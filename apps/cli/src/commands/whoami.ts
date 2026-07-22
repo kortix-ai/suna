@@ -10,6 +10,9 @@ const HELP = help`Usage: kortix whoami [options]
 Print the currently authenticated user + active account on the
 selected host.
 
+Shortcut for the active host — same as \`kortix hosts whoami\`. Use
+\`kortix hosts whoami <name>\` to probe a different instance.
+
 Options:
   --host <name>     Probe a specific host (default: active).
   --json            Machine-readable JSON output.
@@ -56,12 +59,32 @@ export async function runWhoami(argv: string[]): Promise<number> {
     return 0;
   }
 
+  return performWhoami({ host: flags.host, json: flags.json, tokenOnly: flags.tokenOnly });
+}
+
+export interface PerformWhoamiOptions {
+  /** Probe a specific host (default: active). */
+  host?: string;
+  /** Machine-readable JSON output. */
+  json: boolean;
+  /** Print only the active token context. */
+  tokenOnly: boolean;
+}
+
+/**
+ * Shared whoami implementation used by both the top-level `kortix whoami`
+ * alias and the `kortix hosts whoami` subcommand. Resolves the identity
+ * for the named host (default: active) and renders it (human, JSON, or
+ * token-only).
+ */
+export async function performWhoami(opts: PerformWhoamiOptions): Promise<number> {
+  const flags = opts;
   const auth = flags.host ? loadAuthForHost(flags.host) : loadAuth();
   if (!auth?.token) {
     if (flags.host) {
       process.stderr.write(
         `${status.err(`Host "${flags.host}" is not logged in.`)} Run ` +
-          `${C.cyan}kortix login --host ${flags.host}${C.reset}.\n`,
+          `${C.cyan}kortix hosts login ${flags.host}${C.reset}.\n`,
       );
     } else {
       process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);

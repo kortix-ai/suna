@@ -11,13 +11,14 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { accountMembers, projectMembers, projectSessions, projects } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { accountMembers, projectMembers, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
 import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
+import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
 
 // Enforce the per-account project cap (free → 3, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
@@ -241,6 +242,8 @@ export async function ensureOrgMembership(
 export interface UserIdentity {
   /** Email from the auth provider, or null if the user has none. */
   email: string | null;
+  /** Best available display name from auth metadata. */
+  displayName: string | null;
   /**
    * Whether this user_id resolves to a real auth user. `false` means the auth
    * provider returned NO user for this id — i.e. it's a shadow/orphan principal
@@ -266,14 +269,53 @@ export async function resolveUserIdentities(userIds: string[]): Promise<Map<stri
         const { data } = await supabase.auth.admin.getUserById(uid);
         // A completed call with no user object = the id is not a real user.
         const user = data?.user ?? null;
-        result.set(uid, { email: user?.email ?? null, exists: !!user });
+        const metadata = user?.user_metadata as Record<string, unknown> | undefined;
+        const displayName =
+          typeof metadata?.name === 'string'
+            ? metadata.name
+            : typeof metadata?.full_name === 'string'
+              ? metadata.full_name
+              : null;
+        result.set(uid, { email: user?.email ?? null, displayName, exists: !!user });
       } catch {
         // Transient (network/5xx) — assume the user exists; don't hide them.
-        result.set(uid, { email: null, exists: true });
+        result.set(uid, { email: null, displayName: null, exists: true });
       }
     }),
   );
   return result;
+}
+
+export async function resolveSessionOwnerIdentities(
+  ownerIds: string[],
+  accountId: string,
+): Promise<Map<string, SessionOwnerIdentity>> {
+  const uniqueOwnerIds = [...new Set(ownerIds)];
+  if (uniqueOwnerIds.length === 0) return new Map();
+
+  const users = await resolveUserIdentities(uniqueOwnerIds);
+  const unresolvedIds = uniqueOwnerIds.filter((ownerId) => !users.get(ownerId)?.exists);
+  const machineIdentities = unresolvedIds.length
+    ? await db
+        .select({
+          serviceAccountId: serviceAccounts.serviceAccountId,
+          name: serviceAccounts.name,
+          agentName: serviceAccounts.agentName,
+        })
+        .from(serviceAccounts)
+        .where(
+          and(
+            eq(serviceAccounts.accountId, accountId),
+            inArray(serviceAccounts.serviceAccountId, unresolvedIds),
+          ),
+        )
+    : [];
+
+  return mergeSessionOwnerIdentities({
+    ownerIds: uniqueOwnerIds,
+    users,
+    serviceAccounts: machineIdentities,
+  });
 }
 
 export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {

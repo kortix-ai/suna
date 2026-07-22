@@ -9,6 +9,7 @@ import { LLM_PROXY_PLACEHOLDER_KEY, EXECUTOR_PROXY_PLACEHOLDER_KEY } from './llm
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
+import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 
 const READY_POLL_MS = 100
@@ -726,7 +727,7 @@ export function createOpencodeSupervisor(
       })
     }
     const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
-    const env: NodeJS.ProcessEnv = {
+    const env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
       HOME: OPENCODE_HOME,
@@ -741,7 +742,7 @@ export function createOpencodeSupervisor(
       BASH_ENV: AGENT_ENV_SH,
       PORT: undefined,
       APP_PORT: undefined,
-    }
+    })
 
     materializeOpencodeAuth(env)
 

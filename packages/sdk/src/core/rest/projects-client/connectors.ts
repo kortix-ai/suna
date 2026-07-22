@@ -66,6 +66,8 @@ export interface ConnectorAuthDiscovery {
   status: 'detected' | 'none' | 'ambiguous' | 'unsupported';
   recommended: ExecutableConnectorAuth | null;
   candidates: ConnectorAuthCandidate[]; warnings: string[]; totalRequests: number;
+  /** The source document's own name (OpenAPI `info.title`, Postman `info.name`). */
+  title: string | null;
 }
 
 export interface ConnectionProfile {
@@ -87,6 +89,19 @@ export interface ReconcileConnectionProfileInput {
   metadata?: Record<string, unknown>;
 }
 
+/** Create or update the calling user's member-owned profile. Ownership is
+ * derived exclusively from the bearer token; callers cannot supply an owner. */
+export interface ReconcileMemberConnectionProfileInput {
+  connector_alias: string;
+  label: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ConnectionProfileConnectInput {
+  success_redirect_uri?: string;
+  error_redirect_uri?: string;
+}
+
 export async function listConnectionProfiles(projectId: string) {
   return unwrap(
     await backendApi.get<{ profiles: ConnectionProfile[] }>(
@@ -101,6 +116,15 @@ export async function reconcileConnectionProfile(
 ) {
   return unwrap(
     await backendApi.post<ConnectionProfile>(`/projects/${projectId}/connector-profiles`, input),
+  );
+}
+
+export async function reconcileMemberConnectionProfile(
+  projectId: string,
+  input: ReconcileMemberConnectionProfileInput,
+) {
+  return unwrap(
+    await backendApi.post<ConnectionProfile>(`/projects/${projectId}/connector-profiles/me`, input),
   );
 }
 
@@ -130,6 +154,28 @@ export async function activateConnectionProfile(projectId: string, profileId: st
   return unwrap(
     await backendApi.put<{ ok: true }>(
       `/projects/${projectId}/connector-profiles/${profileId}/activate`,
+      {},
+    ),
+  );
+}
+
+export async function pipedreamConnectConnectionProfile(
+  projectId: string,
+  profileId: string,
+  input: ConnectionProfileConnectInput = {},
+) {
+  return unwrap(
+    await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
+      `/projects/${projectId}/connector-profiles/${profileId}/connect`,
+      input,
+    ),
+  );
+}
+
+export async function pipedreamFinalizeConnectionProfile(projectId: string, profileId: string) {
+  return unwrap(
+    await backendApi.post<{ connected: boolean; accountId?: string }>(
+      `/projects/${projectId}/connector-profiles/${profileId}/connect/finalize`,
       {},
     ),
   );
@@ -222,6 +268,12 @@ export interface ConnectorConfig {
     name: string | null;
     prefix: string | null;
   };
+  /** Static request headers sent on EVERY call this connector makes — an
+   *  ordered map of header name → value (`{ Accept: 'application/json' }`);
+   *  `{}` when none are declared. NOT secrets: stored in kortix.yaml in
+   *  plaintext, like `baseUrl`. The credential (see `auth`) always wins if a
+   *  header here has the same name. */
+  headers: Record<string, string>;
 }
 
 export async function getConnectorConfig(projectId: string, slug: string) {
@@ -271,6 +323,12 @@ export interface ConnectorDraftInput {
     name?: string;
     prefix?: string;
   };
+  /** Static request headers, an ordered map of header name → value. Omit to
+   *  keep whatever the connector already declares; send `{}` to clear them.
+   *  Names must be RFC 7230 tokens (`^[A-Za-z0-9!#$%&'*+.^_\`|~-]+$`, max 128
+   *  chars), values may not contain CR/LF (max 2048 chars), at most 32 entries.
+   *  NOT secrets — they are committed to kortix.yaml in plaintext. */
+  headers?: Record<string, string>;
 }
 
 export async function createConnector(projectId: string, draft: ConnectorDraftInput) {

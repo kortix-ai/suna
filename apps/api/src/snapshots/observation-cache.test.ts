@@ -29,6 +29,38 @@ describe('provider catalog observation cache', () => {
     expect(calls).toBe(2);
   });
 
+  test('per-value TTL: negative results cache briefly, positive ones longer', async () => {
+    let calls = 0;
+    const observe = shortLivedObservation(
+      async () => {
+        calls += 1;
+        return calls === 1 ? 'missing' : 'active';
+      },
+      (value) => (value === 'active' ? 60_000 : 1),
+    );
+
+    expect(await observe()).toBe('missing');
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await observe()).toBe('active');
+    expect(await observe()).toBe('active');
+    expect(calls).toBe(2);
+  });
+
+  test('a zero TTL for a value means it is never cached', async () => {
+    let calls = 0;
+    const observe = shortLivedObservation(
+      async () => {
+        calls += 1;
+        return 'unknown';
+      },
+      (value) => (value === 'unknown' ? 0 : 60_000),
+    );
+
+    expect(await observe()).toBe('unknown');
+    expect(await observe()).toBe('unknown');
+    expect(calls).toBe(2);
+  });
+
   test('invalidation prevents an older in-flight read from restoring stale data', async () => {
     let calls = 0;
     let resolveStale!: (value: string[]) => void;

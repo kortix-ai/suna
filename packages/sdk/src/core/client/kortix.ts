@@ -396,6 +396,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           list: () => P.listConnectionProfiles(projectId),
           reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
             P.reconcileConnectionProfile(projectId, ...a),
+          reconcileMember: (
+            ...a: DropFirst<Parameters<typeof P.reconcileMemberConnectionProfile>>
+          ) => P.reconcileMemberConnectionProfile(projectId, ...a),
           updateCredential: (
             ...a: DropFirst<Parameters<typeof P.updateConnectionProfileCredential>>
           ) => P.updateConnectionProfileCredential(projectId, ...a),
@@ -403,6 +406,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.revokeConnectionProfile(projectId, ...a),
           activate: (...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>) =>
             P.activateConnectionProfile(projectId, ...a),
+          pipedreamConnect: (
+            ...a: DropFirst<Parameters<typeof P.pipedreamConnectConnectionProfile>>
+          ) => P.pipedreamConnectConnectionProfile(projectId, ...a),
+          pipedreamFinalize: (
+            ...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnectionProfile>>
+          ) => P.pipedreamFinalizeConnectionProfile(projectId, ...a),
         },
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
@@ -491,7 +500,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       sessions: {
-        list: () => P.listProjectSessions(projectId),
+        list: (options?: Parameters<typeof P.listProjectSessions>[1]) =>
+          P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
       },

@@ -192,6 +192,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
 | B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.** | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`. | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green |
 | B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
+| B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -230,6 +231,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `4003a41b` | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252` |
 | 2026-07-11 | `4003a41b` | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`) |
 | 2026-07-11 | `4003a41b` | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33` |
+| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path. | `apps/api/src/executor/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 
 ---
@@ -1087,3 +1089,154 @@ follow RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test,
 and packed-install smoke gates.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `project-session-inventory` (claim)
+
+Claimed the user-directed privileged project session inventory contract. The
+existing visible-session list remains backward compatible; an additive manager-
+only inventory mode will expose every durable project session, resolved human or
+agent ownership, and explicit viewer access/runtime availability so owners and
+admins can investigate private, stopped, unavailable, and soft-deleted sessions
+without granting ordinary members broader visibility. Implementation will follow
+RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test, and
+packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `project-session-inventory` (completion)
+
+Completed the additive manager-only project session inventory contract. The
+ordinary list remains unchanged; `project(id).sessions.list({ scope: 'project' })`
+now exposes every durable row with resolved human/service-account ownership,
+viewer access, runtime state, and soft-delete audit metadata. No exported name
+was removed or renamed.
+
+**TDD and live evidence:** focused API/serializer/SDK/facade/web tests passed
+**148 / 0**. API and web typechecks exited 0, focused web ESLint exited 0, the
+full web suite reported **1837 pass / 0 fail**, and the API route contract suite
+reported **59 pass / 0 fail**. A real authenticated local HTTP smoke proved the
+manager default list stayed at 2 visible rows while project inventory returned
+all 4 durable rows, including a private missing runtime, a stopped agent-owned
+runtime, and a soft-deleted row; the ordinary member received 403 for project
+inventory and a manager still received 404 when directly reading the private
+session.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** with 5071 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK and local end-to-end contract.
+Repository PR, Deploy Dev, and live-dev verification remain part of the parent
+feature lifecycle.
+
+---
+
+### 2026-07-21 — session `profile-owned-bindings` (B11 completion)
+
+Completed the additive member-owned connection-profile and session-binding
+surface in implementation commit `3eb18b361`. A member can reconcile a profile
+whose owner is derived from the bearer token, connect/finalize its distinct
+Pipedream identity, and select it explicitly when starting a private session.
+Project defaults remain shared. External, agent, and subject profiles retain the
+management-capability path; that capability never exposes or mutates another
+member's profile. Runtime resolution fails closed on owner or visibility drift.
+No exported SDK name or existing field was removed or renamed.
+
+**TDD and focused evidence:** profile/Postgres integration reported **15 pass / 0
+fail**; authenticated HTTP authorization reported **5 pass / 0 fail**; Executor
+gateway reported **32 pass / 0 fail**; and the computer connector regression
+reported **8 pass / 0 fail**. The public runtime and type snapshots contain
+additions only.
+
+**Real local E2E:** two real Supabase users created, listed, mutated, and bound
+only their own profiles; two real session starts persisted distinct bindings;
+project/public sharing was rejected for the personal-profile session; and two
+real Executor calls resolved distinct hidden credentials. The black-box proof
+reported **21 pass / 0 fail**. Cleanup then verified zero synthetic projects,
+users, tokens, and sandbox rows remained.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** across 86 files with 5077 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully. API typecheck exited 0 and `git diff
+--check` was clean.
+
+**Post-rebase addendum:** after rebasing onto current `origin/main` at
+`962498c4f`, SDK typecheck and packed-install smoke remained green; the full SDK
+suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; API
+typecheck exited 0; and the focused profile/authorization/Executor run reported
+**52 pass / 0 fail**. The unrelated computer integration finding is recorded in
+Discovered this session rather than changed inside B11.
+
+**Shippable to production: YES** for the SDK surface and local end-to-end path.
+Repository PR, Deploy Dev, deployed-SHA proof, and live-dev verification remain
+the parent feature lifecycle.
+
+---
+
+### 2026-07-21 — session `revert-owner-profile-bindings` (completion)
+
+Reverted the unfinished owner-scoped connector-profile session-start surface
+introduced by #5139 so `main` returns to the previously published SDK contract.
+This is an exact feature rollback rather than a new SDK behavior; the feature
+will continue in a separate draft PR before it is considered shippable.
+
+**Verification:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** with 5071 assertions; the packed-install
+smoke completed successfully; API typecheck exited 0; and the focused live-env
+API regression run reported **41 pass / 0 fail** with 83 assertions.
+
+**Shippable to production: YES** for the rollback. The owner-scoped binding
+feature itself is **NOT YET** shippable and remains open as WIP.
+
+---
+
+### 2026-07-21 — session `service-account-profile-hardening` (claim)
+
+Claimed the user-directed restoration of owner-scoped connector-profile bindings
+after the security rollback, including the late Strix findings on both #5139 and
+#5143. The restored additive SDK contract will remain unchanged; API enforcement
+will additionally prove that service-account principals cannot create, list,
+mutate, OAuth-connect, bind, or execute human `member` profiles, including
+queued session creation and pre-existing forged bindings. Work will follow
+RED → GREEN → REFACTOR and finish with the full SDK typecheck, test, and packed-
+install smoke gates plus real HTTP/Executor proof.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `service-account-profile-hardening` (completion)
+
+Completed the security restoration in `de11be3b0` and the post-rebase WhatsApp
+principal propagation in `396a63823`. Direct service-account principals can no
+longer create, enumerate, mutate, OAuth-connect, bind, or execute `member`
+connection profiles, even when a forged row uses the service-account UUID as its
+owner. Principal type survives durable queue persistence; older queued commands
+infer it from the stored actor. Runtime resolution also rejects pre-existing
+service-account sessions bound to forged member profiles. The restored manager
+ownership and personal-session privacy checks cover every Strix thread from
+#5139 and #5143.
+
+**Focused evidence:** authenticated profile HTTP authorization reported **9 pass
+/ 0 fail**; profile binding and Executor resolution reported **18 pass / 0
+fail**; Executor gateway, sharing, public share, transcript, share endpoint,
+session sandbox, and queue payload suites reported **86 pass / 0 fail**. Email,
+Slack selection/dispatch, Teams, Telegram, trigger attribution, and WhatsApp
+reported **60 pass / 0 fail**. API typecheck exited 0 and `git diff --check` was
+clean. Multi-file Bun invocations reproduced the suite's known global mock
+contamination; every affected file passed in its own isolated process.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface and locally verified API
+hardening. Replacement PR review, Deploy Dev, deployed-SHA proof, and live-dev
+HTTP/Executor verification remain part of the repository lifecycle.

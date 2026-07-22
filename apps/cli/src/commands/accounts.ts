@@ -13,9 +13,11 @@ import type { AccountMembership, MeResponse } from '../api/types.ts';
 
 const HELP = help`Usage: kortix accounts <subcommand> [options]
 
-One Kortix login can belong to many accounts (your personal account, a
-company account, …). Exactly one is "active" — every account-scoped
-command (\`projects ls\`, \`ship\`, …) operates on it unless overridden.
+Switch the active account within the current host. One Kortix login can
+belong to many accounts (your personal account, a company account, …);
+exactly one is "active" — every account-scoped command (\`projects ls\`,
+\`ship\`, …) operates on it unless overridden. To switch instance instead,
+use \`kortix hosts use\`; to sign in, \`kortix hosts login\`.
 
 Subcommands:
   ls                   List the accounts you belong to (--json)

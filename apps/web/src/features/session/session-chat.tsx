@@ -130,6 +130,7 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
+import { usePendingQueueStore } from '@/stores/pending-queue-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   useSessionComposerPrefillStore,
@@ -3947,7 +3948,12 @@ export function SessionChat({
   // at the next safe boundary: either a tool call finishing, or the turn
   // going idle. See SessionChatInput.handleSubmit → onQueueMessage, and the
   // drain effect below.
-  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  // Seeded with anything queued in the instant shell while the computer was
+  // still booting (same handoff lifecycle as pending-files-store) — the drain
+  // effect below flushes it once the auto-sent first prompt hits a boundary.
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>(() =>
+    usePendingQueueStore.getState().consumePendingQueue(),
+  );
   const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   useEffect(() => {
     queuedMessagesRef.current = queuedMessages;

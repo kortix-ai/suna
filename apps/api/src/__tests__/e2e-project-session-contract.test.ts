@@ -1152,6 +1152,21 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
+    const inventory = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?scope=project`,
+    );
+    expect(inventory.status).toBe(200);
+    expect((await inventory.json())[0]).toMatchObject({
+      session_id: SESSION_ID,
+      owner_email: 'contract@example.test',
+      owner_name: 'contract@example.test',
+      owner_type: 'user',
+      can_access: true,
+      runtime_status: null,
+      deleted_at: null,
+      deleted_by: null,
+    });
+
     const readSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(readSession.status).toBe(200);
     expect(await readSession.json()).toMatchObject({

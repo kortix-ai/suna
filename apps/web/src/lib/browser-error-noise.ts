@@ -61,9 +61,23 @@ const STORAGE_NULL_ACCESS_NOISE_PATTERNS = [
 // actionable first-party case the negative guard exists to preserve. The
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
+// The host name in the browser's throw is the Web Storage global interface
+// (`Window`), which different browsers capitalize differently: Chrome emits
+// `from 'window'`, Firefox/WebKit emit `from 'Window'`. PR #4674's original
+// matcher anchored on the lowercase form only, so the capitalized variants
+// recurred in prod (patterns `89b0a8e8…` / `b6927c9d…` / `e8eadc82…` /
+// `d010de8a…`, last 2026-07-21, call site `webpack-<hash>.js` function `c` =
+// `__webpack_require__` in a storage-blocked context — no resolved first-party
+// frame → exactly the shape the negative guard is meant to drop). The `i` flag
+// makes the host casing match either browser wording WITHOUT widening the match:
+// the storage property name (`'localStorage'` / `'sessionStorage'`) stays
+// case-sensitive in the regex and never appears on a non-storage throw, and the
+// `Failed to read the '…' property from '…'` frame is the browser's own
+// access-control wording (never an app-logic error), so case-folding the host
+// token cannot swallow a real first-party error the negative guard preserves.
 const STORAGE_SECURITY_ERROR_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
-  /^Failed to read the 'localStorage' property from 'window'/,
-  /^Failed to read the 'sessionStorage' property from 'window'/,
+  /^Failed to read the 'localStorage' property from 'window'/i,
+  /^Failed to read the 'sessionStorage' property from 'window'/i,
 ];
 
 // A de-minified first-party source frame: Sentry's sourcemap resolution
@@ -132,6 +146,33 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
+// Expected "no compaction model configured" configuration state. The SDK's
+// `useSummarizeOpenCodeSession` mutation
+// (`packages/sdk/src/react/use-opencode-sessions/sessions.ts`) throws a
+// sentinel-marked `NoCompactionModelError`
+// (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`,
+// mirrored locally by `apps/mobile/lib/opencode/hooks/use-compact-session.ts`)
+// when every model-resolution fallback tier fails (no config default, no
+// assistant message in the thread, no connected provider/model). It is an
+// EXPECTED, user-facing configuration outcome — the host already surfaces it
+// via the `loadingToast` error toast ("No model available for compaction.
+// Please configure a model in settings.") and the global react-query mutation
+// `onError` toast — never a code defect.
+//
+// It leaks to Sentry as an unhandled promise rejection: `compact-modal.tsx`
+// fires `void loadingToast(() => summarize.mutateAsync(...))`, and
+// `loadingToast` re-throws the error after showing the toast (toast.tsx), so
+// the `void`-fired rejection is auto-captured by the Sentry SDK's
+// `onunhandledrejection` integration. Drop it here at the telemetry gate so
+// the expected config state never pages Better Stack, regardless of which
+// capture path delivered it. A longer real mutation failure (network error,
+// `summarize` 5xx, a genuine `TypeError`, …) keeps reporting — only an exact
+// match for this message (plus the explicit canonical wrappers below) is
+// suppressed.
+const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
+  'No model available for compaction. Please configure a model in settings.',
+] as const;
+
 // Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
 // cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
 // the webpack runtime chunk is served from a different deployment, so
@@ -178,33 +219,53 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 // On GPUs/browsers without working WebGL2 (context loss, blacklisted driver,
 // stripped WebView, headless renderer), Paper Shaders' shader-mount
 // `useEffect`/rAF callback reaches a WebGL2 context that has become `null` and
-// calls a WebGL API method on it → `TypeError: Cannot read properties of null
-// (reading '<method>')`. The throw happens INSIDE an async callback, so it
-// ESCAPES the `<ShaderSafe>` React error boundary (which only catches
-// render-phase throws via `getDerivedStateFromError`) → global error → Sentry
-// → Better Stack. The two observed null-context method names are:
-//   - `getSupportedExtensions`  (Better Stack pattern `34127fa4…`, call site
-//                                `new b2` in chunk `c76173f0.…`, prod, 2 occ.)
+// calls a WebGL API method on it → `TypeError`. The throw happens INSIDE an
+// async callback, so it ESCAPES the `<ShaderSafe>` React error boundary (which
+// only catches render-phase throws via `getDerivedStateFromError`) → global
+// error → Sentry → Better Stack. The two observed null-context method names are:
+//   - `getSupportedExtensions`  (Better Stack pattern `34127fa4…` / recurrence
+//                                `dfcb336b…`, call site `new b2` in chunk
+//                                `c76173f0.…`, prod)
 //   - `getAttribLocation`       (the known sibling already documented in
 //                                `shader-safe.tsx`'s probe rationale).
 // These are WebGL2 context method names — they are NEVER called from
 // first-party app code (only from Paper Shaders' library internals), so the
 // message wording alone is specific enough to safely classify as noise without
 // a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
-// matching is exact-substring on the canonical `Cannot read properties of null
-// (reading '<method>')` (V8) and `Cannot read property '<method>' of null`
-// (old JSC) forms, with `TypeError: ` / `Error: ` /
-// `Unhandled promise rejection: ` wrappers stripped so all capture paths
-// (window.onerror, onunhandledrejection, Sentry exception) classify
-// consistently. `shouldIgnore*` here is the leak-path backstop for the throws
-// that still escape `<ShaderSafe>` after a context-loss event; the
-// `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
-// degrades to the fallback BEFORE the throw.
+// matching covers all three JS engine wordings for the same null-context bug:
+//   - V8 (Chrome/Edge):          `Cannot read properties of null (reading '<m>')`
+//   - old JSC (old Safari/iOS):  `Cannot read property '<m>' of null`
+//   - SpiderMonkey (Firefox):    `can't access property "<m>"<…>` (the variable
+//                                name after the method is library-specific, so
+//                                the pattern anchors on the stable method-name
+//                                prefix only — see the recurrence
+//                                `dfcb336b…` which shipped through PR #4544's
+//                                V8/JSC-only filter as
+//                                `can't access property "getSupportedExtensions",
+//                                this.gl is null`).
+// `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
+// stripped before matching so all capture paths (window.onerror,
+// onunhandledrejection, Sentry exception) classify consistently.
+// `shouldIgnore*` here is the leak-path backstop for the throws that still
+// escape `<ShaderSafe>` after a context-loss event; the `supportsWebGL2()`
+// probe in `shader-safe.tsx` is the primary guard that degrades to the fallback
+// BEFORE the throw. The probe is engine-agnostic (it just calls
+// `ctx.getSupportedExtensions()`, which throws or returns null on any engine),
+// so it already prevents the throw at mount for Firefox — the filter backstop
+// catches the residual async-context-loss throws that bypass the one-shot probe.
 const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
+  // V8 (Chrome/Edge).
   "Cannot read properties of null (reading 'getSupportedExtensions')",
   "Cannot read properties of null (reading 'getAttribLocation')",
+  // Old JSC (old Safari/iOS).
   "Cannot read property 'getSupportedExtensions' of null",
   "Cannot read property 'getAttribLocation' of null",
+  // SpiderMonkey (Firefox) — anchors on the stable method-name prefix; the
+  // `, this.gl is null` variable suffix is library-specific and dropped so the
+  // pattern matches regardless of which Paper Shaders internal variable holds
+  // the null context.
+  'can\'t access property "getSupportedExtensions"',
+  'can\'t access property "getAttribLocation"',
 ] as const;
 
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
@@ -275,6 +336,52 @@ function isAndroidNavPerfLoggerFrame(filename: unknown): boolean {
   return normalizeString(filename) === ANDROID_NAV_PERF_LOGGER_FRAME_SOURCE;
 }
 
+// Android System WebView native-bridge instrumentation noise — the `postEvent`
+// sibling of the `postMessage` class above. Android's Chromium WebView ships a
+// `JavaBridge` (the V8↔Java bridge injected into every page) whose
+// `postEvent`/`postMessage` thread-hop hands a serialized event to the Java
+// side via a WEAK reference to the backing `JavaObject`. When that object is
+// garbage-collected — page navigation, WebView teardown, or the host in-app
+// browser (Threads/Barcelona, Facebook, Instagram, …) dismissing the tab — the
+// next `postEvent` throws `Error invoking postEvent: Java object is gone`.
+// This is the WebView's OWN bridge plumbing, never first-party code: there is
+// no app chunk frame, no de-minified `apps/web/src/…` frame, and (unlike the
+// `postMessage` sibling) frequently NO resolvable frame at all — the throw
+// escapes from the GC'd bridge hop with a frameless `<anonymous>` / `?`
+// call site (Sentry mechanism
+// `auto.browser.global_handlers.onerror`/`onunhandledrejection`).
+//
+// Better Stack pattern
+// a6795db236a92a4f9738698e93a8d7ae4e60dae607cacedccb7ed8bbd225b2d4
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+// users, last_seen 2026-07-20 19:05:34 UTC, call_site_file `<anonymous>`,
+// call_site_function `?` — the frameless capture shape. The `postMessage`
+// sibling `e6a45fe4…` (PR #4610) carried the synthetic
+// `app://navigation_performance_logger_android` frame; this `postEvent` variant
+// surfaced frameless, so the bridge-frame-only anchor from #4610 does not
+// match it. `Java object is gone` is the canonical Android System WebView
+// Java-bridge-GC'd message; it is not raised by app code or by desktop
+// Chrome.
+//
+// The message wording (`Error invoking <method>: Java object is gone`) is
+// shared with the `postMessage` sibling and could conceivably be reused by a
+// hostile/injected script, so this matcher — like the iOS-WebKit
+// stack-overflow frameless-capture class — is anchored on BOTH the exact
+// `postEvent` message AND a frameless/injected-WebView origin: it suppresses
+// only when there is NO resolvable source location (no app chunk, no URL, no
+// de-minified `apps/web/src/…` frame) OR the frame is the synthetic Android
+// nav-performance-logger bridge source. A genuine first-party `postEvent` /
+// `dispatchEvent` failure throws from an `app:///_next/…` chunk or a
+// de-minified `apps/web/src/…` frame and is preserved by the negative guard.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list
+// — that gate has no frame context, so a bare-string match there could
+// swallow a real first-party event-dispatch failure; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate.
+const ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES = [
+  'Error invoking postEvent: Java object is gone',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -319,6 +426,52 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
 ] as const;
+
+// Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
+// FireMonkey) injected-script noise. A userscript-manager extension wraps each
+// injected user script in a synthetic `app:///userscript.html?name=<Script>.user.js&id=<uuid>`
+// page so it can run in an isolated sandbox with privileged APIs
+// (`GM_*` / `GM_` / `unsafeWindow`). The user script executes on every page
+// whose URL matches its `@match` / `@include` rules (a `YoutubeDL.user.js`
+// download-helper script `@match`s `*://*/*` and runs on `https://kortix.com/`).
+// When the script's own logic is buggy — e.g. it calls `JSON.parse()` on a
+// value that resolved to `undefined` (an attribute / text node it expected to
+// find was absent on our page) — it throws `SyntaxError: "undefined" is not
+// valid JSON` as an UNHANDLED promise rejection inside the userscript wrapper.
+// Sentry's `GlobalHandlers` `onunhandledrejection` integration captures it,
+// and because the throw's frame is the synthetic `app:///userscript.html?…`
+// source (NOT an `app:///_next/…` bundle frame and NOT a de-minified
+// `apps/web/src/…` frame), it leaks to Better Stack. Better Stack pattern
+// 2249441898cd4d7bb679841d57b829b8863c9a4dc1675a88075d794cfd3cd600
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-21 05:08 UTC, `SyntaxError: "undefined" is not valid JSON`,
+// call site `JSON.parse` at `<anonymous>`, frames
+// `app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-…` (fn `?`, line 1614)
+// + `<anonymous>` (`JSON.parse`), mechanism `auto.browser.global_handlers.
+// onunhandledrejection`, request URL `https://kortix.com/`, Chrome 150 / Win 10.
+// The throw is in the THIRD-PARTY user script's own logic, never in first-party
+// app code: `app:///userscript.html` is the userscript-manager's synthetic
+// wrapper page (it has the same `app:///` empty-host origin shape as the other
+// injected/extension sources above), and `JSON.parse` is a built-in. Our app
+// never runs from a `userscript.html` frame.
+//
+// The `app:///userscript.html` prefix is specific to userscript-manager
+// wrappers and never appears on a first-party `app:///_next/…` bundle frame or
+// a de-minified `apps/web/src/…` source path (those carry `_next/static/` or
+// the `apps/web/src/` path), so anchoring on it is conservative. A real
+// first-party `JSON.parse(undefined)` regression throws inside an
+// `app:///_next/…` chunk (or a de-minified `apps/web/src/…` frame) and is never
+// matched. This mirrors `isInjectedAppSource` / `isExtensionSource`: a
+// definitive third-party-injected-source anchor that drops the event.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there would swallow a
+// real first-party `JSON.parse` SyntaxError; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const USERSCRIPT_MANAGER_FRAME_PATTERN = /^app:\/\/\/userscript\.html\b/;
+
+function isUserscriptManagerInjectedSource(filename: unknown): boolean {
+  return USERSCRIPT_MANAGER_FRAME_PATTERN.test(normalizeString(filename));
+}
 
 // TronLink (Tron blockchain wallet) browser-extension injected-script noise.
 // The TronLink extension injects a content script
@@ -571,9 +724,11 @@ export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean 
  * itself in a storage-blocked context (Safari private mode, sandboxed/
  * cross-origin iframe, partitioned storage, some in-app WebViews). Distinct
  * from #4529's null-access `TypeError` class. Requires the canonical
- * `Failed to read the '<storage>' property from 'window'` message prefix, AND
- * a NEGATIVE guard: if any frame (or the window.onerror filename) resolves to
- * a de-minified first-party `apps/web/src/…` source, the event keeps reporting
+ * `Failed to read the '<storage>' property from 'window'` message prefix (the
+ * host name is matched case-insensitively so Chrome's `from 'window'` AND
+ * Firefox/WebKit's `from 'Window'` wording both classify), AND a NEGATIVE
+ * guard: if any frame (or the window.onerror filename) resolves to a
+ * de-minified first-party `apps/web/src/…` source, the event keeps reporting
  * — that means our own code is reading `window.localStorage` directly
  * (bypassing managed-storage) and is actionable to fix. Only events with NO
  * resolved first-party frame are dropped. See
@@ -613,33 +768,79 @@ export function isStorageSecurityErrorNoise(input: {
 //
 // A real first-party regression — `throw new Error()` /
 // `Promise.reject(new Error())` in our own code — keeps reporting: its frames
-// resolve (via uploaded sourcemaps) to a real source file:line, so the
-// "any resolved frame" negative guard preserves the event. Only events with
-// NEITHER a message NOR a single resolvable frame are dropped.
-function isFrameUnresolved(frame: {
-  filename?: unknown;
-  function?: unknown;
-  lineno?: unknown;
-}): boolean {
-  const fn = normalizeString(frame.function).trim();
-  const lineno = typeof frame.lineno === 'number' ? frame.lineno : 0;
-  return (fn === '' || fn === '?') && lineno <= 0;
+// resolve (via uploaded sourcemaps) to a real `apps/web/src/…` source file
+// (Sentry uploads sourcemaps and rewrites the frame filename), so the
+// "any resolved first-party source frame" negative guard preserves the event.
+// Only events with NEITHER a real message NOR a single resolvable first-party
+// source frame are dropped.
+//
+// --- 2026-07-21 extension (post-0.10.13 recurrence, chunk 21544 again) ---
+// Sentry SDK 10.x (`@sentry/nextjs@10.63.0`) changed how it serializes an
+// onerror capture whose thrown value has NO `.message`: instead of leaving
+// `exception.values[0].value` empty/undefined, it now sets the literal
+// placeholder string `"No error message"` there (which is also what Better
+// Stack displays). The new production patterns
+//   `141dcca3d176082360456b74d56119f59acdf806ae0f3ab1e7e7bd8218bca8d2`
+//   (8 occ / 0 users / last 2026-07-20 21:21:55 UTC, dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2)
+//   `19ee7c2fe89a3f3302fb8209574d906a7b7c8f04d55746e9b443e9bf078c64ca`
+//   (6 occ / 0 users / last 2026-07-21 17:03:18 UTC, dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno)
+// are the SAME noise class as #4540 (window.onerror, value-less throw, call
+// site the chunk-21544 frame) but the original matcher missed them for TWO
+// reasons:
+//   1. The placeholder `"No error message"` is a NON-EMPTY string, so the
+//      `message.trim() !== ''` negative guard #1 bailed immediately.
+//   2. The SDK 10.x frames are mostly NAMED minified functions (`iX`, `iu`,
+//      `ib`, `ik`, `oq`, `o_`, `l9`, `l`, `MessagePort.x`) with real linenos,
+//      so the "every frame unresolved" negative guard #3 also bailed. The
+//      LAST frame (chunk 21544, `?` function, lineno 1) is still unresolved —
+//      that's the call-site frame Better Stack surfaces — but the older
+//      "all frames must be unresolved" rule no longer holds.
+// The fix treats the literal `"No error message"` placeholder as equivalent
+// to an empty message (it is Sentry's own "no message" marker, never a real
+// app error message), and relaxes the frame guard from "every frame
+// unresolved" to "no frame resolves to a first-party `apps/web/src/…` source
+// path". The first-party-source negative guard is the load-bearing one: a
+// real `throw new Error(...)` / `Promise.reject(new Error(...))` in our own
+// code de-minifies to `apps/web/src/…` and is preserved; only events whose
+// frames are ALL raw minified chunk paths (sourcemap resolution produced no
+// first-party source path) keep being dropped. A non-browser-bundle frame
+// (extension / injected / cross-origin) still keeps the event reporting.
+//
+// The literal placeholder Sentry SDK 10.x writes into
+// `exception.values[0].value` when a `window.onerror` capture has no
+// `error.message` (the thrown value was a non-Error, or an Error with an
+// empty message). It is the SDK's own "no message" marker — never a real
+// app error message — so it is equivalent to an empty message for the noise
+// matcher. Better Stack displays this exact string as the error's "Message".
+const SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER = 'No error message';
+
+function isMessageEmptyOrPlaceholder(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return (
+    normalized === ''
+    || normalized === SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER
+  );
 }
 
 /**
  * Whether a Sentry event is the unactionable "No error message" + unresolved
  * minified-chunk-frame class from our browser bundle — empty exception value
- * AND every frame an unresolved (`?` function, no line) `_next/static/chunks`
- * frame. Real errors (non-empty message, or any resolvable frame, or any
- * non-browser-bundle frame) are never matched. See
+ * (or the Sentry 10.x `"No error message"` placeholder string) AND every
+ * frame a raw `_next/static/chunks` minified-chunk frame with NO resolved
+ * first-party `apps/web/src/…` source path. Real errors (a real non-placeholder
+ * message, or any frame that sourcemap-resolved to a first-party source path,
+ * or any non-browser-bundle frame) are never matched. See
  * `isEmptyMessageUnresolvedBrowserChunkNoise` for the full rationale.
  */
 export function isEmptyMessageUnresolvedBrowserChunkNoise(input: {
   message?: unknown;
   frames?: Array<{ filename?: unknown; function?: unknown; lineno?: unknown }>;
 }): boolean {
-  // Negative guard #1: a real, actionable message always reports.
-  if (normalizeString(input.message).trim() !== '') {
+  // Negative guard #1: a real, actionable message always reports. The Sentry
+  // 10.x `"No error message"` placeholder is the SDK's own "no message"
+  // marker (a window.onerror capture whose thrown value had no `.message`),
+  // NOT a real app error message, so it is treated as empty here.
+  if (!isMessageEmptyOrPlaceholder(input.message)) {
     return false;
   }
   const frames = input.frames ?? [];
@@ -653,9 +854,16 @@ export function isEmptyMessageUnresolvedBrowserChunkNoise(input: {
   if (!frames.every((frame) => isBrowserBundleSource(frame.filename))) {
     return false;
   }
-  // Negative guard #3: any resolvable frame (real source line via sourcemap,
-  // or a named function) → an actionable error; keep it.
-  if (frames.some((frame) => !isFrameUnresolved(frame))) {
+  // Negative guard #3: any frame that sourcemap-resolved to a real first-party
+  // `apps/web/src/…` source path → an actionable error with a fixable call
+  // site; keep it. A real `throw new Error(...)` / `Promise.reject(new Error())`
+  // in our own code de-minifies to `apps/web/src/…`, so it is preserved.
+  // (Sentry SDK 10.x frames may be named minified functions like `iX`/`oq`
+  // with real linenos but STILL not resolve to a first-party source path —
+  // those are raw chunk frames with no actionable source location, so they
+  // do not trip this guard. The load-bearing signal is the resolved
+  // first-party source path, not the function-name/lineno resolution.)
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
   return true;
@@ -669,6 +877,37 @@ export function isExtensionSource(filename: unknown): boolean {
 export function isInjectedAppSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return INJECTED_APP_SOURCE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Whether a Sentry / window.onerror event originates from a browser
+ * userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey / FireMonkey)
+ * injected user script — a frame whose filename is the userscript-manager's
+ * synthetic `app:///userscript.html?name=<Script>.user.js&id=<uuid>` wrapper
+ * page. The user script runs on every `@match`ed page (e.g. a download-helper
+ * script `@match`ing a wildcard `https-or-http any-host any-path` rule and
+ * running on `https://kortix.com/`); its OWN
+ * logic bugs (e.g. `JSON.parse(undefined)` → `SyntaxError: "undefined" is not
+ * valid JSON`) surface as unhandled rejections captured by Sentry and leak to
+ * Better Stack because the frame is the synthetic wrapper, never first-party
+ * code. The `app:///userscript.html` prefix is specific to userscript-manager
+ * wrappers and never appears on a first-party `app:///_next/…` bundle frame or
+ * a de-minified `apps/web/src/…` source path, so anchoring on it is
+ * conservative: a real first-party `JSON.parse` SyntaxError throws inside an
+ * app chunk (or a de-minified `apps/web/src/…` frame) and is never matched.
+ * See `USERSCRIPT_MANAGER_FRAME_PATTERN` for the full rationale and the
+ * production pattern `2249441898…`.
+ */
+export function isUserscriptManagerNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some(isUserscriptManagerInjectedSource);
 }
 
 /**
@@ -781,6 +1020,28 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
 }
 
 /**
+ * Whether a message is the EXPECTED "no compaction model configured"
+ * configuration state thrown by the SDK's `useSummarizeOpenCodeSession`
+ * mutation (`NoCompactionModelError`) when every model-resolution fallback
+ * tier fails. The host already surfaces it via a user-facing toast; it must
+ * never page Better Stack, but the sentinel error can leak to Sentry as an
+ * unhandled promise rejection (`void loadingToast(...)` re-throws after
+ * showing the toast → `onunhandledrejection` auto-capture). Match is exact
+ * after trimming, with only the canonical browser/Sentry wrappers we
+ * explicitly support, so a longer real error that merely mentions the wording
+ * is never matched.
+ */
+export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return COMPACTION_NO_MODEL_EXPECTED_MESSAGES.some(
+    (expected) => normalized === expected
+      || normalized === `Error: ${expected}`
+      || normalized === `Unhandled promise rejection: ${expected}`
+      || normalized === `Unhandled promise rejection: Error: ${expected}`,
+  );
+}
+
+/**
  * Whether a Sentry exception is the stale-deploy webpack-runtime
  * `… (reading 'call')` TypeError. Requires BOTH the exact webpack
  * module-loader message AND the throwing frame (the last stack frame, per
@@ -843,9 +1104,12 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Never page Better Stack for this class. See
- * `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and the
- * `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
+ * Matches all three JS engine wordings: V8
+ * (`Cannot read properties of null (reading '<m>')`), old JSC
+ * (`Cannot read property '<m>' of null`), and SpiderMonkey/Firefox
+ * (`can't access property "<m>"<…>`). Never page Better Stack for this class.
+ * See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and
+ * the `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
  */
 export function isPaperShaderNullContextNoise(message: unknown): boolean {
   const stripped = stripErrorWrappers(normalizeString(message));
@@ -942,6 +1206,64 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
   return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
 }
 
+/**
+ * Whether an event is the Android System WebView native-bridge
+ * `Error invoking postEvent: Java object is gone` noise class: the WebView's
+ * injected `JavaBridge` calls `postEvent` on a native Java bridge whose
+ * backing `JavaObject` has been garbage-collected (page navigation / WebView
+ * teardown / in-app browser dismiss). This is the WebView's OWN bridge
+ * plumbing, not first-party code. Unlike the `postMessage` sibling (PR #4610),
+ * the `postEvent` variant is observed as a FRAMELESS capture
+ * (`<anonymous>` / `?` call site, no resolvable stack), so it cannot be
+ * anchored on the synthetic `app://navigation_performance_logger_android`
+ * frame. Instead — like the iOS-WebKit stack-overflow frameless class — it
+ * requires BOTH the exact message AND a frameless/injected-WebView origin:
+ * suppress only when there is NO resolvable source location OR the frame is
+ * the Android nav-performance-logger bridge source. A genuine first-party
+ * `postEvent` / `dispatchEvent` failure throws from an app chunk or a
+ * de-minified `apps/web/src/…` frame and is preserved by the negative guard.
+ * Never page Better Stack for this class. See
+ * `ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES` for the full
+ * rationale.
+ */
+export function isAndroidWebViewNativeBridgePostEventNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (
+    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES.some(
+      (noise) => message === noise,
+    )
+  ) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Positive anchor: the synthetic Android nav-performance-logger bridge
+  // source (the framed sibling shape, forward-compat with #4610's evidence).
+  if (sources.some((filename) => isAndroidNavPerfLoggerFrame(filename))) {
+    return true;
+  }
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame → our
+  // own event-dispatch code is failing; keep reporting so the call site can
+  // be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real app chunk, URL,
+  // or named file) → an actionable event-dispatch error with a real stack;
+  // keep reporting. Only the frameless synthetic-`undefined`/`<anonymous>`
+  // global-onerror/onunhandledrejection capture remains → Android WebView
+  // native-bridge GC noise.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
 // iOS WebKit (Safari, Chrome-on-iOS, Google Search App — all WKWebView/JSC)
 // stack-overflow noise. When iOS WebKit exhausts its (lower-than-desktop) call
 // stack, it surfaces `RangeError: Maximum call stack size exceeded.` through
@@ -1119,6 +1441,113 @@ export function isEmbedPdfTilingReactUpdateDepthNoise(input: {
   return frames.some(frameMatchesEmbedPdfTilingCallback);
 }
 
+// React #327 = `Should not already be working.` — the React production
+// reconciler's re-entrancy guard. It throws from
+// `packages/react-reconciler/src/ReactFiberWorkLoop.js`'s `performSyncWorkOnRoot`
+// (and the `flushSyncUpdateQueue` path at the end of `flushPendingEffects`):
+//
+//   function performSyncWorkOnRoot(root, lanes) {
+//     if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+//       throw new Error('Should not already be working.');   // ← #327
+//     }
+//     …
+//   }
+//
+// i.e. React's scheduler entered `performSyncWorkOnRoot` while it was ALREADY
+// rendering or committing. The documented Firefox-specific trigger is React
+// Router's `unstable_usePrompt` calling `setTimeout(blocker.proceed, 0)` after
+// `window.confirm()` (react-router#10314 — the React team itself called this a
+// "browser-specific issue, possibly related to policy things built-in to
+// Firefox"). The same #327 has been reported across the React ecosystem from
+// Firefox's MessageChannel-based scheduler re-entering during the commit phase
+// (react#17355, react#29908, react-router#10314, react-router#10547) — it does
+// NOT reproduce on Chromium/WebKit, only on Firefox.
+//
+// Better Stack pattern
+// 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence ever (90-day
+// window), 0 identified users (anonymous), single release
+// `22e12080d2b37642aa92a839da6b37f30fc21b9d`, 2026-07-20 11:53:33 UTC, route
+// `/projects/:id/sessions/:sessionId` (co-worker session page actively polling
+// `prompt_async` + UI clicks to remove queued messages — a state-heavy surface
+// that maximises scheduler churn), Firefox 152.0 on Generic Linux, mechanism
+// `auto.browser.global_handlers.onerror` (UNCAUGHT global error — never reached
+// a React error boundary). Stack: 2 frames, BOTH raw React-internal minified
+// production chunks:
+//   - chunk 66499-30a0e6805d268c02.js  function `x`   (scheduler continuation)
+//   - chunk 5ccd075d-fe5b6a678bf52bfe.js function `iX` (React DOM reconciler
+//     `ensureRootIsScheduled`/`performConcurrentWorkOnRoot` continuation →
+//     `iu` (`performSyncWorkOnRoot`) which throws `Error(i(327))` when
+//     `executionContext & 6` is set)
+// NO first-party `apps/web/src/…` source frame — the throw is inside React's
+// own production reconciler, never in our code. There is exactly ONE `flushSync`
+// call site in the entire frontend (`pdf-viewer.tsx:2101`) and it is on a
+// different route, so a first-party sync-render regression is ruled out.
+//
+// The `Minified React error #327;` message is React's canonical production
+// wording for the re-entrancy guard — a real first-party `throw new Error(
+// 'Should not already be working.')` in app code would surface as that exact
+// string, so the matcher anchors on React's minified-error format (`#327;`)
+// rather than the bare message text, AND a NEGATIVE guard: if any frame
+// resolves to a de-minified first-party `apps/web/src/…` source path, the event
+// keeps reporting (our own code IS the re-entrant culprit → actionable). A
+// real first-party #327 surfaces with a resolved `apps/web/src/…` frame and is
+// preserved; only React-internal minified-chunk captures with no first-party
+// frame are dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare `#327` match there would swallow a real first-party
+// re-entrancy regression; the frame-aware `beforeSend` hook (which calls this
+// helper) is the only safe gate.
+const REACT_SCHEDULER_REENTRY_NOISE_PATTERN = /^Minified React error #327;/;
+
+/**
+ * Whether a Sentry / window.onerror event is the Firefox-specific React
+ * scheduler re-entrancy noise class: a `Minified React error #327;` (the
+ * canonical React production wording for `Should not already be working.`)
+ * thrown from React's own production reconciler chunk (function `iX` in the
+ * React DOM bundle's `ensureRootIsScheduled`/`performConcurrentWorkOnRoot`
+ * continuation → `iu` (`performSyncWorkOnRoot`), which throws when
+ * `executionContext & (RenderContext | CommitContext)` is set). The throw is
+ * inside React's own minified production chunk, never first-party; it is a
+ * well-known Firefox-specific scheduler quirk that does not reproduce on
+ * Chromium/WebKit (see `REACT_SCHEDULER_REENTRY_NOISE_PATTERN` for refs).
+ * Requires the `#327;` message AND a NEGATIVE guard: if any frame resolves to
+ * a de-minified first-party `apps/web/src/…` source, the event keeps reporting
+ * (our own code is the re-entrant culprit → actionable). Returns false when
+ * there are no frames (can't confirm the throw is React-internal — keep
+ * reporting rather than swallow a possible app re-entrancy regression). See
+ * `REACT_SCHEDULER_REENTRY_NOISE_PATTERN` for the full rationale.
+ */
+export function isFirefoxReactSchedulerReentryNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!REACT_SCHEDULER_REENTRY_NOISE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // No frames at all → can't confirm the throw is React-internal; keep
+  // reporting rather than blanket-dropping frameless events of unknown origin.
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
+  // code is the re-entrant culprit (e.g. a real `flushSync` inside a render
+  // phase, or a sync `setState` during commit) → actionable; keep reporting so
+  // the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Anchor: the throw must be inside React's own minified production bundle
+  // (`_next/static/chunks/…`). A real first-party `throw new Error('Should not
+  // already be working.')` de-minifies to `apps/web/src/…` and is preserved by
+  // the negative guard above; a #327 from a non-React third-party lib (which
+  // would surface with a different chunk frame) is preserved too. Only the
+  // React-internal #327 with no first-party frame is dropped.
+  return frames.some((frame) => isBrowserBundleSource(frame?.filename));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -1182,6 +1611,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected "no compaction model configured" configuration state — the SDK's
+  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `NoCompactionModelError` that the host already surfaces via a toast. It
+  // leaks here as an unhandled promise rejection (`void loadingToast(...)`
+  // re-throws after the toast → `onunhandledrejection`). Drop it so the
+  // expected config state never pages Better Stack. See
+  // `isExpectedCompactionNoModelMessage`.
+  if (isExpectedCompactionNoModelMessage(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
@@ -1221,7 +1661,33 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Android System WebView native-bridge instrumentation noise — the
+  // `postEvent` sibling of the `postMessage` class above. The WebView's
+  // `JavaBridge` calls `postEvent` on a GC'd Java bridge object; the throw
+  // escapes framelessly (`<anonymous>` / `?`). Requires the exact message AND
+  // a frameless/injected-WebView origin so a real first-party
+  // `postEvent`/`dispatchEvent` failure keeps reporting. See
+  // `isAndroidWebViewNativeBridgePostEventNoise`.
+  if (
+    isAndroidWebViewNativeBridgePostEventNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
+    return true;
+  }
+
   if (isInjectedAppSource(input.filename)) {
+    return true;
+  }
+
+  // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
+  // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
+  // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
+  // thrown from the synthetic `app:///userscript.html?…` wrapper page and
+  // captured as an unhandled rejection. Third-party user-script defect, never
+  // first-party app code; drop it. See `isUserscriptManagerNoise`.
+  if (isUserscriptManagerNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -1355,6 +1821,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Expected "no compaction model configured" configuration state — the SDK's
+  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `NoCompactionModelError` that the host already surfaces via a toast. It
+  // can leak to Sentry through capture paths that bypass the toast (the
+  // `void loadingToast(...)` re-throw → `onunhandledrejection`, plus
+  // `<ClientErrorBoundary>` / route / system-fault boundaries). Drop it here
+  // so the expected config state never pages Better Stack. See
+  // `isExpectedCompactionNoModelMessage`.
+  if (isExpectedCompactionNoModelMessage(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps on the marketing site — WebKit-specific wording, only old Safari/iOS
   // visitors hit it. The de-minified frame points at our own chunk, so this
@@ -1397,6 +1875,19 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Android System WebView native-bridge instrumentation noise — the
+  // `postEvent` sibling of the `postMessage` class above, captured by Sentry's
+  // global onerror/onunhandledrejection handlers. Unlike the `postMessage`
+  // sibling, the `postEvent` variant is observed as a FRAMELESS capture
+  // (`<anonymous>` / `?`), so it is anchored on the exact message AND a
+  // frameless/injected-WebView origin (no resolvable source location, OR the
+  // Android nav-performance-logger bridge frame). A genuine first-party
+  // `postEvent`/`dispatchEvent` failure keeps reporting. Not in `ignoreErrors`
+  // (no frame context there).
+  if (isAndroidWebViewNativeBridgePostEventNoise({ message, frames })) {
+    return true;
+  }
+
   if (environment === 'test' || environment.startsWith('e2e')) {
     return true;
   }
@@ -1424,6 +1915,20 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (frames.some((frame) => isInjectedAppSource(frame.filename))) {
+    return true;
+  }
+
+  // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
+  // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
+  // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
+  // thrown from the synthetic `app:///userscript.html?…` wrapper page and
+  // captured as an unhandled rejection. Third-party user-script defect, never
+  // first-party app code; drop it so a buggy user script someone installed on
+  // their browser never pages Better Stack. A real first-party `JSON.parse`
+  // SyntaxError throws inside an `app:///_next/…` chunk (or a de-minified
+  // `apps/web/src/…` frame) and is never matched. See
+  // `isUserscriptManagerNoise` and the production pattern `2249441898…`.
+  if (isUserscriptManagerNoise({ message, frames })) {
     return true;
   }
 
@@ -1481,6 +1986,21 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // real first-party setState loop keeps reporting. See
   // `isEmbedPdfTilingReactUpdateDepthNoise`.
   if (isEmbedPdfTilingReactUpdateDepthNoise({ message, frames })) {
+    return true;
+  }
+
+  // Firefox-specific React scheduler re-entrancy noise — `Minified React error
+  // #327;` (`Should not already be working.`), thrown from React's own
+  // production reconciler chunk when the scheduler re-enters during the commit
+  // phase. A well-known Firefox-specific quirk (react-router#10314 / react#17355
+  // / react#29908) that does NOT reproduce on Chromium/WebKit. Requires the
+  // canonical `#327;` message AND a NEGATIVE guard: a resolved first-party
+  // `apps/web/src/…` frame means our own code is the re-entrant culprit (a real
+  // `flushSync` inside render or sync `setState` during commit) → actionable, so
+  // the event keeps reporting. Only React-internal minified-chunk captures with
+  // no first-party frame are dropped. See
+  // `isFirefoxReactSchedulerReentryNoise`.
+  if (isFirefoxReactSchedulerReentryNoise({ message, frames })) {
     return true;
   }
 

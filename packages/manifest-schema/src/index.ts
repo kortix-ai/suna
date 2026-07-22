@@ -17,6 +17,7 @@
 
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
+import { parseConnectorHeaders } from './connector-headers';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -60,6 +61,22 @@ export {
 // Re-exported for backward compatibility — these lived as local `const`s in
 // this file until the `constants.ts` extraction (see that module's doc for
 // why: it broke an index.ts ⇄ json-schema.ts import cycle).
+// `[[connectors]].headers` — arbitrary static request headers. Its own
+// dependency-free module (same rationale as `constants.ts`) so the validator,
+// the JSON Schema, apps/api's parser and the executor share ONE ruleset.
+export {
+  type ConnectorHeadersParse,
+  CONNECTOR_FORBIDDEN_HEADER_NAMES,
+  CONNECTOR_HEADER_NAME_RE,
+  CONNECTOR_HEADER_NAME_MAX_LENGTH,
+  CONNECTOR_HEADER_VALUE_MAX_LENGTH,
+  CONNECTOR_HEADERS_MAX_COUNT,
+  connectorHeaderNameError,
+  connectorHeaderValueError,
+  parseConnectorHeaders,
+  sanitizeConnectorHeaders,
+} from './connector-headers';
+
 export {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
@@ -861,10 +878,15 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
     let sessionMode: string | undefined;
     if (sessionModeRaw !== undefined) {
       sessionMode = sessionModeRaw.trim().toLowerCase();
-      if (sessionMode !== 'fresh' && sessionMode !== 'reuse' && sessionMode !== 'pinned') {
+      if (
+        sessionMode !== 'fresh' &&
+        sessionMode !== 'reuse' &&
+        sessionMode !== 'pinned' &&
+        sessionMode !== 'keyed'
+      ) {
         issues.push({
           path: `${where}.session_mode`,
-          message: 'session_mode must be "fresh", "reuse", or "pinned".',
+          message: 'session_mode must be "fresh", "reuse", "pinned", or "keyed".',
           severity: 'error',
         });
       }
@@ -1113,6 +1135,23 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
+      }
+    }
+    // Optional `headers` — arbitrary static request headers sent on every call.
+    // Same ruleset the runtime parser enforces (shared module), so what merges
+    // here is exactly what materializes. Values are plaintext in git: never a
+    // credential (that is `auth` + the platform credential store).
+    if (entry.headers !== undefined) {
+      const parsedHeaders = parseConnectorHeaders(entry.headers);
+      if (!parsedHeaders.ok) {
+        issues.push({ path: `${where}.headers`, message: `${parsedHeaders.error}.`, severity: 'error' });
+      } else if (provider === 'pipedream' || provider === 'channel') {
+        issues.push({
+          path: `${where}.headers`,
+          message:
+            `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
+          severity: 'warning',
+        });
       }
     }
     // Optional [[connectors.policies]]

@@ -781,6 +781,8 @@ projectsApp.openapi(
   const result = await createProjectSession({
     project: loaded.row,
     userId,
+    requestingPrincipalType:
+      c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body: {
       initial_prompt: prompt,
       name: 'Fix sandbox build',

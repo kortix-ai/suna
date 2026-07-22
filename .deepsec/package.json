@@ -8,5 +8,10 @@
   "packageManager": "pnpm@9.15.4",
   "dependencies": {
     "deepsec": "^2.1.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "protobufjs@>=7.0.0 <7.6.5": "7.6.5"
+    }
   }
 }

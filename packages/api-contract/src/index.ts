@@ -356,10 +356,19 @@ export const ProjectSessionSchema = z.object({
   opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
+  owner_name: z.string().nullable().optional(),
+  owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
   visibility: SessionVisibilitySchema,
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
   can_manage_sharing: z.boolean(),
+  can_access: z.boolean().optional(),
+  runtime_status: z
+    .enum(['provisioning', 'active', 'stopped', 'error', 'archived'])
+    .nullable()
+    .optional(),
+  deleted_at: z.string().nullable().optional(),
+  deleted_by: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -455,9 +464,16 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse', 'pinned']),
+  session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
   session_id: z.string().nullable(),
+  /**
+   * For session_mode === 'keyed' only: the `{{ body.path }}` template rendered
+   * per delivery to pick one session per key. Null otherwise.
+   */
+  session_key: z.string().nullable(),
+  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
+  filter: z.record(z.string(), z.string()).nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
