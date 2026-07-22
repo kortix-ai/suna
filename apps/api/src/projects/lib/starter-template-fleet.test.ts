@@ -4,14 +4,17 @@
  *  1. Every shipped `kortix.yaml` in `packages/starter/templates/` (the base
  *     floor + every `marketplace-projects/*` clonable project) is
  *     `kortix_version: 3` and passes `validateManifest` with zero errors.
- *  2. OpenCode-first (founder decision): the base template seeds a native
- *     config dir and a `runtimes` entry for `opencode` ONLY — the one
- *     stable, supported harness. Claude Code/Codex/Pi are experimental and
- *     must NOT be declared by a fresh project; they only become selectable
- *     once a project explicitly opts into `experimental_harnesses`. This
- *     section asserts both halves of that: opencode is seeded and valid,
- *     and the other three official harnesses are absent from the shipped
- *     template.
+ *  2. OpenCode-first (founder decision, unchanged by the 2026-07-22
+ *     multi-harness gate removal): the base template seeds a native config
+ *     dir and a `runtimes` entry for `opencode` ONLY — the platform DEFAULT
+ *     harness. Claude Code/Codex/Pi are NOT declared by a fresh project's
+ *     template (a project adds them later via runtime profiles, no opt-in
+ *     required — see `agent-config-v2.ts`'s `DEFAULT_RUNTIME_PROFILES_V3`,
+ *     which DOES declare all four for a v2→v3 upgrade, a deliberate
+ *     asymmetry: fresh template stays minimal, upgrade hands out everything).
+ *     This section asserts both halves of the template's own posture:
+ *     opencode is seeded and valid, and the other three official harnesses
+ *     are absent from the shipped template.
  *
  * Also proves the web-studio v2→v3 migration (done by hand in the template
  * file, since the migration function only operates on a live `kortix.yaml`
@@ -90,12 +93,12 @@ describe('starter template fleet — seeded native config dirs (base)', () => {
     expect(validateHarnessConfig('opencode', configDir, files)).toEqual([]);
   });
 
-  // OpenCode-first regression guard: the experimental harnesses (claude,
-  // codex, pi) must not ship a seeded native config dir in the base
-  // template — a fresh project only gets one after explicitly opting into
-  // `experimental_harnesses` and adding a runtime profile for one.
+  // OpenCode-first regression guard: claude/codex/pi must not ship a seeded
+  // native config dir in the base template — a fresh project only gets one
+  // after adding a runtime profile for one (Customize → Agents → Runtime
+  // profiles, or hand-editing kortix.yaml); no feature opt-in required.
   for (const harness of HARNESS_IDS.filter((id) => id !== 'opencode')) {
-    test(`${harness}: base template does NOT seed ${HARNESSES[harness].configDir} by default (experimental harness)`, () => {
+    test(`${harness}: base template does NOT seed ${HARNESSES[harness].configDir} by default (non-default harness)`, () => {
       const configDir = HARNESSES[harness].configDir;
       const files = BASE_FILES.filter(
         (f) => f.path === configDir || f.path.startsWith(`${configDir}/`),

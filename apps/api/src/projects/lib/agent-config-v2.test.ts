@@ -20,7 +20,6 @@ import {
   applyAgentBlockV3,
   applyRuntimeProfilesV3,
   DEFAULT_RUNTIME_PROFILES_V3,
-  experimentalHarnessesInRuntimeProfiles,
   migrateManifestV2ToV3,
   readAgentBlockV3,
 } from './agent-config-v2';
@@ -108,18 +107,19 @@ describe('migrateManifestV2ToV3 — happy path', () => {
     // Legacy top-level `opencode:` block is removed outright.
     expect(applied.raw).not.toHaveProperty('opencode');
 
-    // OpenCode-first: only the opencode default runtime profile is injected
-    // (DEFAULT_RUNTIME_PROFILES_V3). Legacy v2 was opencode-only by
-    // construction (V2_RUNTIME_VALUES), so migrating it to v3 must not
-    // reintroduce the experimental harnesses (claude/codex/pi) through a
-    // door that bypasses the `experimental_harnesses` selection gate.
+    // 2026-07-22: the migration injects a runtime profile for all four
+    // official harnesses (DEFAULT_RUNTIME_PROFILES_V3) — multi-harness
+    // selection is no longer gated behind `experimental_harnesses` (that flag
+    // is deleted), so an upgraded project gets every harness immediately.
+    // OpenCode remains the default AGENT binding below (`runtime: 'opencode'`
+    // on every migrated agent) — it's a default, not an exclusivity gate.
     expect(applied.raw.runtimes).toEqual({
       opencode: { harness: 'opencode', config_dir: '.opencode' },
+      claude: { harness: 'claude', config_dir: '.claude' },
+      codex: { harness: 'codex', config_dir: '.codex' },
+      pi: { harness: 'pi', config_dir: '.pi' },
     });
     expect(applied.raw.runtimes).toEqual(DEFAULT_RUNTIME_PROFILES_V3);
-    expect(applied.raw.runtimes).not.toHaveProperty('claude');
-    expect(applied.raw.runtimes).not.toHaveProperty('codex');
-    expect(applied.raw.runtimes).not.toHaveProperty('pi');
 
     // Every v2 agent is present, keyed by its own v2 map key, routed to
     // `runtime: opencode` / `agent: <its own key>`, with governance intact.
@@ -293,38 +293,6 @@ describe('applyRuntimeProfilesV3', () => {
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('kortix_version 3');
-  });
-});
-
-/* ─── 5b. experimentalHarnessesInRuntimeProfiles (WS2-P1-b) ─────────────── */
-
-describe('experimentalHarnessesInRuntimeProfiles', () => {
-  test('a runtimes map naming only opencode (the stable harness) is never gated', () => {
-    expect(
-      experimentalHarnessesInRuntimeProfiles({
-        opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
-      }),
-    ).toEqual([]);
-  });
-
-  test('claude/codex/pi are flagged, deduped, in first-seen order', () => {
-    expect(
-      experimentalHarnessesInRuntimeProfiles({
-        opencode: { harness: 'opencode' },
-        claude: { harness: 'claude' },
-        'claude-fast': { harness: 'claude' },
-        codex: { harness: 'codex' },
-        pi: { harness: 'pi' },
-      }),
-    ).toEqual(['claude', 'codex', 'pi']);
-  });
-
-  test('the migration/shipped-template default runtime map (opencode only) is never gated', () => {
-    expect(experimentalHarnessesInRuntimeProfiles(DEFAULT_RUNTIME_PROFILES_V3)).toEqual([]);
-  });
-
-  test('an empty runtimes map is never gated', () => {
-    expect(experimentalHarnessesInRuntimeProfiles({})).toEqual([]);
   });
 });
 

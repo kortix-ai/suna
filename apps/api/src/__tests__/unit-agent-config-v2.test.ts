@@ -231,12 +231,15 @@ describe('v3 ACP logical agent routing', () => {
     if (!applied.ok) return;
     expect(applied.raw.kortix_version).toBe(3);
     expect(applied.raw).not.toHaveProperty('opencode');
-    // OpenCode-first: the migration injects only the opencode runtime
-    // profile — legacy v2 was opencode-only, and the experimental harnesses
-    // (claude/codex/pi) stay unselected until the project opts into
-    // `experimental_harnesses` and adds a profile explicitly.
+    // 2026-07-22: the migration injects a runtime profile for all four
+    // official harnesses — multi-harness selection is no longer gated behind
+    // `experimental_harnesses` (that flag is deleted), so an upgraded
+    // project gets every harness immediately, opencode included.
     expect(applied.raw.runtimes).toEqual({
       opencode: { harness: 'opencode', config_dir: '.opencode' },
+      claude: { harness: 'claude', config_dir: '.claude' },
+      codex: { harness: 'codex', config_dir: '.codex' },
+      pi: { harness: 'pi', config_dir: '.pi' },
     });
     expect((applied.raw.agents as any).support).toMatchObject({
       runtime: 'opencode',

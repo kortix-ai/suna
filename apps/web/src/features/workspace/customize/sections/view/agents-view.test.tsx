@@ -117,7 +117,7 @@ mock.module('next/image', () => ({
 const { AgentsView } = await import('./agents-view');
 // `EntityDetail`'s toolbar (Copy/Edit) renders `Hint` (`Tooltip` under the
 // hood), which throws outside a `TooltipProvider` — the app mounts one near
-// its root; this harness supplies its own, same as `multi-harness-toggle.test.tsx`.
+// its root; this suite supplies its own.
 const { TooltipProvider } = await import('@/components/ui/tooltip');
 
 const PROJECT_ID = 'proj_1';

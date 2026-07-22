@@ -1,19 +1,20 @@
 /**
- * PUT /:projectId/runtime-profiles — the runtime-profiles WRITE route
- * (Task WS2-P1-b). Claude/Codex/Pi are selectable ONLY once a project opts
- * into `experimental_harnesses` (founder posture: OpenCode is the only
- * non-experimental harness). This gate is on SELECTION/WRITE only — an
- * already-declared v3 manifest naming an experimental harness keeps reading
- * and compiling regardless of the flag. The shipped base template and the
- * v2→v3 migration default both declare `opencode` only (OpenCode-first); see
- * `starter-template-fleet.test.ts` and `compile-runtime-config.test.ts`.
+ * PUT /:projectId/runtime-profiles — the runtime-profiles WRITE route.
+ * Multi-harness selection is not feature-gated (2026-07-22, reversing part of
+ * `876742672`): any declared harness (opencode/claude/codex/pi) is writable/
+ * selectable for every project — there is no `experimental_harnesses` opt-in
+ * to check anymore. This file proves that end to end through the real route
+ * handler: a body naming any single harness, or all four together, commits
+ * cleanly; only shape/reference validation (unknown harness, etc. — covered
+ * by `../lib/agent-config-v2.test.ts`'s `applyRuntimeProfilesV3` suite)
+ * still rejects a request.
  *
  * IAM (`loadProjectForUser`/`assertProjectCapability`), the trigger-engine's
  * `loadManifestForEdit`, and the real git write path
  * (`withProjectGitAuth`/`commitMultipleFilesToBranch`) are mocked so this
- * file exercises the ACTUAL route handler's gate wiring — not a
- * reimplementation of it — without a live DB or git mirror. Mock BEFORE the
- * dynamic import, mirroring the mock-then-dynamic-import pattern used by
+ * file exercises the ACTUAL route handler — not a reimplementation of it —
+ * without a live DB or git mirror. Mock BEFORE the dynamic import, mirroring
+ * the mock-then-dynamic-import pattern used by
  * `../lib/compile-agent-config.test.ts` and
  * `../session-lifecycle/__tests__/continue-session-deleted-guard.test.ts`.
  * `mock.module` is process-global, so this file must not run in the same
@@ -25,7 +26,6 @@ import { describe, expect, mock, test } from 'bun:test';
 
 const PROJECT_ID = '11111111-2222-4333-8444-555555555555';
 
-let projectMetadata: Record<string, unknown> = {};
 let manifestRaw: Record<string, unknown> = {
   kortix_version: 3,
   default_agent: 'kortix',
@@ -61,11 +61,11 @@ mock.module('../lib/access', () => ({
       row: {
         projectId: PROJECT_ID,
         accountId: 'acct-1',
-        name: 'Gate Test Project',
-        repoUrl: 'https://example.test/gate-test.git',
+        name: 'Runtime Profiles Write Test Project',
+        repoUrl: 'https://example.test/runtime-profiles-write-test.git',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',
-        metadata: projectMetadata,
+        metadata: {},
       },
     };
   },
@@ -108,23 +108,8 @@ function putRuntimeProfiles(runtimes: Record<string, unknown>) {
   });
 }
 
-describe('PUT /:projectId/runtime-profiles — experimental_harnesses gate', () => {
-  test('flag OFF: a body naming an experimental harness (claude) is rejected 422, never committed', async () => {
-    projectMetadata = {};
-    commitCalls = [];
-    const res = await putRuntimeProfiles({
-      opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
-      claude: { harness: 'claude', config_dir: '.claude' },
-    });
-    expect(res.status).toBe(422);
-    const body = await res.json();
-    expect(body.code).toBe('experimental_harness_disabled');
-    expect(String(body.error)).toContain('claude');
-    expect(commitCalls).toEqual([]);
-  });
-
-  test('flag OFF: a body naming ONLY opencode (the stable harness) is never gated', async () => {
-    projectMetadata = {};
+describe('PUT /:projectId/runtime-profiles — no harness-selection gate', () => {
+  test('a body naming ONLY opencode is accepted and committed', async () => {
     commitCalls = [];
     const res = await putRuntimeProfiles({
       opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
@@ -133,9 +118,13 @@ describe('PUT /:projectId/runtime-profiles — experimental_harnesses gate', () 
     expect(commitCalls).toHaveLength(1);
   });
 
-  test('flag ON: the same experimental-harness body is accepted and committed', async () => {
-    projectMetadata = { experimental: { experimental_harnesses: true } };
+  test('a body adding a non-opencode harness (claude) alongside opencode is accepted and committed — no opt-in required', async () => {
     commitCalls = [];
+    // `kortix`'s existing agent block still references `runtime: opencode`
+    // (see the shared `manifestRaw` fixture above), so opencode must stay
+    // declared here too — this is agent-reference validation
+    // (`applyRuntimeProfilesV3`), unrelated to and unaffected by harness
+    // gate removal.
     const res = await putRuntimeProfiles({
       opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
       claude: { harness: 'claude', config_dir: '.claude' },
@@ -144,5 +133,29 @@ describe('PUT /:projectId/runtime-profiles — experimental_harnesses gate', () 
     const body = await res.json();
     expect(body.runtimes.claude).toEqual({ harness: 'claude', config_dir: '.claude' });
     expect(commitCalls).toHaveLength(1);
+  });
+
+  test('a body naming all four official harnesses together is accepted and committed', async () => {
+    commitCalls = [];
+    const res = await putRuntimeProfiles({
+      opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+      claude: { harness: 'claude', config_dir: '.claude' },
+      codex: { harness: 'codex', config_dir: '.codex' },
+      pi: { harness: 'pi', config_dir: '.pi' },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Object.keys(body.runtimes).sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    expect(commitCalls).toHaveLength(1);
+  });
+
+  test('an unknown harness id is still rejected — shape validation is unaffected by gate removal', async () => {
+    commitCalls = [];
+    const res = await putRuntimeProfiles({
+      opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+      bogus: { harness: 'not-a-real-harness' },
+    });
+    expect(res.status).toBe(400);
+    expect(commitCalls).toEqual([]);
   });
 });

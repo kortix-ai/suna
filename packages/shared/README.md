@@ -28,17 +28,12 @@ Each `HarnessDescriptor` (`packages/shared/src/harnesses.ts:37-55`) has:
 | `label` | Display label shown in the UI, e.g. `"Claude Code"`. |
 | `configDir` | The harness's native config directory, relative to the project root (e.g. `.claude`). |
 | `adapterPkg` | The npm package name for the harness's ACP adapter (or the harness's own package, for OpenCode). |
-| `stability` | `'stable' \| 'experimental'`. Drives the `experimental_harnesses` feature gate — see below. |
+| `stability` | `'stable' \| 'experimental'`. Maturity signal only — does **not** gate selection/start (that gate was removed 2026-07-22). Its one remaining consumer caps native-config lint severity at `warning` for a non-stable harness — see below. |
 | `modelNamespacing` | `'gateway-prefixed' \| 'bare'`. Whether a `kortix/`-prefixed gateway model id must be stripped before reaching the harness. |
 | `ownsDefaultModel` | Whether the harness supplies its own default model without an explicit launch override (true for Claude/Codex/Pi; false for OpenCode). |
 | `liveModelChange` | Whether the model can be changed live, mid-session (true only for OpenCode today). |
 | `authKinds` | The `HarnessAuthKind[]` this harness is compatible with, in the founder decision matrix's order. |
 | `subscriptionAuth` | `'oauth-device' \| 'oauth-token' \| null` — the harness's subscription auth flow, if it has one. |
-
-`harnessesByStability(stability)` (`packages/shared/src/harnesses.ts:112-115`)
-returns the `HarnessId[]` matching a stability tier, in `HARNESS_IDS` order —
-the one place "which harnesses are experimental" is computed, consumed by
-both the api gate and the web/api capability derivations below.
 
 ### Who consumes it (the derivation map)
 
@@ -48,7 +43,6 @@ both the api gate and the web/api capability derivations below.
 | `apps/api` — config dirs | `DEFAULT_CONFIG_DIR`, the per-harness default config directory used when compiling a runtime config | `apps/api/src/projects/lib/compile-runtime-config.ts:58` — `HARNESS_IDS.map((id) => [id, HARNESSES[id].configDir])` |
 | `apps/api` — zod enums | `RuntimeProfileSchema.harness` request validation | `apps/api/src/projects/routes/agent-config.ts:98` — `harness: z.enum(HARNESS_IDS)` |
 | `apps/api` — capabilities | `computeDefaultAllowed` (owns-default leg), `model.live_change`, connection compatibility | `apps/api/src/projects/lib/composer-capabilities.ts` (`HARNESSES[input.harness].ownsDefaultModel`, `.liveModelChange`); pinned by `apps/api/src/projects/lib/harness-capability-conformance.test.ts` |
-| `apps/api` — gating | Which harnesses are selectable behind `experimental_harnesses` | `apps/api/src/projects/lib/composer-capabilities.ts:339` (`EXPERIMENTAL_HARNESSES = new Set(harnessesByStability('experimental'))`) and `apps/api/src/projects/lib/agent-config-v2.ts:129` (`EXPERIMENTAL_HARNESS_IDS`) |
 | `apps/api` — config validation | Per-harness native config lint severity (`error` only for `stable` harnesses) | `apps/api/src/projects/lib/harness-config-validate.ts:31-33` — `severityFor()` reads `HARNESSES[harness].stability` |
 | `apps/api` — runtime model | Whether a launch model needs its `kortix/` prefix stripped | `apps/api/src/projects/lib/session-runtime-env.ts:33-41` — `runtimeModelForHarness()` reads `HARNESSES[harness].modelNamespacing` |
 | `apps/web` — labels/config-dirs | `ACP_HARNESS_LABELS`, `ACP_HARNESS_CONFIG_DIRS` (runtime profile editor) | `apps/web/src/features/workspace/customize/sections/view/runtime-profile-options.ts:8-13` |
@@ -70,6 +64,9 @@ only test to catch drift. Everything else in the table above imports
 Values below are copied verbatim from `packages/shared/src/harnesses.ts`
 (`HARNESSES`, lines 61-110). If this table and the source ever disagree, the
 source wins — re-copy it.
+
+`stability` is a maturity signal, not a selection gate (see "Config-validation
+severity" below) — every harness in this table is equally selectable/startable.
 
 | id | label | adapter package | config dir | stability | model namespacing | owns default | live model change | auth kinds |
 |---|---|---|---|---|---|---|---|---|
@@ -119,40 +116,35 @@ These decisions are pinned by named tests, not just prose:
   Claude's `claude_subscription`, which forwards `CLAUDE_CODE_OAUTH_TOKEN`
   straight through.
 
-## Experimental gating
+## Multi-harness is not gated (2026-07-22)
 
-`HARNESSES[id].stability` drives the `experimental_harnesses` feature flag
-(`apps/api/src/experimental/features.ts:130-145`):
+There is no selection/start gate on any harness. Every declared harness —
+OpenCode, Claude Code, Codex, Pi — is selectable and startable for every
+project, the moment it has a credential/connection. This reverses part of
+commit `876742672` (2026-07-20), which had gated Claude/Codex/Pi behind a
+per-project `experimental_harnesses` feature flag; that flag, its Settings row,
+its `MultiHarnessToggle` connect-modal surface, the composer-capabilities
+`can_start`/`blocking_reason` gate, and the `PUT /runtime-profiles` 422
+(`experimental_harness_disabled`) are all deleted outright, not just defaulted
+on. If multi-harness selection is ever re-experimented on, the shape would
+invert: a flag that turns OFF every harness except OpenCode, not one that
+turns the others on.
 
-- OpenCode (`stability: 'stable'`) is **never** gated — it is always
-  selectable regardless of the flag.
-- Claude, Codex, and Pi (`stability: 'experimental'`) are selectable only once
-  a project opts into `experimental_harnesses` in Settings → Experimental.
-  `platformDefault: () => false` — off unless a project explicitly enables it.
+OpenCode remains the **default**: a v2→v3 manifest upgrade
+(`migrateManifestV2ToV3`, `apps/api/src/projects/lib/agent-config-v2.ts`) and
+the shipped base starter template both still bind existing/fresh agents to
+`runtime: opencode`. The difference from before is that the migration's
+`DEFAULT_RUNTIME_PROFILES_V3` now declares a runtime profile for all four
+harnesses (not opencode-only), so claude/codex/pi are immediately selectable
+for the project's other agents too — a default, not a gate.
 
-The gate applies to **selection/start only**, never to parsing or compiling a
-manifest that already declares all four runtimes (the shipped base template
-does this unconditionally) — see the comment at
-`apps/api/src/projects/lib/agent-config-v2.ts:131-140`.
+### Config-validation severity (the one place `stability` still matters)
 
-Gate sites:
-
-- `apps/api/src/projects/lib/composer-capabilities.ts:339-347` —
-  `EXPERIMENTAL_HARNESSES = new Set(harnessesByStability('experimental'))` and
-  `isExperimentalHarnessGated()`, which blocks `can_start` and sets
-  `blocking_reason` on the composer capabilities response for a gated harness.
-- `apps/api/src/projects/lib/agent-config-v2.ts:126-149` —
-  `EXPERIMENTAL_HARNESS_IDS` and `experimentalHarnessesInRuntimeProfiles()`,
-  the pure predicate the write route below calls.
-- `apps/api/src/projects/routes/agent-config.ts:244-254` — the
-  `PUT /{projectId}/runtime-profiles` route: if any harness in the submitted
-  runtime profiles is gated and the project hasn't enabled
-  `experimental_harnesses`, the request 422s with
-  `code: 'experimental_harness_disabled'`.
-
-Both the capabilities-side and the write-route-side gates derive from
-`harnessesByStability('experimental')` — zero hardcoded harness lists, so a
-harness's gating follows its `stability` field automatically.
+`HARNESSES[id].stability` has exactly one remaining consumer:
+`apps/api/src/projects/lib/harness-config-validate.ts`'s `severityFor()`,
+which caps a native-config lint issue at `warning` (never `error`) for a
+non-`stable` harness — so a rougher-edged harness's config quirks never
+hard-block a project. This is unrelated to selection/start.
 
 ## How to add a harness
 
@@ -211,8 +203,11 @@ this order:
 
 ### What happens automatically (once steps 1-4 above are done)
 
-These consumers import `HARNESS_IDS`/`HARNESSES` (or `harnessesByStability`)
-directly and re-derive on their own — no code change needed:
+These consumers import `HARNESS_IDS`/`HARNESSES` directly and re-derive on
+their own — no code change needed. A new harness is also NOT declared by
+`DEFAULT_RUNTIME_PROFILES_V3` (`apps/api/src/projects/lib/agent-config-v2.ts`)
+or the shipped base template by default — hand-add it there if it should ship
+by default rather than only be addable via runtime profiles:
 
 - **Manifest enum** — `V3_HARNESS_VALUES` (`packages/manifest-schema/src/constants.ts:28`)
   and the generated JSON Schema `harness` enum
@@ -221,11 +216,14 @@ directly and re-derive on their own — no code change needed:
   (`apps/api/src/projects/routes/agent-config.ts:98`).
 - **API config-dirs** — `DEFAULT_CONFIG_DIR`
   (`apps/api/src/projects/lib/compile-runtime-config.ts:58`).
-- **API capabilities/gating** — `computeDefaultAllowed`, `live_change`,
-  `runtimeModelForHarness`, `isExperimentalHarnessGated`,
-  `experimentalHarnessesInRuntimeProfiles` (all listed in the derivation map
-  above) — a new harness's `ownsDefaultModel`/`liveModelChange`/
-  `modelNamespacing`/`stability` flow straight through.
+- **API capabilities** — `computeDefaultAllowed`, `live_change`,
+  `runtimeModelForHarness` (all listed in the derivation map above) — a new
+  harness's `ownsDefaultModel`/`liveModelChange`/`modelNamespacing` flow
+  straight through. There is no selection gate to update — every declared
+  harness is selectable by construction.
+- **API config-validation severity** — `severityFor()`
+  (`apps/api/src/projects/lib/harness-config-validate.ts`) — a new harness's
+  `stability` flows straight through to its lint-issue severity cap.
 - **Web labels/compat/order** — `ACP_HARNESS_LABELS`, `ACP_HARNESS_CONFIG_DIRS`,
   `AGENT_GROUP_ORDER`, `METHOD_COMPATIBLE_HARNESSES` (all listed in the
   derivation map above).

@@ -2,8 +2,7 @@
  * Canonical harness descriptor.
  *
  * See `packages/shared/README.md` for the full field guide, the harness
- * matrix, the founder auth decisions, the experimental gating rules, and
- * "how to add a harness".
+ * matrix, the founder auth decisions, and "how to add a harness".
  *
  * The single source of truth for harness identity, capability, and stability
  * across the platform. `manifest-schema`, `apps/api`, `apps/web`, and the
@@ -46,6 +45,15 @@ export interface HarnessDescriptor {
   configDir: string;
   /** npm package name for the harness's ACP adapter (or the harness itself). */
   adapterPkg: string;
+  /**
+   * Maturity signal only — does NOT gate selection/start (multi-harness
+   * selection/start gating was removed 2026-07-22; every declared harness is
+   * selectable regardless of this value). Its one remaining consumer is
+   * `apps/api/src/projects/lib/harness-config-validate.ts`'s `severityFor()`,
+   * which caps a native-config lint issue at `warning` (never `error`) for a
+   * non-`stable` harness so a rougher-edged harness's config quirks never
+   * hard-block a project.
+   */
   stability: 'stable' | 'experimental';
   modelNamespacing: 'gateway-prefixed' | 'bare';
   /** Whether the harness supplies its own default model without an explicit launch override. */
@@ -139,11 +147,6 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
     subscriptionAuth: null,
   },
 };
-
-/** Harness ids matching the given stability tier, in `HARNESS_IDS` order. */
-export function harnessesByStability(stability: 'stable' | 'experimental'): HarnessId[] {
-  return HARNESS_IDS.filter((id) => HARNESSES[id].stability === stability);
-}
 
 /**
  * The inverse of `HARNESSES[*].authKinds` — which harnesses accept a given

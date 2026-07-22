@@ -12,12 +12,6 @@ export const ACP_HARNESS_CONFIG_DIRS: Record<AcpHarness, string> = Object.fromEn
   HARNESS_IDS.map((id) => [id, HARNESSES[id].configDir]),
 ) as Record<AcpHarness, string>;
 
-/** Whether a harness is still experimental — drives the Runtime section's
- * "Experimental" badge. Mirrors `HARNESSES[id].stability`; see WS5-P2-a. */
-export const ACP_HARNESS_STABILITY: Record<AcpHarness, 'stable' | 'experimental'> = Object.fromEntries(
-  HARNESS_IDS.map((id) => [id, HARNESSES[id].stability]),
-) as Record<AcpHarness, 'stable' | 'experimental'>;
-
 /** Icon-provider id for `ProviderLogo`'s brand-mark lookup — one per harness. */
 export const ACP_HARNESS_ICON_PROVIDER_ID: Record<AcpHarness, string> = {
   claude: 'anthropic',

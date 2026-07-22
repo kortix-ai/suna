@@ -6,7 +6,6 @@ import {
   ACP_HARNESS_CONFIG_DIRS,
   ACP_HARNESS_ICON_PROVIDER_ID,
   ACP_HARNESS_LABELS,
-  ACP_HARNESS_STABILITY,
   ACP_HARNESSES,
   projectFilesHref,
   withAllAcpHarnesses,
@@ -37,12 +36,6 @@ describe('harness identity/labels/config-dirs pin the @kortix/shared descriptor'
   test('ACP_HARNESS_CONFIG_DIRS matches HARNESSES[id].configDir for every harness', () => {
     for (const id of HARNESS_IDS) {
       expect(ACP_HARNESS_CONFIG_DIRS[id], `configDir for ${id}`).toBe(HARNESSES[id].configDir);
-    }
-  });
-
-  test('ACP_HARNESS_STABILITY matches HARNESSES[id].stability for every harness', () => {
-    for (const id of HARNESS_IDS) {
-      expect(ACP_HARNESS_STABILITY[id], `stability for ${id}`).toBe(HARNESSES[id].stability);
     }
   });
 

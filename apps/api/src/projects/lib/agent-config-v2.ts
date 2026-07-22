@@ -27,7 +27,7 @@ import {
   validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
-import { HARNESSES, harnessesByStability } from '@kortix/shared/harnesses';
+import { HARNESSES } from '@kortix/shared/harnesses';
 import type { ParsedManifest } from '../triggers';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
@@ -86,25 +86,27 @@ export type RuntimeProfileV3 = {
 // descriptor (do not re-hardcode them here); key/insertion order is pinned —
 // WS1-P1-b tests assert this exact shape.
 //
-// Founder posture (OpenCode-first): this is also what `migrateManifestV2ToV3`
-// injects for a legacy v2 project's `runtimes` map. Legacy v2 was
-// opencode-only by construction (`V2_RUNTIME_VALUES` in
-// `@kortix/manifest-schema`'s `constants.ts` names only `opencode`), so the
-// migration must not hand a v2 project the three experimental harnesses
-// through a different door than the (gated) v3 selection path — see
-// `experimentalHarnessesInRuntimeProfiles` below. If a future caller needs
-// the full four-harness set as a default (e.g. an explicit "enable all"
-// action), add a SEPARATE constant rather than widening this one.
+// 2026-07-22 reversal (owner decision, reverses part of `876742672`): a v2→v3
+// upgrade hands a project ALL FOUR harnesses, not just opencode. Multi-harness
+// is no longer gated behind `experimental_harnesses` (that flag is deleted
+// outright), so there is no longer a reason to withhold claude/codex/pi from
+// the migration. Key order here is hand-pinned opencode-first (not
+// `@kortix/shared`'s own `HARNESS_IDS` order, which is
+// `['claude', 'codex', 'opencode', 'pi']`) since OpenCode is still the
+// platform DEFAULT even though it's no longer gate-exclusive.
 export const DEFAULT_RUNTIME_PROFILES_V3: Record<string, RuntimeProfileV3> = {
   opencode: { harness: 'opencode', config_dir: HARNESSES.opencode.configDir },
+  claude: { harness: 'claude', config_dir: HARNESSES.claude.configDir },
+  codex: { harness: 'codex', config_dir: HARNESSES.codex.configDir },
+  pi: { harness: 'pi', config_dir: HARNESSES.pi.configDir },
 };
 
 /** Losslessly promote v2 governance to ACP-native v3 routing. Native OpenCode
  * behavior files remain untouched; every existing logical agent initially
- * keeps OpenCode. Only the `opencode` runtime profile is injected — legacy v2
- * was opencode-only, and the other official harnesses (claude/codex/pi) stay
- * unselected until the project explicitly opts into `experimental_harnesses`
- * and adds a runtime profile for one. */
+ * keeps OpenCode. All four official harnesses get a runtime profile
+ * (`DEFAULT_RUNTIME_PROFILES_V3`) so the upgraded project can pick any of
+ * them — OpenCode stays the default AGENT binding (no existing agent's
+ * `runtime` changes), it's just no longer the only SELECTABLE harness. */
 export function migrateManifestV2ToV3(manifest: ParsedManifest): ApplyAgentBlockResult {
   if (manifest.schemaVersion !== 2) {
     return { ok: false, error: 'Only a kortix_version 2 manifest can be upgraded to v3.' };
@@ -131,34 +133,6 @@ export function migrateManifestV2ToV3(manifest: ParsedManifest): ApplyAgentBlock
   return errorIssues.length
     ? { ok: false, error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), issues: errorIssues }
     : { ok: true, raw: nextRaw };
-}
-
-// Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
-// zero hardcoded harness lists, derived from `HARNESSES[id].stability` via
-// `harnessesByStability('experimental')`.
-const EXPERIMENTAL_HARNESS_IDS = new Set(harnessesByStability('experimental'));
-
-/**
- * Harness ids present in `runtimes` that are gated behind the
- * `experimental_harnesses` feature (claude/codex/pi today — OpenCode is
- * `stable` and never appears here). Deduped, in `runtimes` insertion order.
- * Pure so the write route's 422 gate (`../routes/agent-config.ts`,
- * `PUT /runtime-profiles`) is unit-testable without a manifest/DB fixture.
- * Gates SELECTION/WRITE only — reading or re-committing an already-declared
- * v3 manifest that names an experimental harness (e.g. a manifest someone
- * hand-wrote or forked before enabling the feature) is a separate, ungated
- * path. The shipped base template and `migrateManifestV2ToV3` both declare
- * `opencode` only today, so this carve-out is dormant for the default flows —
- * it only matters for a manifest that already names claude/codex/pi.
- */
-export function experimentalHarnessesInRuntimeProfiles(
-  runtimes: Record<string, RuntimeProfileV3>,
-): string[] {
-  const seen = new Set<string>();
-  for (const profile of Object.values(runtimes)) {
-    if (EXPERIMENTAL_HARNESS_IDS.has(profile.harness)) seen.add(profile.harness);
-  }
-  return Array.from(seen);
 }
 
 /** Replace the complete v3 runtime-profile map and validate every agent

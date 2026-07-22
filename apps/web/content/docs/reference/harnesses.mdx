@@ -12,19 +12,20 @@ profile selects.
 
 ## Supported harnesses
 
-| Harness | Manifest `harness` value | Default `config_dir` | ACP process | Stability |
-| --- | --- | --- | --- | --- |
-| OpenCode | `opencode` | `.opencode` | `opencode acp` (native) | Stable |
-| Claude Code | `claude` | `.claude` | `@agentclientprotocol/claude-agent-acp` | Experimental |
-| Codex | `codex` | `.codex` | `@agentclientprotocol/codex-acp` | Experimental |
-| Pi | `pi` | `.pi` | `pi-acp` | Experimental |
+| Harness | Manifest `harness` value | Default `config_dir` | ACP process |
+| --- | --- | --- | --- |
+| OpenCode | `opencode` | `.opencode` | `opencode acp` (native) |
+| Claude Code | `claude` | `.claude` | `@agentclientprotocol/claude-agent-acp` |
+| Codex | `codex` | `.codex` | `@agentclientprotocol/codex-acp` |
+| Pi | `pi` | `.pi` | `pi-acp` |
 
-OpenCode is the default and the only stable harness today. Claude Code, Codex,
-and Pi ship behind the per-project `experimental_harnesses` experimental
-feature, which is **off by default** — with it off, sessions cannot select or
-start an experimental harness. The Claude Code and Codex processes are official
-adapters maintained in the Agent Client Protocol organization; they are baked
-into the sandbox image at pinned versions, never installed at request time.
+OpenCode is the default harness every new project starts on. Claude Code,
+Codex, and Pi are equally available — declare a runtime profile for one (see
+below, or **Customize → Agents → Runtime profiles** in the dashboard) and
+select it, no separate feature flag required. The Claude Code and Codex
+processes are official adapters maintained in the Agent Client Protocol
+organization; they are baked into the sandbox image at pinned versions, never
+installed at request time.
 
 ## Choosing a harness
 

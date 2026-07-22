@@ -144,12 +144,15 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
-  // OpenCode-first (founder decision): a brand-new project must not be
-  // handed all four ACP harnesses by default. Claude Code/Codex/Pi are
-  // experimental and only become selectable once a project explicitly opts
-  // into the `experimental_harnesses` flag and declares a runtime profile
-  // for one — see apps/api/src/projects/lib/composer-capabilities.ts
-  // (`isExperimentalHarnessGated`).
+  // OpenCode-first (founder decision, unchanged by the 2026-07-22 removal of
+  // multi-harness gating): a brand-new project's template stays minimal —
+  // only the opencode runtime profile ships by default. Claude Code/Codex/Pi
+  // are not gated behind any flag anymore; a project adds a runtime profile
+  // for one whenever it wants (Customize → Agents → Runtime profiles, or a
+  // v2→v3 upgrade, which declares all four — see
+  // apps/api/src/projects/lib/agent-config-v2.ts's
+  // `DEFAULT_RUNTIME_PROFILES_V3`). This template's own opencode-only default
+  // is a template-authoring choice, not an enforcement point.
   test('base kortix.yaml declares only the opencode runtime profile by default', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const manifest = byPath(files).get('kortix.yaml')!;
@@ -159,7 +162,7 @@ describe('getStarterFiles', () => {
     expect(manifest).not.toMatch(/^\s{2}pi:/m);
   });
 
-  test('base template does not seed native config dirs for the experimental harnesses', () => {
+  test('base template does not seed native config dirs for the non-default harnesses', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     for (const dir of ['.claude', '.codex', '.pi']) {
       expect(files.some((f) => f.path === dir || f.path.startsWith(`${dir}/`))).toBe(false);

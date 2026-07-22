@@ -27,6 +27,18 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
   });
+
+  // 2026-07-22: multi-harness selection is no longer an experiment —
+  // `experimental_harnesses` is deleted from the registry outright (not just
+  // defaulted on), so it must not resolve as a known feature key anymore.
+  test('experimental_harnesses no longer exists — multi-harness gating is deleted, not defaulted on', () => {
+    expect(isExperimentalFeatureKey('experimental_harnesses')).toBe(false);
+    // `f.key` no longer includes 'experimental_harnesses' in its own type —
+    // that's the real proof (a `tsc --noEmit` failure, not just a runtime
+    // one, if it ever came back). Widen to string for the runtime check.
+    const keys: string[] = buildExperimentalCatalog({}).map((f) => f.key);
+    expect(keys.includes('experimental_harnesses')).toBe(false);
+  });
 });
 
 describe('resolveExperimentalFeature — explicit override wins', () => {
@@ -52,23 +64,6 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(true);
     expect(
       resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email'),
-    ).toBe(false);
-  });
-
-  test('experimental_harnesses is explicit opt-in (off by default, no operator kill switch)', () => {
-    expect(findCatalogFeature('experimental_harnesses').available).toBe(true);
-    expect(resolveExperimentalFeature({}, 'experimental_harnesses')).toBe(false);
-    expect(
-      resolveExperimentalFeature(
-        { experimental: { experimental_harnesses: true } },
-        'experimental_harnesses',
-      ),
-    ).toBe(true);
-    expect(
-      resolveExperimentalFeature(
-        { experimental: { experimental_harnesses: false } },
-        'experimental_harnesses',
-      ),
     ).toBe(false);
   });
 

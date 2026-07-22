@@ -97,11 +97,11 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
   const enableMutation = useMutation({
     mutationFn: () => enableAcpRuntimeProfiles(projectId),
     onSuccess: async () => {
-      // OpenCode-first: the server-side upgrade (`migrateManifestV2ToV3`)
-      // only declares the opencode runtime profile now — claude/codex/pi
-      // stay unselected until the project opts into "Experimental
-      // harnesses" (Settings → Experimental) and adds a profile for one.
-      successToast('OpenCode runtime profile is ready to select');
+      // The server-side upgrade (`migrateManifestV2ToV3`) declares a runtime
+      // profile for all four official harnesses — OpenCode stays the default
+      // agent binding, but Claude Code, Codex, and Pi are selectable
+      // immediately too, no separate opt-in required.
+      successToast('Runtime profiles are ready to select');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId) }),
         queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
@@ -117,8 +117,8 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
         <div className="min-w-0">
           <p className="text-sm font-medium">Turn on runtime profiles</p>
           <p className="text-muted-foreground mt-1 text-xs text-pretty">
-            Upgrade this project to manage which harness each agent runs on. Claude Code, Codex, and
-            Pi stay off by default — turn on Experimental harnesses in Settings to add one.
+            Upgrade this project to manage which harness each agent runs on. OpenCode stays the
+            default — Claude Code, Codex, and Pi become available runtime profiles too.
           </p>
         </div>
         <Button

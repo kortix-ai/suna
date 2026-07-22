@@ -4,10 +4,8 @@ import {
   HARNESS_IDS,
   type HarnessId,
   compatibleHarnessesFor,
-  harnessesByStability,
 } from '@kortix/shared/harnesses';
 
-import { resolveExperimentalFeature } from '../../experimental/features';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   type HarnessModelResolutionState,
@@ -334,27 +332,6 @@ export function modelPresets(
   return [];
 }
 
-// Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
-// `HARNESSES.opencode.stability === 'stable'`, the sole entry never in this
-// set. Claude/Codex/Pi (`harnessesByStability('experimental')`, zero
-// hardcoded harness lists) are selectable ONLY once a project opts into the
-// `experimental_harnesses` feature (`experimental/features.ts`). This gates
-// SELECTION/START only — parsing/compiling a manifest that already declares
-// an experimental harness (e.g. hand-added before the flag was on) is never
-// gated, see `compile-runtime-config.ts` and `agent-config-v2.ts`'s
-// `migrateManifestV2ToV3`. The shipped base template and the migration
-// default both declare `opencode` only, so this carve-out is dormant unless
-// a manifest explicitly names claude/codex/pi.
-const EXPERIMENTAL_HARNESSES = new Set<HarnessId>(harnessesByStability('experimental'));
-
-/** Whether `harness` may currently be SELECTED to start a session under
- *  `metadata`'s project. Pure so the predicate is unit-testable without a
- *  compiled runtime config. */
-export function isExperimentalHarnessGated(harness: HarnessId, metadata: unknown): boolean {
-  if (!EXPERIMENTAL_HARNESSES.has(harness)) return false;
-  return !resolveExperimentalFeature(metadata, 'experimental_harnesses');
-}
-
 function agentView(agent: LogicalAgentLaunchPlan) {
   return {
     name: agent.name,
@@ -484,10 +461,6 @@ export async function resolveProjectComposerState(input: {
               active === 'codex_subscription'
             ? 'harness-catalog'
             : 'launch-override';
-      const harnessGated = isExperimentalHarnessGated(agent.harness, input.metadata);
-      const blockingReason = harnessGated
-        ? `${HARNESSES[agent.harness].label} is an experimental harness — enable "Experimental harnesses" for this project in Settings → Experimental before selecting it.`
-        : resolution.reason;
       return {
         agent,
         auth: {
@@ -504,8 +477,8 @@ export async function resolveProjectComposerState(input: {
           presets,
           state: resolution.state,
         },
-        can_start: !harnessGated && resolution.state === 'ready',
-        blocking_reason: blockingReason,
+        can_start: resolution.state === 'ready',
+        blocking_reason: resolution.reason,
       };
     },
   };

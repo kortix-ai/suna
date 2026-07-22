@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { HARNESSES, HARNESS_IDS } from '@kortix/shared/harnesses';
 
 import {
   type HarnessAuthKind,
   buildHarnessConnections,
-  isExperimentalHarnessGated,
   modelPresets,
   newestCatalogModels,
   readHarnessAuthRoutes,
@@ -212,36 +210,11 @@ describe('founder decision 2026-07-15 pins (WS2-P4-a): claude/codex harness-only
   });
 });
 
-describe('isExperimentalHarnessGated (WS2-P1-b: experimental_harnesses selection gate)', () => {
-  test('opencode (the only stable harness) is NEVER gated, flag off or on', () => {
-    expect(isExperimentalHarnessGated('opencode', {})).toBe(false);
-    expect(
-      isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: true } }),
-    ).toBe(false);
-    expect(
-      isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: false } }),
-    ).toBe(false);
-  });
-
-  test('every non-stable harness (claude/codex/pi today) is gated when the flag is off', () => {
-    for (const id of HARNESS_IDS) {
-      if (HARNESSES[id].stability === 'stable') continue;
-      expect(isExperimentalHarnessGated(id, {})).toBe(true);
-      expect(
-        isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: false } }),
-      ).toBe(true);
-    }
-  });
-
-  test('every non-stable harness is un-gated once the project opts in', () => {
-    for (const id of HARNESS_IDS) {
-      if (HARNESSES[id].stability === 'stable') continue;
-      expect(
-        isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: true } }),
-      ).toBe(false);
-    }
-  });
-});
+// 2026-07-22: multi-harness selection/start gating is deleted outright
+// (`isExperimentalHarnessGated` no longer exists — see
+// `composer-capabilities-harness-availability.test.ts` for production-path
+// coverage proving every declared harness's `can_start` now depends only on
+// its own auth/model resolution, never on a feature flag).
 
 // 2026-07-21 model-resolution refactor (phase 1, docs/specs/2026-07-21-
 // model-resolution-refactor-plan.md): `computeDefaultAllowed` and

@@ -5,7 +5,6 @@ import {
   HARNESS_IDS,
   type HarnessAuthKind,
   compatibleHarnessesFor,
-  harnessesByStability,
 } from './harnesses';
 
 const ALL_AUTH_KINDS: HarnessAuthKind[] = [
@@ -24,9 +23,15 @@ describe('HARNESSES descriptor', () => {
     expect(HARNESS_IDS).toEqual(['claude', 'codex', 'opencode', 'pi']);
     expect(Object.keys(HARNESSES).sort()).toEqual([...HARNESS_IDS].sort());
   });
+  // `stability` is a maturity signal only (caps config-validation lint
+  // severity) — it does not gate selection/start; every harness is equally
+  // selectable regardless of this value.
   it('marks only opencode stable', () => {
-    expect(harnessesByStability('stable')).toEqual(['opencode']);
-    expect(harnessesByStability('experimental').sort()).toEqual(['claude', 'codex', 'pi']);
+    expect(HARNESSES.opencode.stability).toBe('stable');
+    for (const id of HARNESS_IDS) {
+      if (id === 'opencode') continue;
+      expect(HARNESSES[id].stability).toBe('experimental');
+    }
   });
   it('encodes namespacing + default ownership per grounding', () => {
     expect(HARNESSES.opencode.modelNamespacing).toBe('gateway-prefixed');
