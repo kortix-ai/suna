@@ -6,10 +6,11 @@ import { defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
 // KaTeX / LaTeX markdown support for Streamdown
 // ---------------------------------------------------------------------------
 // Streamdown ships remark-math + rehype-katex but:
-//  1. singleDollarTextMath is enabled for `$E = mc^2$` inline math; currency like `$4M` /
+//  1. Standard `\(…\)` and `\[…\]` delimiters need normalization to remark-math delimiters.
+//  2. singleDollarTextMath is enabled for `$E = mc^2$` inline math; currency like `$4M` /
 //     `$50K` is escaped to `\$4M` / `\$50K` in prepareMarkdownForKatex() before parsing.
-//  2. Default rehype order (raw → katex → sanitize) lets sanitize strip KaTeX SVG/MathML
-//  3. rehype-sanitize's GitHub schema strips KaTeX output if order regresses
+//  3. Default rehype order (raw → katex → sanitize) lets sanitize strip KaTeX SVG/MathML.
+//  4. rehype-sanitize's GitHub schema strips KaTeX output if order regresses.
 // ---------------------------------------------------------------------------
 
 /** MathML tags KaTeX may emit (keep in sync with KaTeX output, not hand-picked subset). */
@@ -53,11 +54,172 @@ export function escapeCurrencyDollars(text: string): string {
   return text.replace(CURRENCY_DOLLAR, (match, prefix: string) => (prefix ? match : '\\$'));
 }
 
+function countRun(text: string, start: number, character: string): number {
+  let end = start;
+  while (text[end] === character) end += 1;
+  return end - start;
+}
+
+function findInlineCodeEnd(text: string, start: number, markerLength: number): number | null {
+  let searchFrom = start + markerLength;
+  while (searchFrom < text.length) {
+    const markerStart = text.indexOf('`', searchFrom);
+    if (markerStart === -1) return null;
+    const candidateLength = countRun(text, markerStart, '`');
+    if (candidateLength === markerLength) return markerStart + markerLength;
+    searchFrom = markerStart + candidateLength;
+  }
+  return null;
+}
+
+function findFencedCodeEnd(text: string, start: number): number | null {
+  if (start !== 0 && text[start - 1] !== '\n') return null;
+
+  const openingLineEnd = text.indexOf('\n', start);
+  const openingLine = text.slice(start, openingLineEnd === -1 ? text.length : openingLineEnd);
+  const openingMatch = /^( {0,3})(`{3,}|~{3,})/.exec(openingLine);
+  if (!openingMatch) return null;
+
+  const marker = openingMatch[2][0];
+  const markerLength = openingMatch[2].length;
+  let lineStart = openingLineEnd === -1 ? text.length : openingLineEnd + 1;
+
+  while (lineStart < text.length) {
+    const lineEnd = text.indexOf('\n', lineStart);
+    const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+    const indentLength = /^ {0,3}/.exec(line)?.[0].length ?? 0;
+    const candidateStart = indentLength;
+
+    if (line[candidateStart] === marker) {
+      const candidateLength = countRun(line, candidateStart, marker);
+      const remainder = line.slice(candidateStart + candidateLength);
+      if (candidateLength >= markerLength && /^[\t ]*\r?$/.test(remainder)) {
+        return lineEnd === -1 ? text.length : lineEnd + 1;
+      }
+    }
+
+    lineStart = lineEnd === -1 ? text.length : lineEnd + 1;
+  }
+
+  return text.length;
+}
+
+interface MarkdownChunk {
+  content: string;
+  code: boolean;
+}
+
+function splitMarkdownCode(text: string): MarkdownChunk[] {
+  const chunks: MarkdownChunk[] = [];
+  let textStart = 0;
+  let index = 0;
+
+  const pushCode = (end: number) => {
+    if (index > textStart) chunks.push({ content: text.slice(textStart, index), code: false });
+    chunks.push({ content: text.slice(index, end), code: true });
+    index = end;
+    textStart = end;
+  };
+
+  while (index < text.length) {
+    const fenceEnd = findFencedCodeEnd(text, index);
+    if (fenceEnd !== null) {
+      pushCode(fenceEnd);
+      continue;
+    }
+
+    if (text[index] === '`') {
+      const markerLength = countRun(text, index, '`');
+      const inlineCodeEnd = findInlineCodeEnd(text, index, markerLength);
+      if (inlineCodeEnd !== null) {
+        pushCode(inlineCodeEnd);
+        continue;
+      }
+      index += markerLength;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  if (textStart < text.length) chunks.push({ content: text.slice(textStart), code: false });
+  return chunks;
+}
+
+function isEscapedDelimiter(text: string, delimiterStart: number): boolean {
+  let precedingBackslashes = 0;
+  for (let index = delimiterStart - 1; index >= 0 && text[index] === '\\'; index -= 1) {
+    precedingBackslashes += 1;
+  }
+  return precedingBackslashes % 2 === 1;
+}
+
+function findClosingDelimiter(text: string, delimiter: '\\)' | '\\]', start: number): number {
+  let searchFrom = start;
+  while (searchFrom < text.length) {
+    const delimiterStart = text.indexOf(delimiter, searchFrom);
+    if (delimiterStart === -1) return -1;
+    if (!isEscapedDelimiter(text, delimiterStart)) return delimiterStart;
+    searchFrom = delimiterStart + delimiter.length;
+  }
+  return -1;
+}
+
+function normalizeLatexText(text: string): string {
+  let output = '';
+  let index = 0;
+
+  while (index < text.length) {
+    const delimiter = text.slice(index, index + 2);
+    const isInline = delimiter === '\\(';
+    const isDisplay = delimiter === '\\[';
+
+    if ((!isInline && !isDisplay) || isEscapedDelimiter(text, index)) {
+      output += text[index];
+      index += 1;
+      continue;
+    }
+
+    const closingDelimiter = isInline ? '\\)' : '\\]';
+    const closingStart = findClosingDelimiter(text, closingDelimiter, index + 2);
+    if (closingStart === -1) {
+      output += delimiter;
+      index += 2;
+      continue;
+    }
+
+    const math = text.slice(index + 2, closingStart);
+    if (isInline) {
+      output += `$${math}$`;
+    } else {
+      const displayMath = math.replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+      if (output && !output.endsWith('\n')) output += '\n';
+      output += `$$\n${displayMath}\n$$`;
+      const afterDelimiter = closingStart + closingDelimiter.length;
+      if (afterDelimiter < text.length && text[afterDelimiter] !== '\n') output += '\n';
+    }
+    index = closingStart + closingDelimiter.length;
+  }
+
+  return output;
+}
+
 /**
- * Normalize markdown before Streamdown: escape currency `$` so inline LaTeX can stay on.
+ * Normalize standard LaTeX delimiters to the dollar delimiters supported by remark-math.
+ * Preserve delimiter-like text inside inline code and fenced code blocks.
+ */
+export function normalizeLatexDelimiters(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return splitMarkdownCode(text)
+    .map((chunk) => (chunk.code ? chunk.content : normalizeLatexText(chunk.content)))
+    .join('');
+}
+
+/**
+ * Normalize markdown before Streamdown: support standard LaTeX delimiters and escape currency `$`.
  */
 export function prepareMarkdownForKatex(text: string): string {
-  return escapeCurrencyDollars(text);
+  return normalizeLatexDelimiters(escapeCurrencyDollars(text));
 }
 
 /**
