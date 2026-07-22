@@ -91,7 +91,10 @@ describe('ACP harness registry', () => {
       KORTIX_RUNTIME_CONFIG_DIR: '.codex',
     };
     expect(resolveAcpHarnessLaunchEnv('codex', env)).toEqual({ CODEX_HOME: '/workspace/.codex' });
-    expect(resolveAcpHarnessLaunchEnv('claude', env)).toEqual({ CLAUDE_CONFIG_DIR: '/workspace/.codex' });
+    expect(resolveAcpHarnessLaunchEnv('claude', env)).toEqual({
+      CLAUDE_CONFIG_DIR: '/workspace/.codex',
+      IS_SANDBOX: '1',
+    });
     // Pi always carries a PATH fallback (see the pi-executable-not-found
     // PATH-injection tests below) — every other field matches the sibling
     // harnesses above.
@@ -149,6 +152,7 @@ describe('ACP harness registry', () => {
       ANTHROPIC_BASE_URL: 'https://api.example.test/v1/router',
       ANTHROPIC_AUTH_TOKEN: 'sandbox-token',
       ANTHROPIC_MODEL: 'claude-sonnet-4-6',
+      IS_SANDBOX: '1',
     });
   });
 
@@ -158,7 +162,7 @@ describe('ACP harness registry', () => {
       KORTIX_TOKEN: 'sandbox-token',
       ANTHROPIC_API_KEY: 'project-key',
     });
-    expect(registry.get('claude')?.launch.env).toBeUndefined();
+    expect(registry.get('claude')?.launch.env).toEqual({ IS_SANDBOX: '1' });
   });
 
   test('applies the session model to native Claude credentials', () => {
@@ -167,7 +171,7 @@ describe('ACP harness registry', () => {
         ANTHROPIC_API_KEY: 'project-key',
         KORTIX_RUNTIME_MODEL: 'claude-custom',
       }),
-    ).toEqual({ ANTHROPIC_MODEL: 'claude-custom' });
+    ).toEqual({ ANTHROPIC_MODEL: 'claude-custom', IS_SANDBOX: '1' });
   });
 
   for (const credential of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] as const) {
@@ -178,7 +182,7 @@ describe('ACP harness registry', () => {
           KORTIX_TOKEN: 'sandbox-token',
           [credential]: 'project-credential',
         }),
-      ).toBeUndefined();
+      ).toEqual({ IS_SANDBOX: '1' });
     });
   }
 
@@ -188,7 +192,7 @@ describe('ACP harness registry', () => {
       KORTIX_API_URL: 'https://api.example.test/v1',
       KORTIX_TOKEN: 'sandbox-token',
     });
-    expect(registry.get('claude')?.launch.env).toBeUndefined();
+    expect(registry.get('claude')?.launch.env).toEqual({ IS_SANDBOX: '1' });
   });
 
   test('resolves credentials from the latest synchronized project environment', () => {
@@ -205,7 +209,7 @@ describe('ACP harness registry', () => {
         KORTIX_TOKEN: 'sandbox-token',
         CLAUDE_CODE_OAUTH_TOKEN: 'subscription-token',
       }),
-    ).toBeUndefined();
+    ).toEqual({ IS_SANDBOX: '1' });
   });
 
   test('routes Codex subscription auth through the dedicated subscription relay, using the executor token — never the sandbox token or the generic Kortix-managed gateway', () => {
@@ -485,7 +489,7 @@ describe('ACP harness registry', () => {
       '@ai-sdk/openai-compatible',
     );
     expect(resolveAcpHarnessLaunchEnv('pi', env)?.KORTIX_PI_MODELS_JSON).toContain('custom/model');
-    expect(resolveAcpHarnessLaunchEnv('claude', env)).toBeUndefined();
+    expect(resolveAcpHarnessLaunchEnv('claude', env)).toEqual({ IS_SANDBOX: '1' });
   });
 
   test('translates an Anthropic-compatible REST connection only for Claude', () => {
@@ -499,6 +503,7 @@ describe('ACP harness registry', () => {
       ANTHROPIC_BASE_URL: 'https://anthropic.example.test',
       ANTHROPIC_AUTH_TOKEN: 'custom-key',
       ANTHROPIC_MODEL: 'custom-claude',
+      IS_SANDBOX: '1',
     });
     expect(resolveAcpHarnessLaunchEnv('codex', env)).toBeUndefined();
   });
@@ -510,6 +515,7 @@ describe('ACP harness registry', () => {
     });
     expect(registry.get('claude')?.launch.env).toEqual({
       CLAUDE_CONFIG_DIR: '/workspace/.config/agent',
+      IS_SANDBOX: '1',
     });
     expect(registry.get('codex')?.launch.env).toEqual({
       CODEX_HOME: '/workspace/.config/agent',
@@ -573,6 +579,7 @@ describe('ACP harness registry', () => {
       });
       expect(registry.get('claude')?.launch.env).toEqual({
         CLAUDE_CONFIG_DIR: join(workspace, '.claude'),
+        IS_SANDBOX: '1',
       });
     } finally {
       rmSync(workspace, { recursive: true, force: true });
@@ -668,7 +675,7 @@ describe('KORTIX_ACP_* overrides (test/rollout escape hatch)', () => {
     expect(registry.get('claude')?.launch).toEqual({
       command: '/opt/test/claude-agent-acp-wrapper',
       args: [],
-      env: undefined,
+      env: { IS_SANDBOX: '1' },
     });
     // Unrelated harnesses are untouched.
     expect(registry.get('codex')?.launch.command).toBe('/usr/local/bin/node');
