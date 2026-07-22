@@ -21,6 +21,9 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
     mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
     enforceAccountCap: command.enforceAccountCap,
     postCreate: command.postCreate,
+    authType: command.authType,
+    apiKeyType: command.apiKeyType,
+    inSession: command.inSession,
   };
 }
 
