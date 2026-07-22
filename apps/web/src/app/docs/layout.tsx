@@ -55,10 +55,6 @@ export default function Layout({ children }: { children: ReactNode }) {
             url: '/',
           },
           {
-            text: 'Changelog',
-            url: '/changelog',
-          },
-          {
             type: 'icon',
             text: 'GitHub',
             label: 'GitHub',
