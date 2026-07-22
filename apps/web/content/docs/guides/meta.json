@@ -3,10 +3,10 @@
   "pages": [
     "index",
     "developing",
-    "managing-secrets",
     "connecting-tools",
+    "managing-secrets",
     "automating-work",
-    "using-the-cli",
+    "working-in-slack",
     "self-hosting"
   ]
 }

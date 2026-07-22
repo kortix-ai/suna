@@ -6,9 +6,10 @@
     "sessions",
     "change-requests",
     "agents",
+    "models",
     "secrets",
     "triggers",
-    "connections",
+    "connectors",
     "channels",
     "computers",
     "accounts"

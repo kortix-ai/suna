@@ -4,12 +4,12 @@
     "index",
     "manifest",
     "cli",
-    "self-hosting-architecture",
     "change-requests",
     "session-runtime",
     "secrets",
     "triggers",
     "sandbox-image",
-    "config-boundary"
+    "self-hosting-architecture",
+    "legacy-toml"
   ]
 }
