@@ -126,10 +126,20 @@ async function ensureUserProfile(
     await project.connectors.profiles.activate(profile.profile_id);
     return profile.profile_id;
   } catch (err) {
-    // Bare project (connector not in kortix.yaml) → skip the binding and run the
-    // rest of the flow. Declare the connector in the project manifest to enable it.
-    console.error(`[connector] skipping profile for "${CONNECTOR_SLUG}": ${String(err)}`);
-    return null;
+    // ONLY the "connector not declared in the project's kortix.yaml" case (404)
+    // is a benign skip — run the rest of the flow without a binding. Every other
+    // failure (403 auth, invalid credential, network) MUST surface: swallowing
+    // it would run the agent FOR this user WITHOUT their credential — a silent
+    // security footgun in a copied backend.
+    const status = (err as { status?: number }).status;
+    if (status === 404) {
+      console.error(
+        `[connector] "${CONNECTOR_SLUG}" is not declared in the project manifest — ` +
+          `running without a per-user binding. Add it to kortix.yaml to enable.`,
+      );
+      return null;
+    }
+    throw err;
   }
 }
 
