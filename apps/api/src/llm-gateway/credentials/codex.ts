@@ -118,5 +118,5 @@ export async function resolveCodexCredential(
 
   const access = stored.access;
   if (!access) return null;
-  return { access, accountId: stored.accountId };
+  return { access, accountId: stored.accountId, expiresAt: stored.expires ?? null };
 }
