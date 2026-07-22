@@ -12,6 +12,12 @@ export type HarnessAuthKind =
   | 'anthropic_compatible'
   | 'native_config';
 
+/** Typed live credential health, populated for configured connections that map
+ * to an auth-provider registry entry (`enrichConnectionsWithStatus`,
+ * apps/api composer-capabilities). Absent/null for managed_gateway and
+ * native_config, or when the probe errs (fail-open). */
+export type HarnessConnectionStatus = 'healthy' | 'expired' | 'invalid' | 'unverified' | 'absent';
+
 export interface HarnessConnection {
   id: HarnessAuthKind;
   kind: HarnessAuthKind;
@@ -22,6 +28,9 @@ export interface HarnessConnection {
   active_for: HarnessId[];
   reason: string | null;
   source: 'kortix' | 'project_secret' | 'native_config';
+  status?: HarnessConnectionStatus | null;
+  status_reason?: string | null;
+  status_expires_at?: number | null;
 }
 
 export interface ConfiguredModelProvider {

@@ -386,15 +386,28 @@ function buildConnection(
   ctx: { managedCount: number; managedLoading: boolean; usedBy: HarnessId[] },
 ): ModelsPageConnection {
   const { catalogState, modelCount } = connectionCatalog(connection, ctx);
+  // Typed live health (server-probed) refines the presence-derived status: an
+  // expired/invalid credential shows as needs-attention even when the row is
+  // otherwise "ready" by presence. Fail-open — absent/unverified/healthy keep
+  // the presence-derived word.
+  const probed =
+    connection.status === 'expired' || connection.status === 'invalid'
+      ? ('needs-attention' as const)
+      : null;
   return {
     id: connection.id,
     name: CONNECTION_NAME[connection.kind] ?? connection.label,
     kind: connection.kind,
-    status: connection.ready ? 'ready' : ctx.usedBy.length > 0 ? 'needs-attention' : 'checking',
+    status: probed ?? (connection.ready ? 'ready' : ctx.usedBy.length > 0 ? 'needs-attention' : 'checking'),
     usedBy: ctx.usedBy,
     catalogState,
     modelCount,
-    statusReason: connection.ready ? null : connection.reason,
+    statusReason: probed
+      ? (connection.status_reason ??
+        (connection.status === 'expired' ? 'Sign-in expired — reconnect' : 'Credential invalid'))
+      : connection.ready
+        ? null
+        : connection.reason,
   };
 }
 

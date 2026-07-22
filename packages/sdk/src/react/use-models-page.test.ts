@@ -490,3 +490,57 @@ describe('presentation helpers', () => {
     );
   });
 });
+
+// Typed live health (apps/api enrichConnectionsWithStatus, 845d0ec54) refines
+// the presence-derived word: an expired/invalid probed credential surfaces as
+// needs-attention with an actionable reason even when presence-"ready";
+// healthy/unverified/absent leave the presence-derived status untouched.
+describe('typed credential health on connections', () => {
+  test('expired probe overrides presence-ready with an actionable reason', () => {
+    const expired = connection({
+      id: 'claude_subscription',
+      kind: 'claude_subscription',
+      compatible_harnesses: ['claude'],
+      active_for: ['claude'],
+      status: 'expired',
+      status_reason: null,
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude')],
+      agentsLoading: false,
+      connectionsData: { connections: [expired], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+    expect(state.connections[0]).toMatchObject({
+      status: 'needs-attention',
+      statusReason: 'Sign-in expired — reconnect',
+    });
+  });
+
+  test('healthy probe leaves the presence-derived status untouched', () => {
+    const healthy = connection({
+      id: 'anthropic_api_key',
+      kind: 'anthropic_api_key',
+      compatible_harnesses: ['claude', 'opencode', 'pi'],
+      active_for: ['opencode'],
+      status: 'healthy',
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'opencode')],
+      agentsLoading: false,
+      connectionsData: { connections: [healthy], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+    expect(state.connections[0]).toMatchObject({ status: 'ready', statusReason: null });
+  });
+});
