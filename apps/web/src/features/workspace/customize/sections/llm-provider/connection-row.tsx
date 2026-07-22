@@ -6,18 +6,10 @@ import { ProviderLogo } from '@/features/providers/provider-branding';
 import {
   CONNECTION_ICON_PROVIDER_ID,
   type ModelsPageConnection,
-  harnessLabel,
   notExposedCatalogText,
 } from '@kortix/sdk/react';
 
 import { connectionStatusBadge } from './connection-status';
-
-function joinAnd(items: string[]): string {
-  if (items.length === 0) return '';
-  if (items.length === 1) return items[0] ?? '';
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
-}
 
 export function catalogLine(connection: ModelsPageConnection): string {
   if (connection.catalogState === 'not-exposed') {
@@ -29,21 +21,20 @@ export function catalogLine(connection: ModelsPageConnection): string {
   return `${count} model${count === 1 ? '' : 's'} available`;
 }
 
+// The service subtitle describes the SERVICE only — the models it unlocks and
+// its health. Which agent uses it now lives on the agent rows above, so this
+// no longer echoes a "Used by …" clause back at them (that mutual
+// cross-reference was the confusing part of the old two-list page).
 export function metadataLine(connection: ModelsPageConnection): string {
   if (connection.status === 'needs-attention') {
     return `Needs attention · ${connection.statusReason ?? 'Reconnect to continue'}`;
   }
-  // The managed gateway ("Kortix") is always available, never "unused" the
-  // way a BYOK connection can be — "Included with Kortix" replaces the
-  // used-by clause instead of reading as "Not currently used".
+  // Kortix is the home of the project default model — say so plainly so a user
+  // hunting for it knows to open this row.
   if (connection.kind === 'managed_gateway') {
-    return `Included with Kortix · ${catalogLine(connection)}`;
+    return `Included · ${catalogLine(connection)} · sets your default model`;
   }
-  const usedByText =
-    connection.usedBy.length === 0
-      ? 'Not currently used'
-      : `Used by ${joinAnd(connection.usedBy.map(harnessLabel))}`;
-  return `${usedByText} · ${catalogLine(connection)}`;
+  return catalogLine(connection);
 }
 
 export function ConnectionRow({

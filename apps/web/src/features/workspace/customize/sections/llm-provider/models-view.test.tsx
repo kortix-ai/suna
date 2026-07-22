@@ -15,20 +15,20 @@ delete (globalThis as any).document;
 GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 const ReactModule = await import('react');
 
 // `ModelsView` and its children (`ManageConnectionModal`, `useModelDefaults`,
 // `useProjectModels`) call raw `useQuery`/`useMutation`/`useQueryClient`/
 // `useIsMutating` directly — no `QueryClientProvider` in this DOM-free-by-
-// default harness — mocked at the module boundary, same convention
-// `models-view-runtime-link.test.tsx` uses.
+// default harness — mocked at the module boundary. Every unmatched query key
+// resolves to empty/undefined data.
 const actualReactQuery = await import('@tanstack/react-query');
 mock.module('@tanstack/react-query', () => ({
   ...actualReactQuery,
   useQuery: () => ({ data: undefined, isLoading: false, isError: false }),
   useMutation: () => ({ mutate: () => {}, mutateAsync: async () => {}, isPending: false }),
-  useQueryClient: () => ({ invalidateQueries: async () => {} }),
+  useQueryClient: () => ({ invalidateQueries: async () => {}, cancelQueries: async () => {} }),
   useIsMutating: () => 0,
 }));
 
@@ -48,22 +48,23 @@ mock.module('@kortix/sdk/react', () => ({
 
 // The default-model picker itself (search, catalog fetch, upgrade/connect
 // routing, …) is out of scope here — this suite is about ModelsView's own
-// section shape, so the picker is stubbed to a marker exposing the two props
-// that matter: the fallback label and the disabled flag.
+// structure, so the picker is stubbed to a marker exposing the fallback label.
 mock.module('@/features/session/model-selector', () => ({
   ModelSelector: ({ unsetLabel, disabled }: { unsetLabel?: string; disabled?: boolean }) =>
     ReactModule.createElement(
       'button',
-      { type: 'button', 'data-testid': 'default-model-selector', 'data-disabled': String(!!disabled) },
+      {
+        type: 'button',
+        'data-testid': 'default-model-selector',
+        'data-disabled': String(!!disabled),
+      },
       unsetLabel ?? 'Default',
     ),
 }));
 
-// `ProviderLogo` (the harness mark on each runtime/connection row) renders
-// `next/image`, whose `getImgProps` constructs a `URL` from the icon's
-// relative asset path — happy-dom has no real page location to resolve that
-// against and throws "Invalid URL", same stub `models-view-runtime-link.test.tsx`
-// uses.
+// `ProviderLogo` renders `next/image`, whose `getImgProps` builds a `URL` from
+// the icon's relative asset path — happy-dom has no page location to resolve
+// that against and throws "Invalid URL".
 mock.module('next/image', () => ({
   default: (props: Record<string, unknown>) => {
     const { src, alt, ...rest } = props;
@@ -80,13 +81,24 @@ const MANAGED_GATEWAY: import('@kortix/sdk/react').ModelsPageConnection = {
   name: 'Kortix',
   kind: 'managed_gateway',
   status: 'ready',
-  usedBy: [],
+  usedBy: ['opencode'],
   catalogState: 'available',
   modelCount: 12,
   statusReason: null,
 };
 
-const BYOK_CONNECTION: import('@kortix/sdk/react').ModelsPageConnection = {
+const CLAUDE_SUB: import('@kortix/sdk/react').ModelsPageConnection = {
+  id: 'claude_subscription',
+  name: 'Claude subscription',
+  kind: 'claude_subscription',
+  status: 'ready',
+  usedBy: ['claude'],
+  catalogState: 'not-exposed',
+  modelCount: null,
+  statusReason: null,
+};
+
+const ANTHROPIC_KEY: import('@kortix/sdk/react').ModelsPageConnection = {
   id: 'anthropic_api_key',
   name: 'Anthropic',
   kind: 'anthropic_api_key',
@@ -95,6 +107,28 @@ const BYOK_CONNECTION: import('@kortix/sdk/react').ModelsPageConnection = {
   catalogState: 'available',
   modelCount: 4,
   statusReason: null,
+};
+
+const CLAUDE_RUNTIME: import('@kortix/sdk/react').ModelsPageRuntime = {
+  id: 'claude',
+  harness: 'claude',
+  label: 'Claude Code',
+  status: 'ready',
+  selectedConnectionId: 'claude_subscription',
+  modelSummary: 'Claude subscription · Harness default',
+  compatibleConnectionIds: ['claude_subscription'],
+  blocker: null,
+};
+
+const OPENCODE_RUNTIME: import('@kortix/sdk/react').ModelsPageRuntime = {
+  id: 'opencode',
+  harness: 'opencode',
+  label: 'OpenCode',
+  status: 'ready',
+  selectedConnectionId: 'managed_gateway',
+  modelSummary: 'Kortix · Automatic',
+  compatibleConnectionIds: ['managed_gateway', 'anthropic_api_key'],
+  blocker: null,
 };
 
 const resetState = () => {
@@ -117,103 +151,201 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('ModelsView — the standalone "Default model" panel is gone (moved to the Kortix modal)', () => {
-  test('no Default model panel renders inline on the Models page anymore', () => {
+function expandServicesDrawer() {
+  fireEvent.click(screen.getByRole('button', { name: /Model services/ }));
+}
+
+describe('ModelsView — one agent-centric list, plain language', () => {
+  test('the primary list is "Your agents"; the old jargon labels are gone', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [CLAUDE_RUNTIME],
+      connections: [MANAGED_GATEWAY, CLAUDE_SUB],
+    };
     render(<ModelsView projectId={PROJECT_ID} canWrite />);
 
-    // The single home for the project default is now the managed-gateway
-    // ("Kortix") connection's Manage modal — the Models page no longer stacks a
-    // duplicate control above the runtime rows.
+    expect(screen.getByText('Your agents')).toBeDefined();
+    // The two circular section names from the old page are gone.
+    expect(screen.queryByText('Agent runtimes')).toBeNull();
+    expect(screen.queryByText('Your connections')).toBeNull();
+    // Plain header copy — no "agent runtime" jargon.
+    expect(
+      screen.getByText('See what each of your agents runs on, and change it anytime.'),
+    ).toBeDefined();
+  });
+
+  test('a subscription-backed agent states plainly that it manages its own model, not a dead end', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [CLAUDE_RUNTIME],
+      connections: [CLAUDE_SUB],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    expect(screen.getByText('Claude Code')).toBeDefined();
+    expect(screen.getByText(/Claude Code chooses the model/)).toBeDefined();
+    // The service paying is an inline button (chip), not a dead end.
+    expect(screen.getByRole('button', { name: 'Claude subscription' })).toBeDefined();
+  });
+
+  test('a BYOK-backed agent reads "uses your default model"; a Kortix one reads "chosen automatically"', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [
+        { ...OPENCODE_RUNTIME, selectedConnectionId: 'anthropic_api_key' },
+        {
+          ...OPENCODE_RUNTIME,
+          id: 'pi',
+          harness: 'pi',
+          label: 'Pi',
+          selectedConnectionId: 'managed_gateway',
+        },
+      ],
+      connections: [MANAGED_GATEWAY, ANTHROPIC_KEY],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    expect(screen.getByText(/uses your default model/)).toBeDefined();
+    // Pi picks its own model even though it runs on Kortix.
+    expect(screen.getByText(/Pi chooses the model/)).toBeDefined();
+  });
+});
+
+describe('ModelsView — the "Change connection" action stays on every agent row', () => {
+  test('a ready agent row still exposes the connection switcher', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [CLAUDE_RUNTIME],
+      connections: [CLAUDE_SUB],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    // ConnectionSelect renders its "Change" trigger — `setActiveHarnessConnection`
+    // is still reachable from the agent row.
+    expect(screen.getByText('Change')).toBeDefined();
+  });
+});
+
+describe('ModelsView — services are secondary and collapsed by default', () => {
+  test('the "Connections" label shows, but service rows stay hidden until expanded', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [OPENCODE_RUNTIME],
+      connections: [MANAGED_GATEWAY, ANTHROPIC_KEY],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    expect(screen.getByText('Connections')).toBeDefined();
+    // Collapsed: the "Manage"/"View" service-row actions are not in the DOM yet,
+    // so the page reads as one list — the agents — at a glance.
+    expect(screen.queryByText('Manage')).toBeNull();
+  });
+
+  test('expanding the drawer reveals every service, Kortix included, each with a Manage action', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [OPENCODE_RUNTIME],
+      connections: [MANAGED_GATEWAY, ANTHROPIC_KEY],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    expandServicesDrawer();
+
+    // Kortix and the BYOK key both appear as manageable service rows (Kortix
+    // also names the agent chip above, hence getAllByText).
+    expect(screen.getAllByText('Kortix').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Anthropic')).toBeDefined();
+    expect(screen.getAllByText('Manage').length).toBeGreaterThanOrEqual(2);
+    // Connecting a new service is reachable from inside the drawer too.
+    expect(screen.getByText('Connect a service')).toBeDefined();
+  });
+});
+
+describe('ModelsView — every preserved capability is reachable', () => {
+  test('connecting is reachable from the header action', () => {
+    modelsPageState = { ...modelsPageState, runtimes: [CLAUDE_RUNTIME], connections: [CLAUDE_SUB] };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    // Header "Connect" (+ the drawer one once expanded) — both open the modal.
+    expect(screen.getAllByText('Connect').length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('disconnect is reachable: clicking an agent’s service chip opens its Manage sheet', () => {
+    modelsPageState = { ...modelsPageState, runtimes: [CLAUDE_RUNTIME], connections: [CLAUDE_SUB] };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Claude subscription' }));
+
+    // The Manage sheet is modal-only content — its Disconnect action proves the
+    // `ManageConnectionModal` path is intact.
+    expect(screen.getByText('Disconnect')).toBeDefined();
+  });
+
+  test('the project default model is reachable via the Kortix service’s Manage sheet', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [OPENCODE_RUNTIME],
+      connections: [MANAGED_GATEWAY],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    // OpenCode runs on Kortix — click that chip to open the managed-gateway
+    // Manage sheet, which owns the "Default model" control.
+    fireEvent.click(screen.getByRole('button', { name: 'Kortix' }));
+
+    expect(screen.getByText('Default model')).toBeDefined();
+    expect(screen.getByTestId('default-model-selector')).toBeDefined();
+  });
+});
+
+describe('ModelsView — the standalone inline "Default model" panel stays gone', () => {
+  test('no Default model control renders on the page itself (only inside the Kortix sheet)', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [OPENCODE_RUNTIME],
+      connections: [MANAGED_GATEWAY],
+    };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    // The sheet is closed on first paint, so the control is not on the page.
     expect(screen.queryByText('Default model')).toBeNull();
-    expect(screen.queryByText("Used when an agent doesn't pick its own")).toBeNull();
     expect(screen.queryByTestId('default-model-selector')).toBeNull();
   });
 });
 
-describe('ModelsView — "Your connections" section + honest empty state (Task 17)', () => {
-  test('the connections section is labeled "Your connections", not "Connections"', () => {
-    modelsPageState = { ...modelsPageState, connections: [BYOK_CONNECTION] };
-    render(<ModelsView projectId={PROJECT_ID} canWrite />);
-
-    expect(screen.getByText('Your connections')).toBeDefined();
-    expect(screen.queryByText('Connections')).toBeNull();
-  });
-
-  test('zero user connections + a healthy managed gateway: the reassurance empty state renders', () => {
-    modelsPageState = { ...modelsPageState, connections: [MANAGED_GATEWAY] };
-    render(<ModelsView projectId={PROJECT_ID} canWrite />);
-
-    expect(screen.getByText('Kortix models are included')).toBeDefined();
-    expect(
-      screen.getByText(
-        'Optionally connect a Claude or ChatGPT subscription, or your own API key, to use those instead.',
-      ),
-    ).toBeDefined();
-    // Two "Connect" affordances legitimately coexist: the section header's
-    // toolbar action and the empty state's own CTA.
-    expect(screen.getAllByText('Connect').length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText('No model services connected yet')).toBeNull();
-  });
-
-  test('the managed gateway unavailable: the legacy honest empty state renders instead', () => {
-    modelsPageState = { ...modelsPageState, connections: [] };
-    render(<ModelsView projectId={PROJECT_ID} canWrite />);
-
-    expect(screen.getByText('No model services connected yet')).toBeDefined();
-    expect(screen.queryByText('Kortix models are included')).toBeNull();
-  });
-
-  test('user connections present: the full connection list renders, Kortix included, no empty state', () => {
-    modelsPageState = { ...modelsPageState, connections: [MANAGED_GATEWAY, BYOK_CONNECTION] };
-    render(<ModelsView projectId={PROJECT_ID} canWrite />);
-
-    expect(screen.queryByText('Kortix models are included')).toBeNull();
-    expect(screen.queryByText('No model services connected yet')).toBeNull();
-    expect(screen.getByText('Kortix')).toBeDefined();
-    expect(screen.getByText('Anthropic')).toBeDefined();
-  });
-
-  test('a read-only viewer sees the reassurance state without a Connect action', () => {
-    modelsPageState = { ...modelsPageState, connections: [MANAGED_GATEWAY], canWrite: false };
+describe('ModelsView — read-only viewer', () => {
+  test('no write actions; service chips degrade to plain text', () => {
+    modelsPageState = {
+      ...modelsPageState,
+      runtimes: [CLAUDE_RUNTIME],
+      connections: [CLAUDE_SUB],
+      canWrite: false,
+    };
     render(<ModelsView projectId={PROJECT_ID} canWrite={false} />);
 
-    expect(screen.getByText('Kortix models are included')).toBeDefined();
     expect(screen.queryByText('Connect')).toBeNull();
+    expect(screen.queryByText('Change')).toBeNull();
+    // The chip is text now, not a button.
+    expect(screen.queryByRole('button', { name: 'Claude subscription' })).toBeNull();
+    expect(screen.getByText('Claude subscription')).toBeDefined();
   });
 });
 
-describe('ModelsView — cross-links (Task 17 relabel check)', () => {
-  test('runtimes-list cross-link reads "Manage agents →" (not "Manage runtimes →")', () => {
-    modelsPageState = {
-      ...modelsPageState,
-      runtimes: [
-        {
-          id: 'claude',
-          harness: 'claude',
-          label: 'Claude Code',
-          status: 'ready',
-          selectedConnectionId: 'claude_subscription',
-          modelSummary: 'Claude Sonnet',
-          compatibleConnectionIds: ['claude_subscription'],
-          blocker: null,
-        },
-      ],
-      connections: [
-        {
-          id: 'claude_subscription',
-          name: 'Claude subscription',
-          kind: 'claude_subscription',
-          status: 'ready',
-          usedBy: ['claude'],
-          catalogState: 'not-exposed',
-          modelCount: null,
-          statusReason: null,
-        },
-      ],
-    };
+describe('ModelsView — empty + cross-links', () => {
+  test('no agents: an empty state points the user at the Agents section', () => {
+    modelsPageState = { ...modelsPageState, runtimes: [], connections: [MANAGED_GATEWAY] };
+    render(<ModelsView projectId={PROJECT_ID} canWrite />);
+
+    expect(screen.getByText('No agents yet')).toBeDefined();
+    expect(screen.getByText('Go to Agents')).toBeDefined();
+    // With no rows there's nothing to cross-link from, so the arrow link is absent.
+    expect(screen.queryByText('Manage agents →')).toBeNull();
+  });
+
+  test('with agents present, the "Manage agents →" link is shown', () => {
+    modelsPageState = { ...modelsPageState, runtimes: [CLAUDE_RUNTIME], connections: [CLAUDE_SUB] };
     render(<ModelsView projectId={PROJECT_ID} canWrite />);
 
     expect(screen.getByText('Manage agents →')).toBeDefined();
-    expect(screen.queryByText('Manage runtimes →')).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -10,12 +11,11 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 import {
   CONNECTIONS_OPTIONAL_DESCRIPTION,
-  KORTIX_INCLUDED_TITLE,
   invalidateComposerCapabilityQueries,
   useModelsPage,
 } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, Sparkles } from 'lucide-react';
+import { Bot, ChevronDown, Plug, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { useConnectModal } from './connect-modal-host';
@@ -43,16 +43,17 @@ export function ModelsView({
   const state = useModelsPage(projectId, canWrite);
   const { open: openConnectModal } = useConnectModal();
   const [manageConnectionId, setManageConnectionId] = useState<HarnessAuthKind | null>(null);
+  // The services drawer stays closed by default so the page reads as ONE list —
+  // "these are my agents" — at a glance. Managing services/keys is a deliberate
+  // second step, not a competing wall of rows.
+  const [servicesOpen, setServicesOpen] = useState(false);
 
-  // The managed gateway ("Kortix") is always included, so it never counts as
-  // a "user connection" for the empty-state decision below — only a
-  // subscription, an API key, or a custom endpoint the user actually set up
-  // does. Its presence here (with `status: 'ready'`) is also the only signal
-  // that the gateway itself is healthy: `useModelsPage` excludes it entirely
-  // when it's neither configured, ready, nor in use (see
-  // `packages/sdk/src/react/use-models-page.ts`'s connection filter), so an
-  // absent/not-ready row means genuinely unavailable, not just "not set up".
-  const managedGatewayConnection = state.connections.find((c) => c.kind === 'managed_gateway') ?? null;
+  // The managed gateway ("Kortix") is always included; a healthy row is the
+  // only signal the gateway itself is available (`useModelsPage` drops it
+  // entirely when it's neither configured, ready, nor in use). We only use it
+  // to phrase the "connecting is optional" note in the drawer.
+  const managedGatewayConnection =
+    state.connections.find((c) => c.kind === 'managed_gateway') ?? null;
   const managedGatewayHealthy = managedGatewayConnection?.status === 'ready';
   const userConnections = state.connections.filter((c) => c.kind !== 'managed_gateway');
 
@@ -68,22 +69,18 @@ export function ModelsView({
   };
 
   const manageConnection = state.connections.find((c) => c.id === manageConnectionId) ?? null;
-  const initialLoad = state.isLoading && state.runtimes.length === 0 && state.connections.length === 0;
+  const initialLoad =
+    state.isLoading && state.runtimes.length === 0 && state.connections.length === 0;
 
-  // Back-link from here to Agents, where runtime profiles are
-  // declared/renamed (this list only shows what's already declared) — the
-  // standalone Runtime section this used to point at was removed; profile
-  // management now lives in Agents' section context
-  // (`runtime-profiles-manager.tsx`). Same `setSection` action
-  // `agent-editor.tsx` used for its now-retired "Manage runtimes ->"
-  // cross-link; this is an in-overlay switch, not a close, so there's
-  // nothing to close first.
-  const manageRuntimes = () => useCustomizeStore.getState().setSection('agents');
+  // Back-link from here to Agents, where agent engines are declared/renamed
+  // (this list only shows what's already declared). Same in-overlay `setSection`
+  // switch `agent-editor.tsx` used — not a close, so nothing to close first.
+  const manageAgents = () => useCustomizeStore.getState().setSection('agents');
 
   return (
     <CustomizeSectionWrapper
       title="Models"
-      description="Connect model services and choose what each agent runtime uses."
+      description="See what each of your agents runs on, and change it anytime."
       action={
         canWrite ? (
           <Button
@@ -98,10 +95,10 @@ export function ModelsView({
         ) : undefined
       }
     >
-      <div className="space-y-5">
+      <div className="space-y-6">
         {state.isError ? (
           <ErrorState
-            title="Couldn't load model connections"
+            title="Couldn't load your models"
             action={
               <Button
                 variant="outline"
@@ -113,34 +110,45 @@ export function ModelsView({
             }
           />
         ) : initialLoad ? (
-          <div className="space-y-5">
-            <div className="space-y-2">
-              {[0, 1].map((i) => (
-                <Skeleton key={i} className="h-16 rounded-md" />
-              ))}
-            </div>
-            <div className="space-y-2">
-              {[0, 1].map((i) => (
-                <Skeleton key={i} className="h-16 rounded-md" />
-              ))}
-            </div>
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 rounded-md" />
+            ))}
           </div>
         ) : (
-          <div className="space-y-5">
-            {state.runtimes.length > 0 && (
-              <section className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>Agent runtimes</Label>
+          <>
+            {/* One primary list: the agents. Each row says, in plain words,
+                what it runs on and how to change it. */}
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Your agents</Label>
+                {state.runtimes.length > 0 ? (
                   <Button
                     type="button"
                     variant="text"
                     size="xs"
                     className="-mr-2.5 active:scale-[0.96] transition-transform"
-                    onClick={manageRuntimes}
+                    onClick={manageAgents}
                   >
                     Manage agents →
                   </Button>
-                </div>
+                ) : null}
+              </div>
+              {state.runtimes.length === 0 ? (
+                <EmptyState
+                  size="sm"
+                  icon={Bot}
+                  title="No agents yet"
+                  description="Add an agent in the Agents section and it'll show up here."
+                  action={
+                    canWrite ? (
+                      <Button variant="outline" size="sm" onClick={manageAgents}>
+                        Go to Agents
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : (
                 <ul className="space-y-2">
                   {state.runtimes.map((runtime) => (
                     <RuntimeRow
@@ -150,62 +158,87 @@ export function ModelsView({
                       connections={state.connections}
                       canWrite={canWrite}
                       onConnect={connectFromRuntime}
-                      onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            <section className="space-y-2">
-              <Label>Your connections</Label>
-              {userConnections.length === 0 ? (
-                managedGatewayHealthy ? (
-                  // The honest "you're set" reassurance: Kortix models work
-                  // out of the box, connecting anything else is optional —
-                  // never claim this when the managed gateway itself isn't
-                  // actually available (see the legacy branch below).
-                  <EmptyState
-                    size="sm"
-                    icon={Sparkles}
-                    title={KORTIX_INCLUDED_TITLE}
-                    description={CONNECTIONS_OPTIONAL_DESCRIPTION}
-                    action={
-                      canWrite ? (
-                        <Button variant="outline" size="sm" onClick={() => openConnectModal({})}>
-                          Connect
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                ) : (
-                  <EmptyState
-                    size="sm"
-                    icon={Plug}
-                    title="No model services connected yet"
-                    action={
-                      canWrite ? (
-                        <Button variant="outline" size="sm" onClick={() => openConnectModal({})}>
-                          Connect
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                )
-              ) : (
-                <ul className="space-y-2">
-                  {state.connections.map((connection) => (
-                    <ConnectionRow
-                      key={connection.id}
-                      connection={connection}
-                      canWrite={canWrite}
-                      onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
+                      onManage={(connectionId) =>
+                        setManageConnectionId(connectionId as HarnessAuthKind)
+                      }
                     />
                   ))}
                 </ul>
               )}
             </section>
-          </div>
+
+            {/* Secondary: the services and keys behind those agents, collapsed
+                by default. Connect/disconnect, see the models each unlocks, and
+                set your default model (in Kortix) all live here — no on-page
+                second list echoing the agents above. */}
+            <section className="space-y-2">
+              <Label>Connections</Label>
+              <Disclosure
+                variant="outline"
+                open={servicesOpen}
+                onOpenChange={setServicesOpen}
+                className="overflow-hidden"
+              >
+                <DisclosureTrigger variant="outline">
+                  <Button
+                    variant="popover"
+                    className="flex h-auto w-full items-center justify-between gap-3 rounded-none px-4 py-3"
+                  >
+                    <span className="flex min-w-0 items-center gap-3 text-left">
+                      <Plug className="text-muted-foreground size-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="text-foreground block truncate text-sm font-medium">
+                          Model services &amp; keys
+                        </span>
+                        <span className="text-muted-foreground block truncate text-xs">
+                          Connect or remove services, and set your default model
+                        </span>
+                      </span>
+                    </span>
+                    <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                  </Button>
+                </DisclosureTrigger>
+                <DisclosureContent variant="outline" contentClassName="border-border border-t">
+                  <div className="space-y-2 px-3 py-3">
+                    {userConnections.length === 0 && managedGatewayHealthy ? (
+                      <p className="text-muted-foreground px-1 text-xs text-pretty">
+                        {CONNECTIONS_OPTIONAL_DESCRIPTION}
+                      </p>
+                    ) : null}
+                    {state.connections.length > 0 ? (
+                      <ul className="space-y-2">
+                        {state.connections.map((connection) => (
+                          <ConnectionRow
+                            key={connection.id}
+                            connection={connection}
+                            canWrite={canWrite}
+                            onManage={(connectionId) =>
+                              setManageConnectionId(connectionId as HarnessAuthKind)
+                            }
+                          />
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-muted-foreground px-1 text-xs text-pretty">
+                        No services connected yet.
+                      </p>
+                    )}
+                    {canWrite ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-1.5"
+                        onClick={() => openConnectModal({})}
+                      >
+                        <Plus className="size-3.5 shrink-0" />
+                        Connect a service
+                      </Button>
+                    ) : null}
+                  </div>
+                </DisclosureContent>
+              </Disclosure>
+            </section>
+          </>
         )}
       </div>
 
