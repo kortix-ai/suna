@@ -18,11 +18,11 @@ function readRepoFile(path: string): string {
 }
 
 describe('runtime version drift guards', () => {
-  test('web SDK package and lockfile use the canonical OpenCode SDK pin', () => {
-    const webPackage = JSON.parse(readRepoFile('apps/web/package.json')) as {
+  test('SDK package and lockfile use the canonical OpenCode SDK pin', () => {
+    const sdkPackage = JSON.parse(readRepoFile('packages/sdk/package.json')) as {
       dependencies?: Record<string, string>;
     };
-    expect(webPackage.dependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
+    expect(sdkPackage.dependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
 
     const lockfile = readRepoFile('pnpm-lock.yaml');
     expect(lockfile).toContain(`'@opencode-ai/sdk':`);

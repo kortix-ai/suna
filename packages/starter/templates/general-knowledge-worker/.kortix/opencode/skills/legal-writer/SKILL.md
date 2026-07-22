@@ -27,7 +27,7 @@ Find the skill directory via `glob("**/legal-writer/")`.
 ```
 1. WRITE section content
 2. GENERATE: build/update the DOCX via the docx skill
-3. VERIFY:   uv run verify-legal.py legal/{slug}/
+3. VERIFY:   uv run --with python-docx verify-legal.py legal/{slug}/
 4. If FAIL → FIX → go to 2
 5. If PASS → move to next section
 ```
@@ -129,7 +129,7 @@ Load the `docx` skill. Run document-generation scripts with `uv run --with pytho
 ### 1e. VERIFY: First green state
 
 ```bash
-uv run verify-legal.py legal/$SLUG/
+uv run --with python-docx verify-legal.py legal/$SLUG/
 ```
 
 The scaffolded document should exist and have correct structure. Placeholders are expected at this stage (they'll be flagged as warnings, not failures, unless `--strict`).
@@ -200,7 +200,7 @@ For non-litigation documents (contracts, ToS), formal citations are generally no
 1. READ all previously written sections for context
 2. WRITE the section following document-type conventions
 3. REGENERATE the DOCX (update via python-docx)
-4. VERIFY: uv run verify-legal.py legal/{slug}/
+4. VERIFY: uv run --with python-docx verify-legal.py legal/{slug}/
 5. If errors → FIX → go to 3
 6. SELF-REFLECT:
    - Is every legal assertion supported by authority? (litigation docs)
@@ -338,7 +338,7 @@ Re-read the entire document and check:
 ### 4b. Strict Verification
 
 ```bash
-uv run "$SKILL_DIR/scripts/verify-legal.py" "legal/$SLUG/" --strict
+uv run --with python-docx "$SKILL_DIR/scripts/verify-legal.py" "legal/$SLUG/" --strict
 ```
 
 All checks must pass:

@@ -5,9 +5,9 @@ Runs a comprehensive checklist against a legal document directory and reports pa
 Designed to be run after every section is written.
 
 Usage:
-    uv run verify-legal.py <document-dir>
-    uv run verify-legal.py legal/contract-acme/
-    uv run verify-legal.py legal/memo-smith/ --strict   # treat warnings as failures
+    uv run --with python-docx verify-legal.py <document-dir>
+    uv run --with python-docx verify-legal.py legal/contract-acme/
+    uv run --with python-docx verify-legal.py legal/memo-smith/ --strict   # treat warnings as failures
 
 Expects:
     <document-dir>/document.docx     (the main document)
