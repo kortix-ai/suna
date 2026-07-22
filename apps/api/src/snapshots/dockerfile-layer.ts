@@ -24,7 +24,9 @@
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
   CLAUDE_AGENT_ACP_VERSION,
+  CLAUDE_CODE_VERSION,
   CODEX_ACP_VERSION,
+  CODEX_CLI_VERSION,
   PI_ACP_VERSION,
   PI_CODING_AGENT_VERSION,
   PLAYWRIGHT_VERSION,
@@ -241,6 +243,16 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
+    // fd-find + ripgrep: system packages so `pi`'s bundled tools-manager
+    // (dist/utils/tools-manager.js, ensureTool()) finds them on PATH and
+    // skips its own GitHub-release download of fd/rg entirely — that lazy
+    // download is what produced the "fd not found. Downloading..." stall +
+    // nag on a session's first tool call. pi's systemBinaryNames check for
+    // `fd` explicitly includes "fdfind" (Debian/Ubuntu's fd-find package
+    // renames the binary to avoid a clash with an unrelated `fd` package),
+    // so no extra symlink is needed; ripgrep's Ubuntu package already
+    // installs the `rg` binary name pi looks for.
+    '        fd-find ripgrep \\',
     '        python3 python3-dev python3-pip python3-venv \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
@@ -338,6 +350,29 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && codex-acp --version \\',
     '    && pi-acp --help >/dev/null \\',
     '    && pi --version',
+    '',
+    // Standard official harness CLIs — the actual `claude` / `codex` binaries
+    // a user expects on PATH in a terminal, distinct from the ACP protocol
+    // adapters above (claude-agent-acp / codex-acp exist to speak ACP over
+    // stdio; they do not provide an interactive `claude`/`codex` command).
+    // Both are the real, officially-published packages (verified against
+    // their npm publisher/maintainer accounts and upstream repos):
+    //   - @anthropic-ai/claude-code   → github.com/anthropics/claude-code, published
+    //     by anthropic.com maintainer accounts. Binary: claude.
+    //   - @openai/codex               → github.com/openai/codex (codex-cli/), published
+    //     via OpenAI's GitHub Actions OIDC trusted publisher. Binary: codex.
+    // Installed the same way as every other pinned CLI in this layer (npm
+    // install -g, exact version, verified via a build-time probe) rather than
+    // piping either vendor's install.sh at build time: image builds need
+    // reproducible, pinned versions and install-script channels are designed
+    // to float to latest, which is exactly what a snapshot build must not do.
+    // (Auth — `claude login` / `codex login` — is a user-side runtime concern,
+    // not wired into Kortix's credential system here.)
+    `RUN npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_CLI_VERSION}" \\`,
+    '    && command -v claude \\',
+    '    && command -v codex \\',
+    '    && claude --version \\',
+    '    && codex --version',
     '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one

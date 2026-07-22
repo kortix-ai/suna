@@ -82,7 +82,7 @@ RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
     && /usr/local/bin/chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN npm install -g --no-audit --no-fund "opencode-ai@1.17.11" \\
+RUN npm install -g --no-audit --no-fund "opencode-ai@1.18.4" \\
     && command -v opencode \\
     && opencode --version
 
@@ -110,7 +110,7 @@ RUN curl -fsSL https://bun.com/install | bash \\
 
 RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.4","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
     && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -257,7 +257,7 @@ RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
     && /usr/local/bin/chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN npm install -g --no-audit --no-fund "opencode-ai@1.17.11" \\
+RUN npm install -g --no-audit --no-fund "opencode-ai@1.18.4" \\
     && command -v opencode \\
     && opencode --version
 
@@ -285,7 +285,7 @@ RUN curl -fsSL https://bun.com/install | bash \\
 
 RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.4","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
     && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -433,7 +433,7 @@ RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
     && /usr/local/bin/chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN npm install -g --no-audit --no-fund "opencode-ai@1.17.11" \\
+RUN npm install -g --no-audit --no-fund "opencode-ai@1.18.4" \\
     && command -v opencode \\
     && opencode --version
 
@@ -461,7 +461,7 @@ RUN curl -fsSL https://bun.com/install | bash \\
 
 RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.4","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
     && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\

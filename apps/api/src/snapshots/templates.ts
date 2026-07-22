@@ -190,7 +190,12 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // layer. Chromium's content hash is now stable across agent-source churn — it is
 // fetched at most once per pinned Playwright/agent-browser version and
 // cache-reused for every base rebuild after.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v29';
+// v30: opencode 1.17.11→1.18.4 (Claude Sonnet 5/Opus 4.7+ adaptive-thinking
+// fix), pi-coding-agent 0.80.6→0.81.1, bake official `claude`/`codex` CLIs
+// (@anthropic-ai/claude-code, @openai/codex) alongside the ACP adapters, and
+// apt-install fd-find+ripgrep so pi's tools-manager finds them on PATH
+// instead of downloading its own copies on first use.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v30';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

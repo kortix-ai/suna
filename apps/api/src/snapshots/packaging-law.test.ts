@@ -19,7 +19,9 @@ import { fileURLToPath } from 'node:url';
 import {
   AGENT_BROWSER_VERSION,
   CLAUDE_AGENT_ACP_VERSION,
+  CLAUDE_CODE_VERSION,
   CODEX_ACP_VERSION,
+  CODEX_CLI_VERSION,
   OPENCODE_VERSION,
   PI_ACP_VERSION,
   PI_CODING_AGENT_VERSION,
@@ -59,9 +61,7 @@ describe('packaging law: never run unpinned npx at request time', () => {
 
   test('the emitted Dockerfile ENTRYPOINT hands off to the boot script verbatim, never an inline npm/npx invocation', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
-    const entrypointLine = merged
-      .split('\n')
-      .find((line) => line.startsWith('ENTRYPOINT'));
+    const entrypointLine = merged.split('\n').find((line) => line.startsWith('ENTRYPOINT'));
     expect(entrypointLine).toBe('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 
@@ -148,7 +148,9 @@ describe('packaging law: image build verifies each adapter via a version/help pr
 
   test('the adapter probe RUN step runs after the install it verifies, and is not best-effort (`set +e`)', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
-    const installIdx = merged.indexOf(`@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}`);
+    const installIdx = merged.indexOf(
+      `@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}`,
+    );
     const probeIdx = merged.indexOf('claude-agent-acp --version');
     expect(installIdx).toBeGreaterThanOrEqual(0);
     expect(probeIdx).toBeGreaterThan(installIdx);
@@ -211,9 +213,74 @@ describe('packaging law: the runtime fingerprint folds all four adapter pins', (
   });
 });
 
+describe('packaging law: official harness CLIs (claude, codex) install pinned exact versions with a probe', () => {
+  // These are the ACTUAL interactive CLIs (`claude`, `codex`) — distinct from
+  // the ACP protocol adapters above (`claude-agent-acp`/`codex-acp`), which
+  // exist only to speak ACP over stdio and provide no standalone command a
+  // user would run in a terminal. Same packaging law applies: pinned exact
+  // version, never a floating tag, verified via a build-time probe.
+  test('the pin constants are exact semver, not `latest`/a dist-tag/a range', () => {
+    for (const pin of [CLAUDE_CODE_VERSION, CODEX_CLI_VERSION]) {
+      expect(pin).toMatch(SEMVER_RE);
+    }
+  });
+
+  test('the emitted install command interpolates the exact pinned constant for both CLIs', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(merged).toContain(`@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`);
+    expect(merged).toContain(`@openai/codex@${CODEX_CLI_VERSION}`);
+  });
+
+  test('never installs either CLI off `@latest`', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    for (const floating of ['@anthropic-ai/claude-code@latest', '@openai/codex@latest']) {
+      expect(merged).not.toContain(floating);
+    }
+  });
+
+  test('both CLIs are probed after install — command presence AND a version invocation', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    const probes: Record<string, string[]> = {
+      claude: ['command -v claude', 'claude --version'],
+      codex: ['command -v codex', 'codex --version'],
+    };
+    for (const [cli, checks] of Object.entries(probes)) {
+      for (const check of checks) {
+        expect(merged, `${cli} probe missing: ${check}`).toContain(check);
+      }
+    }
+  });
+
+  test('the probe RUN step runs after the install it verifies, and is not best-effort (`set +e`)', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    const installIdx = merged.indexOf(`@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`);
+    const probeIdx = merged.indexOf('claude --version');
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(probeIdx).toBeGreaterThan(installIdx);
+    const precedingRun = merged.lastIndexOf('RUN', installIdx);
+    const stepText = merged.slice(precedingRun, merged.indexOf('\n\n', probeIdx));
+    expect(stepText).not.toContain('set +e');
+  });
+});
+
+describe('packaging law: pi resolves fd/ripgrep from the system apt floor (no runtime download)', () => {
+  test('fd-find and ripgrep are installed in the apt floor, ahead of every harness install', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    const aptIdx = merged.indexOf('fd-find ripgrep');
+    const piInstallIdx = merged.indexOf(
+      `@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}`,
+    );
+    expect(aptIdx).toBeGreaterThan(0);
+    expect(piInstallIdx).toBeGreaterThan(aptIdx);
+  });
+});
+
 describe('cold-start posture (P3): production-grade warm-up stays OpenCode-only', () => {
   test('OpenCode gets a build-time DB-migration bake AND (when a config is provided) a project-instance warm-up', () => {
-    const withoutConfig = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    const withoutConfig = buildLayeredDockerfile({
+      userDockerfile: 'FROM ubuntu:24.04',
+      ...COMMON,
+    });
     expect(withoutConfig).toContain('opencode serve --port 4096 --hostname 127.0.0.1');
 
     const withConfig = buildLayeredDockerfile({
