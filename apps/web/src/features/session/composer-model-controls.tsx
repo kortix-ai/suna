@@ -6,7 +6,7 @@ import type { KortixHarness } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 
 import { AcpConfigOptionPill } from './acp-config-option-pills';
-import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { ModelSelector } from './model-selector';
 import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import type { FlatModel } from './session-chat-input';
 
@@ -91,8 +91,6 @@ export interface ComposerModelControlsProps {
   selectedModel: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
-  /** Optional "set as default" controls for the model picker (account/per-agent). */
-  modelDefaultControls?: ModelDefaultControls;
   /** Static state for a harness that manages its own model — see
    *  {@link HarnessManagedModelState}. */
   harnessManagedModel?: HarnessManagedModelState;
@@ -129,7 +127,6 @@ export function ComposerModelControls({
   selectedModel,
   onModelChange,
   providers,
-  modelDefaultControls,
   harnessManagedModel,
   modelRequired = false,
   projectId,
@@ -144,7 +141,6 @@ export function ComposerModelControls({
           selectedModel={selectedModel}
           onSelect={onModelChange}
           providers={providers}
-          defaultControls={modelDefaultControls}
         />
       ) : null}
       {/* Reasoning-effort control. Renders nothing unless the selected

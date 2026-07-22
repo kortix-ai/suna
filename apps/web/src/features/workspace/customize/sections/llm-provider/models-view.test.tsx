@@ -117,30 +117,15 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('ModelsView — "Default model" row (Task 17)', () => {
-  test('renders a Default model Label + bordered row as the first section, with the selector', () => {
+describe('ModelsView — the standalone "Default model" panel is gone (moved to the Kortix modal)', () => {
+  test('no Default model panel renders inline on the Models page anymore', () => {
     render(<ModelsView projectId={PROJECT_ID} canWrite />);
 
-    expect(screen.getByText('Default model')).toBeDefined();
-    expect(screen.getByText("Used when an agent doesn't pick its own")).toBeDefined();
-    expect(screen.getByTestId('default-model-selector')).toBeDefined();
-  });
-
-  test('the row carries the bg-popover / rounded-md / border / px-4 py-3 design-system classes', () => {
-    render(<ModelsView projectId={PROJECT_ID} canWrite />);
-
-    const row = screen.getByTestId('default-model-selector').closest('div.bg-popover');
-    expect(row).not.toBeNull();
-    expect(row?.className).toContain('rounded-md');
-    expect(row?.className).toContain('border');
-    expect(row?.className).toContain('px-4');
-    expect(row?.className).toContain('py-3');
-  });
-
-  test('is omitted entirely for a read-only viewer (no write path to expose)', () => {
-    render(<ModelsView projectId={PROJECT_ID} canWrite={false} />);
-
+    // The single home for the project default is now the managed-gateway
+    // ("Kortix") connection's Manage modal — the Models page no longer stacks a
+    // duplicate control above the runtime rows.
     expect(screen.queryByText('Default model')).toBeNull();
+    expect(screen.queryByText("Used when an agent doesn't pick its own")).toBeNull();
     expect(screen.queryByTestId('default-model-selector')).toBeNull();
   });
 });

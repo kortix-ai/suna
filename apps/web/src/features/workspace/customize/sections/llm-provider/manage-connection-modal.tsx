@@ -3,10 +3,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ModelSelector } from '@/features/session/model-selector';
 import { ProviderLogo } from '@/features/providers/provider-branding';
+import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import {
   type HarnessAuthKind,
@@ -19,11 +22,13 @@ import {
   type ModelsPageConnection,
   type ModelsPageRuntime,
   connectionExplainer,
+  gatewayRoutingPolicyKey,
   harnessLabel,
   invalidateComposerCapabilityQueries,
   reconnectVerb,
+  useProjectModels,
 } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Unplug } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -74,6 +79,50 @@ function ModelChips({ names, count }: { names: string[]; count: number }) {
         </span>
       ))}
       {more > 0 && <span className="text-muted-foreground px-1 text-xs">+{more} more</span>}
+    </div>
+  );
+}
+
+/**
+ * The project's default model — its ONE home. Kortix models are always
+ * included, so the managed-gateway ("Kortix") connection's Manage modal is
+ * where the project default belongs: pick from the included catalog, and it
+ * governs anything that doesn't choose its own. This owns the only
+ * `useModelDefaults.setProjectDefault` write path (the standalone Models-page
+ * panel and the composer picker's footer buttons were removed). The shared
+ * `gatewayRoutingPolicyKey` mutation guard is preserved so a pending write
+ * still blocks the picker and can't race Routing.
+ */
+function DefaultModelSection({ projectId }: { projectId: string }) {
+  const models = useProjectModels(projectId);
+  const modelDefaults = useModelDefaults(projectId);
+  const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
+  const effectiveDefault =
+    modelDefaults.projectDefault ??
+    modelDefaults.accountDefault ??
+    modelDefaults.platformDefault ??
+    null;
+
+  return (
+    <div className="space-y-1.5">
+      <Label>Default model</Label>
+      <ModelSelector
+        models={models}
+        selectedModel={effectiveDefault}
+        unsetLabel="Project default"
+        disabled={modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0}
+        onSelect={(m) => {
+          if (!m) return;
+          void modelDefaults
+            .setProjectDefault(m)
+            .catch(() => errorToast('Could not update the project default'));
+        }}
+      />
+      <p className="text-muted-foreground text-xs text-pretty">
+        Kortix uses this when nothing more specific is set. What wins, in order: the model chosen
+        for a session, then an agent&rsquo;s pinned model, then this project default, then your
+        account default.
+      </p>
     </div>
   );
 }
@@ -197,6 +246,10 @@ export function ManageConnectionModal({
                   <ModelChips names={modelNames} count={connection.modelCount ?? 0} />
                 )}
               </div>
+            ) : null}
+
+            {connection.kind === 'managed_gateway' && canWrite ? (
+              <DefaultModelSection projectId={projectId} />
             ) : null}
 
             {canWrite && manageable && (

@@ -53,7 +53,6 @@ import {
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import type { ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
@@ -819,8 +818,6 @@ export interface SessionChatInputProps {
   /** Static state for a harness that manages its own model (Claude Code,
    *  Codex, Pi) — see {@link HarnessManagedModelState}. */
   harnessManagedModel?: HarnessManagedModelState;
-  /** Optional "set as default" controls for the model picker (account/per-agent). */
-  modelDefaultControls?: ModelDefaultControls;
   messages?: MessageWithParts[];
   /** Protocol-native context and token usage projected by @kortix/sdk. */
   acpUsage?: AcpUsageProjection | null;
@@ -945,7 +942,6 @@ function SessionChatInputImpl({
   selectedModel = null,
   onModelChange,
   harnessManagedModel,
-  modelDefaultControls,
   messages,
   acpUsage,
   sessionId,
@@ -2082,7 +2078,6 @@ function SessionChatInputImpl({
                 selectedModel={selectedModel}
                 onModelChange={onModelChange}
                 providers={providers}
-                modelDefaultControls={modelDefaultControls}
                 harnessManagedModel={harnessManagedModel}
                 modelRequired={modelRequired}
                 projectId={projectId}

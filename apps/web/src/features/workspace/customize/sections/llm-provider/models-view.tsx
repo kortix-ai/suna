@@ -3,23 +3,18 @@
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 import {
   CONNECTIONS_OPTIONAL_DESCRIPTION,
   KORTIX_INCLUDED_TITLE,
-  gatewayRoutingPolicyKey,
   invalidateComposerCapabilityQueries,
   useModelsPage,
-  useProjectModels,
 } from '@kortix/sdk/react';
-import { useIsMutating, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Plug, Plus, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
@@ -48,19 +43,6 @@ export function ModelsView({
   const state = useModelsPage(projectId, canWrite);
   const { open: openConnectModal } = useConnectModal();
   const [manageConnectionId, setManageConnectionId] = useState<HarnessAuthKind | null>(null);
-
-  // Default model — relocated here from `gateway-view.tsx`'s tab bar
-  // (Task 17): same `useModelDefaults` write path, same inheritance chain
-  // (project -> account -> platform) and the same routing-mutation guard, so
-  // this is a mechanical move rather than a behavior change.
-  const models = useProjectModels(projectId);
-  const modelDefaults = useModelDefaults(projectId);
-  const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
-  const effectiveDefault =
-    modelDefaults.projectDefault ??
-    modelDefaults.accountDefault ??
-    modelDefaults.platformDefault ??
-    null;
 
   // The managed gateway ("Kortix") is always included, so it never counts as
   // a "user connection" for the empty-state decision below — only a
@@ -117,31 +99,6 @@ export function ModelsView({
       }
     >
       <div className="space-y-5">
-        {canWrite && (
-          <section className="space-y-2">
-            <Label>Default model</Label>
-            <div className="bg-popover flex flex-col gap-3 rounded-md border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-muted-foreground text-xs text-pretty">
-                Used when an agent doesn&apos;t pick its own
-              </p>
-              <ModelSelector
-                models={models}
-                selectedModel={effectiveDefault}
-                unsetLabel="Project default"
-                disabled={
-                  modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0
-                }
-                onSelect={(m) => {
-                  if (!m) return;
-                  void modelDefaults
-                    .setProjectDefault(m)
-                    .catch(() => errorToast('Could not update the project default'));
-                }}
-              />
-            </div>
-          </section>
-        )}
-
         {state.isError ? (
           <ErrorState
             title="Couldn't load model connections"
