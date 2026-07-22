@@ -344,6 +344,77 @@ describe('daemon proxy auth gate', () => {
     expect(body.auth).toBe('unconfigured')
   })
 
+  it('keeps runtime ready after the initialized repository changes branches', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-health-branch-'))
+    const target = join(root, 'workspace')
+    const previousBranch = process.env.KORTIX_BRANCH_NAME
+    try {
+      mkdirSync(target)
+      git(['init'], target)
+      git(['checkout', '-b', 'main'], target)
+      writeFileSync(join(target, 'README.md'), 'ready\n')
+      git(['add', 'README.md'], target)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'ready'], target)
+      git(['checkout', '-b', 'session-branch'], target)
+      process.env.KORTIX_BRANCH_NAME = 'session-branch'
+
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: true, projectTarget: target, branchName: 'session-branch' }),
+        fakeOpencode('ok'),
+        Date.now(),
+      )
+
+      const initialized = (await (await app.request('/kortix/health')).json()) as {
+        runtimeReady: boolean
+        repo_ready: boolean
+        branch: string
+      }
+      expect(initialized).toMatchObject({
+        runtimeReady: true,
+        repo_ready: true,
+        branch: 'session-branch',
+      })
+
+      git(['checkout', 'main'], target)
+
+      const changed = (await (await app.request('/kortix/health')).json()) as {
+        runtimeReady: boolean
+        repo_ready: boolean
+        branch: string
+      }
+      expect(changed).toMatchObject({
+        runtimeReady: true,
+        repo_ready: true,
+        branch: 'main',
+      })
+
+      process.env.KORTIX_BRANCH_NAME = 'another-session-branch'
+      const differentSession = (await (await app.request('/kortix/health')).json()) as {
+        runtimeReady: boolean
+        repo_ready: boolean
+      }
+      expect(differentSession).toMatchObject({
+        runtimeReady: false,
+        repo_ready: false,
+      })
+
+      process.env.KORTIX_BRANCH_NAME = 'session-branch'
+      rmSync(join(target, '.git'), { recursive: true, force: true })
+      const missingRepo = (await (await app.request('/kortix/health')).json()) as {
+        runtimeReady: boolean
+        repo_ready: boolean
+      }
+      expect(missingRepo).toMatchObject({
+        runtimeReady: false,
+        repo_ready: false,
+      })
+    } finally {
+      if (previousBranch === undefined) delete process.env.KORTIX_BRANCH_NAME
+      else process.env.KORTIX_BRANCH_NAME = previousBranch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('reports runtime not ready and blocks OpenCode proxy when repo materialization failed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-repo-failed-'))
     try {

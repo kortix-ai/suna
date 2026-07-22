@@ -81,6 +81,7 @@ export function createHealthRouter(
   staticWebPort: number | null = null,
 ): Hono {
   const router = new Hono()
+  let initializedRepoBranch: string | null = null
 
   router.get('/', async (c) => {
     const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
@@ -94,8 +95,17 @@ export function createHealthRouter(
     // on the default branch (observed live: `main` at ready, session branch
     // +3s). Seed builders have no session branch → gate inert for capture.
     const wantBranch = repoRequired ? wantedSessionBranch() : ''
+    if (repoInfo !== null && wantBranch && repoInfo.branch === wantBranch) {
+      initializedRepoBranch = wantBranch
+    }
+    // Branch equality is a boot gate, not a permanent liveness condition.
+    // After initialization, an agent can inspect or update another branch.
+    // Keep runtimeReady true while the repository still exists. A different
+    // session branch must pass the equality gate independently.
     const repoReady =
-      !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
+      !repoRequired ||
+      (repoInfo !== null &&
+        (!wantBranch || repoInfo.branch === wantBranch || initializedRepoBranch === wantBranch))
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
