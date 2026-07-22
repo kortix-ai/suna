@@ -10,6 +10,10 @@ import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { parseBasicAuthHeader } from '../git-backends';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
+import {
+  oauthAuthExpiresInMs,
+  writeOAuthCredentialSecret,
+} from '../../llm-gateway/auth/oauth/credential-store';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
@@ -634,75 +638,24 @@ async function writeCodexAuthSecret(input: {
   value: string;
   sharing?: ReturnType<typeof parseSharingIntent>;
 }) {
-  const { projectId, userId, value, sharing } = input;
-  const now = new Date();
-
-  if (sharing?.mode === 'private') {
-    await db
-      .insert(projectSecrets)
-      .values({
-        projectId,
-        identifier: CODEX_AUTH_JSON_SECRET_NAME,
-        name: CODEX_AUTH_JSON_SECRET_NAME,
-        valueEnc: encryptProjectSecret(projectId, value),
-        ownerUserId: userId,
-        active: true,
-        createdBy: userId,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
-        targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
-        set: {
-          valueEnc: encryptProjectSecret(projectId, value),
-          active: true,
-          updatedAt: now,
-        },
-      });
-  } else {
-    await db
-      .insert(projectSecrets)
-      .values({
-        projectId,
-        identifier: CODEX_AUTH_JSON_SECRET_NAME,
-        name: CODEX_AUTH_JSON_SECRET_NAME,
-        valueEnc: encryptProjectSecret(projectId, value),
-        createdBy: userId,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [projectSecrets.projectId, projectSecrets.identifier],
-        targetWhere: isNull(projectSecrets.ownerUserId),
-        set: {
-          valueEnc: encryptProjectSecret(projectId, value),
-          updatedAt: now,
-        },
-      });
-  }
-
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
-
-  const views = await loadSecretViewsForUser(projectId, userId, true);
-  return views.find((v) => v.identifier === CODEX_AUTH_JSON_SECRET_NAME)
-    ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
+  // Compatibility alias (docs/specs/2026-07-22-unified-auth-gateway.md Step 3):
+  // the shared/personal insert precedence now lives in one place —
+  // `llm-gateway/auth/oauth/credential-store.ts` — which the new
+  // `/oauth-credentials/*` routes also call. Kept as a thin wrapper so this
+  // file's Codex-only `/oauth/*` routes behave byte-identically until Step 6
+  // retires them.
+  return writeOAuthCredentialSecret({
+    projectId: input.projectId,
+    userId: input.userId,
+    secretName: CODEX_AUTH_JSON_SECRET_NAME,
+    value: input.value,
+    sharing: input.sharing,
+  });
 }
 
 // Best-effort token expiry (ms remaining) from a stored auth.json, for display.
-function authExpiresInMs(authJson: string): number | null {
-  try {
-    const parsed = JSON.parse(authJson);
-    // opencode auth.json is keyed by provider: { openai: { expires, ... } }.
-    for (const entry of Object.values(parsed ?? {})) {
-      const expires = (entry as { expires?: unknown })?.expires;
-      if (typeof expires === 'number' && Number.isFinite(expires)) {
-        return Math.max(0, expires - Date.now());
-      }
-    }
-  } catch {
-    // not parseable / no expiry — treat as unknown
-  }
-  return null;
-}
+// Delegates to the shared helper (same alias rationale as above).
+const authExpiresInMs = oauthAuthExpiresInMs;
 
 // ─── POST /v1/projects/:projectId/oauth/:provider/start ────────────────────
 // Kick the device flow in a detached background task; return the challenge.

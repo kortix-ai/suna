@@ -37,6 +37,7 @@ import './routes/model-defaults';
 import './routes/agent-scope';
 import './routes/agent-config';
 import './routes/composer-capabilities';
+import './routes/auth-providers';
 import './routes/gateway';
 import './routes/channel-bindings';
 

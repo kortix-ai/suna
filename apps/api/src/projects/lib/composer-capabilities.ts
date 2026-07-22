@@ -6,6 +6,11 @@ import {
   compatibleHarnessesFor,
 } from '@kortix/shared/harnesses';
 
+import {
+  authProviderRefForKind,
+  resolveCredentialStatusCached,
+} from '../../llm-gateway/auth/credential-status';
+import type { CredentialStatus } from '../../llm-gateway/auth/resolve-credential-status';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   type HarnessModelResolutionState,
@@ -41,6 +46,16 @@ export type HarnessConnection = {
   active_for: HarnessId[];
   reason: string | null;
   source: 'kortix' | 'project_secret' | 'native_config';
+  // Typed credential HEALTH (docs/specs/2026-07-22-unified-auth-gateway.md
+  // §4/§8) — distinct from `configured` (presence-only). Populated only for a
+  // configured connection that maps to an auth-provider registry entry
+  // (`managed_gateway`/`native_config` have none); `null` when unknown/
+  // un-probed or the live check failed (fail-open — a probe error never sinks
+  // the listing). Lets the UI render healthy/expired/invalid/unverified
+  // instead of a bare "Connected".
+  status?: CredentialStatus | null;
+  status_reason?: string | null;
+  status_expires_at?: number | null;
 };
 
 export type ComposerModelPreset = {
@@ -207,6 +222,41 @@ export function buildHarnessConnections(input: {
       reason: configured ? null : `Connect ${definition.label} before selecting it.`,
     };
   });
+}
+
+/**
+ * Layers typed credential HEALTH onto a built connection listing (docs/specs/
+ * 2026-07-22-unified-auth-gateway.md §4/§8). Probes only CONFIGURED
+ * connections that map to an auth-provider registry entry, in parallel, via
+ * the 30s-memoized `resolveCredentialStatusCached` (so a polled listing route
+ * cannot hammer upstreams). Fail-open per connection: any probe error leaves
+ * `status: null` and never breaks the listing. Mutates `connections` in place.
+ */
+async function enrichConnectionsWithStatus(
+  connections: HarnessConnection[],
+  projectId: string,
+  userId: string | null,
+): Promise<void> {
+  await Promise.all(
+    connections.map(async (connection) => {
+      if (!connection.configured) return;
+      const ref = authProviderRefForKind(connection.kind);
+      if (!ref) return;
+      try {
+        const record = await resolveCredentialStatusCached(
+          projectId,
+          userId,
+          ref.providerId,
+          ref.door,
+        );
+        connection.status = record.status;
+        connection.status_reason = record.reason;
+        connection.status_expires_at = record.expiresAt;
+      } catch {
+        connection.status = null;
+      }
+    }),
+  );
 }
 
 export function configuredModelProviders(env: Record<string, string>): ConfiguredModelProvider[] {
@@ -390,6 +440,7 @@ export async function resolveProjectComposerState(input: {
     nativeConfigReady: anyNativeConfig,
     activeRoutes: routes,
   });
+  await enrichConnectionsWithStatus(connections, input.project.projectId, input.userId);
   const agents = compiled ? Object.values(compiled.agents).map(agentView) : [];
 
   return {
