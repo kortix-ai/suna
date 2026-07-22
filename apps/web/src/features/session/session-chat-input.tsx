@@ -32,6 +32,7 @@ import {
   MessageSquare,
   Paperclip,
   Reply,
+  Slash,
   Terminal,
   X,
 } from 'lucide-react';
@@ -416,12 +417,16 @@ function SlashCommandPopover({
   selectedIndex,
   onSelect,
   anchorRef,
+  sourceLabel,
 }: {
   commands: Command[];
   filter: string;
   selectedIndex: number;
   onSelect: (command: Command) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  /** The harness these commands come from (e.g. "Claude Code") — shown as a
+   *  heading so the source is obvious, per the owner's ask. */
+  sourceLabel?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const filtered = useMemo(() => {
@@ -459,6 +464,11 @@ function SlashCommandPopover({
         width: Math.min(r.width, 480),
       }}
     >
+      {sourceLabel ? (
+        <div className="text-muted-foreground/60 border-border/60 border-b px-3 py-1.5 text-xs font-medium">
+          Commands from {sourceLabel}
+        </div>
+      ) : null}
       <div ref={scrollRef} className="max-h-64 overflow-y-auto py-1">
         {filtered.map((cmd, i) => (
           <button
@@ -811,6 +821,9 @@ export interface SessionChatInputProps {
   /** Show the selected agent but prevent switching inside an immutable session. */
   agentSelectorLocked?: boolean;
   commands?: Command[];
+  /** The harness the `commands` come from (e.g. "Claude Code") — labels the
+   *  "/" palette so the source is obvious. */
+  commandsSourceLabel?: string | null;
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
@@ -937,6 +950,7 @@ function SessionChatInputImpl({
   onAgentChange,
   agentSelectorLocked = false,
   commands = [],
+  commandsSourceLabel,
   onCommand,
   models = [],
   selectedModel = null,
@@ -1577,6 +1591,18 @@ function SessionChatInputImpl({
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
+  // The composer-toolbar commands affordance: makes "/" discoverable for users
+  // who don't already know the convention. Replicates exactly the state a
+  // typed "/" produces (text "/", empty filter) so the same popover, selection,
+  // and staging flow take over — nothing special-cased.
+  const handleOpenCommands = () => {
+    if (stagedCommand) return;
+    setText('/');
+    setSlashFilter('');
+    setSlashIndex(0);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
   const handleSelectMention = (item: MentionItem) => {
     if (!mentionQuery) return;
     const before = text.slice(0, mentionQuery.triggerPos);
@@ -1812,6 +1838,7 @@ function SessionChatInputImpl({
               selectedIndex={slashIndex}
               onSelect={handleSelectCommand}
               anchorRef={cardRef}
+              sourceLabel={commandsSourceLabel}
             />
           )}
 
@@ -2082,6 +2109,27 @@ function SessionChatInputImpl({
                 modelRequired={modelRequired}
                 projectId={projectId}
               />
+              {commands.length > 0 && !stagedCommand && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Commands"
+                      data-testid="composer-commands-button"
+                      onClick={handleOpenCommands}
+                      className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors active:scale-[0.96]"
+                    >
+                      <Slash className="size-3.5 shrink-0" />
+                      <span className="hidden sm:inline">Commands</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {commandsSourceLabel
+                      ? `Commands from ${commandsSourceLabel}`
+                      : 'Run a command'}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
 
             {/* RIGHT: TokenProgress + Voice + Submit/Stop. Only the PRIMARY

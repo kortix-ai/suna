@@ -940,6 +940,7 @@ export function ComposerChatInput({
       composerConnectKind={composerConnectKind}
       composerCapabilityGoverned={composerCapabilityGoverned}
       commands={commands}
+      commandsSourceLabel={harnessLabel}
       messages={live?.messages}
       acpUsage={live?.acpUsage}
       onStop={live?.onStop}

@@ -163,6 +163,30 @@ describe('SessionChatInput — projectId wiring into AgentSelector (Task 14)', (
     expect(within(claudeOption).queryByTestId('agent-connection-dot')).toBeNull();
   });
 
+  it('shows no commands affordance when the harness advertises none', () => {
+    renderComposer({ projectId: 'p', commands: [] });
+    expect(screen.queryByTestId('composer-commands-button')).toBeNull();
+  });
+
+  it('exposes a composer commands button that opens the palette with a source heading', async () => {
+    renderComposer({
+      projectId: 'p',
+      commands: [{ name: 'review', id: 'review', description: 'Review the diff' }],
+      commandsSourceLabel: 'Claude Code',
+    });
+
+    const button = screen.getByTestId('composer-commands-button');
+    expect(button).toBeTruthy();
+
+    fireEvent.click(button);
+    await flush();
+
+    // The palette opens (without the user having to know the "/" convention)
+    // and names its source.
+    expect(screen.getByText('Commands from Claude Code')).toBeTruthy();
+    expect(screen.getByText('/review')).toBeTruthy();
+  });
+
   it('omitting projectId forwards undefined (not a hardcoded value) into useModelsPage', () => {
     // This proves `AgentSelector`'s `projectId` prop is genuinely threaded
     // from `SessionChatInput`'s own prop, not hardcoded — when the composer
