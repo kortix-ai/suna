@@ -26,6 +26,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/track';
+import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
@@ -73,6 +74,7 @@ import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
+import { useChatAppOpenRequest } from './use-chat-app-open-request';
 import { useChatFileOpenRequest } from './use-chat-file-open-request';
 import { useRunningApps } from './use-running-apps';
 
@@ -456,6 +458,37 @@ export const EasyPanel = memo(function EasyPanel({
     [handleOpenOutput],
   );
   useChatFileOpenRequest(sessionId, openChatFile);
+
+  // Localhost URLs clicked in the CHAT (the chips and preview cards
+  // `SandboxUrlDetector` appends) land here — the running port opens as the
+  // very same `AppPreview` detail a Preview-card row opens, rather than
+  // navigating the app away to `/p/PORT`.
+  //
+  // The clicked url wins over the known app's url even when they share a port:
+  // clicking `localhost:3000/docs` must land on `/docs`. The known row is
+  // consulted only for its NAME — the human title the agent gave the
+  // deliverable beats a synthesized `localhost:3000` in the detail header and
+  // in `AppPreview`'s "Couldn't load X" copy. Siblings stay empty for the same
+  // reason `openChatFile`'s do: this synthetic item isn't a member of the Apps
+  // list, so prev/next through that list would be paging from nowhere.
+  const openChatApp = useCallback(
+    (url: string, name?: string) => {
+      const port = parseLocalhostUrl(url)?.port ?? 0;
+      const known = apps.find((a) => parseLocalhostUrl(a.url ?? '')?.port === port);
+      handleOpenOutput(
+        {
+          callID: 'chat-link',
+          kind: 'app',
+          name: known?.title ?? known?.name ?? name ?? `localhost:${port}`,
+          url,
+        },
+        [],
+        'chat',
+      );
+    },
+    [apps, handleOpenOutput],
+  );
+  useChatAppOpenRequest(sessionId, openChatApp);
 
   const outcome = useMemo(
     () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),
