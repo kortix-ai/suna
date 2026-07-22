@@ -75,8 +75,8 @@ export const PROJECT_PROVIDER_CONNECTIONS: ProjectProviderConnectionDefinition[]
     // (docs/specs/2026-07-21-llm-credential-and-model-management.md D1). This
     // hardcoded copy does NOT auto-derive from @kortix/shared's authKinds the
     // way the web/API surfaces do, so it must be updated by hand to stay in
-    // sync with compatibleHarnessesFor('codex_subscription') === ['codex','pi'].
-    compatibleHarnesses: ['codex', 'pi'],
+    // sync with compatibleHarnessesFor('codex_subscription') === ['codex','opencode','pi'].
+    compatibleHarnesses: ['codex', 'opencode', 'pi'],
     helpUrl: 'https://developers.openai.com/codex/auth',
   },
   {
