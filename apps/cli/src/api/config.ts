@@ -35,7 +35,7 @@ export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://
 // Local `pnpm dev` API server.
 export const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
 // Kortix-internal hosted dev API.
-export const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
+export const DEFAULT_INTERNAL_DEV_API_BASE = 'https://dev-api.kortix.com';
 // The self-host Docker stack publishes its API on this port by default
 // (see `kortix self-host` DEFAULT_API_URL). The built-in `selfhost` host is
 // pre-pointed here so `kortix hosts use selfhost` works before login;
