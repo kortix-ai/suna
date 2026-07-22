@@ -96,8 +96,15 @@ describe('composer capability auth resolution', () => {
       'native_config',
     ]);
     expect(kindsFor('codex')).toEqual(['codex_subscription', 'native_config', 'openai_api_key']);
+    // 2026-07-22 Codex-subscription widening: OpenCode gains codex_subscription
+    // (its OpenAI-compatible client speaks chat-completions, which the relay
+    // translates to the ChatGPT-backend Responses shape server-side —
+    // docs/specs/2026-07-21-llm-credential-and-model-management.md D1). The
+    // sorted set therefore includes codex_subscription; every other opencode
+    // kind is unchanged.
     expect(kindsFor('opencode')).toEqual([
       'anthropic_api_key',
+      'codex_subscription',
       'managed_gateway',
       'native_config',
       'openai_api_key',

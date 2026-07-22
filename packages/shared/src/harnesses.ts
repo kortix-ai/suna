@@ -104,9 +104,32 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
     modelNamespacing: 'gateway-prefixed',
     ownsDefaultModel: false,
     liveModelChange: true,
+    // 2026-07-22 Codex-subscription widening (docs/specs/2026-07-21-llm-
+    // credential-and-model-management.md D1, verdict: SAFE for Codex only).
+    // `codex_subscription` is added here — beyond its origin harness `codex`
+    // and Pi — because OpenCode reaches Codex through the AI-SDK gateway's
+    // EXISTING `codex/*` chat-completions path, not a bespoke endpoint: OpenCode
+    // keeps its normal Kortix managed-gateway provider (`/v1/llm` + the
+    // per-session executor PAT) and just selects a `codex/*`-namespaced model.
+    // The gateway then resolves the CALLER's OWN Codex OAuth credential
+    // server-side (`resolve-candidates.ts`, provider === 'codex' →
+    // `resolveCodexCredential`) and drives the ChatGPT Responses backend via the
+    // AI SDK's OpenAI `.responses()` model (chat↔Responses is the SDK's,
+    // `store:false` already handled for `openai-codex`), at
+    // `billingMode:'none'` — zero Kortix credits (proven live: a
+    // `codex/gpt-5.6-sol` completion booked `cost_usd = 0`, no credit_ledger
+    // row). The credential never reaches the sandbox, exactly as for `codex`/
+    // `pi`. Pure `authKinds` edit — every fan-out (the API's
+    // `compatibleHarnessesFor` projection, the web two-door modal's
+    // `METHOD_COMPATIBLE_HARNESSES`, `/auth-providers`' `compatibleHarnesses`,
+    // `composer-capabilities`' `CONNECTIONS`) derives from this one table, so
+    // OpenCode now appears wherever Codex/Pi do for this kind, automatically.
+    // `claude_subscription` stays pinned to `claude` only (Anthropic ToS:
+    // direct-only custody — never relayed).
     authKinds: [
       'managed_gateway',
       'anthropic_api_key',
+      'codex_subscription',
       'openai_api_key',
       'openai_compatible',
       'native_config',

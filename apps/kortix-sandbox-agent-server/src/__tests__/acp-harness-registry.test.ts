@@ -247,6 +247,50 @@ describe('ACP harness registry', () => {
     ).toThrow(/executor token/);
   });
 
+  test('routes an OpenCode codex_subscription session through the AI-SDK gateway codex/* lane (normal /v1/llm provider + executor PAT, codex-namespaced model) — never a bespoke relay or the sandbox token', () => {
+    // OpenCode keeps its normal managed-gateway provider (baseURL /v1/llm, apiKey
+    // = executor PAT) and just selects the codex/-namespaced model, so the AI-SDK
+    // gateway routes it to the user's subscription internally (provider==='codex'
+    // → resolveCodexCredential → billingMode 'none'). No bespoke relay endpoint,
+    // no sandbox token, no raw OAuth blob in the sandbox.
+    const registry = createAcpHarnessRegistry({
+      KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
+      KORTIX_RUNTIME_HARNESS: 'opencode',
+      CODEX_AUTH_JSON: '{"openai":{"type":"oauth"}}',
+      // Standard session env: the raw-relay pair (used by the eagerly-built
+      // codex/pi branches) AND the gateway pair (used by opencode's lane).
+      KORTIX_API_URL: 'https://api.example.test/v1',
+      KORTIX_EXECUTOR_TOKEN: 'kortix_pat_executor-token',
+      KORTIX_LLM_BASE_URL: 'https://api.example.test/v1/llm',
+      KORTIX_LLM_API_KEY: 'kortix_pat_executor-token',
+      KORTIX_TOKEN: 'sandbox-token',
+    });
+    const content = registry.get('opencode')?.launch.env?.OPENCODE_CONFIG_CONTENT ?? '{}';
+    const cfg = JSON.parse(content) as {
+      provider?: { kortix?: { options?: { baseURL?: string; apiKey?: string } } };
+      model?: string;
+    };
+    expect(cfg.provider?.kortix?.options?.baseURL).toBe('https://api.example.test/v1/llm');
+    expect(cfg.provider?.kortix?.options?.apiKey).toBe('kortix_pat_executor-token');
+    expect(content).not.toContain('/router/codex-subscription');
+    expect(content).not.toContain('sandbox-token');
+    // The raw subscription blob must never be embedded — it stays server-side.
+    expect(content).not.toContain('oauth');
+    expect(cfg.model).toBe('kortix/codex/gpt-5.6-sol');
+  });
+
+  test('the ACTIVE OpenCode codex_subscription launch with no gateway env fails loudly instead of silently falling back to a non-subscription route', () => {
+    expect(() =>
+      resolveAcpHarnessLaunchEnv('opencode', {
+        KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
+        KORTIX_RUNTIME_HARNESS: 'opencode',
+        CODEX_AUTH_JSON: '{"openai":{"type":"oauth"}}',
+        KORTIX_TOKEN: 'sandbox-token',
+        // No KORTIX_LLM_BASE_URL / KORTIX_LLM_API_KEY.
+      }),
+    ).toThrow(/gateway/);
+  });
+
   test('routes Codex through the scoped Kortix Responses gateway by default', () => {
     const registry = createAcpHarnessRegistry({
       KORTIX_API_URL: 'https://api.test/v1',

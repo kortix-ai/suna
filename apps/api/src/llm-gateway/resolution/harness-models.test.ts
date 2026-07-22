@@ -157,6 +157,38 @@ describe('resolveHarnessModels — the closed state union', () => {
     expect(result.default).toBe('gpt-5.6-sol');
   });
 
+  test('ready: opencode + codex_subscription — the ChatGPT-backend model set in the gateway `codex/*` namespace (OpenCode rides the AI-SDK gateway codex path, not the raw relay)', async () => {
+    // OpenCode is catalog-driven (ownsDefaultModel: false) like Pi, so a
+    // connected Codex subscription resolves to the ChatGPT-backend advertised
+    // set — never the gateway catalog. But OpenCode reaches Codex through the
+    // AI-SDK gateway's `codex/*` chat-completions path (its normal managed
+    // provider, model set swapped), which routes on the `codex/` prefix — so
+    // unlike Pi's BARE ids (raw relay, forwarded verbatim), OpenCode's ids carry
+    // the canonical `codex/<id>` gateway grammar. The set is otherwise the same
+    // list, provider-tagged `openai-codex`.
+    const { codexModelIds } = await import('../models/codex-models');
+    const result = await resolveHarnessModels({
+      harness: 'opencode',
+      projectId: 'proj-1',
+      userId: 'user-1',
+      env: { CODEX_AUTH_JSON: '{"openai":{}}' },
+      gatewayEnabled: false,
+      nativeConfigReady: false,
+      explicit: 'codex_subscription',
+      resolveCodex: async () => ({ access: 'token', accountId: undefined }),
+    });
+    expect(result.state).toBe('ready');
+    expect(result.ownsDefaultModel).toBe(false);
+    expect(result.credentialRef).toEqual({ kind: 'codex_subscription', scope: 'shared' });
+    expect(result.upstreamKind).toBe('gateway'); // codex_subscription is relay-eligible
+    expect(result.models.map((m) => m.id)).toEqual(codexModelIds().map((id) => `codex/${id}`));
+    for (const model of result.models) {
+      expect(model.provider).toBe('openai-codex');
+      expect(model.id.startsWith('codex/')).toBe(true);
+    }
+    expect(result.default).toBe('codex/gpt-5.6-sol');
+  });
+
   test('pi + codex_subscription whose credential resolves to nothing usable is no_credential, never a bogus catalog', async () => {
     const result = await resolveHarnessModels({
       harness: 'pi',

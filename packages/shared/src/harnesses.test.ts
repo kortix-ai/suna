@@ -76,6 +76,12 @@ describe('HARNESSES descriptor', () => {
     expect(HARNESSES.opencode.authKinds).toEqual([
       'managed_gateway',
       'anthropic_api_key',
+      // 2026-07-22 Codex-subscription widening: OpenCode's OpenAI-compatible
+      // client speaks chat-completions, which the subscription relay now
+      // translates to the ChatGPT-backend Responses shape server-side
+      // (docs/specs/2026-07-21-llm-credential-and-model-management.md D1), so
+      // it is usable on OpenCode as well as Codex/Pi.
+      'codex_subscription',
       'openai_api_key',
       'openai_compatible',
       'native_config',
@@ -137,13 +143,14 @@ describe('compatibleHarnessesFor — pure inverse of HARNESSES[*].authKinds', ()
   it('matches the founder matrix per kind (with the 2026-07-22 Codex-subscription widening)', () => {
     expect(compatibleHarnessesFor('managed_gateway').sort()).toEqual(['opencode', 'pi']);
     expect(compatibleHarnessesFor('claude_subscription')).toEqual(['claude']);
-    // 2026-07-22: Codex subscription is now usable on Pi as well as Codex —
+    // 2026-07-22: Codex subscription is now usable on Codex, OpenCode, and Pi —
     // the credential relays server-side (never reaches the sandbox), which is
     // safe per docs/specs/2026-07-21-llm-credential-and-model-management.md D1.
-    // HARNESS_IDS order is [claude, codex, opencode, pi], so the derived
-    // inverse is [codex, pi]. Claude subscription stays pinned to Claude only
-    // (Anthropic ToS: direct-only custody).
-    expect(compatibleHarnessesFor('codex_subscription')).toEqual(['codex', 'pi']);
+    // OpenCode reaches it through the chat-completions→Responses translation
+    // lane on the same relay. HARNESS_IDS order is [claude, codex, opencode,
+    // pi], so the derived inverse is [codex, opencode, pi]. Claude subscription
+    // stays pinned to Claude only (Anthropic ToS: direct-only custody).
+    expect(compatibleHarnessesFor('codex_subscription')).toEqual(['codex', 'opencode', 'pi']);
     expect(compatibleHarnessesFor('anthropic_compatible')).toEqual([]);
     expect(compatibleHarnessesFor('native_config').sort()).toEqual([...HARNESS_IDS].sort());
   });

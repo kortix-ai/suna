@@ -306,14 +306,24 @@ function codexModelDisplayName(id: string): string {
  * (a gateway-style `openai/…`-prefixed id is rejected 400), so the ids stay
  * bare here — the provider tag (`openai-codex`, matching `codexDescriptor`)
  * carries the routing fact so no consumer parses the id. This is what makes a
- * catalog-driven harness (`ownsDefaultModel: false` — Pi) resolve to a real,
- * non-empty, subscription-correct list instead of falling through to the
+ * catalog-driven harness (`ownsDefaultModel: false` — Pi, OpenCode) resolve to
+ * a real, non-empty, subscription-correct list instead of falling through to the
  * gateway catalog (which knows nothing of the ChatGPT-backend model set) and
  * landing in `healthy_but_no_models`.
  */
-function codexSubscriptionModels(): ResolvedModel[] {
+function codexSubscriptionModels(namespacing: 'bare' | 'gateway-prefixed'): ResolvedModel[] {
+  // Pi speaks OpenAI Responses natively and relays through /router/codex-
+  // subscription, which forwards the model id VERBATIM to the ChatGPT backend —
+  // so Pi's ids must stay BARE (`gpt-5.6-sol`). OpenCode instead rides the
+  // AI-SDK gateway's `codex/*` chat-completions path (its normal managed-gateway
+  // provider, model set swapped for the codex ids), where the gateway routes on
+  // the `codex/` prefix (resolve-candidates.ts: provider === 'codex') — so its
+  // ids carry the canonical `codex/<id>` grammar. Mirrors the per-harness
+  // `modelNamespacing` field (`HARNESSES[*].modelNamespacing`); the provider tag
+  // stays `openai-codex` for both, carrying the routing fact so no consumer
+  // parses the id.
   return codexModelIds().map((id) => ({
-    id,
+    id: namespacing === 'gateway-prefixed' ? `codex/${id}` : id,
     name: codexModelDisplayName(id),
     provider: 'openai-codex',
   }));
@@ -504,12 +514,15 @@ export async function resolveHarnessModels(
 
   const models =
     kind === 'codex_subscription'
-      ? // Reached only for a catalog-driven harness (Pi) — the `codex` harness
+      ? // Reached for a catalog-driven harness (`ownsDefaultModel: false` — Pi,
+        // and per the 2026-07-22 widening, OpenCode) — the `codex` harness
         // (`ownsDefaultModel: true`) already returned `ready` with an empty
         // list above and advertises its own models over ACP. A Codex
         // subscription's models are the ChatGPT-backend set, never the gateway
-        // catalog, so this bypasses `conditionedCatalogModels` entirely.
-        codexSubscriptionModels()
+        // catalog, so this bypasses `conditionedCatalogModels` entirely. The id
+        // grammar follows the harness's own namespacing (bare for Pi's raw
+        // relay, `codex/`-prefixed for OpenCode's gateway lane).
+        codexSubscriptionModels(descriptor.modelNamespacing)
       : kind === 'openai_compatible' || kind === 'anthropic_compatible' || kind === 'native_config'
         ? directOrCustomModels(kind, input.env)
         : await conditionedCatalogModels({

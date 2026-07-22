@@ -305,6 +305,103 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // the two early returns — carries it.
     const native = { ...outerNative, PATH: env.PATH?.trim() || HARNESS_DEFAULT_PATH }
     const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
+    if (authKind === 'codex_subscription') {
+      // 2026-07-22 Codex-subscription widening. OpenCode is NOT pointed at a
+      // bespoke translation endpoint — it keeps its NORMAL Kortix managed-gateway
+      // provider (`buildOpencodeKortixProvider`: baseURL = the in-process
+      // `/v1/llm` gateway, apiKey = the per-session executor PAT). The ONLY
+      // difference from a managed_gateway session is the model set: instead of
+      // the full gateway catalog, OpenCode is given the ChatGPT-backend codex
+      // model(s) in the gateway's `codex/*` namespace (default
+      // `kortix/codex/gpt-5.6-sol`).
+      //
+      // The gateway itself does the rest, with zero new code: a chat-completions
+      // request carrying `model: codex/<id>` routes through the AI-SDK gateway's
+      // existing `codex/*` path (`resolve-candidates.ts` → provider === 'codex'),
+      // which resolves the CALLER's OWN Codex OAuth credential server-side
+      // (`resolveCodexCredential(principal.projectId, principal.userId)` — the
+      // executor PAT resolves to exactly that principal) and drives the ChatGPT
+      // Responses backend via the AI SDK's OpenAI `.responses()` model (the chat
+      // ↔ Responses translation is the SDK's, maintained by Vercel, and already
+      // sets `store: false` for `openai-codex`). `codexDescriptor`'s
+      // `billingMode: 'none'` means zero Kortix credits are deducted — proven
+      // live 2026-07-22: a `codex/gpt-5.6-sol` completion booked `cost_usd = 0`
+      // and no `credit_ledger` row. So OpenCode gets the subscription for free,
+      // using the same gateway lane the modern `codex/*` models already ride —
+      // no relay, no translator, no billing bypass.
+      //
+      // The executor PAT (KORTIX_LLM_API_KEY) is what makes this custody-safe:
+      // it carries the launching user's project/user id, so the gateway resolves
+      // THAT user's credential and never a Kortix platform key. Fail closed if
+      // the gateway env is absent rather than silently degrading.
+      const gatewayProvider = buildOpencodeKortixProvider(env)
+      if (!gatewayProvider) {
+        // The active OpenCode launch with the gateway env missing is a real
+        // misconfiguration — fail closed (no silent Zen-only fallback). But
+        // `createAcpHarnessRegistry` eagerly evaluates EVERY harness for its
+        // diagnostic snapshot: a codex_subscription session whose ACTIVE harness
+        // is codex/pi (the raw-relay lane, which legitimately has no KORTIX_LLM_*)
+        // must not have opencode's branch throw and break the active harness's
+        // launch. So only throw when OpenCode is the harness actually being
+        // launched; otherwise degrade to native like the managed_gateway branch
+        // below does when its provider can't be built. There is no billing-leak
+        // risk either way: OpenCode's codex lane is the SAME gateway + executor
+        // PAT a managed session uses — a missing gateway just yields no provider,
+        // never a Kortix-billed fallback.
+        if (env.KORTIX_RUNTIME_HARNESS?.trim() === 'opencode') {
+          throw new Error(
+            'Codex subscription auth for OpenCode requires the Kortix LLM gateway env ' +
+              '(KORTIX_LLM_BASE_URL + KORTIX_LLM_API_KEY, the per-session executor PAT); ' +
+              'refusing to fall back to a non-subscription route.',
+          )
+        }
+        return Object.keys(native).length ? native : undefined
+      }
+      // Canonical `codex/<id>` grammar so the gateway's resolve-candidates sees
+      // provider === 'codex'. A caller-selected `runtimeModel` (fed from the
+      // advertised set the composer resolves via resolveHarnessModels, already
+      // `codex/`-prefixed for OpenCode's gateway-prefixed namespacing) wins;
+      // normalize either shape to exactly one `codex/` prefix.
+      const codexModel = `codex/${(runtimeModel || 'codex/gpt-5.6-sol').replace(/^codex\//, '')}`
+      let existing: Record<string, unknown> = {}
+      try {
+        const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT || '{}')
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) existing = parsed
+      } catch {
+        // Invalid inherited content must not suppress manifest-selected routing.
+      }
+      return {
+        ...native,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          ...existing,
+          provider: {
+            ...(existing.provider && typeof existing.provider === 'object' && !Array.isArray(existing.provider)
+              ? (existing.provider as Record<string, unknown>)
+              : {}),
+            // Same npm/options (baseURL=/v1/llm, apiKey=executor PAT) as the
+            // managed provider — only the model set and display name change.
+            kortix: {
+              ...gatewayProvider,
+              name: 'Kortix Codex Subscription',
+              models: {
+                [codexModel]: {
+                  name: codexModel,
+                  reasoning: true,
+                  tool_call: true,
+                  attachment: true,
+                  temperature: false,
+                  limit: { context: 400_000, output: 128_000 },
+                },
+              },
+            },
+          },
+          enabled_providers: ['kortix'],
+          model: `kortix/${codexModel}`,
+          small_model: `kortix/${codexModel}`,
+          ...(nativeAgent ? { default_agent: nativeAgent } : {}),
+        }),
+      }
+    }
     const gatewayProvider =
       custom || (authKind && authKind !== 'managed_gateway')
         ? null

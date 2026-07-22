@@ -72,7 +72,7 @@ severity" below) — every harness in this table is equally selectable/startable
 |---|---|---|---|---|---|---|---|---|
 | `claude` | Claude Code | `@agentclientprotocol/claude-agent-acp` | `.claude` | experimental | bare | yes | no | `claude_subscription`, `anthropic_api_key`, `native_config` |
 | `codex` | Codex | `@agentclientprotocol/codex-acp` | `.codex` | experimental | bare | yes | no | `codex_subscription`, `openai_api_key`, `native_config` |
-| `opencode` | OpenCode | `opencode-ai` | `.opencode` | stable | gateway-prefixed | no | yes | `managed_gateway`, `anthropic_api_key`, `openai_api_key`, `openai_compatible`, `native_config` |
+| `opencode` | OpenCode | `opencode-ai` | `.opencode` | stable | gateway-prefixed | no | yes | `managed_gateway`, `anthropic_api_key`, `codex_subscription`, `openai_api_key`, `openai_compatible`, `native_config` |
 | `pi` | Pi | `pi-acp` | `.pi` | experimental | bare | no | no | `managed_gateway`, `anthropic_api_key`, `codex_subscription`, `openai_api_key`, `openai_compatible`, `native_config` |
 
 `subscriptionAuth`: `claude` → `oauth-token`, `codex` → `oauth-device`,
@@ -94,13 +94,20 @@ table (`compatible_harnesses` per auth kind) and its top-of-block comment
   `anthropic_api_key`, `openai_api_key`, `openai_compatible`, and
   `native_config` are all compatible with both.
 - **2026-07-22 Codex-subscription widening.** `codex_subscription` is now also
-  in `HARNESSES.pi.authKinds` (so `compatibleHarnessesFor('codex_subscription')`
-  is `['codex', 'pi']`, not `['codex']`). Pi speaks OpenAI Responses natively —
-  the same wire shape the subscription relay speaks — and the credential never
-  reaches the sandbox: it is resolved/refreshed server-side and relayed through
-  `/v1/router/codex-subscription` (`billingMode:'none'`, fail-closed), exactly
-  as for the `codex` harness. The `claude_subscription` pin to `claude`-only is
-  deliberately unchanged: `CREDENTIAL_CUSTODY.claude_subscription` is
+  in `HARNESSES.pi.authKinds` AND `HARNESSES.opencode.authKinds` (so
+  `compatibleHarnessesFor('codex_subscription')` is `['codex', 'opencode', 'pi']`,
+  not `['codex']`). Two different lanes to the SAME server-side credential, both
+  `billingMode:'none'` and fail-closed, credential never reaching the sandbox:
+  **Pi** speaks OpenAI Responses natively and relays through
+  `/v1/router/codex-subscription` (forwards the model id verbatim, so Pi's ids
+  stay BARE). **OpenCode** keeps its normal managed-gateway provider (`/v1/llm`
+  + the per-session executor PAT) and just selects a `codex/*`-namespaced model,
+  riding the AI-SDK gateway's existing `codex/*` chat-completions path
+  (`resolve-candidates.ts`, provider === 'codex' → `resolveCodexCredential` →
+  the ChatGPT Responses backend via the AI SDK's `.responses()` model) — no
+  bespoke endpoint, no translator. The `claude_subscription` pin to
+  `claude`-only is deliberately unchanged: `CREDENTIAL_CUSTODY.claude_subscription`
+  is
   `direct-only` (Anthropic ToS forbids relaying that token), so it is handed
   verbatim to the harness process and cannot be widened the same way. See
   docs/specs/2026-07-21-llm-credential-and-model-management.md D1.
