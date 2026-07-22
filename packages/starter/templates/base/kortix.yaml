@@ -63,12 +63,11 @@ env:
 # These are launch profiles, not translated configuration. The selected
 # official ACP adapter reads the harness's own native files directly.
 #
-# OpenCode is the only profile declared by default — it's the one stable,
-# supported harness. Claude Code, Codex, and Pi are experimental: add a
-# `runtimes` entry (and a matching `agents` entry below) for one of them only
-# once you've turned on "Experimental harnesses" for this project in
-# Settings → Experimental — an undeclared/unselected experimental harness
-# never shows up as a launch option.
+# OpenCode is the only profile declared by default — it's the default
+# harness. Claude Code, Codex, and Pi are fully supported too: add a
+# `runtimes` entry (and a matching `agents` entry below) for any of them and
+# it becomes selectable immediately. An undeclared harness never shows up as
+# a launch option.
 runtimes:
   opencode:
     harness: opencode
