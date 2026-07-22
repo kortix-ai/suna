@@ -1,5 +1,5 @@
 import { AlarmClock, ChatMessages, Sparkles } from '@mynaui/icons-react';
-import { Bot, Container, GitFork, KeyRound, Plug, Webhook } from 'lucide-react';
+import { Bot, Boxes, Container, GitFork, KeyRound, Plug, Webhook } from 'lucide-react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 
 import type { RailGroup } from './type';
@@ -30,6 +30,12 @@ export const GROUPS: readonly RailGroup[] = [
   {
     label: 'Connect',
     items: [
+      // Models (the two-door connect surface) leads the Connect group so the
+      // connect flow is reachable from the rail, not only via composer
+      // deep-links. `customize-panel.tsx` filters it out for projects where the
+      // managed gateway isn't available (the same `llmGatewayAvailable` gate
+      // that used to splice it in here).
+      { section: 'llm-management', label: 'Models', icon: Boxes },
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Environment variables', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },

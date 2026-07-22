@@ -10,9 +10,11 @@ import {
   notExposedCatalogText,
 } from '@kortix/sdk/react';
 
+import { connectionStatusBadge } from './connection-status';
+
 function joinAnd(items: string[]): string {
   if (items.length === 0) return '';
-  if (items.length === 1) return items[0]!;
+  if (items.length === 1) return items[0] ?? '';
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
@@ -67,23 +69,8 @@ export function ConnectionRow({
               <span className="text-foreground truncate text-sm font-medium">
                 {connection.name}
               </span>
-              <Badge
-                variant={
-                  connection.status === 'ready'
-                    ? 'success'
-                    : connection.status === 'needs-attention' || connection.status === 'unavailable'
-                      ? 'destructive'
-                      : 'secondary'
-                }
-                size="sm"
-              >
-                {connection.status === 'ready'
-                  ? 'Connected'
-                  : connection.status === 'needs-attention'
-                    ? 'Needs attention'
-                    : connection.status === 'unavailable'
-                      ? 'Unavailable'
-                      : 'Checking'}
+              <Badge variant={connectionStatusBadge(connection.status).variant} size="sm">
+                {connectionStatusBadge(connection.status).label}
               </Badge>
             </div>
             <p className="text-muted-foreground truncate text-xs text-pretty">

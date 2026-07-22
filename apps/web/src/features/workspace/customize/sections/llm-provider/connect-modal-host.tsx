@@ -119,6 +119,7 @@ export function ConnectModalHost() {
       }}
       runtimes={state.runtimes}
       connections={state.connections}
+      connectedProviderIds={state.connectedProviderIds}
       harnessFilter={harnessFilter ?? null}
       initialKind={(connectKind as HarnessAuthKind | undefined) ?? null}
       initialProviderId={providerId ?? null}

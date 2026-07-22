@@ -30,7 +30,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { ArrowLeft } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowUpCircle, AudioLines, Boxes, Inbox, Monitor, Store } from 'lucide-react';
+import { ArrowUpCircle, AudioLines, Inbox, Monitor, Store } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
@@ -40,8 +40,6 @@ import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailGroup, RailItem } from './type';
-
-const LLM_ITEM: RailItem = { section: 'llm-management', label: 'Models', icon: Boxes };
 
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
@@ -70,10 +68,13 @@ function railGroups(
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
     if (g.label === 'Connect') {
-      const items = [...g.items];
+      // Models lives in the base Connect group (rail-groups.ts) so it's always
+      // in the nav; drop it only where the managed gateway isn't available.
+      const items = g.items.filter(
+        (item) => item.section !== 'llm-management' || llmGatewayAvailable,
+      );
       if (meetEnabled) items.push(MEET_ITEM);
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
-      if (llmGatewayAvailable) items.push(LLM_ITEM);
       return { ...g, items };
     }
     if (g.label === 'Build' && reviewEnabled) {

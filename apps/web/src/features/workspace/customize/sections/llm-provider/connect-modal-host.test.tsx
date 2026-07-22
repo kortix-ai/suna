@@ -62,7 +62,9 @@ mock.module('next/image', () => ({
   },
 }));
 
-const { ConnectModalHost, useConnectModal, useConnectModalStore } = await import('./connect-modal-host');
+const { ConnectModalHost, useConnectModal, useConnectModalStore } = await import(
+  './connect-modal-host'
+);
 
 afterEach(() => {
   cleanup();
@@ -134,29 +136,31 @@ describe('ConnectModalHost — the one root-mounted connect surface', () => {
     expect(overlay?.style.zIndex).toBe('10018');
   });
 
-  test('a connectKind opens straight into that method\'s form, skipping the method list', () => {
+  test("a connectKind opens straight into that method's form, skipping the two doors", () => {
     useConnectModalStore.setState({ isOpen: true, connectKind: 'anthropic_api_key' });
     render(ReactModule.createElement(ConnectModalHost));
 
     expect(screen.queryByText('Connect a model service')).toBeDefined();
-    // The method list itself never rendered — jumped straight to the
-    // Anthropic API-key form.
-    expect(screen.queryByText('Claude via your own API key')).toBeNull();
+    // Neither door header rendered — jumped straight to the Anthropic
+    // API-key form.
+    expect(screen.queryByText('Use an API key')).toBeNull();
+    expect(screen.queryByText('Sign in with an account')).toBeNull();
   });
 
-  test('the footer Back button returns from a form to the method list', () => {
+  test('the footer Back button returns from a form to the two doors', () => {
     useConnectModalStore.setState({ isOpen: true, connectKind: 'anthropic_api_key' });
     render(ReactModule.createElement(ConnectModalHost));
 
-    // On a form: no method list, but the footer Back button is there.
-    expect(screen.queryByText('Claude via your own API key')).toBeNull();
+    // On a form: no door headers, but the footer Back button is there.
+    expect(screen.queryByText('Use an API key')).toBeNull();
 
     act(() => {
       screen.getByText('Back').click();
     });
 
-    // Back on the method list — and the footer Back button is gone with it.
-    expect(screen.getByText('Claude via your own API key')).toBeDefined();
+    // Back on the two doors — and the footer Back button is gone with it.
+    expect(screen.getByText('Use an API key')).toBeDefined();
+    expect(screen.getByText('Sign in with an account')).toBeDefined();
     expect(screen.queryByText('Back')).toBeNull();
   });
 
