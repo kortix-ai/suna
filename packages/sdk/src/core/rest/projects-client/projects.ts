@@ -24,8 +24,7 @@ export type ExperimentalFeatureKey =
   | 'agentmail_email'
   | 'meet'
   | 'llm_gateway'
-  | 'review_center'
-  | 'experimental_harnesses';
+  | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

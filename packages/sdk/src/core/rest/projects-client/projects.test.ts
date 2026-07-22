@@ -81,9 +81,10 @@ test('returns ok:false without hitting the network when credentials are missing'
 });
 
 // DISC-07: the SDK's local ExperimentalFeatureKey union mirrors
-// @kortix/api-contract's ExperimentalFeatureMapSchema keys and had drifted,
-// missing `experimental_harnesses`. Type-level assertion — a regression here
-// is a typecheck failure, not a runtime one.
+// @kortix/api-contract's ExperimentalFeatureMapSchema keys. Type-level
+// assertion — a regression here is a typecheck failure, not a runtime one.
+// (`experimental_harnesses` was removed 2026-07-22: multi-harness is no
+// longer gated — commit bc755191a.)
 test('ExperimentalFeatureKey union includes every api-contract registry key', () => {
   const keys: ExperimentalFeatureKey[] = [
     'agent_tunnel',
@@ -92,9 +93,6 @@ test('ExperimentalFeatureKey union includes every api-contract registry key', ()
     'meet',
     'llm_gateway',
     'review_center',
-    'experimental_harnesses',
   ];
-  const harnesses: ExperimentalFeatureKey = 'experimental_harnesses';
-  expect(keys).toContain(harnesses);
-  expect(keys).toHaveLength(7);
+  expect(keys).toHaveLength(6);
 });
