@@ -8,14 +8,10 @@ import type { ProjectSessionRow } from './lib/serializers';
 
 // Deferred title capture, scheduled off the prompt proxy path.
 //
-// The list-time sync (opencode-title-sync.ts) only reads titles from ACTIVE
-// sandboxes — a session whose sandbox goes to sleep before the user next opens
-// the session list never gets its real title and shows as untitled forever
-// (the wall of "New session - <date>" rows). The one moment a sandbox is
-// GUARANTEED awake is right after it served a prompt, and OpenCode's
-// summarizer produces the real title within seconds of the first reply — so
-// the proxy schedules a capture here instead of hoping a list request happens
-// to race the sandbox's nap.
+// Session read routes do not contact sandbox runtimes. The one moment a sandbox
+// is guaranteed awake is after it served a prompt. OpenCode's summarizer
+// produces the real title after the first reply. The proxy schedules capture
+// here so title enrichment never delays a session list or detail response.
 //
 // Fire-and-forget by design: never blocks or fails the prompt request, one
 // pending capture per session, a single retry when the summarizer hasn't
@@ -88,7 +84,7 @@ export function scheduleTitleCaptureAfterPrompt(
       await attempt();
     } catch (err) {
       // Best-effort enrichment: a failed capture must never surface — the
-      // list-time sync remains as the fallback path.
+      // The next prompt schedules another capture attempt.
       appLogger.warn('[title-capture] deferred capture failed', {
         sessionId: input.sessionId,
         projectId: input.projectId,
