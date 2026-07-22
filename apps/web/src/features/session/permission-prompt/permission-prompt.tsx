@@ -176,6 +176,15 @@ export interface PermissionPromptProps {
    *  click, "allow everything", or a policy auto-answer) goes through this
    *  SAME function. Never invent a parallel respond. */
   onReply: (id: AcpJsonRpcId, optionId?: string) => Promise<void> | void;
+  /** Switch the whole session to its most-permissive advertised mode
+   *  (claude → bypassPermissions, codex → agent-full-access). "Allow all" calls
+   *  this so the harness STOPS sending new `session/request_permission`s —
+   *  resolving the currently-pending ones alone doesn't help when the running
+   *  turn keeps generating more (the "even when I click Allow everything it
+   *  doesn't work" bug). Resolves to `true` when a permissive mode was applied,
+   *  `false` when this harness advertises none. Optional so a host that can't
+   *  change mode still gets a working per-request prompt. */
+  onAllowAllMode?: () => Promise<boolean> | boolean | void;
 }
 
 export function PermissionPrompt({
@@ -185,6 +194,7 @@ export function PermissionPrompt({
   autoApprove,
   onAutoApproveChange,
   onReply,
+  onAllowAllMode,
 }: PermissionPromptProps) {
   const reduceMotion = useReducedMotion() ?? false;
   const rowMotion = rowSwapVariants(reduceMotion);
@@ -376,6 +386,19 @@ export function PermissionPrompt({
     setBusy('all');
     try {
       onAutoApproveChange(true);
+      // Flip the session to its most-permissive advertised mode FIRST, so the
+      // running turn stops emitting new permission requests the instant it
+      // asks for its next tool — resolving only the currently-pending ones (the
+      // loop below) is not enough when the agent keeps generating more (the
+      // real "Allow everything doesn't work" symptom). Best-effort: a harness
+      // that advertises no such mode (or a transient failure) still falls
+      // through to resolving the pending requests + the client-side backstop.
+      try {
+        await onAllowAllMode?.();
+      } catch {
+        // ignore — the client-side autoApprove backstop + per-request replies
+        // below still unblock the currently-pending requests.
+      }
       await Promise.all(
         permissions.map(async (permission) => {
           const { allowOnce } = resolvePermissionActionOptions(permission.options);
@@ -421,7 +444,7 @@ export function PermissionPrompt({
       setBusy(null);
       setConfirmAllOpen(false);
     }
-  }, [permissions, pendingConnectorActions, onReply, onAutoApproveChange, resolveConnector, addRecord]);
+  }, [permissions, pendingConnectorActions, onReply, onAutoApproveChange, onAllowAllMode, resolveConnector, addRecord]);
 
   const qualifiedConnectorActions = [
     ...new Set(pendingConnectorActions.map(qualifiedConnectorAction).filter((q): q is string => !!q)),
@@ -443,148 +466,173 @@ export function PermissionPrompt({
   // React key.
   const visiblePermissions = permissions.filter((permission) => !(JSON.stringify(permission.id) in records));
   const visibleConnectorActions = pendingConnectorActions.filter((a) => !(a.execution_id in records));
+  const pendingCount = permissions.length + pendingConnectorActions.length;
 
   return (
-    <div data-testid="acp-session-permission-prompt" className="bg-popover mb-2 rounded-md border px-4 py-3">
+    <div data-testid="acp-session-permission-prompt" className="bg-popover mb-2 rounded-md border">
       {hasPending || hasRecords ? (
-        <div className="mb-3 flex items-center gap-3">
+        // Header doubles as the batch-action bar: the primary "Allow all" lives
+        // HERE, not in a redundant footer, so N stacked requests never blow out
+        // the composer — one click clears them all AND switches the session to
+        // bypass so no more arrive (see `confirmAllowEverything`/`onAllowAllMode`).
+        <div className="flex items-center gap-3 border-b px-4 py-3">
           <span className="bg-kortix-yellow/15 flex size-9 shrink-0 items-center justify-center rounded-sm">
             <ShieldAlert className="text-kortix-yellow size-5" />
           </span>
-          <div className="min-w-0">
-            <div className="text-sm font-medium">Needs your permission</div>
-            <div className="text-muted-foreground text-xs">Paused until you decide</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Permission needed</div>
+            <div className="text-muted-foreground text-xs">
+              {pendingCount > 1
+                ? `${pendingCount} actions paused — approve to continue`
+                : 'Paused until you decide'}
+            </div>
           </div>
+          {hasPending ? (
+            <Button
+              size="sm"
+              className={cn(ACTION_BUTTON_CLASS, 'shrink-0')}
+              title="Allow every pending and future action this session — switches the agent to bypass mode"
+              disabled={!!busy}
+              onClick={() => setConfirmAllOpen(true)}
+            >
+              {busy === 'all' ? <Loading className="size-3 shrink-0" /> : null}
+              Allow all
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
-      <AnimatePresence initial={false}>
-        {visiblePermissions.map((permission) => {
-          const idKey = JSON.stringify(permission.id);
-          const { allowOnce, allowSession, deny, extra } = resolvePermissionActionOptions(permission.options);
-          const detail = permissionDetail(permission);
-          const tool = permission.permission;
-          const remembered = policy.toolDecisions[tool] === 'allow';
-          const rowBusy = busy?.startsWith(`${idKey}:`) ? busy.split(':')[1] : null;
-          return (
-            <motion.div key={idKey} {...rowMotion} className="border-border/60 space-y-2 border-b py-2 last:border-b-0 last:pb-0">
-              <div>
-                <div className="text-xs font-medium">{permissionLabel(permission)}</div>
-                {detail ? (
-                  <code title={detail} className="text-muted-foreground mt-0.5 block truncate font-mono text-[11px]">
-                    {detail}
-                  </code>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Button
-                  size="sm"
-                  variant="outline-ghost"
-                  className={cn(ACTION_BUTTON_CLASS, 'hover:bg-destructive/10 hover:text-destructive')}
-                  disabled={!!busy}
-                  onClick={() => void replyAcp(permission, 'deny', deny)}
+      <div className="px-4 py-1">
+        <AnimatePresence initial={false}>
+          {visiblePermissions.map((permission) => {
+            const idKey = JSON.stringify(permission.id);
+            const { allowOnce, allowSession, deny, extra } = resolvePermissionActionOptions(permission.options);
+            const detail = permissionDetail(permission);
+            const tool = permission.permission;
+            const remembered = policy.toolDecisions[tool] === 'allow';
+            const rowBusy = busy?.startsWith(`${idKey}:`) ? busy.split(':')[1] : null;
+            return (
+              <motion.div key={idKey} {...rowMotion} className="border-border/60 flex flex-col gap-2 border-b py-2.5 last:border-b-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 pt-1">
+                    <div className="text-xs font-medium">{permissionLabel(permission)}</div>
+                    {detail ? (
+                      <code title={detail} className="text-muted-foreground mt-0.5 block truncate font-mono text-[11px]">
+                        {detail}
+                      </code>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline-ghost"
+                      className={cn(ACTION_BUTTON_CLASS, 'hover:bg-destructive/10 hover:text-destructive')}
+                      disabled={!!busy}
+                      onClick={() => void replyAcp(permission, 'deny', deny)}
+                    >
+                      {rowBusy === 'deny' ? <Loading className="size-3 shrink-0" /> : null}
+                      Deny
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className={ACTION_BUTTON_CLASS}
+                      data-testid="acp-permission-allow-once"
+                      disabled={!!busy}
+                      onClick={() => void replyAcp(permission, 'once', allowOnce)}
+                    >
+                      {rowBusy === 'once' ? <Loading className="size-3 shrink-0" /> : null}
+                      Allow once
+                    </Button>
+                    {extra.map((option) => (
+                      <Button
+                        key={optionValue(option)}
+                        size="sm"
+                        variant="outline"
+                        className={ACTION_BUTTON_CLASS}
+                        disabled={!!busy}
+                        onClick={() => void replyAcp(permission, 'once', option)}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                    {allowSession ? (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className={ACTION_BUTTON_CLASS}
+                        title="Allow this action for the rest of this session — the agent won't ask again for it"
+                        disabled={!!busy}
+                        onClick={() => void replyAcp(permission, 'session', allowSession)}
+                      >
+                        {rowBusy === 'session' ? <Loading className="size-3 shrink-0" /> : null}
+                        Allow for session
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {/* Cross-session project policy — a genuinely distinct outcome
+                    (`rememberToolDecision`), kept as one quiet, subordinate line
+                    per row rather than the old full-width switch block. A plain
+                    clickable row (not a <button>, which can't legally wrap the
+                    Switch's own <button>) gives the label a real hit area; the
+                    Switch stays the focusable/keyboard control. */}
+                <div
+                  role="button"
+                  tabIndex={-1}
+                  className={cn(
+                    '-my-1 flex w-fit cursor-pointer items-center gap-2 py-1 text-[11px] transition-colors select-none',
+                    remembered ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  onClick={() => {
+                    if (!remembered && !busy) remember(tool, 'allow');
+                  }}
                 >
-                  {rowBusy === 'deny' ? <Loading className="size-3 animate-spin" /> : null}
-                  Deny
-                </Button>
-                <div className="flex flex-wrap items-center gap-2">
+                  <Switch
+                    aria-label="Remember for this project"
+                    checked={remembered}
+                    disabled={!!busy}
+                    className="scale-90"
+                    onCheckedChange={(checked) => {
+                      if (checked) remember(tool, 'allow');
+                    }}
+                  />
+                  {remembered ? 'Always allowed in this project' : 'Always allow in this project'}
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {visibleConnectorActions.map((a) => {
+            const rowBusy = busy?.startsWith(`${a.execution_id}:`) ? busy.split(':')[1] : null;
+            const qualified = qualifiedConnectorAction(a);
+            return (
+              <motion.div key={a.execution_id} {...rowMotion} className="border-border/60 flex items-start justify-between gap-3 border-b py-2.5 last:border-b-0">
+                <div className="min-w-0 flex-1 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground text-xs">Run</span>
+                    <code title={qualified ?? a.action} className="text-foreground truncate font-mono text-xs font-medium">
+                      {a.action}
+                    </code>
+                    {a.risk ? (
+                      <Badge variant={riskTone(a.risk)} size="xs" className="shrink-0 capitalize">
+                        {a.risk}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="text-muted-foreground mt-0.5 text-[11px]">Requested {relativeTime(a.at)}</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                   <Button
                     size="sm"
-                    variant="secondary"
-                    className={ACTION_BUTTON_CLASS}
-                    data-testid="acp-permission-allow-once"
+                    variant="outline-ghost"
+                    className={cn(ACTION_BUTTON_CLASS, 'hover:bg-destructive/10 hover:text-destructive')}
                     disabled={!!busy}
-                    onClick={() => void replyAcp(permission, 'once', allowOnce)}
+                    onClick={() => decideConnector(a.execution_id, 'deny')}
                   >
-                    {rowBusy === 'once' ? <Loading className="size-3 animate-spin" /> : null}
-                    Allow once
+                    {rowBusy === 'deny' ? <Loading className="size-3 shrink-0" /> : null}
+                    Deny
                   </Button>
-                  {extra.map((option) => (
-                    <Button
-                      key={optionValue(option)}
-                      size="sm"
-                      variant="outline"
-                      className={ACTION_BUTTON_CLASS}
-                      disabled={!!busy}
-                      onClick={() => void replyAcp(permission, 'once', option)}
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                  {allowSession ? (
-                    <Button
-                      size="sm"
-                      variant="default"
-                      className={ACTION_BUTTON_CLASS}
-                      title="Allow this action for the rest of this session — the agent won't ask again for it"
-                      disabled={!!busy}
-                      onClick={() => void replyAcp(permission, 'session', allowSession)}
-                    >
-                      {rowBusy === 'session' ? <Loading className="size-3 animate-spin" /> : null}
-                      Allow for session
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-              {/* `Switch`'s own `label` prop renders the text as an inert
-                  sibling `<span>` — clicking it does nothing, since a
-                  non-form-control `<button role="switch">` gets no native
-                  label-click delegation. Wrapping it here (instead of using
-                  that prop) gives the whole row a real ≥40px-tall click
-                  target, not just the 20px track. */}
-              <div
-                className="-mx-3 -my-1 flex cursor-pointer items-center gap-2.5 px-3 py-2 select-none"
-                onClick={() => {
-                  if (!remembered) remember(tool, 'allow');
-                }}
-              >
-                <Switch
-                  aria-label="Remember for this project"
-                  checked={remembered}
-                  disabled={!!busy}
-                  onCheckedChange={(checked) => {
-                    if (checked) remember(tool, 'allow');
-                  }}
-                />
-                <span className={cn('text-sm transition-colors duration-80', remembered ? 'text-foreground' : 'text-muted-foreground')}>
-                  Remember for this project
-                </span>
-              </div>
-            </motion.div>
-          );
-        })}
-
-        {visibleConnectorActions.map((a) => {
-          const rowBusy = busy?.startsWith(`${a.execution_id}:`) ? busy.split(':')[1] : null;
-          const qualified = qualifiedConnectorAction(a);
-          return (
-            <motion.div key={a.execution_id} {...rowMotion} className="border-border/60 space-y-2 border-b py-2 last:border-b-0 last:pb-0">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground text-xs">Run</span>
-                  <code title={qualified ?? a.action} className="text-foreground truncate font-mono text-xs font-medium">
-                    {a.action}
-                  </code>
-                  {a.risk ? (
-                    <Badge variant={riskTone(a.risk)} size="xs" className="shrink-0 capitalize">
-                      {a.risk}
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="text-muted-foreground mt-0.5 text-[11px]">Requested {relativeTime(a.at)}</p>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Button
-                  size="sm"
-                  variant="outline-ghost"
-                  className={cn(ACTION_BUTTON_CLASS, 'hover:bg-destructive/10 hover:text-destructive')}
-                  disabled={!!busy}
-                  onClick={() => decideConnector(a.execution_id, 'deny')}
-                >
-                  {rowBusy === 'deny' ? <Loading className="size-3 animate-spin" /> : null}
-                  Deny
-                </Button>
-                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="secondary"
@@ -592,7 +640,7 @@ export function PermissionPrompt({
                     disabled={!!busy}
                     onClick={() => decideConnector(a.execution_id, 'approve', 'once')}
                   >
-                    {rowBusy === 'once' ? <Loading className="size-3 animate-spin" /> : null}
+                    {rowBusy === 'once' ? <Loading className="size-3 shrink-0" /> : null}
                     Allow once
                   </Button>
                   <Button
@@ -603,44 +651,28 @@ export function PermissionPrompt({
                     disabled={!!busy}
                     onClick={() => decideConnector(a.execution_id, 'approve', 'session')}
                   >
-                    {rowBusy === 'session' ? <Loading className="size-3 animate-spin" /> : null}
+                    {rowBusy === 'session' ? <Loading className="size-3 shrink-0" /> : null}
                     Allow for session
                   </Button>
                 </div>
-              </div>
-            </motion.div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
 
-        {Object.entries(records).map(([key, record]) => (
-          <RecordRow key={key} label={record.label} tone={record.tone} motionProps={rowMotion} />
-        ))}
-      </AnimatePresence>
+          {Object.entries(records).map(([key, record]) => (
+            <RecordRow key={key} label={record.label} tone={record.tone} motionProps={rowMotion} />
+          ))}
+        </AnimatePresence>
+      </div>
 
       {autoApprove ? (
-        <div data-testid="acp-session-permission-autoapprove" className="bg-muted/40 mt-3 flex items-center gap-2 rounded-md border px-3 py-1.5">
-          <ShieldCheck className="text-muted-foreground size-3.5" />
+        <div data-testid="acp-session-permission-autoapprove" className="bg-muted/40 mx-4 mb-3 flex items-center gap-2 rounded-md border px-3 py-1.5">
+          <ShieldCheck className="text-muted-foreground size-3.5 shrink-0" />
           <span className="text-muted-foreground flex-1 text-[11px]">
-            Auto-allowing all permission requests for this session
+            Bypassing permission prompts for this session
           </span>
           <Button size="xs" variant="ghost" className="active:scale-[0.96]" onClick={() => onAutoApproveChange(false)}>
             Turn off
-          </Button>
-        </div>
-      ) : null}
-
-      {hasPending ? (
-        <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3">
-          <span className="text-muted-foreground text-[11px]">This session</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            className={cn(ACTION_BUTTON_CLASS, 'text-muted-foreground hover:text-foreground')}
-            title="Allow every pending permission and gated action for the rest of this session"
-            disabled={!!busy}
-            onClick={() => setConfirmAllOpen(true)}
-          >
-            Allow everything
           </Button>
         </div>
       ) : null}
@@ -649,7 +681,7 @@ export function PermissionPrompt({
         // Deliberately set apart from the one-off buttons above: these WRITE
         // the project's connector policy config — every future session
         // stops asking. Unchanged behavior from `SessionApprovalPrompt`.
-        <div className="bg-muted/40 border-border/40 mt-3 flex flex-wrap items-center gap-2 rounded-md border px-3 py-1.5">
+        <div className="bg-muted/40 border-border/40 mx-4 mb-3 flex flex-wrap items-center gap-2 rounded-md border px-3 py-1.5">
           <span className="text-muted-foreground text-[11px]">
             Project policy <span className="opacity-70">(applies to future sessions)</span>:
           </span>
@@ -662,7 +694,7 @@ export function PermissionPrompt({
               disabled={!!busy}
               onClick={() => void alwaysRunInPolicy(qualified)}
             >
-              {busy === `policy:${qualified}` ? <Loading className="size-3 animate-spin" /> : null}
+              {busy === `policy:${qualified}` ? <Loading className="size-3 shrink-0" /> : null}
               Always allow "{qualified}"
             </Button>
           ))}
@@ -672,9 +704,9 @@ export function PermissionPrompt({
       <ConfirmDialog
         open={confirmAllOpen}
         onOpenChange={setConfirmAllOpen}
-        title="Allow everything for this session?"
-        description="The agent won't ask for permission again this session — every pending and future tool call and gated action is auto-approved until you turn it off."
-        confirmLabel="Yes, allow everything"
+        title="Allow everything in this session?"
+        description="Switches the agent to bypass mode for this session — it stops asking and auto-runs every pending and future tool call and gated action until you pick a stricter mode again."
+        confirmLabel="Allow all"
         onConfirm={() => void confirmAllowEverything()}
         isPending={busy === 'all'}
       />

@@ -58,15 +58,17 @@ describe('sandbox harness registry conforms to the canonical descriptor', () => 
     for (const id of HARNESS_IDS) {
       const launchEnv = resolveAcpHarnessLaunchEnv(id as (typeof ACP_HARNESS_IDS)[number], env)
       expect(launchEnv).toBeDefined()
-      // Pi carries one extra, harness-specific key here: PATH. Platinum
-      // microVMs have been observed booting the whole sandbox process tree
-      // with no PATH at all, and pi-acp (unlike the other adapters) shells
-      // out to a separate `pi` CLI by bare command name — so it always gets a
-      // fallback PATH injected regardless of auth kind (see the `id === 'pi'`
-      // branch of resolveAcpHarnessLaunchEnv). Excluded here so this test
-      // keeps asserting its real point: exactly one *native-config* var per
-      // harness, each distinct.
-      const keys = Object.keys(launchEnv ?? {}).filter((key) => key !== 'PATH')
+      // Two harness-specific extra keys are excluded so this test keeps
+      // asserting its real point (exactly one *native-config* var per harness):
+      //   - PATH (Pi): Platinum microVMs have booted the whole sandbox process
+      //     tree with no PATH, and pi-acp shells out to a separate `pi` CLI by
+      //     bare command name, so it always gets a fallback PATH.
+      //   - IS_SANDBOX (Claude): claude-agent-acp only advertises its
+      //     most-permissive `bypassPermissions` mode when
+      //     `ALLOW_BYPASS = !IS_ROOT || IS_SANDBOX` holds; the runtime runs it
+      //     as root inside a disposable sandbox, so it's always declared (see
+      //     the `id === 'claude'` branch of resolveAcpHarnessLaunchEnv).
+      const keys = Object.keys(launchEnv ?? {}).filter((key) => key !== 'PATH' && key !== 'IS_SANDBOX')
       expect(keys).toHaveLength(1)
       const [varName] = keys as [string]
       expect(varName.length).toBeGreaterThan(0)

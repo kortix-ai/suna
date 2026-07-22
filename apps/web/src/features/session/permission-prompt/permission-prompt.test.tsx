@@ -121,9 +121,11 @@ function renderPrompt(over: {
   autoApprove?: boolean;
   onAutoApproveChange?: (v: boolean) => void;
   onReply?: (id: unknown, optionId?: string) => Promise<void> | void;
+  onAllowAllMode?: () => Promise<boolean> | boolean | void;
 } = {}) {
   const onReply = over.onReply ?? mock(async (_id: unknown, _optionId?: string) => {});
   const onAutoApproveChange = over.onAutoApproveChange ?? mock((_v: boolean) => {});
+  const onAllowAllMode = over.onAllowAllMode ?? mock(async () => true);
   render(
     <PermissionPrompt
       projectId="proj_1"
@@ -132,9 +134,10 @@ function renderPrompt(over: {
       autoApprove={over.autoApprove ?? false}
       onAutoApproveChange={onAutoApproveChange}
       onReply={onReply as never}
+      onAllowAllMode={onAllowAllMode as never}
     />,
   );
-  return { onReply, onAutoApproveChange };
+  return { onReply, onAutoApproveChange, onAllowAllMode };
 }
 
 describe('PermissionPrompt — zero amber', () => {
@@ -164,18 +167,51 @@ describe('PermissionPrompt — action order', () => {
   });
 });
 
-describe('PermissionPrompt — allow everything is behind ConfirmDialog', () => {
+describe('PermissionPrompt — Allow all is behind ConfirmDialog', () => {
   it('does not call onReply until the confirmation is accepted', async () => {
     const { onReply } = renderPrompt({ permissions: [BASH_PERMISSION] });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Allow everything' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Allow all' }));
     await flush();
 
     expect(onReply).not.toHaveBeenCalled();
-    expect(screen.getByText('Allow everything for this session?')).toBeTruthy();
+    expect(screen.getByText('Allow everything in this session?')).toBeTruthy();
 
     const dialog = screen.getByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, allow everything' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Allow all' }));
+    await flush();
+
+    expect(onReply).toHaveBeenCalledWith('p-bash', 'allow_once');
+  });
+
+  // The "even when I click Allow everything it doesn't work" fix: the batch
+  // action must ALSO flip the session to its most-permissive mode, or the
+  // running turn just keeps generating fresh permission requests.
+  it('flips the session to bypass mode (onAllowAllMode) AND resolves every pending request', async () => {
+    const onAllowAllMode = mock(async () => true);
+    const { onReply } = renderPrompt({
+      permissions: [BASH_PERMISSION, READ_PERMISSION],
+      onAllowAllMode,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow all' }));
+    await flush();
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Allow all' }));
+    await flush();
+
+    expect(onAllowAllMode).toHaveBeenCalledTimes(1);
+    expect(onReply).toHaveBeenCalledWith('p-bash', 'allow_once');
+    expect(onReply).toHaveBeenCalledWith('p-read', 'allow_once');
+  });
+
+  it('still resolves pending requests when no mode switch is available (onAllowAllMode returns false)', async () => {
+    const onAllowAllMode = mock(async () => false);
+    const { onReply } = renderPrompt({ permissions: [BASH_PERMISSION], onAllowAllMode });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow all' }));
+    await flush();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Allow all' }));
     await flush();
 
     expect(onReply).toHaveBeenCalledWith('p-bash', 'allow_once');
@@ -184,14 +220,37 @@ describe('PermissionPrompt — allow everything is behind ConfirmDialog', () => 
   it('records each bulk-replied row after its own reply resolves', async () => {
     renderPrompt({ permissions: [BASH_PERMISSION] });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Allow everything' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Allow all' }));
     await flush();
     const dialog = screen.getByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, allow everything' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Allow all' }));
     await flush();
 
     expect(screen.getByTestId('permission-record-row')).toBeTruthy();
     expect(screen.getByText(/Allowed — Bash/)).toBeTruthy();
+  });
+});
+
+describe('PermissionPrompt — each per-request action maps to its ACP outcome', () => {
+  it('Deny → the reject option id', async () => {
+    const { onReply } = renderPrompt({ permissions: [BASH_PERMISSION] });
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await flush();
+    expect(onReply).toHaveBeenCalledWith('p-bash', 'reject_once');
+  });
+
+  it('Allow once → the allow_once option id', async () => {
+    const { onReply } = renderPrompt({ permissions: [BASH_PERMISSION] });
+    fireEvent.click(screen.getByTestId('acp-permission-allow-once'));
+    await flush();
+    expect(onReply).toHaveBeenCalledWith('p-bash', 'allow_once');
+  });
+
+  it('Allow for session → the allow_always option id', async () => {
+    const { onReply } = renderPrompt({ permissions: [BASH_PERMISSION] });
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for session' }));
+    await flush();
+    expect(onReply).toHaveBeenCalledWith('p-bash', 'allow_always');
   });
 });
 
@@ -262,11 +321,15 @@ describe('PermissionPrompt — persistent policy auto-answer', () => {
 });
 
 describe('PermissionPrompt — remember for this project', () => {
-  it('toggling the switch calls rememberToolDecision(tool, "allow")', () => {
+  it('the switch is still exposed with its accessible name (distinct project-policy outcome)', () => {
+    renderPrompt({ permissions: [BASH_PERMISSION] });
+    expect(screen.getByRole('switch', { name: 'Remember for this project' })).toBeTruthy();
+  });
+
+  it('clicking the "Always allow in this project" control calls rememberToolDecision(tool, "allow")', () => {
     renderPrompt({ permissions: [BASH_PERMISSION] });
 
-    const toggle = screen.getByRole('switch', { name: 'Remember for this project' });
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: /Always allow in this project/ }));
 
     expect(rememberToolDecisionMock).toHaveBeenCalledWith('Bash', 'allow');
   });

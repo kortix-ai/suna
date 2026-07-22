@@ -787,25 +787,36 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     }
   }
   if (id !== 'claude') return Object.keys(native).length ? native : undefined
-  if (authKind === 'native_config') return Object.keys(native).length ? native : undefined
+  // claude-agent-acp gates its most-permissive `bypassPermissions` mode behind
+  // `ALLOW_BYPASS = !IS_ROOT || IS_SANDBOX` (acp-agent.js): as root it is never
+  // even ADVERTISED, so the composer can only ever default a fresh Claude
+  // session to `acceptEdits` (which still prompts for every command). The Kortix
+  // runtime runs every ACP harness inside an isolated, disposable per-session
+  // sandbox, so declare `IS_SANDBOX` — this is what makes `bypassPermissions`
+  // appear in the session's advertised modes, which the client then selects by
+  // default (see `resolveDefaultModeToApply`, @kortix/sdk) so a fresh Claude
+  // session auto-executes without per-tool permission prompts. Applies to every
+  // claude auth path, so it's shadowed once here over `outerNative`.
+  const claudeNative = { ...native, IS_SANDBOX: '1' }
+  if (authKind === 'native_config') return Object.keys(claudeNative).length ? claudeNative : undefined
   if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) {
     const direct = {
-      ...native,
+      ...claudeNative,
       ...(runtimeModel ? { ANTHROPIC_MODEL: runtimeModel } : {}),
     }
     return Object.keys(direct).length ? direct : undefined
   }
   if (custom?.protocol === 'anthropic') {
     return {
-      ...native,
+      ...claudeNative,
       ANTHROPIC_BASE_URL: custom.baseUrl,
       ...(custom.apiKey ? { ANTHROPIC_AUTH_TOKEN: custom.apiKey } : {}),
       ...(runtimeModel || custom.model ? { ANTHROPIC_MODEL: runtimeModel || custom.model } : {}),
     }
   }
-  if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
+  if (!apiUrl || !token) return Object.keys(claudeNative).length ? claudeNative : undefined
   return {
-    ...native,
+    ...claudeNative,
     ANTHROPIC_BASE_URL: `${apiUrl}/router`,
     ANTHROPIC_AUTH_TOKEN: token,
     // Claude Code's release-channel default can be newer than the model exposed

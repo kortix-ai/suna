@@ -38,6 +38,8 @@ import {
   toQuestionRequest,
 } from './acp-composer-adapters';
 import { AcpSessionPermissionPrompt } from './acp-session-permission-prompt';
+import { isAcpModeConfigOption } from '@kortix/sdk';
+import { useAcpDefaultMode } from './use-acp-default-mode';
 import {
   AcpGroupedReasoningCard,
   AcpSameToolGroup,
@@ -520,6 +522,21 @@ export function AcpSessionChat({
     [configOptions, modelConfigOption],
   );
 
+  // Bypass-all-by-default: once the session is ready, switch it to its
+  // most-permissive advertised mode (claude → bypassPermissions, codex →
+  // agent-full-access) unless the user has an explicit persisted opt-in for
+  // this agent — so a fresh session never prompts for per-tool permission. Also
+  // backs the permission prompt's "Allow all" (`applyMostPermissiveMode`) and
+  // records a user's manual mode pick so it sticks (`persistExplicitMode`). All
+  // decisions live in `@kortix/sdk`; this only wires them to the live session.
+  const { persistExplicitMode, applyMostPermissiveMode } = useAcpDefaultMode({
+    agentKey: boundAgentName ?? null,
+    sessionId,
+    ready,
+    configOptions,
+    setConfigOption,
+  });
+
   return (
     <div className="bg-background flex h-full min-h-0 flex-col" data-testid="acp-session-chat">
       <SessionSiteHeader
@@ -895,14 +912,22 @@ export function AcpSessionChat({
                     <AcpConfigOptionSegment
                       key={option.id}
                       option={option}
-                      onChange={(value) => setConfigOption(option.id, value)}
+                      onChange={(value) => {
+                        // Persist a manual mode pick so the bypass-all default
+                        // never re-stomps the user's opt-in next session.
+                        if (isAcpModeConfigOption(option)) persistExplicitMode(String(value));
+                        return setConfigOption(option.id, value);
+                      }}
                       disabled={configOptionsDisabled}
                     />
                   ) : (
                     <AcpConfigOptionPill
                       key={option.id}
                       option={option}
-                      onChange={(value) => void setConfigOption(option.id, value)}
+                      onChange={(value) => {
+                        if (isAcpModeConfigOption(option)) persistExplicitMode(String(value));
+                        void setConfigOption(option.id, value);
+                      }}
                       disabled={configOptionsDisabled}
                     />
                   ),
@@ -919,6 +944,7 @@ export function AcpSessionChat({
                 autoApprove={autoApprovePermissions}
                 onAutoApproveChange={setAutoApprovePermissions}
                 onReply={respondPermission}
+                onAllowAllMode={applyMostPermissiveMode}
               />
               {activeQuestionRequest ? (
                 <QuestionPrompt

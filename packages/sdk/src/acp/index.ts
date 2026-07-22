@@ -6,3 +6,4 @@ export * from './tool-part';
 export * from './reduce';
 export * from './project-session';
 export * from './session';
+export * from './session-mode';
