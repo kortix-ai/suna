@@ -1058,9 +1058,6 @@ describe('project session API contract', () => {
 
   test('derives session origin from the caller token; only a backend-origin caller may set origin_ref', async () => {
     const app = createApp();
-    // A normal (human/supabase) caller may NOT vouch for a wrapper end-user:
-    // origin_ref is a backend-only field, so supplying it is rejected rather
-    // than silently attributing the session to a phantom identity.
     const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1069,7 +1066,6 @@ describe('project session API contract', () => {
     expect(forbidden.status).toBe(403);
     expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
 
-    // Same caller, no override → allowed; origin is derived as 'user'.
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1080,9 +1076,6 @@ describe('project session API contract', () => {
     expect(userBody.origin).toBe('user');
     expect(userBody.origin_ref).toBeNull();
 
-    // A service-account (backend wrapper) token may vouch for its end-user via
-    // origin_ref; origin is derived as 'backend' from the token kind, never the
-    // body.
     const backendRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1096,9 +1089,6 @@ describe('project session API contract', () => {
     expect(backendBody.origin).toBe('backend');
     expect(backendBody.origin_ref).toBe('tenant-42');
 
-    // The account API token the app ships as "API key" (a PAT) is a
-    // programmatic customer credential — it is backend too and may vouch via
-    // origin_ref.
     const patRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1112,12 +1102,6 @@ describe('project session API contract', () => {
     expect(patBody.origin).toBe('backend');
     expect(patBody.origin_ref).toBe('tenant-43');
 
-    // The INTERNAL sandbox key (KORTIX_TOKEN inside every sandbox) must never
-    // be backend — an in-sandbox agent can't vouch for a phantom end-user.
-    // Defense-in-depth: in prod the real supabaseAuth 401s a kortix_sb_ token on
-    // POST /sessions (not in its sandbox-token path allowlist), so this gate is
-    // only load-bearing if session-create is ever mounted under combinedAuth —
-    // but the resolver contract is asserted here regardless.
     const sandboxRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1129,8 +1113,6 @@ describe('project session API contract', () => {
     expect(sandboxRes.status).toBe(403);
     expect(await sandboxRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
 
-    // Same for an agent-scoped token: it acts AS an agent inside a session,
-    // never as a customer backend.
     const agentRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1142,10 +1124,6 @@ describe('project session API contract', () => {
     expect(agentRes.status).toBe(403);
     expect(await agentRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
 
-    // And the REAL executor PAT (session-bound, NULL agent grant) — the common
-    // v1/default case. Excluding it proves the exclusion keys on session-binding,
-    // not on the agent grant (which would fail open here). Regression guard for
-    // the in-sandbox origin_ref forgery the null-grant path allowed.
     const executorRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {

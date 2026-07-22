@@ -1,5 +1,3 @@
-// Session origin is DERIVED from the caller's token kind + invocation source,
-// never the request body, and it gates which override fields a caller may set.
 import { describe, expect, test } from 'bun:test';
 import {
   type SessionOrigin,
@@ -29,13 +27,9 @@ describe('resolveSessionOrigin', () => {
   });
 
   test('the INTERNAL sandbox key is never backend (the security-critical exclusion)', () => {
-    // The kortix_sb_ KORTIX_TOKEN injected into every sandbox must not let an
-    // in-sandbox agent vouch for a phantom end-user via origin_ref.
     expect(resolveSessionOrigin({ authType: 'apiKey', apiKeyType: 'sandbox', source: 'ui' })).toBe(
       'user',
     );
-    // POSITIVE apiKeyType==='user' test: a missing/unknown apiKeyType must
-    // never be promoted to backend.
     expect(resolveSessionOrigin({ authType: 'apiKey', source: 'ui' })).toBe('user');
     expect(resolveSessionOrigin({ authType: 'apiKey', apiKeyType: null, source: 'ui' })).toBe(
       'user',
@@ -43,10 +37,6 @@ describe('resolveSessionOrigin', () => {
   });
 
   test('an in-session token is never backend, whatever its kind', () => {
-    // A token operating from inside a running session (session-bound OR
-    // agent-scoped) is not a customer backend. This is the exclusion that keeps
-    // the executor PAT injected into every sandbox from vouching via origin_ref
-    // even when its agent grant is null (v1/default agent, ungoverned project).
     expect(resolveSessionOrigin({ authType: 'pat', inSession: true, source: 'cli' })).toBe('user');
     expect(
       resolveSessionOrigin({ authType: 'service_account', inSession: true, source: 'ui' }),
@@ -57,7 +47,6 @@ describe('resolveSessionOrigin', () => {
     expect(resolveSessionOrigin({ source: 'trigger:cron' })).toBe('schedule');
     expect(resolveSessionOrigin({ source: 'trigger:webhook' })).toBe('trigger');
     expect(resolveSessionOrigin({ source: 'trigger:manual' })).toBe('trigger');
-    // Source wins even if a backend-class token happened to drive the fire.
     expect(resolveSessionOrigin({ authType: 'service_account', source: 'trigger:cron' })).toBe(
       'schedule',
     );

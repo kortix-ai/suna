@@ -1,7 +1,3 @@
-// The queued-create payload is the ONLY thing that survives backpressure —
-// whatever it drops, the replay loses. A queued backend create must keep its
-// origin-derivation signals, or it replays as origin 'user' and 403s its
-// origin_ref asynchronously after the caller already got a 202.
 import { describe, expect, test } from 'bun:test';
 import { createSessionCommandPayload } from './store';
 import type { CreateSessionCommand } from './types';
@@ -25,7 +21,6 @@ describe('createSessionCommandPayload', () => {
     expect(payload.authType).toBe('pat');
     expect(payload.apiKeyType).toBe('user');
     expect(payload.inSession).toBe(false);
-    // The body (incl. origin_ref) survives verbatim for the replay's gate.
     expect(payload.body).toEqual({ initial_prompt: 'hi', origin_ref: 'tenant-42' });
   });
 
