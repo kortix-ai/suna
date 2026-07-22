@@ -7,6 +7,7 @@ import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import './scripts/build-content-timestamps.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+import { SITE_LINK_HEADER } from './src/lib/agent-discovery/link-header';
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -299,6 +300,13 @@ const nextConfig = (): NextConfig => ({
   // HTTP headers for security, caching and performance
   async headers() {
     return [
+      {
+        // RFC 8288 discovery pointers for agents. Advertised site-wide so an
+        // agent landing on any page — not just the homepage — can find the API
+        // catalog, the docs, and the machine-readable content index.
+        source: '/:path*',
+        headers: [{ key: 'Link', value: SITE_LINK_HEADER }],
+      },
       {
         source: '/:path*',
         headers: [
