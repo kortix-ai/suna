@@ -460,7 +460,12 @@ projectsApp.openapi(
     const [sessionRow] = await db
       .select({ secretsAllowlist: projectSessions.secretsAllowlist })
       .from(projectSessions)
-      .where(eq(projectSessions.sessionId, boundSessionId))
+      .where(
+        and(
+          eq(projectSessions.sessionId, boundSessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
       .limit(1);
     if (sessionRow?.secretsAllowlist) {
       sessionAllowUpper = new Set(sessionRow.secretsAllowlist.map((id) => id.toUpperCase()));

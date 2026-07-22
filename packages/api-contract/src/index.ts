@@ -396,7 +396,7 @@ export const ProjectSessionSchema = z.object({
   /** Backend wrapper's end-user handle; non-null only for backend sessions. */
   origin_ref: z.string().nullable(),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
-  secrets_allowlist: z.array(z.string()).nullable(),
+  secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
   can_manage_sharing: z.boolean(),
