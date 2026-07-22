@@ -1202,6 +1202,39 @@ describe('project session API contract', () => {
     expect((await zero.json()).secrets_allowlist).toEqual([]);
   });
 
+  test('rejects an allowlist whose identifiers collide on one env key (409, not a bricked session)', async () => {
+    const mk = (identifier: string, value: string) => ({
+      secretId: crypto.randomUUID(),
+      projectId: PROJECT_ID,
+      identifier,
+      name: 'GOOGLE_MAPS_API_KEY',
+      valueEnc: encryptProjectSecret(PROJECT_ID, value),
+      scope: 'runtime' as const,
+      ownerUserId: null,
+      active: true,
+      createdBy: USER_ID,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    });
+    secretRows = [mk('GMAPS_PRIMARY', 'a'), mk('GMAPS_BACKUP', 'b')];
+    const app = createApp();
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAPS_PRIMARY', 'GMAPS_BACKUP'],
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
+  });
+
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
     projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};
