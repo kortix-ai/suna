@@ -49,10 +49,19 @@ The `201` response echoes what was applied — `origin: "backend"`, `origin_ref`
 
 ### SDK
 
-```ts
-import { createProjectSession } from '@kortix/sdk/projects-client';
+Use the server SDK entry (`@kortix/sdk/server`) — it carries your API key and
+base URL explicitly, which the deprecated browser `projects-client` cannot do.
+This is the same surface the runnable example uses.
 
-const session = await createProjectSession(projectId, {
+```ts
+import { createScopedKortix } from '@kortix/sdk/server';
+
+const kortix = createScopedKortix({
+  backendUrl: process.env.KORTIX_API_URL!, // base incl. /v1
+  getToken: async () => process.env.KORTIX_API_KEY!, // your kortix_pat_ token
+});
+
+const session = await kortix.project(projectId).sessions.create({
   initial_prompt: 'Summarize my new signups',
   origin_ref: 'your-app-user-123',
   agent_name: 'support',
@@ -107,7 +116,7 @@ both mintable with your API key:
    ```ts
    await kortix.project(projectId).connectors.create({
      slug: 'user-mcp', provider: 'mcp', transport: 'http',
-     endpoint: 'https://mcp.example.com/mcp', credential: 'shared',
+     url: 'https://mcp.example.com/mcp', credential: 'shared',
      auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer ' },
    });
    ```
@@ -128,8 +137,8 @@ both mintable with your API key:
    await kortix.project(projectId).connectors.profiles.activate(profile.profile_id);
    // → bind at session start: connector_bindings: { 'user-mcp': { profile_id: profile.profile_id } }
    ```
-   All four ops require the project **manager/owner** role — a dashboard API key
-   rides that automatically.
+   All of these are gated by `project.connector.write` (editor-tier and up) — a
+   dashboard API key rides that automatically.
 
 > **All-or-nothing binding:** if a session's `connector_bindings` sets *any*
 > alias, every *unbound* alias resolves to null for that session. Bind every
@@ -188,4 +197,7 @@ knowing them as a login.
   `connector_bindings` credentials are broker-resolved server-side and never
   enter the sandbox.
 
-See also the design/rationale in `docs/KORTIX_AS_BACKEND_V1_PLAN.md`.
+See also the runnable, end-to-end version of this flow —
+[`packages/sdk/examples/09-kaab-backend-wrapper.ts`](../packages/sdk/examples/09-kaab-backend-wrapper.ts)
+— and the printable one-page guide next to it
+(`packages/sdk/examples/KORTIX-AS-A-BACKEND.pdf`).
