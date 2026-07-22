@@ -48,6 +48,9 @@ mock.module('../shared/platinum', () => ({
         ? [{ id: 'tpl-1', name: registeredTemplateName, state: 'ready' }]
         : [];
     }
+    if (path === '/v1/templates/tpl-1') {
+      return { id: 'tpl-1', name: registeredTemplateName, state: 'ready' };
+    }
     throw new Error(`unexpected Platinum path: ${path}`);
   },
 }));
