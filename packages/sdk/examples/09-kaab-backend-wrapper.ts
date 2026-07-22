@@ -181,8 +181,17 @@ async function runTurn(
   onText: (delta: string) => void,
 ): Promise<void> {
   const session = kortix.session(projectId!, sessionId);
-  // ensureReady() before stream() so the stream is connected before the prompt
-  // goes out — no early events missed (see example 02).
+  // ensureReady() blocks — polling the sandbox cold start (up to ~3 min by
+  // default; pass { readyTimeoutMs } to wait longer) — until the runtime is up,
+  // THEN we stream, so the stream is connected before the prompt goes out and no
+  // early events are missed (see example 02).
+  //
+  // Streaming precondition: the sandbox must be able to reach YOUR Kortix API
+  // (its KORTIX_URL) to finish booting OpenCode. A hosted deployment satisfies
+  // this out of the box; against a LOCAL API a cloud sandbox cannot reach
+  // localhost, so front the API with a public tunnel (e.g.
+  // `cloudflared tunnel --url http://localhost:8010`) and start it with
+  // KORTIX_URL set to that tunnel URL.
   await session.ensureReady();
 
   await new Promise<void>((resolve, reject) => {

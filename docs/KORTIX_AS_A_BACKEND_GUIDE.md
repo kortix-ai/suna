@@ -173,7 +173,36 @@ knowing them as a login.
 
 ---
 
-## 4. Errors you may hit
+## 4. Stream the answer
+
+```ts
+const s = kortix.session(projectId, session.session_id);
+await s.ensureReady();               // blocks through the sandbox cold start
+const h = await s.stream({ onEvent: (e) => {
+  const ev = narrowChatEvent(e);
+  if (ev?.type === 'message.part.updated' && ev.part.type === 'text')
+    process.stdout.write(ev.part.text);
+  if (ev?.type === 'session.idle') h.close();
+} });
+await s.send(prompt);
+```
+
+- **`ensureReady()` polls the cold start.** A fresh sandbox can take tens of
+  seconds to boot OpenCode; `ensureReady()` long-polls until the runtime is ready
+  (default ~3 min) and only then resolves, so `stream()` connects before the
+  prompt goes out. Pass `{ readyTimeoutMs }` to wait longer.
+- **Streaming needs the sandbox to reach *your* API.** The sandbox finishes
+  booting by calling back to its `KORTIX_URL`. A hosted deployment satisfies this
+  automatically. Against a **local** API a cloud sandbox can't reach `localhost`,
+  so front it with a public tunnel and start the API with that URL, e.g.:
+  ```bash
+  cloudflared tunnel --url http://localhost:8010    # → https://<name>.trycloudflare.com
+  KORTIX_URL=https://<name>.trycloudflare.com PORT=8010 pnpm --filter @kortix/api start
+  ```
+
+---
+
+## 5. Errors you may hit
 
 | Status | Code | Meaning |
 |---|---|---|
@@ -184,7 +213,7 @@ knowing them as a login.
 
 ---
 
-## 5. Security model (why it's safe)
+## 6. Security model (why it's safe)
 
 - **Origin is derived, never declared.** The session's `origin` comes from your
   token kind, not the request body — a caller can't claim `backend` to unlock
