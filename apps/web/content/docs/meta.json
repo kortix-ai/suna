@@ -3,12 +3,17 @@
   "pages": [
     "index",
     "quickstart",
-    "---Learn---",
-    "concepts",
-    "guides",
-    "---Reference---",
-    "reference",
-    "---SDK---",
-    "sdk"
+    "accounts",
+    "---Your project---",
+    "project",
+    "---Running work---",
+    "work",
+    "---Connect & automate---",
+    "connect",
+    "---Develop---",
+    "cli",
+    "sdk",
+    "---Host---",
+    "host"
   ]
 }
