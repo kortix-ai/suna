@@ -87,6 +87,30 @@ export function pickerGroupLabel(groupID: string, model: FlatModel): string {
   return PROVIDER_LABELS[groupID] ?? model.providerName;
 }
 
+// The trigger pill's label. The selected model's own name when it resolves to a
+// row in the feed; otherwise AUTO (`{ kortix, auto }`, the synthetic managed
+// default that is deliberately NOT a feed row — filtered from `visibleModels`,
+// exposed only as the standalone toggle) reads "Auto"; otherwise `unsetLabel`
+// ("No model"). A composer whose server capability allows the managed default
+// seeds the AUTO sentinel as its effective selection, so the pill must read
+// "Auto" — a real, resolvable choice — never a blank "No model" with a live
+// Send. Independent of `featureFlags.enableAutoModel` (that only governs the
+// in-popover toggle, not this label).
+export function resolveModelSelectorLabel(input: {
+  currentModelName: string | undefined;
+  selectedModel: { providerID: string; modelID: string } | null | undefined;
+  unsetLabel: string;
+}): string {
+  if (input.currentModelName) return input.currentModelName;
+  if (
+    input.selectedModel?.providerID === 'kortix' &&
+    input.selectedModel?.modelID === AUTO_MODEL_ID
+  ) {
+    return 'Auto';
+  }
+  return input.unsetLabel;
+}
+
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
 export interface ModelSelectorProps {
@@ -188,7 +212,11 @@ export function ModelSelector({
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || unsetLabel;
+  const displayName = resolveModelSelectorLabel({
+    currentModelName: current?.modelName,
+    selectedModel,
+    unsetLabel,
+  });
 
   // Reset transient picker state when closing.
   useEffect(() => {

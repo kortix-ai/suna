@@ -29,7 +29,7 @@ import {
   useRuntimeProviders,
   useRuntimeSessions,
 } from '@/hooks/runtime/use-runtime-sessions';
-import { CATALOG } from '@kortix/llm-catalog';
+import { AUTO_MODEL_ID, CATALOG } from '@kortix/llm-catalog';
 import type { AcpAvailableCommand, AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
 import type { FlatModel } from '@kortix/sdk/react';
 import {
@@ -295,6 +295,41 @@ export function resolveExplicitCatalogModel(input: {
   return valid ? candidate : undefined;
 }
 
+/** The synthetic managed-default selection — `{ kortix, auto }`, the gateway's
+ *  own smart-router sentinel (`AUTO_MODEL_ID`). NEVER an explicit catalog pick
+ *  and never sent as a `model_id`; a bare `kind: 'default'` create lets the
+ *  server resolve it (see `buildComposerOptions`, which drops it back to the
+ *  default path). */
+export const AUTO_CATALOG_MODEL: ModelKey = { providerID: 'kortix', modelID: AUTO_MODEL_ID };
+
+export function isAutoCatalogModel(model: ModelKey | null | undefined): boolean {
+  return model?.providerID === 'kortix' && model?.modelID === AUTO_MODEL_ID;
+}
+
+/**
+ * The composer's EFFECTIVE model for DISPLAY (the pill), separate from what a
+ * send actually carries. An explicit user pick always wins. Otherwise, when
+ * the harness is catalog-driven and the server reports it can start on the
+ * managed default (`default_allowed` — identical to `can_start`/`model.state
+ * === 'ready'`, see composer-capabilities.ts), the effective model is Auto
+ * (`AUTO_CATALOG_MODEL`) so the pill reads "Auto", never a blank "No model"
+ * with a live Send. When the default is NOT allowed (e.g. `no_credential`),
+ * this stays `null`: the pill reads "No model" AND the capability gate blocks
+ * the Send with a connect CTA — the only other valid state. This value is for
+ * rendering only; `buildComposerOptions` is fed the EXPLICIT pick, so a
+ * defaulted-to-Auto composer sends `kind: 'default'` (no `model_id`) and lets
+ * the server resolve the managed default.
+ */
+export function resolveDisplayCatalogModel(input: {
+  explicitModel: ModelKey | null;
+  catalogModelRequired: boolean;
+  defaultAllowed: boolean;
+}): ModelKey | null {
+  if (input.explicitModel) return input.explicitModel;
+  if (input.catalogModelRequired && input.defaultAllowed) return AUTO_CATALOG_MODEL;
+  return null;
+}
+
 export function buildComposerOptions(input: {
   agent: Agent | undefined;
   lockedAgentName?: string | null;
@@ -307,7 +342,13 @@ export function buildComposerOptions(input: {
   const agentName = input.lockedAgentName?.trim() || input.agent?.name;
   if (agentName) options.agent = agentName;
   const catalogModel = agentRequiresCatalogModel(input.agent);
-  if (catalogModel && input.model) options.model = input.model;
+  // AUTO (`{ kortix, auto }`) is the MANAGED DEFAULT, never an explicit catalog
+  // id — sending it as a `preset`/`custom` `model_id` would make the create
+  // path stamp `metadata.model = 'kortix/auto'` and validate it as a concrete
+  // catalog model. Drop it here so it flows through the `kind: 'default'` path
+  // below (no `model_id`), letting the server resolve the managed default.
+  const explicitModel = isAutoCatalogModel(input.model) ? undefined : input.model;
+  if (catalogModel && explicitModel) options.model = explicitModel;
   if (!catalogModel && input.runtimeModel?.trim()) {
     options.runtimeModel = input.runtimeModel.trim();
   }
@@ -328,7 +369,7 @@ export function buildComposerOptions(input: {
   // nothing harness-native ever reaches gateway catalog existence/access
   // validation. `default` is the harness's own bootstrap default (needs no
   // override); a non-default pick is driven purely by the ACP round-trip.
-  const catalogSelected = catalogModel && input.model ? formatModelString(input.model) : null;
+  const catalogSelected = catalogModel && explicitModel ? formatModelString(explicitModel) : null;
   const harnessNativeSelection = !catalogModel && Boolean(options.runtimeModel);
   if (input.connectionId || catalogSelected || harnessNativeSelection) {
     options.modelSelection = {
@@ -538,6 +579,18 @@ export function ComposerChatInput({
   // pipeline (open, search, filter) stays small — see `capFeedModels`'s doc
   // comment for why this lives here instead of inside the restored file.
   const capabilityModels = capFeedModels(capabilityModelsRaw, selectedCatalogModel);
+  // The pill's EFFECTIVE selection: the explicit pick, else Auto (the managed
+  // default) when the server says this catalog harness can start on its default
+  // (`default_allowed` === `can_start` === `model.state === 'ready'`). This is
+  // display-only — `selectedCatalogModel` (the explicit pick) is what feeds the
+  // send below, so a defaulted-to-Auto composer sends `kind: 'default'` and
+  // lets the server resolve the managed default, never a blank "No model" with
+  // a live Send. See `resolveDisplayCatalogModel`'s doc comment.
+  const displayCatalogModel = resolveDisplayCatalogModel({
+    explicitModel: selectedCatalogModel,
+    catalogModelRequired,
+    defaultAllowed: Boolean(capability.data?.model.default_allowed),
+  });
 
   // ── Live-session model pill ──────────────────────────────────────────────
   // A live session's model isn't "pick from the connected provider catalog" —
@@ -938,7 +991,7 @@ export function ComposerChatInput({
       // `session/set_config_option`); that remains a known gap, tracked
       // separately, not a regression this fix introduces.
       models={catalogModelRequired ? capabilityModels : []}
-      selectedModel={catalogModelRequired ? selectedCatalogModel : null}
+      selectedModel={catalogModelRequired ? displayCatalogModel : null}
       onModelChange={
         catalogModelRequired
           ? (m) => {

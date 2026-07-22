@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  AUTO_CATALOG_MODEL,
   boundSessionAgentName,
   buildComposerOptions,
   capFeedModels,
   catalogAgentModelKey,
   catalogSessionModelKey,
   firstModelOptionValue,
+  isAutoCatalogModel,
   otherConfigOptionDeferredKey,
   presetToFlatModel,
+  resolveDisplayCatalogModel,
   resolveExplicitCatalogModel,
   resolvePresetProviderId,
 } from './composer-chat-input';
@@ -139,6 +142,24 @@ describe('harness-aware composer options', () => {
         runtimeModel: 'native/model',
       }),
     ).toEqual({ agent: 'kortix' });
+  });
+
+  // AUTO is the MANAGED DEFAULT, never an explicit catalog id — it must send
+  // `kind: 'default'` with NO model_id (letting the server resolve it), never
+  // a `custom`/`preset` `model_id: 'kortix/auto'` that the create path would
+  // stamp onto `metadata.model` and validate as a concrete catalog model.
+  test('OpenCode defaulted to AUTO sends kind:default with no model_id', () => {
+    expect(
+      buildComposerOptions({
+        agent: { name: 'kortix', harness: 'opencode' },
+        model: AUTO_CATALOG_MODEL,
+        connectionId: 'managed_gateway',
+      }),
+    ).toEqual({
+      agent: 'kortix',
+      connectionId: 'managed_gateway',
+      modelSelection: { kind: 'default', modelId: null, connectionId: 'managed_gateway' },
+    });
   });
 });
 
@@ -446,6 +467,67 @@ describe('resolveExplicitCatalogModel', () => {
       models,
     });
     expect(resolved).toBeUndefined();
+  });
+});
+
+// THE merge-regression fix: a catalog composer whose server capability reports
+// it can start on the managed default (`default_allowed` === `can_start` ===
+// `model.state === 'ready'`) must default its EFFECTIVE (display) model to AUTO
+// — so the pill reads "Auto", never a blank "No model" with a live Send — while
+// still sending `kind: 'default'` (no model_id) so the server resolves it. When
+// the default is NOT allowed (e.g. no_credential), it stays null: the pill
+// reads "No model" AND the capability gate blocks the Send. An explicit pick
+// always wins over the AUTO default.
+describe('resolveDisplayCatalogModel', () => {
+  test('ready + default_allowed, no explicit pick → AUTO (pill reads "Auto")', () => {
+    expect(
+      resolveDisplayCatalogModel({
+        explicitModel: null,
+        catalogModelRequired: true,
+        defaultAllowed: true,
+      }),
+    ).toEqual(AUTO_CATALOG_MODEL);
+  });
+
+  test('no_credential (default NOT allowed), no explicit pick → null (pill "No model", Send blocked)', () => {
+    expect(
+      resolveDisplayCatalogModel({
+        explicitModel: null,
+        catalogModelRequired: true,
+        defaultAllowed: false,
+      }),
+    ).toBeNull();
+  });
+
+  test('an explicit pick always wins over the AUTO default', () => {
+    const pick = { providerID: 'openai', modelID: 'gpt-5.4' };
+    expect(
+      resolveDisplayCatalogModel({
+        explicitModel: pick,
+        catalogModelRequired: true,
+        defaultAllowed: true,
+      }),
+    ).toEqual(pick);
+  });
+
+  test('a non-catalog harness (claude/codex own their model) never defaults to AUTO here', () => {
+    expect(
+      resolveDisplayCatalogModel({
+        explicitModel: null,
+        catalogModelRequired: false,
+        defaultAllowed: true,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('isAutoCatalogModel', () => {
+  test('recognises the AUTO sentinel and nothing else', () => {
+    expect(isAutoCatalogModel(AUTO_CATALOG_MODEL)).toBe(true);
+    expect(isAutoCatalogModel({ providerID: 'kortix', modelID: 'auto' })).toBe(true);
+    expect(isAutoCatalogModel({ providerID: 'openai', modelID: 'gpt-5.4' })).toBe(false);
+    expect(isAutoCatalogModel({ providerID: 'kortix', modelID: 'gpt-5.4' })).toBe(false);
+    expect(isAutoCatalogModel(null)).toBe(false);
   });
 });
 
