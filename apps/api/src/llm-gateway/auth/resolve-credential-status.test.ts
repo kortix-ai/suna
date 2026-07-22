@@ -7,9 +7,9 @@ const USER_ID = 'user_1';
 
 describe('resolveCredentialStatus — unknown provider/door', () => {
   test('throws UnknownAuthProviderError for an id with no registry entry', async () => {
-    await expect(resolveCredentialStatus(PROJECT_ID, USER_ID, 'does-not-exist', 'account')).rejects.toThrow(
-      UnknownAuthProviderError,
-    );
+    await expect(
+      resolveCredentialStatus(PROJECT_ID, USER_ID, 'does-not-exist', 'account'),
+    ).rejects.toThrow(UnknownAuthProviderError);
   });
 
   test('throws for a known id under the WRONG door — (id, door) is the natural registry key', async () => {
@@ -36,7 +36,11 @@ describe('resolveCredentialStatus — codex_subscription', () => {
 
   test('healthy with expiresAt carried through when resolveCodex succeeds', async () => {
     const result = await resolveCredentialStatus(PROJECT_ID, USER_ID, 'openai', 'account', {
-      resolveCodex: async () => ({ access: 'tok', accountId: 'acct_1', expiresAt: 1_800_000_000_000 }),
+      resolveCodex: async () => ({
+        access: 'tok',
+        accountId: 'acct_1',
+        expiresAt: 1_800_000_000_000,
+      }),
     });
     expect(result.status).toBe('healthy');
     expect(result.expiresAt).toBe(1_800_000_000_000);
@@ -128,7 +132,8 @@ describe('resolveCredentialStatus — api-key doors (anthropic_api_key / openai_
 
   test('healthy when the value is present and checkApiKey confirms it', async () => {
     const result = await resolveCredentialStatus(PROJECT_ID, USER_ID, 'anthropic', 'api-key', {
-      getSecretValue: async (_projectId, name) => (name === 'ANTHROPIC_API_KEY' ? 'sk-ant-xxx' : null),
+      getSecretValue: async (_projectId, name) =>
+        name === 'ANTHROPIC_API_KEY' ? 'sk-ant-xxx' : null,
       checkApiKey: async (providerId, apiKey) => {
         expect(providerId).toBe('anthropic');
         expect(apiKey).toBe('sk-ant-xxx');
@@ -158,17 +163,24 @@ describe('resolveCredentialStatus — api-key doors (anthropic_api_key / openai_
   });
 
   test('custom OpenAI-compatible endpoint: absent unless CUSTOM_LLM_PROTOCOL/BASE_URL/MODEL_ID are set', async () => {
-    const result = await resolveCredentialStatus(PROJECT_ID, USER_ID, 'openai-compatible-endpoint', 'api-key', {
-      getSecretValue: async (_projectId, name) => (name === 'CUSTOM_LLM_BASE_URL' ? 'https://example.test' : null),
-      // No probe registered for a synthetic endpoint id — falls to unverified.
-      checkApiKey: async () => 'unverified',
-    });
+    const result = await resolveCredentialStatus(
+      PROJECT_ID,
+      USER_ID,
+      'openai-compatible-endpoint',
+      'api-key',
+      {
+        getSecretValue: async (_projectId, name) =>
+          name === 'CUSTOM_LLM_BASE_URL' ? 'https://example.test' : null,
+        // No probe registered for a synthetic endpoint id — falls to unverified.
+        checkApiKey: async () => 'unverified',
+      },
+    );
     expect(result.status).toBe('unverified');
     expect(result.authKind).toBe('openai_compatible');
   });
 
   test('multi-env-var entries stop at the first configured var', async () => {
-    let calls: string[] = [];
+    const calls: string[] = [];
     await resolveCredentialStatus(PROJECT_ID, USER_ID, 'openai-compatible-endpoint', 'api-key', {
       getSecretValue: async (_projectId, name) => {
         calls.push(name);

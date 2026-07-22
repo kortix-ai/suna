@@ -43,7 +43,11 @@ export interface OAuthDeviceCodePollOptions<T> {
   signal?: AbortSignal;
 }
 
-function abortableSleep(ms: number, signal: AbortSignal | undefined, cancelMessage: string): Promise<void> {
+function abortableSleep(
+  ms: number,
+  signal: AbortSignal | undefined,
+  cancelMessage: string,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error(cancelMessage));
@@ -63,7 +67,9 @@ function abortableSleep(ms: number, signal: AbortSignal | undefined, cancelMessa
   });
 }
 
-export async function pollOAuthDeviceCodeFlow<T>(options: OAuthDeviceCodePollOptions<T>): Promise<T> {
+export async function pollOAuthDeviceCodeFlow<T>(
+  options: OAuthDeviceCodePollOptions<T>,
+): Promise<T> {
   const deadline =
     typeof options.expiresInSeconds === 'number'
       ? Date.now() + options.expiresInSeconds * 1000

@@ -16,7 +16,7 @@ describe('AUTH_PROVIDERS — round-trip against HARNESSES[*].authKinds', () => {
     }
   });
 
-  it('managed_gateway gets NO registry row — it is Kortix\'s own included route, not user-connectable', () => {
+  it("managed_gateway gets NO registry row — it is Kortix's own included route, not user-connectable", () => {
     expect(authProvidersForKind('managed_gateway')).toEqual([]);
   });
 
@@ -29,7 +29,7 @@ describe('AUTH_PROVIDERS — round-trip against HARNESSES[*].authKinds', () => {
     expect(connectableAuthKinds()).not.toContain('native_config');
   });
 
-  it('every entry\'s producesAuthKind is a kind some harness declares, except the parked anthropic_compatible row', () => {
+  it("every entry's producesAuthKind is a kind some harness declares, except the parked anthropic_compatible row", () => {
     const declared = new Set(HARNESS_IDS.flatMap((id) => HARNESSES[id].authKinds));
     for (const provider of AUTH_PROVIDERS) {
       if (provider.producesAuthKind === 'anthropic_compatible') continue; // parked, see harnesses.ts's own comment
@@ -66,7 +66,9 @@ describe('AUTH_PROVIDERS — per-entry shape', () => {
     expect(codex?.flows.cli).toEqual(['browser-oauth', 'device-code']);
     expect(codex?.flows.web).toEqual(['device-code']);
     expect(codex?.oauth?.clientId).toBe('app_EMoamEEZ73f0CkXaXp7hrann');
-    expect(codex?.oauth?.deviceCodeUrl).toBe('https://auth.openai.com/api/accounts/deviceauth/usercode');
+    expect(codex?.oauth?.deviceCodeUrl).toBe(
+      'https://auth.openai.com/api/accounts/deviceauth/usercode',
+    );
     expect(codex?.oauth?.cliRedirectPort).toBe(1455);
   });
 
@@ -112,7 +114,9 @@ describe('custody enforcement — the registry cannot misrepresent a direct-only
 
   it('every produced kind resolves to a real CREDENTIAL_CUSTODY verdict — no entry can reference an unknown kind', () => {
     for (const provider of AUTH_PROVIDERS) {
-      expect(['direct-only', 'relay-eligible']).toContain(CREDENTIAL_CUSTODY[provider.producesAuthKind]);
+      expect(['direct-only', 'relay-eligible']).toContain(
+        CREDENTIAL_CUSTODY[provider.producesAuthKind],
+      );
     }
   });
 });

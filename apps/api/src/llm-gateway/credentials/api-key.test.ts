@@ -36,26 +36,46 @@ describe('checkApiKeyLiveness', () => {
   });
 
   test('healthy on a 2xx response from a registered provider', async () => {
-    const status = await checkApiKeyLiveness('anthropic', 'key-healthy-a', async () => new Response('{}', { status: 200 }));
+    const status = await checkApiKeyLiveness(
+      'anthropic',
+      'key-healthy-a',
+      async () => new Response('{}', { status: 200 }),
+    );
     expect(status).toBe('healthy');
   });
 
   test('invalid on 401/403 from a registered provider', async () => {
-    expect(await checkApiKeyLiveness('openai', 'key-401-a', async () => new Response('{}', { status: 401 }))).toBe(
-      'invalid',
-    );
-    expect(await checkApiKeyLiveness('openai', 'key-403-a', async () => new Response('{}', { status: 403 }))).toBe(
-      'invalid',
-    );
+    expect(
+      await checkApiKeyLiveness(
+        'openai',
+        'key-401-a',
+        async () => new Response('{}', { status: 401 }),
+      ),
+    ).toBe('invalid');
+    expect(
+      await checkApiKeyLiveness(
+        'openai',
+        'key-403-a',
+        async () => new Response('{}', { status: 403 }),
+      ),
+    ).toBe('invalid');
   });
 
   test('unverified (never invalid) on a 5xx/429 or network error — ambiguous never means broken', async () => {
-    expect(await checkApiKeyLiveness('anthropic', 'key-500-a', async () => new Response('{}', { status: 500 }))).toBe(
-      'unverified',
-    );
-    expect(await checkApiKeyLiveness('anthropic', 'key-429-a', async () => new Response('{}', { status: 429 }))).toBe(
-      'unverified',
-    );
+    expect(
+      await checkApiKeyLiveness(
+        'anthropic',
+        'key-500-a',
+        async () => new Response('{}', { status: 500 }),
+      ),
+    ).toBe('unverified');
+    expect(
+      await checkApiKeyLiveness(
+        'anthropic',
+        'key-429-a',
+        async () => new Response('{}', { status: 429 }),
+      ),
+    ).toBe('unverified');
     expect(
       await checkApiKeyLiveness('anthropic', 'key-network-a', async () => {
         throw new Error('network blip');

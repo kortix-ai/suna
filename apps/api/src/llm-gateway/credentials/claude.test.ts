@@ -17,7 +17,9 @@ mock.module('../../shared/db', () => ({
 }));
 
 const { encryptProjectSecret } = await import('../../projects/secrets');
-const { parseClaudeAuth, probeClaudeConnection, resolveClaudeCredential } = await import('./claude');
+const { parseClaudeAuth, probeClaudeConnection, resolveClaudeCredential } = await import(
+  './claude'
+);
 
 const PROJECT_ID = 'proj_claude_test';
 
@@ -30,12 +32,18 @@ function row(input: { secretId: string; ownerUserId: string | null; token: strin
 }
 
 describe('parseClaudeAuth', () => {
-  test('a plain setup-token string (today\'s only shape) has no known expiry', () => {
-    expect(parseClaudeAuth('sk-ant-oat-abc123')).toEqual({ token: 'sk-ant-oat-abc123', expiresAt: null });
+  test("a plain setup-token string (today's only shape) has no known expiry", () => {
+    expect(parseClaudeAuth('sk-ant-oat-abc123')).toEqual({
+      token: 'sk-ant-oat-abc123',
+      expiresAt: null,
+    });
   });
 
   test('trims surrounding whitespace on the plain-string path', () => {
-    expect(parseClaudeAuth('  sk-ant-oat-abc123  \n')).toEqual({ token: 'sk-ant-oat-abc123', expiresAt: null });
+    expect(parseClaudeAuth('  sk-ant-oat-abc123  \n')).toEqual({
+      token: 'sk-ant-oat-abc123',
+      expiresAt: null,
+    });
   });
 
   test('decodes a future {token, expires} JSON envelope', () => {
@@ -53,7 +61,10 @@ describe('parseClaudeAuth', () => {
   });
 
   test('malformed JSON that merely starts with "{" falls back to the raw trimmed string, never throws', () => {
-    expect(parseClaudeAuth('{not valid json')).toEqual({ token: '{not valid json', expiresAt: null });
+    expect(parseClaudeAuth('{not valid json')).toEqual({
+      token: '{not valid json',
+      expiresAt: null,
+    });
   });
 
   test('a JSON object without a usable token field falls back to the raw string', () => {
@@ -80,7 +91,7 @@ describe('resolveClaudeCredential — shared/personal precedence, mirrors loadCo
     expect(result).toEqual({ token: 'shared-token', expiresAt: null, scope: 'shared' });
   });
 
-  test('the caller\'s own personal row wins over the shared row', async () => {
+  test("the caller's own personal row wins over the shared row", async () => {
     nextRows = [
       row({ secretId: 's1', ownerUserId: null, token: 'shared-token' }),
       row({ secretId: 's2', ownerUserId: 'user_1', token: 'personal-token' }),
@@ -89,7 +100,7 @@ describe('resolveClaudeCredential — shared/personal precedence, mirrors loadCo
     expect(result).toEqual({ token: 'personal-token', expiresAt: null, scope: 'personal' });
   });
 
-  test('a DIFFERENT user\'s personal row never wins — falls back to shared', async () => {
+  test("a DIFFERENT user's personal row never wins — falls back to shared", async () => {
     nextRows = [
       row({ secretId: 's1', ownerUserId: null, token: 'shared-token' }),
       row({ secretId: 's2', ownerUserId: 'someone-else', token: 'their-personal-token' }),
@@ -109,7 +120,13 @@ describe('resolveClaudeCredential — shared/personal precedence, mirrors loadCo
   });
 
   test('a JSON envelope with a future expiry round-trips through the real encrypt/decrypt path', async () => {
-    nextRows = [row({ secretId: 's1', ownerUserId: null, token: JSON.stringify({ token: 't2', expires: 4102444800000 }) })];
+    nextRows = [
+      row({
+        secretId: 's1',
+        ownerUserId: null,
+        token: JSON.stringify({ token: 't2', expires: 4102444800000 }),
+      }),
+    ];
     const result = await resolveClaudeCredential(PROJECT_ID, 'user_1');
     expect(result).toEqual({ token: 't2', expiresAt: 4102444800000, scope: 'shared' });
   });
@@ -117,23 +134,36 @@ describe('resolveClaudeCredential — shared/personal precedence, mirrors loadCo
 
 describe('probeClaudeConnection', () => {
   test('healthy on a 2xx response', async () => {
-    const status = await probeClaudeConnection('tok', async () => new Response('{}', { status: 200 }));
+    const status = await probeClaudeConnection(
+      'tok',
+      async () => new Response('{}', { status: 200 }),
+    );
     expect(status).toBe('healthy');
   });
 
   test('invalid on 401', async () => {
-    const status = await probeClaudeConnection('tok', async () => new Response('{}', { status: 401 }));
+    const status = await probeClaudeConnection(
+      'tok',
+      async () => new Response('{}', { status: 401 }),
+    );
     expect(status).toBe('invalid');
   });
 
   test('invalid on 403', async () => {
-    const status = await probeClaudeConnection('tok', async () => new Response('{}', { status: 403 }));
+    const status = await probeClaudeConnection(
+      'tok',
+      async () => new Response('{}', { status: 403 }),
+    );
     expect(status).toBe('invalid');
   });
 
   test('unverified (never invalid) on a 5xx/rate-limit response — an ambiguous status must not falsely accuse a working credential', async () => {
-    expect(await probeClaudeConnection('tok', async () => new Response('{}', { status: 500 }))).toBe('unverified');
-    expect(await probeClaudeConnection('tok', async () => new Response('{}', { status: 429 }))).toBe('unverified');
+    expect(
+      await probeClaudeConnection('tok', async () => new Response('{}', { status: 500 })),
+    ).toBe('unverified');
+    expect(
+      await probeClaudeConnection('tok', async () => new Response('{}', { status: 429 })),
+    ).toBe('unverified');
   });
 
   test('unverified on a network error — never invalid', async () => {

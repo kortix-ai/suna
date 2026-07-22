@@ -1,3 +1,4 @@
+import { projectSecrets } from '@kortix/db';
 /**
  * `claude_subscription` credential resolution — docs/specs/2026-07-22-
  * unified-auth-gateway.md §5.2. Mirrors `codex.ts`'s shape (shared/personal
@@ -13,9 +14,8 @@
  * because there is nothing to refresh yet.
  */
 import { and, eq, isNull, or } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
-import { db } from '../../shared/db';
 import { decryptProjectSecret } from '../../projects/secrets';
+import { db } from '../../shared/db';
 
 export const CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME = 'CLAUDE_CODE_OAUTH_TOKEN';
 
@@ -44,11 +44,13 @@ async function loadClaudeRow(
       valueEnc: projectSecrets.valueEnc,
     })
     .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
-    ));
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME),
+        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
+      ),
+    );
   if (!rows.length) return null;
   const personal = rows.find((r) => r.ownerUserId === userId);
   if (personal) return { row: personal, scope: 'personal' };
@@ -78,7 +80,11 @@ export function parseClaudeAuth(raw: string): StoredClaudeAuth {
   const trimmed = raw.trim();
   if (trimmed.startsWith('{')) {
     try {
-      const parsed = JSON.parse(trimmed) as { token?: unknown; expires?: unknown; expiresAt?: unknown };
+      const parsed = JSON.parse(trimmed) as {
+        token?: unknown;
+        expires?: unknown;
+        expiresAt?: unknown;
+      };
       if (typeof parsed.token === 'string' && parsed.token.trim()) {
         const expires =
           typeof parsed.expires === 'number'

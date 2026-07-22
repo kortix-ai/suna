@@ -20,9 +20,7 @@ export type ApiKeyLivenessStatus = 'healthy' | 'invalid' | 'unverified';
 
 export type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 
-interface LivenessProbe {
-  (apiKey: string, fetchImpl: FetchImpl): Promise<ApiKeyLivenessStatus>;
-}
+type LivenessProbe = (apiKey: string, fetchImpl: FetchImpl) => Promise<ApiKeyLivenessStatus>;
 
 async function probeStatusOnly(
   fetchImpl: FetchImpl,

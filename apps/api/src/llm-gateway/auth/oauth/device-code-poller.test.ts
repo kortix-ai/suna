@@ -23,7 +23,9 @@ describe('pollOAuthDeviceCodeFlow — completion', () => {
       expiresInSeconds: 30,
       poll: async () => {
         calls += 1;
-        return calls === 1 ? { status: 'pending' as const } : { status: 'complete' as const, value: 'token-b' };
+        return calls === 1
+          ? { status: 'pending' as const }
+          : { status: 'complete' as const, value: 'token-b' };
       },
     });
     expect(result).toBe('token-b');
@@ -80,12 +82,14 @@ describe('pollOAuthDeviceCodeFlow — RFC 8628 §3.5 slow_down', () => {
     expect(result).toBe('token-e');
     expect(calls).toBe(2);
     // Server said 1s (same as the floor), not the client's default +5s backoff.
-    expect(pollTimes[1]! - pollTimes[0]!).toBeLessThan(4000);
+    expect(pollTimes).toHaveLength(2);
+    const [first, second] = pollTimes;
+    expect((second ?? 0) - (first ?? 0)).toBeLessThan(4000);
   }, 10_000);
 });
 
 describe('pollOAuthDeviceCodeFlow — failure, timeout, cancellation', () => {
-  test('throws the poller\'s own message on a failed status', async () => {
+  test("throws the poller's own message on a failed status", async () => {
     await expect(
       pollOAuthDeviceCodeFlow({
         intervalSeconds: 5,

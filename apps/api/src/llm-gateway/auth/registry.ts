@@ -158,7 +158,9 @@ function apiKeyEntryFromCatalog(input: {
 function oauthEntry(providerId: 'anthropic' | 'openai'): AuthProviderDescriptor {
   const publicEntry = findAuthProviderPublic(providerId, 'account');
   if (!publicEntry) {
-    throw new Error(`auth-providers.ts is missing the public entry for "${providerId}" — keep the two tables in sync`);
+    throw new Error(
+      `auth-providers.ts is missing the public entry for "${providerId}" — keep the two tables in sync`,
+    );
   }
   if (providerId === 'anthropic') {
     return {
@@ -194,9 +196,17 @@ function oauthEntry(providerId: 'anthropic' | 'openai'): AuthProviderDescriptor 
  */
 export const AUTH_PROVIDERS: readonly AuthProviderDescriptor[] = [
   oauthEntry('anthropic'),
-  apiKeyEntryFromCatalog({ catalogId: 'anthropic', label: 'Anthropic', producesAuthKind: 'anthropic_api_key' }),
+  apiKeyEntryFromCatalog({
+    catalogId: 'anthropic',
+    label: 'Anthropic',
+    producesAuthKind: 'anthropic_api_key',
+  }),
   oauthEntry('openai'),
-  apiKeyEntryFromCatalog({ catalogId: 'openai', label: 'OpenAI', producesAuthKind: 'openai_api_key' }),
+  apiKeyEntryFromCatalog({
+    catalogId: 'openai',
+    label: 'OpenAI',
+    producesAuthKind: 'openai_api_key',
+  }),
   {
     // Not a catalog provider — the generic "OpenAI-compatible REST" custom
     // endpoint already shipped (`composer-capabilities.ts`'s

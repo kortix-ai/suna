@@ -102,7 +102,10 @@ async function resolveCodexStatus(
   try {
     const credential = await resolveCodex(projectId, userId ?? '');
     if (!credential) {
-      return record(entry, { status: 'absent', reason: `Connect ${entry.label} to use this credential.` });
+      return record(entry, {
+        status: 'absent',
+        reason: `Connect ${entry.label} to use this credential.`,
+      });
     }
     // resolveCodexCredential already refreshes-on-read (single-flight) and
     // throws CodexRefreshError when the token is genuinely dead — reaching
@@ -125,7 +128,10 @@ async function resolveClaudeStatus(
 ): Promise<CredentialRecord> {
   const stored = await resolveClaude(projectId, userId ?? '');
   if (!stored) {
-    return record(entry, { status: 'absent', reason: `Connect ${entry.label} to use this credential.` });
+    return record(entry, {
+      status: 'absent',
+      reason: `Connect ${entry.label} to use this credential.`,
+    });
   }
   if (stored.expiresAt !== null && Date.now() >= stored.expiresAt) {
     return record(entry, {
@@ -140,7 +146,8 @@ async function resolveClaudeStatus(
     status: probeStatus,
     scope: stored.scope,
     expiresAt: stored.expiresAt,
-    reason: probeStatus === 'invalid' ? `${entry.label} was rejected by Anthropic — reconnect.` : null,
+    reason:
+      probeStatus === 'invalid' ? `${entry.label} was rejected by Anthropic — reconnect.` : null,
   });
 }
 
@@ -169,7 +176,10 @@ async function resolveApiKeyStatus(
     }
   }
   if (!value) {
-    return record(entry, { status: 'absent', reason: `Connect ${entry.label} to use this credential.` });
+    return record(entry, {
+      status: 'absent',
+      reason: `Connect ${entry.label} to use this credential.`,
+    });
   }
   const status = await checkApiKey(entry.id, value);
   return record(entry, {
