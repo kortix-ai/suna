@@ -533,12 +533,15 @@ export function AcpSessionChat({
       <div ref={chatAreaRef} className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
-          className="relative h-full overflow-y-auto px-4 py-6"
+          className="scrollbar-hide relative z-10 h-full overflow-y-auto [scroll-behavior:auto]"
           onMouseUp={handleChatMouseUp}
           onMouseDown={handleChatMouseDown}
           onScroll={handleChatScroll}
         >
-          <div ref={contentRef} className="mx-auto w-full max-w-3xl space-y-4">
+          <div
+            ref={contentRef}
+            className="mx-auto w-full max-w-3xl min-w-0 space-y-4 px-3 py-6 sm:px-6"
+          >
             {errorInfo?.terminal && items.length === 0 ? (
               <ErrorState
                 size="sm"
@@ -842,12 +845,14 @@ export function AcpSessionChat({
           contentRef={contentRef as React.RefObject<HTMLDivElement>}
         />
       </div>
-      <div className="mx-auto w-full max-w-3xl space-y-2">
+      <div className="w-full">
         {connection === 'reconnecting' ? (
-          <span className="text-muted-foreground flex items-center gap-2 text-xs">
-            <Loading className="size-3 shrink-0" />
-            Reconnecting…
-          </span>
+          <div className="mx-auto w-full max-w-[52rem] px-2 pb-1 sm:px-4">
+            <span className="text-muted-foreground flex items-center gap-2 text-xs">
+              <Loading className="size-3 shrink-0" />
+              Reconnecting…
+            </span>
+          </div>
         ) : null}
         <ComposerChatInput
           sessionId={sessionId}
