@@ -259,6 +259,14 @@ const nextConfig = (): NextConfig => ({
         source: '/.well-known/api-catalog',
         destination: '/well-known/api-catalog',
       },
+      {
+        source: '/.well-known/oauth-authorization-server',
+        destination: '/well-known/oauth-authorization-server',
+      },
+      {
+        source: '/.well-known/oauth-protected-resource',
+        destination: '/well-known/oauth-protected-resource',
+      },
       // Proxy API calls to backend to avoid CORS in local dev. The target is
       // env-driven so an isolated `pnpm worktree` instance proxies the browser
       // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
