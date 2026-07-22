@@ -1075,6 +1075,18 @@ describe('project session API contract', () => {
     });
     expect(whitespace.status).toBe(400);
 
+    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        metadata: { source: 'system:forged' },
+      }),
+    });
+    expect(bodySpoof.status).toBe(201);
+    expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
+
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
