@@ -19,6 +19,19 @@ describe('auth.md', () => {
     expect(body).toContain('S256');
   });
 
+  test('documents every parameter the token endpoint requires for the code exchange', () => {
+    expect(body).toContain('grant_type=authorization_code');
+    expect(body).toContain('code_verifier');
+    expect(body).toContain('redirect_uri');
+    expect(body).toContain('client_id');
+    expect(body).toContain('client_secret');
+  });
+
+  test('documents every parameter the token endpoint requires for a refresh', () => {
+    expect(body).toContain('grant_type=refresh_token');
+    expect(body).toContain('refresh_token');
+  });
+
   test('is honest that there is no self-service registration', () => {
     expect(body).toContain('no dynamic client registration');
     expect(body).toContain(buildAuthorizationServerMetadata().agent_auth.register_uri);

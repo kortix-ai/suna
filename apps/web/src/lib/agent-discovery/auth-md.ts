@@ -1,9 +1,12 @@
 import { DISCOVERY_PATHS } from './link-header';
 import {
   API_BASE,
+  OAUTH_CODE_CHALLENGE_METHODS,
   OAUTH_ENDPOINTS,
+  OAUTH_GRANT_TYPES,
   OAUTH_ISSUER,
   OAUTH_SCOPES_SUPPORTED,
+  OAUTH_TOKEN_AUTH_METHODS,
   OAUTH_TOKEN_RATE_LIMIT_PER_MINUTE,
   siteUrl,
 } from './endpoints';
@@ -34,12 +37,17 @@ Issuer: ${OAUTH_ISSUER}
 1. Redirect the user to the authorization endpoint with \`response_type=code\`,
    your \`client_id\`, a registered \`redirect_uri\`, the scopes you need, and a
    \`code_challenge\`.
-2. PKCE is required. \`code_challenge_method=S256\` is the only accepted method;
-   a request without a challenge is rejected with \`invalid_request\`.
-3. Exchange the returned code at the token endpoint. Send \`client_id\` and
-   \`client_secret\` in the form body (\`client_secret_post\`).
+2. PKCE is required. \`code_challenge_method=${OAUTH_CODE_CHALLENGE_METHODS[0]}\`
+   is the only accepted method; a request without a challenge is rejected with
+   \`invalid_request\`.
+3. Exchange the code at the token endpoint with \`grant_type=${OAUTH_GRANT_TYPES[0]}\`,
+   \`code\`, \`redirect_uri\`, \`code_verifier\`, \`client_id\`, and \`client_secret\`
+   (\`${OAUTH_TOKEN_AUTH_METHODS[0]}\`) in the form body — all six are required, or the
+   request is rejected with \`invalid_request\`. \`code_verifier\` is the plaintext
+   secret behind the ${OAUTH_CODE_CHALLENGE_METHODS[0]} \`code_challenge\` from step 1.
 4. Call the API with \`Authorization: Bearer <access_token>\`.
-5. Refresh with \`grant_type=refresh_token\` when the access token expires.
+5. Refresh with \`grant_type=${OAUTH_GRANT_TYPES[1]}\` plus \`refresh_token\`,
+   \`client_id\`, and \`client_secret\` in the form body when the access token expires.
 
 The token endpoint is rate limited to ${OAUTH_TOKEN_RATE_LIMIT_PER_MINUTE}
 requests per minute per client.
