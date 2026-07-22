@@ -514,6 +514,64 @@ describe('RuntimeView — experimental harness gating', () => {
     expect(screen.getByText('OpenCode')).toBeDefined();
   });
 
+  // Guards the structural invariant behind the removal bug: the remove-confirm
+  // must live INSIDE the editor `Modal`'s React tree. Radix reads pointer
+  // ownership off that tree, so while the confirm was a sibling, every click in
+  // it registered as an outside-click and dismissed the editor mid-removal.
+  // Depth is derived from tree position via `DialogDepthContext`, so the
+  // confirm's z can only exceed the modal's when it is genuinely nested — which
+  // makes this assertion a faithful stand-in for a dismissal that only
+  // reproduces under real hit-testing.
+  test('the remove-confirm stacks above the editor modal instead of tying its z band', () => {
+    setRuntimes({ 'runtime-1': { harness: 'opencode' } });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByText('Edit profiles'));
+    fireEvent.click(screen.getByLabelText('Remove runtime-1'));
+
+    const zOf = (role: string) => {
+      const node = document.querySelector(`[role="${role}"]`) as HTMLElement | null;
+      return node ? Number(node.style.zIndex) : NaN;
+    };
+    // `[role="dialog"]` here is the editor modal — `RuntimeView` renders no
+    // other dialog, and the confirm carries Radix's `alertdialog` role.
+    expect(zOf('alertdialog')).toBeGreaterThan(zOf('dialog'));
+  });
+
+  // Regression for the actual dismissal bug: Radix decides whether a pointer
+  // landed "inside" a layer from a React `onPointerDownCapture` flag, and React
+  // events travel the component tree rather than the DOM. While the confirm was
+  // rendered as a *sibling* of the editor `Modal`, pointing at it never marked
+  // the editor as the pointer's owner, so confirming a removal dismissed the
+  // whole editor. The `pointerDown` below is the load-bearing part — a bare
+  // `click()` never sets that flag and so never reproduces it.
+  test('confirming a removal drops the profile and leaves the editor modal open', async () => {
+    setRuntimes({
+      'runtime-1': { harness: 'opencode' },
+      'runtime-2': { harness: 'codex' },
+    });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByText('Edit profiles'));
+
+    const modal = document.querySelector('[role="dialog"]')!;
+    expect(within(modal as HTMLElement).getByDisplayValue('runtime-1')).toBeDefined();
+
+    fireEvent.click(screen.getByLabelText('Remove runtime-1'));
+    // Radix attaches its outside-pointerdown listener on a `setTimeout(0)`, so
+    // the confirm has to be a tick old before the gesture is representative.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const action = screen.getByText('Remove profile');
+    fireEvent.pointerDown(action);
+    fireEvent.click(action);
+
+    // Editor stays mounted, minus the removed row.
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(screen.queryByDisplayValue('runtime-1')).toBeNull();
+    expect(screen.getByDisplayValue('runtime-2')).toBeDefined();
+  });
+
   test('a project declaring ONLY experimental harnesses with the flag off shows the first-run EmptyState, not silent empty rows', () => {
     experimentalHarnessesEnabled = false;
     setRuntimes({ 'runtime-1': { harness: 'claude' }, 'runtime-2': { harness: 'codex' } });

@@ -428,7 +428,7 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
         ))}
       </ul>
 
-      <Modal open={open} onOpenChange={setOpen}>
+      <Modal open={open} onOpenChange={setOpen} depth={2}>
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
             <ModalTitle>Runtime profiles</ModalTitle>
@@ -463,23 +463,31 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
             <Button type="button" variant="outline-ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button type="button" disabled={mutation.isPending || Object.keys(draft).length === 0} onClick={() => mutation.mutate(draft)}>{mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}Save profiles</Button>
           </ModalFooter>
+
+          {/* Kept INSIDE the editor's tree on purpose. Radix decides
+              "was this pointer inside me?" from the React tree (a
+              `onPointerDownCapture` flag on the layer), not the DOM — and
+              React events cross portals. Rendered as a sibling of `Modal`,
+              every click in this confirm read as an outside-click on the
+              editor and tore it down mid-removal. As a child, the editor
+              sees the pointer as its own, and the depth context nests the
+              confirm one z band above it for free. */}
+          <ConfirmDialog
+            open={removeName !== null}
+            onOpenChange={(next) => { if (!next) setRemoveName(null); }}
+            title={`Remove ${removeName ?? 'runtime'}?`}
+            description="Agents that reference this profile must be moved before the manifest can be saved."
+            confirmLabel="Remove profile"
+            confirmVariant="destructive"
+            confirmIcon={<Trash2 className="size-4" />}
+            onConfirm={() => {
+              if (!removeName) return;
+              setDraft((current) => { const next = { ...current }; delete next[removeName]; return next; });
+              setRemoveName(null);
+            }}
+          />
         </ModalContent>
       </Modal>
-
-      <ConfirmDialog
-        open={removeName !== null}
-        onOpenChange={(next) => { if (!next) setRemoveName(null); }}
-        title={`Remove ${removeName ?? 'runtime'}?`}
-        description="Agents that reference this profile must be moved before the manifest can be saved."
-        confirmLabel="Remove profile"
-        confirmVariant="destructive"
-        confirmIcon={<Trash2 className="size-4" />}
-        onConfirm={() => {
-          if (!removeName) return;
-          setDraft((current) => { const next = { ...current }; delete next[removeName]; return next; });
-          setRemoveName(null);
-        }}
-      />
     </div>
   );
 }
