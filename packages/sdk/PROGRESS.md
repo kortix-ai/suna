@@ -193,7 +193,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.** | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`. | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green |
 | B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
 | B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
-| B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **IN PROGRESS 2026-07-22** — session `terminal-connect-recovery` |
+| B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1241,3 +1241,36 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface and locally verified API
 hardening. Replacement PR review, Deploy Dev, deployed-SHA proof, and live-dev
 HTTP/Executor verification remain part of the repository lifecycle.
+
+---
+
+### 2026-07-22 — session `terminal-connect-recovery` (B12 completion)
+
+Removed the false OpenCode-health dependency from the daemon-owned PTY query.
+The React hooks now subscribe to the session runtime URL directly. PTY create
+and resize mutations stay pinned to that URL. The web panel replaces every
+unbounded loading state with a 15-second server-URL deadline, a visible error,
+and an explicit retry action. A WebSocket that never opens now expires after 15
+seconds and enters the existing bounded backoff loop.
+
+**TDD evidence:** the focused RED run failed because `isPtyQueryEnabled`,
+`deriveTerminalPanelState`, and `shouldExpirePtyConnect` did not exist. The
+focused GREEN run reported **14 pass / 0 fail** with 27 assertions.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1148 pass / 2 skip / 0 fail** across 86 files with 5082
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. The full web
+suite reported **1891 pass / 0 fail** with 5318 assertions. Focused web ESLint
+exited 0.
+
+**Runtime evidence:** isolated sandbox-agent and API proxy coverage reported 77
+pass after the known Bun module-mock-contaminated file was rerun in isolation at
+**6 pass / 0 fail**. Fresh local-stack smokes passed on both Platinum and
+Daytona. Each smoke created a real PTY, opened two WebSocket attachments, wrote
+and observed a marker, replayed scrollback, listed the running PTY, deleted it,
+and cleaned up the session and project.
+
+**Shippable to production: YES** for the SDK and local end-to-end terminal path.
+Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
+remain part of the repository lifecycle.
