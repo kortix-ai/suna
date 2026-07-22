@@ -33,7 +33,7 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { setAdminBypass } from '@/lib/api-client';
-import { getProjectDetail, requestProjectAccess } from '@kortix/sdk/projects-client';
+import { getProject, requestProjectAccess } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 
 interface ProjectAccessBoundaryProps {
@@ -51,8 +51,8 @@ function errorStatus(error: unknown): number | undefined {
 export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoundaryProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const query = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId, { showErrors: false }),
+    queryKey: ['project-access', projectId],
+    queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: !!projectId,
     retry: false,
   });
@@ -140,7 +140,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
     onMutate: () => setInlineError(null),
     onSuccess: (result) => {
       if (result.status === 'already_has_access') {
-        void queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+        void queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
         return;
       }
       setSent(true);
@@ -151,7 +151,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   });
 
   // Platform-admin escape hatch: flips the client-wide admin-bypass header
-  // on, then re-fetches this same ['project-detail', projectId] query so the
+  // on, then re-fetches this same ['project-access', projectId] query so the
   // boundary above (which shares this query cache) picks up the result and
   // renders the actual project. Read-only server-side (see
   // apps/api/src/projects/lib/access.ts) and audit-logged against the
@@ -160,8 +160,8 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
     mutationFn: async () => {
       setAdminBypass(true);
       return queryClient.fetchQuery({
-        queryKey: ['project-detail', projectId],
-        queryFn: () => getProjectDetail(projectId, { showErrors: false }),
+        queryKey: ['project-access', projectId],
+        queryFn: () => getProject(projectId, { showErrors: false }),
       });
     },
     onMutate: () => setBypassError(null),
