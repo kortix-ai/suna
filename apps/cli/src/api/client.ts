@@ -1,4 +1,8 @@
 import type { Auth } from './auth.ts';
+import { secureRemoteBase } from './config.ts';
+
+// Re-exported for callers/tests that reach it via the client module.
+export { secureRemoteBase };
 
 export class ApiError extends Error {
   status: number;
@@ -27,38 +31,6 @@ export interface ClientOptions {
    *  (and validates membership); project-id routes ignore it. Without it the
    *  server falls back to the caller's earliest-joined account. */
   accountId?: string;
-}
-
-function isLocalHostname(h: string): boolean {
-  return (
-    h === 'localhost' ||
-    h === '127.0.0.1' ||
-    h === '0.0.0.0' ||
-    h === '::1' ||
-    h === '[::1]' ||
-    h.endsWith('.localhost')
-  );
-}
-
-/**
- * Kortix cloud APIs are HTTPS-only. Hitting one over `http://` triggers a 308
- * redirect to `https://`, and `fetch` drops the `Authorization` header on the
- * scheme change — so the bearer token silently never arrives and the call 401s
- * as "Token rejected by the API" even though login otherwise succeeded. Upgrade
- * any REMOTE http base to https before we ever send credentials; localhost and
- * self-host (which legitimately run plain http) are left untouched.
- */
-export function secureRemoteBase(base: string): string {
-  try {
-    const u = new URL(base);
-    if (u.protocol === 'http:' && !isLocalHostname(u.hostname)) {
-      u.protocol = 'https:';
-      return u.toString().replace(/\/$/, '');
-    }
-  } catch {
-    // Not a parseable absolute URL — leave it for the caller/fetch to reject.
-  }
-  return base;
 }
 
 function joinUrl(base: string, path: string): string {

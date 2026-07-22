@@ -394,6 +394,38 @@ export function validateHostName(name: string): void {
 
 // ─── Internal ─────────────────────────────────────────────────────────────
 
+function isLocalHostname(h: string): boolean {
+  return (
+    h === 'localhost' ||
+    h === '127.0.0.1' ||
+    h === '0.0.0.0' ||
+    h === '::1' ||
+    h === '[::1]' ||
+    h.endsWith('.localhost')
+  );
+}
+
+/**
+ * Kortix cloud APIs are HTTPS-only. A remote `http://` base 308-redirects to
+ * https, and `fetch` drops the `Authorization` header on the scheme change — so
+ * the bearer token silently never arrives and the call 401s as "Token rejected
+ * by the API" even after a successful browser login (and the same drop breaks
+ * the sandbox proxy, which reads the stored base directly). Upgrade any REMOTE
+ * http base to https; localhost / self-host (legitimately plain http) stay put.
+ */
+export function secureRemoteBase(base: string): string {
+  try {
+    const u = new URL(base);
+    if (u.protocol === 'http:' && !isLocalHostname(u.hostname)) {
+      u.protocol = 'https:';
+      return u.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // Not a parseable absolute URL — leave it for the caller/fetch to reject.
+  }
+  return base;
+}
+
 function normalizeConfig(parsed: Partial<Config>): Config {
   const hosts = parsed.hosts ?? {};
   const cleaned: Record<string, Host> = {};
@@ -402,7 +434,7 @@ function normalizeConfig(parsed: Partial<Config>): Config {
     const h = value as Partial<Host>;
     if (typeof h.token !== 'string') continue;
     cleaned[name] = {
-      url: h.url ?? DEFAULT_API_BASE,
+      url: secureRemoteBase(h.url ?? DEFAULT_API_BASE),
       token: h.token,
       user_id: h.user_id ?? '',
       user_email: h.user_email ?? '',
