@@ -76,7 +76,9 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
           // Whole-dollar amounts only — custom prices are per-dollar on the
           // backend and the ledger displays cleanly. Round to be safe.
           amount: Math.round(amount),
-          success_url: successUrl ?? `${window.location.origin}/dashboard?credit_purchase=success`,
+          // Land on /projects (a real route) — /dashboard 404s. The projects
+          // page reads ?credit_purchase=success to refresh the wallet + confetti.
+          success_url: successUrl ?? `${window.location.origin}/projects?credit_purchase=success`,
           cancel_url: cancelUrl ?? window.location.href,
         },
         billingAccountId,
