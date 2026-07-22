@@ -44,23 +44,25 @@ afterAll(() => {
 });
 
 describe('RuntimeProfilesManager', () => {
-  test('a not-yet-editable project shows the enable-harnesses upsell, not the profile editor', () => {
+  test('a not-yet-editable project shows the agent-types upsell, not the editor', () => {
     runtimeProfiles = { schema_version: 2, editable: false, runtimes: {} };
     render(<RuntimeProfilesManager projectId={PROJECT_ID} canWrite />);
 
-    expect(screen.getByText('Turn on runtime profiles')).toBeDefined();
-    expect(screen.queryByText('Runtime profiles')).toBeNull();
+    expect(screen.getByText('Turn on more agent types')).toBeDefined();
+    // The internals word never leaks into user-facing copy.
+    expect(screen.queryByText('Turn on runtime profiles')).toBeNull();
+    expect(screen.queryByText('Agent types')).toBeNull();
   });
 
   test('a read-only viewer sees the upsell with its action disabled', () => {
     runtimeProfiles = { schema_version: 2, editable: false, runtimes: {} };
     render(<RuntimeProfilesManager projectId={PROJECT_ID} canWrite={false} />);
 
-    const button = screen.getByRole('button', { name: 'Enable runtime profiles' });
+    const button = screen.getByRole('button', { name: 'Turn on agent types' });
     expect(button.hasAttribute('disabled')).toBe(true);
   });
 
-  test('an editable project lists its declared profiles with harness + config dir', () => {
+  test('an editable project lists its declared types with brand agent labels, no config path', () => {
     runtimeProfiles = {
       schema_version: 3,
       editable: true,
@@ -71,16 +73,19 @@ describe('RuntimeProfilesManager', () => {
     };
     render(<RuntimeProfilesManager projectId={PROJECT_ID} canWrite />);
 
-    expect(screen.getByText('Runtime profiles')).toBeDefined();
+    expect(screen.getByText('Agent types')).toBeDefined();
     expect(screen.getByText('2')).toBeDefined();
-    // "claude" appears twice — the profile name and its harness badge.
-    expect(screen.getAllByText('claude').length).toBe(2);
-    expect(screen.getByText('.claude')).toBeDefined();
+    // The type name shows once; the agent shows as its brand label, never the
+    // raw harness id or the config-folder path (that's hidden behind Advanced).
+    expect(screen.getByText('claude')).toBeDefined();
+    expect(screen.getByText('Claude Code')).toBeDefined();
     expect(screen.getByText('runtime-2')).toBeDefined();
-    expect(screen.getByText('opencode')).toBeDefined();
+    expect(screen.getByText('OpenCode')).toBeDefined();
+    expect(screen.queryByText('.claude')).toBeNull();
+    expect(screen.queryByText('Runtime profiles')).toBeNull();
   });
 
-  test('a read-only viewer sees the profile list with "Edit profiles" disabled', () => {
+  test('a read-only viewer sees the type list with "Edit" disabled', () => {
     runtimeProfiles = {
       schema_version: 3,
       editable: true,
@@ -88,7 +93,7 @@ describe('RuntimeProfilesManager', () => {
     };
     render(<RuntimeProfilesManager projectId={PROJECT_ID} canWrite={false} />);
 
-    const button = screen.getByRole('button', { name: 'Edit profiles' });
+    const button = screen.getByRole('button', { name: 'Edit' });
     expect(button.hasAttribute('disabled')).toBe(true);
   });
 });
