@@ -1212,3 +1212,111 @@ describe('ACP-native chat projection', () => {
     ]);
   });
 });
+
+describe('AcpSessionChat — refusal / truncation footer note', () => {
+  // One completed turn to hang the last-turn footer note off.
+  const completedTurnRows: any[] = [
+    { ordinal: 1, direction: 'client_to_agent', streamEventId: null, createdAt: '2026-01-01T00:00:00.000Z', envelope: { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: { prompt: [{ type: 'text', text: 'Write a long essay' }] } } },
+    { ordinal: 2, direction: 'agent_to_client', streamEventId: 1, createdAt: '2026-01-01T00:00:05.000Z', envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Once upon a time' } } } } },
+  ];
+
+  test('truncation renders a plain explanation + a Continue action that sends "Continue"', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const items = projectAcpEnvelopes(completedTurnRows);
+    const sent: string[] = [];
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({
+            ready: true,
+            busy: false,
+            chatItems: items,
+            envelopes: completedTurnRows as any,
+            stopReason: 'max_tokens',
+            send: async (blocks: any) => {
+              sent.push(blocks?.[0]?.text ?? '');
+              return true;
+            },
+          } as any)}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const note = renderer.root.findAll((n) => n.props?.['data-testid'] === 'acp-stop-reason-note');
+      expect(note).toHaveLength(1);
+      expect(textOf(note[0]!)).toContain('The response hit its length limit.');
+
+      const continueBtn = note[0]!.findAll(
+        (n) => typeof n.type === 'string' && n.type === 'button' && textOf(n).includes('Continue'),
+      );
+      expect(continueBtn.length).toBeGreaterThanOrEqual(1);
+      act(() => {
+        (continueBtn[0]!.props as { onClick?: () => void }).onClick?.();
+      });
+      expect(sent).toContain('Continue');
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('refusal renders an honest explanation and NO Continue action', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const items = projectAcpEnvelopes(completedTurnRows);
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, busy: false, chatItems: items, envelopes: completedTurnRows as any, stopReason: 'refusal' } as any)}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const note = renderer.root.findAll((n) => n.props?.['data-testid'] === 'acp-stop-reason-note');
+      expect(note).toHaveLength(1);
+      expect(textOf(note[0]!)).toContain('The model declined this request.');
+      expect(textOf(note[0]!)).not.toContain('Continue');
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('a clean end_turn finish renders no stop-reason note at all', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const items = projectAcpEnvelopes(completedTurnRows);
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, busy: false, chatItems: items, envelopes: completedTurnRows as any, stopReason: 'end_turn' } as any)}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      expect(renderer.root.findAll((n) => n.props?.['data-testid'] === 'acp-stop-reason-note')).toHaveLength(0);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+});

@@ -324,13 +324,24 @@ describe('acpContextGroupSummary', () => {
 // `max_turn_requests` are spec'd (protocol/v1/prompt-turn.md) but not yet
 // observed live — covered here from the spec text.
 describe('describeAcpStopReason', () => {
-  test('refusal gets a distinct, emphasized label', () => {
-    expect(describeAcpStopReason('refusal')).toEqual({ text: 'Refused', emphasize: true });
+  test('refusal gets a distinct, emphasized label + plain explanation, no continue', () => {
+    expect(describeAcpStopReason('refusal')).toEqual({
+      text: 'Refused',
+      emphasize: true,
+      explanation: 'The model declined this request.',
+      canContinue: false,
+    });
   });
 
-  test('max_tokens and max_turn_requests both get a "Truncated" affordance', () => {
-    expect(describeAcpStopReason('max_tokens')).toEqual({ text: 'Truncated', emphasize: true });
-    expect(describeAcpStopReason('max_turn_requests')).toEqual({ text: 'Truncated', emphasize: true });
+  test('max_tokens and max_turn_requests both get a "Truncated" affordance with a continue action', () => {
+    const truncated = {
+      text: 'Truncated',
+      emphasize: true,
+      explanation: 'The response hit its length limit.',
+      canContinue: true,
+    };
+    expect(describeAcpStopReason('max_tokens')).toEqual(truncated);
+    expect(describeAcpStopReason('max_turn_requests')).toEqual(truncated);
   });
 
   test('end_turn (the ordinary clean finish) renders nothing', () => {

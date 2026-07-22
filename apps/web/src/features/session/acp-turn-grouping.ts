@@ -272,15 +272,37 @@ export function formatAcpSessionCostLabel(cost: AcpUsageCost | null | undefined)
  * deliberately NOT an alarm color: a truncation or refusal is a normal
  * protocol outcome, not an error state.
  */
+export interface AcpStopReasonNote {
+  /** Short footer label, next to the duration/cost meta. */
+  text: string;
+  /** Nudge to a slightly stronger text color — never an alarm color. */
+  emphasize: boolean;
+  /** One plain-English line under the label: what happened, no jargon. */
+  explanation: string;
+  /** Truncation has an obvious one-click recovery (ask it to continue);
+   *  refusal does not. Drives whether a `Continue` action is offered. */
+  canContinue: boolean;
+}
+
 export function describeAcpStopReason(
   stopReason: string | null | undefined,
-): { text: string; emphasize: boolean } | null {
+): AcpStopReasonNote | null {
   switch (stopReason) {
     case 'refusal':
-      return { text: 'Refused', emphasize: true };
+      return {
+        text: 'Refused',
+        emphasize: true,
+        explanation: 'The model declined this request.',
+        canContinue: false,
+      };
     case 'max_tokens':
     case 'max_turn_requests':
-      return { text: 'Truncated', emphasize: true };
+      return {
+        text: 'Truncated',
+        emphasize: true,
+        explanation: 'The response hit its length limit.',
+        canContinue: true,
+      };
     default:
       return null;
   }

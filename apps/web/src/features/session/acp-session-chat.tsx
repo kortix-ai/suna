@@ -44,6 +44,7 @@ import {
   AcpUnknownMethodCard,
 } from './acp-transcript-groups';
 import {
+  type AcpStopReasonNote,
   acpOrdinalTimestamps,
   acpTurnDurationMs,
   describeAcpStopReason,
@@ -81,7 +82,7 @@ interface AcpTurnFooter {
    *  `describeAcpStopReason`'s doc comment. `null` for a clean `end_turn`/
    *  `cancelled` finish, or any turn other than the last (the SDK only ever
    *  tracks the MOST RECENT turn's `stopReason`). */
-  stopReasonNote: { text: string; emphasize: boolean } | null;
+  stopReasonNote: AcpStopReasonNote | null;
 }
 
 interface QueuedAcpMessage {
@@ -685,32 +686,71 @@ export function AcpSessionChat({
                         // never as a detached line floating above the
                         // composer). Last turn: legible, rest-visible.
                         // Historical turns keep the hover-reveal noise control.
-                        <div
-                          data-testid="acp-turn-footer"
-                          className={cn(
-                            'text-muted-foreground -mt-2 flex items-center gap-1 text-xs transition-opacity duration-150',
-                            isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
-                          )}
-                        >
-                          <CopyButton code={footer.lastAssistantText.text} />
-                          <InlineMeta
+                        <>
+                          <div
+                            data-testid="acp-turn-footer"
                             className={cn(
-                              'tabular-nums',
-                              isLastTurn ? 'text-muted-foreground' : 'text-muted-foreground/50',
+                              'text-muted-foreground -mt-2 flex items-center gap-1 text-xs transition-opacity duration-150',
+                              isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
                             )}
                           >
-                            {footer.durationMs != null
-                              ? formatAcpDuration(footer.durationMs)
-                              : null}
-                            {footer.costLabel}
-                            {footer.contextLabel}
-                            {footer.stopReasonNote ? (
-                              <span className={footer.stopReasonNote.emphasize ? 'text-foreground/80' : undefined}>
-                                {footer.stopReasonNote.text}
-                              </span>
-                            ) : null}
-                          </InlineMeta>
-                        </div>
+                            <CopyButton code={footer.lastAssistantText.text} />
+                            <InlineMeta
+                              className={cn(
+                                'tabular-nums',
+                                isLastTurn ? 'text-muted-foreground' : 'text-muted-foreground/50',
+                              )}
+                            >
+                              {footer.durationMs != null
+                                ? formatAcpDuration(footer.durationMs)
+                                : null}
+                              {footer.costLabel}
+                              {footer.contextLabel}
+                              {footer.stopReasonNote ? (
+                                <span className={footer.stopReasonNote.emphasize ? 'text-foreground/80' : undefined}>
+                                  {footer.stopReasonNote.text}
+                                </span>
+                              ) : null}
+                            </InlineMeta>
+                          </div>
+                          {footer.stopReasonNote ? (
+                            // A refusal/truncation is a normal protocol outcome,
+                            // not an error — so it gets a plain one-line
+                            // explanation (never an alarm banner) and, for
+                            // truncation only, a one-click Continue (the obvious
+                            // recovery). Last turn only for the action; the
+                            // explanation follows the footer's rest/hover visibility.
+                            <div
+                              data-testid="acp-stop-reason-note"
+                              className={cn(
+                                'text-muted-foreground mt-1 flex flex-wrap items-center gap-2 pl-1 text-xs text-pretty transition-opacity duration-150',
+                                isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
+                              )}
+                            >
+                              <span>{footer.stopReasonNote.explanation}</span>
+                              {isLastTurn && footer.stopReasonNote.canContinue ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="xs"
+                                  disabled={busy}
+                                  className="active:scale-[0.96] transition-transform"
+                                  onClick={() => {
+                                    void send('Continue').catch((reason) =>
+                                      errorToast(
+                                        reason instanceof Error
+                                          ? reason.message
+                                          : 'Could not continue',
+                                      ),
+                                    );
+                                  }}
+                                >
+                                  Continue
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                   );
