@@ -22,7 +22,7 @@ import type {
 import type { RegisteredFlow } from '../core/flow';
 import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
-import { provisionMatrix, synthUser, type Provisioned } from './principals';
+import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
 
@@ -185,6 +185,20 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       }
       return u.principal;
     },
+    async userWithEmail(email, opts) {
+      const u = await synthUserWithEmail(env, email.toLowerCase(), opts?.label ?? 'ADDRESSEE');
+      extraUserIds.push(u.user.id);
+      // Same lazy-personal-account bootstrap as `user()` — minting a PAT forces
+      // the personal account + owner membership into existence so subsequent
+      // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
+      const bootstrap = await new Client(env.apiUrl)
+        .as(u.principal)
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap` });
+      if (bootstrap.statusCode !== 201) {
+        throw new Error(`standalone user-with-email bootstrap failed: ${bootstrap.text()}`);
+      }
+      return u.principal;
+    },
     async session(project, opts) {
       // `prompt` was never consumed by the session API; use the documented
       // field now that the HTTP boundary rejects unknown create properties.
@@ -261,6 +275,7 @@ function makeUnavailableFixtures(): Fixtures {
     pat: fail as any,
     team: fail as any,
     user: fail as any,
+    userWithEmail: fail as any,
   };
 }
 
