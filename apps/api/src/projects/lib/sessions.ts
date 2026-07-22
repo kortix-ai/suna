@@ -522,6 +522,20 @@ export async function createProjectSession(input: {
       },
     };
   }
+  // Mirror the OpenAPI bound (origin_ref max 256) for internal backend callers
+  // that compose the body server-side and bypass request validation, so an
+  // oversized handle can't reach the project_sessions.origin_ref column.
+  if (requestedOriginRef && requestedOriginRef.length > 256) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'origin_ref must be at most 256 characters',
+          code: 'INVALID_ORIGIN_REF',
+        },
+      },
+    };
+  }
   const originRef = canOverride(origin, 'origin_ref') ? (requestedOriginRef ?? null) : null;
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
