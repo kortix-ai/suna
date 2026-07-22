@@ -467,7 +467,7 @@ openpyxl cannot create pivot tables. Use `skills/xlsx/scripts/pivot_table.py`, w
 
 ```bash
 # Create a pivot table
-uv run skills/xlsx/scripts/pivot_table.py create output.xlsx '{
+uv run --with openpyxl skills/xlsx/scripts/pivot_table.py create output.xlsx '{
     "source_sheet": "Data",
     "target_sheet": "Revenue Pivot",
     "pivot_name": "RevPivot",

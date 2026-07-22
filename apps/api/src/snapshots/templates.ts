@@ -194,10 +194,10 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // layer. Chromium's content hash is now stable across agent-source churn — it is
 // fetched at most once per pinned Playwright/agent-browser version and
 // cache-reused for every base rebuild after.
-// v35: run the toolchain and daemon as `kortix`, restore the runtime environment
+// v30: run the toolchain and daemon as `kortix`, restore the runtime environment
 // when a provider discards image USER/ENV, extract OpenCode cache warming, and
 // bake the platform machine guide at /MACHINE.md.
-const RUNTIME_LAYER_VERSION = 'kortix-runtime-user-v35';
+const RUNTIME_LAYER_VERSION = 'kortix-runtime-user-v30';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
