@@ -319,7 +319,7 @@ export const SessionCreateInputSchema = z
     // Accepted only from a backend-origin caller (an account API key / PAT or a
     // service-account bearer); any other origin supplying it is rejected 403
     // (see resolveSessionOrigin / canOverride).
-    origin_ref: z.string().min(1).max(256).optional(),
+    origin_ref: z.string().trim().min(1).max(256).optional(),
     // Deprecated camelCase compatibility accepted by the pre-contract route.
     // New SDK/API consumers use the snake_case fields above.
     baseRef: z.string().min(1).optional(),

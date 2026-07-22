@@ -1066,6 +1066,13 @@ describe('project session API contract', () => {
     expect(forbidden.status).toBe(403);
     expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
 
+    const whitespace = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: '   ' }),
+    });
+    expect(whitespace.status).toBe(400);
+
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

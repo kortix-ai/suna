@@ -510,7 +510,12 @@ export async function createProjectSession(input: {
     source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
   });
   const requestedOriginRef = normalizeString(body.origin_ref);
-  if (requestedOriginRef && !canOverride(origin, 'origin_ref')) {
+  // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
+  // whitespace-only one), not on its trimmed value — otherwise a non-backend
+  // caller could send origin_ref: "   " to slip past the 403, since
+  // normalizeString would null it out.
+  const originRefProvided = typeof body.origin_ref === 'string' && body.origin_ref.length > 0;
+  if (originRefProvided && !canOverride(origin, 'origin_ref')) {
     return {
       error: {
         status: 403,
