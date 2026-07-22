@@ -120,7 +120,7 @@ describe('public SEO/AEO content coverage', () => {
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {
     const resolved = resolvePublicMarkdown(['docs', 'index.md']);
-    expect(resolved?.markdown).toContain('Create a project, run a session, keep the work');
+    expect(resolved?.markdown).toContain('Create a project, start a session, and merge your first change request');
     expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
 
@@ -288,10 +288,11 @@ describe('bounded public agent index', () => {
     }
 
     // The recency-first sort should now surface docs and marketing records
-    // among the dated set, not just blog + use-case. Verify by checking that
-    // the top 25 of the unfiltered index include at least one docs record.
+    // among the dated set, not just blog + use-case. Sample the max page size
+    // (50): a docs-wide refresh can legitimately stamp every docs page with
+    // the same day, filling a 25-item page with docs alone.
     const unfiltered = getAgentIndex(
-      new Request('https://kortix.com/api/ai?limit=25', { headers: { 'x-real-ip': '192.0.2.6' } }),
+      new Request('https://kortix.com/api/ai?limit=50', { headers: { 'x-real-ip': '192.0.2.6' } }),
     );
     const unfilteredBody = (await unfiltered.json()) as any;
     const types = new Set((unfilteredBody.data as any[]).map((item) => item.type));
