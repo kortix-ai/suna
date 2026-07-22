@@ -2,7 +2,11 @@
 
 import type { ReactNode } from 'react';
 
-import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
+import {
+  type AttachedFile,
+  SessionChatInput,
+  type TrackedMention,
+} from '@/features/session/session-chat-input';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
 import {
@@ -45,6 +49,9 @@ export function ComposerChatInput({
   cardClassName,
   boundAgentName,
   clearOnSend,
+  queuedMessages,
+  onQueueMessage,
+  onRemoveQueuedMessage,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -73,6 +80,10 @@ export function ComposerChatInput({
   cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /** Queued-while-busy support, passed straight through to SessionChatInput. */
+  queuedMessages?: { id: string; text: string }[];
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
 }) {
   const { data: agents } = useOpenCodeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
@@ -107,6 +118,9 @@ export function ComposerChatInput({
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
+      queuedMessages={queuedMessages}
+      onQueueMessage={onQueueMessage}
+      onRemoveQueuedMessage={onRemoveQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}
       isSending={isSending}

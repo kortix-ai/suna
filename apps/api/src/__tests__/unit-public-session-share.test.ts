@@ -9,6 +9,7 @@ const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const EXTERNAL_ID = 'sandbox-external-1';
 
 let shareRow: any;
+let personalBindingRow: { profileId: string } | null;
 let updateCalls = 0;
 let fetchUrls: string[] = [];
 
@@ -24,7 +25,7 @@ mock.module('../shared/db', () => ({
         }),
         innerJoin: () => ({
           where: () => ({
-            limit: async () => shareRow ? [shareRow] : [],
+            limit: async () => personalBindingRow ? [personalBindingRow] : [],
           }),
         }),
       }),
@@ -79,6 +80,7 @@ beforeEach(() => {
     externalId: EXTERNAL_ID,
     sandboxStatus: 'active',
   };
+  personalBindingRow = null;
   updateCalls = 0;
   fetchUrls = [];
   globalThis.fetch = (async (url: RequestInfo | URL) => {
@@ -109,17 +111,29 @@ describe('public session preview shares', () => {
     expect(body.share.resource_type).toBe('preview');
   });
 
+  test('rejects a legacy public link when the session now has a personal connector binding', async () => {
+    personalBindingRow = { profileId: '55555555-5555-4555-8555-555555555555' };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'Sessions using a personal connector profile cannot be shared publicly',
+    });
+  });
+
   test('rejects ports outside the share allow-list', async () => {
     const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/8000/`);
     expect(res.status).toBe(403);
   });
 
-  test('allows normal app methods for preview shares', async () => {
+  test('keeps view-mode preview shares read-only', async () => {
     const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/api`, {
       method: 'POST',
       body: '{}',
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(405);
+    expect(await res.json()).toEqual({ error: 'This public share is view-only' });
   });
 
   test('proxies allowed GET requests and records use', async () => {

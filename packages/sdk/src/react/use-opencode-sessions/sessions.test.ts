@@ -62,6 +62,7 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
 
 const { useSummarizeOpenCodeSession, useInitSession } = await import('./sessions');
 const { opencodeKeys } = await import('./keys');
+const { NoCompactionModelError } = await import('./no-compaction-model-error');
 
 beforeEach(() => {
   fakeQueryClient = makeFakeQueryClient();
@@ -180,9 +181,14 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
+    // The expected "no model configured" state throws the sentinel-marked
+    // `NoCompactionModelError` (not a plain `Error`) so the Sentry telemetry
+    // gate can `instanceof`-match it and drop the expected config state
+    // instead of paging Better Stack. The user-facing message is unchanged.
     await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
       'No model available for compaction. Please configure a model in settings.',
     );
+    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toBeInstanceOf(NoCompactionModelError);
   });
 
   test('a thrown/rejected config.get() is swallowed — falls through to the next tier', async () => {

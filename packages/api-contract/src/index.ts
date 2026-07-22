@@ -316,8 +316,9 @@ export const SessionCreateInputSchema = z
     runtime_context: SessionRuntimeContextSchema.optional(),
     connector_bindings: SessionConnectorBindingsSchema.optional(),
     // Backend-only: the wrapper's opaque end-user handle this session acts for.
-    // Accepted solely from a service-account (backend) caller; any other origin
-    // supplying it is rejected 403 (see resolveSessionOrigin / canOverride).
+    // Accepted only from a backend-origin caller (an account API key / PAT or a
+    // service-account bearer); any other origin supplying it is rejected 403
+    // (see resolveSessionOrigin / canOverride).
     origin_ref: z.string().min(1).max(256).optional(),
     // Deprecated camelCase compatibility accepted by the pre-contract route.
     // New SDK/API consumers use the snake_case fields above.
@@ -472,9 +473,16 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse', 'pinned']),
+  session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
   session_id: z.string().nullable(),
+  /**
+   * For session_mode === 'keyed' only: the `{{ body.path }}` template rendered
+   * per delivery to pick one session per key. Null otherwise.
+   */
+  session_key: z.string().nullable(),
+  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
+  filter: z.record(z.string(), z.string()).nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

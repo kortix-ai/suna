@@ -64,7 +64,10 @@ export function resolveSessionOrigin(input: {
   inSession?: boolean | null;
   source?: string | null;
 }): SessionOrigin {
-  const source = input.source ?? '';
+  // `source` ultimately comes from session metadata (arbitrary JSON) — coerce
+  // defensively so a non-string value can't make `startsWith` throw and break
+  // session creation.
+  const source = typeof input.source === 'string' ? input.source : '';
   if (source === 'trigger:cron') return 'schedule';
   if (source.startsWith('trigger:')) return 'trigger';
   if (source.startsWith('system:')) return 'system';
@@ -80,7 +83,8 @@ export function resolveSessionOrigin(input: {
 }
 
 /**
- * Override fields only a trusted backend (service-account) session may set.
+ * Override fields only a trusted backend-origin session may set (a service
+ * account, or the account API key / PAT — see resolveSessionOrigin).
  * Everything else stays as open as today — a project member can already pass
  * connectors/model/agent/runtime_context, so gating those would be a
  * regression. The two backend-only fields are genuinely new/sensitive:

@@ -40,8 +40,15 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1784642564770,
-      "tag": "20260721140244_add_session_origin",
+      "when": 1784665625784,
+      "tag": "20260721202705_add_audit_events_occurred_at_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784711662984,
+      "tag": "20260722091422_add_session_origin",
       "breakpoints": true
     }
   ]

@@ -1056,7 +1056,7 @@ describe('project session API contract', () => {
     });
   });
 
-  test('derives session origin from the caller token; only a service-account backend may set origin_ref', async () => {
+  test('derives session origin from the caller token; only a backend-origin caller may set origin_ref', async () => {
     const app = createApp();
     // A normal (human/supabase) caller may NOT vouch for a wrapper end-user:
     // origin_ref is a backend-only field, so supplying it is rejected rather

@@ -1,3 +1,4 @@
+import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
@@ -5,10 +6,10 @@ import {
   listPublicSharesForSession,
   revokePublicShare,
 } from '../../shared/session-public-shares';
-import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, loadSessionForSharing, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, readBody } from '../lib/serializers';
+import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -97,7 +98,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(z.any(), 'Public share'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -112,6 +113,21 @@ projectsApp.openapi(
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json({ error: 'Only the session owner or an editor can create public shares' }, 403);
+    }
+    if (
+      await sessionHasMemberConnectorBinding({
+        accountId: visible.row.accountId,
+        projectId,
+        sessionId,
+      })
+    ) {
+      return c.json(
+        {
+          error: 'Sessions using a personal connector profile cannot be shared publicly',
+          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+        },
+        409,
+      );
     }
 
     const result = await createPublicShare(body, {

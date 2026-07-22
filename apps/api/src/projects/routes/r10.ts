@@ -164,6 +164,8 @@ async function handleMarketplaceInstallSession(c: any) {
   const result = await createProjectSession({
     project: loaded.row,
     userId: loaded.userId,
+    requestingPrincipalType:
+      c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,

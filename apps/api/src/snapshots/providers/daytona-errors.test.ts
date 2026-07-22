@@ -41,6 +41,9 @@ describe('Daytona snapshot not-found classifier', () => {
     ['503', Object.assign(new Error('upstream failed'), { statusCode: 503 })],
     ['generic not-found text', new Error('repository not found')],
     ['imprecise snapshot text', new Error('snapshot lookup not found')],
+    // A throttled lookup must NEVER read as "missing" — that would turn every
+    // rate-limited call into a spurious rebuild trigger.
+    ['rate limit (429)', Object.assign(new Error('ThrottlerException: Too Many Requests'), { statusCode: 429 })],
   ])('rejects %s as an unconfirmed not-found', (_label, err) => {
     expect(isDaytonaSnapshotNotFoundError(err)).toBe(false);
   });

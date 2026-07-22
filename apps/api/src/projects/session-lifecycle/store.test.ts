@@ -10,6 +10,7 @@ const BASE: CreateSessionCommand = {
   source: 'ui',
   project: {} as CreateSessionCommand['project'],
   userId: 'user-1',
+  requestingPrincipalType: 'human',
   body: { initial_prompt: 'hi', origin_ref: 'tenant-42' },
 };
 

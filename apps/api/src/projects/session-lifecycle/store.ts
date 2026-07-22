@@ -1,5 +1,6 @@
-import { sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, isNull, lte, or } from 'drizzle-orm';
+import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { and, asc, eq, isNull, lte, ne, or } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type {
   CreateSessionCommand,
@@ -13,9 +14,11 @@ export type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferS
 export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
+    requestingPrincipalType: command.requestingPrincipalType,
     metadata: command.metadata,
     extraEnvVars: command.extraEnvVars,
     visibility: command.visibility,
+    mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
     enforceAccountCap: command.enforceAccountCap,
     postCreate: command.postCreate,
     authType: command.authType,
@@ -30,6 +33,10 @@ export interface QueuedContinueSessionPayload {
    *  already consumed in-band (a live held/poll request resumed the turn) —
    *  the follow-up prompt would just be noise. */
   executionId?: string | null;
+  /** Which trigger fired this prompt — diagnostics only, carried into the
+   *  dead-letter alert so "which automation lost its prompt" is answerable
+   *  from the log line alone. */
+  triggerSlug?: string | null;
 }
 
 /**
@@ -46,6 +53,7 @@ export async function enqueueContinueSessionCommand(input: {
   actorUserId: string | null;
   text: string;
   executionId?: string | null;
+  triggerSlug?: string | null;
   availableAt?: Date;
   /** Dedupe key — a repeat enqueue (double-resolve race) is a no-op. */
   idempotencyKey?: string | null;
@@ -54,6 +62,7 @@ export async function enqueueContinueSessionCommand(input: {
   const payload: QueuedContinueSessionPayload = {
     text: input.text,
     executionId: input.executionId ?? null,
+    triggerSlug: input.triggerSlug ?? null,
   };
   const values = {
     commandType: 'continue_session',
@@ -221,7 +230,7 @@ export async function markCommandFailed(
   },
 ): Promise<void> {
   const retry = opts.retryable && opts.attempts < 5;
-  await db
+  const [row] = await db
     .update(sessionLifecycleCommands)
     .set({
       status: retry ? 'queued' : 'dead_lettered',
@@ -234,13 +243,62 @@ export async function markCommandFailed(
       lastError: error,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .returning();
+  if (retry || !row) return;
+
+  // Dead-lettered = this command's work is being ABANDONED. That used to be a
+  // console.warn deep in the drain — invisible to alerting while the user's
+  // session sat "queued — agent picking up" forever. Make it a real error.
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  logger.error('[session-lifecycle] command dead-lettered — giving up after retries', {
+    command_id: row.commandId,
+    command_type: row.commandType,
+    source: row.source,
+    project_id: row.projectId,
+    account_id: row.accountId,
+    session_id: row.sessionId,
+    trigger_slug: typeof payload.triggerSlug === 'string' ? payload.triggerSlug : undefined,
+    idempotency_key: row.idempotencyKey,
+    attempts: opts.attempts,
+    error,
+  });
+
+  if (row.commandType === 'continue_session' && row.sessionId) {
+    // Park the target session 'failed': findReusableTriggerSession skips failed
+    // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
+    // FRESH session instead of re-aiming prompts at a wedged one — the proven
+    // lossless self-heal. Status re-check in the UPDATE predicate (same pattern
+    // as reconcileStuckActiveSessions) so a concurrent transition isn't
+    // clobbered by a stale dead-letter.
+    try {
+      await db
+        .update(projectSessions)
+        .set({
+          status: 'failed',
+          error: `prompt delivery dead-lettered: ${error}`.slice(0, 1000),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(projectSessions.sessionId, row.sessionId), ne(projectSessions.status, 'failed')),
+        );
+    } catch (err) {
+      console.warn('[session-lifecycle] failed to park session after dead-letter', {
+        sessionId: row.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 export async function claimDueLifecycleCommands(input: {
   workerId: string;
   limit: number;
   now?: Date;
+  /** Claim only commands that came due before this instant (default: now).
+   *  Lets the starvation reconciler target rows the scheduler drain should
+   *  have taken long ago, without racing it for freshly-due ones. */
+  availableBefore?: Date;
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
   const rows = await db
@@ -249,7 +307,7 @@ export async function claimDueLifecycleCommands(input: {
     .where(
       and(
         eq(sessionLifecycleCommands.status, 'queued'),
-        lte(sessionLifecycleCommands.availableAt, now),
+        lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
         or(isNull(sessionLifecycleCommands.lockedUntil), lte(sessionLifecycleCommands.lockedUntil, now)),
       ),
     )

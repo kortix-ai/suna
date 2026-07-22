@@ -698,6 +698,7 @@ const TEAMS_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
 export function channelCatalog(platform: string): NormalizedAction[] {
   switch (platform) {
