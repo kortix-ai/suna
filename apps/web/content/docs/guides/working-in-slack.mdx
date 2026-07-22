@@ -26,9 +26,9 @@ From the dashboard, open the project's Channels page and connect Slack there ins
 </Step>
 
 <Step>
-### Use your own Slack app (self-hosted, no shared app)
+### Use your own Slack app
 
-If no shared app is configured, `kortix channels connect` falls back to manual mode automatically. Run `kortix channels manifest` to print an app manifest. Create the app at `api.slack.com/apps` from that manifest. Install the app to your workspace. Then run:
+On a self-hosted deployment with no shared Slack app configured, `kortix channels connect` falls back to manual mode automatically. Run `kortix channels manifest` to print an app manifest. Create the app at `api.slack.com/apps` from that manifest. Install the app to your workspace. Then run:
 
 ```
 kortix channels connect --manual --bot-token xoxb-... --signing-secret ...
@@ -51,13 +51,13 @@ Connecting Slack adds a `channel` [connector](/docs/guides/connecting-tools) ent
 
 ## Start a session from Slack
 
-Mention the bot with a task, in any channel it has joined, or open a direct message. The first message in a thread creates a session. Every later reply in that thread goes to the same session, even after its sandbox stops and resumes.
+Mention the bot with a task, in any channel it has joined, or open a direct message. See [how a channel starts a session](/docs/concepts/channels#how-a-channel-starts-a-session) for how the thread keeps its session.
 
-A workspace connected to more than one project shows a project picker on the first mention. A bare mention with no task gets a reminder to add one instead of starting a session.
+A bare mention with no task gets a reminder to add one instead of starting a session.
 
 ## Control a session with slash commands
 
-Type these as `/kortix <command>` in Slack, or as plain text in a DM (slash commands do not run inside the Assistant DM pane, so Kortix parses the same words from plain text there).
+Type these as `/kortix <command>` in Slack, or as plain text in a DM. Slash commands do not run inside the Assistant DM pane, so Kortix parses the same words from plain text there.
 
 | Command | What it does |
 |---|---|
@@ -74,10 +74,10 @@ Type these as `/kortix <command>` in Slack, or as plain text in a DM (slash comm
 
 ## Link your identity
 
-Kortix links every sender to a Kortix account before a session runs for them. Run `/kortix login` and follow the link to sign in. An unlinked sender gets a prompt to link instead of a session run.
+Kortix links every sender to a Kortix account before a session runs for them. See [identity linking](/docs/concepts/channels#identity-linking) for the full rule. Run `/kortix login` and follow the link to sign in.
 
 <Callout title="Where the bot token lives">
-The connected Slack bot token is a connector-scoped secret. It does not appear on the project's Secrets page, and Kortix never injects it into a sandbox — Kortix resolves it server-side when the agent sends a message. See [Managing secrets](/docs/guides/managing-secrets).
+The connected Slack bot token is a connector-scoped secret — see [where credentials live](/docs/concepts/channels#where-credentials-live). See [Managing secrets](/docs/guides/managing-secrets).
 </Callout>
 
 ## What does not work

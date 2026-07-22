@@ -27,7 +27,7 @@ The config file lives at `~/.config/kortix/config.json`, mode `0600`. Override i
 
 The CLI follows one hierarchy: host → account → project → session. You sign in to a host, pick an account inside it, pick a project inside that account, and open sessions inside the project. `kortix hosts login` walks the first three steps in order: it signs you in, picks the account, then sets a default project.
 
-Every token starts with `kortix_pat_`. Two scopes exist: a user token, from `kortix login`, that sees every account and project you belong to; and a project token, auto-minted for a session sandbox, that is scoped to one project. See [Token scope](#token-scope).
+Every token starts with `kortix_pat_`. A user token, from `kortix login`, sees every account and project you belong to. A project token is auto-minted for a session sandbox and scoped to one project. See [Token scope](#token-scope).
 
 ```sh
 kortix login                                   # browser flow → pick account → pick default project
@@ -47,7 +47,7 @@ kortix cr merge 1                              # land it on main
 | `kortix whoami [--host <name>] [--json] [--token-only]` | Print the signed-in user and active account. |
 | `kortix token [--host <name>]` | Shortcut for `kortix whoami --token-only`. |
 
-`kortix hosts login` / `hosts logout` / `hosts whoami` are the canonical forms; `login` / `logout` / `whoami` are shortcuts that act on the active host.
+`kortix hosts login` / `hosts logout` / `hosts whoami` are the canonical forms. `login` / `logout` / `whoami` are shortcuts that act on the active host.
 
 ### Hosts
 
@@ -62,7 +62,7 @@ kortix cr merge 1                              # land it on main
 | `kortix hosts info [<name>] [--json]` | Show details for one host. |
 | `kortix hosts current [--json]` | Print the active host name. |
 
-A remote host URL that starts with `http://` is normalized to `https://` — the CLI never sends a token over plain HTTP to a remote host. `localhost` is exempt.
+A remote host URL that starts with `http://` is normalized to `https://`. The CLI never sends a token over plain HTTP to a remote host. `localhost` is exempt.
 
 ### Accounts
 
@@ -75,7 +75,12 @@ A remote host URL that starts with `http://` is normalized to `https://` — the
 
 ## Projects
 
-A command resolves "the project" in order: the `--project` flag, then the `KORTIX_PROJECT_ID` environment variable, then `.kortix/link.json` in the exact working directory, then the global default set by `kortix projects use`.
+A command resolves "the project" in this order:
+
+1. The `--project` flag.
+2. The `KORTIX_PROJECT_ID` environment variable.
+3. `.kortix/link.json` in the exact working directory.
+4. The global default set by `kortix projects use`.
 
 | Command | Effect |
 | --- | --- |
@@ -93,7 +98,16 @@ A command resolves "the project" in order: the `--project` flag, then the `KORTI
 
 `kortix init [project-name] [options]` creates a new, empty project directory. It writes `kortix.yaml`, `.kortix/Dockerfile`, and the OpenCode config directory. It does not write `.kortix/link.json` — `kortix ship` or `kortix projects link` create that later.
 
-Flags: `--name <project>`, `--primary <agent>`, `--agents <csv>` (configure local coding-agent integrations to wire up), `--template <general-knowledge-worker|minimal>` (default: `general-knowledge-worker`), `--force` (configure the current directory in place instead of scaffolding a new one), `--overwrite`, `--no-git`, `-y|--yes`.
+| Flag | Meaning |
+| --- | --- |
+| `--name <project>` | Project name. |
+| `--primary <agent>` | Primary agent. |
+| `--agents <csv>` | Local coding-agent integrations to wire up. |
+| `--template <general-knowledge-worker\|minimal>` | Project template. Default: `general-knowledge-worker`. |
+| `--force` | Configure the current directory in place instead of scaffolding a new one. |
+| `--overwrite` | Overwrite existing files. |
+| `--no-git` | Skip git init. |
+| `-y, --yes` | Don't prompt. |
 
 `kortix init` does not include a marketplace picker. Adding a marketplace skill is an agent import: start a session and ask the agent to bring one in.
 
@@ -157,7 +171,7 @@ A change request (CR) merges one branch into another on any git host. It is the 
 | `kortix cr ls [--status open\|merged\|closed\|all] [--project <id>]` | List CRs. Default: `--status open`. |
 | `kortix cr show <cr> [--project <id>]` | Show one CR, including its merge preview. Alias: `info`. |
 | `kortix cr diff <cr> [--no-color] [--json]` | Print a CR's unified diff. |
-| `kortix cr open --title "<text>" [--description "<text>"] [--head <ref>] [--base <ref>]` | Open a CR. Aliases: `new`, `create`. Inside a sandbox, `--head` and the session default automatically. `--base` defaults to the project's default branch. |
+| `kortix cr open --title "<text>" [--description "<text>"] [--head <ref>] [--session <id>] [--base <ref>]` | Open a CR. Aliases: `new`, `create`. Inside a sandbox, `--head` and `--session` default automatically. `--base` defaults to the project's default branch. |
 | `kortix cr merge <cr> [--message "<text>"]` | Merge an open CR. Fast-forward when possible, three-way merge otherwise. |
 | `kortix cr close <cr>` | Close an open CR without merging. |
 | `kortix cr reopen <cr>` | Reopen a closed CR. Merged CRs are terminal. |
@@ -392,7 +406,7 @@ Common flags: `--instance <name>` (default `default`), `--domain <domain>`, `--t
 
 ## Token scope
 
-Every token starts with `kortix_pat_`: a user token, scoped to every project on your accounts, or a project token, scoped to one project and auto-injected into that project's sandboxes. See the full token-family reference at [Session runtime](/docs/reference/session-runtime).
+Every token starts with `kortix_pat_`. A user token is scoped to every project on your accounts. A project token is scoped to one project and auto-injected into that project's sandboxes. See the full token-family reference at [Session runtime](/docs/reference/session-runtime).
 
 ## Exit codes
 

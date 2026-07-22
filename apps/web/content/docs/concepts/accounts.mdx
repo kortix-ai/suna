@@ -33,11 +33,9 @@ If you belong to more than one account, switch between them from the account swi
 
 ## Tokens
 
-Kortix signs you in with a personal access token, prefixed `kortix_pat_`. It acts as you, with your full account access, unless you scope it to one project when you create it.
+Kortix signs you in with a personal access token (`kortix_pat_...`). A service account (`kortix_sa_...`) is a separate, non-human credential with no project access until you grant it.
 
-A service account is a separate, non-human identity, prefixed `kortix_sa_`. It has no project access by default — you must grant it access explicitly, or every call returns 403. Use a service account only when you need a credential that does not act as a specific person.
-
-See [token families](/docs/reference/session-runtime) for the full list.
+See [SDK authentication](/docs/sdk/auth) for the full token model.
 
 ## Billing
 

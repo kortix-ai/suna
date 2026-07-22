@@ -12,7 +12,14 @@ A Kortix project has two configuration surfaces with strict, non-overlapping own
 - **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/Dockerfile`. The platform reads this: the trigger sweep, the sandbox builder, session token minting, and the dashboard.
 - **OpenCode config** — everything under `.kortix/opencode/` (`opencode.jsonc`, `agents/`, `skills/`, `commands/`, `tools/`, `plugins/`). The OpenCode runtime reads this, in the sandbox and locally.
 
-The join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field — system prompt, `model`, `mode`, `temperature`, `top_p`, `steps`, `permission`, and more — lives only in that `.md` file's frontmatter and body, never in `kortix.yaml`. The manifest's `agents:` block sets governance only: which agents may launch, and what each one may touch. The validator enforces this — it rejects a v2 agent block that contains any behavioral field, with an error that points at the agent's own `.md` file.
+The join between the two halves is the agent name. A manifest key `agents.<name>` must match the filename `.kortix/opencode/agents/<name>.md`. Every behavioral field lives only in that `.md` file's frontmatter and body, never in `kortix.yaml`:
+
+- system prompt
+- `model`, `mode`
+- `temperature`, `top_p`
+- `steps`, `permission`
+
+The manifest's `agents:` block sets governance only: which agents may launch, and what each one may touch. The validator enforces this. It rejects a v2 agent block that contains any behavioral field, with an error that points at the agent's own `.md` file.
 
 ## Location and versions
 
@@ -20,7 +27,7 @@ Any repo with a valid manifest at its root is a Kortix project. `kortix.yaml` (v
 
 `kortix_version: 2` requires YAML — a `.toml` file that declares `kortix_version: 2` fails validation. A manifest that declares a version higher than `2` is rejected outright, so the platform never silently misreads a future field. Unknown top-level keys are ignored, so you can park your own metadata in the file.
 
-`validateManifest()` is the single gate behind `kortix ship`, the change request merge check, and `kortix validate` — the same rules everywhere, so anything that merges into `main` is structurally sound. The schema is public and generated from the same package:
+`validateManifest()` is the single gate behind `kortix ship`, the change request merge check, and `kortix validate`. The same rules apply everywhere, so anything that merges into `main` is structurally sound. The schema is public and generated from the same package:
 
 - [`kortix.v2.schema.json`](/schema/kortix.v2.schema.json)
 - [`kortix.v1.schema.json`](/schema/kortix.v1.schema.json)
@@ -97,6 +104,7 @@ triggers:
 | `opencode.config_dir` | no | default `.kortix/opencode` |
 | `triggers` | no | list of cron and webhook triggers |
 | `connectors` | no | list of integration definitions |
+| `policy.default_mode` | no | `risk` (default) or `allow_all`; project-wide connector approval mode |
 | `agents` | yes | name-to-block governance map; must not be empty |
 
 ## `project:`
@@ -105,7 +113,7 @@ Optional, human-facing metadata: `name` and `description`. The platform does not
 
 ## `env:`
 
-Declares the env var names your sessions need. Values live in the dashboard's Environment variables page, never inline in the manifest — the platform decrypts and injects them as plain env vars at session start.
+Declares the env var names your sessions need. Values live in the dashboard's Environment variables page, never inline in the manifest. The platform decrypts and injects them as plain env vars at session start.
 
 ```yaml
 env:
@@ -197,9 +205,9 @@ triggers:
 | `type` | yes | — | `cron` or `webhook`. |
 | `prompt` | yes | — | Non-empty. Supports templating. |
 | `name` | no | slug | Human label. |
-| `agent` | no | `default_agent` | Must name a declared agent. |
+| `agent` | no | `default` | Must name a key in `agents:`, or fall back to `default_agent`. |
 | `enabled` | no | `true` | `false` skips the entry. |
-| `model` | no | account default | Wire form `provider/model`. Pins the fired session to that model. |
+| `model` | no | resolves at fire time | Wire form `provider/model`. Pins the fired session to that model. See [Default model resolution](/docs/concepts/models). |
 | `session_mode` | no | `fresh` | `fresh`, `reuse`, `pinned`, or `keyed`. |
 | `session_id` | required for `pinned` | — | Exact session to re-prompt. |
 
@@ -226,6 +234,7 @@ connectors:
 | `name` | no | Display name. Defaults to slug. |
 | `enabled` | no | Defaults to `true`. |
 | `credential` | no | Only `shared` is supported. The retired `per_user` mode is a hard error. |
+| `sensitive` | no | Defaults to `false`. `true` forces approval on every call to this connector, regardless of `policy.default_mode`. |
 
 Provider-specific fields:
 
@@ -246,9 +255,11 @@ Provider-specific fields:
 
 `connectors.policies`: a list of `{match, action}` pairs. `match` is a glob over tool names. `action` is `always_run`, `require_approval`, or `block`.
 
+`policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `risk` (default; require approval per each connector's own policy) or `allow_all`. Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI reference](/docs/reference/cli).
+
 ## Channels
 
-v2 removes `channels:` from the schema. Channel-to-agent routing (Slack and Microsoft Teams today) is live operational state, set from the dashboard's Channels page or from chat commands, not declarative config — the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Channels](/docs/concepts/channels). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/reference/legacy-toml).
+v2 removes `channels:` from the schema. Channel-to-agent routing (Slack and Microsoft Teams today) is live operational state, not declarative config. You set it from the dashboard's Channels page or from chat commands, the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Channels](/docs/concepts/channels). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/reference/legacy-toml).
 
 ## `agents:`
 
@@ -297,4 +308,4 @@ Dashboard edits are a read-modify-write on the same file. To keep diffs clean ac
 
 1. Keep `kortix_version` as the first key.
 2. Inside a trigger entry, order fields `slug`, `name`, `type`, `agent`, `enabled`, then type-specific fields, then `prompt` last.
-3. If you add a webhook trigger before its secret is set, list the secret name in `env.optional` and leave the trigger `enabled: false` until the value is in.
+3. If you add a webhook trigger before its secret is set, list the secret name in `env.optional`. Leave the trigger `enabled: false` until the value is in.

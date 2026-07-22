@@ -57,7 +57,7 @@ A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `
 `session_mode` controls which session a fire re-prompts. Kortix tries the modes below in order and falls through on failure at each step.
 
 1. **`pinned`** — re-prompt the exact `session_id`. If that session is gone or failed, fall through.
-2. **`keyed`** — render `session_key` against the payload, then look up the most recent non-failed session previously stamped with that exact key. If the key renders empty, or no session matches, fall through to a fresh session directly (never to another key's session).
+2. **`keyed`** — render `session_key` against the payload, then look up the most recent non-failed session previously stamped with that exact key. If the key renders empty, or no session matches, fall through to a fresh session. It never falls through to another key's session.
 3. **`reuse`** — re-prompt the most recent non-failed session this trigger previously created. A pinned trigger falls back here too, before falling further.
 4. **`fresh`** — create a new sandbox and branch. This is the default, and the final fallback for every mode. The new session becomes the trigger's session for future `reuse` and `keyed` fires.
 
@@ -77,7 +77,7 @@ Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger
 
 `{{ message.text }}` is hardcoded to an empty string on a manual fire, and `{{ message.source }}` to `manual_test`. A manual fire is not a way to inject test input into the prompt.
 
-`filter` compares dotted paths as strings against the same payload the prompt sees. It exists to break loops — for example, a source that reports both sides of a conversation would otherwise re-fire the agent on its own reply.
+`filter` compares dotted paths as strings against the same payload the prompt sees. It exists to break loops. For example, a source that reports both sides of a conversation would otherwise re-fire the agent on its own reply.
 
 ## Webhook signature
 

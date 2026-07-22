@@ -115,4 +115,12 @@ All routes sit under `/v1/projects/:projectId/change-requests`.
 
 ### Authorization
 
-Read routes need read access to the project. Write routes need write access. Opening a CR also needs the `project.gitops.push` capability — or, for a session's scoped token, `project.cr.open`. Requesting changes needs `project.review.act` — or `project.cr.open` for a scoped token. Merging also needs `project.gitops.merge` — or `project.cr.merge` for a scoped token. These are separate capabilities, so a token can open CRs without the power to merge them. This is the mechanism behind [the agent mandate](#the-agent-mandate).
+Read routes need read access to the project. Write routes need write access. Each write action also needs a capability, shown below for a full token and for a session's scoped token.
+
+| Action | Full-token capability | Scoped-token capability |
+| --- | --- | --- |
+| Open a CR | `project.gitops.push` | `project.cr.open` |
+| Request changes | `project.review.act` | `project.cr.open` |
+| Merge | `project.gitops.merge` | `project.cr.merge` |
+
+These are separate capabilities, so a token can open CRs without the power to merge them. This is the mechanism behind [the agent mandate](#the-agent-mandate).

@@ -89,13 +89,21 @@ Kortix does not inject `KORTIX_WORKSPACE`. The image bakes in `/workspace`; no p
 
 ## Token families
 
-Four tokens can appear in a sandbox. They carry two different identities, and every other page links here rather than re-explain them.
+Kortix has two token vocabularies: external tokens you create yourself, and env vars Kortix injects inside a sandbox. This section covers both, and every other page links here for the full list.
+
+### External tokens
+
+A personal access token (PAT, prefixed `kortix_pat_`) or a service account (prefixed `kortix_sa_`) authenticates calls to the Kortix API, the SDK, and the CLI from outside a sandbox. See [Authentication](/docs/sdk/auth) for PAT scope, service-account setup, and how to choose between them.
+
+### In-sandbox tokens
+
+Four tokens can appear in a sandbox. They carry two different identities.
 
 | Variable | Identity | Used for |
 | --- | --- | --- |
 | `KORTIX_SANDBOX_TOKEN` | The sandbox's own service key. | Signs the daemon's control-surface requests (the `X-Kortix-User-Context` header) and authenticates sandbox-identity routes: clone-credential, turn-stream, execution leases, turn-question. |
 | `KORTIX_TOKEN` | Back-compat alias for `KORTIX_SANDBOX_TOKEN`. | Same value, same use, kept for daemons built before the rename. Do not depend on it — a future release drops this alias and repurposes `KORTIX_TOKEN` to mean the session token instead. |
-| `KORTIX_CLI_TOKEN` | A project-scoped personal access token (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
+| `KORTIX_CLI_TOKEN` | A project-scoped [personal access token](/docs/sdk/auth) (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
 | `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT as `KORTIX_CLI_TOKEN`. | Backs the `kortix-executor` MCP gateway. |
 
 `KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` or `KORTIX_EXECUTOR_TOKEN` for any call that should act as the launching user.

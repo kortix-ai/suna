@@ -81,23 +81,15 @@ by default.
 
 ## Updates
 
-Every instance runs an updater service. It does not poll on an interval. It
-runs once a day, at a fixed local time set by `--update-time` (default
-`02:00`) and `--update-tz` (default `America/New_York`). At that time it
-pulls the configured channel, runs migrations, and starts a new, healthy
-replica of each service before it stops the old one.
-
-This swap is zero-downtime in domain mode, which runs 2 replicas. Tunnel and
-local setups run 1 replica and fall back to a brief stop-then-start instead.
-
-Two channels track the app images: `stable` (default, curated) and `latest`
-(every release, automatically). Pin an exact version instead:
+Every instance updates itself automatically. Pin an exact version instead:
 
 ```sh
 kortix self-host update --tag 0.9.84
 ```
 
-Turn the updater off with `--auto-update off`.
+Turn the updater off with `--auto-update off`. See
+[Self-hosting architecture](/docs/reference/self-hosting-architecture) for
+the update schedule, the zero-downtime swap, and the channels.
 
 ## Backups
 

@@ -39,27 +39,20 @@ Three more read methods round out the handle:
 - `s.previews()` — candidate preview ports the runtime exposes.
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
-- `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token, so use it from a scoped or embedded host.
+- `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
 
 ## Readiness is a handshake
 
-A session's sandbox is not always running. Before you send a prompt, call
-`ensureReady()`. It provisions the sandbox if needed, waits for the runtime
-to boot, and returns the resolved runtime.
+Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
+needed, waits for the runtime to boot, and returns the resolved runtime.
 
 ```ts
 const { opencodeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
 ```
 
-`ensureReady()` is idempotent. If two callers call it for the same session
-at the same time, the SDK sends one `start` request and both callers get the
-same result.
-
-On a cold boot, the sandbox can take longer to start than `ensureReady()`
-waits for. When that happens, it throws an `ApiError` with
-`code: 'RUNTIME_UNAVAILABLE'`. This means the sandbox is still provisioning,
-not that it failed. Retry `ensureReady()` in a loop with a deadline. See
-[Error handling](/docs/sdk/error-handling) for the retry pattern.
+On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
+[Streaming](/docs/sdk/streaming#retry-on-runtime_unavailable) for what that
+means and how to retry.
 
 `s.send()` and `s.abort()` call `ensureReady()` for you.
 
