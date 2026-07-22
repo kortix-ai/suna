@@ -61,7 +61,15 @@ export function buildAuthorizationServerMetadata(): AuthorizationServerMetadata 
       // clients are provisioned out of band. Pointing at a real request path
       // beats inventing a /register that would 404.
       register_uri: siteUrl('/contact'),
-      identity_types: ['service_account'],
+      // This grant only ever mints a delegated end-user identity: every
+      // access token traces back to the userId who approved the consent
+      // screen, and apps/api/src/oauth/index.ts has no client_credentials
+      // grant for a service account to call in on its own. Advertising
+      // 'service_account' here would send an agent to POST
+      // grant_type=client_credentials, which that endpoint answers with
+      // unsupported_grant_type. Service accounts are a separate, non-OAuth
+      // bearer-token credential documented in auth.md.
+      identity_types: ['user'],
       credential_types: ['client_secret'],
     },
   };

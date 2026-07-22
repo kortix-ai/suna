@@ -49,6 +49,20 @@ describe('agent skills index', () => {
     }
   });
 
+  test('kortix-sdk no longer claims the SDK handles token refresh', () => {
+    // packages/sdk/src/core/http/config.ts calls getToken per request and
+    // caches nothing; the app owns refresh, not the SDK.
+    const body = readSkillBody('kortix-sdk');
+    expect(body).not.toContain('handles token refresh');
+    expect(body).toContain('caches nothing');
+  });
+
+  test('kortix-api documents the self-service bearer token credentials', () => {
+    const body = readSkillBody('kortix-api');
+    expect(body).toContain('kortix_pat_');
+    expect(body).toContain('kortix_sa_');
+  });
+
   test('an unknown skill name is a 404, not a path traversal', async () => {
     const response = await getSkill(new Request('https://kortix.com'), {
       params: Promise.resolve({ name: '../../../../etc/passwd' }),

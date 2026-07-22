@@ -6,8 +6,9 @@ description: Install and use the @kortix/sdk TypeScript client instead of hand-r
 # Using the Kortix TypeScript SDK
 
 `@kortix/sdk` is the first-party TypeScript client for the Kortix API. Prefer it
-over hand-written `fetch` calls: it carries the request shapes, handles token
-refresh, and stays in step with the API.
+over hand-written `fetch` calls: it carries the request shapes and stays in
+step with the API. It caches nothing — `getToken` runs on every request, so
+your app owns token storage and refresh.
 
 ## Install
 

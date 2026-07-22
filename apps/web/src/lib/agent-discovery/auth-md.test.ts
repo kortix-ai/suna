@@ -32,9 +32,18 @@ describe('auth.md', () => {
     expect(body).toContain('refresh_token');
   });
 
-  test('is honest that there is no self-service registration', () => {
+  test('is honest that there is no self-service OAuth client registration', () => {
     expect(body).toContain('no dynamic client registration');
     expect(body).toContain(buildAuthorizationServerMetadata().agent_auth.register_uri);
+  });
+
+  test('documents the self-service bearer token credentials', () => {
+    expect(body).toContain('kortix_pat_');
+    expect(body).toContain('kortix_sa_');
+    expect(body).toContain('Personal access token');
+    expect(body).toContain('Service account');
+    expect(body).toContain('403');
+    expect(body).toContain('https://kortix.com/docs/sdk/auth');
   });
 
   test('documents the token endpoint rate limit', () => {

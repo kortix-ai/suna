@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "catalog:enrich": "bun scripts/enrich-llm-catalog-capabilities.ts",
-    "markdown-routes:build": "bun scripts/build-markdown-routes.ts",
+    "markdown-routes:build": "NODE_ENV=production bun scripts/build-markdown-routes.ts",
     "i18n:audit": "node scripts/audit-i18n.mjs",
     "i18n:strict": "node scripts/audit-i18n.mjs --max-hardcoded=0",
     "test:workspace-search": "node --experimental-strip-types --test src/features/files/search/workspace-search-core.test.mts",

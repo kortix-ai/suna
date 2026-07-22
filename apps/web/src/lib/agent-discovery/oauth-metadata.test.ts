@@ -47,6 +47,17 @@ describe('authorization server metadata', () => {
     expect(agentAuth.credential_types).toEqual(['client_secret']);
   });
 
+  test('never advertises an identity this grant cannot mint', () => {
+    // grant_types_supported has no client_credentials grant, so a
+    // service_account identity here would send an agent into a 400
+    // unsupported_grant_type. Every token this flow issues traces back to a
+    // delegated end user instead.
+    const { agent_auth: agentAuth, grant_types_supported: grantTypes } =
+      buildAuthorizationServerMetadata();
+    expect(agentAuth.identity_types).toEqual(['user']);
+    expect(grantTypes).not.toContain('client_credentials');
+  });
+
   test('the metadata document location derives from the issuer', () => {
     // RFC 8414 §3: issuer https://kortix.com => metadata at
     // https://kortix.com/.well-known/oauth-authorization-server.

@@ -16,7 +16,19 @@ path, parameter, and response shape. Do not guess endpoint names.
 
 ## Authenticating
 
-Kortix uses OAuth 2.0 authorization code flow with mandatory PKCE (`S256`).
+Most callers need no browser flow at all. Two bearer tokens are self-service:
+
+- **Personal access token** (`kortix_pat_` prefix) — create one at User
+  settings → API keys. Acts as the user who created it.
+- **Service account** (`kortix_sa_` prefix) — create one at Account settings →
+  Service accounts, for non-human callers. A new service account has no
+  project access; calls return `403` until one is granted.
+
+Send either as `Authorization: Bearer <token>` on every API call. Full detail:
+`https://kortix.com/docs/sdk/auth`.
+
+To act on behalf of a signed-in user instead, use the OAuth 2.0 authorization
+code flow with mandatory PKCE (`S256`):
 
 1. Read `https://kortix.com/.well-known/oauth-authorization-server` for the
    current endpoint URLs.
@@ -27,7 +39,7 @@ Kortix uses OAuth 2.0 authorization code flow with mandatory PKCE (`S256`).
    `client_secret` in the form body.
 4. Send `Authorization: Bearer <access_token>` on every API call.
 
-Credentials are provisioned by the Kortix team, not self-service. See
+OAuth clients are provisioned by the Kortix team, not self-service. See
 `https://kortix.com/auth.md`.
 
 ## Checking availability
