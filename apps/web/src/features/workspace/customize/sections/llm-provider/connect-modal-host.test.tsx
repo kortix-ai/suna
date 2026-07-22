@@ -147,21 +147,22 @@ describe('ConnectModalHost — the one root-mounted connect surface', () => {
     expect(screen.queryByText('Sign in with an account')).toBeNull();
   });
 
-  test('the footer Back button returns from a form to the two doors', () => {
+  test('the Back button returns from a form to the two doors', () => {
     useConnectModalStore.setState({ isOpen: true, connectKind: 'anthropic_api_key' });
     render(ReactModule.createElement(ConnectModalHost));
 
-    // On a form: no door headers, but the footer Back button is there.
+    // On a form: no door headers, but the "All connection methods" back
+    // affordance is there.
     expect(screen.queryByText('Use an API key')).toBeNull();
 
     act(() => {
-      screen.getByText('Back').click();
+      screen.getByText('All connection methods').click();
     });
 
-    // Back on the two doors — and the footer Back button is gone with it.
+    // Back on the two doors — and the back affordance is gone with it.
     expect(screen.getByText('Use an API key')).toBeDefined();
     expect(screen.getByText('Sign in with an account')).toBeDefined();
-    expect(screen.queryByText('Back')).toBeNull();
+    expect(screen.queryByText('All connection methods')).toBeNull();
   });
 
   test('renders nothing outside a project route — every migrated call site is project-scoped', () => {

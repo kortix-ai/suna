@@ -8,13 +8,11 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
 import {
   Modal,
   ModalBody,
   ModalContent,
   ModalDescription,
-  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
@@ -29,7 +27,7 @@ import {
   accountDoorProviders,
   findAuthProviderPublic,
 } from '@kortix/shared/auth-providers';
-import { ChevronLeft, Plus, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { CONNECTION_STATUS, type StatusBadge, connectionStatusBadge } from './connection-status';
@@ -49,7 +47,7 @@ type ConnectMethod =
   | { kind: 'anthropic_compatible' };
 
 const ROW =
-  'group bg-popover hover:bg-secondary flex min-h-10 w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-[color,background-color,transform] active:scale-[0.96]';
+  'group bg-popover hover:bg-secondary focus-visible:ring-ring/50 flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-[color,background-color,transform] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96]';
 
 const OTHER_PROVIDER_IDS = new Set(
   LLM_PROVIDERS.filter(
@@ -148,12 +146,13 @@ function methodForKind(kind: HarnessAuthKind): ConnectMethod | null {
   }
 }
 
-function compatibleWithFilter(kind: HarnessAuthKind, harnessFilter: HarnessId | null): boolean {
-  // A kind compatible with no harness at all (e.g. the parked
-  // anthropic_compatible endpoint) is never offered, filtered or not.
-  if (METHOD_COMPATIBLE_HARNESSES[kind].length === 0) return false;
-  if (!harnessFilter) return true;
-  return METHOD_COMPATIBLE_HARNESSES[kind].includes(harnessFilter);
+/** A method is offered whenever at least one harness can use it. A kind
+ *  compatible with no harness at all (e.g. the parked anthropic_compatible
+ *  endpoint) is never shown. This is the ONLY gate on a row's presence — the
+ *  modal never hides a door or a row to "scope" itself to one harness (see
+ *  `harnessFilter`, which only emphasizes, never subtracts). */
+function isOfferable(kind: HarnessAuthKind): boolean {
+  return METHOD_COMPATIBLE_HARNESSES[kind].length > 0;
 }
 
 export function ConnectModelModal({
@@ -166,7 +165,6 @@ export function ConnectModelModal({
   harnessFilter = null,
   initialKind = null,
   initialProviderId = null,
-  tab = null,
   onConnected,
 }: {
   projectId: string;
@@ -177,6 +175,10 @@ export function ConnectModelModal({
   /** Gateway provider ids whose secrets are already satisfied — the only
    *  "connected" signal a raw-key catalog provider (no HarnessAuthKind) has. */
   connectedProviderIds?: readonly string[];
+  /** The harness a caller is connecting *for* (the per-runtime "Connect" in
+   *  `models-view.tsx`). This ONLY emphasizes the rows that harness can use —
+   *  it never hides a door or a row. There is exactly one connect modal and it
+   *  always shows both doors, everywhere it opens. */
   harnessFilter?: HarnessId | null;
   /** Pre-selects a form (used by "Reconnect"/"Replace key" from the manage
    *  modal) instead of landing on the two doors. */
@@ -184,7 +186,9 @@ export function ConnectModelModal({
   /** Pre-selects a specific "other provider" row (ignored when `initialKind`
    *  is also set — a specific method always wins over a provider guess). */
   initialProviderId?: string | null;
-  /** Narrows to one door — `null` shows both (subject to `harnessFilter`). */
+  /** @deprecated Retained only for source-compat with call sites that still
+   *  pass it (e.g. `model-selector.tsx`). It no longer narrows the modal — both
+   *  doors always render, everywhere. Delete once no caller passes it. */
   tab?: 'subscriptions' | 'api-keys' | null;
   onConnected?: () => void;
 }) {
@@ -224,24 +228,19 @@ export function ConnectModelModal({
     [query],
   );
 
-  const tabAllowsSubscriptions = tab !== 'api-keys';
-  const tabAllowsApiKeys = tab !== 'subscriptions';
-
   // Door 1 — "Sign in with an account": built entirely from the shared
-  // registry's `door === 'account'` rows (spec §8.3/§9.1), filtered to what
-  // the active harness (if any) can use. Copilot/xAI are deliberately absent
-  // from the registry (Phase 2, §7/§11#4) — so they simply don't appear here.
-  const accountRows = accountDoorProviders().filter(
-    (provider) =>
-      tabAllowsSubscriptions && compatibleWithFilter(provider.producesAuthKind, harnessFilter),
+  // registry's `door === 'account'` rows (spec §8.3/§9.1). Copilot/xAI are
+  // deliberately absent from the registry (Phase 2, §7/§11#4) — so they simply
+  // don't appear here. Every offerable row is ALWAYS shown; `harnessFilter`
+  // only emphasizes, never subtracts.
+  const accountRows = accountDoorProviders().filter((provider) =>
+    isOfferable(provider.producesAuthKind),
   );
 
-  const showAnthropicKey =
-    tabAllowsApiKeys && compatibleWithFilter('anthropic_api_key', harnessFilter);
-  const showOpenaiKey = tabAllowsApiKeys && compatibleWithFilter('openai_api_key', harnessFilter);
-  const showOtherProviders = tabAllowsApiKeys && !harnessFilter;
-  const showOpenaiCompatible =
-    tabAllowsApiKeys && compatibleWithFilter('openai_compatible', harnessFilter);
+  const showAnthropicKey = isOfferable('anthropic_api_key');
+  const showOpenaiKey = isOfferable('openai_api_key');
+  const showOtherProviders = true;
+  const showOpenaiCompatible = isOfferable('openai_compatible');
   const showApiKeyDoor =
     showAnthropicKey || showOpenaiKey || showOtherProviders || showOpenaiCompatible;
   // Anthropic-compatible custom endpoints are parked (2026-07-15): no harness
@@ -250,15 +249,28 @@ export function ConnectModelModal({
 
   const isConnectedProvider = (providerId: string) => connectedProviderIds.includes(providerId);
 
+  // `harnessFilter` emphasis: a row is "recommended" when the harness the
+  // caller is connecting *for* can actually use that method. Rows never
+  // disappear — the highlight replaces the old scope-by-hiding behavior.
+  const recommendsKind = (kind: HarnessAuthKind) =>
+    harnessFilter != null && METHOD_COMPATIBLE_HARNESSES[kind].includes(harnessFilter);
+
+  const anthropicMatches = showAnthropicKey && matchesSearch('anthropic claude api key');
+  const openaiMatches = showOpenaiKey && matchesSearch('openai gpt api key');
+  const customMatches =
+    showOpenaiCompatible && matchesSearch('custom openai-compatible endpoint local vllm ollama');
+  const anyApiKeyMatch =
+    anthropicMatches || openaiMatches || customMatches || filteredOtherProviders.length > 0;
+
   let body: ReactNode;
   if (!method) {
     body = (
-      <div className="space-y-6">
+      <div className="space-y-8">
         {accountRows.length > 0 && (
-          <section className="space-y-2">
+          <section className="space-y-3">
             <DoorHeader
               title="Sign in with an account"
-              description="Use your existing Claude or ChatGPT plan — no API key, billed to your subscription."
+              description="Use your existing Claude or ChatGPT plan — no API key needed."
             />
             <ul className="space-y-2">
               {accountRows.map((provider) => {
@@ -270,6 +282,7 @@ export function ConnectModelModal({
                       label={provider.label}
                       hint={rowHint(conn, accountSubtitle(provider))}
                       health={healthFor(conn)}
+                      recommended={recommendsKind(provider.producesAuthKind)}
                       onClick={() => {
                         const next = methodForKind(provider.producesAuthKind);
                         if (next) setMethod(next);
@@ -283,10 +296,10 @@ export function ConnectModelModal({
         )}
 
         {showApiKeyDoor && (
-          <section className="space-y-2">
+          <section className="space-y-3">
             <DoorHeader
               title="Use an API key"
-              description="Bring your own key from any provider — billed by them, works across your harnesses."
+              description="Bring your own key from any provider."
             />
             <InputGroupSearch>
               <InputGroupSearchIcon>
@@ -301,69 +314,72 @@ export function ConnectModelModal({
               />
               <InputGroupSearchClear onClick={() => setSearch('')} />
             </InputGroupSearch>
-            <ul className="max-h-80 space-y-2 overflow-y-auto">
-              {showAnthropicKey && matchesSearch('anthropic claude api key') && (
-                <li>
-                  <MethodRow
-                    providerID="anthropic"
-                    label="Anthropic"
-                    hint={rowHint(
-                      connectionFor(connections, 'anthropic_api_key'),
-                      worksWithLabel('anthropic_api_key') ?? 'Claude via your own API key',
-                    )}
-                    health={healthFor(connectionFor(connections, 'anthropic_api_key'))}
-                    onClick={() => setMethod({ kind: 'anthropic_api_key' })}
-                  />
-                </li>
-              )}
-              {showOpenaiKey && matchesSearch('openai gpt api key') && (
-                <li>
-                  <MethodRow
-                    providerID="openai"
-                    label="OpenAI"
-                    hint={rowHint(
-                      connectionFor(connections, 'openai_api_key'),
-                      worksWithLabel('openai_api_key') ?? 'GPT models via your own API key',
-                    )}
-                    health={healthFor(connectionFor(connections, 'openai_api_key'))}
-                    onClick={() => setMethod({ kind: 'openai_api_key' })}
-                  />
-                </li>
-              )}
-              {showOtherProviders &&
-                filteredOtherProviders.map((provider) => (
-                  <li key={provider.id}>
+            {anyApiKeyMatch ? (
+              <ul className="space-y-2">
+                {anthropicMatches && (
+                  <li>
                     <MethodRow
-                      providerID={provider.id}
-                      label={PROVIDER_LABELS[provider.id] ?? provider.label}
-                      hint={provider.hint}
-                      health={isConnectedProvider(provider.id) ? CONNECTION_STATUS.connected : null}
-                      onClick={() => setMethod({ kind: 'other_provider', providerId: provider.id })}
+                      providerID="anthropic"
+                      label="Anthropic"
+                      hint={rowHint(
+                        connectionFor(connections, 'anthropic_api_key'),
+                        worksWithLabel('anthropic_api_key') ?? 'Claude via your own API key',
+                      )}
+                      health={healthFor(connectionFor(connections, 'anthropic_api_key'))}
+                      recommended={recommendsKind('anthropic_api_key')}
+                      onClick={() => setMethod({ kind: 'anthropic_api_key' })}
                     />
                   </li>
-                ))}
-              {showOpenaiCompatible &&
-                matchesSearch('custom openai-compatible endpoint local vllm ollama') && (
+                )}
+                {openaiMatches && (
+                  <li>
+                    <MethodRow
+                      providerID="openai"
+                      label="OpenAI"
+                      hint={rowHint(
+                        connectionFor(connections, 'openai_api_key'),
+                        worksWithLabel('openai_api_key') ?? 'GPT models via your own API key',
+                      )}
+                      health={healthFor(connectionFor(connections, 'openai_api_key'))}
+                      recommended={recommendsKind('openai_api_key')}
+                      onClick={() => setMethod({ kind: 'openai_api_key' })}
+                    />
+                  </li>
+                )}
+                {showOtherProviders &&
+                  filteredOtherProviders.map((provider) => (
+                    <li key={provider.id}>
+                      <MethodRow
+                        providerID={provider.id}
+                        label={PROVIDER_LABELS[provider.id] ?? provider.label}
+                        hint={provider.hint}
+                        health={
+                          isConnectedProvider(provider.id) ? CONNECTION_STATUS.connected : null
+                        }
+                        onClick={() =>
+                          setMethod({ kind: 'other_provider', providerId: provider.id })
+                        }
+                      />
+                    </li>
+                  ))}
+                {customMatches && (
                   <li>
                     <MethodRow
                       providerID="custom"
                       label="OpenAI-compatible endpoint"
                       hint="Custom base URL — OpenCode and Pi"
                       health={healthFor(connectionFor(connections, 'openai_compatible'))}
+                      recommended={recommendsKind('openai_compatible')}
                       onClick={() => setMethod({ kind: 'openai_compatible' })}
                     />
                   </li>
                 )}
-              {query &&
-                filteredOtherProviders.length === 0 &&
-                !matchesSearch('anthropic claude api key') &&
-                !matchesSearch('openai gpt api key') &&
-                !matchesSearch('custom openai-compatible endpoint local vllm ollama') && (
-                  <li className="text-muted-foreground px-3 py-4 text-center text-xs">
-                    No providers match &ldquo;{search}&rdquo;
-                  </li>
-                )}
-            </ul>
+              </ul>
+            ) : (
+              <div className="text-muted-foreground rounded-md border border-dashed px-3 py-8 text-center text-xs">
+                No providers match &ldquo;{search}&rdquo;
+              </div>
+            )}
           </section>
         )}
 
@@ -437,25 +453,27 @@ export function ConnectModelModal({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} depth={2}>
-      <ModalContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden lg:max-w-2xl">
-        <ModalHeader>
-          <ModalTitle>Connect a model service</ModalTitle>
-          <ModalDescription>
-            Sign in with an account or paste an API key — we&apos;ll show which harnesses each works
-            with.
+      <ModalContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden lg:max-w-3xl">
+        <ModalHeader className="space-y-1 pb-4">
+          <ModalTitle className="text-lg">Connect a model service</ModalTitle>
+          <ModalDescription className="text-balance">
+            Sign in with an account or paste an API key. We&apos;ll show which harnesses each one
+            works with.
           </ModalDescription>
         </ModalHeader>
-        <ModalBody className="overflow-y-auto pb-0">
-          {body}
-
+        <ModalBody className="min-h-0 flex-1 overflow-y-auto">
           {method && (
-            <ModalFooter className="shrink-0 p-0 sm:justify-start md:p-0">
-              <Button variant="secondary" className="gap-1" onClick={() => setMethod(null)}>
-                <ChevronLeft className="size-4 shrink-0" />
-                Back
-              </Button>
-            </ModalFooter>
+            <Button
+              variant="outline-ghost"
+              size="sm"
+              className="-ml-1.5 gap-1 self-start"
+              onClick={() => setMethod(null)}
+            >
+              <ChevronLeft className="size-4 shrink-0" />
+              All connection methods
+            </Button>
           )}
+          {body}
         </ModalBody>
       </ModalContent>
     </Modal>
@@ -465,7 +483,7 @@ export function ConnectModelModal({
 function DoorHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="space-y-0.5">
-      <Label>{title}</Label>
+      <h3 className="text-foreground text-sm font-medium">{title}</h3>
       <p className="text-muted-foreground text-xs text-pretty">{description}</p>
     </div>
   );
@@ -476,12 +494,16 @@ function MethodRow({
   label,
   hint,
   health,
+  recommended = false,
   onClick,
 }: {
   providerID: string;
   label: string;
   hint: string;
   health: RowHealth;
+  /** When set, the harness the caller is connecting for can use this method —
+   *  a subtle "Recommended" badge highlights it without hiding anything else. */
+  recommended?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -490,15 +512,19 @@ function MethodRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">{label}</span>
-          {health && (
+          {health ? (
             <Badge variant={health.variant} size="sm">
               {health.label}
             </Badge>
-          )}
+          ) : recommended ? (
+            <Badge variant="kortix" size="sm">
+              Recommended
+            </Badge>
+          ) : null}
         </div>
         <p className="text-muted-foreground mt-0.5 truncate text-xs text-pretty">{hint}</p>
       </div>
-      <Plus className="text-muted-foreground/40 size-4 shrink-0" />
+      <ChevronRight className="text-muted-foreground/40 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
     </button>
   );
 }

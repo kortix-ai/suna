@@ -139,31 +139,43 @@ describe('ConnectModelModal — two doors, built from the shared registry', () =
     expect(within(row as HTMLElement).getByText('Connected')).toBeDefined();
   });
 
-  test('harnessFilter narrows the account door to compatible providers only', () => {
-    // `claude` harness only accepts the Claude subscription — the Codex row is
-    // filtered out entirely.
+  test('harnessFilter NEVER hides a door or a row — it only emphasizes the compatible method', () => {
+    // The old behavior filtered the account door down to `claude`-compatible
+    // providers, dropping the Codex row. The unified modal keeps BOTH doors and
+    // BOTH account rows and instead marks the compatible one "Recommended".
     renderModal({ harnessFilter: 'claude' });
-    expect(screen.getByText('Claude Code')).toBeDefined();
-    expect(screen.queryByText('ChatGPT / Codex')).toBeNull();
-  });
-
-  test('tab="api-keys" hides the account door; tab="subscriptions" hides the API-key door', () => {
-    const { rerender } = renderModal({ tab: 'api-keys' });
-    expect(screen.queryByText('Sign in with an account')).toBeNull();
+    expect(screen.getByText('Sign in with an account')).toBeDefined();
     expect(screen.getByText('Use an API key')).toBeDefined();
 
-    rerender(
-      ReactModule.createElement(ConnectModelModal, {
-        projectId: 'proj_1',
-        open: true,
-        onOpenChange: () => {},
-        runtimes: [],
-        connections: [],
-        connectedProviderIds: [],
-        tab: 'subscriptions',
-      }),
-    );
-    expect(screen.getByText('Sign in with an account')).toBeDefined();
-    expect(screen.queryByText('Use an API key')).toBeNull();
+    const claudeRow = screen.getByText('Claude Code').closest('button');
+    const codexRow = screen.getByText('ChatGPT / Codex').closest('button');
+    expect(claudeRow).not.toBeNull();
+    expect(codexRow).not.toBeNull();
+    // Claude Code is what a `claude` harness can use → emphasized.
+    expect(within(claudeRow as HTMLElement).getByText('Recommended')).toBeDefined();
+    // Codex is still shown (never hidden), just not recommended for `claude`.
+    expect(within(codexRow as HTMLElement).queryByText('Recommended')).toBeNull();
+  });
+
+  test('both doors ALWAYS render regardless of the tab prop — no api-key-only variant', () => {
+    // `tab` is deprecated and no longer narrows the modal. Whether a caller
+    // passes 'api-keys', 'subscriptions', or nothing, the same two-door surface
+    // renders everywhere (the owner\'s "always use the same modal" fix).
+    for (const tab of ['api-keys', 'subscriptions', null] as const) {
+      const { unmount } = render(
+        ReactModule.createElement(ConnectModelModal, {
+          projectId: 'proj_1',
+          open: true,
+          onOpenChange: () => {},
+          runtimes: [],
+          connections: [],
+          connectedProviderIds: [],
+          tab,
+        }),
+      );
+      expect(screen.getByText('Sign in with an account')).toBeDefined();
+      expect(screen.getByText('Use an API key')).toBeDefined();
+      unmount();
+    }
   });
 });
