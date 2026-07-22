@@ -98,6 +98,48 @@ connector — the secret never lands in the sandbox env, and one binding can't
 reach another user's profile. This is how the same shared agent talks to *each*
 user's Gmail/Slack/etc. without per-user Kortix logins.
 
+**Creating a connector, fully from your backend** (no browser) — two layers,
+both mintable with your API key:
+
+1. **The connector definition** (project-wide) — what/where the connector is.
+   For `provider` `mcp` / `http` / `openapi` / `graphql` (static credential, no
+   OAuth) this is fully headless:
+   ```ts
+   await kortix.project(projectId).connectors.create({
+     slug: 'user-mcp', provider: 'mcp', transport: 'http',
+     endpoint: 'https://mcp.example.com/mcp', credential: 'shared',
+     auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer ' },
+   });
+   ```
+   (`provider: 'pipedream'` is the exception — it needs an interactive OAuth
+   connect flow and can't be minted headlessly.)
+
+2. **A per-end-user connection profile** — the independent, by-reference layer.
+   Use **`owner_type: 'external'`** so the profile belongs to *your app's user*,
+   not a Kortix member or agent — that's what makes it usable purely by reference
+   in a backend session:
+   ```ts
+   const profile = await kortix.project(projectId).connectors.profiles.reconcile({
+     connector_alias: 'user-mcp', owner_type: 'external',
+     owner_id: 'your-app-user-123', label: 'MCP for user 123',
+   });
+   await kortix.project(projectId).connectors.profiles.updateCredential(
+     profile.profile_id, { value: usersOwnToken, kind: 'secret' });
+   await kortix.project(projectId).connectors.profiles.activate(profile.profile_id);
+   // → bind at session start: connector_bindings: { 'user-mcp': { profile_id: profile.profile_id } }
+   ```
+   All four ops require the project **manager/owner** role — a dashboard API key
+   rides that automatically.
+
+> **All-or-nothing binding:** if a session's `connector_bindings` sets *any*
+> alias, every *unbound* alias resolves to null for that session. Bind every
+> connector the agent needs in the one call.
+
+A complete, runnable version of this whole flow — create connector → mint the
+per-user profile → start a backend session → **stream the answer** — lives at
+[`packages/sdk/examples/09-kaab-backend-wrapper.ts`](../packages/sdk/examples/09-kaab-backend-wrapper.ts)
+(one-shot CLI **and** a multi-tenant SSE service in one file).
+
 ### Secrets — narrow, never widen
 
 `secrets` is a **pure narrowing**: the session's sandbox receives
