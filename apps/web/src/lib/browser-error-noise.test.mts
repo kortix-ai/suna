@@ -15,6 +15,7 @@ import {
   isInjectedAppSource,
   isInpageWalletStreamNoise,
   isKnownBrowserNoiseMessage,
+  isNonErrorUndefinedRejectionNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
   isPaperShaderNullContextNoise,
@@ -3654,4 +3655,208 @@ test('does NOT suppress a runtime rejection whose reason is a real Error with an
     }),
     false,
   )
+})
+
+// ---------------------------------------------------------------------------
+// Sentry 10.x bare-`undefined` non-Error promise rejection noise
+// (Better Stack pattern
+// 5cfc90e5077a4f3d956f46b51beb633256b9a74532717d4b5797ca5cbc62f2f1,
+// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// promise rejected with the primitive `undefined` (NOT an Error instance),
+// captured by Sentry's GlobalHandlers `onunhandledrejection` integration as
+// the synthetic "Non-Error promise rejection captured with value: undefined"
+// message with NO stacktrace frames at all (there is no stack to de-minify —
+// the rejection carries none). The breadcrumbs around the production event
+// are all third-party fetches on the marketing site (`/api/github-stars`,
+// `/_vercel/insights/view`, `cdn-cookieyes.com`, `/api/maintenance`) plus the
+// recurring `Unsupported color format var(--kortix-orange)` console.error — a
+// third-party/cookie-library runtime, not first-party app code. 1 occurrence,
+// 0 identified users (anonymous), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached a React error boundary), release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6`, first 2026-04-23 / last
+// 2026-07-22, Safari 26.5.2 on iOS 18.7 (iPhone, Mobile), request URL
+// `https://kortix.com/` (the marketing/landing page). Stack trace: NONE —
+// `call_site_file`/`call_site_function` are null, `call_stack_hash` is null,
+// no frames at all.
+//
+// DISTINCT from the EIP-1193 wallet-extension plain-object rejection class
+// (`isExtensionRejectedObjectNoise` / Better Stack `0f78b2f8…`, PR #4720):
+// that one rejects with a serialized OBJECT (`{ code, message, stack }`) and
+// Sentry emits "Object captured as promise rejection with keys: …" (carrying
+// the extension stack in `extra.__serialized__.stack`). THIS class rejects
+// with the primitive `undefined` and Sentry emits
+// "Non-Error promise rejection captured with value: undefined" with no
+// serialized payload and no frames. The two message prefixes are disjoint, so
+// the matchers do not shadow each other.
+//
+// The "Non-Error promise rejection captured with value: undefined" message is
+// Sentry's generic signature for ANY `Promise.reject(undefined)` — a real
+// first-party `Promise.reject(undefined)` would produce the SAME signature —
+// so the matcher requires the canonical message AND NEGATIVE guards: if the
+// event has ANY resolved stack frame OR a resolved first-party
+// `apps/web/src/…` frame, keep reporting (a real first-party
+// `Promise.reject(undefined)` we can attribute should still surface). The
+// production noise pattern has NO frames at all; only the frameless capture
+// is dropped.
+// ---------------------------------------------------------------------------
+
+// The exact synthetic message from the production event.
+const NON_ERROR_UNDEFINED_REJECTION =
+  'Non-Error promise rejection captured with value: undefined'
+
+test('classifies the bare-undefined non-Error promise rejection noise', () => {
+  // Exact production shape: the canonical message, NO frames (the rejection
+  // carried no stack).
+  assert.equal(
+    isNonErrorUndefinedRejectionNoise({
+      message: NON_ERROR_UNDEFINED_REJECTION,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned bare-undefined rejection Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `UnhandledRejection`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), NO
+  // stacktrace frames, request URL `https://kortix.com/` (marketing site).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: NON_ERROR_UNDEFINED_REJECTION,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the bare-undefined rejection when frames are absent entirely (no stacktrace key)', () => {
+  // The production event has no frames at all — Sentry omits the stacktrace
+  // key entirely when there is nothing to serialize. The gate must still drop
+  // it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: NON_ERROR_UNDEFINED_REJECTION }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a non-undefined non-Error rejection (e.g. an object or string value)', () => {
+  // A rejection with a non-undefined value produces a DIFFERENT synthetic
+  // message ("…with value: [object Object]" / "…with value: some string") —
+  // that is the EIP-1193 plain-object class handled separately by
+  // `isExtensionRejectedObjectNoise` (PR #4720). THIS matcher must not shadow
+  // it: the canonical-`undefined` anchor is exact, so any other value keeps
+  // reporting.
+  for (const message of [
+    'Non-Error promise rejection captured with value: [object Object]',
+    'Non-Error promise rejection captured with value: some string',
+    'Non-Error promise rejection captured with value: null',
+    'Non-Error promise rejection captured with value: 0',
+    'Object captured as promise rejection with keys: code, message, stack',
+  ]) {
+    assert.equal(
+      isNonErrorUndefinedRejectionNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: [] } }],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the bare-undefined rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code rejected a promise
+  // with `undefined` → actionable; the negative guard MUST preserve it so the
+  // call site can be found + fixed. This is the whole reason the matcher is
+  // frame-aware (the message is also a real first-party
+  // `Promise.reject(undefined)` signature).
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/workspace/customize/index.ts', function: 'loadConfig' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/api/client.ts', function: 'fetchProject' },
+    ],
+  ]) {
+    assert.equal(
+      isNonErrorUndefinedRejectionNoise({
+        message: NON_ERROR_UNDEFINED_REJECTION,
+        frames,
+      }),
+      false,
+      `expected first-party bare-undefined rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: NON_ERROR_UNDEFINED_REJECTION, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party bare-undefined rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the bare-undefined rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject(undefined)` with a stack we can trace. Keep reporting;
+  // only the frameless capture (the production noise pattern) is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.cookieyes.com/cookieyes.js', function: 'init' }],
+    [{ filename: 'app:///inpage.js', function: 'emit' }],
+  ]) {
+    assert.equal(
+      isNonErrorUndefinedRejectionNoise({
+        message: NON_ERROR_UNDEFINED_REJECTION,
+        frames,
+      }),
+      false,
+      `expected attributable bare-undefined rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a message that only mentions the non-Error rejection wording', () => {
+  // The matcher anchors on the EXACT canonical message; a different wording
+  // that merely mentions the prefix must not be matched.
+  for (const message of [
+    'Non-Error promise rejection captured with value: undefined (extra context)',
+    'Non-Error promise rejection',
+    'promise rejection captured with value: undefined',
+    'UnhandledRejection: undefined',
+  ]) {
+    assert.equal(
+      isNonErrorUndefinedRejectionNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
 })

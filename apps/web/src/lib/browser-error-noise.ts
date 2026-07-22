@@ -1548,6 +1548,102 @@ export function isFirefoxReactSchedulerReentryNoise(input: {
   return frames.some((frame) => isBrowserBundleSource(frame?.filename));
 }
 
+// Sentry 10.x's GlobalHandlers `onunhandledrejection` integration synthesizes a
+// placeholder message when a promise rejects with a value that is NOT an Error
+// instance (no `.message`/`.stack` to extract). For the primitive `undefined`,
+// it emits the canonical
+//   "Non-Error promise rejection captured with value: undefined"
+// with NO stacktrace frames at all (there is nothing to de-minify — the
+// rejection carries no stack). This is Sentry's generic signature for a
+// fire-and-forget `.then()` (or async-init race) somewhere in the page that
+// rejected with a bare `undefined`, OR a third-party script (analytics / cookie
+// banner / tag manager) whose own promise rejected with `undefined`. The
+// breadcrumbs around the production event are all third-party fetches on the
+// marketing site (`/api/github-stars`, `/_vercel/insights/view`,
+// `cdn-cookieyes.com`, `/api/maintenance`) plus the recurring
+// `Unsupported color format var(--kortix-orange)` console.error — i.e. a
+// third-party/cookie-library runtime, not first-party app code.
+//
+// Better Stack pattern
+// 5cfc90e5077a4f3d956f46b51beb633256b9a74532717d4b5797ca5cbc62f2f1
+// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`, 1
+// occurrence, 0 identified users (anonymous), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached any React error boundary), release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6`, first 2026-04-23 / last
+// 2026-07-22, Safari 26.5.2 on iOS 18.7 (iPhone, Mobile), request URL
+// `https://kortix.com/` (the marketing/landing page). Stack trace: NONE —
+// `call_site_file`/`call_site_function` are null, `call_stack_hash` is null,
+// no frames at all. A bare `onunhandledrejection` capture of `undefined`.
+//
+// DISTINCT from the EIP-1193 wallet-extension plain-object rejection class
+// (`isExtensionRejectedObjectNoise` / Better Stack `0f78b2f8…`, PR #4720):
+// that one rejects with a serialized OBJECT (`{ code, message, stack }`) and
+// Sentry emits "Object captured as promise rejection with keys: …" (which
+// carries the extension stack in `extra.__serialized__.stack`). THIS class
+// rejects with the primitive `undefined` and Sentry emits
+// "Non-Error promise rejection captured with value: undefined" with no
+// serialized payload and no frames. The two message prefixes are disjoint, so
+// the matchers do not shadow each other.
+//
+// The "Non-Error promise rejection captured with value: undefined" message is
+// Sentry's generic signature for ANY `Promise.reject(undefined)` — a real
+// first-party `Promise.reject(undefined)` (e.g. a code path that resolves a
+// promise with `undefined` on an error branch instead of throwing) would
+// produce the SAME signature — so matching on the message alone is too broad.
+// Require BOTH the canonical message AND a NEGATIVE guard: if the event has
+// ANY resolved stack frame OR a resolved first-party `apps/web/src/…` frame,
+// keep reporting (a real first-party `Promise.reject(undefined)` we can
+// attribute should still surface). The production noise pattern has NO frames
+// at all; only the frameless capture is dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `Promise.reject(undefined)` the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls this helper) is the only safe
+// gate.
+const NON_ERROR_UNDEFINED_REJECTION_PATTERN =
+  /^Non-Error promise rejection captured with value: undefined$/;
+
+/**
+ * Whether a Sentry event is the bare-`undefined` non-Error promise rejection
+ * noise class: Sentry 10.x's GlobalHandlers `onunhandledrejection`
+ * integration captured a promise that rejected with the primitive `undefined`
+ * (not an Error), and synthesized the canonical
+ * "Non-Error promise rejection captured with value: undefined" message with NO
+ * stacktrace frames. This is a fire-and-forget `.then()` or a third-party
+ * script (analytics / cookie banner) on the marketing site whose promise
+ * rejected with bare `undefined` — never first-party app code. Requires the
+ * canonical message AND a NEGATIVE guard: if any frame resolves to a
+ * de-minified first-party `apps/web/src/…` source path OR any resolvable
+ * frame location at all, the event keeps reporting (a real first-party
+ * `Promise.reject(undefined)` we can attribute should still surface). The
+ * production noise pattern has NO frames; only the frameless capture is
+ * dropped. See `NON_ERROR_UNDEFINED_REJECTION_PATTERN` for the full rationale.
+ */
+export function isNonErrorUndefinedRejectionNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!NON_ERROR_UNDEFINED_REJECTION_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code rejected a promise with `undefined` → actionable; keep reporting
+  // so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -2001,6 +2097,24 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // no first-party frame are dropped. See
   // `isFirefoxReactSchedulerReentryNoise`.
   if (isFirefoxReactSchedulerReentryNoise({ message, frames })) {
+    return true;
+  }
+
+  // Sentry 10.x bare-`undefined` non-Error promise rejection noise — a promise
+  // rejected with the primitive `undefined` (not an Error), captured by
+  // Sentry's GlobalHandlers `onunhandledrejection` integration as the
+  // synthetic "Non-Error promise rejection captured with value: undefined"
+  // message with NO stacktrace frames. A fire-and-forget `.then()` or a
+  // third-party script (analytics / cookie banner / tag manager) on the
+  // marketing site whose promise rejected with bare `undefined`; never
+  // first-party app code. Requires the canonical message AND NEGATIVE guards:
+  // any resolved first-party `apps/web/src/…` frame OR any resolvable frame
+  // location → keep reporting (a real first-party `Promise.reject(undefined)`
+  // we can attribute should still surface). The production noise pattern has
+  // NO frames at all; only the frameless capture is dropped. See
+  // `isNonErrorUndefinedRejectionNoise`. NOT in `ignoreErrors` (no frame
+  // context there).
+  if (isNonErrorUndefinedRejectionNoise({ message, frames })) {
     return true;
   }
 
