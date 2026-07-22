@@ -10,6 +10,7 @@ import {
   projects,
   sessionToolApprovals,
 } from '@kortix/db';
+import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 /**
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
@@ -74,6 +75,7 @@ import { graphToken } from '../channels/teams-auth';
 import {
   browsePipedreamApps,
   finalizePipedreamConnection,
+  finalizePipedreamProfileConnection,
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
@@ -88,7 +90,8 @@ import type {
   ExecutorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { syncProjectConnectors } from './sync';
+import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
+import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -276,6 +279,16 @@ function authOf(row: ConnectorRow): { auth: ExecutorAuth; hasAuth: boolean } {
   return { auth, hasAuth };
 }
 
+/**
+ * The connector's static request headers (kortix.yaml `headers:`, persisted
+ * into `config` by the materializer). Sanitized on the way out — a row written
+ * before the header rules existed can never inject an illegal header.
+ */
+function headersOf(row: ConnectorRow): Record<string, string> {
+  const cfg = (row.config ?? {}) as Record<string, any>;
+  return sanitizeConnectorHeaders(cfg.headers);
+}
+
 function baseUrlOf(row: ConnectorRow): string | null {
   const cfg = (row.config ?? {}) as Record<string, any>;
   switch (row.providerType) {
@@ -394,6 +407,7 @@ function toGatewayConnector(
     platform: channelPlatform(row.config),
     baseUrl: baseUrlOf(row),
     auth,
+    headers: headersOf(row),
     hasAuth,
     // `per_user` was removed 2026-07-05; every row is `shared` (DB-enforced by
     // a CHECK constraint), so this is a defensive cast, not a live branch.
@@ -922,6 +936,7 @@ async function getConnectorConfig(
     baseUrl: baseUrlOf(row),
     spec: cfg.spec ?? null,
     auth: { type: auth.type, in: auth.in, name: auth.name, prefix: auth.prefix },
+    headers: headersOf(row),
   };
 }
 
@@ -1002,16 +1017,40 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         if (!verifyWebhookSig(extUserId, sig)) return false;
-        const [projectId, slug, userId] = extUserId.split(':');
+        const [projectId, slug, identityId] = extUserId.split(':');
         if (!projectId || !slug) return false;
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return false;
+        if (identityId) {
+          const [profile] = await db
+            .select({ profileId: executorConnectionProfiles.profileId })
+            .from(executorConnectionProfiles)
+            .where(
+              and(
+                eq(executorConnectionProfiles.profileId, identityId),
+                eq(executorConnectionProfiles.projectId, projectId),
+                eq(executorConnectionProfiles.connectorId, conn.connectorId),
+              ),
+            )
+            .limit(1);
+          if (profile) {
+            await finalizePipedreamProfileConnection({
+              projectId,
+              slug,
+              app: conn.app,
+              connectorId: conn.connectorId,
+              profileId: profile.profileId,
+              createdBy: null,
+            });
+            return true;
+          }
+        }
         await finalizePipedreamConnection({
           projectId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
-          userId: userId ?? null,
+          userId: identityId ?? null,
         });
         return true;
       }
@@ -1019,6 +1058,9 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
     : undefined,
+  discoverConnectorAuth: discoverDraftConnectorAuth,
+  listDiscoverIntegrations: (input) => listIntegrationCatalog(input),
+  getDiscoverIntegration: (id) => getIntegrationCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

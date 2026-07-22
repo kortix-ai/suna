@@ -8,16 +8,16 @@ overrides:
   '@icons-pack/react-simple-icons@>=13.11.2 <14': 13.11.1
   import-in-the-middle: 3.0.0
   next@>=15.0.0 <15.5.18: 15.5.18
-  axios@>=1.0.0 <1.16.0: 1.16.0
-  protobufjs@>=7.0.0 <7.6.3: 7.6.3
-  protobufjs@>=8.0.0 <8.6.0: 8.6.0
+  axios@>=1.0.0 <1.18.0: 1.18.0
+  protobufjs@>=7.0.0 <7.6.5: 7.6.5
+  protobufjs@>=8.0.0 <8.6.6: 8.6.6
   '@protobufjs/utf8@>=1.0.0 <1.1.1': 1.1.1
   mermaid@>=11.0.0 <11.15.0: 11.15.0
   '@opentelemetry/api': 1.9.0
   '@opentelemetry/sdk-node@>=0.0.0 <0.217.0': 0.217.0
   '@opentelemetry/exporter-prometheus@>=0.0.0 <0.217.0': 0.217.0
-  fast-uri@>=3.0.0 <3.1.2: 3.1.2
-  hono@>=4.0.0 <4.12.25: 4.12.25
+  fast-uri@>=3.0.0 <3.1.3: 3.1.3
+  hono@>=4.0.0 <4.12.27: 4.12.27
   next-intl@>=4.0.0 <4.9.2: 4.9.2
   icu-minify@>=4.0.0 <4.9.2: 4.9.2
   uuid@>=7.0.0 <11.1.1: 11.1.1
@@ -25,7 +25,7 @@ overrides:
   postcss@>=8.0.0 <8.5.10: 8.5.10
   fast-xml-parser@>=5.0.0 <5.7.0: 5.7.2
   '@xmldom/xmldom@>=0.0.0 <0.8.13': 0.8.13
-  dompurify@>=3.0.0 <3.4.11: 3.4.11
+  dompurify@>=3.0.0 <3.4.12: 3.4.12
   follow-redirects@>=1.0.0 <1.16.0: 1.16.0
   '@hono/node-server@>=1.0.0 <1.19.13': 1.19.13
   esbuild@>=0.0.0 <0.28.1: 0.28.1
@@ -33,13 +33,15 @@ overrides:
   flatted@>=3.0.0 <3.4.2: 3.4.2
   socket.io-parser@>=4.0.0 <4.2.6: 4.2.6
   undici@>=6.0.0 <6.27.0: 6.27.0
-  brace-expansion@>=5.0.0 <5.0.6: 5.0.6
-  brace-expansion@>=1.0.0 <1.1.13: 1.1.13
+  brace-expansion@>=5.0.0 <5.0.7: 5.0.7
+  brace-expansion@>=1.0.0 <1.1.16: 1.1.16
   picomatch@>=2.0.0 <2.3.2: 2.3.2
   diff@>=7.0.0 <8.0.3: 8.0.3
-  js-yaml@>=3.0.0 <4.2.0: 4.2.0
+  js-yaml@>=3.0.0 <4.3.0: 4.3.0
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
-  brace-expansion@>=2.0.0 <2.0.3: 2.0.3
+  '@opentelemetry/propagator-jaeger@>=0.0.0 <2.9.0': 2.9.0
+  svgo@>=3.0.0 <3.3.4: 3.3.4
+  brace-expansion@>=2.0.0 <2.1.2: 2.1.2
   yaml@>=1.0.0 <1.10.3: 1.10.3
   picomatch@>=4.0.0 <4.0.4: 4.0.4
   picomatch@>=3.0.0 <3.0.2: 3.0.2
@@ -92,7 +94,7 @@ importers:
         version: 0.184.0(ws@8.21.0)
       '@hono/zod-openapi':
         specifier: ^0.19.10
-        version: 0.19.10(hono@4.12.25)(zod@3.25.76)
+        version: 0.19.10(hono@4.12.27)(zod@3.25.76)
       '@kortix/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
@@ -122,7 +124,7 @@ importers:
         version: 0.5.8
       '@scalar/hono-api-reference':
         specifier: ^0.10.20
-        version: 0.10.20(hono@4.12.25)
+        version: 0.10.20(hono@4.12.27)
       '@sentry/bun':
         specifier: ^10.47.0
         version: 10.63.0(@opentelemetry/core@2.8.0)
@@ -148,8 +150,8 @@ importers:
         specifier: 2.32.0
         version: 2.32.0
       hono:
-        specifier: 4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -232,8 +234,8 @@ importers:
   apps/kortix-sandbox-agent-server:
     dependencies:
       hono:
-        specifier: ^4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -254,8 +256,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       hono:
-        specifier: 4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
       langfuse:
         specifier: ^3.38.20
         version: 3.38.20
@@ -1302,8 +1304,8 @@ importers:
   packages/agent-tunnel:
     dependencies:
       hono:
-        specifier: 4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
     devDependencies:
       '@types/bun':
         specifier: ^1.3.9
@@ -3303,17 +3305,19 @@ packages:
   /@daytona/api-client@0.184.0:
     resolution: {integrity: sha512-wfBVkH48Aiz4mVR4n8Qzd2g7OhU3pr/ZASOTwLncTZ/LJDpBiVFtVk+KOYKRSNEHWXs6znPbMXxRIh9pTdmYeg==}
     dependencies:
-      axios: 1.16.0
+      axios: 1.18.0
     transitivePeerDependencies:
       - debug
+      - supports-color
     dev: false
 
   /@daytona/toolbox-api-client@0.184.0:
     resolution: {integrity: sha512-uuhJJF0uLAnK6nNM7sgjTErf7NKnrc+kd0AlYjdxsDk7Nad+v0FZeecQZ4GEE4GDSr/Hg3f9SxgHFVY/rGLrCQ==}
     dependencies:
-      axios: 1.16.0
+      axios: 1.18.0
     transitivePeerDependencies:
       - debug
+      - supports-color
     dev: false
 
   /@daytonaio/sdk@0.184.0(ws@8.21.0):
@@ -3333,7 +3337,7 @@ packages:
       '@opentelemetry/sdk-node': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.9.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.41.1
-      axios: 1.16.0
+      axios: 1.18.0
       busboy: 1.6.0
       dotenv: 17.4.2
       expand-tilde: 2.0.2
@@ -4161,7 +4165,7 @@ packages:
       globals: 14.0.0
       ignore: 5.3.2
       import-fresh: 3.3.1
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       minimatch: 3.1.5
       strip-json-comments: 3.1.1
     transitivePeerDependencies:
@@ -4638,7 +4642,7 @@ packages:
     dependencies:
       '@babel/code-frame': 7.29.7
       chalk: 4.1.2
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
 
   /@extend-ai/react-docx@0.7.6(react-dom@19.1.0)(react@19.1.0):
     resolution: {integrity: sha512-P4z41fDRx/X4r/TBnZTg1PeR9zpSTyV1fBokvpnU9w0XrvhYQGcNeEAb51Qjwqm1iVSH0TPWtR4ES9Oc5N/fLg==}
@@ -4804,7 +4808,7 @@ packages:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 7.6.3
+      protobufjs: 7.6.5
       yargs: 17.7.3
     dev: false
 
@@ -4815,31 +4819,31 @@ packages:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 7.6.3
+      protobufjs: 7.6.5
       yargs: 17.7.3
     dev: false
 
-  /@hono/zod-openapi@0.19.10(hono@4.12.25)(zod@3.25.76):
+  /@hono/zod-openapi@0.19.10(hono@4.12.27)(zod@3.25.76):
     resolution: {integrity: sha512-dpoS6DenvoJyvxtQ7Kd633FRZ/Qf74+4+o9s+zZI8pEqnbjdF/DtxIib08WDpCaWabMEJOL5TXpMgNEZvb7hpA==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
-      hono: 4.12.25
+      hono: 4.12.27
       zod: '>=3.0.0'
     dependencies:
       '@asteasolutions/zod-to-openapi': 7.3.4(zod@3.25.76)
-      '@hono/zod-validator': 0.7.6(hono@4.12.25)(zod@3.25.76)
-      hono: 4.12.25
+      '@hono/zod-validator': 0.7.6(hono@4.12.27)(zod@3.25.76)
+      hono: 4.12.27
       openapi3-ts: 4.6.0
       zod: 3.25.76
     dev: false
 
-  /@hono/zod-validator@0.7.6(hono@4.12.25)(zod@3.25.76):
+  /@hono/zod-validator@0.7.6(hono@4.12.27)(zod@3.25.76):
     resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
     peerDependencies:
-      hono: 4.12.25
+      hono: 4.12.27
       zod: ^3.25.0 || ^4.0.0
     dependencies:
-      hono: 4.12.25
+      hono: 4.12.27
       zod: 3.25.76
     dev: false
 
@@ -5189,7 +5193,7 @@ packages:
       camelcase: 5.3.1
       find-up: 4.1.0
       get-package-type: 0.1.0
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       resolve-from: 5.0.0
 
   /@istanbuljs/schema@0.1.6:
@@ -6041,7 +6045,7 @@ packages:
       '@opentelemetry/sdk-logs': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.7.1(@opentelemetry/api@1.9.0)
-      protobufjs: 8.6.0
+      protobufjs: 8.6.6
     dev: false
 
   /@opentelemetry/propagator-b3@2.7.1(@opentelemetry/api@1.9.0):
@@ -6054,14 +6058,14 @@ packages:
       '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.0)
     dev: false
 
-  /@opentelemetry/propagator-jaeger@2.7.1(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-KMjVBHzP4N60bOzxja76M1F1hZZ43lGPga5ix+mkv9+kk1nx9SbkxSvJsMbuVUxdPQmsPTqGShmhN8ulrMOg6Q==}
+  /@opentelemetry/propagator-jaeger@2.9.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-4mYGty27rYvSM0jtp1ZUOqd3LfVRCYg9H5G9OFzSx5HViYToU21MFhWfco7x1HwXr7ER8yGOiCIHZUwjPksc0Q==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': 1.9.0
     dependencies:
       '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/core': 2.9.0(@opentelemetry/api@1.9.0)
     dev: false
 
   /@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0):
@@ -6135,7 +6139,7 @@ packages:
       '@opentelemetry/instrumentation': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/otlp-exporter-base': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/propagator-b3': 2.7.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/propagator-jaeger': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/propagator-jaeger': 2.9.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-logs': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics': 2.7.1(@opentelemetry/api@1.9.0)
@@ -6450,10 +6454,6 @@ packages:
 
   /@protobufjs/float@1.0.2:
     resolution: {integrity: sha512-Ddb+kVXlXst9d+R9PfTIxh1EdNkgoRe5tOX6t01f1lYWOvJnSPDBlG241QLzcyPdoNTsblLUdujGSE4RzrTZGQ==}
-    dev: false
-
-  /@protobufjs/inquire@1.1.2:
-    resolution: {integrity: sha512-pa0vFRuws4wkvaXKK1uXZMAwAX4/t8ANaJo45iw/oQHNQ9q5xUzwgFmVJGXiga2BeN+zpX7Vf9vmsiIa2J+MUw==}
     dev: false
 
   /@protobufjs/path@1.1.2:
@@ -9237,14 +9237,14 @@ packages:
     engines: {node: '>=22'}
     dev: false
 
-  /@scalar/hono-api-reference@0.10.20(hono@4.12.25):
+  /@scalar/hono-api-reference@0.10.20(hono@4.12.27):
     resolution: {integrity: sha512-/Ae0M9rOpsJJb5b121G8LX4vvBo1t2qFX1ffRKkTgCS9VWfpsfq11r0yBcYy1fmAn1x8YLO21Ls1/9h8LzHuDw==}
     engines: {node: '>=22'}
     peerDependencies:
-      hono: 4.12.25
+      hono: 4.12.27
     dependencies:
       '@scalar/client-side-rendering': 0.1.13
-      hono: 4.12.25
+      hono: 4.12.27
     dev: false
 
   /@scalar/schemas@0.3.3:
@@ -9968,7 +9968,7 @@ packages:
       '@svgr/core': 8.1.0(typescript@5.9.3)
       cosmiconfig: 8.3.6(typescript@5.9.3)
       deepmerge: 4.3.1
-      svgo: 3.3.3
+      svgo: 3.3.4
     transitivePeerDependencies:
       - typescript
     dev: true
@@ -12203,7 +12203,7 @@ packages:
     resolution: {integrity: sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A==}
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.2
+      fast-uri: 3.1.3
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -12303,7 +12303,7 @@ packages:
       hosted-git-info: 4.1.0
       is-ci: 3.0.1
       isbinaryfile: 5.0.7
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       json5: 2.2.3
       lazy-val: 1.0.5
       minimatch: 10.2.5
@@ -12609,14 +12609,16 @@ packages:
     engines: {node: '>=4'}
     dev: true
 
-  /axios@1.16.0:
-    resolution: {integrity: sha512-6hp5CwvTPlN2A31g5dxnwAX0orzM7pmCRDLnZSX772mv8WDqICwFjowHuPs04Mc8deIld1+ejhtaMn5vp6b+1w==}
+  /axios@1.18.0:
+    resolution: {integrity: sha512-E32NzpYKp++W7XRe52rHiXV2ehxmh3wbdgO7MHeFM+vqxLBYHzt0ElkiImtOBxtOmyp0yoC8C6uESVV84Y2/hw==}
     dependencies:
       follow-redirects: 1.16.0
       form-data: 4.0.6
+      https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
       - debug
+      - supports-color
     dev: false
 
   /axobject-query@4.1.0:
@@ -12924,20 +12926,20 @@ packages:
     dependencies:
       big-integer: 1.6.52
 
-  /brace-expansion@1.1.13:
-    resolution: {integrity: sha512-9ZLprWS6EENmhEOpjCYW2c8VkmOvckIJZfkr7rBW6dObmfgJ/L1GpSYW5Hpo9lDz4D1+n0Ckz8rU7FwHDQiG/w==}
+  /brace-expansion@1.1.16:
+    resolution: {integrity: sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==}
     dependencies:
       balanced-match: 1.0.2
       concat-map: 0.0.1
 
-  /brace-expansion@2.0.3:
-    resolution: {integrity: sha512-MCV/fYJEbqx68aE58kv2cA/kiky1G8vux3OR6/jbS+jIMe/6fJWa0DTzJU7dqijOWYwHi1t29FlfYI9uytqlpA==}
+  /brace-expansion@2.1.2:
+    resolution: {integrity: sha512-w5JZcKgdhDOgOwm8H+KgbosopHMuGcl6qbulwjtz3SM7I7P3yW1eAjzMPLrIE+NQ9vjgANKHWeMHnrT0OXW1oA==}
     dependencies:
       balanced-match: 1.0.2
     dev: true
 
-  /brace-expansion@5.0.6:
-    resolution: {integrity: sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g==}
+  /brace-expansion@5.0.7:
+    resolution: {integrity: sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA==}
     engines: {node: 18 || 20 || >=22}
     dependencies:
       balanced-match: 4.0.4
@@ -13035,7 +13037,7 @@ packages:
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       is-ci: 3.0.1
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       source-map-support: 0.5.21
       stat-mode: 1.0.0
       temp-file: 3.4.0
@@ -13676,7 +13678,7 @@ packages:
         optional: true
     dependencies:
       import-fresh: 3.3.1
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       parse-json: 5.2.0
       path-type: 4.0.0
       typescript: 5.9.3
@@ -14355,7 +14357,7 @@ packages:
       builder-util-runtime: 9.2.10
       fs-extra: 10.1.0
       iconv-lite: 0.6.3
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
     optionalDependencies:
       dmg-license: 1.0.11
     transitivePeerDependencies:
@@ -14409,7 +14411,7 @@ packages:
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.7.15
       docker-modem: 5.0.7
-      protobufjs: 7.6.3
+      protobufjs: 7.6.5
       tar-fs: 2.1.5
       uuid: 11.1.1
     transitivePeerDependencies:
@@ -14439,8 +14441,8 @@ packages:
     dependencies:
       domelementtype: 2.3.0
 
-  /dompurify@3.4.11:
-    resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
+  /dompurify@3.4.12:
+    resolution: {integrity: sha512-zQvGet8Z2sWbQhCmfFz/T5QWH2oBmjnqK3qvOjaqaNLrLEF912WamU+ohnTp0TCep/MFVHpdJuCZEdFOdTnEFg==}
     optionalDependencies:
       '@types/trusted-types': 2.0.7
     dev: false
@@ -14694,7 +14696,7 @@ packages:
     dependencies:
       builder-util-runtime: 9.7.0
       fs-extra: 10.1.0
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       lazy-val: 1.0.5
       lodash.escaperegexp: 4.1.2
       lodash.isequal: 4.5.0
@@ -16198,8 +16200,8 @@ packages:
       iobuffer: 6.0.1
     dev: false
 
-  /fast-uri@3.1.2:
-    resolution: {integrity: sha512-rVjf7ArG3LTk+FS6Yw81V1DLuZl1bRbNrev6Tmd/9RaroeeRRJhAt7jg/6YFxbvAQXUCavSoZhPPj6oOx+5KjQ==}
+  /fast-uri@3.1.3:
+    resolution: {integrity: sha512-i70LwGWUduXqzicKXWshooq+sWL1K3WUU5rKZNG/0i3a1OSoX3HqhH5WbWwTmqWfor4urUakGPiRQcleRZTwOg==}
 
   /fast-xml-builder@1.3.0:
     resolution: {integrity: sha512-F74cZEdCvuw9P41GAC3rod4X04jjWGM1JPEv/GWSqFTWLsdyMSBMBMlm9Hk3GLBgLBbdBNY8yee0pQh2RBVESQ==}
@@ -16611,7 +16613,7 @@ packages:
       esbuild: 0.28.1
       estree-util-value-to-estree: 3.5.0
       fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
-      js-yaml: 4.2.0
+      js-yaml: 4.3.0
       lru-cache: 11.5.1
       next: 15.5.18(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
       picocolors: 1.1.1
@@ -17235,8 +17237,8 @@ packages:
       parse-passwd: 1.0.0
     dev: false
 
-  /hono@4.12.25:
-    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
+  /hono@4.12.27:
+    resolution: {integrity: sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q==}
     engines: {node: '>=16.9.0'}
     dev: false
 
@@ -18095,8 +18097,8 @@ packages:
   /js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  /js-yaml@4.2.0:
-    resolution: {integrity: sha512-ePWsvanv0DWuDRsW8dnt+R4jQ31SCRCQ7hhNcPXZPsoBZiemuZNYGf7adZdqX2D86j6rvKp3RpCxVTSb8WQlOw==}
+  /js-yaml@4.3.0:
+    resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
     hasBin: true
     dependencies:
       argparse: 2.0.1
@@ -18191,7 +18193,7 @@ packages:
     optionalDependencies:
       canvg: 3.0.11
       core-js: 3.49.0
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       html2canvas: 1.4.1
     dev: false
 
@@ -19116,7 +19118,7 @@ packages:
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.21
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       es-toolkit: 1.49.0
       katex: 0.16.47
       khroma: 2.1.0
@@ -19975,31 +19977,31 @@ packages:
     resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
     engines: {node: 18 || 20 || >=22}
     dependencies:
-      brace-expansion: 5.0.6
+      brace-expansion: 5.0.7
 
   /minimatch@3.1.4:
     resolution: {integrity: sha512-twmL+S8+7yIsE9wsqgzU3E8/LumN3M3QELrBZ20OdmQ9jB2JvW5oZtBEmft84k/Gs5CG9mqtWc6Y9vW+JEzGxw==}
     dependencies:
-      brace-expansion: 1.1.13
+      brace-expansion: 1.1.16
 
   /minimatch@3.1.5:
     resolution: {integrity: sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w==}
     dependencies:
-      brace-expansion: 1.1.13
+      brace-expansion: 1.1.16
     dev: true
 
   /minimatch@5.1.9:
     resolution: {integrity: sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw==}
     engines: {node: '>=10'}
     dependencies:
-      brace-expansion: 2.0.3
+      brace-expansion: 2.1.2
     dev: true
 
   /minimatch@9.0.7:
     resolution: {integrity: sha512-MOwgjc8tfrpn5QQEvjijjmDVtMw2oL88ugTevzxQnzRLm6l3fVEF2gzU0kYeYYKD8C66+IdGX6peJ4MyUlUnPg==}
     engines: {node: '>=16 || 14 >=14.17'}
     dependencies:
-      brace-expansion: 5.0.6
+      brace-expansion: 5.0.7
 
   /minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
@@ -21220,7 +21222,7 @@ packages:
       '@posthog/core': 1.39.6
       '@posthog/types': 1.392.1
       core-js: 3.49.0
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       fflate: 0.4.8
       preact: 10.29.4
       query-selector-shadow-dom: 1.0.1
@@ -21242,7 +21244,7 @@ packages:
       react-icons: ^5.6.0
     dependencies:
       clsx: 2.1.1
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       fast-xml-parser: 5.10.0
       framer-motion: 12.42.2(react-dom@19.1.0)(react@19.1.0)
       html2canvas-pro: 2.2.3
@@ -21585,8 +21587,8 @@ packages:
       prosemirror-transform: 1.12.0
     dev: false
 
-  /protobufjs@7.6.3:
-    resolution: {integrity: sha512-+k0vdJKNdW+Vu+dYe8tZA/VvQb6XKNWexC6URwBFXxNnjLJz9nQJCemGyNgRAWD+B7+nGNc9qMPGwcD7s4nzUw==}
+  /protobufjs@7.6.5:
+    resolution: {integrity: sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==}
     engines: {node: '>=12.0.0'}
     requiresBuild: true
     dependencies:
@@ -21596,7 +21598,6 @@ packages:
       '@protobufjs/eventemitter': 1.1.1
       '@protobufjs/fetch': 1.1.1
       '@protobufjs/float': 1.0.2
-      '@protobufjs/inquire': 1.1.2
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.1
@@ -21604,8 +21605,8 @@ packages:
       long: 5.3.2
     dev: false
 
-  /protobufjs@8.6.0:
-    resolution: {integrity: sha512-PIOO89BMGMXGz2333TVv/OqPNVWm7w30ll/4FtLbtLBaonzJMYwTbAZSSlobjIy9MoUgIAxSVUpK7aP7EpTtkg==}
+  /protobufjs@8.6.6:
+    resolution: {integrity: sha512-RkLIhE+Tdc2Kpq1F4Uw6OnpAXPca7B+GSDov/GqGCqNBpVyDskQ9yReZfgM+C7xw9AAix873iQZXbBWXj6NzYQ==}
     engines: {node: '>=12.0.0'}
     dependencies:
       long: 5.3.2
@@ -23994,8 +23995,8 @@ packages:
     dev: false
     optional: true
 
-  /svgo@3.3.3:
-    resolution: {integrity: sha512-+wn7I4p7YgJhHs38k2TNjy1vCfPIfLIJWR5MnCStsN8WuuTcBnRKcMHQLMM2ijxGZmDoZwNv8ipl5aTTen62ng==}
+  /svgo@3.3.4:
+    resolution: {integrity: sha512-GsNRis4e8jxn2Y9ENz/8lbJ93CstG8svtMnuRaHbiF2LTJ5tK0/q3t/URPq9Zc7zVWBJnNnJMIp6bevK7bSmNg==}
     engines: {node: '>=14.0.0'}
     hasBin: true
     dependencies:

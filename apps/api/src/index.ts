@@ -12,7 +12,7 @@ import {
   metricsEnabled,
 } from './lib/metrics';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
-import { getRequestUrl } from './lib/request-url';
+import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
 
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
@@ -36,6 +36,11 @@ import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
+import {
+  isDaytonaTransientProviderError,
+  primeDaytonaTransientClassifier,
+} from './shared/daytona-transient';
 import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
@@ -874,6 +879,35 @@ app.onError((err, c) => {
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
   }
 
+  // Daytona's org-wide throttler surfaces any HTTP 429 from the Daytona API as
+  // `DaytonaRateLimitError: ThrottlerException: Too Many Requests`. That is an
+  // EXPECTED, transient provider state — every Daytona call site (preview link
+  // resolution, transcript / public-share reads, lease discover, reaper health,
+  // env-sync fan-out, snapshot reconciliation, …) must NOT page Sentry for it.
+  // Prior PRs (#3567, #4605) guarded call sites one-by-one but new paths kept
+  // reintroducing the same Better Stack fingerprint (`ec26b248…`) because a
+  // forgotten try/catch still let the 429 propagate here → captureException →
+  // Sentry. This single classifier covers EVERY remaining + future call site:
+  // it downgrades the expected Daytona 429 to a retryable 503 + Retry-After
+  // WITHOUT paging Sentry (mirroring the Platinum / git-timeout / request-
+  // deadline patterns). Other Daytona failures (404 missing box, 409 conflict,
+  // 5xx outage, timeout, disk quota) still throw a generic error and fall
+  // through to the generic capture below, so unexpected failures stay loud.
+  // See shared/daytona-rate-limit.ts.
+  if (isDaytonaRateLimitError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [DaytonaRateLimitError] ${err.message}`, {
+      method,
+      path,
+      errorType: 'DaytonaRateLimitError',
+      errorName: err.name,
+    });
+    c.header('Retry-After', '10');
+    return c.json(
+      { error: true, message: 'sandbox provider is temporarily rate-limited', status: 503 },
+      503,
+    );
+  }
+
   // A bare-clone / fetch of a project's git mirror that exceeds its timeout
   // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
   // retryable — the mirror already retries once internally before surfacing.
@@ -898,6 +932,43 @@ app.onError((err, c) => {
     c.header('Retry-After', '10');
     return c.json(
       { error: true, message: 'git mirror is temporarily unavailable', status: 503 },
+      503,
+    );
+  }
+
+  // A transient Daytona provider gateway / connection / timeout failure is
+  // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
+  // gateway) momentarily 502/503/504-ing, a socket reset mid-call, or the
+  // SDK's own bounded call timing out. The SDK surfaces these as a generic
+  // `DaytonaError` whose `message` is the raw upstream response body — when
+  // the gateway 502s with an HTML error page, that HTML becomes the error
+  // message verbatim, which is exactly what produced the recurring Better
+  // Stack pattern `e98d61f1…` (`DaytonaError` with message
+  // `<html>…<h1>502 Bad Gateway</h1>…</html>`, thrown from the SDK's axios
+  // response interceptor at `createDaytonaError`). The 429 throttler case
+  // is owned by `shared/daytona-rate-limit.ts` (`isDaytonaRateLimitError`)
+  // and is NOT matched here — this classifier is the sibling for transient
+  // gateway / connection / timeout failures. It downgrades those to a
+  // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the
+  // Platinum / git-timeout / request-deadline patterns), so a forgotten
+  // try/catch at any Daytona call site (preview-link resolution, lease
+  // discover, reaper health, env-sync fan-out, snapshot reconciliation, …)
+  // can no longer page Better Stack for an upstream blip. Other Daytona
+  // failures (404 missing box, 409 conflict, 401/403 auth, 400 validation,
+  // disk quota, unexpected 5xx with a JSON body) still throw a generic
+  // error and fall through to the generic capture below, so unexpected
+  // failures stay loud. See shared/daytona-transient.ts.
+  if (isDaytonaTransientProviderError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`, {
+      method,
+      path,
+      errorType: 'DaytonaError',
+      errorName: err.name,
+      statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+    });
+    c.header('Retry-After', '10');
+    return c.json(
+      { error: true, message: 'sandbox provider is temporarily unavailable', status: 503 },
       503,
     );
   }
@@ -1007,6 +1078,24 @@ app.notFound((c) => {
 });
 
 // === Start Server ===
+
+// Pre-load the Daytona SDK's `DaytonaRateLimitError` class so the synchronous
+// `isDaytonaRateLimitError` classifier (on the global `app.onError` hot path)
+// has its strongest instanceof signal available the first time a 429 throws —
+// see shared/daytona-rate-limit.ts. Fire-and-forget: the classifier's
+// name/statusCode/message fallbacks already cover the rare race where a 429
+// throws before this resolves, so we never block startup on it.
+void primeDaytonaRateLimitClassifier();
+
+// Pre-load the Daytona SDK's `DaytonaTimeoutError` / `DaytonaConnectionError`
+// classes so the synchronous `isDaytonaTransientProviderError` classifier (on
+// the global `app.onError` hot path) has its strongest instanceof signal
+// available the first time a transient gateway / connection / timeout failure
+// throws — see shared/daytona-transient.ts. Fire-and-forget: the classifier's
+// name / statusCode / message fallbacks already cover the rare race where a
+// transient failure throws before this resolves, so we never block startup on
+// it.
+void primeDaytonaTransientClassifier();
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
@@ -1196,9 +1285,27 @@ export default {
   // stuck request surfaces as the middleware's clean 503 (with Retry-After)
   // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
   // server.timeout(req, 0) below.
-  idleTimeout: 30,
+  // Must stay comfortably ABOVE the 25s request deadline. When this equalled
+  // the client's own 30s timeout, whichever fired first was a coin flip, and
+  // the socket-kill path returns an empty reply that the load balancer turns
+  // into a 502 with no CORS headers — surfacing in browsers as a bogus CORS
+  // error rather than a timeout.
+  idleTimeout: 45,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
+    // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,
+    // `"/nice%20ports%2C/Tri%6Eity.txt%2ebak"`, …) for requests that arrive
+    // WITHOUT a `Host` header — raw HTTP/1.0 port-scanner probes and malformed
+    // clients. Every downstream `new URL(c.req.url)` / `new URL(req.url)`
+    // call site (auth middleware, OpenAPI server URL, sandbox preview /
+    // public-share proxy, git proxy, Slack/Teams webhook routers, …) assumes
+    // an absolute URL and would otherwise throw
+    // `TypeError: "…" cannot be parsed as a URL.` → app.onError → Sentry.
+    // Rebuild the Request once, here, with the absolute URL so all of those
+    // call sites are safe. No-op for normal requests (which already carry an
+    // absolute `req.url`). See lib/request-url.ts ensureAbsoluteRequestUrl.
+    // BS pattern 28e9a65c… (scanner noise, 0 users, first seen 2026-04-27).
+    req = ensureAbsoluteRequestUrl(req, config.PORT);
     const url = getRequestUrl(req, config.PORT);
     const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
 

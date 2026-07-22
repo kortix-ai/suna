@@ -14,6 +14,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
+import { getAgentGrant } from '../../iam/agent-scope';
 import { getCatalogEntry } from '../../marketplace/catalog';
 import { buildTemplateInstallPrompt } from './marketplace-install-prompts';
 import { auth, errors, json } from '../../openapi';
@@ -163,12 +164,20 @@ async function handleMarketplaceInstallSession(c: any) {
   const result = await createProjectSession({
     project: loaded.row,
     userId: loaded.userId,
+    requestingPrincipalType:
+      c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,
       metadata: { kind: 'marketplace-install', item_id: id },
     },
     visibility: 'project',
+    // Derive origin from the caller's token kind, same as POST /sessions (r7),
+    // so a backend-driven install records origin='backend' rather than 'user'.
+    // No origin_ref is accepted here — the body is composed server-side.
+    authType: c.get('authType') as string | undefined,
+    apiKeyType: c.get('apiKeyType') as string | undefined,
+    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
   });
   if (result.error) return sendSessionCreateError(c, result.error);

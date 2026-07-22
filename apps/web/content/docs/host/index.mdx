@@ -1,0 +1,112 @@
+---
+title: Self-hosting
+description: Run your own Kortix instance with Docker Compose, on a VPS or for evaluation.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Kortix runs as one Docker Compose stack: the frontend, the API, the LLM gateway, and the Supabase distribution. This page shows the three ways to install it, how updates work, and how to back up your data.
+
+Agent sessions run on a separate sandbox provider, not on this stack. The default is [Daytona](https://www.daytona.io/); Platinum and E2B are also supported. `local-docker` runs sandboxes on the same box through Docker. It is **experimental** and not for production.
+
+## One-shot bootstrap
+
+On a bare Linux box, one command installs Docker, installs the `kortix` CLI, and starts the stack:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/kortix-selfhost-up.sh \
+  | bash -s -- --domain kortix.example.com --email ops@example.com
+```
+
+This script runs on Linux only. On another OS, install the CLI directly and use the manual path below.
+
+## Manual path
+
+<Steps>
+
+<Step>
+### Install the CLI
+
+```sh
+curl -fsSL https://kortix.com/install | bash
+```
+</Step>
+
+<Step>
+### Point DNS, then initialize
+
+Create an A/AAAA record for your domain and for `api.<domain>`, both pointing
+at the box's IP. Open ports 80 and 443 — the bundled Caddy proxy uses them to
+issue a TLS certificate. Then run:
+
+```sh
+kortix self-host init --domain kortix.example.com
+```
+</Step>
+
+<Step>
+### Start the stack
+
+```sh
+kortix self-host start
+```
+
+Check `kortix self-host status`, `logs`, and `doctor` while the stack starts.
+</Step>
+
+</Steps>
+
+## Evaluation mode
+
+To try Kortix with no domain, use a Cloudflare tunnel instead of a domain:
+
+```sh
+kortix self-host init --tunnel cloudflare
+kortix self-host start
+```
+
+The tunnel URL changes on every restart. Use this mode for evaluation, not production.
+
+After the stack starts, set your sandbox provider key:
+
+```sh
+kortix self-host configure
+```
+
+`configure` is an interactive prompt for the sandbox provider key, and
+optionally a managed-git token. Sign up in the dashboard, then connect your
+own LLM key in the model picker. Self-hosted instances use your own key
+by default.
+
+## Updates
+
+Every instance updates itself automatically. Pin an exact version instead:
+
+```sh
+kortix self-host update --tag 0.9.84
+```
+
+Turn the updater off with `--auto-update off`. See
+[Self-hosting architecture](/docs/host/architecture) for
+the update schedule, the zero-downtime swap, and the channels.
+
+## Backups
+
+Kortix has no separate backup system. Each instance stores its data as two
+directories under `~/.config/kortix/self-host/<instance>/`: `volumes/db/data`
+(the Postgres database) and `volumes/storage` (file storage). The instance's
+`.env` file holds every secret and signing key it uses. Back up all three
+before you run a destructive command.
+
+<Callout type="warn">
+`kortix self-host uninstall` stops the stack, deletes its containers and
+volumes, and deletes the instance directory. This cannot be undone.
+</Callout>
+
+## Learn more
+
+- [Self-hosting architecture](/docs/host/architecture) —
+  how the stack fits together.
+- [CLI reference](/docs/cli) — every `kortix self-host` subcommand
+  and flag.

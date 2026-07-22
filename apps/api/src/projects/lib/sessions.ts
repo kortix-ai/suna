@@ -47,8 +47,10 @@ import {
 } from './serializers';
 import {
   parseSessionConnectorBindings,
+  sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import { canOverride, resolveSessionOrigin } from './session-origin';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -434,6 +436,7 @@ export function sandboxCallbackUnreachableReason(providerName: SandboxProviderNa
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
@@ -446,6 +449,21 @@ export async function createProjectSession(input: {
    * otherwise be invisible to everyone but the account's first owner.
    */
   visibility?: 'private' | 'project' | 'restricted';
+  /**
+   * Caller's token kind (auth.ts `authType`), its apiKeyType (user | sandbox,
+   * for authType==='apiKey'), and whether the token operates from inside a
+   * running session (`inSession`: session-bound or agent-scoped). Combined with
+   * the invocation source these derive the session ORIGIN — never trusted from
+   * the body. A programmatic customer credential (service_account, pat, or a
+   * 'user' apiKey) that is NOT in-session resolves to 'backend' and may set
+   * backend-only override fields (currently `origin_ref`). See session-origin.ts.
+   */
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
+  /** The request-time capability verdict for operator-managed (non-member)
+   * connection profiles. Personal profiles ignore this and remain owner-only. */
+  mayManageSystemConnectorProfiles?: boolean;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -480,6 +498,51 @@ export async function createProjectSession(input: {
     };
   }
 
+  // Origin is a POLICY CLASS derived from the caller's token kind (authType)
+  // + invocation source (metadata.source), NEVER the body. It gates which
+  // override fields the caller may set. `origin_ref` (the wrapper end-user this
+  // session acts for) is backend-only: a non-backend caller that supplies it is
+  // rejected rather than silently attributing to a phantom identity.
+  const origin = resolveSessionOrigin({
+    authType: input.authType,
+    apiKeyType: input.apiKeyType,
+    inSession: input.inSession,
+    source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+  });
+  const requestedOriginRef = normalizeString(body.origin_ref);
+  // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
+  // whitespace-only one), not on its trimmed value — otherwise a non-backend
+  // caller could send origin_ref: "   " to slip past the 403, since
+  // normalizeString would null it out.
+  const originRefProvided = typeof body.origin_ref === 'string' && body.origin_ref.length > 0;
+  if (originRefProvided && !canOverride(origin, 'origin_ref')) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'origin_ref may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+          code: 'origin_override_forbidden',
+        },
+      },
+    };
+  }
+  // Mirror the OpenAPI bound (origin_ref max 256) for internal backend callers
+  // that compose the body server-side and bypass request validation, so an
+  // oversized handle can't reach the project_sessions.origin_ref column.
+  if (requestedOriginRef && requestedOriginRef.length > 256) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'origin_ref must be at most 256 characters',
+          code: 'INVALID_ORIGIN_REF',
+        },
+      },
+    };
+  }
+  const originRef = canOverride(origin, 'origin_ref') ? (requestedOriginRef ?? null) : null;
+
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
   // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
@@ -511,6 +574,9 @@ export async function createProjectSession(input: {
   const validatedConnectorBindings = await validateSessionConnectorBindings({
     accountId,
     projectId,
+    actingUserId: userId,
+    actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
+    mayManageSystemProfiles: input.mayManageSystemConnectorProfiles ?? false,
     bindings: parsedConnectorBindings.bindings,
   });
   if (!validatedConnectorBindings.ok) {
@@ -520,6 +586,20 @@ export async function createProjectSession(input: {
         body: {
           error: validatedConnectorBindings.error,
           code: validatedConnectorBindings.code,
+        },
+      },
+    };
+  }
+  if (
+    visibility !== 'private' &&
+    sessionConnectorBindingsRequirePrivateVisibility(validatedConnectorBindings.bindings)
+  ) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'Sessions using a personal connector profile must remain private',
+          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
         },
       },
     };
@@ -689,6 +769,8 @@ export async function createProjectSession(input: {
         // session-header control (visibility = project | restricted).
         createdBy: userId,
         visibility,
+        origin,
+        originRef,
         metadata,
         updatedAt: new Date(),
       })

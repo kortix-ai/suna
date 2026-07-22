@@ -505,6 +505,18 @@ export const projectSessionVisibilityEnum = kortixSchema.enum('project_session_v
   'restricted',
 ]);
 
+// How a session was started, as a POLICY CLASS (distinct from the surface it
+// came from, which lives in metadata.source). Derived from the caller's token
+// kind + invocation source at create time — NEVER from the request body — and
+// used to gate which override fields the caller may set (see session-origin.ts).
+export const projectSessionOriginEnum = kortixSchema.enum('project_session_origin', [
+  'user',
+  'trigger',
+  'schedule',
+  'backend',
+  'system',
+]);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -527,6 +539,12 @@ export const projectSessions = kortixSchema.table(
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
+    // Policy class this session was created under (default 'user'). `originRef`
+    // is the backend wrapper's opaque end-user handle — set ONLY for
+    // backend-origin sessions (a service account or API key/PAT); null for
+    // everything else.
+    origin: projectSessionOriginEnum('origin').default('user').notNull(),
+    originRef: text('origin_ref'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1816,6 +1834,15 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+    // Standalone index on occurred_at so the admin ops dashboard's account-
+    // agnostic "audit events in the last 24h" count
+    // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
+    // sequential scan. The composite indices above all have a different
+    // leading column, so they can't serve a `WHERE occurred_at >= …` with no
+    // account/actor/resource filter — the scan was exceeding statement_timeout
+    // on the growing audit_events table and 500-ing /ops/overview (Better Stack
+    // error 4ba74f8c17f3e48e13c07511fb802ec55ba07294237c0985f3df792729e8f4d8).
+    index('idx_audit_events_occurred_at').on(table.occurredAt),
   ],
 );
 

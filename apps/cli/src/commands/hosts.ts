@@ -1,4 +1,5 @@
 import {
+  DEFAULT_HOST_NAME,
   type Host,
   activeHostName,
   getHost,
@@ -12,13 +13,16 @@ import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
-import { runLogin } from './login.ts';
+import { performLogin, runLogin } from './login.ts';
+import { performLogout } from './logout.ts';
+import { performWhoami } from './whoami.ts';
 
 const HELP = help`Usage: kortix hosts <subcommand> [options]
 
-Manage Kortix API hosts — one set of stored credentials per Kortix
+Authentication is per host — one set of stored credentials per Kortix
 instance. The "active" host is what every other command operates on
-unless you pass \`--host <name>\` per invocation.
+unless you pass \`--host <name>\` per invocation. Sign in with
+\`kortix hosts login\`; switch instance with \`kortix hosts use\`.
 
 Built-in hosts (always exist):
   cloud                Kortix Cloud (https://api.kortix.com)
@@ -26,8 +30,18 @@ Built-in hosts (always exist):
   local-dev            Local dev server (http://localhost:8008)
   kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)
 
+Authentication:
+  login [<name>]                      Sign in to a host (browser flow or
+    [--token <pat>] [--api <url>]      --token PAT). Defaults to the active
+    [--no-project]                     host; an unknown <name> is registered
+                                      and signed in (like \`add\` + login).
+  logout [<name>]                     Clear a host's stored token (default:
+                                      active).
+  whoami [<name>]                     Show the signed-in user for a host
+    [--json] [--token-only]            (default: active).
+
 Subcommands:
-  ls                                  List hosts (built-ins always exist) (--json)
+  ls                                  List hosts + auth status (--json)
   use <name>                          Switch the active host
   add <name> --url <url>              Register a new host; with --login
     [--dashboard-url <url>] [--login]  run the browser flow immediately.
@@ -46,12 +60,58 @@ Global options:
   -h, --help     Show this help.
 
 Examples:
+  kortix hosts login                  # sign in to the active host
+  kortix hosts login selfhost         # sign in to a specific instance
   kortix hosts use selfhost
   kortix hosts use cloud
-  kortix hosts use local-dev
+  kortix hosts whoami
   kortix projects ls --host selfhost
-  kortix projects ls --host kortix-internal-dev
   kortix hosts ls
+`;
+
+const LOGIN_HELP = help`Usage: kortix hosts login [<name>] [options]
+
+Authenticate a host (browser device flow or --token PAT). Defaults to
+the active host when <name> is omitted; an unknown <name> is registered
+and signed in (like \`kortix hosts add\` + login).
+
+A fresh login walks the hierarchy DOWN: host ✓ → account (auto when you
+belong to one, otherwise a prompt) → default project (prompt).
+
+Options:
+  --token <pat>     Skip the browser flow and authenticate with a token.
+  --api <url>       API base URL for the host (default: stored host URL
+                    or the cloud default). Required to register a brand
+                    new host with a non-default URL.
+  --account <slug>  Pick the active account non-interactively (skips the
+                    "Select your active account" prompt).
+  --no-project      Skip the default-project binding step at the end.
+  -h, --help        Show this help.
+
+Examples:
+  kortix hosts login
+  kortix hosts login selfhost --api http://localhost:13738
+  kortix hosts login --token kortix_pat_... --account acme
+`;
+
+const LOGOUT_HELP = help`Usage: kortix hosts logout [<name>]
+
+Clear a host's stored auth token. Defaults to the active host when
+<name> is omitted.
+
+Options:
+  -h, --help        Show this help.
+`;
+
+const WHOAMI_HELP = help`Usage: kortix hosts whoami [<name>] [options]
+
+Show the authenticated user + active account for a host. Defaults to the
+active host when <name> is omitted.
+
+Options:
+  --json            Machine-readable JSON output.
+  --token-only      Print only the active token context.
+  -h, --help        Show this help.
 `;
 
 export async function runHosts(argv: string[]): Promise<number> {
@@ -67,6 +127,12 @@ export async function runHosts(argv: string[]): Promise<number> {
     case 'ls':
     case 'list':
       return hostsLs(takeFlagBool([...rest], ['--json']));
+    case 'login':
+      return hostsLogin(rest);
+    case 'logout':
+      return hostsLogout(rest);
+    case 'whoami':
+      return hostsWhoami(rest);
     case 'use':
     case 'switch':
       return hostsUse(rest[0]);
@@ -106,27 +172,34 @@ function hostsLs(json = false): number {
   }
 
   const nameW = Math.max(...rows.map((r) => r.name.length), 6);
-  const userW = Math.max(
-    ...rows.map((r) => (r.host.user_email || r.host.user_id || '—').length),
-    8,
-  );
+  // Auth-status column: "✓ signed in as <user/email>" vs "○ not signed in".
+  // Width is measured on the visible text (glyph + label), ANSI stripped.
+  const statusText = (r: (typeof rows)[number]): string =>
+    r.host.token
+      ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}`
+      : '○ not signed in';
+  const statusW = Math.max(...rows.map((r) => statusText(r).length), 8);
 
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('   NAME', nameW + 3)}   ${pad('USER', userW)}   URL${C.reset}\n`,
+    `  ${C.dim}${pad('   NAME', nameW + 3)}   ${pad('STATUS', statusW)}   URL${C.reset}\n`,
   );
   for (const r of rows) {
     const mark = r.active ? `${C.green}● ${C.reset}` : '  ';
-    const user = r.host.user_email || r.host.user_id || '—';
+    const status_ = r.host.token
+      ? `${C.green}✓${C.reset} ${r.host.user_email || r.host.user_id || 'signed in'}`
+      : `${C.faded}○ not signed in${C.reset}`;
     process.stdout.write(
-      `${mark}${pad(r.name, nameW)}   ${pad(user, userW)}   ${C.faded}${r.host.url}${C.reset}\n`,
+      `${mark}${pad(r.name, nameW)}   ${pad(status_, statusW)}   ${C.faded}${r.host.url}${C.reset}\n`,
     );
   }
   const active = rows.find((r) => r.active);
-  process.stdout.write(`\n  ${C.green}●${C.reset}${C.dim} active${C.reset}`);
+  process.stdout.write(
+    `\n  ${C.green}●${C.reset}${C.dim} active   ${C.reset}${C.green}✓${C.reset}${C.dim} signed in   ${C.reset}${C.faded}○ not signed in${C.reset}`,
+  );
   if (active) {
     process.stdout.write(
-      `${C.dim}: ${C.reset}${C.bold}${active.name}${C.reset}${C.dim} -> ${active.host.url}${C.reset}`,
+      `\n  ${C.dim}Sign in with ${C.reset}${C.cyan}kortix hosts login${C.reset}${C.dim}, switch with ${C.reset}${C.cyan}kortix hosts use <name>${C.reset}`,
     );
   }
   process.stdout.write('\n\n');
@@ -166,6 +239,59 @@ async function hostsUse(name: string | undefined): Promise<number> {
   }
   process.stdout.write(`${status.ok(`Active host is now ${C.bold}${target}${C.reset}`)}\n`);
   return 0;
+}
+
+// ── login / logout / whoami ────────────────────────────────────────────────
+//
+// Host-centric auth. These reuse the exact shared helpers the top-level
+// `kortix login`/`logout`/`whoami` aliases call — the only difference is the
+// host is a positional `<name>` here (defaulting to the active host) rather
+// than a `--host <name>` flag.
+
+async function hostsLogin(args: string[]): Promise<number> {
+  const rest = [...args];
+  if (takeFlagBool(rest, ['-h', '--help'])) {
+    process.stdout.write(LOGIN_HELP);
+    return 0;
+  }
+  let token: string | undefined;
+  let api: string | undefined;
+  let account: string | undefined;
+  let noProject = false;
+  try {
+    token = takeFlagValue(rest, ['--token']);
+    api = takeFlagValue(rest, ['--api', '--url']);
+    account = takeFlagValue(rest, ['--account']);
+    noProject = takeFlagBool(rest, ['--no-project']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const positional = rest.find((a) => !a.startsWith('-'));
+  const hostName = positional ?? activeHostName() ?? DEFAULT_HOST_NAME;
+  return performLogin({ hostName, token, api, account, noProject });
+}
+
+async function hostsLogout(args: string[]): Promise<number> {
+  const rest = [...args];
+  if (takeFlagBool(rest, ['-h', '--help'])) {
+    process.stdout.write(LOGOUT_HELP);
+    return 0;
+  }
+  const positional = rest.find((a) => !a.startsWith('-'));
+  return performLogout(positional);
+}
+
+async function hostsWhoami(args: string[]): Promise<number> {
+  const rest = [...args];
+  if (takeFlagBool(rest, ['-h', '--help'])) {
+    process.stdout.write(WHOAMI_HELP);
+    return 0;
+  }
+  const json = takeFlagBool(rest, ['--json']);
+  const tokenOnly = takeFlagBool(rest, ['--token-only']);
+  const positional = rest.find((a) => !a.startsWith('-'));
+  return performWhoami({ host: positional, json, tokenOnly });
 }
 
 // ── add ──────────────────────────────────────────────────────────────────

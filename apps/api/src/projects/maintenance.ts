@@ -11,6 +11,7 @@ import {
   reapOrphanProviderBoxes,
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
+  reconcileUndeliveredPrompts,
 } from './sandbox-reaper';
 
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -208,6 +209,7 @@ export async function runProjectMaintenance(): Promise<void> {
       idle,
       orphanCompute,
       stuckSessions,
+      undeliveredPrompts,
       orphanBoxes,
       branches,
       computeTick,
@@ -250,6 +252,16 @@ export async function runProjectMaintenance(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
         return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
+      }),
+      // Prompt-delivery backstop: execute queued session_lifecycle_commands the
+      // scheduler drain should have taken minutes ago (leader dead / scheduler
+      // disabled) — the other half of "queued — agent picking up" forever.
+      reconcileUndeliveredPrompts().catch((err) => {
+        console.warn(
+          '[project-maintenance] undelivered-prompt reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
@@ -307,6 +319,7 @@ export async function runProjectMaintenance(): Promise<void> {
         orphanCompute.errors ||
         stuckSessions.reconciled ||
         stuckSessions.errors ||
+        undeliveredPrompts.claimed ||
         orphanBoxes.stopped ||
         orphanBoxes.errors ||
         branches.deleted ||
@@ -321,6 +334,7 @@ export async function runProjectMaintenance(): Promise<void> {
         idle,
         orphanCompute,
         stuckSessions,
+        undeliveredPrompts,
         orphanBoxes,
         branches,
         computeTick,

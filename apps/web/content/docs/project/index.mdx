@@ -1,0 +1,63 @@
+---
+title: Your project
+description: A project is a git repository that holds your agent's config and state.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+A project is one git repository. It holds a manifest, agent config, and the
+state your agent produces. No separate database exists to keep in sync.
+
+Kortix backs a project two ways:
+
+- **Kortix-managed repo** — Kortix creates and hosts a private repo. Default.
+- **Imported GitHub repo** — connect an existing repo. Kortix operates on it
+  through the GitHub API.
+
+Either way, the project has a `default_branch`. Every
+[session](/docs/work/sessions) branches from it. Every
+[change request](/docs/work/change-requests) merges into it. Each branch of a
+GitHub repo can become its own project. `main` and `dev` can then run as
+separate projects, each with its own sessions and change requests.
+
+## A project is not your codebase
+
+A project holds your agent's instructions, its
+[connectors](/docs/connect/connectors), its [triggers](/docs/connect/triggers),
+and its memory. Keep it small — Kortix clones it into every session.
+
+Your code lives elsewhere. When a task needs a codebase, the agent clones
+that repository, does the work, and opens a change request back to it. Do
+not turn an existing codebase into a project by adding a manifest to it.
+Create a dedicated project instead, and point it at the repositories the
+agent works on.
+
+## The manifest
+
+Every project has a manifest at its repo root, `kortix.yaml` by default. The
+platform reads these top-level keys:
+
+| Key | Configures |
+|---|---|
+| `default_agent` | which agent runs by default |
+| `agents` | per-agent grants: connectors, secrets, skills, CLI actions |
+| `sandbox` | the sandbox image and hardware |
+| `triggers` | scheduled and webhook automation |
+| `connectors` | which external tools the project can reach |
+| `env` | env variable names the project expects (values come from secrets) |
+
+Unknown keys are ignored.
+
+Older projects may still run `kortix.toml` (`kortix_version: 1`). Kortix
+reads both formats. See [legacy TOML](/docs/project/legacy-toml) for the
+migration path.
+
+## In this section
+
+<Cards>
+  <Card title="Manifest" href="/docs/project/manifest">The full kortix.yaml reference.</Card>
+  <Card title="Agents" href="/docs/project/agents">Markdown personas with scoped tools.</Card>
+  <Card title="Models" href="/docs/project/models">Which model a session uses, and who pays.</Card>
+  <Card title="Secrets" href="/docs/project/secrets">Encrypted values injected into a sandbox.</Card>
+  <Card title="Legacy TOML" href="/docs/project/legacy-toml">Migrating from kortix.toml.</Card>
+</Cards>

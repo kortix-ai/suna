@@ -108,6 +108,8 @@ export function serializeSession(
     owner_name: ctx?.ownerName ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
+    origin: row.origin,
+    origin_ref: row.originRef,
     sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
     is_owner: isOwner,
     can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),

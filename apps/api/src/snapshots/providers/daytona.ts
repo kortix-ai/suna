@@ -11,6 +11,7 @@
 import { rm } from 'node:fs/promises';
 import { Image } from '@daytonaio/sdk';
 import { getDaytona, isDaytonaConfigured, listDaytonaSnapshots } from '../../shared/daytona';
+import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { withTimeout } from '../../shared/with-timeout';
 import {
   DEFAULT_CPU,
@@ -39,12 +40,18 @@ const POST_FAILURE_SETTLE_POLL_MS = 4_000;
 const ACTIVATE_DEADLINE_MS = 120_000;
 
 /**
- * Positive-state cache for Daytona snapshots. Keyed by snapshot name; only
- * 'active' is cached. TTL is 60s — long enough to collapse a burst of session
- * boots into one round-trip, short enough that a manual delete in the
- * Daytona dashboard surfaces in under a minute.
+ * State cache for Daytona snapshots, keyed by snapshot name. 'active' is held
+ * for 60s — long enough to collapse a burst of session boots into one
+ * round-trip, short enough that a manual delete in the Daytona dashboard
+ * surfaces in under a minute. Non-active states ('missing' / 'building' /
+ * 'build_failed') are held briefly too: they are re-read by every session boot,
+ * build poll, and templates-UI refresh, and uncached negative lookups were a
+ * major contributor to org-wide 429s (ThrottlerException) once builds churned.
+ * 'unknown' (transport/rate-limit error) is never cached so recovery is
+ * observed immediately.
  */
 const SNAPSHOT_STATE_CACHE_TTL_MS = 60_000;
+const SNAPSHOT_STATE_NEGATIVE_TTL_MS = 5_000;
 /**
  * Per-call wall-clock budget for the (timeout-less) Daytona `snapshot.get`.
  * A healthy call is ~50-200ms; 8s is generous headroom for a slow-but-alive
@@ -78,8 +85,8 @@ function observeSnapshotState(snapshotName: string): InvalidatableObservation<Pr
         return 'unknown';
       }
     },
-    SNAPSHOT_STATE_CACHE_TTL_MS,
-    (state) => state === 'active',
+    (state) => (state === 'active' ? SNAPSHOT_STATE_CACHE_TTL_MS : SNAPSHOT_STATE_NEGATIVE_TTL_MS),
+    (state) => state !== 'unknown',
   );
   snapshotStateObservations.set(snapshotName, observation);
   return observation;
@@ -182,7 +189,10 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         console.warn(
           `[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed — re-staging + retrying: ${msg.slice(0, 120)}`,
         );
-        await new Promise((r) => setTimeout(r, BUILD_RETRY_BASE_MS * attempt));
+        // Rate-limited attempts back off much longer — retrying a 429 in
+        // seconds just spends another request against an exhausted quota.
+        const retryBaseMs = isDaytonaRateLimitError(err) ? RATE_LIMIT_RETRY_BASE_MS : BUILD_RETRY_BASE_MS;
+        await new Promise((r) => setTimeout(r, retryBaseMs * attempt));
       } finally {
         await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       }
@@ -193,14 +203,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
 
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!isDaytonaConfigured()) return 'missing';
-    // 60s positive-state cache. Daytona's snapshot.get is ~50-200ms per call
-    // over the public internet; on a burst of session boots this dominates
-    // the warm path. We cache only `active` (the common case) because that's
-    // the only state where speeding the boot up is safe: if the snapshot is
-    // mid-build / removing / missing, the caller's logic depends on the
-    // accurate state, and the auto-heal in session-sandbox.ts already covers
-    // the rare race where an `active` snapshot disappears between our check
-    // and the actual sandbox.create.
+    // Cached — 60s for `active`, a few seconds for negative states, never for
+    // `unknown`. Daytona's snapshot.get is ~50-200ms per call over the public
+    // internet; on a burst of session boots this dominates the warm path, and
+    // uncached negative lookups compounded into org-wide 429s. Mutating paths
+    // (build/delete) invalidate, and the auto-heal in session-sandbox.ts
+    // already covers the rare race where an `active` snapshot disappears
+    // between our check and the actual sandbox.create.
     return observeSnapshotState(snapshotName)();
   }
 
@@ -283,7 +292,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         if (message.includes('build_failed') || message.includes('error')) throw err;
         lastState = message.slice(0, 120) || 'lookup failed';
       }
-      await new Promise((r) => setTimeout(r, 1_000));
+      // 2s, not 1s: post-create activation takes tens of seconds; halving the
+      // poll rate meaningfully cuts org-wide API traffic with no visible cost.
+      await new Promise((r) => setTimeout(r, 2_000));
     }
     throw new Error(
       `Snapshot ${name} did not become active after create (last state: ${lastState})`,
@@ -348,7 +359,17 @@ export function isDaytonaSnapshotNotFoundError(err: unknown): boolean {
   return has404Status || hasDaytonaNotFoundName || hasPreciseSnapshotNotFoundMessage;
 }
 
+/** Extra breathing room before retrying a rate-limited call. */
+const RATE_LIMIT_RETRY_BASE_MS = 15_000;
+
+// Rate limiting (`DaytonaRateLimitError` / "ThrottlerException: Too Many
+// Requests") MUST be retryable: a throttled build attempt is not a build
+// failure, and failing it re-queues the whole bake later — which generates
+// MORE API traffic and feeds the very storm that caused the 429 (observed
+// live in prod 2026-07-22). Classification lives in shared/daytona-rate-limit
+// (the same conservative classifier app.onError uses).
 function isTransientDaytonaError(err: unknown): boolean {
+  if (isDaytonaRateLimitError(err)) return true;
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
   const statusCode = (err as { statusCode?: number } | null | undefined)?.statusCode;
   if (statusCode === 404) return true;
