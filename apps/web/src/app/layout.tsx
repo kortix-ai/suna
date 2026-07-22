@@ -1,3 +1,4 @@
+import { WebMcpTools } from '@/components/agent/web-mcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
@@ -336,6 +337,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                         event (coded 403) and walks the user through a TOTP
                         step-up so the retried action passes the IAM gate. */}
                     <MfaStepUpProvider>
+                      <WebMcpTools />
                       <KortixProjectScope>{children}</KortixProjectScope>
                     </MfaStepUpProvider>
                   </RequestDemoProvider>
