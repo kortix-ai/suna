@@ -9,6 +9,8 @@
  * — above all the agent's OWN outbound messages, which would otherwise loop it
  * against itself.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { renderSessionKey, triggerFilterMatches } from '../projects/lib/trigger-payload';
 import type { GitTriggerSpec } from '../projects/triggers';
@@ -115,5 +117,30 @@ describe('trigger filter', () => {
     expect(triggerFilterMatches(spec({ filter: { 'body.ok': 'true' } }), payload)).toBe(true);
     expect(triggerFilterMatches(spec({ filter: { 'body.count': '3' } }), payload)).toBe(true);
     expect(triggerFilterMatches(spec({ filter: { 'body.count': '4' } }), payload)).toBe(false);
+  });
+});
+
+describe('keyed lookups never bind to an unusable session', () => {
+  const SOURCE = readFileSync(
+    join(import.meta.dir, '..', 'projects', 'lib', 'triggers.ts'),
+    'utf8',
+  );
+
+  test('both trigger-session lookups exclude soft-deleted sessions', () => {
+    // deleteSession() is a SOFT delete: metadata.deletedAt is stamped and the
+    // row stays 'stopped', so a status filter alone still selects it. For a
+    // KEYED trigger that is not a one-off miss — the key keeps resolving to the
+    // same dead session, so every later message in that chat is swallowed
+    // instead of starting a new one.
+    const guards = SOURCE.match(/->> 'deletedAt' IS NULL/g) ?? [];
+    expect(guards.length).toBe(2); // findKeyedTriggerSession + findReusableTriggerSession
+  });
+
+  test("a wedged session still self-heals via the 'failed' park", () => {
+    // Dead-lettering a continue_session parks the target session 'failed'
+    // (store.markCommandFailed). Both lookups must skip failed sessions or that
+    // recovery never takes effect.
+    const failedGuards = SOURCE.match(/ne\(projectSessions\.status, 'failed'\)/g) ?? [];
+    expect(failedGuards.length).toBe(2);
   });
 });

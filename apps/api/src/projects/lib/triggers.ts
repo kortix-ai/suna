@@ -653,6 +653,8 @@ export async function findReusableTriggerSession(
         ne(projectSessions.status, 'failed'),
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+        // Same soft-delete guard as the keyed lookup above.
+        sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
@@ -684,6 +686,12 @@ export async function findKeyedTriggerSession(
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
         sql`${projectSessions.metadata} ->> 'trigger_session_key' = ${sessionKey}`,
+        // deleteSession() is a SOFT delete: it stamps metadata.deletedAt and
+        // leaves the row 'stopped'. Selecting one would bind this key to a
+        // session that can never run again — and because a keyed trigger keeps
+        // resolving to the same session, every later message for that chat
+        // would be swallowed silently rather than starting a new one.
+        sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
