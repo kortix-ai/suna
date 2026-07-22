@@ -1,12 +1,12 @@
 ---
 title: Full example
-description: 'Zero to a streaming agent reply in one framework-free file: list projects, create a session, ready the sandbox, stream events, send a prompt, render the transcript.'
+description: One file that lists projects, starts a session, and streams a reply.
 ---
 
-This is the whole SDK in one runnable file — no framework, no build step beyond
-TypeScript. It exercises every core concept in order: the client, the platform
-REST surface, the readiness handshake, live streaming, sending with overrides,
-and turn classification. Each numbered section below maps to a concept page.
+This page shows the whole SDK in one file. It uses no framework and needs no
+build step beyond TypeScript. The file uses every core concept in order: the
+client, the platform REST surface, session readiness, live streaming, sending
+a prompt, and turn classification. Each numbered step links to a concept page.
 
 ## The complete script
 
@@ -34,12 +34,12 @@ async function main() {
   const session = kortix.session(project.project_id, created.session_id);
 
   // 4. Ready the session. This provisions (or resumes) the real cloud
-  //    sandbox. Each ensureReady() call is ONE bounded long-poll — on a
+  //    sandbox. Each ensureReady() call is one bounded long-poll — on a
   //    cold boot it throws a typed RUNTIME_UNAVAILABLE ApiError while the
   //    sandbox is still coming up, so retry until it resolves.
   const { opencodeSessionId } = await retryUntilReady(() => session.ensureReady());
 
-  // 5. Connect the event stream BEFORE sending, so no early events are
+  // 5. Connect the event stream before you send, so no early events are
   //    missed. narrowChatEvent() collapses the wire events into a small
   //    typed union you can switch over.
   let resolveIdle!: () => void;
@@ -57,8 +57,8 @@ async function main() {
     },
   });
 
-  // 6. Send. Per-send overrides let you pick the model and the agent for
-  //    just this prompt (ids come from projects.modelPicker() and
+  // 6. Send. Per-send overrides pick the model and the agent for this
+  //    prompt only (ids come from projects.modelPicker() and
   //    projects.detail().config.agents).
   await session.send('What files are in this repo?', {
     model: { providerID: 'kortix', modelID: 'claude-sonnet-4.6' },
@@ -68,9 +68,9 @@ async function main() {
   await idle;
   stream.close();
 
-  // 8. Render the transcript. classifyTurn() collapses ~50 wire part
-  //    variants into a compile-time-exhaustive union, so a renderer can
-  //    switch (part.kind) and TypeScript proves no case is missed.
+  // 8. Render the transcript. classifyTurn() turns the wire part variants
+  //    into one union, so a renderer can switch on part.kind and
+  //    TypeScript proves no case is missed.
   const result = await session.runtime.session.messages({
     sessionID: opencodeSessionId,
   });
@@ -101,32 +101,31 @@ main().catch((error) => {
 });
 ```
 
-Run it with Node ≥ 18, Bun, or `tsx`:
+Run it with Node 18 or later, Bun, or `tsx`:
 
 ```sh
 KORTIX_API_KEY=kortix_pat_... npx tsx full-example.ts
 ```
 
 <Callout>
-  The first `ensureReady()` on a fresh session provisions a **real cloud sandbox** — expect the
-  ready step to take a while on the first run. Subsequent runs resume the same sandbox and are fast.
+  The first `ensureReady()` call on a fresh session provisions a real cloud sandbox. Expect the
+  ready step to take a while on the first run. Later runs resume the same sandbox and are fast.
 </Callout>
 
 ## What each step teaches
 
-| Step | Concept                                                     | Deep dive                          |
-| ---- | ----------------------------------------------------------- | ---------------------------------- |
-| 1    | One client, one token, one auth seam                        | [Authentication](/docs/sdk/auth)   |
-| 2–3  | The platform REST surface: projects and sessions            | [The client](/docs/sdk/the-client) |
-| 4    | Session readiness — the bridge between platform and runtime | [Sessions](/docs/sdk/sessions)     |
-| 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`          | [Streaming](/docs/sdk/streaming)   |
-| 6    | Per-send `{ model, agent }` overrides                       | [Sessions](/docs/sdk/sessions)     |
-| 8    | `classifyTurn` and the exhaustive `ClassifiedPart` union    | [Turns](/docs/sdk/turns)           |
+| Step | Concept                                             | Deep dive                          |
+| ---- | ---------------------------------------------------- | ----------------------------------- |
+| 1    | One client, one token, one auth seam                | [Authentication](/docs/sdk/auth)   |
+| 2–3  | The platform REST surface: projects and sessions    | [The client](/docs/sdk/the-client) |
+| 4    | Session readiness, the bridge from platform to runtime | [Sessions](/docs/sdk/sessions)     |
+| 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`  | [Streaming](/docs/sdk/streaming)   |
+| 6    | Per-send `{ model, agent }` overrides               | [Sessions](/docs/sdk/sessions)     |
+| 8    | `classifyTurn` and the exhaustive part union         | [Turns](/docs/sdk/turns)           |
 
 ## Going further from here
 
-The same client reaches the rest of the platform — a taste of the wider surface,
-all through the one facade:
+The same client reaches the rest of the platform through one facade.
 
 ```ts
 const project = kortix.project(projectId);
@@ -138,7 +137,7 @@ const readme = await session.files.read('/workspace/README.md');
 // Project secrets — env vars every session's agent can read at runtime
 await project.secrets.upsert({ name: 'MY_API_KEY', value: 'sk-…' });
 
-// The project's agents, skills, and slash commands (config files in the repo)
+// The project's agents and skills (config files in the repo)
 const { config } = await kortix.projects.detail(projectId);
 console.log(
   config.agents.map((a) => a.name),
@@ -148,14 +147,8 @@ console.log(
 // LLM gateway observability — cost, latency, per-model breakdown
 const overview = await project.gateway.overview(7);
 const routing = await project.gateway.routing.get();
-const preview = await project.gateway.routing.preview({ requestedModel: 'auto', imageInput: false });
-
-// Channels: connect the project to Slack, email, or a meeting bot
-const slack = await project.channels.slack.installation();
 ```
 
-In-repo, the package ships **runnable examples** covering each of these —
-`packages/sdk/examples/` is the graded ladder (minimal client → streaming →
-server wrapper → transcript rendering → files & secrets → CDN `<script>` tag),
-and `packages/sdk/playground/` is a 35-script live-stack test suite you can run
-against your own deployment with `bun run playground/run-all.ts`.
+The package ships runnable examples that cover each of these steps, in
+`packages/sdk/examples/`: a minimal client, streaming, a server wrapper,
+transcript rendering, and files and secrets.

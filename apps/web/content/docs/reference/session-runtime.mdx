@@ -1,45 +1,53 @@
 ---
 title: Session runtime
-description: Status model, branch creation, sandbox layout, injected environment, and the in-sandbox daemon.
+description: Sandbox lifecycle states, injected environment variables, and the token families.
 ---
 
-The runtime mechanics of a session. For the technical model of what a session is, see [Sessions](/docs/concepts/sessions).
+A session runs in an isolated sandbox on Daytona, Platinum, or E2B Cloud. Kortix checks out the project repo on a branch named after the session id. This page covers the sandbox lifecycle, the environment Kortix injects at boot, and the token families. For the session concept itself, see [Sessions](/docs/concepts/sessions).
 
-A session is one conversation with the agent, run in an isolated sandbox VM on Daytona, Platinum, or E2B Cloud, with the project repo cloned and checked out on a branch named after the session id. The provider is an implementation detail of the same session-scoped API. Work reaches the default branch only through a [change request](/docs/reference/change-requests).
+## Sandbox lifecycle
 
-## Status model
-
-A session row (`project_sessions`) carries a `status`. The enum defines `queued`, `branching`, `provisioning`, `running`, `stopped`, `failed`, `completed`; the runtime only writes a subset:
+A session row carries a `status`. The enum defines `queued`, `branching`, `provisioning`, `running`, `stopped`, `failed`, `completed`, but the runtime only writes four of them:
 
 | Status | Set when |
 | --- | --- |
-| `provisioning` | At session create — the row is inserted directly as `provisioning`. The session branch is created and the sandbox is requested during this phase. |
+| `provisioning` | At session create. The session branch is created and the sandbox is requested. |
 | `running` | Once the sandbox is live and reachable. |
 | `stopped` | On explicit stop, or by the idle sweep that hibernates inactive sandboxes. |
-| `failed` | If provisioning errors out. |
+| `failed` | If provisioning fails. |
 
-`queued` and `branching` exist in the enum but are not part of the live session flow; `completed` is defined but not currently written. The sandbox itself is tracked in a separate `session_sandboxes` row with its own states (`provisioning → active → stopped | error | archived`).
+`queued` and `branching` exist in the enum but are dead in the session flow. `completed` is defined but never written. Do not treat these three as live states.
 
-Concurrent-session caps are enforced per account; exceeding your tier returns `429`.
+The sandbox itself carries a separate `status` in its own row, with its own enum:
+
+| Status | Set when |
+| --- | --- |
+| `provisioning` | The provider is booting the sandbox. |
+| `active` | The provider confirms the sandbox is live. |
+| `stopped` | Explicit stop, idle auto-stop, or mid-restart. |
+| `error` | The provider reports a boot or runtime failure. |
+| `archived` | Terminal. The session was deleted and the provider sandbox was destroyed, not paused. |
+
+Kortix enforces a concurrent-session limit per account. Exceeding your tier's limit returns `429`.
 
 ## Active-turn protection
 
-While any OpenCode root or subagent session is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease vetoes the idle reaper, and each renewal touches the provider edge so the provider's native inactivity timer cannot hibernate the VM during a long tool-only phase. The daemon also caches that provider edge and continues the busy-only keep-alive if the Kortix API is temporarily unavailable. `session.idle` and `session.error` release the lease.
+While an OpenCode turn is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease blocks the idle reaper, and each renewal also touches the provider so the provider's own inactivity timer cannot hibernate the sandbox mid-run. `session.idle` and `session.error` release the lease.
 
-An open dashboard, preview, SSE connection, or health poll does **not** create an execution lease. Passive tabs therefore cannot keep genuinely idle compute alive.
+An open dashboard tab, preview, SSE connection, or health poll does not create a lease. A passive tab cannot keep an idle sandbox alive.
 
 ## Branch model
 
-- The session branch is **named after the session id** (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` are the same value.
-- It is cut from `base_ref`, which defaults to the project's `default_branch` (usually `main`), at create time.
-- Creation path depends on the backend: GitHub repos use the GitHub API (read the base tip, create the branch ref); generic git backends push `refs/heads/<base>:refs/heads/<session-id>`.
-- Triggers create their session branch the same way an interactive session does. Nothing writes the default branch directly except a change-request merge.
+- The session branch is named after the session id (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` carry the same value.
+- Kortix cuts the branch from `base_ref`, which defaults to the project's default branch, at session-create time.
+- Triggers create their session branch the same way an interactive session does.
+- Nothing writes the default branch directly. Only a merged [change request](/docs/reference/change-requests) does.
 
 ## What survives
 
-An in-place stop/resume preserves the same provider sandbox identity and its filesystem while dropping RAM and processes; the Kortix entrypoint and OpenCode restart on resume. E2B uses a filesystem-only pause (`keepMemory: false`), and Daytona and Platinum expose the same Kortix lifecycle contract through their native stop/resume primitives. Permanent deletion removes the provider sandbox.
+An in-place stop and resume keeps the same provider sandbox identity and filesystem, and drops RAM and processes. The Kortix entrypoint and OpenCode restart on resume. Permanent deletion removes the provider sandbox entirely.
 
-The session branch is the only durable, provider-independent record. Commit and push in small chunks so work survives provider deletion or recovery, and merge a [change request](/docs/reference/change-requests) to land it on the default branch.
+The session branch is the only durable, provider-independent record. Commit and push in small chunks so work survives a deleted sandbox, then merge a [change request](/docs/reference/change-requests) to land it on the default branch.
 
 ## Layout inside the sandbox
 
@@ -51,57 +59,67 @@ The session branch is the only durable, provider-independent record. Commit and 
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
 ```
 
-OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`, so its store never lands among your repo files.
+OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store never lands among your repo files. See [The sandbox image](/docs/reference/sandbox-image) for what else the image contains.
 
 ## Injected environment
 
-Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (which arrive as plain env vars):
+Kortix injects these variables at boot, alongside your project's [secrets](/docs/reference/secrets), which arrive as plain environment variables:
 
 | Variable | What |
 | --- | --- |
 | `KORTIX_PROJECT_ID` | UUID of this project. |
 | `KORTIX_SESSION_ID` | UUID of this session. Also the branch name. |
-| `KORTIX_BRANCH_NAME` | Same as `KORTIX_SESSION_ID` — the branch your work pushes to. |
+| `KORTIX_BRANCH_NAME` | Same value as `KORTIX_SESSION_ID`. |
 | `KORTIX_REPO_URL` | Clone URL for the project repo. |
-| `KORTIX_DEFAULT_BRANCH` | The base ref (the repo's default branch). |
+| `KORTIX_DEFAULT_BRANCH` | The project's default branch. |
 | `KORTIX_BASE_REF` | The ref this session branched from. |
 | `KORTIX_SERVICE_PORT` | `8000` — the daemon's external port. |
-| `KORTIX_API_URL` | The platform API base (`…/v1`). |
-| `KORTIX_AGENT_NAME` | The OpenCode agent the session was created with. |
+| `KORTIX_API_URL` | The platform API base (`.../v1`). |
+| `KORTIX_AGENT_NAME` | The agent the session was created with. |
 | `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
-| `KORTIX_INITIAL_PROMPT` | The first prompt, when the session was spawned by a trigger or created with one. |
+| `KORTIX_INITIAL_PROMPT` | The first prompt, when a trigger spawned the session. |
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
-| `KORTIX_SANDBOX_TOKEN` | The sandbox **service key** — the daemon's own identity. It signs and validates its own control-surface requests with it (HMAC key for `X-Kortix-User-Context`) and is the bearer for the sandbox-identity routes (clone-credential / turn-stream, including execution leases / turn-question). It is *not* a project API token, and the `kortix` CLI does not read it — the project-scoped API routes reject it. `KORTIX_TOKEN` is injected with the same value as a back-compat alias for daemons baked before the rename to `KORTIX_SANDBOX_TOKEN`; a planned Phase 2 will drop the `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` aliases and repurpose `KORTIX_TOKEN` to mean the session token instead, so don't depend on `KORTIX_TOKEN` continuing to carry the sandbox identity long-term. |
-| `KORTIX_CLI_TOKEN` | The project-scoped PAT the in-sandbox `kortix` CLI authenticates with (same value as `KORTIX_EXECUTOR_TOKEN`). |
-| `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT — acts as the launching user, scoped to the project. Also backs the `kortix-executor` MCP gateway. |
-| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. The sandbox daemon owns OpenCode root creation on every cold boot; this tells it to create/open the OpenCode root at boot, and the API adopts whatever root the daemon creates rather than racing to create its own. |
-| `KORTIX_LLM_API_KEY` · `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key + base URL, injected only on plans that use Kortix's bundled model access (operator availability + per-project opt-in + account entitlement all gate it). |
+| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to create the OpenCode root on cold boot. |
+| `KORTIX_LLM_API_KEY`, `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key and base URL. Injected only on plans that use Kortix's managed model access. |
+| `KORTIX_SANDBOX_TOKEN`, `KORTIX_TOKEN`, `KORTIX_CLI_TOKEN`, `KORTIX_EXECUTOR_TOKEN` | The token family. See below. |
 
-Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). When a project brings its own model keys they travel as ordinary project secrets OpenCode reads at boot; the `KORTIX_LLM_*` pair above appears only on plans that use Kortix's managed model access.
+Kortix does not inject `KORTIX_WORKSPACE`. The image bakes in `/workspace`; no per-session step sets it. Kortix does not inject a git token either — the daemon fetches a short-lived clone credential just in time (see below). Kortix rejects a user secret named with the `KORTIX_*` prefix, because it reserves that prefix for platform variables.
 
-The `KORTIX_*` prefix is reserved for platform variables; a user secret using it is rejected ([Secrets](/docs/reference/secrets)).
+## Token families
+
+Four tokens can appear in a sandbox. They carry two different identities, and every other page links here rather than re-explain them.
+
+| Variable | Identity | Used for |
+| --- | --- | --- |
+| `KORTIX_SANDBOX_TOKEN` | The sandbox's own service key. | Signs the daemon's control-surface requests (the `X-Kortix-User-Context` header) and authenticates sandbox-identity routes: clone-credential, turn-stream, execution leases, turn-question. |
+| `KORTIX_TOKEN` | Back-compat alias for `KORTIX_SANDBOX_TOKEN`. | Same value, same use, kept for daemons built before the rename. Do not depend on it — a future release drops this alias and repurposes `KORTIX_TOKEN` to mean the session token instead. |
+| `KORTIX_CLI_TOKEN` | A project-scoped personal access token (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
+| `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT as `KORTIX_CLI_TOKEN`. | Backs the `kortix-executor` MCP gateway. |
+
+`KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` or `KORTIX_EXECUTOR_TOKEN` for any call that should act as the launching user.
 
 ## Pushing from a session
 
-The daemon fetches a short-lived clone credential (`GET /v1/projects/:id/git/clone-credential`) using `KORTIX_SANDBOX_TOKEN` — no static token in the environment. With that, `git push origin HEAD` sends commits to the session branch. Landing on the default branch goes through a [change request](/docs/reference/change-requests).
+The daemon fetches a short-lived clone credential from `GET /v1/projects/:id/git/clone-credential`, authenticated with `KORTIX_SANDBOX_TOKEN`. No static git token sits in the environment. With that credential, `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/reference/change-requests).
 
 ## The agent runtime
 
-The agent is **OpenCode**, launched by the daemon as `opencode serve --port 4096 --hostname 127.0.0.1` with `OPENCODE_CONFIG_DIR` at the project's config dir (`[opencode] config_dir`, default `.kortix/opencode`), resolved from the cloned repo. See [Kortix vs OpenCode config](/docs/reference/config-boundary).
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/concepts/agents) for how a session picks an agent and its config.
 
 ## The daemon control surface
 
-The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Everything outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header (validated against `KORTIX_SANDBOX_TOKEN`).
+The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_SANDBOX_TOKEN`.
 
 | Path | Purpose |
 | --- | --- |
-| `GET /kortix/health` | Liveness (auth-bypassed). Reports daemon + OpenCode state, repo, branch, commit. |
+| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
 | `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
-| `/proxy/{port}/*` | Reverse-proxy to a port inside the sandbox (its own port is blocked). |
-| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096` (`503` while it boots). |
+| `/kortix/pty` | Backs the in-dashboard terminal. |
+| `/proxy/{port}/*` | Reverse-proxy to another port inside the sandbox. The daemon's own port is blocked. |
+| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096`. Returns `503` while OpenCode boots. |
 
-`/kortix/refresh` is how the dashboard applies an out-of-band change (e.g. a manifest edit committed from a parallel session) without re-provisioning the sandbox.
+Run `/kortix/refresh` to apply an out-of-band change, such as a manifest edit committed from a parallel session, without re-provisioning the sandbox.

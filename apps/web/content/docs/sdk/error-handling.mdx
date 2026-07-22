@@ -1,13 +1,9 @@
 ---
 title: Error handling
-description: "The typed error hierarchy — ApiError, AuthError, BillingError, SessionNotReadyError, the RUNTIME_UNAVAILABLE handshake — and how to catch, branch on, and format them for the UI."
+description: The typed error hierarchy for SDK calls, and how to retry safely.
 ---
 
-Every REST call made through `createKortix(...)` or `backendApi` rejects with a
-real `Error` subclass — never a plain object. `catch` it, `instanceof` it, and
-branch on `.status`/`.code`. These are the **same classes** on every host: a
-server-side "Kortix as a backend" wrapper and the React UI both import from the
-one module.
+Every call through `createKortix` rejects with a typed `Error` subclass, never a plain object. Catch the error, check `instanceof`, and branch on `.status` or `.code`.
 
 ```ts
 import { ApiError, BillingError } from '@kortix/sdk';
@@ -16,7 +12,7 @@ try {
   await kortix.project(projectId).sessions.create();
 } catch (err) {
   if (err instanceof BillingError) {
-    // 402 — out of credits / plan limit
+    // 402 — out of credits or over a plan limit
   } else if (err instanceof ApiError) {
     // any other failed request — err.status, err.code, err.detail
   } else {
@@ -25,128 +21,83 @@ try {
 }
 ```
 
-## The classes
+## Error classes
 
-| class                  | extends    | when                                                                                             | key fields                                                                             |
-| ---------------------- | ---------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `ApiError`             | `Error`    | the default for any failed request — bad status, network failure, timeout, or an aborted request | `status`, `code`, `details`/`data`, `detail`, `response`, `url`, `endpoint`, `timeout` |
-| `AuthError`            | `ApiError` | `getToken` returned `null` — the request was never sent                                          | `code` is always `'NO_SESSION'`                                                        |
-| `BillingError`         | `Error`    | HTTP `402` — the backend's only billing error today                                              | `status` (`402`), `detail: { message, ... }`                                           |
-| `RequestTooLargeError` | `Error`    | HTTP `431` — typically too many files attached to one request                                    | `status` (`431`), `detail: { message, suggestion }`                                    |
-| `SessionNotReadyError` | `Error`    | a runtime accessor (`previewUrl`, `proxyUrl`, `.runtime`) was called before `ensureReady()` — see [below](#session-readiness-errors) | `name` is `'SessionNotReadyError'`                                                     |
-
-<Callout>
-  `BillingError` used to be an 8-class hierarchy (`AGENT_RUN_LIMIT_EXCEEDED`,
-  `THREAD_LIMIT_EXCEEDED`, etc.). The backend now only ever returns a plain `402` with `{message}`,
-  so it's one class — legacy code that still switches on old error-code strings can delete that
-  branch.
-</Callout>
+| Class | Extends | When it throws | Key fields |
+|---|---|---|---|
+| `ApiError` | `Error` | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
+| `AuthError` | `ApiError` | `getToken` returned `null`. Kortix never sent the request | `code` is always `'NO_SESSION'` |
+| `BillingError` | `Error` | HTTP `402`. The only billing error class | `status` (`402`), `detail.message` |
+| `RequestTooLargeError` | `Error` | HTTP `431`. Usually too many files in one request | `detail.suggestion` |
+| `SessionNotReadyError` | `Error` | A runtime accessor ran before `ensureReady()` | `name` is `'SessionNotReadyError'` |
 
 ### `ApiError`
 
-The class every failed `backendApi`/facade call produces. `name` defaults to
-`'ApiError'` but is overridden for specific failure modes you can match on:
+`ApiError.name` is `'ApiError'` by default. Two cases override it:
 
-- `name: 'AbortError'`, `code: 'ABORTED'` — the request was aborted externally (navigation, React Query cancellation) — not a timeout, safe to ignore.
-- `code: 'TIMEOUT'` — the request's own timeout budget elapsed; `url`, `endpoint`, and `timeout` (ms) are set so you know what timed out.
-- Otherwise `status` is the HTTP status code and `code` is the backend's `error_code`/`detail.error_code` (falling back to the status as a string) when the body carried one.
+- `name: 'AbortError'`, `code: 'ABORTED'` — the request was cancelled, for example by navigation. This is not a failure. Ignore it.
+- `code: 'TIMEOUT'` — the request's own timeout elapsed. `url`, `endpoint`, and `timeout` show what timed out.
 
-Transient gateway failures are retried before you see them: idempotent reads
-(`GET`/`HEAD`) that return `502`, `503`, or `504` retry up to two times with a
-250ms → 500ms backoff. A single proxy/ALB blip is absorbed silently and never
-reaches `onError`; persistent failures surface as a normal `ApiError` with the
-last status. Mutations (`POST`/`PUT`/`PATCH`/`DELETE`) and deterministic `500`s
-are never retried.
+For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string.
 
-`message` is an **enumerable own property** (not just inherited from `Error`),
-so spreading the error or `JSON.stringify`-logging it includes the message —
-useful for error reporting.
+Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
+
+`message` is an enumerable own property on `ApiError`. It survives `JSON.stringify` and object spread, so error-reporting tools capture it.
 
 ### `AuthError`
 
-Thrown client-side, before any request goes out, when `getToken()` resolves to
-`null` — there's no way to sign the request. It's an `ApiError` subclass, so
-`err instanceof ApiError` still matches; check `err instanceof AuthError` (or
-`err.code === 'NO_SESSION'`) to special-case "not signed in" from a real
-backend failure.
+Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
 
 ### `BillingError`
 
-Thrown for HTTP `402` responses — out of credits, over a plan limit, or any
-other billing gate. `detail.message` is the human-readable reason from the
-backend; `detail` may carry additional fields the backend chose to include.
+Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend.
 
 ### `RequestTooLargeError`
 
-Thrown for HTTP `431` (Request Header Fields Too Large) — in practice, this
-means too many files were attached to a single request. `detail.suggestion`
-is a ready-to-show hint ("Try uploading files one at a time...").
+Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the request carried too many files. `detail.suggestion` holds a ready-to-show hint for the user.
 
 ## Session readiness errors
 
-Two failure modes are about the **session's runtime not being there yet** —
-they're deliberate design, not bugs, and each has one correct response.
+Two errors mean the session's sandbox is not ready yet. Handle each one differently.
 
 ### `SessionNotReadyError`
 
-Thrown **synchronously, client-side** when you touch a runtime-scoped accessor
-— `session.previewUrl()`, `session.proxyUrl()`, `session.runtime` — before this
-handle has resolved its own runtime. This enforces the SDK's most important
-invariant: a session handle resolves *its own* sandbox or throws — it never
-silently falls back to whatever sandbox happens to be globally active (which
-could route your calls into another session's machine).
+Kortix throws `SessionNotReadyError` synchronously when you call a runtime accessor — `session.previewUrl()`, `session.proxyUrl()`, or `session.runtime` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox. It never falls back to another session's sandbox.
 
 ```ts
 import { SessionNotReadyError } from '@kortix/sdk';
 
 const s = kortix.session(projectId, sessionId);
 try {
-  const url = s.previewUrl(3000); // ← throws: nothing resolved yet
+  const url = s.previewUrl(3000); // throws: not resolved yet
 } catch (err) {
   if (err instanceof SessionNotReadyError) {
-    await s.ensureReady(); // resolve the runtime first
+    await s.ensureReady();
   }
 }
 ```
 
-The fix is always the same: `await session.ensureReady()` (or `send()`, which
-readies internally) before the accessor. `session.health()` is the one
-exception — it never throws this, so a health poller can run before the
-session has ever booted.
+Call `await session.ensureReady()` first, or call `send()`, which readies the session internally. `session.health()` is the one accessor that never throws this error, so you can poll it before the session boots.
 
-### `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`
+### `RUNTIME_UNAVAILABLE`
 
-Thrown by `ensureReady()` when its single bounded `/start` long-poll returns
-while the sandbox is **still provisioning** — normal on a cold boot, which can
-take longer than one poll. It means *not ready yet*, not *failed*: retry, and
-each retry re-attaches to the same server-side provision.
+`ensureReady()` sends one bounded `/start` request and waits. If the sandbox is still starting when that wait ends, `ensureReady()` throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`. This means the sandbox is still starting, not that it failed.
 
 ```ts
 if (err instanceof ApiError && err.code === 'RUNTIME_UNAVAILABLE') {
-  // still provisioning — wait a few seconds and call ensureReady() again
+  // still starting — wait, then call ensureReady() again
 }
 ```
 
-The full retry-with-deadline pattern lives on the
-**[Streaming](/docs/sdk/streaming#readiness-is-a-handshake-not-a-one-liner)**
-page; in React, `useSession` handles all of this for you (surfacing it as the
-boot `phase` instead of an exception).
-
-<Callout type="warn">
-  One `instanceof` trap: if a page somehow loads **two copies** of the SDK (the
-  ESM build *and* the CDN `window.Kortix` global), each copy has its own
-  `ApiError` class and `instanceof` across the boundary silently returns
-  `false`. Pick one distribution per page — see
-  [Distribution](/docs/sdk/distribution#cdn--no-build-step).
-</Callout>
+Retry `ensureReady()` after a short wait. Each retry attaches to the same sandbox start. See [Streaming](/docs/sdk/streaming) for the full retry pattern. In React, `useSession` retries this for you and exposes it through the `phase` value instead of throwing.
 
 ## Helpers
 
-| helper                           | signature                                | what                                                                                                                                                                                                                                                            |
-| -------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseBillingError(error)`       | `(error: any) => Error`                  | If `error`'s status is `402`, wraps it into a `BillingError`; otherwise returns `error` unchanged. Called internally on every `402` response, so callers rarely need it directly.                                                                               |
-| `isBillingError(error)`          | `(error: any) => boolean`                | `error instanceof BillingError`                                                                                                                                                                                                                                 |
-| `formatBillingErrorForUI(error)` | `(error: any) => BillingErrorUI \| null` | Returns `null` for anything that isn't a `BillingError`; otherwise returns `{ alertTitle, alertSubtitle }` ready to render in an upgrade/pricing modal — with a dedicated "you ran out of credits" copy when the message mentions credits/balance/insufficient. |
+| Helper | Signature | What it does |
+|---|---|---|
+| `parseBillingError(error)` | `(error) => Error` | Wraps a `402` response into a `BillingError`. Returns other errors unchanged |
+| `isBillingError(error)` | `(error) => boolean` | Returns `error instanceof BillingError` |
+| `formatBillingErrorForUI(error)` | `(error) => BillingErrorUI \| null` | Returns `null` for non-billing errors. Otherwise returns `{ alertTitle, alertSubtitle }` for an upgrade modal |
 
 ```ts
 import { formatBillingErrorForUI } from '@kortix/sdk';
@@ -161,23 +112,16 @@ try {
 
 ## In `@kortix/sdk/react`
 
-`@kortix/sdk/react` re-exports `BillingError`, `RequestTooLargeError`,
-`parseBillingError`, `isBillingError`, and `formatBillingErrorForUI` — **not**
-`ApiError`/`AuthError`, which stay root-only (`@kortix/sdk`) since they're the
-generic REST-failure shape, not something a chat UI branches on. Import both
-from wherever you already import `@kortix/sdk`/`@kortix/sdk/react` — same
-classes either way.
+`@kortix/sdk/react` re-exports `BillingError`, `RequestTooLargeError`, `parseBillingError`, `isBillingError`, and `formatBillingErrorForUI`. It does not re-export `ApiError` or `AuthError` — import those from `@kortix/sdk`.
 
-`useSession`'s `send`/`answerQuestion`/`answerPermission`/`rejectQuestion`
-classify every failure into a `KortixSendError` (`sendError` on the hook's
-return value) instead of making you `instanceof`-check by hand:
+`useSession` classifies every `send`, `answerQuestion`, `answerPermission`, and `rejectQuestion` failure into one `sendError` object, so you do not need to write `instanceof` checks by hand:
 
 ```ts
 interface KortixSendError {
   kind: 'billing' | 'runtime-not-ready' | 'runtime-error';
-  message: string; // already formatted for display
-  billing?: BillingError; // present when kind === 'billing'
-  cause: unknown; // the original thrown value
+  message: string;
+  billing?: BillingError; // set when kind is 'billing'
+  cause: unknown;
 }
 ```
 
@@ -186,8 +130,7 @@ const s = useSession(projectId, sessionId);
 
 if (s.sendError?.kind === 'billing') {
   const ui = formatBillingErrorForUI(s.sendError.billing);
-  // ...
 }
 ```
 
-See **[React hooks](/docs/sdk/react)** for the rest of `useSession`'s surface.
+See [React hooks](/docs/sdk/react) for the rest of `useSession`.

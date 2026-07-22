@@ -1,37 +1,43 @@
 ---
 title: Computers
-description: Let the agent reach your own machine — files, shell, and desktop — over a permissioned tunnel, through the Executor.
+description: A computer connects your own machine to Kortix through a permissioned tunnel.
 ---
 
-A **computer** is one of your own machines (laptop, desktop, server) connected to
-Kortix over the **Agent Computer Tunnel** — a permissioned reverse tunnel. Once
-connected, the agent can read/write files, run shell commands, and drive the
-desktop **on that machine**, with you granting access per capability.
+A computer is your own machine — laptop, desktop, or server — connected to
+Kortix through a permissioned reverse tunnel. A computer is not a sandbox. A
+sandbox is a disposable cloud machine that Kortix creates for a
+[session](/docs/concepts/sessions). A computer is a machine you already own,
+and it stays connected across sessions.
 
-- **Connect a machine** from the project's Computers page in the dashboard.
-  It's an experimental feature — enable **Agent Computer Tunnel** in Customize →
-  Experimental first, then the Computers page shows a one-line command to run
-  on the target machine (`npx --yes @kortix/agent-tunnel@latest connect --api-url ...`) to
-  pair it.
-- **Grant access per capability** — filesystem / shell / desktop, scoped to
-  allowed paths, commands, and desktop features. The agent only gets what you
-  grant; a call to something ungranted raises a **permission request** you
-  approve in Computers.
-- **The agent reaches machines through the Executor.** Connecting a machine
-  auto-materializes a single **`computer`** [connector](/docs/concepts/connections)
-  that fronts **all** your connected machines. The agent calls
-  `computer.list_computers`, then `computer.fs.read` / `shell.exec` /
-  `desktop.cua.*` with a `computer` argument selecting the machine (optional when
-  only one is online). The `computer` connector also shows up in the project's
-  Connectors, where you control who can use it.
-- **There is no credential.** Unlike other connectors, `computer` has no token —
-  the live tunnel connection *is* the credential, and per-machine auth is the
-  tunnel permission layer. Nothing is exposed inside the sandbox.
+This feature is experimental. Before you connect a machine, enable **Agent
+Computer Tunnel** in Customize → Experimental.
 
-<Callout type="info" title="Note">
-Computers are configured through the dashboard (Computers) — **not** through
-the manifest (`kortix.yaml`/`kortix.toml`). The `computer` connector
-auto-materializes when you connect a machine; you don't declare it. Calls run
-through the same tunnel permission, approval, and audit model as the dedicated
-Computers surface.
-</Callout>
+## Connect a machine
+
+1. Open the project's Computers page in the dashboard.
+2. Run the command the page shows you, for example
+   `npx --yes @kortix/agent-tunnel@latest connect --api-url <url>`.
+3. Approve the connection.
+
+## Grant access
+
+You grant access per capability: filesystem, shell, or desktop. You can scope
+each capability to allowed paths, commands, or desktop features. The agent
+gets only what you grant. A call to an ungranted capability creates a
+permission request. You approve or deny each request on the Computers page.
+
+## How the agent reaches a computer
+
+Connecting a machine creates one `computer`
+[connector](/docs/concepts/connectors) that fronts every machine you connect.
+The agent calls `computer.list_computers` to find machines, then
+`computer.fs.read`, `computer.shell.exec`, or `computer.desktop.cua.*` to act
+on one. You control who can use the `computer` connector from the project's
+Connectors page.
+
+A computer has no credential. The live tunnel connection is the credential.
+Per-machine access control lives in the tunnel permission layer, not in a
+stored secret.
+
+You configure computers from the dashboard, not from `kortix.yaml`. Connecting
+a machine creates the connector automatically — you never add it by hand.

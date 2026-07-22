@@ -1,26 +1,45 @@
 ---
 title: Change requests
-description: The git merge layer that lands a session's branch on the default branch.
+description: How a session's work reaches the default branch through review.
 ---
 
-A **change request** merges one branch (`head_ref`, usually a session branch)
-into another (`base_ref`, usually the default branch). It is the **only** path
-for session work to reach the default branch.
+A change request (CR) merges one git branch into another. Kortix creates a CR
+from a session's branch (`head_ref`) onto the project's default branch
+(`base_ref`, usually `main`). A CR is the only way session work reaches the
+default branch.
 
-It's Kortix-native: the row is metadata; the git operations run in the Kortix API
-against any backend (GitHub, GitLab, plain git) — no per-host integration.
+## Why work goes through a CR
 
-- **Why** — sessions run on ephemeral branches; the sandbox is destroyed at the
-  end, and everything else boots from the default branch. Until a change request
-  merges, the work is invisible and unreviewed. This covers everything committed:
-  code, skills, agents, the manifest (`kortix.yaml`/`kortix.toml`), `AGENTS.md`
-  — no exceptions.
-- **Lifecycle** — `open → merged` (terminal) or `open → closed` (reopenable). A
-  merged request can't be reopened or closed.
-- **Merge** — fast-forward when `head_ref` is ahead, else a three-way merge
-  commit (default message `Merge CR #<n>: <title>`). A preview flags conflicts
-  first; resolve on the branch and push.
+A session runs in a sandbox on its own branch. The sandbox does not last
+forever, but the branch does: git is the only durable record of a session's
+work. Every new session starts from the default branch. Until a CR merges,
+the work stays on its own branch: unreviewed and invisible to the rest of the
+project. This applies to code, agents, skills, and the manifest — no
+exceptions.
 
-The agent opens the request (`kortix cr open`) but does not merge its own work —
-you merge from the dashboard or `kortix cr merge <n>`. Data model, diff
-semantics, and REST API: [change requests reference](/docs/reference/change-requests).
+## Lifecycle
+
+A CR moves through these statuses:
+
+- `open` — created, ready for review.
+- `merged` — landed on the base branch. Terminal: a merged CR cannot reopen
+  or close.
+- `closed` — rejected without merging. You can reopen a closed CR.
+
+Kortix merges a CR by fast-forward when possible. Otherwise it creates a
+three-way merge commit.
+
+Kortix refuses to create a CR whose branch has no commits ahead of the
+default branch. This usually means the agent committed locally but never
+pushed. Push the commits. Then create the CR again.
+
+An open CR compares against the branch's live tip each time you view it. If
+you push more commits to the same branch, the same CR shows them — you do
+not need to open a new one.
+
+An agent opens a CR for its own session but does not merge it. A separate
+permission controls who can merge, so review always sits between an agent's
+work and the default branch.
+
+See the [change requests reference](/docs/reference/change-requests) for the
+data model and REST API.

@@ -1,59 +1,43 @@
 ---
 title: Channels
-description: Drive a project from chat — Slack and Microsoft Teams messages spawn sessions and the agent replies in-thread.
+description: A channel is a chat surface that starts and continues agent sessions.
 ---
 
-A **channel** connects a chat workspace to a project so you can run the agent
-from chat. Connect Slack or Microsoft Teams to a project, and a message or
-mention spawns a [session](/docs/concepts/sessions); the agent replies in the
-thread. Follow-up messages in that thread continue the same session.
+A channel connects a chat platform to a project. A message in a connected
+channel starts a [session](/docs/concepts/sessions). The agent replies in
+the same thread.
 
-- **Connect Slack** with [`kortix channels connect`](/docs/reference/cli) or
-  from the project's Channels page in the dashboard. Both offer the same two
-  modes: one-click via the Kortix-managed Slack app (the CLI prints an
-  "Add to Slack" install link — open it, pick the workspace, click Allow), or
-  bring your own Slack app (`--manual`: a bot token + signing secret, via
-  flags, `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env vars, or stdin).
-- **Connect Microsoft Teams** from the project's Channels page when Teams is
-  enabled on your Kortix deployment. If a managed Kortix Teams bot is available,
-  the dashboard gives you the app manifest, admin-consent link, and install
-  steps; self-hosted deployments can bring their own multi-tenant Azure Bot with
-  an app ID, client secret, and Azure AD tenant ID.
-- **Credentials are stored as project [secrets](/docs/concepts/secrets)** (e.g.
-  `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, or Teams bot credentials for
-  self-hosted installs) — never in the repo.
-- **The agent talks to chat through the Executor.** Connecting Slack
-  auto-materializes the `kortix_slack` connector; connecting Teams
-  auto-materializes `kortix_teams`. Both use provider `channel`: the agent's
-  chat calls run through the gateway with the bot credential resolved
-  **server-side**, so the token is never exposed inside the sandbox. The channel
-  connector also shows up in the project's Connectors, where you control who can
-  use it.
+## Live channels
 
-<Callout type="info" title="Note">
-Channels are configured through the dashboard, CLI, and secrets — **not**
-through the manifest (`kortix.yaml`/`kortix.toml`). v2 removes channel
-declarations from the schema outright; `kortix_slack` / `kortix_teams`
-connectors auto-materialize on connect, you don't declare them.
-</Callout>
+Kortix supports two channels today:
 
-## Who the agent runs as
+- **Slack** — connect with one click through the Kortix-managed app, or bring
+  your own bot token.
+- **Microsoft Teams** — connect through org admin-consent OAuth, or bring your
+  own Azure Bot.
 
-By default, every chat sender — the first message in a channel, a thread
-follow-up, or a button click — must be linked to a Kortix account that has
-access to the project before the agent will act for them. Link your identity
-once with Slack's `/kortix login` slash command, Teams' `/login` command, or the
-button on the prompt below; it opens a short-lived, private browser link that
-connects your chat user to a Kortix account.
+Connect a channel from the project's Channels page in the dashboard, or run
+`kortix channels connect` from the CLI. See the [CLI reference](/docs/reference/cli).
 
-If there's no linked mapping yet, the agent doesn't run — it posts an
-ephemeral prompt nudging the sender to connect (or, if they're linked but
-not a member of the project's account, to request access) instead of
-replying.
+Connecting Slack adds a `channel` [connector](/docs/concepts/connectors) entry
+to `kortix.yaml` for you. You never write this entry by hand.
 
-<Callout type="warn" title="Legacy">
-Deployments that disable this requirement fall back to the older behavior:
-every message runs as a stand-in for the project account's owner, regardless
-of who actually sent it. This is legacy, non-default behavior — the identity
-requirement is on by default.
-</Callout>
+## How a channel starts a session
+
+The first message in a Slack thread or Teams conversation creates a session.
+Every later message in that thread goes to the same session, even after the
+sandbox stops and resumes. A Slack workspace connected to more than one
+project shows a project picker on the first mention.
+
+## Identity linking
+
+Kortix links each chat sender to a Kortix account before the agent runs for
+them. Link your Slack identity once with `/kortix login`. Teams uses the same
+requirement. An unlinked sender gets a prompt to link instead of a session run.
+
+## Where credentials live
+
+A connected channel's bot token is a connector-scoped
+[secret](/docs/concepts/secrets). It does not appear on the project's Secrets
+page. Kortix never injects it into a sandbox. Kortix resolves the token
+server-side when the agent sends a chat message.

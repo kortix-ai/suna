@@ -1,128 +1,67 @@
 ---
 title: Sandbox image
-description: The layered Docker image, what Kortix injects, constraints, examples, and snapshot rebuilds.
+description: The layered image every sandbox boots from, and how to customize it.
 ---
 
-The sandbox base image. For how a session uses it at runtime, see [Session runtime](/docs/reference/session-runtime).
+This page describes the image every session's sandbox boots from. It covers what Kortix adds, how to customize it with a Dockerfile, and how ports and preview URLs work. For sandbox lifecycle and stop/resume behavior, see [Session runtime](/docs/reference/session-runtime).
 
-Every session boots inside a Docker container, built in two parts: **your Dockerfile** defines the environment (languages, tools, system packages), and the **Kortix runtime layer** is auto-injected on top so the dashboard can connect.
+## The two layers
+
+Every sandbox boots from an image built in two layers. Your Dockerfile defines the base environment. The Kortix runtime layer is added on top, so the dashboard can connect to the sandbox.
 
 ```
 ┌─────────────────────────────────────────┐
-│  Kortix runtime layer (auto-injected)   │  ← opencode + kortix-agent + ENTRYPOINT
+│  Kortix runtime layer (added on top)    │  ← opencode + kortix-agent + entrypoint
 ├─────────────────────────────────────────┤
 │  Your Dockerfile                        │  ← .kortix/Dockerfile
 └─────────────────────────────────────────┘
 ```
 
-Referenced from the manifest as a named template under `sandbox.templates` (v2 `kortix.yaml`) or `[[sandbox.templates]]` (legacy v1 `kortix.toml`):
+## Declare a template
+
+Reference your Dockerfile as a named template under `sandbox.templates` in `kortix.yaml`:
 
 ```yaml
-# kortix.yaml (v2)
 sandbox:
   templates:
-    - slug: dev               # any slug except the reserved "default"
-      name: Dev box            # optional label
-      dockerfile: .kortix/Dockerfile   # OR image: python:3.12-slim
-      cpu: 2      # optional — vCPU cores
-      memory: 4   # optional — GiB
-      disk: 20    # optional — GiB
-  # Make a template the project-wide default so every session (UI, triggers,
-  # channels) boots it without passing a slug. Omit → the platform default.
+    - slug: dev
+      name: Dev box
+      dockerfile: .kortix/Dockerfile
   default: dev
 ```
 
-```toml
-# kortix.toml (legacy v1) — same fields, TOML array of tables
-[[sandbox.templates]]
-slug       = "dev"             # any slug except the reserved "default"
-name       = "Dev box"         # optional label
-dockerfile = ".kortix/Dockerfile"   # OR image = "python:3.12-slim"
-cpu        = 2     # optional — vCPU cores
-memory     = 4     # optional — GiB
-disk       = 20    # optional — GiB
+Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must stay inside the repository. Set `default` to the template slug your sessions should use; omit it to use the platform default image. Older projects on `kortix.toml` follow the same fields — see [legacy `kortix.toml`](/docs/reference/legacy-toml). Full field list: [manifest reference](/docs/reference/manifest#sandbox-and-sandboxtemplates).
 
-[sandbox]
-default = "dev"
-```
+If your project has no Dockerfile, Kortix builds sessions from a bare `ubuntu:24.04` image plus the runtime layer below.
 
-Each entry sets exactly one of `dockerfile` or `image`. Paths must be repo-relative — absolute paths and `..` traversal are rejected. A singular `sandbox` block with image/build keys on it directly (rather than under `templates`) is **legacy and rejected**; image definitions live under `sandbox.templates`, and `sandbox` itself otherwise only carries `default`. Field details: [the manifest reference](/docs/reference/manifest#sandboxtemplates--sandboxtemplates).
+## What the runtime layer adds
 
-## What the Kortix layer injects
+Kortix appends this layer on top of your Dockerfile's final stage:
 
-On top of your Dockerfile's final stage, the snapshot builder appends:
+- A system package floor: `git`, `curl`, `build-essential`, `ffmpeg`, `tmux`, Node.js, npm, and a Python 3 toolchain.
+- A document-tools floor: LibreOffice, Pandoc, and OCR tools.
+- A Python package floor for data, PDF, and office-file work (`numpy`, `pandas`, `pypdf`, `python-docx`, `python-pptx`, `pillow`, `playwright`, and more). Kortix installs this floor into its own virtual environment at `/opt/kortix/pyfloor`, not into the system Python. Code that calls `/usr/bin/python3` directly bypasses the floor. Where your Dockerfile installs a conflicting version through `apt`, the floor's version still wins for anything that runs the plain `python3` command.
+- `opencode-ai`, the `bun` runtime, and `agent-browser` with a baked Chromium build.
+- The `kortix-agent` daemon, the `kortix` CLI, and the entrypoint script.
+- `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`, and the entrypoint that starts the daemon.
 
-1. `USER root` (the layer needs to install things).
-2. `apt-get install` a system package floor: `ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr python3 python3-dev python3-pip python3-venv texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base texlive-latex-extra texlive-latex-recommended` — CLI/networking basics, a build toolchain, LibreOffice/LaTeX/Pandoc document conversion, OCR, and a Python 3 toolchain.
-3. A Python package floor via `pip install --break-system-packages` with lower-bound (`>=`) version constraints: web/parsing (`beautifulsoup4`, `lxml`, `markdownify`, `markitdown[pptx]`, `requests`), data (`numpy`, `pandas`, `scipy`, `scikit-learn`), PDF/office (`pdf2docx`, `pdf2image`, `pdfplumber`, `pymupdf`, `pypdf`, `pypdfium2`, `python-docx`, `python-pptx`, `openpyxl`, `reportlab`), imaging/browser (`pillow`, `pytesseract`, `playwright`), plotting (`matplotlib`, `plotly`, `seaborn`), and media/transcripts (`youtube-transcript-api`). The build verifies representative imports from that floor before the layer succeeds. This backs the starter's document/data/PDF/presentation skills and is present even if your Dockerfile never touches Python.
-4. `npm install -g opencode-ai@<pinned-version>`, plus the `bun` runtime and `agent-browser` (for the headless-browser tool).
-5. A baked OpenCode tool-dependency cache under `/opt/kortix/` (so the boot-time `bun install` in your config dir is a no-op, not a network round-trip).
-6. `COPY` the `kortix-agent` daemon, the `kortix` CLI, and the `kortix-entrypoint` script to `/usr/local/bin/`, plus the `slack-cli` and `executor-sdk` package trees under `/opt/kortix/`.
-7. `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`.
-8. `ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]`.
-
-Everything you installed stays on `PATH`; the layer relocates and removes nothing. The exact package lists above are pinned to a runtime layer version and can change between platform releases — they're the floor guaranteed on every sandbox, not a ceiling on what you can add.
+Everything you install in your own Dockerfile stays on `PATH`. Kortix does not remove or relocate it.
 
 ## Constraints
 
-These rules keep a sandbox connectable. They aren't enforced statically — your build succeeds even if you violate them — but the session won't behave correctly.
-
 | Rule | Why |
 | --- | --- |
-| Don't set `ENTRYPOINT`. | Kortix overrides it. Your `CMD` is also ignored. |
-| Don't claim port `8000`. | Reserved for the daemon's reverse proxy. Run your dev servers on other ports. |
-| `FROM` a Debian/Ubuntu-family base. | The layer assumes `apt-get`. Alpine, Fedora, Arch will fail at layer build. |
-| Don't `RUN apt-get clean` without `rm -rf /var/lib/apt/lists/*`. | The Kortix layer re-runs `apt-get update`; a broken lists cache breaks it. |
-| Don't bake credentials into the image. | Declare the name in `env:` (or legacy `[env]`) and set the value in the dashboard's Environment variables page — it's injected at session start. |
-
-Everything else is fair game: `RUN curl … | sh` for toolchains, COPY seed data, set `ENV` for non-secret config, install any apt/npm packages.
-
-## Examples
-
-The starter ships no Dockerfile — `sandbox.templates` is a commented-out example in `kortix.yaml`, so a fresh project boots the platform's default image (bare Ubuntu plus the Kortix runtime layer above):
-
-```dockerfile
-# syntax=docker/dockerfile:1.7
-# Kortix platform default sandbox base.
-FROM ubuntu:24.04
-
-WORKDIR /workspace
-```
-
-Add your own `.kortix/Dockerfile` and declare it under `sandbox.templates` once you need packages beyond the runtime floor. A minimal custom base might look like this:
-
-```dockerfile
-# syntax=docker/dockerfile:1.7
-FROM ubuntu:24.04
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates curl git build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /workspace
-```
-
-A heavier example with Python + Bun:
-
-```dockerfile
-FROM ubuntu:24.04
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git python3.12 python3.12-venv unzip \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://bun.sh/install | bash
-
-ENV PATH="/root/.bun/bin:${PATH}"
-WORKDIR /workspace
-```
+| Don't set `ENTRYPOINT` or `CMD`. | Kortix overrides both to start the daemon. |
+| Don't claim port `8000`. | Reserved for the daemon's reverse proxy. Run dev servers on other ports. |
+| `FROM` a Debian or Ubuntu base. | The runtime layer runs `apt-get`. Alpine, Fedora, and Arch fail the build. |
+| Don't run `apt-get clean` without `rm -rf /var/lib/apt/lists/*`. | The runtime layer re-runs `apt-get update`; a broken cache breaks the build. |
+| Don't bake credentials into the image. | Declare the name in `env:` and set the value as a project secret. Kortix injects it at session start. |
 
 ## Hardware spec
 
-`cpu`, `memory`, and `disk` on a `sandbox.templates` entry size the box your sessions run on. All three are optional; an omitted field takes the runtime provider's default. `cpu` is vCPU cores, `memory` and `disk` are GiB. GPUs are not supported in this version — a `gpu` key is rejected by the manifest validator.
+`cpu`, `memory`, and `disk` on a template entry set the sandbox size. All three are optional; an omitted field uses the platform default: 2 vCPU, 4 GiB memory, 20 GiB disk.
 
 ```yaml
-# kortix.yaml (v2)
 sandbox:
   templates:
     - slug: big
@@ -132,12 +71,27 @@ sandbox:
       disk: 50
 ```
 
-The spec is **baked into the snapshot**, not set per-session: the provider builds each sandbox from your project's snapshot and inherits its size from there. That has one practical consequence — changing the spec rebuilds the snapshot (it's part of the content hash, below) and the new size applies on the **next** session, exactly like a Dockerfile edit. Values are rounded to whole numbers; a non-positive value falls back to the default, and anything above the platform ceiling (cpu 32, memory 128 GiB, disk 500 GiB) is clamped down. See [the manifest → `sandbox.templates`](/docs/reference/manifest#hardware-spec) for the full field table and aliases.
+`cpu` takes 1–32 cores, `memory` takes 1–128 GiB, and `disk` takes 1–500 GiB. Kortix clamps any value above these limits down to the limit. Kortix does not support GPUs; a `gpu` key on a template is rejected.
+
+The spec is part of the template's snapshot, not a per-session setting. Changing it rebuilds the snapshot and applies to the next session — the current session keeps its already-booted spec.
+
+The default spec costs about $0.10 per hour on Daytona, the default sandbox provider. The same spec on Platinum or E2B costs about twice as much, because the Daytona rate includes a volume discount the other providers don't. Kortix meters this cost only for Team accounts; free and self-hosted plans aren't billed for it.
+
+## Ports and preview URLs
+
+The daemon listens on port `8000` and proxies any other port your app uses inside the sandbox. Only port `8000` itself is blocked from the proxy.
+
+The dashboard reaches a sandbox port two ways:
+
+- **Path-based**: `https://<api-host>/v1/p/<sandbox-id>/<port>/...`. This is the default form and the only one that supports WebSocket upgrades.
+- **Subdomain-based**: `https://p<port>-<sandbox-id>.<api-host>/...`. Use this form for apps that need root-relative paths or cookies, such as a Next.js or Vite dev server. WebSocket upgrades don't work on this form yet.
+
+The preview proxy strips `X-Frame-Options` and any `frame-ancestors` policy. A session can embed your app's preview in an iframe without any config on your side.
+
+A session's preview can also be shared through a public link, in view-only or interactive mode. Public share links block ports `22`, `4096`, `8000`, and the static file-share port.
 
 ## Snapshot rebuilds
 
-Snapshots are content-addressed: the platform hashes your Dockerfile's own bytes + the hardware spec + a platform runtime fingerprint (opencode version + `kortix-agent` binary). Unchanged hash reuses the snapshot; otherwise a new one builds. Rebuilds happen on any push that changes the Dockerfile's text, or any change to the `sandbox` spec — pure code commits, and edits to files your Dockerfile `COPY`s in without touching the Dockerfile itself, reuse the snapshot for free (the hash isn't computed over those copied files today).
+Kortix content-addresses each snapshot: it hashes your Dockerfile's bytes, the hardware spec, and the platform's own runtime version. An unchanged hash reuses the existing snapshot. A changed hash triggers a rebuild, shown as "preparing image" on the first session that needs it; later sessions reuse that build.
 
-Builds run on the selected sandbox provider through the same adapter contract: Daytona snapshots, Platinum templates, or E2B templates. The first session on a new content hash triggers an inline build (a few minutes, shown as "preparing image"); later sessions on that provider and content hash hit its cache.
-
-Editing the Dockerfile inside a session takes effect on the **next** session; current ones keep their booted snapshot. The edit reaches `main` only once a [change request](/docs/reference/change-requests) merges it.
+Editing the Dockerfile inside a session takes effect on the next session, not the current one. The edit reaches `main` only once its [change request](/docs/reference/change-requests) merges.

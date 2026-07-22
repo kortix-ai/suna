@@ -1,41 +1,39 @@
 ---
 title: Distribution
-description: 'How @kortix/sdk ships: npm, the CDN ESM bundle, the window.Kortix script global, version lockstep with platform releases, and the entry-point stability tiers.'
+description: How the SDK ships and what each entry point guarantees.
 ---
 
-## npm (the default)
+This page describes how `@kortix/sdk` ships, and what each entry point guarantees.
+
+## Install from npm
 
 ```sh
 npm install @kortix/sdk
 ```
 
-The published package is compiled ESM (`dist/`) with full type declarations.
-`react` and `@tanstack/react-query` are **optional peer dependencies** — install
-them only if you use `@kortix/sdk/react`.
+The package ships as compiled ESM with full TypeScript type declarations. `react` and `@tanstack/react-query` are optional peer dependencies. If you use `@kortix/sdk/react`, install both.
 
 ```ts
 import { createKortix } from '@kortix/sdk'; // framework-free core
 import { useSession } from '@kortix/sdk/react'; // optional React layer
-import { createScopedKortix } from '@kortix/sdk/server'; // Node servers (async_hooks)
+import { createScopedKortix } from '@kortix/sdk/server'; // Node and Bun servers
 ```
 
-## CDN — no build step
+## Entry points and stability
 
-Two browser bundles ship with the package, mirrored automatically by unpkg and
-jsDelivr:
+The root entry, `@kortix/sdk`, is canonical. It exports the full framework-free surface and runs in browsers, Node 18+, Bun, and edge runtimes.
 
-**ESM** (`dist/kortix.esm.min.js`, the package's `browser` field) — for
-`<script type="module">` and import maps:
+| Entry | Tier | Contract |
+|---|---|---|
+| `@kortix/sdk` | Canonical | Framework-free. Never imports React or `node:*`. |
+| `@kortix/sdk/react` | Supported | React hooks. The only entry that imports React. |
+| `@kortix/sdk/server` | Supported | Per-request config isolation for Node and Bun servers, via `node:async_hooks`. Never bundle it into a browser. |
+| Legacy subpaths (`/projects-client`, `/turns`, `/files`, and more) | Deprecated | Still work. Each re-exports from the root. Import from the root instead. |
+| `@kortix/sdk/internal/*` | Internal | Used by the Kortix web app only. Not a supported API. |
 
-```html
-<script type="module">
-  import { createKortix, classifyTurn } from 'https://unpkg.com/@kortix/sdk/dist/kortix.esm.min.js';
-</script>
-```
+## CDN bundles
 
-**IIFE global** (`dist/kortix.global.js` — what a bare
-`https://unpkg.com/@kortix/sdk` resolves to, via the package's `unpkg` /
-`jsdelivr` fields) — a single `<script>` tag that defines `window.Kortix`:
+The package also ships two browser bundles, built by `tsup`: an ESM bundle (`dist/kortix.esm.min.js`) and an IIFE global (`dist/kortix.global.js`) that defines `window.Kortix`.
 
 ```html
 <script src="https://unpkg.com/@kortix/sdk/dist/kortix.global.js"></script>
@@ -47,47 +45,9 @@ jsDelivr:
 </script>
 ```
 
-`window.Kortix` **is** the root entry — `Kortix.createKortix`,
-`Kortix.classifyTurn`, `Kortix.ApiError`, no namespaces. Streaming works from
-the CDN bundles in any modern browser (Safari 16.4+).
+`window.Kortix` exposes the same root entry as the npm import: `Kortix.createKortix`, `Kortix.classifyTurn`, `Kortix.ApiError`.
 
-<Callout type="warn">
-  Don't mix the ESM build and the IIFE global in one page — you'd get two copies of every class, and
-  `err instanceof ApiError` across the boundary silently returns `false`. Pick one.
-</Callout>
+## Next steps
 
-## Versioning — lockstep with the platform
-
-The SDK version is stamped from the platform release at publish time; the SDK
-ships **in lockstep with the Kortix platform**. There is no separate SDK
-release train — a platform release publishes the matching SDK. Pin a version
-or use `^` as you prefer; the API surface follows semver, enforced by a
-committed public-surface snapshot asserted in CI (any rename or removal of an
-exported name must land as a reviewed, deliberate diff).
-
-## Entry points and their stability tiers
-
-**The root entry is canonical.** Since v2, everything framework-free is
-exported from `@kortix/sdk` itself — one flat, discoverable surface. The
-supported entry points:
-
-| Entry                                                       | Tier                   | Contract                                                                                                                            |
-| ----------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `@kortix/sdk`                                               | **canonical**          | The full framework-free surface. Runs in browsers, Node ≥ 18, Bun, and edge runtimes. Never imports React or `node:*`.              |
-| `@kortix/sdk/react`                                         | **supported**          | The React hooks layer. The only entry allowed to import React.                                                                      |
-| `@kortix/sdk/server`                                        | **supported**          | Node/Bun-only per-request config isolation (`node:async_hooks`). Never bundle into a browser.                                       |
-| Legacy subpaths (`/projects-client`, `/turns`, `/files`, …) | **deprecated aliases** | Still work — every legacy subpath re-exports from the root — but are frozen. Import from the root instead. Removal only in a major. |
-| Browser store subpaths (`/sync-store`, `/server-store`, …)  | **internal**           | Plumbing consumed by the Kortix web app. Not on `window.Kortix`, not designed API — don't build on them.                            |
-
-These guarantees are enforced mechanically, not by convention: an
-import-graph tripwire fails the build if a framework or `node:*` import ever
-reaches the core, and the public-surface snapshot catches accidental renames
-before they reach a release.
-
-## What's in the tarball
-
-`npm pack` contains `dist/` (compiled ESM + `.d.ts` + CDN bundles), `src/`
-(readable source for go-to-definition), and the README — nothing else. Repo
-docs, examples, tests, and internal tooling never ship to consumers. The
-publish pipeline verifies the tarball installs and imports before anything
-goes out.
+- Set up a client: [Getting started](/docs/sdk/getting-started)
+- Handle SDK errors: [Error handling](/docs/sdk/error-handling)

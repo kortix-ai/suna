@@ -1,37 +1,23 @@
 ---
 title: Triggers
-description: Spawn a session automatically — on a schedule or from a webhook.
+description: A trigger starts a session automatically, on a schedule or from a webhook.
 ---
 
-A **trigger** spawns a [session](/docs/concepts/sessions) on its own — this is
-how you automate recurring or event-driven work. Triggers are `triggers` entries
-in the project manifest (`kortix.yaml`; `[[triggers]]` in legacy `kortix.toml`);
-by default, each fire starts a **fresh** session that runs a templated prompt
-as its first message.
+A **trigger** spawns a [session](/docs/concepts/sessions) with no person present. Use a trigger to automate recurring or event-driven work.
 
-- **`cron`** — runs on a schedule (6-field cron expression + IANA timezone).
-- **`webhook`** — runs on a **signed** `POST` to the project's webhook URL. No
-  unauthenticated surface: a webhook trigger must name a signing secret.
+## Trigger types
 
-A fresh-mode fired session is an ordinary session — isolated sandbox, its own
-branch, work reviewed as a [change request](/docs/concepts/change-requests).
-The manifest holds the config; runtime state (e.g. `last_fired_at`) lives in
-the database, so a fire doesn't write a commit.
+Kortix supports two trigger types:
 
-A trigger can instead opt into `session_mode: reuse`: each fire re-prompts the
-most recent session that trigger already created — resuming its existing
-sandbox and branch instead of spawning a new one — so context accumulates
-across fires. This suits recurring cron triggers that should feel like one
-long-lived agent run rather than a new isolated task every time. If no
-reusable session exists yet (or the last one is dead or failed), the trigger
-falls back to creating a fresh session, which then becomes the canonical one
-for the next fire.
+- **cron** — runs on a schedule you set.
+- **webhook** — runs when an external service sends a signed request to the project's webhook URL.
 
-Use `session_mode: pinned` with a `session_id` when a trigger must first try to
-loop a specific existing session. If that pinned session is gone or unavailable,
-Kortix gracefully falls back to the trigger's reusable session, then to a fresh
-session.
+## Where triggers live
 
-The scheduler reads triggers from the default branch, so a new or edited trigger
-goes live only after its change request merges. Fields, signature format, and
-template variables: [Triggers](/docs/reference/triggers).
+You define triggers in the project manifest, `kortix.yaml`. Each trigger holds a prompt that starts the fired session's first message.
+
+Kortix stores runtime state — such as the last fire time and its status — separately from the manifest. Firing a trigger does not create a commit.
+
+## Session strategy
+
+A fired trigger can start a new session, resume an earlier one, or target a session you pin. See the [triggers reference](/docs/reference/triggers) for the full list of session strategies and the manifest fields.

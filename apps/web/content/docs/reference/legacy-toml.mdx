@@ -1,0 +1,66 @@
+---
+title: Legacy kortix.toml
+description: Support status and the migration path from v1 kortix.toml to v2 kortix.yaml.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+This page covers the v1 manifest (`kortix.toml`, `kortix_version: 1`). For the current manifest, see [Manifest reference](/docs/reference/manifest).
+
+## Support status
+
+Kortix still fully supports v1 manifests. The platform resolves a project's manifest in this order: `kortix.yaml`, then `kortix.yml`, then `kortix.toml`. New projects from the web dashboard, `POST /v1/projects/provision`, and `kortix init` all create a v2 `kortix.yaml`. A v1 project keeps working with no forced upgrade.
+
+v1 accepts TOML or YAML syntax. v2 accepts YAML only — a v2 manifest written in TOML fails validation.
+
+## Key differences
+
+| v1 (`kortix_version: 1`) | v2 (`kortix_version: 2`) | Change |
+|---|---|---|
+| `[[agents]]` (array) | `agents:` (map keyed by name) | Convert each array item to a map entry. |
+| `[[agents]].env` | `agents.<name>.secrets` | Renamed. Default flips from `all` to `none` — see the callout below. |
+| `[[agents]].model`, `[[agents]].file` | removed | Dead in v1 (parsed, never applied). Agent behavior always comes from the agent's `.md` frontmatter. |
+| no `default_agent` | `default_agent` (required) | Must name a declared, enabled agent. |
+| `[[channels]]` | removed | Channel routing is dashboard-managed. A connected channel appears as a `connectors:` entry with `provider: channel`. |
+| `[sandbox]` (singular, image keys directly on it) | `sandbox.templates` (list) | Move each image into a template entry. |
+| `[[sandboxes]]` | `sandbox.templates` | Renamed. |
+
+<Callout type="warn" title="Secrets default to none in v2">
+  In v1, an agent with no `env` field gets every project secret by default. In v2, an agent with no `secrets` field gets none. When you migrate, list every secret each agent needs — an agent that silently loses a secret can fail mid-task.
+</Callout>
+
+A few `kortix_cli` actions are legacy-tolerated in v1 (`project.session.exec`, `project.gateway.routing.edit`, `project.schedule.read`, `project.schedule.write`, `project.webhook.read`, `project.webhook.write`, `channel.read`, `channel.connect`, `channel.send`, `channel.disconnect`) — the platform warns but allows them. The same actions are a hard error in v2. Remove them from any agent's `kortix_cli` grant before you migrate.
+
+## Migrate to v2
+
+<Steps>
+<Step>
+Create `kortix.yaml` at the repo root. Set `kortix_version: 2`.
+</Step>
+<Step>
+Convert `[[agents]]` to an `agents:` map, keyed by agent name.
+</Step>
+<Step>
+Rename each agent's `env` field to `secrets`. List every secret the agent needs — v2 does not grant secrets by default.
+</Step>
+<Step>
+Add `default_agent`, naming the agent that runs by default.
+</Step>
+<Step>
+Delete `[[channels]]`. Reconnect each channel from the dashboard.
+</Step>
+<Step>
+If you use `[sandbox]` or `[[sandboxes]]`, move each image definition under `sandbox.templates`.
+</Step>
+<Step>
+Run `kortix validate` against `kortix.yaml`. Fix any error it reports.
+</Step>
+<Step>
+Delete `kortix.toml`.
+</Step>
+</Steps>
+
+Agent behavior — system prompt, `model`, `mode`, `temperature`, and more — never moves. It already lives in each agent's `.md` frontmatter under `.kortix/opencode/agents/`, in both v1 and v2. See [Agents](/docs/concepts/agents).
+
+Check the result with `kortix validate --file kortix.yaml`. Fetch the full v2 schema with `kortix schema --version 2`. See [CLI reference](/docs/reference/cli) for both commands.

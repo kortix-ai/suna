@@ -1,182 +1,120 @@
 ---
 title: Triggers
-description: Cron and signed-webhook entries that spawn, reuse, or pin sessions — fields, template variables, and gotchas.
+description: Field reference for trigger config, session strategy, template variables, endpoints, and limits.
 ---
 
-Field-level reference for triggers. For the plain-language version, see [Automations](/docs/concepts/triggers).
+This page lists every trigger field, the session strategy fallback order, template variables, endpoints, and limits. For the plain-language version, see [triggers](/docs/concepts/triggers).
 
-A trigger fires a session that runs the rendered prompt as its initial message. By default the platform creates a fresh session branch like an interactive session; `session_mode` can instead reuse that trigger's prior session or pin the fire to a specific session. The agent works, commits, pushes. Landing on `main` goes through a [change request](/docs/reference/change-requests).
+A trigger starts a [session](/docs/concepts/sessions) with no person present, on a schedule (`cron`) or an inbound webhook. There is no third type. Triggers live in the project manifest — `triggers:` in `kortix.yaml`. Legacy `kortix.toml` uses the same fields in a different container; see [legacy TOML](/docs/reference/legacy-toml).
 
-Triggers live in the manifest — `triggers:` (a YAML list) in v2 `kortix.yaml`, `[[triggers]]` (a TOML array of tables) in legacy v1 `kortix.toml`. Same fields either way, just a different container. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
+Creating, updating, or deleting a trigger through the API, SDK, or dashboard writes directly to the default branch. It does not go through a [change request](/docs/reference/change-requests) (CR). Editing `kortix.yaml` inside a session and running `kortix ship` follows the normal branch and CR flow instead.
 
-## Cron triggers
+Runtime state (`last_fired_at`, `last_status`, `last_error`) lives outside the manifest, in the database. There is no fire count.
 
-```yaml
-# kortix.yaml (v2)
-triggers:
-  - slug: daily-digest
-    name: Daily digest
-    type: cron
-    agent: kortix
-    enabled: true
-    cron: "0 0 9 * * 1-5"
-    timezone: America/Los_Angeles
-    prompt: |
-      Summarize yesterday's commits across the repo. Save the result to
-      notes/digest-{{ cron.fired_at }}.md and open a CR against main.
-```
-
-```toml
-# kortix.toml (legacy v1) — same fields, TOML array of tables
-[[triggers]]
-slug     = "daily-digest"
-name     = "Daily digest"
-type     = "cron"
-agent    = "kortix"
-enabled  = true
-cron     = "0 0 9 * * 1-5"
-timezone = "America/Los_Angeles"
-prompt   = """
-Summarize yesterday's commits across the repo. Save the result to
-notes/digest-{{ cron.fired_at }}.md and open a CR against main.
-"""
-```
-
-`cron` is a **6-field croner expression**: `second minute hour day month weekday`. `timezone` is an IANA name (default `UTC`). The scheduler polls every 60 s (`KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`), so sub-minute precision is best-effort.
-
-## Webhook triggers
+## Config shape
 
 ```yaml
-# kortix.yaml (v2)
+# kortix.yaml
 triggers:
-  - slug: slack-hook
-    name: Slack handler
-    type: webhook
-    agent: kortix
-    enabled: true
-    secret_env: WEBHOOK_SLACK_SECRET
-    prompt: "Slack event: {{ body.text }}"
+  - slug: daily-digest # required, lowercase + dashes, unique per project
+    name: Daily digest # optional, defaults to slug
+    type: cron # "cron" | "webhook", required
+    agent: kortix # optional, defaults to "default"
+    model: anthropic/claude-sonnet-4-5 # optional, resolves at fire time if unset
+    enabled: true # optional, default true
+    cron: "0 0 9 * * 1-5" # 6-field expression, mutually exclusive with run_at
+    timezone: America/Los_Angeles # IANA name, default UTC
+    session_mode: reuse # "fresh" | "reuse" | "pinned" | "keyed", default "fresh"
+    filter: # optional, webhook payload guard
+      "body.data.direction": "inbound"
+    prompt: "Summarize {{ body.text }}" # required, template string
 ```
 
-```toml
-# kortix.toml (legacy v1)
-[[triggers]]
-slug       = "slack-hook"
-name       = "Slack handler"
-type       = "webhook"
-agent      = "kortix"
-enabled    = true
-secret_env = "WEBHOOK_SLACK_SECRET"
-prompt     = "Slack event: {{ body.text }}"
-```
+## Fields
 
-Fires on signed `POST` requests to:
+| Field | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `slug` | yes | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. |
+| `type` | yes | — | `cron` or `webhook`. |
+| `prompt` | yes | — | Template string. Renders as the session's first message. |
+| `name` | no | `slug` | Human label. |
+| `agent` | no | `default` | Must name a key in `agents:`, or fall back to `default_agent`. |
+| `model` | no | resolves at fire time | Wire form `provider/model`, for example `anthropic/claude-sonnet-4-5`. |
+| `enabled` | no | `true` | When `false`, the scheduler and the webhook receiver skip the entry. |
+| `session_mode` | no | `fresh` | See [Session strategy](#session-strategy). |
+| `session_id` | required for `pinned` | — | Exact session to re-prompt. |
+| `session_key` | required for `keyed` | — | Template string. Setting it alone implies `session_mode: keyed`. |
+| `filter` | no | — | Dotted path → expected string. A webhook delivery that does not match returns `200` and fires no session. |
+| `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. |
+| `run_at` | one of `cron`/`run_at`, on `type: cron` | — | ISO-8601 timestamp. Fires once, then stays dormant. |
+| `timezone` | no, cron only | `UTC` | IANA name. |
+| `secret_env` | required, webhook only | — | Name of a project secret holding the webhook signing key. |
 
-```
-POST /v1/webhooks/projects/<project_id>/<slug>
-```
+A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `secret_env` is rejected — there is no unauthenticated webhook.
 
-The secret value lives in `project_secrets`; the manifest references it by name. Declare it in `env.optional` (v2) or `[env].optional` (v1 legacy) so it shows up in the dashboard's Environment variables page.
+## Session strategy
 
-### Signature
+`session_mode` controls which session a fire re-prompts. Kortix tries the modes below in order and falls through on failure at each step.
 
-- Primary header: `X-Kortix-Signature: sha256=<hmac>`. The `sha256=` prefix is optional — the receiver strips it if present.
-- GitHub-compatible: `X-Hub-Signature-256` is also accepted, so GitHub webhooks point straight at this URL with no adapter.
-- Algorithm: HMAC-SHA256 over the **raw** request body using the secret named by `secret_env`.
-- Format: exactly 64 hex chars (mixed case accepted).
-- Compared with constant-time `timingSafeEqual`.
+1. **`pinned`** — re-prompt the exact `session_id`. If that session is gone or failed, fall through.
+2. **`keyed`** — render `session_key` against the payload, then look up the most recent non-failed session previously stamped with that exact key. If the key renders empty, or no session matches, fall through to a fresh session directly (never to another key's session).
+3. **`reuse`** — re-prompt the most recent non-failed session this trigger previously created. A pinned trigger falls back here too, before falling further.
+4. **`fresh`** — create a new sandbox and branch. This is the default, and the final fallback for every mode. The new session becomes the trigger's session for future `reuse` and `keyed` fires.
 
-**Fallback: static token auth.** If neither `X-Kortix-Signature` nor `X-Hub-Signature-256` is present on the request, the receiver falls back to a static shared-token check against the same `secret_env` value — for senders that can't HMAC-sign a body (e.g. Better Stack error webhooks, which only support custom headers or basic auth). Send the token as:
+Every trigger-fired session is created with project visibility (any project member can see it), not private to whoever configured or fired the trigger.
 
-- `X-Kortix-Token: <secret>`, or
-- `Authorization: Bearer <secret>`, or
-- `Authorization: Basic <base64(user:secret)>` — the password half is used as the token.
+## Payload templating
 
-The token is compared to `secret_env` with constant-time `timingSafeEqual`, same as the HMAC path. If a signature header is present, the token headers are ignored — signature auth always takes priority.
+`prompt` and `session_key` render with the same engine: `{{ token.dotted.path }}`. A missing value renders as an empty string — no error, no leftover `{{ }}`. Objects and arrays render as JSON. `session_key` is trimmed and truncated to 512 characters.
 
-### Response codes
+Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger.kind }}` (always `git`). The rest of the variable set depends on how the trigger fired.
+
+| Source | Variables |
+| --- | --- |
+| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.fired_at }}`, `{{ cron.last_fired_at }}`. No top-level `fired_at`. |
+| webhook | `{{ fired_at }}`, `{{ body.* }}` (JSON-parsed; falls back to `{{ body.raw }}` if the body does not parse), `{{ headers.content_type }}`, `{{ headers.user_agent }}`, `{{ headers.forwarded_for }}`. |
+| manual (dashboard "fire now" or the `fire` endpoint) | `{{ fired_at }}`, `{{ source }}` (`manual`), `{{ actor }}`, `{{ message.text }}`, `{{ message.source }}`. |
+
+`{{ message.text }}` is hardcoded to an empty string on a manual fire, and `{{ message.source }}` to `manual_test`. A manual fire is not a way to inject test input into the prompt.
+
+`filter` compares dotted paths as strings against the same payload the prompt sees. It exists to break loops — for example, a source that reports both sides of a conversation would otherwise re-fire the agent on its own reply.
+
+## Webhook signature
+
+Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the request in this order, with a constant-time comparison:
+
+1. **HMAC signature** — header `X-Kortix-Signature: sha256=<hmac>` (the `sha256=` prefix is optional) or the GitHub-compatible `X-Hub-Signature-256`. HMAC-SHA256 over the raw request body, using the secret named by `secret_env`.
+2. **Static token**, only when no signature header is present, for senders that cannot HMAC-sign a body. Send the secret as `X-Kortix-Token: <secret>`, `Authorization: Bearer <secret>`, or `Authorization: Basic <base64(user:secret)>` (the password half is the token).
 
 | Status | Meaning |
 | --- | --- |
-| 202 | Signature or token valid — the session was fired or queued. The body is `{ "status": "fired", "session_id": … }` or `{ "status": "queued", "reason": … }` (queued when you're at a concurrency cap). |
-| 400 | Malformed project id or slug in the URL. |
-| 401 | Signature/token missing or mismatched. |
-| 404 | Trigger not found, disabled, or not a webhook (also when the project isn't active). |
-| 409 | `secret_env` value is not configured in the dashboard's Environment variables page. |
-| 500 | Auth succeeded but the session failed to fire. |
+| 202 | Signature or token valid. Body is `{ status: "fired" \| "queued" \| "deduped", session_id, ... }`. |
+| 200 | Valid, but skipped — the project is paused, or the delivery did not match `filter`. |
+| 400 | Malformed project ID or slug in the URL. |
+| 401 | Signature and token both missing or wrong. |
+| 404 | Trigger not found, disabled, not a webhook, or the project is not active. |
+| 409 | `secret_env` has no value set. |
+| 500 | Auth passed, but the session failed to fire. |
 
-## Field reference
+## Endpoints
 
-### Common fields
+| Method + path | Needs | Notes |
+| --- | --- | --- |
+| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
+| `POST /v1/projects/{projectId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
+| `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
+| `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |
+| `PATCH /v1/projects/{projectId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume). |
+| `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. Any project member can fire a trigger — this permission does not require the editor or manager role. |
+| `POST /v1/webhooks/projects/{projectId}/{slug}` | signature or token | Public URL, gated by the webhook secret. |
 
-| Field | Required | Type | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `slug` | yes | string | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers. |
-| `type` | yes | string | — | `"cron"` or `"webhook"`. |
-| `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. Alias: `prompt_template`. |
-| `name` | no | string | `slug` | Human label. |
-| `agent` | no | string | `"default"` | Agent name. In v2 (`kortix.yaml`), must name a key in `agents:` or be omitted to fall back to `default_agent`. Legacy v1 projects with no `[[agents]]` resolve it through OpenCode discovery instead. Alias: `agent_name`. |
-| `model` | no | string | — (resolves at fire time) | Per-trigger model override, wire form `provider/model` (e.g. `"anthropic/claude-sonnet-4-5"`). When unset, resolves through the chain agent → project → account → platform `auto` at fire time — catalog availability is validated when the trigger runs, not when the manifest is parsed. |
-| `session_mode` | no | string | `"fresh"` | `"fresh"`: every fire mints a brand-new session (new sandbox + branch). `"reuse"`: re-prompts the trigger's most recent session (resuming its sandbox) so one long-lived session accumulates context across fires. `"pinned"`: first tries the exact `session_id` below, then falls back to the trigger's reusable session or a fresh one if the pin is gone or unavailable. Case-insensitive. Alias: `sessionMode`. |
-| `session_id` | required only for `session_mode: "pinned"` | string | — | Exact project session to re-prompt for pinned mode. Alias: `sessionId`. |
-| `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. |
+## Pause and resume
 
-### Cron-only fields
+A project-level switch stops every trigger in the project at once, independent of each trigger's own `enabled` field. While paused, the scheduler skips the project and inbound webhooks return `200` with `{ status: "skipped" }` — no session fires. A manual fire still works. Use this when the same repository runs on two control planes (for example, dev and production) so cron does not fire twice. CLI: `kortix triggers pause` and `kortix triggers resume`. See [CLI reference](/docs/reference/cli) for the full `kortix triggers` command group.
 
-| Field | Required | Type | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `cron` | one of `cron` / `run_at` | string | — | 6-field croner expression. Mutually exclusive with `run_at`. Alias: `schedule`. |
-| `run_at` | one of `cron` / `run_at` | string | — | ISO-8601 datetime for a one-off ("run once") schedule — the trigger fires once at/after this instant and then stays dormant. Mutually exclusive with `cron`. Alias: `runAt`. |
-| `timezone` | no | string | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`. |
+## Limits and reliability
 
-### Webhook-only fields
-
-| Field | Required | Type | Notes |
-| --- | --- | --- | --- |
-| `secret_env` | yes | string | Name of a `project_secrets` entry holding the HMAC secret (and the static-token fallback secret — see [Signature](#signature)). Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). Alias: `secretEnv`. |
-
-The parser also accepts the camelCase / alternate aliases noted above (`prompt_template`, `agent_name`, `sessionMode`, `schedule`, `runAt`, `secretEnv`) — the manifest-schema validator mirrors this same tolerance so a manifest that materializes fine never fails validation.
-
-## Template variables
-
-`prompt` renders with a mustache-style engine: `{{ token.dotted.path }}`. Missing values render as empty strings — no error, no leftover `{{ x }}`. Objects and arrays render as JSON.
-
-The variables differ by **how the trigger fired** — there is no single combined
-set. On every fire you get `{{ trigger.slug }}`, `{{ trigger.type }}`, and
-`{{ trigger.kind }}` (always `"git"`).
-
-**Cron fires** — note there is no top-level `fired_at`; use `cron.fired_at`:
-
-| Variable | Source |
-| --- | --- |
-| `{{ cron.schedule }}` | The croner expression that fired. |
-| `{{ cron.timezone }}` | Configured tz (default `"UTC"`). |
-| `{{ cron.fired_at }}` | ISO-8601 timestamp of this fire. |
-| `{{ cron.last_fired_at }}` | Previous fire timestamp (or empty). |
-
-**Webhook fires:**
-
-| Variable | Source |
-| --- | --- |
-| `{{ fired_at }}` | ISO-8601 timestamp of this fire. |
-| `{{ body.* }}` | JSON-parsed request body (dotted access). Unparseable body → `{{ body.raw }}`. |
-| `{{ headers.content_type }}` · `{{ headers.user_agent }}` · `{{ headers.forwarded_for }}` | Request headers. |
-
-**Manual fires** (dashboard "fire now"):
-
-| Variable | Source |
-| --- | --- |
-| `{{ fired_at }}` | ISO-8601 timestamp. |
-| `{{ source }}` | `"manual"`. |
-| `{{ actor }}` | User id that fired it. |
-| `{{ message.text }}` · `{{ message.source }}` | Manual-fire context. |
-
-Missing values render as empty strings — no error, no leftover `{{ x }}`. Objects and arrays render as JSON.
-
-## Common gotchas
-
-- In legacy `kortix.toml`, `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array of tables). The parser surfaces a clear error.
-- Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
-- A webhook trigger without `secret_env` is rejected. There is no unauthenticated webhook surface — by design.
-- A cron trigger must declare either `cron` or a one-off `run_at` — having neither is rejected.
-- Bad entries surface in the listing's `errors` array next to the good ones — they don't break the whole manifest.
+- The scheduler polls every 60 seconds. Cron precision is best-effort to the minute, even though the expression has a seconds field.
+- Each project allows 3 triggered sessions provisioning at once, by default. The account's plan-tier active-session cap can also apply. A fire past either limit returns `queued` (`202`) instead of failing, and runs once a slot frees up.
+- A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
+- A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry. A webhook fire is keyed on the delivery ID header, or a hash of the body and signature when the sender sends no ID.

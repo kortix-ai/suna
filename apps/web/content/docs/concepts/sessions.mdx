@@ -1,36 +1,67 @@
 ---
 title: Sessions
-description: An isolated, disposable sandbox VM on a branch named after the session.
+description: A session is a git branch and a sandbox where the agent works.
 ---
 
-A **session** runs the agent in its own isolated sandbox. The platform cuts a
-branch named after the session id, provisions a sandbox VM with the repo cloned
-onto it, and runs [OpenCode](/docs/concepts/agents) inside.
+A session is one unit of agent work. Kortix cuts a git branch and provisions
+a sandbox for it. The session id, the branch name, and the sandbox id are the
+same value.
 
-- **Isolated** — each session has its own VM and branch, so any number run at
-  once (yours, teammates', [automations](/docs/concepts/triggers)) without
-  interfering. None touch the default branch directly.
-- **Status** — `provisioning → running → (stopped | failed)`. The branch is cut
-  and the sandbox requested during `provisioning`; `stopped` on explicit stop or
-  idle hibernation.
-- **Persistence** — stop/resume keeps the same provider identity and filesystem,
-  but drops running processes and memory. Permanent deletion removes that
-  provider state. Git remains the durable contract: only work the agent
-  **commits and pushes** is portable and recoverable, and only a merged
-  [change request](/docs/concepts/change-requests) lands it on the default branch.
+## Status
 
-Inside the VM the `kortix-agent` daemon clones to `/workspace`, supervises
-OpenCode, and serves a control surface on port 8000 that the dashboard tunnels
-into. A trigger fire is just an ordinary session. Full runtime detail —
-status enum, injected env vars, daemon endpoints — is in
-[Session runtime](/docs/reference/session-runtime).
+A session reaches one of 4 states in practice.
 
-<Callout type="info" title="Sandbox provider">
-Kortix supports Daytona, Platinum, and E2B Cloud. A project can follow the
-platform default or be pinned to any enabled provider. Every provider builds
-and hosts the same layered image through the unified runtime contract — everything above
-(branch-per-session, `/workspace`, the daemon, port 8000) behaves the same
-regardless of provider. Pin or clear a project's provider with the SDK's
-`p.sandbox.setProvider(provider)` (`null` follows the platform default); see
-[The client](/docs/sdk/the-client).
+| Status | Meaning |
+|---|---|
+| `provisioning` | Kortix cuts the branch and requests the sandbox. |
+| `running` | The sandbox is live and reachable. |
+| `stopped` | The session is paused, by you or by idle auto-stop. |
+| `failed` | Provisioning failed. |
+
+The database defines 3 more values (`queued`, `branching`, `completed`).
+Kortix does not write them for a session today.
+
+## Stop, resume, and idle auto-stop
+
+You can stop a session yourself. Resume brings back the same sandbox with the
+same filesystem: code, dependencies, and OpenCode state. Only the running
+processes and memory reset.
+
+Kortix also stops an idle session for you:
+
+- After 15 minutes idle, for a normal session.
+- After 5 minutes idle, for a session a trigger started.
+
+An open dashboard tab does not keep a session alive. A busy agent turn blocks
+the stop.
+
+## What stop and delete keep
+
+<Callout type="warn" title="Deletion is permanent">
+Deleting a session destroys its sandbox for good. Kortix keeps the session
+record and the git branch, so you can still recover pushed work. Anything not
+pushed is gone.
 </Callout>
+
+Stop and resume keep the sandbox's identity and filesystem. Delete destroys
+the sandbox. Git is the only durable record: work the agent commits and
+pushes survives; everything else does not.
+
+## Sharing a preview
+
+You can share a session's live preview with a public link, in view-only or
+interactive mode.
+
+## Providers
+
+Kortix runs sessions on Daytona, Platinum, or E2B Cloud. A project follows
+the platform default, or pins one provider through the SDK — see
+[The client](/docs/sdk/the-client). Every provider runs the same sandbox
+image.
+
+For the full status enum, injected environment variables, and daemon
+endpoints, see [Session runtime](/docs/reference/session-runtime). For how a
+session picks its agent, see [Agents](/docs/concepts/agents). For sessions a
+schedule or webhook starts, see [Triggers](/docs/concepts/triggers). To land
+session work on the default branch, see
+[Change requests](/docs/concepts/change-requests).

@@ -1,39 +1,100 @@
 ---
 title: Automating work
-description: How to run a session on a schedule or from an event using triggers.
+description: Set up a cron trigger and a webhook trigger from the CLI.
 ---
 
-[Triggers](/docs/concepts/triggers) start a [session](/docs/concepts/sessions) on its own, with no one watching. A triggered session works like any other: the agent does the work, proposes a [change request](/docs/concepts/change-requests), and waits for review.
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-## Two ways to trigger a session
+A [trigger](/docs/concepts/triggers) starts a [session](/docs/concepts/sessions) with no person present, on a schedule or from an inbound webhook. This guide sets up one of each with the CLI.
 
-- **On a schedule** — run at fixed times. Good for a Monday-morning summary or end-of-day report.
-- **From an event** — run when something happens elsewhere, delivered as a signed webhook.
+## Set up a cron trigger
 
-## A scheduled example
+<Steps>
 
-Triggers live in your project's manifest (`kortix.yaml`) as `triggers` entries. This one runs every weekday morning and writes a digest:
+<Step>
+### Add the trigger
 
-```yaml
-triggers:
-  - slug: daily-digest
-    name: Daily digest
-    type: cron
-    enabled: true
-    cron: "0 0 9 * * 1-5"
-    timezone: America/Los_Angeles
-    prompt: |
-      Summarize yesterday's activity and save it as a daily note.
+```sh
+kortix triggers add daily-digest --type cron \
+  --cron "0 0 9 * * 1-5" --timezone America/Los_Angeles \
+  --prompt "Summarize yesterday's activity and save it as a daily note."
 ```
 
-(Legacy `kortix.toml` declares the same thing as `[[triggers]]`, an array of tables with the same fields.)
+`cron` is a 6-field expression: second, minute, hour, day, month, weekday. This command edits your local `kortix.yaml` only.
+</Step>
 
-When the schedule fires, Kortix starts a fresh session and gives the agent the `prompt` as its first message.
+<Step>
+### Ship it
 
-## Changes take effect after they're merged
+```sh
+kortix ship
+```
 
-A trigger lives in the manifest, so adding or editing one is a change to your project. It goes live only once it's [merged](/docs/quickstart) onto your main line: edit the manifest, review and merge, then the trigger runs.
+`kortix ship` commits `kortix.yaml` and pushes it. The schedule goes live once this lands on your project's default branch.
+</Step>
 
-<Callout title="Under the hood">
-`cron` is a 6-field expression (`second minute hour day month weekday`); `timezone` is an IANA name. Webhook triggers fire on signed `POST` requests and must reference a signing secret by name (`secret_env`) — there's no unauthenticated webhook surface. By default (`session_mode: "fresh"`), each fire spawns a new session on its own branch; set `session_mode: "reuse"` to instead re-prompt the trigger's existing session, resuming its sandbox and branch so one long-lived session accumulates context across fires. Use `session_mode: "pinned"` plus `session_id` when a trigger should first try one exact session. See the [triggers reference](/docs/reference/triggers).
-</Callout>
+<Step>
+### Confirm it runs
+
+```sh
+kortix triggers ls
+```
+
+The list shows each trigger's slug, state, and when it last fired. To fire it now instead of waiting for the schedule, run `kortix triggers fire daily-digest`.
+</Step>
+
+</Steps>
+
+## Set up a webhook trigger
+
+A webhook trigger needs a secret. Kortix uses it to check the signature on every incoming request.
+
+<Steps>
+
+<Step>
+### Add the secret
+
+```sh
+kortix secrets set WEBHOOK_SECRET=<a-random-value>
+```
+
+See [Managing secrets](/docs/guides/managing-secrets) for more on secrets.
+</Step>
+
+<Step>
+### Add the trigger
+
+```sh
+kortix triggers add new-lead --type webhook \
+  --secret-env WEBHOOK_SECRET \
+  --prompt "A new lead arrived: {{ body.name }} ({{ body.email }}). Add it to the CRM."
+```
+
+`--secret-env` names the secret that signs requests to this trigger.
+</Step>
+
+<Step>
+### Ship it
+
+```sh
+kortix ship
+```
+</Step>
+
+<Step>
+### Send it a request
+
+Kortix builds the webhook URL from your project id and the trigger's slug:
+
+```
+POST /v1/webhooks/projects/<project-id>/<slug>
+```
+
+Send a signed `POST` request to this URL from the external service. Kortix checks the signature against `WEBHOOK_SECRET`. It then starts a session with the request body available in the prompt. See [Triggers reference](/docs/reference/triggers) for the exact signature header and format.
+</Step>
+
+</Steps>
+
+## Next steps
+
+By default, each fire starts a fresh session on a new branch. A trigger can instead reuse or pin a session. A webhook trigger can also filter which payloads start one. See the [triggers reference](/docs/reference/triggers) for session strategy, template variables, and every manifest field.

@@ -1,185 +1,119 @@
 ---
 title: Developing with Kortix
-description: Run a local Kortix instance to build and test against, clone a project, and iterate from the CLI.
+description: The CLI loop to link a repo, ship code, run sessions, and review change requests.
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-This guide is for **building on Kortix** — developing your own project (agents,
-connectors, skills, `kortix.yaml`) against a Kortix instance you control. You'll
-stand up a local instance to test against, clone a project onto your machine, and
-drive the whole loop from the terminal.
-
-<Callout type="info">
-Contributing to the Kortix codebase itself? That's a different setup — see
-[Local development](/docs/development), which runs this monorepo with `pnpm dev`.
-This guide is about developing *your* Kortix project, not the platform.
-</Callout>
-
-## The two pieces
-
-Developing with Kortix needs two things:
-
-1. **An instance** — a running Kortix server your project targets. Either a
-   **local instance** you run yourself (below), or a remote one (Kortix Cloud, or
-   a shared team/self-host box) you connect to.
-2. **The CLI** — how you clone, configure, and drive that instance from your
-   terminal.
-
-## 1. Install the CLI
-
-```sh
-curl -fsSL https://kortix.com/install | KORTIX_CHANNEL=dev bash
-```
-
-`KORTIX_CHANNEL` selects which CLI build you get. It defaults to `prod` (the
-latest tagged release). Pass **`dev`** when you're developing against the dev
-channel or a self-host instance tracking `dev`/`latest`, so your CLI matches the
-features and API shape of the build you're testing against. Stick with the
-default `prod` when you're working against Kortix Cloud or a released version.
-
-```sh
-kortix --version      # confirm the install + channel
-kortix --help         # full command index
-```
-
-## 2. Run a local instance to test against
-
-`kortix self-host` isn't only for production VPS deployments — it's also the
-**standard way to run Kortix locally**. It starts the full stack (frontend, API,
-LLM gateway, and the bundled Supabase) as one Docker Compose project on your
-machine, giving you a real Kortix server to point your project at and iterate
-against — no cloud account required.
-
-<Callout type="info">
-For a production deployment on a VPS with a public domain, follow
-[Self-hosting](/docs/guides/self-hosting). The steps below are the **local
-development** path: same stack, no domain, reachable from your machine.
-</Callout>
+This page shows the CLI loop for building on Kortix: link a repo, ship code,
+run sessions, and review the result. It assumes the CLI is installed and you
+ran `kortix login`. See [Quickstart](/docs/quickstart) for setup.
 
 <Steps>
 
 <Step>
-### Start it
+### Link a repo
 
-On a local machine with no public domain, use a Cloudflare tunnel for
-reachability — `init` sets everything else to sensible defaults:
+Start a new project, or link an existing repo folder to one.
+
+To scaffold a new project:
 
 ```sh
-kortix self-host init --tunnel cloudflare
-kortix self-host start
+kortix init my-app
+cd my-app
 ```
 
-`init` is a short guided flow (pass `--yes` to accept defaults). To track the
-same build as the dev channel, add `--version dev`.
+`kortix init` creates a project directory with the `general-knowledge-worker`
+template.
+
+To link an existing cloned repo to a project you already created:
+
+```sh
+kortix projects link <project-id>
+```
+
+This command writes `.kortix/link.json` in the current directory. Kortix
+reads this file to find your project on every command run from this folder.
+If you plan to run `kortix ship` first, skip this step. It links a new
+project for you when none exists.
 </Step>
 
 <Step>
-### Check it's healthy
+### Ship your code
 
 ```sh
-kortix self-host status      # containers, versions, drift, last update
-kortix self-host logs        # tail logs
-kortix self-host open        # open the dashboard in a browser
+kortix ship
+```
+
+`kortix ship` lints your `kortix.yaml`, commits local changes, pushes your
+branch, and prompts for any missing secret or connector connection. Run it
+each time you want your local changes on the cloud project. The first run
+also creates the cloud project and repo if you have not linked one yet.
+</Step>
+
+<Step>
+### Run and attach to sessions
+
+Start a session with a prompt:
+
+```sh
+kortix sessions new --prompt "Build the login page" --wait
+```
+
+Each session runs in its own sandbox, on its own branch. `--wait` blocks
+until the session is ready.
+
+Attach to a session from your terminal:
+
+```sh
+kortix sessions chat
+```
+
+This opens an interactive chat with your most recent session. Add an id to
+target a specific session: `kortix sessions chat <id>`.
+
+To attach your local OpenCode client to the sandbox instead, run:
+
+```sh
+kortix sessions connect
+```
+
+To open a raw shell in the sandbox, with no agent involved, run:
+
+```sh
+kortix sessions shell
+```
+
+List your running sessions at any time:
+
+```sh
+kortix sessions ls
 ```
 </Step>
 
 <Step>
-### Point the CLI at it
+### Review with change requests
 
-Your self-host instance is the built-in `selfhost` host:
+An agent opens a change request (CR) when its session has commits ready to
+merge. List, inspect, and merge them from the CLI.
 
 ```sh
-kortix hosts use selfhost
-kortix hosts current         # → selfhost
+kortix cr ls
+kortix cr diff 1
+kortix cr merge 1
 ```
+
+`kortix cr ls` lists change requests for the linked project. `kortix cr diff
+<cr>` shows the unified patch. `kortix cr merge <cr>` merges it into the
+project's default branch. Accept a CR number or its full id.
 </Step>
 
 </Steps>
 
-Common lifecycle commands while developing:
-
-| Command | Does |
-| --- | --- |
-| `kortix self-host start` | Pull images and start the stack |
-| `kortix self-host restart` | Restart the stack |
-| `kortix self-host stop` | Stop it (data persists) |
-| `kortix self-host update` | Pull + apply the configured channel/version |
-| `kortix self-host status` | Container status, drift, last update |
-| `kortix self-host logs [service]` | Tail logs |
-| `kortix self-host doctor` | Validate Docker + Compose config |
-
-<Callout type="info">
-Prefer targeting a shared instance instead of running one locally? Skip this
-section and connect to it: `kortix hosts add <name> --url <api-url> --login`,
-then `kortix hosts use <name>`. Everything below works the same against any host.
-</Callout>
-
-## 3. Clone a project onto your machine
-
-Clone through the authenticated Kortix git proxy. Tokens are **never** written
-into the URL or your Git config — Kortix resolves the current provider
-credential just in time, and your local clone stays the source of truth.
-
-```sh
-kortix projects ls                         # find the project id
-kortix projects clone <project-id>         # clone via the Kortix proxy
-cd <cloned-dir>
-kortix init --force                        # (re)initialize local project config
-kortix env pull                            # pull the project's secrets as a local .env
-```
-
-<Callout type="info">
-**Kortix proxy origin.** Sessions and the CLI use a single stable git URL; Kortix
-resolves the underlying provider credential at request time, so the real backing
-provider can change without you touching your local remote.
-</Callout>
-
-## 4. Iterate
-
-With an instance running and a project cloned, drive the loop from the terminal:
-
-```sh
-# Point agents at models, connect providers
-kortix agents model <agent> anthropic/claude-opus-4-8
-kortix providers set openai <key>          # or: kortix providers login openai
-
-# Start a session and talk to it
-kortix sessions new --prompt "Build X" --wait
-kortix chat
-
-# Ship changes to the instance
-kortix ship                                # push code + open a change request
-
-# Debug model calls
-kortix gateway test <model>
-kortix gateway logs --failed               # add a logId for full upstream error detail
-```
-
-See [Using the command line](/docs/guides/using-the-cli) for the full command
-reference and the session-sandbox workflow.
-
-## The loop, end to end
-
-```sh
-# once
-curl -fsSL https://kortix.com/install | KORTIX_CHANNEL=dev bash
-kortix self-host init --tunnel cloudflare && kortix self-host start
-kortix hosts use selfhost
-
-# per project
-kortix projects clone <project-id>
-cd <dir> && kortix init --force && kortix env pull
-
-# iterate
-kortix sessions new --prompt "..." --wait
-kortix chat
-kortix ship
-```
-
 ## Next steps
 
-- [Using the command line](/docs/guides/using-the-cli) — the full CLI reference
-- [Self-hosting](/docs/guides/self-hosting) — take the same stack to a production VPS
-- [Managing secrets](/docs/guides/managing-secrets) — how project secrets work
-- [Local development](/docs/development) — contributing to the Kortix platform itself
+- [Change requests](/docs/concepts/change-requests) — the CR lifecycle
+- [Sessions](/docs/concepts/sessions) — session status and what survives a stop
+- [CLI reference](/docs/reference/cli) — every command and flag
+- [Managing secrets](/docs/guides/managing-secrets) — add and rotate project secrets
+- [Self-hosting](/docs/guides/self-hosting) — run your own Kortix instance

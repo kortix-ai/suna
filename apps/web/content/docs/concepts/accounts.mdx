@@ -1,38 +1,48 @@
 ---
 title: Accounts and teams
-description: Your account holds your projects and the people you work with.
+description: An account holds your projects, your teammates, and your billing.
 ---
 
-An **account** holds your [projects](/docs/concepts/projects) and teammates. Signing up gives you a personal account; you can also create shared accounts for a company or team.
+An account holds your [projects](/docs/concepts/projects) and the people who work in them. When you sign up, Kortix creates a personal account for you. Invite a teammate and it becomes a team account. Personal and team accounts use the same roles, billing, and limits.
 
-## People and roles
+## Account roles
 
-Each person you invite has a role:
+Each person in an account has one role:
 
 - **Owner** — full control, including members and billing.
-- **Admin** — manage projects and members.
-- **Member** — work in the projects they're given access to.
+- **Admin** — manages projects and members.
+- **Member** — works only in the projects you grant them.
 
-Within a project, access is one of three project roles:
+Owner and admin both get manager access to every project in the account. A member sees only the projects they hold a project role on.
 
-- **Member** — read the project and run sessions/chat and fire triggers.
-- **Editor** — everything a member can do, plus edit/customize the project and manage triggers.
-- **Manager** — everything an editor can do, plus invite/remove project members, change member roles, manage gateway keys, and delete the project.
+Invite a teammate by email from the account's members page. They get access as soon as they accept.
 
-Those controls live in each project's access settings.
+## Project roles
+
+Inside a project, each person holds one role:
+
+- **Member** — runs sessions and triggers.
+- **Editor** — also edits the project and manages triggers.
+- **Manager** — also manages members and gateway keys, and deletes the project.
+
+Set these from the project's access settings.
 
 ## Switching accounts
 
-If you belong to more than one account, switch between them from the account switcher. Each keeps its projects, members, and settings separate.
+If you belong to more than one account, switch between them from the account switcher. Each account keeps its own projects, members, and settings.
 
-## Inviting your team
+## Tokens
 
-Invite teammates by email from the account's members page; they get access as
-soon as they accept. Adding someone as **owner** or **admin** gives them manager
-access to every project (full control, including managing members and deleting
-the project); a plain account **member** sees only the projects they're
-granted a project role on.
+Kortix signs you in with a personal access token, prefixed `kortix_pat_`. It acts as you, with your full account access, unless you scope it to one project when you create it.
 
-<Callout type="info" title="Under the hood">
-An account is the top-level tenant; projects belong to accounts, and access is governed by account roles (owner, admin, member) plus per-project roles. Personal and team accounts use the same model.
+A service account is a separate, non-human identity, prefixed `kortix_sa_`. It has no project access by default — you must grant it access explicitly, or every call returns 403. Use a service account only when you need a credential that does not act as a specific person.
+
+See [token families](/docs/reference/session-runtime) for the full list.
+
+## Billing
+
+Billing applies at the account level and covers every project in the account. Kortix offers a free tier, a pro tier, and a per-seat team tier, each with its own model access and credits. Using your own model key does not make usage free: Kortix still charges a platform fee on top of it, except on the free tier.
+
+<Callout type="info" title="Enterprise">
+Single sign-on (SSO), SCIM provisioning, and custom roles are available on the enterprise tier. Contact sales to enable them.
 </Callout>

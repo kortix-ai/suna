@@ -1,57 +1,62 @@
 ---
 title: Agents
-description: The agent runtime is OpenCode; the manifest's agents map is governance-only, agent behavior lives in .kortix/opencode.
+description: An agent is a markdown file that OpenCode runs; the manifest only governs its access.
 ---
 
-The agent in every [session](/docs/concepts/sessions) is
-**[OpenCode](https://opencode.ai/docs/)**. The `kortix-agent` daemon runs it as
-`opencode serve` with its config dir pointed at the project's `.kortix/opencode/`.
+An agent is a markdown file that defines how OpenCode acts in a
+[session](/docs/concepts/sessions). This page covers agent files, skills, and
+how a session picks an agent.
 
-OpenCode-native behavior lives there, in OpenCode's standard layout:
+## OpenCode runs every session
 
-- **Agents** — a `.md` file per agent (frontmatter + prompt body) in `agents/`
-- **Skills** — on-demand `SKILL.md` know-how in `skills/`
-- **Commands, tools, plugins**
-- **Models, providers, MCP servers** — in `opencode.jsonc`
+OpenCode runs every session. The `kortix-agent` daemon starts it as
+`opencode serve`, with its config directory pointed at the project's
+`.kortix/opencode/` folder.
 
-`opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers,
-providers, model/provider settings, permissions, and default runtime behavior.
-Kortix does not duplicate those settings in the manifest.
+## An agent is two files
 
-## The manifest is governance, not behavior
+Each agent has two parts:
 
-`kortix.yaml`'s `agents:` is a **map keyed by agent name** — one entry per agent,
-joined to that agent's `.kortix/opencode/agents/<name>.md` by name. Each entry is
-governance only: `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`,
-`enabled`. Nothing about prompt, mode, tools, or permissions lives here — that's
-entirely the `.md` file's job. `default_agent` is required at the top level and
-must name a declared, enabled agent. The project default agent can be set (or
-changed) from the dashboard, API, or SDK — each writes `default_agent` in
-`kortix.yaml` — and sessions (UI, triggers, channels) inherit it unless the
-caller passes an explicit agent for that session.
+- **Behavior** — a markdown file at `.kortix/opencode/agents/<name>.md`. Its
+  frontmatter sets the model, mode, and tools. Its body is the system prompt.
+- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
+  name. It sets what the agent may access on Kortix: connectors, secrets,
+  skills, and CLI actions.
 
-v2 is **deny-by-default**: an agent with no `connectors`/`secrets`/`kortix_cli`/
-`skills` key gets none of that access. Give it `all` explicitly to grant full
-access (the starter's default `kortix` agent does this). Chat inputs, trigger
-pickers, and channel pickers list registered agents from the API, not from a
-sandbox-local OpenCode query — this doesn't mean every native file under
-`.kortix/opencode/agents/` must be registered; unregistered files can still
-exist for local experiments or runtime internals.
+The manifest never sets a prompt, mode, or tool. The `.md` file never sets
+platform access. See [the manifest reference](/docs/reference/manifest) for
+every governance field.
 
-<Callout type="info" title="Legacy kortix.toml">
-v1 projects declare the same grants as an array, `[[agents]]`, with the secrets
-field named `env` instead of `secrets`, and per-field defaults instead of
-deny-all. A v1 project with no `[[agents]]` at all runs in legacy unrestricted
-mode — an agent inherits the launching user's full role. Once `[[agents]]`
-exists, an unlisted agent is default-denied, same as v2.
-</Callout>
+## Governance is deny-by-default
 
-Every project ships a default agent + the kortix-system skill, so it runs with no
-setup. Beyond reading/writing repo files, an agent can use external tools through
-connected integrations (per project — it only uses what's connected; see
-[Connecting your tools](/docs/guides/connecting-tools)).
+An agent with no `connectors`, `secrets`, `skills`, or `kortix_cli` key gets
+none of that access. Set a field to `all` to grant full access, or list
+specific names. `default_agent` in `kortix.yaml` names the agent a session
+starts when you request no agent.
 
-New agents, skills, or tools reach future sessions only after a
-[change request](/docs/concepts/change-requests) merges them. Authoring details:
-[opencode.ai/docs](https://opencode.ai/docs/) and
-[Kortix vs OpenCode config](/docs/reference/config-boundary).
+Legacy `kortix.toml` (v1) projects list agents in an array, not a map, and
+grant full access by default. Set specific grants to restrict access. See
+[the manifest reference](/docs/reference/manifest).
+
+## Skills give an agent know-how
+
+A skill is a markdown file at `.kortix/opencode/skills/<name>/SKILL.md`.
+OpenCode loads a skill on demand when the agent calls it — Kortix does not
+inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
+controls which skills it may load.
+
+## How a session picks its agent
+
+Creating a session accepts an `agent_name`. Kortix starts that agent for the
+session. If you omit `agent_name`, Kortix uses the project's `default_agent`.
+Set the default agent from the dashboard, the API, or the SDK. Each writes
+`default_agent` to `kortix.yaml` and commits the change to the project's
+default branch.
+
+An agent never exceeds the access of the person or token that started the
+session.
+
+New or changed agents and skills reach future sessions only after a
+[change request](/docs/concepts/change-requests) merges them into the default
+branch. Connect external tools before an agent can use them; see
+[Connecting your tools](/docs/guides/connecting-tools).

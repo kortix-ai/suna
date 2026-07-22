@@ -1,0 +1,86 @@
+---
+title: Working in Slack
+description: Connect Slack to a project and start, control, and reply to sessions from a channel.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+This guide connects Slack to a project and shows how to run [sessions](/docs/concepts/sessions) from a Slack channel or DM. For what a channel is, see [Channels](/docs/concepts/channels).
+
+## Connect Slack
+
+<Steps>
+
+<Step>
+### Start the connection
+
+From the CLI, run:
+
+```
+kortix channels connect
+```
+
+On a host with the shared Slack app configured (Kortix Cloud, for example), this prints a one-click install link. Open the link and pick the workspace. Click **Allow**. Add `--wait` to make the command poll until the install lands.
+
+From the dashboard, open the project's Channels page and connect Slack there instead. It uses the same install flow.
+</Step>
+
+<Step>
+### Use your own Slack app (self-hosted, no shared app)
+
+If no shared app is configured, `kortix channels connect` falls back to manual mode automatically. Run `kortix channels manifest` to print an app manifest. Create the app at `api.slack.com/apps` from that manifest. Install the app to your workspace. Then run:
+
+```
+kortix channels connect --manual --bot-token xoxb-... --signing-secret ...
+```
+</Step>
+
+<Step>
+### Check the connection
+
+```
+kortix channels status
+```
+
+Run `kortix channels disconnect` to remove the connection. See the [CLI reference](/docs/reference/cli) for every flag.
+</Step>
+
+</Steps>
+
+Connecting Slack adds a `channel` [connector](/docs/guides/connecting-tools) entry to `kortix.yaml` for you. You never write this entry by hand.
+
+## Start a session from Slack
+
+Mention the bot with a task, in any channel it has joined, or open a direct message. The first message in a thread creates a session. Every later reply in that thread goes to the same session, even after its sandbox stops and resumes.
+
+A workspace connected to more than one project shows a project picker on the first mention. A bare mention with no task gets a reminder to add one instead of starting a session.
+
+## Control a session with slash commands
+
+Type these as `/kortix <command>` in Slack, or as plain text in a DM (slash commands do not run inside the Assistant DM pane, so Kortix parses the same words from plain text there).
+
+| Command | What it does |
+|---|---|
+| `login`, `logout` | Link or unlink your Slack identity |
+| `switch`, `unbind` | Rebind or unbind this channel from its project |
+| `projects` | List projects you can bind to |
+| `sessions` | List recent sessions started in this workspace |
+| `whoami` | Show the channel panel: project, agent, model, policy, and your linked identity |
+| `agent <name>`, `model <id>` | Set the agent or model this channel uses |
+| `policy <mode>` | Set who can start sessions here |
+| `help` | List all commands |
+
+`policy` accepts `project_open` (default — any project member who mentions the bot gets a session), `owner_approval`, or `owner_only`.
+
+## Link your identity
+
+Kortix links every sender to a Kortix account before a session runs for them. Run `/kortix login` and follow the link to sign in. An unlinked sender gets a prompt to link instead of a session run.
+
+<Callout title="Where the bot token lives">
+The connected Slack bot token is a connector-scoped secret. It does not appear on the project's Secrets page, and Kortix never injects it into a sandbox — Kortix resolves it server-side when the agent sends a message. See [Managing secrets](/docs/guides/managing-secrets).
+</Callout>
+
+## What does not work
+
+- Slash commands do not fire inside the Assistant DM pane. Type `/kortix <command>` as plain text there instead.
+- Other chat platforms, including Telegram, are not supported channels today. Only Slack and Microsoft Teams connect through the CLI and dashboard.
