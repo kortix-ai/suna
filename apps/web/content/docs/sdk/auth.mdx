@@ -1,0 +1,70 @@
+---
+title: Authentication
+description: Authenticate the SDK with a personal access token or a service account.
+---
+
+Kortix accepts one bearer token per request. Pass it through `getToken` in
+`createKortix`. The SDK sends it as `Authorization: Bearer <token>`.
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => process.env.KORTIX_API_KEY!,
+});
+```
+
+`backendUrl` and `getToken` are required. The SDK caches nothing: it calls
+`getToken` on every request, so your app owns token storage and refresh.
+
+## Personal access tokens
+
+A personal access token (PAT) is the credential for the SDK, the CLI, and CI.
+Create one at **User settings → API keys**. The key starts with `kortix_pat_`
+and shows only once, at creation. Store it as a secret.
+
+A PAT acts as the user who created it. Its scope is fixed at creation:
+
+| Scope | Reach |
+|---|---|
+| Account (default) | Every project in the account |
+| Project | One project only; every other project returns `403` |
+
+Choose the project scope for CI and other narrow-purpose credentials.
+`kortix login` mints a PAT and stores it locally — it is the same credential
+type, not a separate token kind.
+
+## Service accounts
+
+A service account is a separate credential family for non-human callers,
+prefixed `kortix_sa_`. Create one at **Account settings → Service accounts**.
+
+<Callout type="warn">
+  A new service account has no project access. If you point `getToken` at one
+  before you grant it access, every call returns `403 "You do not have access
+  to this project"`. Grant the service account access first, or use a
+  personal access token for the SDK, the CLI, and demos instead.
+</Callout>
+
+## Supabase JWT
+
+If your app uses Kortix's own sign-in, return the live session token instead
+of a PAT:
+
+```ts
+getToken: async () =>
+  (await supabase.auth.getSession()).data.session?.access_token ?? null,
+```
+
+The SDK calls `getToken` on every request, so a refreshed token takes effect
+automatically.
+
+## Choose a credential
+
+| You are building | Use |
+|---|---|
+| A backend, script, or CI job | A personal access token, account-wide or project-scoped |
+| The Kortix CLI | `kortix login` (mints a personal access token) |
+| A web app on Kortix sign-in | A Supabase JWT |
+| An automated caller with a granted project | A service account |

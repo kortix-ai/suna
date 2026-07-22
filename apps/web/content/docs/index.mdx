@@ -1,0 +1,30 @@
+---
+title: Kortix
+description: Kortix is the AI command center for your company.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+Kortix is the Autonomous Company Operating System — a cloud computer where a
+workforce of AI agents runs your company, and everything is code you own.
+
+Each agent works inside your own git repo. A session runs an agent in an
+isolated sandbox, on its own branch. When the work is ready, the agent opens
+a change request. You review it and merge it to the default branch.
+
+```
+project (git repo + kortix.yaml)
+   └─ session ──> isolated sandbox on branch "<uuid>"
+                     └─ agent (OpenCode) commits + pushes
+                           └─ change request ──> merge ──> default branch
+```
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart">Create a project, start a session, and merge your first change request.</Card>
+  <Card title="Your project" href="/docs/project">Set up the manifest, agents, models, and secrets.</Card>
+  <Card title="Running work" href="/docs/work">Sessions, sandboxes, and change requests.</Card>
+  <Card title="Connect & automate" href="/docs/connect">Connectors, Slack, computers, and triggers.</Card>
+  <Card title="CLI" href="/docs/cli">Develop and run Kortix from your terminal.</Card>
+  <Card title="SDK" href="/docs/sdk">Build on Kortix from TypeScript with the client SDK.</Card>
+  <Card title="Self-hosting" href="/docs/host">Install and operate Kortix on your own infrastructure.</Card>
+</Cards>

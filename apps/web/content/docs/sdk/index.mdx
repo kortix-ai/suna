@@ -1,0 +1,78 @@
+---
+title: TypeScript SDK
+description: Install, authenticate, and send your first message with the typed SDK.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+`@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix REST API and the OpenCode runtime in one interface — your app never calls the raw API or runtime directly. The core client is fetch-based and runs in Node, Bun, and browsers.
+
+## Install
+
+```bash
+npm install @kortix/sdk
+```
+
+`react` (18+) and `@tanstack/react-query` (5.75+) are optional peers, needed only for [React hooks](/docs/sdk/react).
+
+## Create a client
+
+Call `createKortix` once, with your API base URL and a function that returns your token.
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+export const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => process.env.KORTIX_API_KEY!,
+});
+```
+
+`backendUrl` and `getToken` are the only required fields. The SDK calls `getToken` on every request and caches nothing — your host owns token storage and refresh.
+
+Create an API key at **User settings → API keys**. The key starts with `kortix_pat_` and shows only once. Store it as a secret and return it from `getToken`. See [Auth](/docs/sdk/auth) for token types and scopes.
+
+## Start your first session
+
+1. Create a session in your project.
+
+   ```ts
+   const created = await kortix.project(projectId).sessions.create();
+   const session = kortix.session(projectId, created.session_id);
+   ```
+
+2. Wait for the sandbox to accept work.
+
+   ```ts
+   await session.ensureReady();
+   ```
+
+   `ensureReady()` starts or resumes the session sandbox. If the sandbox is still starting, it throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`. Retry after a short delay. See [Sessions](/docs/sdk/sessions).
+
+3. Send a message to the agent.
+
+   ```ts
+   await session.send('Add a README');
+   ```
+
+   `send()` calls `ensureReady()` for you, then sends the message.
+
+`createKortix` gives you an imperative client: call methods for every action, like projects, sessions, secrets, and triggers. `@kortix/sdk/react` gives you hooks for live UI data — `useSession` runs a whole session in one hook.
+
+<Cards>
+  <Card title="Full example" href="/docs/sdk/example">
+    Zero to a streaming agent reply.
+  </Card>
+  <Card title="Auth" href="/docs/sdk/auth">
+    API keys and Supabase JWTs.
+  </Card>
+  <Card title="Sessions" href="/docs/sdk/sessions">
+    Lifecycle, streaming, and error handling.
+  </Card>
+  <Card title="React hooks" href="/docs/sdk/react">
+    `useSession` and other reactive hooks.
+  </Card>
+  <Card title="Reference" href="/docs/sdk/reference">
+    The full client, modules, turns, and distribution.
+  </Card>
+</Cards>
