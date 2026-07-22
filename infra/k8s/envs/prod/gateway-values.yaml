@@ -5,15 +5,13 @@
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
 image:
-  tag: "0.9.38"
-
+  tag: "0.10.14"
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:
   enabled: true
   minReplicas: 3
   maxReplicas: 12
-
 resources:
   requests:
     cpu: "500m"
@@ -21,7 +19,6 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
-
 # Public, direct. Prod sandboxes hit the gateway straight at this host
 # (LLM_GATEWAY_BASE_URL=https://gateway.kortix.com/v1/llm) so LLM streams live
 # on gateway pods, not the API — API deploys don't cut in-flight streams.
@@ -38,3 +35,4 @@ ingress:
   # Lock the origin ALB to Cloudflare's edge ranges so the LLM gateway can only be
   # reached THROUGH Cloudflare — no direct-to-origin bypass of the edge.
   inboundCidrs: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22"
+kortixVersion: 0.10.14
