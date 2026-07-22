@@ -1235,6 +1235,74 @@ describe('project session API contract', () => {
     expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
   });
 
+  test('KaaB: backend overrides (model, origin_ref, secrets, agent) each apply at boot', async () => {
+    // THE end-to-end proof: backend (PAT) creates carrying the Kortix-as-a-
+    // Backend overrides, asserting each is (a) reflected in the 201 and (b)
+    // actually applied in the env handed to the sandbox — not accepted-and-dropped.
+    const app = createApp();
+
+    // Seed two runtime secrets; the allowlist will narrow the session to one.
+    for (const [name, value] of [
+      ['GMAIL_TOKEN', 'g-secret'],
+      ['STRIPE_SECRET', 's-secret'],
+    ] as const) {
+      const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, value }),
+      });
+      expect(w.status).toBe(200);
+    }
+
+    // (A) The default agent (unrestricted grant) + model + origin_ref + a secrets
+    // allowlist → each applied; the allowlist NARROWS from every secret to just
+    // the one named.
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        opencode_model: 'anthropic/claude-opus-4-8',
+        origin_ref: 'tenant-42',
+        secrets: ['GMAIL_TOKEN'],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      origin: string;
+      origin_ref: string | null;
+      secrets_allowlist: string[] | null;
+    };
+    expect(body.origin).toBe('backend');
+    expect(body.origin_ref).toBe('tenant-42');
+    expect(body.secrets_allowlist).toEqual(['GMAIL_TOKEN']);
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    const env = lastProvisionInput!.extraEnvVars ?? {};
+    expect(env.KORTIX_ORIGIN_REF).toBe('tenant-42'); // origin_ref → attribution
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8'); // model
+    expect(env.GMAIL_TOKEN).toBe('g-secret'); // allowlisted secret injected
+    expect(env.STRIPE_SECRET).toBeUndefined(); // non-allowlisted secret withheld
+
+    // (B) The agent_name override reaches the sandbox as KORTIX_AGENT_NAME.
+    const res2 = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'reviewer' }),
+    });
+    expect(res2.status).toBe(201);
+    expect((await res2.json()).agent_name).toBe('reviewer');
+    await flushUntil(() => sandboxProvisionCalls === 2);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
+  });
+
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
     projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};

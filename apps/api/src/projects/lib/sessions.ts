@@ -289,19 +289,23 @@ export async function buildSessionSandboxEnvVars(input: {
     agentGrantEnv = grant?.env;
   }
 
-  // KaaB per-session secrets allowlist: NARROW the agent grant to (grant) ∩
-  // (this session's allowlist) so a backend-vouched session only receives the
-  // secrets the wrapper named. Read by sessionId inside the builder so all
-  // three call sites (create, restart, open/ensure) are covered — no caller can
-  // forget it. null column → passthrough (byte-identical to pre-KaaB).
-  const [sessionRowForSecrets] = await db
-    .select({ secretsAllowlist: projectSessions.secretsAllowlist })
+  // Per-session KaaB fields, read by sessionId inside the builder so all three
+  // call sites (create, restart, open/ensure) are covered — no caller can
+  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
+  // so a backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB). `originRef` (the wrapper's
+  // end-user) is surfaced to the sandbox as KORTIX_ORIGIN_REF for attribution.
+  const [sessionKaabRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      originRef: projectSessions.originRef,
+    })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
   const grantEnvForSession = intersectSecretGrants(
     agentGrantEnv,
-    sessionRowForSecrets?.secretsAllowlist ?? null,
+    sessionKaabRow?.secretsAllowlist ?? null,
   );
 
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
@@ -391,6 +395,8 @@ export async function buildSessionSandboxEnvVars(input: {
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
+      // Backend-vouched end-user (KaaB) → KORTIX_ORIGIN_REF in the sandbox.
+      originRef: sessionKaabRow?.originRef ?? null,
       compiledAgentConfig,
     }),
   };
