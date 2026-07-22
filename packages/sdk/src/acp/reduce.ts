@@ -199,7 +199,23 @@ export const classifyAcpMethod: AcpMethodClassifier = (method) => METHOD_KINDS[m
 /** `session/update` kinds that carry no visual chat item of their own —
  *  `usage_update` still feeds `projectAcpUsage` via the usage bookkeeping
  *  block below; this only excludes them from `chatItems`. */
-const NON_VISUAL_UPDATES = new Set(['usage_update', 'current_mode_update', 'available_commands_update']);
+const NON_VISUAL_UPDATES = new Set([
+  'usage_update',
+  'current_mode_update',
+  'available_commands_update',
+  // The agent echoing back the prompt it was just handed. The user's turn is
+  // already projected from the client→agent `session/prompt` frame — that is
+  // where its `prompt-N` id comes from — so projecting this one too would
+  // print the user's own message a second time.
+  //
+  // Harnesses that echo only while replaying under `session/load` never
+  // reached here (the bootstrap-replay guard above swallows the whole window),
+  // which is why every fixture that carries this kind still passes without it.
+  // A harness that echoes LIVE fell through to the `raw` branch instead and
+  // surfaced in the transcript as "Unrecognized agent event" — an event that
+  // is neither unrecognized nor the agent's.
+  'user_message_chunk',
+]);
 
 /** A tool call that has reached one of these statuses is done; a later
  *  update (e.g. a stray/out-of-order `in_progress`) must never regress it
@@ -471,9 +487,10 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
           chatItems = [...chatItems, { kind: 'plan', ...plan }];
         }
       } else if (typeof kind === 'string' && NON_VISUAL_UPDATES.has(kind)) {
-        // No chat item: usage_update/current_mode_update/available_commands_update
-        // are protocol bookkeeping, not something to render in the transcript.
-        // usage_update still feeds `usage`/`usageContext` in the block below.
+        // No chat item: these are protocol bookkeeping, or (user_message_chunk)
+        // an echo of something the transcript already renders from the other
+        // direction — see NON_VISUAL_UPDATES. usage_update still feeds
+        // `usage`/`usageContext` in the block below.
       } else {
         chatItems = [...chatItems, { kind: 'raw', method: String(kind ?? envelope.method), data: update }];
       }

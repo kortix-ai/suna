@@ -81,6 +81,31 @@ describe('reduceEnvelope', () => {
     expect(state.envelopes).toContainEqual(inert);
   });
 
+  test('a LIVE user_message_chunk echo is projected away, not surfaced as an unknown frame', () => {
+    // A harness that echoes the prompt back OUTSIDE a `session/load` window —
+    // the bootstrap-replay guard (covered by the replay test below) never sees
+    // this one, so before `user_message_chunk` joined NON_VISUAL_UPDATES it
+    // fell through to the `raw` branch and rendered as "Unrecognized agent
+    // event". The user's turn already comes from the `session/prompt` frame.
+    const echo = stored(2, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'hello' } } },
+    });
+
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, userPrompt(1, 'hello', 'prompt-1', 'session-1'));
+    state = reduceEnvelope(state, echo);
+    state = reduceEnvelope(state, agentChunk(3, 'hi there'));
+
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'hello' },
+      { kind: 'message', id: 'assistant-3', role: 'assistant', text: 'hi there' },
+    ]);
+    expect(state.chatItems.some((item) => item.kind === 'raw')).toBe(false);
+    // Inert for the transcript, but the envelope log stays lossless.
+    expect(state.envelopes).toContainEqual(echo);
+  });
+
   test('a message chunk gives new identity only to the tail item', () => {
     let state = emptyReducerState();
     state = reduceEnvelope(state, userPrompt(1));
