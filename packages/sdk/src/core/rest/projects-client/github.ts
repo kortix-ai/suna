@@ -72,6 +72,24 @@ export interface GitHubInstallationsResponse extends GitHubInstallationStatus {
   installations: GitHubInstallationStatus[];
 }
 
+export interface LinkableGitHubInstallation {
+  installation_id: string;
+  owner_login: string | null;
+  owner_type: string | null;
+  repository_selection: string | null;
+  permissions: Record<string, unknown>;
+  installation_url: string | null;
+  linked: boolean;
+}
+
+export interface LinkableGitHubInstallationsResponse {
+  account_id: string;
+  github_login: string;
+  configured: boolean;
+  install_url: string | null;
+  installations: LinkableGitHubInstallation[];
+}
+
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
     await backendApi.post<LinkRepositoryResponse>(
@@ -97,6 +115,19 @@ export async function listGitHubInstallations(accountId: string) {
   return unwrap(
     await backendApi.get<GitHubInstallationsResponse>(
       `/projects/github/installations?account_id=${encodeURIComponent(accountId)}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listLinkableGitHubInstallations(input: {
+  account_id: string;
+  github_user_token: string;
+}) {
+  return unwrap(
+    await backendApi.post<LinkableGitHubInstallationsResponse>(
+      '/projects/github/installations/linkable',
+      input,
       { showErrors: false },
     ),
   );
@@ -146,6 +177,20 @@ export async function saveGitHubInstallation(input: {
   return unwrap(
     await backendApi.post<GitHubInstallationStatus>(
       '/projects/github/installation',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function linkGitHubInstallation(input: {
+  account_id: string;
+  installation_id: string;
+  github_user_token: string;
+}) {
+  return unwrap(
+    await backendApi.post<GitHubInstallationStatus>(
+      '/projects/github/installations/link',
       input,
       { showErrors: false },
     ),
