@@ -47,7 +47,7 @@ Create an API key at **User settings → API keys**. The key starts with `kortix
    await session.ensureReady();
    ```
 
-   `ensureReady()` starts or resumes the session sandbox. If the sandbox is still starting, it throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`. Retry after a short delay. See [Sessions](/docs/sdk/sessions).
+   `ensureReady()` starts or resumes the session sandbox. It polls the session's `/start` endpoint — each call long-polls up to 30 s — until the runtime is ready, hits a terminal stage, or its deadline elapses (default ~3 min, configurable via `{ readyTimeoutMs }`). On a cold boot it keeps polling while the sandbox reports `retriable: true`; it only throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'` if the runtime is still not ready when the deadline expires. See [Sessions](/docs/sdk/sessions).
 
 3. Send a message to the agent.
 

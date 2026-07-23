@@ -91,6 +91,7 @@ describe("buildProjectSeedFilesFromItem", () => {
     expect(paths.has('.kortix/opencode/skills/content-seo-workflow/SKILL.md')).toBe(true);
     expect(paths.has('.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(true);
     expect(paths.has('.kortix/memory/SEO.md')).toBe(true);
+    expect(paths.has('install.md')).toBe(true);
     expect(manifest).toContain('name: "Acme SEO"');
     expect(manifest).toContain('default_agent: seo-director');
     expect(manifest).toContain('daily-serp-watch');

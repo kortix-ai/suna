@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 498,
+  "count": 500,
   "routes": [
     {
       "method": "GET",
@@ -1701,6 +1701,14 @@
     {
       "method": "DELETE",
       "path": "/v1/projects/github/installations/:installationId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/linkable"
     },
     {
       "method": "GET",
