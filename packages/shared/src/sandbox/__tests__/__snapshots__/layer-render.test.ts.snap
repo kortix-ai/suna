@@ -473,14 +473,14 @@ RUN cd /opt/kortix/opencode-config-deps \\
 
 
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
-RUN cd / \\
-    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\
-    && git -c http.extraHeader='Authorization: Bearer redacted' clone --depth 1 --branch 'main' 'https://git.example.com/acme/app.git' /tmp/kortix-warm-repo \\
-    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\
-    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\
-    && rm -rf /tmp/kortix-warm-repo \\
-    && git -C /workspace remote set-url origin 'https://kortix.example.com/v1/git/proj.git' \\
-    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on main"
+# The repo was cloned with the git-host credential, origin-reset to the
+# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
+# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# bytes — no git credential ever enters the Dockerfile, build args, image
+# history, or build logs. See PHASE 1 provider-migration hardening.
+RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+COPY kortix-warm-repo/ /workspace/
+RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
@@ -555,14 +555,14 @@ exports[`buildPerProjectWarmFromBaseDockerfile (FROM-base fast path) golden 1`] 
 USER root
 
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
-RUN cd / \\
-    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\
-    && git -c http.extraHeader='Authorization: Bearer redacted' clone --depth 1 --branch 'main' 'https://git.example.com/acme/app.git' /tmp/kortix-warm-repo \\
-    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\
-    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\
-    && rm -rf /tmp/kortix-warm-repo \\
-    && git -C /workspace remote set-url origin 'https://kortix.example.com/v1/git/proj.git' \\
-    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on main"
+# The repo was cloned with the git-host credential, origin-reset to the
+# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
+# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# bytes — no git credential ever enters the Dockerfile, build args, image
+# history, or build logs. See PHASE 1 provider-migration hardening.
+RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+COPY kortix-warm-repo/ /workspace/
+RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\

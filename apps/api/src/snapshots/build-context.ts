@@ -74,19 +74,230 @@ export interface StagedContext {
 
 /**
  * Per-project COLD warm: bake the project's repo checkout into /workspace at
- * build time. Passed straight through to the Dockerfile layer, which clones the
- * repo (build-time creds, one RUN) and skips the /workspace wipe. Omit for the
- * shared, project-independent default image.
+ * build time. The credential-bearing clone happens API-side in Suna
+ * (`stageWarmRepoCheckout`), NOT inside the built image: the resulting build
+ * context carries only a sanitized, origin-reset, credential-scrubbed checkout
+ * that the Dockerfile `COPY`s. Omit for the shared, project-independent default
+ * image.
+ *
+ * SECURITY (PHASE 1): `cloneHeaders` NEVER leaves this process. It is used to
+ * clone (git config passed via ENV, never argv, never persisted to
+ * `.git/config`), and the staged bytes are verified free of auth material
+ * before they enter the build context — so no git credential reaches the
+ * uploaded context, the OCI image history, the provider build logs, or an
+ * abandoned retry object.
  */
 export interface WarmRepoContext {
   /** Upstream URL to clone from at BUILD time (real git host or proxy). */
   cloneUrl: string;
-  /** Auth headers for the build-time clone (git -c http.extraHeader). */
+  /** Auth headers for the API-side clone. Never embedded in any artifact. */
   cloneHeaders: Record<string, string>;
   /** Branch to check out (default-branch tip). */
   branch: string;
   /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
   originUrl: string;
+}
+
+/**
+ * ─── CREDENTIAL ROTATION REQUIREMENT (PHASE 1 finding) ───────────────────────
+ * Builds produced BEFORE this fix embedded the git-host clone credential
+ * (`Authorization: <PAT/installation token>`) inside a Dockerfile `RUN`, which
+ * shipped into: (1) the tar build context uploaded to object storage, (2) the
+ * built image's OCI layer history, (3) the provider build logs, and (4) any
+ * abandoned retry/context objects. Deleting the temp clone dir did NOT remove
+ * any of those copies. Therefore, on rollout, ANY git credential that could
+ * have been used for a per-project warm bake before this change must be treated
+ * as POTENTIALLY EXPOSED and ROTATED:
+ *   • GitHub App INSTALLATION tokens are short-lived (~1h) → low residual risk,
+ *     but any long-lived fallback PAT must be rotated.
+ *   • Any project-level BYO git PAT/credential stored + used for a warm bake
+ *     must be rotated and the old value revoked at the git host.
+ *   • Object-storage build-context objects created by prior builds should be
+ *     lifecycle-expired/deleted (see the tracking + cleanup follow-up).
+ * After this change no NEW build can leak a credential (proven by
+ * warm-repo-credential.test.ts + the shared layer-render tests), so rotation is
+ * a one-time remediation of the pre-fix window, not an ongoing requirement.
+ */
+
+/** Basename (in the build context) of the staged credential-free checkout. */
+export const WARM_REPO_STAGED_DIR = 'kortix-warm-repo';
+
+/**
+ * A conservative safe-subset of git branch/ref names: letters, digits, and
+ * `._/-`, no leading `-` or `/`, no `..`, bounded length. This rejects every
+ * shell metacharacter (space, `;` `"` `` ` `` `$` `|` `&` `\n` …) so a hostile
+ * `default_branch` can never inject a build-time or clone-time shell command —
+ * defense-in-depth on top of the render's shell-quoting + the clone's argv
+ * (non-shell) invocation. Deliberately stricter than `git check-ref-format`
+ * (which permits some of these) because a warm-repo branch is a plain tip name.
+ */
+export function isSafeGitBranchName(branch: string): boolean {
+  if (!branch || branch.length > 255) return false;
+  if (branch.startsWith('-') || branch.startsWith('/') || branch.endsWith('/')) return false;
+  if (branch.includes('..') || branch.includes('//')) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch);
+}
+
+/**
+ * Assert a warm-repo `cloneUrl` is safe to hand to `git clone`. Git's remote
+ * layer treats a cloneUrl like `ext::sh -c '…'`, `file::…`, or `fd::…` as a
+ * REMOTE-HELPER invocation, and a `scheme://user:token@host` URL leaks the
+ * credential into FETCH_HEAD / reflog — so an attacker-influenced cloneUrl is a
+ * build-time RCE / local-file-exfiltration / secret-leak surface. We pin the
+ * transport to plain `https://` with NO userinfo. `file://` is permitted ONLY
+ * under the test harness (NODE_ENV==='test') for the no-network fixture clones —
+ * production warm cloneUrls are always the project's https upstream.
+ *
+ * Throws a CREDENTIAL-FREE error (scheme only, never the full URL/query) so a
+ * rejection never logs a token.
+ */
+export function assertSafeCloneUrl(cloneUrl: string): void {
+  let u: URL;
+  try {
+    u = new URL(cloneUrl);
+  } catch {
+    throw new Error('refusing to clone warm repo: cloneUrl is not a valid absolute URL');
+  }
+  const testFileClone =
+    process.env.NODE_ENV === 'test' && u.protocol === 'file:' && cloneUrl.startsWith('file://');
+  if (u.protocol !== 'https:' && !testFileClone) {
+    throw new Error(
+      `refusing to clone warm repo: cloneUrl must use https (rejected scheme "${u.protocol}") — ` +
+        `git remote-helper transports (ext::/file::/fd::) are not allowed`,
+    );
+  }
+  if (u.username || u.password) {
+    throw new Error('refusing to clone warm repo: cloneUrl must not embed userinfo (user:pass@host)');
+  }
+}
+
+/**
+ * Per-clone protocol allow-list, passed as `git -c` config so it is scoped to
+ * THIS clone (not global). Denies every transport by default, then re-enables
+ * ONLY the one scheme the (already-validated) cloneUrl uses — belt-and-braces
+ * with GIT_ALLOW_PROTOCOL so an unexpected redirect/submodule can't switch to a
+ * remote-helper protocol mid-clone. Exported for the regression test that
+ * asserts the pin is present in the clone invocation.
+ */
+export function warmCloneProtocolPinArgs(cloneUrl: string): string[] {
+  const scheme = new URL(cloneUrl).protocol.replace(/:$/, '');
+  return ['-c', 'protocol.allow=never', '-c', `protocol.${scheme}.allow=always`];
+}
+
+/**
+ * Clone `warmRepo` API-side into the build context as a SANITIZED,
+ * credential-free checkout the Dockerfile can `COPY` into /workspace. This is
+ * the PHASE 1 fix for the credential leak: the git auth header is used ONLY
+ * here (on the Suna host), passed to git via config-in-ENV so it never lands in
+ * process argv or `.git/config`, and the resulting bytes are verified to
+ * contain no auth material before they enter the (uploadable) build context.
+ *
+ *   1. clone the exact branch tip with the credential (env config, depth 1),
+ *   2. reset `origin` to the runtime proxy so the daemon re-auths per session,
+ *   3. drop any credential helper / http.extraHeader that could have persisted,
+ *   4. ASSERT `.git/config` carries no `authorization`/`http.extraheader`/
+ *      embedded userinfo before returning.
+ *
+ * Returns the staged dir basename + the exact baked HEAD sha (for the caller's
+ * verification / logging). Throws if the checkout still contains credentials —
+ * failing the build closed is correct; shipping a leaked token is not.
+ */
+export async function stageWarmRepoCheckout(
+  contextDir: string,
+  warmRepo: WarmRepoContext,
+): Promise<{ stagedPath: string; headSha: string }> {
+  if (!isSafeGitBranchName(warmRepo.branch)) {
+    throw new Error(
+      `refusing to bake per-project warm image: unsafe default branch name ${JSON.stringify(warmRepo.branch)}`,
+    );
+  }
+  // Pin the clone transport BEFORE any git runs — reject remote-helper / userinfo
+  // cloneUrls (build-time RCE / secret-leak surface) up front.
+  assertSafeCloneUrl(warmRepo.cloneUrl);
+  const dest = join(contextDir, WARM_REPO_STAGED_DIR);
+  await rm(dest, { recursive: true, force: true });
+
+  // git config via ENV (GIT_CONFIG_COUNT/KEY_i/VALUE_i) — NOT argv, NOT
+  // persisted. http.extraHeader is multi-valued, so repeated keys accumulate.
+  const headers = Object.entries(warmRepo.cloneHeaders ?? {});
+  const headerEnv: Record<string, string> = { GIT_CONFIG_COUNT: String(headers.length) };
+  headers.forEach(([k, v], i) => {
+    headerEnv[`GIT_CONFIG_KEY_${i}`] = 'http.extraHeader';
+    headerEnv[`GIT_CONFIG_VALUE_${i}`] = `${k}: ${v}`;
+  });
+  const cloneScheme = new URL(warmRepo.cloneUrl).protocol.replace(/:$/, '');
+  const cloneEnv = {
+    ...process.env,
+    ...headerEnv,
+    GIT_TERMINAL_PROMPT: '0',
+    // Refuse to fall back to any interactive/stored credential helper — the
+    // ENV header is the ONLY credential this clone may use.
+    GIT_CONFIG_NOSYSTEM: '1',
+    // Transport allow-list: only the validated cloneUrl scheme may run (blocks
+    // ext::/file::/fd:: remote helpers even if git is coerced into one).
+    GIT_ALLOW_PROTOCOL: cloneScheme,
+  };
+  const plainEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const g = (args: string[], env: NodeJS.ProcessEnv) =>
+    execFileAsyncBC('git', args, { env, timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
+
+  await g(
+    [
+      ...warmCloneProtocolPinArgs(warmRepo.cloneUrl),
+      'clone', '--depth', '1', '--single-branch', '--branch', warmRepo.branch, warmRepo.cloneUrl, dest,
+    ],
+    cloneEnv,
+  );
+  // origin → runtime proxy (build credential is never persisted at runtime).
+  await g(['-C', dest, 'remote', 'set-url', 'origin', warmRepo.originUrl], plainEnv);
+  // Belt + braces: drop anything credential-shaped that could have persisted.
+  await g(['-C', dest, 'config', '--local', '--unset-all', 'http.extraHeader'], plainEnv).catch(() => {});
+  await g(['-C', dest, 'config', '--local', '--unset-all', 'http.extraheader'], plainEnv).catch(() => {});
+  await g(['-C', dest, 'config', '--local', '--unset-all', 'credential.helper'], plainEnv).catch(() => {});
+
+  const { stdout: headOut } = await g(['-C', dest, 'rev-parse', 'HEAD'], plainEnv);
+  const headSha = headOut.trim();
+
+  await assertCheckoutHasNoCredentials(dest);
+  return { stagedPath: WARM_REPO_STAGED_DIR, headSha };
+}
+
+/**
+ * Fail-closed guard: assert a staged warm-repo checkout carries no auth
+ * material in its `.git/config` (no `authorization` header, no persisted
+ * `http.extraheader`, no `credential.helper`, no `user:token@host` userinfo in
+ * any remote URL). Exported for the regression test that renders with a
+ * sentinel token and proves it never reaches the staged bytes.
+ */
+export async function assertCheckoutHasNoCredentials(checkoutDir: string): Promise<void> {
+  const { readFile } = await import('node:fs/promises');
+  const configPath = join(checkoutDir, '.git', 'config');
+  let config = '';
+  try {
+    config = await readFile(configPath, 'utf8');
+  } catch (err) {
+    // A genuinely-absent .git/config (ENOENT) is the ONLY safe pass: there is
+    // nothing credential-bearing to leak. ANY other read failure (EACCES from a
+    // hostile mode, EISDIR from a config that's actually a directory, ELOOP from
+    // a symlink loop, …) means we could NOT verify the checkout is clean — so we
+    // must fail the build CLOSED rather than silently treat "couldn't read" as
+    // "no credential". Swallowing every error here is how a leaked token ships.
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return;
+    throw err;
+  }
+  const lower = config.toLowerCase();
+  const offenders: string[] = [];
+  if (lower.includes('authorization')) offenders.push('authorization header');
+  if (lower.includes('extraheader')) offenders.push('http.extraheader');
+  if (lower.includes('credential.helper') || lower.includes('[credential')) offenders.push('credential helper');
+  // A remote URL of the form scheme://user:token@host embeds a secret.
+  if (/url\s*=\s*[a-z]+:\/\/[^/\s]*:[^/@\s]+@/i.test(config)) offenders.push('embedded userinfo in remote url');
+  if (offenders.length > 0) {
+    throw new Error(
+      `warm-repo checkout at ${checkoutDir} still contains credential material ` +
+      `(${offenders.join(', ')}) — refusing to bake it into a build context`,
+    );
+  }
 }
 
 /**
@@ -161,6 +372,15 @@ export async function stageBuildContext(
     opencodeConfigPath = 'kortix-opencode-config';
   }
 
+  // PHASE 1: for a per-project COLD warm, clone the repo API-side into a
+  // SANITIZED, credential-free checkout the Dockerfile only COPYs. The git auth
+  // header is used here (Suna host) and NEVER embedded in the built image.
+  let warmRepoBake: { stagedPath: string; branch: string } | undefined;
+  if (warmRepo) {
+    const { stagedPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+    warmRepoBake = { stagedPath, branch: warmRepo.branch };
+  }
+
   // Bake the FULL gateway model catalog into the image. The no-restart warm seed
   // has no sandbox token / projectId to fetch the catalog at PARK, so without this
   // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
@@ -194,7 +414,7 @@ export async function stageBuildContext(
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
     isSharedDefault,
-    warmRepo,
+    warmRepo: warmRepoBake,
   });
 
   await guardBuildahPortable(composed);
@@ -204,7 +424,7 @@ export async function stageBuildContext(
   // "Path does not exist", and the auto-build can't tell it's a staging miss to
   // recover from. Assert at the source so a miss is caught here AND is retryable
   // (the daytona adapter re-stages on "staging incomplete").
-  await assertContextComplete(contextDir, dockerfileName);
+  await assertContextComplete(contextDir, dockerfileName, warmRepoBake?.stagedPath);
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
 }
@@ -242,11 +462,15 @@ export async function stageWarmFromBaseContext(
     opencodeConfigPath = 'kortix-opencode-config';
   }
 
+  // PHASE 1: sanitized, credential-free repo checkout — cloned API-side, only
+  // COPY'd by the rendered Dockerfile (no git auth header in the image).
+  const { stagedPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+
   const dockerfileName = '.kortix-snapshot.Dockerfile';
   const composedPath = join(contextDir, dockerfileName);
   const composed = buildPerProjectWarmFromBaseDockerfile({
     baseImageRef,
-    warmRepo,
+    warmRepo: { stagedPath, branch: warmRepo.branch },
     opencodeConfigPath,
   });
 
@@ -299,8 +523,17 @@ async function writeComposedDockerfile(composedPath: string, composed: string): 
  * Dockerfile COPYs, so a staging miss fails HERE (clear + retryable) instead of
  * as an opaque provider "Path does not exist" mid-build. Cheap stat checks.
  */
-async function assertContextComplete(contextDir: string, dockerfileName: string): Promise<void> {
-  for (const rel of ['scaffold.git', 'kortix-agent.gz', dockerfileName]) {
+async function assertContextComplete(
+  contextDir: string,
+  dockerfileName: string,
+  warmRepoStagedPath?: string,
+): Promise<void> {
+  const required = ['scaffold.git', 'kortix-agent.gz', dockerfileName];
+  // A per-project warm bake COPYs the staged checkout — verify it (and its
+  // baked .git) actually landed, so a staging miss fails HERE rather than as an
+  // opaque remote "Path does not exist" mid-build.
+  if (warmRepoStagedPath) required.push(join(warmRepoStagedPath, '.git'));
+  for (const rel of required) {
     try {
       await stat(join(contextDir, rel));
     } catch {

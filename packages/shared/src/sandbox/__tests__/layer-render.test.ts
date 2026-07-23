@@ -68,10 +68,8 @@ const CASES: Array<{ label: string; opts: BuildLayeredDockerfileOpts }> = [
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
       ...COMMON,
       warmRepo: {
-        cloneUrl: 'https://git.example.com/acme/app.git',
-        cloneHeaders: { Authorization: 'Bearer redacted' },
+        stagedPath: 'kortix-warm-repo',
         branch: 'main',
-        originUrl: 'https://kortix.example.com/v1/git/proj.git',
       },
     },
   },
@@ -161,22 +159,58 @@ describe('Chromium sits on deterministic parents (cache order is load-bearing)',
     expect(chromium).toBeLessThan(migrationBakeAt(base));
   });
 
-  test('a per-project warm bake installs Chromium before the credential-bearing clone', () => {
+  test('a per-project warm bake installs Chromium before the warm-repo COPY', () => {
     const warm = kortixToolchainLayer({
       opencodeVersion: OPENCODE_VERSION,
       agentBrowserVersion: AGENT_BROWSER_VERSION,
       opencodeConfigPath: 'kortix-opencode-config',
       warmRepo: {
-        cloneUrl: 'https://git.example.com/acme/app.git',
-        cloneHeaders: { Authorization: 'Bearer redacted' },
+        stagedPath: 'kortix-warm-repo',
         branch: 'main',
-        originUrl: 'https://kortix.example.com/v1/git/proj.git',
       },
     });
     const chromium = chromiumAt(warm);
     expect(chromium).toBeGreaterThan(-1);
-    // the credential-bearing clone RUN must come strictly after Chromium
-    expect(chromium).toBeLessThan(warm.indexOf('/tmp/kortix-warm-repo'));
+    // the warm-repo COPY must come strictly after Chromium (non-deterministic
+    // parents bust the content-addressed cache for everything chained below).
+    expect(chromium).toBeLessThan(warm.indexOf('COPY kortix-warm-repo/'));
+  });
+});
+
+describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () => {
+  // The old renderer embedded `git -c http.extraHeader='Authorization: …'` in a
+  // RUN, leaking the token into the uploaded context, OCI image history, and
+  // build logs. The credential now lives ONLY in the API-side clone
+  // (stageWarmRepoCheckout); the render must be credential-free by construction.
+  const SENTINEL = 'ghp_PHASE1SENTINELtoken0000000000000000';
+
+  test('the warm-repo render never contains an auth header or clone command', () => {
+    const warm = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: { stagedPath: 'kortix-warm-repo', branch: 'main' },
+    });
+    expect(warm).not.toContain('http.extraHeader');
+    expect(warm).not.toContain('Authorization');
+    // The build-time clone is gone entirely — the image only COPYs staged bytes.
+    expect(warm).not.toContain('git clone');
+    expect(warm).toContain('COPY kortix-warm-repo/ /workspace/');
+  });
+
+  test('a sentinel-shaped branch name is shell-quoted, not interpolated raw', () => {
+    // A hostile branch name must not be able to inject a build-time shell
+    // command through the diagnostic echo (the latent sink PHASE 1 closes).
+    const evil = `main"; echo ${SENTINEL}; #`;
+    const warm = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: { stagedPath: 'kortix-warm-repo', branch: evil },
+    });
+    // shq single-quotes the whole value and escapes embedded quotes, so the
+    // branch appears exactly once, fully quoted — the `; echo …` cannot escape.
+    expect(warm).toContain(`'main"; echo ${SENTINEL}; #'`);
+    // No bare, unquoted occurrence that a shell would execute.
+    expect(warm).not.toContain(`printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" main"`);
   });
 });
 
@@ -220,10 +254,8 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     baseImageRef: 'registry.daytona.internal/kortix-default-abc123:latest',
     opencodeConfigPath: 'kortix-opencode-config',
     warmRepo: {
-      cloneUrl: 'https://git.example.com/acme/app.git',
-      cloneHeaders: { Authorization: 'Bearer redacted' },
+      stagedPath: 'kortix-warm-repo',
       branch: 'main',
-      originUrl: 'https://kortix.example.com/v1/git/proj.git',
     },
   };
 
@@ -250,19 +282,26 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
   test('bakes the repo checkout and re-warms the opencode instance against it', () => {
     const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
     expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
-    expect(rendered).toContain(FROM_BASE_OPTS.warmRepo.cloneUrl);
+    expect(rendered).toContain('COPY kortix-warm-repo/ /workspace/');
     expect(rendered).toContain('opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log');
     expect(rendered).toContain('warm-repo: keeping baked /workspace checkout');
   });
 
-  test('renders the clone + warm-up steps byte-identically to the monolithic build', () => {
+  test('carries no git credential — no auth header, no clone command', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('http.extraHeader');
+    expect(rendered).not.toContain('Authorization');
+    expect(rendered).not.toContain('git clone');
+  });
+
+  test('renders the warm-repo + warm-up steps byte-identically to the monolithic build', () => {
     const monolithic = buildLayeredDockerfile({
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
       ...COMMON,
       warmRepo: FROM_BASE_OPTS.warmRepo,
     });
     const fromBase = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
-    const startMarker = 'RUN cd / \\\n    && rm -rf /tmp/kortix-warm-repo';
+    const startMarker = 'COPY kortix-warm-repo/ /workspace/';
     const endMarker = 'rm -f /tmp/oc-warm.log; true';
     const slice = (text: string) =>
       text.slice(text.indexOf(startMarker), text.indexOf(endMarker) + endMarker.length);
@@ -277,12 +316,15 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     expect(rendered).not.toContain('ENTRYPOINT');
   });
 
-  test('with no opencodeConfigPath, only the clone step is added on top of the base', () => {
+  test('with no opencodeConfigPath, only the warm-repo COPY is added on top of the base', () => {
     const rendered = buildPerProjectWarmFromBaseDockerfile({
       baseImageRef: FROM_BASE_OPTS.baseImageRef,
       warmRepo: FROM_BASE_OPTS.warmRepo,
     });
-    expect(rendered).not.toContain('COPY ');
+    // The only COPY is the credential-free warm-repo checkout (no artifact tail,
+    // no opencode-config COPY since none was provided).
+    expect(rendered).toContain('COPY kortix-warm-repo/ /workspace/');
+    expect(rendered).not.toContain('COPY kortix-opencode-config');
     expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
   });
 
