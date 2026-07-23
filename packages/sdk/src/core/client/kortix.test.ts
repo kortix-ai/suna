@@ -1009,3 +1009,64 @@ test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes re
     k.session('PROJ', 'SESS-TIMEOUT').ensureReady({ readyTimeoutMs: 20 }),
   ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
 });
+
+test('ensureReady() rides transient null /start results (5xx / create→start race) and resolves once ready', async () => {
+  let n = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      n += 1;
+      // startProjectSession returns null (not throws) for a 5xx / the create→
+      // start 404 race — ensureReady must poll through it, not give up.
+      if (n <= 2) return jsonResponse({ error: 'gateway' }, 503);
+      return jsonResponse({
+        stage: 'ready',
+        agent_name: 'default',
+        retriable: false,
+        sandbox: { external_id: 'sb-transient' },
+        opencode_session_id: 'ocs-transient',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-TRANSIENT').ensureReady({ readyTimeoutMs: 10_000 });
+  expect(ready.opencodeSessionId).toBe('ocs-transient');
+  expect(n).toBeGreaterThanOrEqual(3);
+});
+
+test('ensureReady() caps each /start long-poll to the remaining deadline budget', async () => {
+  const waits: number[] = [];
+  let n = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      const m = url.match(/wait_ms=(\d+)/);
+      if (m) waits.push(Number(m[1]));
+      n += 1;
+      if (n === 1) {
+        return jsonResponse({
+          stage: 'provisioning',
+          agent_name: 'default',
+          retriable: true,
+          sandbox: null,
+          opencode_session_id: null,
+        });
+      }
+      return jsonResponse({
+        stage: 'ready',
+        agent_name: 'default',
+        retriable: false,
+        sandbox: { external_id: 'sb-cap' },
+        opencode_session_id: 'ocs-cap',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await k.session('PROJ', 'SESS-CAP').ensureReady({ readyTimeoutMs: 5_000 });
+  expect(waits.length).toBeGreaterThan(0);
+  expect(Math.max(...waits)).toBeLessThanOrEqual(5_000);
+});
