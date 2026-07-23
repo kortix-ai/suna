@@ -82,6 +82,7 @@ import {
   updateProjectTrigger,
   upsertProjectSecret,
 } from '@kortix/sdk/projects-client';
+import { useProjectConfig } from '@kortix/sdk/react';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,
@@ -989,6 +990,7 @@ function AgentModelSection({
   onMutated: () => void;
 }) {
   const agents = useVisibleAgents({ projectId });
+  const defaultAgentName = useProjectConfig(projectId)?.runtime_default_agent;
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
@@ -1070,6 +1072,7 @@ function AgentModelSection({
         <div className="bg-card rounded-2xl border px-2 py-1">
           <AgentSelector
             agents={agents}
+            defaultAgentName={defaultAgentName}
             selectedAgent={trigger.agent}
             onSelect={(next) => next && saveAgent.mutate(next)}
             disabled={saveAgent.isPending}
@@ -1786,6 +1789,7 @@ function CreateTriggerModal({
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
+  const defaultAgentName = useProjectConfig(projectId)?.runtime_default_agent;
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
@@ -2154,6 +2158,7 @@ function CreateTriggerModal({
                 <div className="bg-card rounded-2xl border px-2 py-1">
                   <AgentSelector
                     agents={agents}
+                    defaultAgentName={defaultAgentName}
                     selectedAgent={agentName}
                     onSelect={setAgentName}
                     projectId={projectId}

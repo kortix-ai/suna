@@ -382,6 +382,55 @@ export function modelPresets(
   return [];
 }
 
+/**
+ * Which repo-committed files under a harness's config directory actually
+ * constitute a `native_config` AUTH route — the harness reading its own
+ * configuration (and, through it, its own credentials) out of the repo.
+ *
+ * Deliberately narrow, and deliberately NOT "anything under `configDir`".
+ * `@kortix/starter`'s `addNativeHarnessSkillLinks` commits `.claude/skills`,
+ * `.codex/skills` and `.pi/skills` as symlinks into OpenCode's canonical
+ * skills tree, so every project made from the default template carries all
+ * four config directories from its first commit. A presence-only check made
+ * `native_config` read as configured for every harness with zero credentials,
+ * and because Claude/Codex own their default model (`ownsDefaultModel`),
+ * `resolveHarnessModels` short-circuited to `ready` before it ever looked for
+ * one — handing the user a sendable composer with nothing behind it and no
+ * connect gate. Agent skills, commands, and subagent definitions are shared
+ * CONTENT; they say nothing about how the harness authenticates.
+ */
+const NATIVE_CONFIG_FILES: Record<HarnessId, readonly string[]> = {
+  claude: ['settings.json', 'settings.local.json', '.credentials.json'],
+  codex: ['config.toml', 'auth.json'],
+  opencode: ['opencode.json', 'opencode.jsonc', 'auth.json'],
+  pi: ['config.json', 'config.toml', 'auth.json'],
+};
+
+/**
+ * Whether `files` carries a real harness-native config for `harness` — a
+ * recognised config file sitting at the ROOT of its config directory (that is
+ * where every harness reads its own config from; a `settings.json` nested
+ * inside a skill is that skill's data, not the harness's configuration).
+ *
+ * Pure over a repo tree slice, so the seeded-project regression is unit
+ * testable without a git mirror — see
+ * `composer-capabilities-native-config.test.ts`.
+ */
+export function harnessNativeConfigPresent(input: {
+  harness: HarnessId;
+  configDir: string;
+  files: readonly { path: string }[];
+}): boolean {
+  const prefix = input.configDir.replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!prefix) return false;
+  const recognised = NATIVE_CONFIG_FILES[input.harness];
+  return input.files.some((file) => {
+    if (!file.path.startsWith(`${prefix}/`)) return false;
+    const relative = file.path.slice(prefix.length + 1);
+    return !relative.includes('/') && recognised.includes(relative);
+  });
+}
+
 function agentView(agent: LogicalAgentLaunchPlan) {
   return {
     name: agent.name,
@@ -423,15 +472,12 @@ export async function resolveProjectComposerState(input: {
     // managed/BYOK routes down when the git mirror is briefly unavailable.
     listRepoFiles(input.project, input.project.defaultBranch).catch(() => []),
   ]);
-  const hasNativeConfig = (configDir: string): boolean => {
-    const prefix = configDir.replace(/^\.\//, '').replace(/\/+$/, '');
-    return (
-      Boolean(prefix) &&
-      repoFiles.some((file) => file.path === prefix || file.path.startsWith(`${prefix}/`))
-    );
-  };
+  const hasNativeConfig = (harness: HarnessId, configDir: string): boolean =>
+    harnessNativeConfigPresent({ harness, configDir, files: repoFiles });
   const anyNativeConfig = compiled
-    ? Object.values(compiled.runtimes).some((runtime) => hasNativeConfig(runtime.configDir))
+    ? Object.values(compiled.runtimes).some((runtime) =>
+        hasNativeConfig(runtime.harness as HarnessId, runtime.configDir),
+      )
     : false;
   const routes = readHarnessAuthRoutes(input.metadata);
   const connections = buildHarnessConnections({
@@ -482,7 +528,7 @@ export async function resolveProjectComposerState(input: {
         userId: input.userId,
         env: agentSecrets.env,
         gatewayEnabled: projectLlmGatewayEnabled(input.metadata),
-        nativeConfigReady: Boolean(runtime && hasNativeConfig(runtime.configDir)),
+        nativeConfigReady: Boolean(runtime && hasNativeConfig(agent.harness, runtime.configDir)),
         explicit,
       });
 

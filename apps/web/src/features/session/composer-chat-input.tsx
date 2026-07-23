@@ -1,7 +1,8 @@
 'use client';
 
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef } from 'react';
 
+import { withoutRedundantHarnessAgents } from '@/features/session/agent-selector-helpers';
 import {
   findAcpModelConfigOption,
   isWritableAcpModelConfigOption,
@@ -521,6 +522,21 @@ export function ComposerChatInput({
   // flags moving together automatically once that lands.
   const nativeHarness = activeHarness && !catalogModelRequired ? activeHarness : null;
   const capabilityAgentName = lockedAgentName ?? local.agent.current?.name ?? null;
+  // Pointing the default agent at Claude Code / Codex / Pi makes its manifest
+  // block identical to the starter's bare pass-through agent for that harness,
+  // so the composer would offer the same coding agent twice under two names.
+  // Collapsed here rather than inside `AgentSelector` so the picker, Tab
+  // cycling and the `@` mention list all agree on one roster — and AFTER
+  // `local.agent.current` has resolved, which still reads the full list, so
+  // pinning the live selection can never leave the composer agent-less.
+  const selectableAgents = useMemo(
+    () =>
+      withoutRedundantHarnessAgents(local.agent.list, {
+        defaultAgentName: projectConfig?.runtime_default_agent,
+        keepAgentName: capabilityAgentName,
+      }),
+    [local.agent.list, projectConfig?.runtime_default_agent, capabilityAgentName],
+  );
   // Harness-native launch model (Claude/Codex/Pi) — persisted per AGENT NAME
   // in the shared SDK model store, not per harness: two agents on the same
   // harness must never share a remembered model, and switching agents/harness
@@ -957,7 +973,7 @@ export function ComposerChatInput({
       projectId={projectId}
       providers={providers}
       onFileSearch={onFileSearch}
-      agents={local.agent.list}
+      agents={selectableAgents}
       selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}

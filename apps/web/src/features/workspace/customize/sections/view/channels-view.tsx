@@ -390,6 +390,7 @@ function ChannelBindingTableRow({
         <div className="bg-card rounded-2xl border px-2 py-1 inline-flex">
           <AgentSelector
             agents={agentSelectorAgents}
+            defaultAgentName={projectDefaultAgent}
             selectedAgent={selectedAgentValue}
             onSelect={(v) =>
               update.mutate(

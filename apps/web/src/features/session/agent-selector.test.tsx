@@ -272,6 +272,113 @@ describe('AgentSelector — uniform flat list', () => {
     expect(within(claudeOption).queryByText(/^Claude$/)).toBeNull();
   });
 
+  // Switching the project default agent's coding agent to Claude Code rewrites
+  // `kortix`'s runtime, and the starter manifest already declares a separate
+  // `claude` agent — so two visible agents land on the same harness and the
+  // picker used to render "Claude Code" twice with nothing to tell them apart.
+  const SHARED_HARNESS_AGENTS: Agent[] = [
+    { name: 'kortix', harness: 'claude', description: 'The project default agent' },
+    { name: 'claude', harness: 'claude', description: 'Anthropic coding agent' },
+    { name: 'codex', harness: 'codex' },
+  ];
+
+  it('two agents on one harness both read as their own names — never "Claude Code" twice', async () => {
+    renderSelector({ agents: SHARED_HARNESS_AGENTS, selectedAgent: 'kortix' });
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const options = screen.getAllByTestId('agent-option');
+    const labels = options.map((o) => o.textContent?.trim());
+    expect(labels).toEqual(['kortix', 'claude', 'Codex']);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('the trigger names the selected agent, not its now-ambiguous harness', () => {
+    renderSelector({ agents: SHARED_HARNESS_AGENTS, selectedAgent: 'kortix' });
+    const trigger = screen.getByTestId('agent-selector');
+    expect(within(trigger).getByText('kortix')).toBeTruthy();
+    expect(within(trigger).queryByText('Claude Code')).toBeNull();
+    // The harness is still what backs it — the brand mark and data attribute stay.
+    expect(trigger.getAttribute('data-harness')).toBe('claude');
+  });
+
+  it('a harness that still owns exactly one agent keeps its brand alongside them', async () => {
+    renderSelector({ agents: SHARED_HARNESS_AGENTS, selectedAgent: 'kortix' });
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const codexOption = screen
+      .getAllByTestId('agent-option')
+      .find((o) => o.getAttribute('data-agent') === 'codex')!;
+    expect(within(codexOption).getByText('Codex')).toBeTruthy();
+  });
+
+  // The bug: Customize → Coding agents points the project default agent at
+  // Codex by rewriting `agents.kortix.runtime`, which makes it identical to the
+  // starter's bare `codex` agent. The picker offered both.
+  const STARTER_ON_CODEX: Agent[] = [
+    { name: 'kortix', harness: 'codex', runtime: 'codex' },
+    { name: 'claude', harness: 'claude', runtime: 'claude' },
+    { name: 'codex', harness: 'codex', runtime: 'codex' },
+    { name: 'pi', harness: 'pi', runtime: 'pi' },
+  ] as unknown as Agent[];
+
+  it('collapses the pass-through the default agent absorbed — one Codex row, not two', async () => {
+    renderSelector({
+      agents: STARTER_ON_CODEX,
+      selectedAgent: 'kortix',
+      defaultAgentName: 'kortix',
+    });
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    // Rows are ordered by harness (HARNESS_ROW_ORDER), so `kortix` sits in
+    // Codex's slot.
+    const options = screen.getAllByTestId('agent-option');
+    expect(options.map((o) => o.getAttribute('data-agent'))).toEqual(['claude', 'kortix', 'pi']);
+    // With the harness back down to a single agent it re-earns its brand, so
+    // the surviving row reads "Codex" rather than the manifest key "kortix".
+    expect(options.map((o) => o.textContent?.trim())).toEqual(['Claude Code', 'Codex', 'Pi']);
+  });
+
+  it('without a known default agent nothing is collapsed — both rows stay', async () => {
+    renderSelector({ agents: STARTER_ON_CODEX, selectedAgent: 'kortix' });
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    expect(
+      screen.getAllByTestId('agent-option').map((o) => o.getAttribute('data-agent')),
+    ).toEqual(['claude', 'kortix', 'codex', 'pi']);
+  });
+
+  it('a trigger already bound to the pass-through keeps the row it is sitting on', async () => {
+    renderSelector({
+      agents: STARTER_ON_CODEX,
+      selectedAgent: 'codex',
+      defaultAgentName: 'kortix',
+    });
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    expect(
+      screen.getAllByTestId('agent-option').map((o) => o.getAttribute('data-agent')),
+    ).toEqual(['claude', 'kortix', 'codex', 'pi']);
+  });
+
+  it('search still matches a de-branded row by its own name', async () => {
+    renderSelector({ agents: SHARED_HARNESS_AGENTS, selectedAgent: 'kortix' });
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    fireEvent.change(screen.getByPlaceholderText(/searchAgents/i), {
+      target: { value: 'kortix' },
+    });
+    await flush();
+
+    const options = screen.getAllByTestId('agent-option');
+    expect(options.map((o) => o.getAttribute('data-agent'))).toEqual(['kortix']);
+  });
+
   it('OpenCode agents read as themselves, with no description chrome', async () => {
     renderSelector();
     fireEvent.click(screen.getByTestId('agent-selector'));

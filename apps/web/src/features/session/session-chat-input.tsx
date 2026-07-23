@@ -16,7 +16,6 @@ import type {
   ProviderListResponse,
   Session,
 } from '@/hooks/runtime/use-runtime-sessions';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { AcpUsageProjection } from '@kortix/sdk';
@@ -32,7 +31,6 @@ import {
   MessageSquare,
   Paperclip,
   Reply,
-  Slash,
   Terminal,
   X,
 } from 'lucide-react';
@@ -87,6 +85,7 @@ function formatRelativeTime(timestamp: number): string {
 // far past the size where new logic belongs in it. Re-exported here so the
 // many existing `from '@/features/session/session-chat-input'` importers keep
 // working.
+import { errorToast } from '@/components/ui/toast';
 import type { FlatModel } from './model-flatten';
 
 export { flattenModels, type FlatModel } from './model-flatten';
@@ -1456,7 +1455,7 @@ function SessionChatInputImpl({
 
   const handleSubmit = useCallback(async () => {
     if (capabilityBlocked) {
-      toast.error(
+      errorToast(
         composerBlockingActionLabel ||
           composerBlockingReason ||
           'This agent is not ready to start.',
@@ -1464,13 +1463,13 @@ function SessionChatInputImpl({
       return;
     }
     if (modelUnavailable) {
-      toast.error(modelUnavailableMessage);
+      errorToast(modelUnavailableMessage);
       return;
     }
 
     // The run is paused on a connector approval — resolve it above first.
     if (lockForApproval) {
-      toast.error('Approve or deny the pending action to continue.');
+      errorToast('Approve or deny the pending action to continue.');
       return;
     }
 
@@ -2112,25 +2111,6 @@ function SessionChatInputImpl({
                 modelRequired={modelRequired}
                 projectId={projectId}
               />
-              {commands.length > 0 && !stagedCommand && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Commands"
-                      data-testid="composer-commands-button"
-                      onClick={handleOpenCommands}
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors active:scale-[0.96]"
-                    >
-                      <Slash className="size-3.5 shrink-0" />
-                      <span className="hidden sm:inline">Commands</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {commandsSourceLabel ? `Commands from ${commandsSourceLabel}` : 'Run a command'}
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
 
             {/* RIGHT: TokenProgress + Voice + Submit/Stop. Only the PRIMARY

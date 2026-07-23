@@ -28,7 +28,12 @@ import {
 
 import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isHarnessDisconnected } from './agent-selector-helpers';
+import {
+  agentRowLabel,
+  brandLabelHarnesses,
+  isHarnessDisconnected,
+  withoutRedundantHarnessAgents,
+} from './agent-selector-helpers';
 import {
   COMPOSER_PILL_ACTIVE_CLASS,
   COMPOSER_PILL_DISABLED_CLASS,
@@ -47,11 +52,6 @@ const HARNESS_ICON_PROVIDER_ID: Record<KortixHarness, string> = {
   opencode: 'opencode',
   pi: 'pi',
 };
-
-/** Claude Code, Codex, and Pi surface exactly one agent — the harness itself —
- *  so those rows read as the brand ("Claude Code"), while OpenCode's many
- *  named agents read as themselves ("kortix", "build", …). */
-const BRAND_ROW_HARNESSES: ReadonlySet<KortixHarness> = new Set(['claude', 'codex', 'pi']);
 
 /** Single-agent brand harnesses first, then OpenCode's agents, then agents
  *  with no resolvable harness. Stable within each harness. */
@@ -73,20 +73,17 @@ function HarnessIcon({ harness, className }: { harness: KortixHarness; className
   );
 }
 
-function agentDisplayName(agent: Agent | undefined): string {
-  if (!agent) return 'Agent';
-  const harness = agentHarness(agent);
-  return harness && BRAND_ROW_HARNESSES.has(harness)
-    ? harnessPresentation(harness).label
-    : agent.name;
-}
-
 /** What the row's hover card explains: the harness blurb for brand rows
  *  (Claude Code, Codex, Pi), the agent's own manifest description for
- *  OpenCode/other agents. `null` → no card, the row renders bare. */
-function agentHoverDescription(agent: Agent): string | null {
+ *  OpenCode/other agents — and for a harness that lost its brand to a second
+ *  agent, that agent's own description, which is now the only thing that
+ *  tells the two rows apart. `null` → no card, the row renders bare. */
+function agentHoverDescription(
+  agent: Agent,
+  brandHarnesses: ReadonlySet<KortixHarness>,
+): string | null {
   const harness = agentHarness(agent);
-  if (harness && BRAND_ROW_HARNESSES.has(harness)) return harnessPresentation(harness).description;
+  if (harness && brandHarnesses.has(harness)) return harnessPresentation(harness).description;
   return agent.description?.trim() || null;
 }
 
@@ -96,11 +93,17 @@ export function AgentSelector({
   onSelect,
   disabled = false,
   projectId,
+  defaultAgentName,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
+  /** The project's `runtime_default_agent`. Lets the list collapse the harness
+   *  pass-through agent this one has absorbed — see
+   *  `withoutRedundantHarnessAgents`. Omitted → nothing is collapsed, so a
+   *  caller that doesn't know the default never hides a row by accident. */
+  defaultAgentName?: string | null;
   /** Lets the picker read this project's per-harness connection status
    *  (`useModelsPage(projectId).runtimes`) to drive the row-level "no model
    *  connected" dot. Omitted → no runtime data → no dots, never a false
@@ -135,9 +138,21 @@ export function AgentSelector({
     return map;
   }, [runtimes]);
 
+  // Once the project default agent is pointed at Claude Code / Codex / Pi, its
+  // manifest block is identical to the starter's bare pass-through agent for
+  // that harness and the list would offer the same coding agent twice —
+  // `withoutRedundantHarnessAgents` keeps the default and drops the
+  // pass-through. Applied here rather than only at each call site so every
+  // picker (composer, trigger detail, trigger modal, channel binding) agrees;
+  // `selectedAgent` is passed through as the pin, so a trigger or channel
+  // already bound to the pass-through never loses the row it's sitting on.
   const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
+    () =>
+      withoutRedundantHarnessAgents(
+        agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
+        { defaultAgentName, keepAgentName: selectedAgent },
+      ),
+    [agents, defaultAgentName, selectedAgent],
   );
 
   // Flash highlight when agent changes (e.g. via Tab cycling)
@@ -159,15 +174,24 @@ export function AgentSelector({
     if (!open) setSearch('');
   }, [open]);
 
+  // Which harnesses still own exactly one visible agent, and so may render as
+  // the brand instead of the agent's name — see `brandLabelHarnesses`. Derived
+  // from the FULL primary list, never the filtered one: a search that happens
+  // to match only one of two Claude Code agents must not hand that harness its
+  // brand back mid-keystroke.
+  const brandHarnesses = useMemo(() => brandLabelHarnesses(primaryAgents), [primaryAgents]);
+
   // Match what the user can actually see: the row's display name (brand label
-  // for Claude Code/Codex/Pi, agent name for OpenCode) plus the raw name.
+  // where it's earned, agent name otherwise) plus the raw name.
   const filteredPrimary = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
     return primaryAgents.filter(
-      (a) => a.name.toLowerCase().includes(q) || agentDisplayName(a).toLowerCase().includes(q),
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        agentRowLabel(a, brandHarnesses).label.toLowerCase().includes(q),
     );
-  }, [primaryAgents, search]);
+  }, [primaryAgents, search, brandHarnesses]);
 
   // One flat list, every row the same anatomy: logo + name. No group
   // headings, no per-row descriptions — the logo already says which harness
@@ -183,6 +207,7 @@ export function AgentSelector({
 
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
   const currentHarness = agentHarnessPresentation(currentAgent);
+  const currentLabel = agentRowLabel(currentAgent, brandHarnesses);
 
   return (
     // When locked we keep the trigger hoverable (no native `disabled`, which
@@ -221,7 +246,7 @@ export function AgentSelector({
           >
             {currentHarness ? <HarnessIcon harness={currentHarness.id} /> : null}
             <span className="max-w-[96px] truncate capitalize sm:max-w-[130px]">
-              {agentDisplayName(currentAgent)}
+              {currentLabel.label}
             </span>
             {/* Locked state drops the chevron too — per the pill law's
                 "chevron ⇔ popover" rule (composer-pill.ts): the popover
@@ -276,21 +301,16 @@ export function AgentSelector({
               const isDisconnected = isHarnessDisconnected(
                 presentation ? runtimeStatusByHarness.get(presentation.id) : undefined,
               );
-              const description = agentHoverDescription(agent);
+              const description = agentHoverDescription(agent, brandHarnesses);
+              const { label, isBrand } = agentRowLabel(agent, brandHarnesses);
               return (
                 <CommandItemHoverCard
                   key={agent.name}
                   content={
                     description ? (
                       <div data-testid="agent-hover-card">
-                        <p
-                          className={cn(
-                            'text-sm font-medium',
-                            (!presentation || !BRAND_ROW_HARNESSES.has(presentation.id)) &&
-                              'capitalize',
-                          )}
-                        >
-                          {agentDisplayName(agent)}
+                        <p className={cn('text-sm font-medium', !isBrand && 'capitalize')}>
+                          {label}
                         </p>
                         <p className="text-muted-foreground mt-1 text-xs leading-snug text-pretty">
                           {description}
@@ -319,14 +339,13 @@ export function AgentSelector({
                     <span
                       className={cn(
                         'min-w-0 flex-1 truncate text-sm leading-tight',
-                        (!presentation || !BRAND_ROW_HARNESSES.has(presentation.id)) &&
-                          'capitalize',
+                        !isBrand && 'capitalize',
                         isSelected
                           ? 'text-foreground font-semibold'
                           : 'text-foreground/90 font-medium',
                       )}
                     >
-                      {agentDisplayName(agent)}
+                      {label}
                     </span>
                     {isDisconnected && (
                       <Hint label="No model connected" side="right" className="text-xs">
