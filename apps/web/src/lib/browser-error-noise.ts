@@ -1644,6 +1644,95 @@ export function isNonErrorUndefinedRejectionNoise(input: {
   return true;
 }
 
+// Browser-internal DOM/binding `OperationError` noise — `Instance dropped in
+// popErrorScope`. `popErrorScope` is part of the WebIDL/internal error-scope
+// machinery (DOMQueuingStrategy, ResizeObserver, IntersectionObserver, media
+// streams, GPU, …), NOT a first-party Kortix API. Some browser code paths
+// (Firefox-originated; also emitted by some Chromium/Edge paths) surface a
+// frameless `OperationError: Instance dropped in popErrorScope` as an
+// unhandled promise rejection via the global `onunhandledrejection` handler.
+// Better Stack pattern
+// 5e1aca208331fa2d7540c9810b815b6c94f1373c470ff54e15f39d389dac7e0c
+// (Kortix Frontend prod, application_id 2346967): `OperationError`, 2
+// occurrences EVER across a 90-day window (first 2026-04-28 18:41:18 UTC on
+// `https://www.kortix.com/instances` Chrome/Win, last 2026-07-22 18:26:35 UTC
+// on `https://kortix.com/projects/<id>` reached from Google account sign-in
+// Chrome/Edge/Win), 0 identified users (anonymous), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary). The exception payload is
+// `{"values":[{"type":"OperationError","value":"Instance dropped in
+// popErrorScope","mechanism":{"type":"auto.browser.global_handlers.
+// onunhandledrejection","handled":false}}]}` — NO `stacktrace`, NO frames, NO
+// `call_site_file`/`call_site_function`, NO `call_stack_hash`. A real
+// first-party `Promise.reject(new OperationError(...))` carries a stack with
+// `apps/web/src/…` frames, so the frameless shape is the noise signature.
+//
+// The same family as the prior frameless browser-internal rejection noise
+// matchers — `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`) and `isFirefoxReactSchedulerReentryNoise` (PR #5185, pattern
+// `0f03b24e…`).
+//
+// `OperationError` is the WebIDL type for async DOM operations, NOT a Kortix
+// error class, and it is a GENERIC type a real first-party
+// `new OperationError(...)` could also surface with — so the matcher anchors on
+// the EXACT message `/^Instance dropped in popErrorScope$/` (case-sensitive),
+// never on the bare `OperationError` type. It additionally requires the
+// frameless shape as a positive guard (no resolvable frame / no
+// `call_site_file` / no stack) — the production noise pattern carries NO
+// stack — mirroring the negative-guard pattern from PR #5200's
+// `isNonErrorUndefinedRejectionNoise`: any resolved first-party
+// `apps/web/src/…` frame → KEEP reporting (a real first-party `OperationError`
+// rejection with a stack is preserved); any other resolvable frame location →
+// keep reporting. Only the frameless capture is dropped. Deliberately NOT
+// added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no
+// frame context, so a bare-string match there could swallow a real first-party
+// `OperationError` rejection the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN =
+  /^Instance dropped in popErrorScope$/;
+
+/**
+ * Whether a Sentry event is the browser-internal DOM/binding
+ * `OperationError: Instance dropped in popErrorScope` noise class:
+ * `popErrorScope` is part of the WebIDL/internal error-scope machinery
+ * (DOMQueuingStrategy, ResizeObserver, IntersectionObserver, media streams,
+ * GPU, …), NOT a first-party Kortix API. Some browser code paths surface a
+ * frameless `OperationError` with this exact message as an uncaught global
+ * `onunhandledrejection` — never first-party app code. Requires the EXACT
+ * message (case-sensitive; `OperationError` alone is a generic WebIDL type a
+ * real first-party `new OperationError(...)` could also surface with) AND a
+ * NEGATIVE guard: if any frame resolves to a de-minified first-party
+ * `apps/web/src/…` source path OR any resolvable frame location at all, the
+ * event keeps reporting (a real first-party `OperationError` rejection we can
+ * attribute should still surface). The production noise pattern has NO frames
+ * at all; only the frameless capture is dropped. See
+ * `OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN` for the full rationale.
+ */
+export function isOperationErrorPopErrorScopeNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code rejected a promise with an `OperationError` → actionable; keep
+  // reporting so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -2115,6 +2204,23 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isNonErrorUndefinedRejectionNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isNonErrorUndefinedRejectionNoise({ message, frames })) {
+    return true;
+  }
+
+  // Browser-internal DOM/binding `OperationError: Instance dropped in
+  // popErrorScope` noise — `popErrorScope` is part of the WebIDL/internal
+  // error-scope machinery (DOMQueuingStrategy, ResizeObserver,
+  // IntersectionObserver, media streams, GPU, …), NOT a first-party API. Some
+  // browser code paths surface a frameless `OperationError` with this exact
+  // message as an uncaught global `onunhandledrejection`; never first-party
+  // app code. Requires the EXACT message AND NEGATIVE guards: any resolved
+  // first-party `apps/web/src/…` frame OR any resolvable frame location → keep
+  // reporting (a real first-party `OperationError` rejection we can attribute
+  // should still surface). The production noise pattern has NO frames at all;
+  // only the frameless capture is dropped. See
+  // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
+  // context there).
+  if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
     return true;
   }
 

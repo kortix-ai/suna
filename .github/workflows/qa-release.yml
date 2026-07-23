@@ -63,6 +63,9 @@ jobs:
       KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+      # Staging can provision managed repositories with the server credential.
+      # CLI push flows also require repo-scoped token export from a GitHub App.
+      KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
       # staging.kortix.com sits behind Vercel deployment protection (SSO); the
       # Playwright configs send this as x-vercel-protection-bypass so the browser
       # suite can reach the app instead of the Vercel login wall.

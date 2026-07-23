@@ -42,18 +42,23 @@ function parseVersionType(version: string): VersionType {
 function normalizeReleaseTitle(title: string | undefined, version: string): string | undefined {
   if (!title) return title;
   if (version.startsWith('dev-')) return title;
-  const escaped = version.replace(/\./g, '\\.');
-  const patterns = [
-    new RegExp(`^v${escaped}\\s*[—–:-]\\s*`, 'i'),
-    new RegExp(`^${escaped}\\s*[—–:-]\\s*`, 'i'),
-    new RegExp(`^v${escaped}\\s+`, 'i'),
-    new RegExp(`^${escaped}\\s+`, 'i'),
-  ];
-  let normalized = title;
-  for (const pattern of patterns) {
-    normalized = normalized.replace(pattern, '');
+  const lowerTitle = title.toLowerCase();
+  for (const prefix of [`v${version}`, version]) {
+    if (!lowerTitle.startsWith(prefix.toLowerCase())) continue;
+    let offset = prefix.length;
+    const separator = title[offset];
+    if (separator !== ' ' && separator !== '\t' && separator !== '—' && separator !== '–' && separator !== ':' && separator !== '-') {
+      continue;
+    }
+    while (offset < title.length) {
+      const char = title[offset];
+      if (char !== ' ' && char !== '\t' && char !== '—' && char !== '–' && char !== ':' && char !== '-') break;
+      offset += 1;
+    }
+    const normalized = title.slice(offset).trim();
+    return normalized || title;
   }
-  return normalized.trim() || title;
+  return title;
 }
 
 function normalizeReleaseBody(body: string | undefined, version: string, title?: string): string | undefined {
@@ -645,4 +650,3 @@ function formatInlineMarkdown(text: string): string {
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/`(.*?)`/g, '$1');
 }
-

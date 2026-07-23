@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { ENV_MODE, EnvMode } from '@/lib/utils/env-config';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
+import { inferFrontendUrl } from './frontend-url';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8008/v1';
 
@@ -29,12 +30,8 @@ export function getFrontendUrl(): string {
   }
 
   // Infer from backend URL - if backend is production, frontend should be too
-  if (BACKEND_URL.includes('api.kortix.com')) {
-    return 'https://kortix.com';
-  }
-  if (BACKEND_URL.includes('staging.api') || BACKEND_URL.includes('staging-api')) {
-    return 'https://staging.kortix.com';
-  }
+  const inferredFrontendUrl = inferFrontendUrl(BACKEND_URL);
+  if (inferredFrontendUrl) return inferredFrontendUrl;
 
   // Fall back to environment-based defaults
   switch (ENV_MODE) {

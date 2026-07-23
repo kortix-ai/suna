@@ -47,7 +47,7 @@ import {
   Settings,
   RotateCcw,
 } from 'lucide-react-native';
-import { formatCredits } from '@agentpress/shared';
+import { formatCredits } from '@kortix/shared';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
 import { log } from '@/lib/logger';
 

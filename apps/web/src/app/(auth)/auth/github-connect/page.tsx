@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { ErrorStrip } from '@/features/auth/auth-primitives';
-import { createClient } from '@/lib/supabase/client';
+import { createEphemeralOAuthClient } from '@/lib/supabase/client';
 
 type ConnectMessage =
   | { type: 'github-connect-success'; provider_token: string; github_login?: string }
@@ -21,7 +21,7 @@ export default function GitHubConnectPopup() {
   useEffect(() => {
     let disposed = false;
     let closeTimer: ReturnType<typeof setTimeout> | null = null;
-    const supabase = createClient();
+    const supabase = createEphemeralOAuthClient();
     const post = (message: ConnectMessage) => {
       try {
         if (window.opener && !window.opener.closed) {
@@ -81,20 +81,16 @@ export default function GitHubConnectPopup() {
             provider_token: session.provider_token,
             github_login: githubLogin,
           });
+          await supabase.auth.signOut({ scope: 'local' });
           closeTimer = setTimeout(() => window.close(), 200);
           return;
         }
 
-        // The @supabase/ssr browser client doesn't implement linkIdentity
-        // reliably, so use signInWithOAuth — the existing /auth/github-popup
-        // uses the same approach. If the user's primary identity is already
-        // GitHub, the session is preserved; otherwise Supabase will match by
-        // email per the project's auth configuration.
         const redirectTo = `${window.location.origin}/auth/github-connect`;
         const { error: signInError } = await supabase.auth.signInWithOAuth({
           provider: 'github',
           options: {
-            scopes: 'repo read:user',
+            scopes: 'read:user read:org',
             redirectTo,
             queryParams: { prompt: 'select_account' },
           },

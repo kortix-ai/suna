@@ -9,7 +9,7 @@ import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
 import { startUnifiedCreditPurchase, shouldUseRevenueCat, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
-import { formatCredits } from '@agentpress/shared';
+import { formatCredits } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { log } from '@/lib/logger';
 
@@ -133,4 +133,3 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
     </View>
   );
 }
-

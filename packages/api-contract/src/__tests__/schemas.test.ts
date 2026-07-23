@@ -78,6 +78,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     visibility: 'private',
     origin: 'user',
     origin_ref: null,
+    secrets_allowlist: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,
     can_manage_sharing: true,

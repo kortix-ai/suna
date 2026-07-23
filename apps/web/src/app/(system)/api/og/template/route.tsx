@@ -2,6 +2,7 @@ import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
+import { buildPublicTemplateUrl } from './template-url';
 
 export const runtime = 'edge';
 
@@ -13,13 +14,14 @@ export async function GET(request: NextRequest) {
     const shareId = searchParams.get('shareId');
 
     if (!shareId) {
-      return new Response('Missing shareId parameter', { status: 400 });
+      return new Response('Invalid shareId parameter', { status: 400 });
     }
 
-    const templateResponse = await fetch(
-      `${runtimeEnv.BACKEND_URL}/templates/public/${shareId}`,
-      { signal: AbortSignal.timeout(5000) }
-    );
+    const templateUrl = buildPublicTemplateUrl(runtimeEnv.BACKEND_URL, shareId);
+    if (!templateUrl) {
+      return new Response('Invalid shareId parameter', { status: 400 });
+    }
+    const templateResponse = await fetch(templateUrl, { signal: AbortSignal.timeout(5000) });
 
     if (!templateResponse.ok) {
       throw new Error('Template not found');

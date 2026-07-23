@@ -19,6 +19,7 @@ import {
   type UrlRegistryRef,
 } from './address';
 import { parseFrontmatter } from './manifest';
+import { trimTrailingSlashes } from './paths';
 import { groupSkillFiles } from './skills';
 import type { RegistryItem, RegistryJson } from './schema';
 
@@ -203,7 +204,7 @@ async function scanGithubRepo(
   opts: RegistryLoaderOptions,
 ): Promise<ResolvedRegistry | null> {
   const fetchImpl = opts.fetchImpl ?? fetch;
-  const subdir = (ref.subdir ?? '').replace(/\/+$/, '');
+  const subdir = trimTrailingSlashes(ref.subdir ?? '');
   const prefix = subdir ? `${subdir}/` : '';
   const refsToTry = [...new Set([ref.ref, ...(opts.defaultRefs ?? ['main', 'master'])].filter(Boolean))] as string[];
 

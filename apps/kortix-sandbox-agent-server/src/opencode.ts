@@ -31,6 +31,39 @@ const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
+/** True when OpenCode uses the single synthetic `kortix` LLM provider. */
+export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    env.KORTIX_LLM_PROXY_URL ||
+    (env.KORTIX_LLM_BASE_URL && env.KORTIX_LLM_API_KEY),
+  )
+}
+
+/** Convert a gateway wire model into OpenCode's `provider/model` string. */
+export function toKortixOpencodeModelRef(ref: string): string {
+  const trimmed = ref.trim()
+  return trimmed.startsWith('kortix/') ? trimmed : `kortix/${trimmed}`
+}
+
+/** Route every configured model through the only provider enabled in gateway mode. */
+function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
+  for (const key of ['model', 'small_model'] as const) {
+    if (typeof config[key] === 'string' && config[key].trim()) {
+      config[key] = toKortixOpencodeModelRef(config[key])
+    }
+  }
+
+  const agents = config.agent
+  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return
+  for (const value of Object.values(agents)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const agent = value as Record<string, unknown>
+    if (typeof agent.model === 'string' && agent.model.trim()) {
+      agent.model = toKortixOpencodeModelRef(agent.model)
+    }
+  }
+}
+
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has four
 // independent contributors, any of which may apply:
@@ -72,7 +105,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
 
   // Direct mode needs both token+url; proxy mode needs only the proxy URL.
   const hasExecutorMcp = executorMcpEnabled && (executorProxyMode || (!!executorToken && !!apiUrl))
-  const hasLlmGateway = proxyMode || (!!llmBaseUrl && !!llmApiKey)
+  const hasLlmGateway = hasKortixLlmGateway(env)
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #3 keys off it.
@@ -167,6 +200,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
         fetchApiKey: llmApiKey,
       }),
     }
+    normalizeGatewayModelRefs(out)
     if (!('model' in out) || typeof out.model !== 'string') {
       out.model = DEFAULT_KORTIX_MODEL
     }
