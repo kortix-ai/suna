@@ -16,6 +16,26 @@ Status legend: **[open-PR]** closed by merging the named PR · **[fix-here]**
 addressed in this change · **[todo]** needs new code · **[doc]** documentation ·
 **[defer]** tracked follow-up.
 
+The two HIGH defects that the open PRs do **not** close (§2 items 1 & 2) were
+**re-verified by hand** against current `main`:
+
+- **`runtime()` cross-tenant bleed** — the top-level `runtime` is publicly
+  exposed on the facade (`kortix.ts:1000`), resolves its URL from the process
+  global via `getClient()`, and `ensureReady()` writes that global
+  **unconditionally** (`kortix.ts:752`, not gated by the scoped `global:false`
+  flag). So on a shared account, `scopedClientA.runtime()` reaches whichever
+  session last called `ensureReady()`. `session(pid,sid).runtime` is safe. Fix:
+  make top-level `runtime()` throw under `createScopedKortix`. **Own SDK PR**
+  (published package — needs TDD + typecheck/test/smoke:install + surface
+  snapshot).
+- **Sandbox-down 400 message loss** — the Daytona "no IP address found" handling
+  is gated `status===400 && attempt < MAX_RETRIES` (`preview.ts:825`); on the
+  final attempt it falls through to the "sandbox is alive" passthrough
+  (`preview.ts:856-863`), so #5271's `releasePromptDelivery` never runs and the
+  held claim turns the client's retry into a bogus `200 {duplicate}`. Fix:
+  recognize sandbox-down on the final attempt too (release the claim / route
+  through `portUnreachableResponse`) + add the missing dedupe test. **Own PR.**
+
 ---
 
 # KaaB edge-case audit
