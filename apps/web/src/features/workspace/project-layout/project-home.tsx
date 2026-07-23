@@ -368,7 +368,6 @@ type SetupTile = {
   icon: LucideIcon | IconMynauiType | IconType;
   title: string;
   desc: string;
-  count: number | null;
   section: CustomizeSection;
 };
 
@@ -378,42 +377,36 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
       icon: HiOutlineViewGrid,
       title: 'Integrations',
       desc: 'Connect tools your agent can act in.',
-      count: null,
-      section: 'connectors',
+    section: 'connectors',
     },
     {
       icon: CalendarClock,
       title: 'Scheduled tasks',
       desc: 'Run work on a schedule or from an event.',
-      count: null,
-      section: 'schedules',
+    section: 'schedules',
     },
     {
       icon: SparklesSolid,
       title: 'Skills',
       desc: 'Repeatable workflows your agent reuses.',
-      count: null,
       section: 'skills',
     },
     {
       icon: Icon.Slack,
       title: 'Slack',
       desc: 'Run this project right from chat.',
-      count: null,
-      section: 'channels',
+    section: 'channels',
     },
     {
       icon: UsersGroupSolid,
       title: 'Your team',
       desc: 'Invite people to run and review work.',
-      count: null,
       section: 'members',
     },
     {
       icon: Icon.Kortix,
       title: 'Agent',
       desc: 'Shape how your agent thinks and acts.',
-      count: null,
       section: 'agents',
     },
 ];
@@ -425,8 +418,7 @@ function ProjectHomeSections() {
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
-        const { icon: TileIcon, title, desc, count, section } = tile;
-        const isSet = (count ?? 0) > 0;
+        const { icon: TileIcon, title, desc, section } = tile;
 
         return (
           <Hint key={section} label={desc} side="top">
@@ -438,9 +430,6 @@ function ProjectHomeSections() {
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
               {title}
-              {isSet ? (
-                <span className="text-muted-foreground text-sm tabular-nums">{count}</span>
-              ) : null}
             </Button>
           </Hint>
         );

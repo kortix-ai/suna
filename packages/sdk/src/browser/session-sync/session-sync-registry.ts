@@ -1,8 +1,7 @@
 import type {
 	Message,
 	Part,
-	SessionStatus,
-} from "@opencode-ai/sdk/v2/client";
+	SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useSyncStore } from "../stores/sync-store";
 import { getClient } from "../../core/runtime/client";
 import {
@@ -25,13 +24,15 @@ interface SessionMessageClient {
 			limit: number;
 			before?: string;
 		}) => Promise<MessagesResponse>;
-	};
+    status?: () => Promise<{ data?: Record<string, SessionStatus> }>;
+  };
 }
 
 interface RegistryEntry {
 	controller: SessionSyncController;
 	consumers: number;
 	lastUsedAt: number;
+  client?: SessionMessageClient;
 }
 
 const MAX_CONTROLLERS = 20;
@@ -61,16 +62,20 @@ function reportTelemetry(
 	console.debug("[session-sync]", { sessionId, ...event });
 }
 
+function resolveClient(sessionId: string): SessionMessageClient {
+  return controllers.get(sessionId)?.client ?? getClient();
+}
+
 function createController(sessionId: string): SessionSyncController {
 	return new SessionSyncController({
 		sessionId,
 		loadPage: (request) =>
-			readSessionMessagePage(getClient(), sessionId, request),
+			readSessionMessagePage(resolveClient(sessionId), sessionId, request),
 		loadStatus: async () => {
-			const result = await getClient().session.status();
-			return (
-				result.data?.[sessionId] ?? ({ type: "idle" } as SessionStatus)
-			);
+			const loadStatus = resolveClient(sessionId).session.status;
+      if (!loadStatus) return { type: "idle" } as SessionStatus;
+      const result = await loadStatus();
+			return result.data?.[sessionId] ?? ({ type: "idle" } as SessionStatus);
 		},
 		hydrate: (messages) => {
 			useSyncStore.getState().hydrate(sessionId, messages);
@@ -85,10 +90,11 @@ function createController(sessionId: string): SessionSyncController {
 	});
 }
 
-function evictInactiveControllers(): void {
+function evictInactiveControllers(protectedSessionId?: string): void {
 	if (controllers.size <= MAX_CONTROLLERS) return;
 	const inactive = [...controllers.entries()]
-		.filter(([, entry]) => entry.consumers === 0)
+		.filter(([sessionId, entry]) => entry.consumers === 0 && sessionId !== protectedSessionId,
+    )
 		.sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
 	for (const [sessionId, entry] of inactive) {
 		entry.controller.destroy();
@@ -97,35 +103,69 @@ function evictInactiveControllers(): void {
 	}
 }
 
-export function getSessionSyncController(
+function getOrCreateRegistryEntry(
 	sessionId: string,
-): SessionSyncController {
+  client?: SessionMessageClient,
+  initialConsumers = 0,
+): RegistryEntry {
 	const existing = controllers.get(sessionId);
 	if (existing) {
-		existing.lastUsedAt = Date.now();
-		return existing.controller;
+		existing.client = client;
+    existing.lastUsedAt = Date.now();
+		return existing;
 	}
-	const controller = createController(sessionId);
-	controllers.set(sessionId, {
-		controller,
-		consumers: 0,
+	const entry: RegistryEntry = {
+    controller: createController(sessionId),
+    client,
+		consumers: initialConsumers,
 		lastUsedAt: Date.now(),
-	});
-	evictInactiveControllers();
-	return controller;
+	};
+  controllers.set(sessionId, entry);
+  return entry;
+}
+
+export function getSessionSyncController(
+  sessionId: string,
+  client?: SessionMessageClient,
+): SessionSyncController {
+  const entry = getOrCreateRegistryEntry(sessionId, client);
+	evictInactiveControllers(sessionId);
+	return entry.controller;
+}
+
+export function prefetchSessionSyncWithClient(
+  sessionId: string,
+  client: SessionMessageClient,
+): Promise<boolean> {
+  const existing = controllers.get(sessionId);
+  const entry = getOrCreateRegistryEntry(
+    sessionId,
+    existing?.consumers ? undefined : client,
+  );
+  evictInactiveControllers(sessionId);
+  return entry.controller
+    .reconcile("manual")
+    .then(() => entry.controller.getSnapshot().freshness === "fresh");
 }
 
 export function retainSessionSyncController(sessionId: string): () => void {
-	const controller = getSessionSyncController(sessionId);
-	const entry = controllers.get(sessionId);
-	if (!entry) return () => {};
+  let entry = controllers.get(sessionId);
+	if (entry) {
+    entry.client = undefined;
 	entry.consumers += 1;
+    entry.lastUsedAt = Date.now();
+  } else {
+    entry = getOrCreateRegistryEntry(sessionId, undefined, 1);
+  }
+  evictInactiveControllers();
+  const controller = entry.controller;
 	return () => {
 		const current = controllers.get(sessionId);
 		if (!current || current.controller !== controller) return;
 		current.consumers = Math.max(0, current.consumers - 1);
 		current.lastUsedAt = Date.now();
 		if (current.consumers === 0) controller.setBusy(false);
+    evictInactiveControllers();
 	};
 }
 

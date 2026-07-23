@@ -7,7 +7,6 @@
  */
 
 import { platformConfig } from '../../core/http/config';
-import { selectCacheKeysToPrune } from './idb-sync-cache-helpers';
 
 const DB_NAME = "kortix-session-cache";
 const DB_VERSION = 2;
@@ -217,14 +216,14 @@ export async function pruneIDBCache(): Promise<void> {
     const now = Date.now();
     const stale = entries.filter((e) => now - e.updatedAt > MAX_SESSION_AGE_MS);
     for (const e of stale) {
-      store.delete(e.cacheKey);
+      store.delete(e.sessionId);
     }
     const fresh = entries
       .filter((e) => now - e.updatedAt <= MAX_SESSION_AGE_MS)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     if (fresh.length > MAX_CACHED_SESSIONS) {
-      for (const cacheKey of selectCacheKeysToPrune(fresh, MAX_CACHED_SESSIONS)) {
-        store.delete(cacheKey);
+      for (const e of fresh.slice(MAX_CACHED_SESSIONS)) {
+        store.delete(e.sessionId);
       }
     }
   } catch {

@@ -3,7 +3,7 @@ import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client";
 export const SESSION_SYNC_PAGE_SIZE = 10;
 
 export type SessionSyncFreshness =
-	| "idle"
+  "idle"
 	| "loading"
 	| "fresh"
 	| "stale"
@@ -241,7 +241,8 @@ export class SessionSyncController {
 		this.update({ isLoadingOlder: true });
 		this.olderRequest = this.loadPage("older", "manual", before)
 			.then((page) => {
-				this.options.hydrate(page.messages);
+        if (this.destroyed) return;
+        this.options.hydrate(page.messages);
 				this.setCursor(page.nextCursor);
 			})
 			.finally(() => {
@@ -286,7 +287,6 @@ export class SessionSyncController {
 			this.update({ freshness: "fresh" });
 		} catch {
 			if (!this.destroyed) {
-				this.setCursor(undefined);
 				this.update({ freshness: "error" });
 			}
 		} finally {
@@ -334,8 +334,7 @@ export class SessionSyncController {
 		}
 		await Promise.all([
 			this.reconcile("poll"),
-			this.reconcileStatus(),
-		]);
+			this.reconcileStatus()]);
 		this.lastActivityAt = this.scheduler.now();
 	}
 

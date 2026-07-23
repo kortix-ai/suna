@@ -227,4 +227,60 @@ describe("SessionSyncController", () => {
 			hasOlder: false,
 		});
 	});
+
+  test("retains the older-page cursor after a transient tail failure", async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    let failTail = false;
+    const controller = new SessionSyncController({
+      sessionId: "session-1",
+      loadPage: async (request) => {
+        requests.push(request);
+        if (failTail && !request.before) throw new Error("offline");
+        return request.before
+          ? page(["message-older"])
+          : page(["message-newest"], "cursor-older");
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    failTail = true;
+    await controller.reconcile("poll");
+
+    expect(controller.getSnapshot()).toMatchObject({
+      freshness: "error",
+      hasOlder: true,
+    });
+
+    await controller.loadOlder();
+    expect(requests.at(-1)).toEqual({
+      limit: 10,
+      before: "cursor-older",
+    });
+  });
+
+  test("does not hydrate an older page after destruction", async () => {
+    let resolveOlder!: (value: SessionSyncPage) => void;
+    const older = new Promise<SessionSyncPage>((resolve) => {
+      resolveOlder = resolve;
+    });
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: "session-1",
+      loadPage: async (request) =>
+        request.before ? older : page(["message-newest"], "cursor-older"),
+      hydrate: (messages) =>
+        hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    const pending = controller.loadOlder();
+    controller.destroy();
+    resolveOlder(page(["message-older"]));
+    await pending;
+
+    expect(hydrated).toEqual([["message-newest"]]);
+  });
 });

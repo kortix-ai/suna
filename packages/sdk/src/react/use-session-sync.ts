@@ -101,7 +101,9 @@ export function useSessionSync(sessionId: string) {
 	useEffect(() => {
 		if (!canQueryOpenCodeSession(sessionId) || !runtimeHealthy) return;
 		const release = retainSessionSyncController(sessionId);
-		void controller.start();
+    // Cached messages render immediately. Revalidate one bounded tail so
+    // events produced while this route was inactive are not skipped.
+    void controller.reconcile("initial");
 		return () => {
 			release();
 			messageCache.delete(sessionId);
@@ -115,15 +117,14 @@ export function useSessionSync(sessionId: string) {
 		(state) => state.sessionStatus[sessionId] ?? IDLE_STATUS,
 	) as SessionStatus;
 	const diffs = useSyncStore((state) => state.diffs[sessionId]) as
-		| FileDiff[]
+    FileDiff[]
 		| undefined;
 	const todos = useSyncStore((state) => state.todos[sessionId]) as
-		| Todo[]
+    Todo[]
 		| undefined;
 	const isBusy = status.type === "busy" || status.type === "retry";
 	const isLoading = !useSyncStore(
-		(state) => sessionId in state.messages,
-	);
+		(state) => sessionId in state.messages);
 
 	useEffect(() => {
 		controller.setBusy(runtimeHealthy && isBusy);

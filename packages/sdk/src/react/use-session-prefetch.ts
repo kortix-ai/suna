@@ -1,29 +1,43 @@
 "use client";
 
 import { useCallback } from "react";
-import { reconcileSessionTail } from "../browser/session-sync/session-sync-registry";
+import {
+  getSessionSyncController,
+  prefetchSessionSyncWithClient,
+} from "../browser/session-sync/session-sync-registry";
 import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
-import { useSyncStore } from "../browser/stores/sync-store";
+import { getClientForUrl } from "../core/runtime/client";
 import { canQueryOpenCodeSession, type Session } from "./use-opencode-sessions";
 
-const prefetchedSessions = new Set<string>();
+const ACTIVE_RUNTIME = Symbol("active-runtime");
+const prefetchedRuntime = new Map<string, string | typeof ACTIVE_RUNTIME>();
 
-/** Load a bounded session tail when the user signals navigation intent. */
-export async function prefetchSession(sessionId: string): Promise<void> {
+/** Load a bounded session tail before navigation or through a known runtime URL. */
+export async function prefetchSession(sessionId: string,
+  runtimeUrl?: string,
+): Promise<void> {
 	if (!canQueryOpenCodeSession(sessionId)) return;
-	if (useSandboxConnectionStore.getState().healthy !== true) return;
-	if (prefetchedSessions.has(sessionId)) return;
-	const messages = useSyncStore.getState().messages[sessionId];
-	if (messages?.length) {
-		prefetchedSessions.add(sessionId);
-		return;
+	if (!runtimeUrl && useSandboxConnectionStore.getState().healthy !== true) return;
+  const source = runtimeUrl ?? ACTIVE_RUNTIME;
+  if (prefetchedRuntime.get(sessionId) === source) return;
+  let succeeded: boolean;
+	if (runtimeUrl) {
+    succeeded = await prefetchSessionSyncWithClient(
+      sessionId,
+      getClientForUrl(runtimeUrl),
+    );
+  } else {
+    const controller = getSessionSyncController(sessionId);
+    await controller.reconcile("manual");
+    succeeded = controller.getSnapshot().freshness === "fresh";
 	}
-	await reconcileSessionTail(sessionId, "manual");
-	prefetchedSessions.add(sessionId);
+  if (succeeded) prefetchedRuntime.set(sessionId, source);
 }
 
 export function resetPrefetchState(): void {
-	prefetchedSessions.clear();
+  for (const [sessionId, source] of prefetchedRuntime) {
+    if (source === ACTIVE_RUNTIME) prefetchedRuntime.delete(sessionId);
+  }
 }
 
 export function useBackgroundSessionPrefetch(_sessions: Session[] | undefined) {
