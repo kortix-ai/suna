@@ -92,8 +92,17 @@ export interface WarmRepoContext {
   cloneUrl: string;
   /** Auth headers for the API-side clone. Never embedded in any artifact. */
   cloneHeaders: Record<string, string>;
-  /** Branch to check out (default-branch tip). */
+  /** Branch the tip belongs to — the fallback fetch ref for git hosts that
+   *  reject fetch-by-sha, and validated as a defense-in-depth safe ref name. */
   branch: string;
+  /**
+   * The EXACT commit sha the checkout is pinned to. The warm image name is keyed
+   * on this sha (`perProjectWarmImageName(..., tip, ...)`), so the staged checkout
+   * MUST be this exact commit — cloning the branch tip (which can advance after
+   * the sha was resolved) would bake SHA_Y content under a SHA_X name, poisoning
+   * the content-addressed image. A full 40-char hex sha.
+   */
+  tip: string;
   /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
   originUrl: string;
 }
@@ -136,6 +145,17 @@ export function isSafeGitBranchName(branch: string): boolean {
   if (branch.startsWith('-') || branch.startsWith('/') || branch.endsWith('/')) return false;
   if (branch.includes('..') || branch.includes('//')) return false;
   return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch);
+}
+
+/**
+ * A full 40-char lowercase hex commit sha — the ONLY shape the warm-repo pin
+ * accepts. `resolveCommitSha` already guarantees this upstream; re-checking here
+ * is defense-in-depth so a malformed/attacker-influenced value can never reach a
+ * `git fetch <sha>` argument (which, while argv not shell, must still be a plain
+ * object name — never a ref-spec, option, or path).
+ */
+export function isSafeGitSha(sha: string): boolean {
+  return /^[0-9a-f]{40}$/.test(sha);
 }
 
 /**
@@ -192,10 +212,16 @@ export function warmCloneProtocolPinArgs(cloneUrl: string): string[] {
  * process argv or `.git/config`, and the resulting bytes are verified to
  * contain no auth material before they enter the (uploadable) build context.
  *
- *   1. clone the exact branch tip with the credential (env config, depth 1),
+ *   1. init an empty repo and fetch the EXACT pinned sha (`warmRepo.tip`) with the
+ *      credential (env config, depth 1) — NEVER a branch clone, whose tip could
+ *      have advanced past the sha the image name is keyed on (SHA_X name ⇒ SHA_Y
+ *      content is a poisoned/wasted warm image). Falls back to a shallow branch
+ *      fetch + `checkout <tip>` for hosts that reject fetch-by-sha, and FAILS the
+ *      bake if the sha is gone (force-pushed away) rather than ship other content,
  *   2. reset `origin` to the runtime proxy so the daemon re-auths per session,
  *   3. drop any credential helper / http.extraHeader that could have persisted,
- *   4. ASSERT `.git/config` carries no `authorization`/`http.extraheader`/
+ *   4. ASSERT the baked HEAD equals the pinned tip (belt-and-braces),
+ *   5. ASSERT `.git/config` carries no `authorization`/`http.extraheader`/
  *      embedded userinfo before returning.
  *
  * Returns the staged dir basename + the exact baked HEAD sha (for the caller's
@@ -211,11 +237,17 @@ export async function stageWarmRepoCheckout(
       `refusing to bake per-project warm image: unsafe default branch name ${JSON.stringify(warmRepo.branch)}`,
     );
   }
+  if (!isSafeGitSha(warmRepo.tip)) {
+    throw new Error(
+      `refusing to bake per-project warm image: pinned tip ${JSON.stringify(warmRepo.tip)} is not a full commit sha`,
+    );
+  }
   // Pin the clone transport BEFORE any git runs — reject remote-helper / userinfo
   // cloneUrls (build-time RCE / secret-leak surface) up front.
   assertSafeCloneUrl(warmRepo.cloneUrl);
   const dest = join(contextDir, WARM_REPO_STAGED_DIR);
   await rm(dest, { recursive: true, force: true });
+  await mkdir(dest, { recursive: true });
 
   // git config via ENV (GIT_CONFIG_COUNT/KEY_i/VALUE_i) — NOT argv, NOT
   // persisted. http.extraHeader is multi-valued, so repeated keys accumulate.
@@ -241,15 +273,45 @@ export async function stageWarmRepoCheckout(
   const g = (args: string[], env: NodeJS.ProcessEnv) =>
     execFileAsyncBC('git', args, { env, timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
 
-  await g(
-    [
-      ...warmCloneProtocolPinArgs(warmRepo.cloneUrl),
-      'clone', '--depth', '1', '--single-branch', '--branch', warmRepo.branch, warmRepo.cloneUrl, dest,
-    ],
-    cloneEnv,
-  );
+  // Init an empty repo, then fetch the EXACT pinned sha (credentialed, protocol-
+  // scoped). Cloning `--branch <branch>` would race a moved tip — the cloned HEAD
+  // could advance past the sha the image name is keyed on — so we NEVER clone the
+  // branch; we pin to the sha the cache key demands.
+  await g(['-C', dest, 'init', '-q'], plainEnv);
+  const protocolPin = warmCloneProtocolPinArgs(warmRepo.cloneUrl);
+  try {
+    // PRIMARY: fetch the exact commit. Works on git hosts that allow fetch-by-sha
+    // (GitHub with allowReachableSHA1InWant, the local file transport, …) and is
+    // immune to the branch advancing after the sha was resolved.
+    await g(
+      [...protocolPin, '-C', dest, 'fetch', '--depth', '1', warmRepo.cloneUrl, warmRepo.tip],
+      cloneEnv,
+    );
+    await g(['-C', dest, 'checkout', '-q', 'FETCH_HEAD'], plainEnv);
+  } catch {
+    // FALLBACK for a host that refuses fetch-by-sha (allowReachableSHA1InWant off):
+    // fetch the branch shallow, then check out the exact sha from it. If the sha is
+    // no longer present (force-pushed away), FAIL the bake — the SHA-keyed content
+    // no longer exists, and shipping other content under that name would poison the
+    // content-addressed image.
+    await g(
+      [...protocolPin, '-C', dest, 'fetch', '--depth', '1', warmRepo.cloneUrl, warmRepo.branch],
+      cloneEnv,
+    );
+    try {
+      await g(['-C', dest, 'checkout', '-q', warmRepo.tip], plainEnv);
+    } catch {
+      throw new Error(
+        `refusing to bake per-project warm image: pinned commit ${warmRepo.tip.slice(0, 12)} is not present ` +
+          `on branch ${JSON.stringify(warmRepo.branch)} (force-pushed away?) — the SHA-keyed content no longer exists`,
+      );
+    }
+  }
   // origin → runtime proxy (build credential is never persisted at runtime).
-  await g(['-C', dest, 'remote', 'set-url', 'origin', warmRepo.originUrl], plainEnv);
+  // `git init` created no `origin`, so add it (fall back to set-url if present).
+  await g(['-C', dest, 'remote', 'add', 'origin', warmRepo.originUrl], plainEnv).catch(() =>
+    g(['-C', dest, 'remote', 'set-url', 'origin', warmRepo.originUrl], plainEnv),
+  );
   // Belt + braces: drop anything credential-shaped that could have persisted.
   await g(['-C', dest, 'config', '--local', '--unset-all', 'http.extraHeader'], plainEnv).catch(() => {});
   await g(['-C', dest, 'config', '--local', '--unset-all', 'http.extraheader'], plainEnv).catch(() => {});
@@ -257,6 +319,16 @@ export async function stageWarmRepoCheckout(
 
   const { stdout: headOut } = await g(['-C', dest, 'rev-parse', 'HEAD'], plainEnv);
   const headSha = headOut.trim();
+
+  // Belt-and-braces: the pinned checkout HEAD MUST equal the requested tip. Once
+  // the checkout is pinned to the sha this can never fire — it is the last guard
+  // ensuring a SHA_X-named warm image can never carry non-SHA_X content.
+  if (headSha !== warmRepo.tip) {
+    throw new Error(
+      `warm-repo checkout HEAD ${headSha} does not match the pinned tip ${warmRepo.tip} — ` +
+        `refusing to bake mismatched content under a SHA-keyed image name`,
+    );
+  }
 
   await assertCheckoutHasNoCredentials(dest);
   return { stagedPath: WARM_REPO_STAGED_DIR, headSha };

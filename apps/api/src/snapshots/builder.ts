@@ -1314,7 +1314,10 @@ export async function ensurePerProjectWarmImage(
     );
   }
 
-  const warmRepo = await resolveWarmRepoContext(project);
+  // Pin the warm bake to the EXACT tip the cache key (`snapshotName`) is keyed on,
+  // so the staged checkout can never drift to a newer branch tip mid-bake and
+  // poison the content-addressed image (SHA_X name ⇒ SHA_X content).
+  const warmRepo = await resolveWarmRepoContext(project, tip);
   const buildTap: BuildLogTap | undefined = opts.heartbeat ? { heartbeat: opts.heartbeat } : undefined;
 
   // FAST PATH: FROM the already-built shared default image instead of
@@ -1426,7 +1429,7 @@ export async function resolveWarmBaseImageRef(
  * a short-lived git-host credential embedded ONLY in a one-shot RUN; origin is
  * reset to the Kortix proxy so the daemon re-auths per session at runtime.
  */
-async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRepoContext> {
+async function resolveWarmRepoContext(project: GitBackedProject, tip: string): Promise<WarmRepoContext> {
   const { projects } = await import('@kortix/db');
   const { resolveProjectUpstream } = await import('../projects/lib/git');
   const { proxyGitUrl } = await import('../projects/lib/sessions');
@@ -1441,6 +1444,9 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
     cloneUrl: upstream.url,
     cloneHeaders: upstream.headers ?? {},
     branch: project.defaultBranch,
+    // Pin to the EXACT tip the snapshot name is keyed on (not just the branch),
+    // so the staged checkout is byte-identical to the cache key.
+    tip,
     originUrl: proxyGitUrl(project.projectId),
   };
 }

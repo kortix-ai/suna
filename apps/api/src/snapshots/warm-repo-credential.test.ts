@@ -34,6 +34,7 @@ const {
   assertSafeCloneUrl,
   warmCloneProtocolPinArgs,
   isSafeGitBranchName,
+  isSafeGitSha,
   WARM_REPO_STAGED_DIR,
 } = await import('./build-context');
 
@@ -48,9 +49,10 @@ afterEach(async () => {
   for (const p of cleanup.splice(0)) await rm(p, { recursive: true, force: true }).catch(() => {});
 });
 
-/** A real local git repo with a `main` branch and one commit — cloned via file://
- *  so the test needs no network and exercises the actual git clone path. */
-async function makeSourceRepo(): Promise<string> {
+/** A real local git repo with a `main` branch and one commit — fetched via file://
+ *  so the test needs no network and exercises the actual git fetch/pin path.
+ *  Returns the dir + the resolved HEAD sha the warm bake pins to. */
+async function makeSourceRepo(): Promise<{ dir: string; sha: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'warm-src-'));
   cleanup.push(dir);
   const env = {
@@ -62,11 +64,21 @@ async function makeSourceRepo(): Promise<string> {
   await g(['init', '-b', 'main']);
   await g(['config', 'user.email', 't@t.test']);
   await g(['config', 'user.name', 'T']);
+  // Mirror a production git host (GitHub) that serves fetch-by-sha, so the
+  // primary pin path (`git fetch --depth 1 <url> <sha>`) resolves an exact commit
+  // — including an ancestor after the branch advances.
+  await g(['config', 'uploadpack.allowReachableSHA1InWant', 'true']);
+  await g(['config', 'uploadpack.allowAnySHA1InWant', 'true']);
   await writeFile(join(dir, 'README.md'), '# hello\n');
   await g(['add', '-A']);
   await g(['commit', '-m', 'init']);
-  return dir;
+  const { stdout } = await g(['rev-parse', 'HEAD']);
+  return { dir, sha: stdout.trim() };
 }
+
+/** A hex string that is a valid-shaped sha but not the tip — used by guard tests
+ *  that must reject BEFORE the fetch (branch/cloneUrl checks fire first). */
+const DUMMY_SHA = '0'.repeat(40);
 
 async function collectBytes(dir: string): Promise<string> {
   let out = '';
@@ -85,13 +97,15 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     cleanup.push(ctx);
 
     const { stagedPath, headSha } = await stageWarmRepoCheckout(ctx, {
-      cloneUrl: `file://${src}`,
+      cloneUrl: `file://${src.dir}`,
       cloneHeaders: { Authorization: `Bearer ${SENTINEL}` },
       branch: 'main',
+      tip: src.sha,
       originUrl: PROXY_ORIGIN,
     });
 
     expect(stagedPath).toBe(WARM_REPO_STAGED_DIR);
+    expect(headSha).toBe(src.sha);
     expect(headSha).toMatch(/^[0-9a-f]{40}$/);
 
     const dest = join(ctx, stagedPath);
@@ -125,9 +139,10 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
     cleanup.push(ctx);
     await stageWarmRepoCheckout(ctx, {
-      cloneUrl: `file://${src}`,
+      cloneUrl: `file://${src.dir}`,
       cloneHeaders: { Authorization: `Bearer ${SENTINEL}`, 'X-Extra': SENTINEL },
       branch: 'main',
+      tip: src.sha,
       originUrl: PROXY_ORIGIN,
     });
     const tarPath = join(ctx, '..', `warm-ctx-${crypto.randomUUID()}.tar`);
@@ -173,6 +188,7 @@ describe('PHASE 1: default branch name is validated (no shell injection)', () =>
         cloneUrl: 'file:///nonexistent',
         cloneHeaders: {},
         branch: 'main"; echo pwned',
+        tip: DUMMY_SHA,
         originUrl: PROXY_ORIGIN,
       }),
     ).rejects.toThrow(/unsafe default branch/);
@@ -279,8 +295,126 @@ describe('PHASE 1: warm cloneUrl transport is pinned (no remote-helper RCE / sec
         cloneUrl: 'ext::sh -c "id"',
         cloneHeaders: {},
         branch: 'main',
+        tip: DUMMY_SHA,
         originUrl: PROXY_ORIGIN,
       }),
     ).rejects.toThrow(/must use https/);
+  });
+});
+
+describe('FIX-G: the warm checkout is pinned to the EXACT cache-key sha', () => {
+  test('the staged checkout HEAD equals the requested tip', async () => {
+    const src = await makeSourceRepo();
+    const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
+    cleanup.push(ctx);
+    const { headSha } = await stageWarmRepoCheckout(ctx, {
+      cloneUrl: `file://${src.dir}`,
+      cloneHeaders: {},
+      branch: 'main',
+      tip: src.sha,
+      originUrl: PROXY_ORIGIN,
+    });
+    expect(headSha).toBe(src.sha);
+    const { stdout: head } = await exec('git', ['-C', join(ctx, WARM_REPO_STAGED_DIR), 'rev-parse', 'HEAD']);
+    expect(head.trim()).toBe(src.sha);
+  }, 30_000);
+
+  test('a branch that advanced AFTER tip-resolution still yields SHA-X content under the SHA-X key', async () => {
+    const src = await makeSourceRepo();
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t.test',
+      GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t.test',
+    };
+    const g = (args: string[]) => exec('git', args, { cwd: src.dir, env });
+    // src.sha is SHA-X (README == "# hello"). Now advance `main` to SHA-Y with
+    // DIFFERENT content — exactly the race the old branch-clone lost.
+    await writeFile(join(src.dir, 'README.md'), '# ADVANCED TIP CONTENT\n');
+    await g(['commit', '-am', 'advance the tip']);
+    const { stdout: newTip } = await g(['rev-parse', 'HEAD']);
+    expect(newTip.trim()).not.toBe(src.sha);
+
+    const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
+    cleanup.push(ctx);
+    // Bake pinned to SHA-X (the cache key) even though the branch tip is now SHA-Y.
+    const { headSha } = await stageWarmRepoCheckout(ctx, {
+      cloneUrl: `file://${src.dir}`,
+      cloneHeaders: {},
+      branch: 'main',
+      tip: src.sha,
+      originUrl: PROXY_ORIGIN,
+    });
+    expect(headSha).toBe(src.sha);
+    // The decisive assertion: the staged /workspace carries SHA-X content, NOT the
+    // advanced tip's content — the image named for SHA-X can never carry SHA-Y bytes.
+    const readme = await readFile(join(ctx, WARM_REPO_STAGED_DIR, 'README.md'), 'utf8');
+    expect(readme).toBe('# hello\n');
+    expect(readme).not.toContain('ADVANCED TIP CONTENT');
+  }, 30_000);
+
+  test('a tip that no longer exists FAILS the bake (never silently ships other content)', async () => {
+    const src = await makeSourceRepo();
+    const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
+    cleanup.push(ctx);
+    // A well-formed sha that was never in this repo (force-pushed away). Primary
+    // fetch-by-sha misses it; the branch fallback fetch cannot check it out → FAIL.
+    const goneSha = 'deadbeef'.repeat(5);
+    expect(isSafeGitSha(goneSha)).toBe(true);
+    await expect(
+      stageWarmRepoCheckout(ctx, {
+        cloneUrl: `file://${src.dir}`,
+        cloneHeaders: {},
+        branch: 'main',
+        tip: goneSha,
+        originUrl: PROXY_ORIGIN,
+      }),
+    ).rejects.toThrow(/not present on branch|does not match the pinned tip/);
+  }, 30_000);
+
+  test('the fallback path (host rejects fetch-by-sha) still yields the exact tip', async () => {
+    const src = await makeSourceRepo();
+    // Force the host to REJECT fetch-by-sha so the shallow-branch fallback runs.
+    const env = { ...process.env };
+    const cfg = (args: string[]) => exec('git', ['-C', src.dir, 'config', ...args], { env });
+    await cfg(['uploadpack.allowReachableSHA1InWant', 'false']);
+    await cfg(['uploadpack.allowAnySHA1InWant', 'false']);
+    await cfg(['uploadpack.allowTipSHA1InWant', 'false']);
+
+    const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
+    cleanup.push(ctx);
+    const { headSha } = await stageWarmRepoCheckout(ctx, {
+      cloneUrl: `file://${src.dir}`,
+      cloneHeaders: {},
+      branch: 'main',
+      tip: src.sha, // still the branch tip → present in the depth-1 branch fetch
+      originUrl: PROXY_ORIGIN,
+    });
+    expect(headSha).toBe(src.sha);
+  }, 30_000);
+
+  test('rejects a malformed (non-sha) tip before any git runs', async () => {
+    const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
+    cleanup.push(ctx);
+    await expect(
+      stageWarmRepoCheckout(ctx, {
+        cloneUrl: 'file:///nonexistent',
+        cloneHeaders: {},
+        branch: 'main',
+        tip: 'not-a-sha',
+        originUrl: PROXY_ORIGIN,
+      }),
+    ).rejects.toThrow(/not a full commit sha/);
+  });
+
+  test.each([
+    ['a full lowercase sha', '0123456789abcdef0123456789abcdef01234567', true],
+    ['the all-zero sha shape', '0'.repeat(40), true],
+    ['too short', 'abc123', false],
+    ['uppercase hex', 'A'.repeat(40), false],
+    ['a branch name', 'main', false],
+    ['sha with a space', '0'.repeat(39) + ' ', false],
+    ['empty', '', false],
+  ])('isSafeGitSha(%s)', (_label, value, expected) => {
+    expect(isSafeGitSha(value)).toBe(expected);
   });
 });
