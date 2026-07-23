@@ -38,6 +38,16 @@ export interface ApiResponse<T = any> {
   success: boolean;
 }
 
+/**
+ * Stable error code the platform API returns (HTTP 501) when an OPTIONAL
+ * capability isn't wired on the current deployment — e.g. connector
+ * auth-discovery, Pipedream. `makeRequest` classifies a 501 carrying this code
+ * as an EXPECTED "feature unavailable" state and drops it from Sentry; callers
+ * branch on `err.code === FEATURE_NOT_SUPPORTED_CODE`. Must stay in sync with
+ * `apps/api/src/executor/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
+ */
+export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -340,7 +350,26 @@ async function makeRequest<T = any>(
         });
       }
 
-      if (showErrors) {
+      // Expected "feature not enabled on this deployment" state — the backend
+      // returns a TYPED 501 with `code: 'feature_not_supported'` (see the
+      // executor router's `featureNotSupportedResponse`) when an OPTIONAL
+      // capability isn't wired on this deployment (e.g. connector
+      // auth-discovery, Pipedream). The dashboard already surfaces these as a
+      // graceful "unavailable" UI state (e.g. the connector-auth-discovery
+      // InfoBanner), so they must NEVER page Better Stack — a bare 501
+      // "not supported" previously leaked as an opaque `ApiError` in Sentry
+      // (pattern `1f3c4d96…`). Treat it as SILENT here: skip the global
+      // `onError` (Sentry) capture, but still return the `ApiError` so callers
+      // (React Query `onError` / the UI) can branch on `.code ===
+      // 'feature_not_supported'`. A genuine 501 server bug carries no such
+      // code and still reports normally. Mirrors the expected-state
+      // classification used for billing-gate 402s and the no-compaction-model
+      // sentinel (PR #5183): a typed code distinguishes "deployment doesn't
+      // offer this" from a real defect.
+      const isFeatureNotSupported =
+        response.status === 501 && errorData?.code === FEATURE_NOT_SUPPORTED_CODE;
+
+      if (showErrors && !isFeatureNotSupported) {
         platformConfig().onError?.(error, errorContext);
       }
 
