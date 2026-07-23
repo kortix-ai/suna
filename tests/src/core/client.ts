@@ -174,6 +174,23 @@ export class Res {
   }
 }
 
+/**
+ * Detect a gateway-generated outage response.
+ *
+ * API responses carry x-request-id. Cloudflare host failures do not. This
+ * distinction prevents retries from hiding a real API 5xx contract failure.
+ */
+export function isKe2eTransientGatewayResponse(response: Res): boolean {
+  if (![502, 503, 504].includes(response.statusCode)) return false;
+  if (response.header('x-request-id')) return false;
+  return (
+    response.header('retry-after') !== undefined ||
+    response.header('content-type')?.includes('text/html') === true
+  );
+}
+
+const TRANSIENT_GATEWAY_RETRY_DELAY_MS = 2_000;
+
 export class Client {
   private readonly origin: string;
 
@@ -181,17 +198,27 @@ export class Client {
     apiUrl: string,
     private readonly identity: Identity = ANON,
     private readonly defaultTimeoutMs = 60_000,
+    private readonly transientGatewayRetries = 0,
   ) {
     this.origin = new URL(apiUrl).origin;
   }
 
   /** Clone bound to a principal/identity. */
   as(identity: Identity): Client {
-    return new Client(this.origin, identity, this.defaultTimeoutMs);
+    return new Client(this.origin, identity, this.defaultTimeoutMs, this.transientGatewayRetries);
   }
 
   withBearer(token: string, label = 'raw'): Client {
     return this.as({ label, auth: { mode: 'bearer', token } });
+  }
+
+  /**
+   * Retry marked network errors and gateway-generated 502/503/504 responses.
+   *
+   * Callers must opt in only for requests that are safe to repeat.
+   */
+  withTransientGatewayRetries(retries = 3): Client {
+    return new Client(this.origin, this.identity, this.defaultTimeoutMs, retries);
   }
 
   get(t: string, o?: ReqOpts) {
@@ -261,64 +288,78 @@ export class Client {
 
     const routeTemplate = `${method} ${template}`;
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
-    const started = performance.now();
+    const maxAttempts = this.transientGatewayRetries + 1;
 
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method,
-        headers,
-        body: bodyInit,
-        signal: AbortSignal.timeout(timeoutMs),
-        redirect: 'manual',
-      });
-    } catch (err: any) {
-      // Surface as a captured "network" failure (retryable infra signal).
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const started = performance.now();
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method,
+          headers,
+          body: bodyInit,
+          signal: AbortSignal.timeout(timeoutMs),
+          redirect: 'manual',
+        });
+      } catch (err: any) {
+        // Surface as a captured network failure.
+        const ms = performance.now() - started;
+        const captured: Captured = {
+          routeTemplate,
+          req: { method, url: url.toString(), headers: redactHeaders(headersToObject(headers)) },
+          res: { status: 0, headers: {}, bodyText: String(err?.message ?? err) },
+          ms,
+        };
+        record(captured);
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, TRANSIENT_GATEWAY_RETRY_DELAY_MS));
+          continue;
+        }
+        const e = new Error(`network error ${method} ${url}: ${err?.message ?? err}`);
+        (e as any).ke2eRetryable = true;
+        throw e;
+      }
+
+      const bodyText = await res.text();
       const ms = performance.now() - started;
+      const resHeaders: Record<string, string> = {};
+      res.headers.forEach((v, k) => (resHeaders[k] = k.toLowerCase() === 'set-cookie' ? mask(v) : v));
+      let json: unknown;
+      const ct = res.headers.get('content-type') ?? '';
+      if (ct.includes('application/json')) {
+        try {
+          json = JSON.parse(bodyText);
+        } catch {
+          /* leave undefined */
+        }
+      }
+
       const captured: Captured = {
         routeTemplate,
-        req: { method, url: url.toString(), headers: redactHeaders(headersToObject(headers)) },
-        res: { status: 0, headers: {}, bodyText: String(err?.message ?? err) },
+        req: {
+          method,
+          url: url.toString(),
+          headers: redactHeaders(headersToObject(headers)),
+          body: redactBodyText(typeof bodyInit === 'string' ? bodyInit : undefined),
+        },
+        res: {
+          status: res.status,
+          headers: resHeaders,
+          bodyText: redactBodyText(bodyText) ?? '',
+          json,
+        },
         ms,
       };
       record(captured);
-      const e = new Error(`network error ${method} ${url}: ${err?.message ?? err}`);
-      (e as any).ke2eRetryable = true;
-      throw e;
-    }
-
-    const bodyText = await res.text();
-    const ms = performance.now() - started;
-    const resHeaders: Record<string, string> = {};
-    res.headers.forEach((v, k) => (resHeaders[k] = k.toLowerCase() === 'set-cookie' ? mask(v) : v));
-    let json: unknown;
-    const ct = res.headers.get('content-type') ?? '';
-    if (ct.includes('application/json')) {
-      try {
-        json = JSON.parse(bodyText);
-      } catch {
-        /* leave undefined */
+      const response = new Res(captured);
+      if (attempt < maxAttempts && isKe2eTransientGatewayResponse(response)) {
+        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_GATEWAY_RETRY_DELAY_MS));
+        continue;
       }
+      return response;
     }
 
-    const captured: Captured = {
-      routeTemplate,
-      req: {
-        method,
-        url: url.toString(),
-        headers: redactHeaders(headersToObject(headers)),
-        body: redactBodyText(typeof bodyInit === 'string' ? bodyInit : undefined),
-      },
-      res: {
-        status: res.status,
-        headers: resHeaders,
-        bodyText: redactBodyText(bodyText) ?? '',
-        json,
-      },
-      ms,
-    };
-    record(captured);
-    return new Res(captured);
+    throw new Error(`request attempt loop exhausted for ${method} ${url}`);
   }
 }
 

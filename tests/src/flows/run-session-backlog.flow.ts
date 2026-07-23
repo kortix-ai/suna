@@ -627,7 +627,7 @@ flow(
       r.status(200).body().has('$.status', 'stopped');
     });
     await ctx.step('stopping an already-stopped session → 409', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
+      const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
         '/v1/projects/:projectId/sessions/:sessionId/stop',
         {},
         {
