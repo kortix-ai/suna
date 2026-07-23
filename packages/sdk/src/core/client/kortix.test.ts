@@ -171,18 +171,18 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).channels covers slack, email and meet', async () => {
-  await kortix.project('PID123').channels.slack.installation();
-  expect(last().url).toContain('/projects/PID123/channels/slack/installation');
+test('project(id).connectors.channels dispatches lifecycle by platform', async () => {
+  await kortix.project('PID123').connectors.channels.installation('slack');
+  expect(last().url).toContain('/projects/PID123/connectors/channels/slack/installation');
 
-  await kortix.project('PID123').channels.email.mode();
-  expect(last().url).toContain('/projects/PID123/channels/email/mode');
+  await kortix.project('PID123').connectors.channels.mode('email');
+  expect(last().url).toContain('/projects/PID123/connectors/channels/email/mode');
 
-  await kortix.project('PID123').channels.meet.voices();
-  expect(last().url).toContain('/projects/PID123/channels/meet/voices');
+  await kortix.project('PID123').connectors.channels.action('meet', 'voices', undefined, 'get');
+  expect(last().url).toContain('/projects/PID123/connectors/channels/meet/actions/voices');
 
-  await kortix.project('PID123').channels.meet.setVoice('voice-1');
-  expect(last().url).toContain('/projects/PID123/channels/meet/voice');
+  await kortix.project('PID123').connectors.channels.action('meet', 'setVoice', { voice: 'voice-1' }, 'put');
+  expect(last().url).toContain('/projects/PID123/connectors/channels/meet/actions/setVoice');
   expect(last().method).toBe('PUT');
 });
 
@@ -517,23 +517,25 @@ test('project(id).gitToken mints a scoped push token', async () => {
   expect(last().method).toBe('POST');
 });
 
-test('project(id).channels.slack covers file download + upload proxies', async () => {
-  await kortix.project('PID123').channels.slack.getFile('https://files.slack.com/x');
-  expect(last().url).toContain('/projects/PID123/channels/slack/file?url=');
+test('project(id).connectors.channels.action drives slack file proxies + meet speak', async () => {
+  await kortix
+    .project('PID123')
+    .connectors.channels.action('slack', 'getFile', { url: 'https://files.slack.com/x' }, 'get');
+  expect(last().url).toContain('/projects/PID123/connectors/channels/slack/actions/getFile?');
   expect(last().method).toBe('GET');
 
-  await kortix.project('PID123').channels.slack.uploadFile({
+  await kortix.project('PID123').connectors.channels.action('slack', 'uploadFile', {
     channel: 'C1',
     filename: 'report.pdf',
-    contentBase64: 'YWJj',
+    content_base64: 'YWJj',
   });
-  expect(last().url).toContain('/projects/PID123/channels/slack/file/upload');
+  expect(last().url).toContain('/projects/PID123/connectors/channels/slack/actions/uploadFile');
   expect(last().method).toBe('POST');
-});
 
-test('project(id).channels.meet.speak posts bot id + text', async () => {
-  await kortix.project('PID123').channels.meet.speak('bot-1', 'hello there');
-  expect(last().url).toContain('/projects/PID123/channels/meet/speak');
+  await kortix
+    .project('PID123')
+    .connectors.channels.action('meet', 'speak', { bot_id: 'bot-1', text: 'hello there' });
+  expect(last().url).toContain('/projects/PID123/connectors/channels/meet/actions/speak');
   expect(last().method).toBe('POST');
 });
 

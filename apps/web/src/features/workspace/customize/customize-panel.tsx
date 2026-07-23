@@ -10,7 +10,6 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
-import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
@@ -29,7 +28,7 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
+import { AlarmClock, ArrowLeft, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowUpCircle,
@@ -69,7 +68,6 @@ const GROUPS: readonly RailGroup[] = [
     items: [
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Environment variables', icon: KeyRound },
-      { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],
   },
   {
@@ -477,8 +475,6 @@ function SectionContent({
       return <ConnectorsView projectId={projectId} />;
     case 'secrets':
       return <SecretsView projectId={projectId} />;
-    case 'channels':
-      return <ChannelsView projectId={projectId} />;
     case 'meet':
       return <MeetView projectId={projectId} />;
     case 'computers':

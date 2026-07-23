@@ -427,7 +427,7 @@ function useProjectSetupTiles(projectId: string): SetupTile[] {
       title: 'Slack',
       desc: 'Run this project right from chat.',
       count: null,
-      section: 'channels',
+      section: 'connectors',
     },
     {
       icon: UsersGroupSolid,

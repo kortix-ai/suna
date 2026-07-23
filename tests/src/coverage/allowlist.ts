@@ -4,22 +4,56 @@ export interface AllowEntry {
   reason: string;
 }
 
+/**
+ * DEPRECATED `/channels/*` aliases (apps/api/src/projects/routes/connectors-channels-compat.ts).
+ * Each delegates to the canonical `/connectors/channels/*` handler via the SAME
+ * lookup/auth/handler path — and those canonical routes ARE flow-covered
+ * (CHN-*/MEET-*). The aliases exist only so sandbox images with a baked
+ * `slack-cli`, and already-installed `kortix` CLIs, keep working until images and
+ * CLIs roll over; they are deleted after that. Flow-testing them would duplicate
+ * the canonical flows byte-for-byte rather than assert anything new.
+ */
+const DEPRECATED_CHANNEL_ALIAS_REASON =
+  "deprecated /channels/* alias — delegates to the flow-covered /connectors/channels/* handler; kept for baked sandbox images + installed kortix CLIs until rollover, then deleted";
+
+const DEPRECATED_CHANNEL_ALIASES: ReadonlyArray<readonly [string, string]> = [
+  ["GET", "/v1/projects/:*/channels/slack/installation"],
+  ["DELETE", "/v1/projects/:*/channels/slack/installation"],
+  ["GET", "/v1/projects/:*/channels/slack/mode"],
+  ["POST", "/v1/projects/:*/channels/slack/connect"],
+  ["GET", "/v1/projects/:*/channels/slack/file"],
+  ["POST", "/v1/projects/:*/channels/slack/file/upload"],
+  ["POST", "/v1/projects/:*/channels/slack/bind-thread"],
+  ["GET", "/v1/projects/:*/channels/teams/installation"],
+  ["DELETE", "/v1/projects/:*/channels/teams/installation"],
+  ["GET", "/v1/projects/:*/channels/teams/mode"],
+  ["GET", "/v1/projects/:*/channels/teams/manifest"],
+  ["POST", "/v1/projects/:*/channels/teams/connect"],
+  ["GET", "/v1/projects/:*/channels/teams/file"],
+  ["POST", "/v1/projects/:*/channels/teams/file/upload"],
+  ["GET", "/v1/projects/:*/channels/email/installation"],
+  ["DELETE", "/v1/projects/:*/channels/email/installation"],
+  ["PATCH", "/v1/projects/:*/channels/email/installation"],
+  ["GET", "/v1/projects/:*/channels/email/mode"],
+  ["POST", "/v1/projects/:*/channels/email/connect"],
+  ["GET", "/v1/projects/:*/channels/meet/voices"],
+  ["PUT", "/v1/projects/:*/channels/meet/name"],
+  ["PUT", "/v1/projects/:*/channels/meet/voice"],
+  ["POST", "/v1/projects/:*/channels/meet/voices/:*/preview"],
+  ["POST", "/v1/projects/:*/channels/meet/speak"],
+];
+
 export const uncoveredAllow: AllowEntry[] = [
+  ...DEPRECATED_CHANNEL_ALIASES.map(([method, path]) => ({
+    method,
+    path,
+    reason: DEPRECATED_CHANNEL_ALIAS_REASON,
+  })),
   {
     method: "PUT",
     path: "/v1/executor/projects/:*/connectors/:*/sensitive",
     reason:
       "executor-scoped runtime endpoint — called by the in-sandbox executor with its own token, not by end-user clients; the user-facing equivalent is flow-covered",
-  },
-  {
-    method: "DELETE",
-    path: "/v1/projects/:*/channels/teams/installation",
-    reason: "teams disconnect — manage-ACL teardown symmetric with the flow-covered connect",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/channels/teams/manifest",
-    reason: "teams sideload manifest — read-only generated artifact",
   },
   {
     method: "GET",
@@ -30,16 +64,6 @@ export const uncoveredAllow: AllowEntry[] = [
     method: "POST",
     path: "/v1/channels/teams/identity/bind",
     reason: "authed identity bind, hit from the web teams-login page — mirrors the slack identity bind",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/channels/teams/file",
-    reason: "server-side file download proxy, exercised via the in-sandbox teams CLI, not end-user clients",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/channels/teams/file/upload",
-    reason: "server-side consent-card upload, exercised via the in-sandbox teams CLI, not end-user clients",
   },
   {
     method: "POST",

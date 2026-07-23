@@ -66,8 +66,9 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  *           A user with `read` but not `write` sees the section read-only.
  *
  * Notes:
- * - `channels` maps to connector.* (NOT the unseeded channel.* namespace) — the
- *   actual Slack connect/disconnect routes assert project.connector.write.
+ * - `connectors` maps to connector.* (NOT the unseeded channel.* namespace) —
+ *   the actual Slack/Teams/Email connect/disconnect routes (channels folded
+ *   into Connectors) assert project.connector.write.
  * - `git` surfaces repository metadata and clone instructions; pushes remain
  *   separately gated by project.gitops.push.
  * - sandbox/settings/marketplace/computers have no dedicated read leaf, so
@@ -92,10 +93,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   secrets: {
     read: PROJECT_ACTIONS.PROJECT_SECRET_READ,
     write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
-  },
-  channels: {
-    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
-    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
   },
   // `schedules` and `webhooks` are two views over the SAME backend resource
   // (project triggers, filtered client-side by `type`) — there is no
@@ -136,7 +133,8 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   computers: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
   // Meetings (notetaker bot) — connector-backed (materializes kortix_meet), so
-  // it follows the connector leaves like channels does.
+  // it follows the connector leaves like the other channel profiles under
+  // Connectors do.
   meet: {
     read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
     write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,

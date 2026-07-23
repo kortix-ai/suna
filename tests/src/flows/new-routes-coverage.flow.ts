@@ -168,8 +168,8 @@ flow(
   {
     domain: 'coverage',
     routes: [
-      'GET /v1/projects/:projectId/channels/slack/file',
-      'POST /v1/projects/:projectId/channels/slack/file/upload',
+      'GET /v1/projects/:projectId/connectors/channels/:platform/actions/:action',
+      'POST /v1/projects/:projectId/connectors/channels/:platform/actions/:action',
       'PATCH /v1/projects/:projectId/triggers/activation',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
@@ -180,13 +180,15 @@ flow(
     const params = { projectId: p.id };
 
     await ctx.step('Slack file proxy validates missing or unconfigured file inputs', async () => {
-      const download = await owner.get('/v1/projects/:projectId/channels/slack/file', { params });
+      const download = await owner.get('/v1/projects/:projectId/connectors/channels/:platform/actions/:action', {
+        params: { ...params, platform: 'slack', action: 'getFile' },
+      });
       download.status([400, 404]);
 
       const upload = await owner.post(
-        '/v1/projects/:projectId/channels/slack/file/upload',
+        '/v1/projects/:projectId/connectors/channels/:platform/actions/:action',
         {},
-        { params },
+        { params: { ...params, platform: 'slack', action: 'uploadFile' } },
       );
       upload.status([400, 404]);
     });
@@ -275,6 +277,7 @@ flow(
       'POST /v1/projects/:projectId/marketplace/install-session',
       'GET /v1/projects/:projectId/llm-catalog',
       'PATCH /v1/projects/:projectId/channels/email/installation',
+      'PUT /v1/projects/:projectId/connectors/channels/:platform/actions/:action',
       'POST /v1/channels/slack/identity/bind',
       'POST /internal/gateway/authorize',
     ],
@@ -297,7 +300,9 @@ flow(
     await ctx.step('unauthenticated email and Slack identity mutations are gated', async () => {
       const email = await ctx.client
         .as(ctx.P.ANON)
-        .patch('/v1/projects/:projectId/channels/email/installation', {}, { params });
+        .put('/v1/projects/:projectId/connectors/channels/:platform/actions/:action', {}, {
+          params: { ...params, platform: 'email', action: 'updatePolicy' },
+        });
       email.status(401);
 
       const slack = await ctx.client.as(ctx.P.ANON).post('/v1/channels/slack/identity/bind', {});

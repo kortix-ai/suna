@@ -43,7 +43,6 @@ import {
   GitCompareArrows,
   GitPullRequest,
   Globe,
-  Hash,
   Keyboard,
   // Settings pages
   KeyRound,
@@ -443,7 +442,8 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
-    keywords: 'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
+    keywords:
+      'connectors integrations pipedream mcp openapi postman collections apps executor channels slack teams email agentmail agentic mail inbox messaging notifications project customize',
   },
   {
     id: 'proj-connectors-policies',
@@ -561,18 +561,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/webhooks',
     requiresProject: true,
     keywords: 'webhooks triggers http project customize',
-  },
-  {
-    id: 'proj-channels',
-    label: 'Customize · Channels',
-    icon: Hash,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/customize/channels',
-    requiresProject: true,
-    keywords:
-      'channels slack email agent mail agentmail agentic mail inbox messaging notifications integrations project customize',
   },
   {
     id: 'proj-settings',

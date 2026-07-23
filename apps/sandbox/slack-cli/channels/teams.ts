@@ -33,7 +33,7 @@ async function downloadFile(url: string, outPath: string) {
     );
   }
   const proxyUrl = new URL(
-    `/v1/projects/${projectId}/channels/teams/file?url=${encodeURIComponent(url)}`,
+    `/v1/projects/${projectId}/connectors/channels/teams/actions/getFile?url=${encodeURIComponent(url)}`,
     apiUrl,
   ).href;
   const res = await fetch(proxyUrl, {
@@ -72,7 +72,7 @@ async function sendFile(filePath: string, description?: string) {
   const data = readFileSync(filePath);
   const filename = filePath.split('/').pop() || 'file';
   const r = await kortixPost<{ ok?: boolean; uploadId?: string }>(
-    `/projects/${projectId}/channels/teams/file/upload`,
+    `/projects/${projectId}/connectors/channels/teams/actions/uploadFile`,
     {
       service_url: serviceUrl,
       conversation_id: conversationId,
