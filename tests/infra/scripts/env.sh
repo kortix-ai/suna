@@ -12,7 +12,7 @@ export CHARTS_DIR="${K8S_DIR}/charts"
 export TESTS_INFRA_DIR="${REPO_ROOT}/tests/infra"
 export RESULTS_DIR="${RESULTS_DIR:-${REPO_ROOT}/tests/test-results/infra}"
 
-export TFLINT_IMAGE="ghcr.io/terraform-linters/tflint:v0.55.1"
+export TFLINT_IMAGE="ghcr.io/terraform-linters/tflint:v0.64.0"
 export CHECKOV_IMAGE="bridgecrew/checkov:3.2.334"
 export KUBECONFORM_IMAGE="ghcr.io/yannh/kubeconform:v0.6.7"
 export HELM_IMAGE="alpine/helm:3.16.3"
