@@ -103,8 +103,17 @@ resource "aws_sns_topic" "cloudtrail" {
 
 data "aws_iam_policy_document" "cloudtrail_sns" {
   statement {
-    sid       = "AccountAdministration"
-    actions   = ["SNS:*"]
+    sid = "AccountAdministration"
+    actions = [
+      "SNS:AddPermission",
+      "SNS:DeleteTopic",
+      "SNS:GetTopicAttributes",
+      "SNS:ListSubscriptionsByTopic",
+      "SNS:Publish",
+      "SNS:RemovePermission",
+      "SNS:SetTopicAttributes",
+      "SNS:Subscribe",
+    ]
     resources = [aws_sns_topic.cloudtrail.arn]
     principals {
       type        = "AWS"
