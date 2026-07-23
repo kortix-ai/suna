@@ -127,6 +127,7 @@ function resetState() {
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    secretsAllowlist: null,
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -589,6 +590,7 @@ mock.module('../shared/db', () => ({
             visibility: values.visibility ?? 'private',
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
+            secretsAllowlist: values.secretsAllowlist ?? null,
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -1141,6 +1143,96 @@ describe('project session API contract', () => {
     });
     expect(executorRes.status).toBe(403);
     expect(await executorRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+  });
+
+  test('secrets allowlist is backend-only, existence-checked, and persisted', async () => {
+    const app = createApp();
+
+    // Seed a runtime secret so the allowlist has a valid identifier to name.
+    const seed = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'GMAIL_TOKEN', value: 'g' }),
+    });
+    expect(seed.status).toBe(200);
+
+    // A non-backend (human/supabase) caller may NOT narrow secrets.
+    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    // A backend (PAT) caller naming an unknown identifier fails fast at create.
+    const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['DOES_NOT_EXIST'] }),
+    });
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_NOT_FOUND' });
+
+    // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
+    const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+    });
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
+
+    // An empty allowlist (inject ZERO project secrets) is a valid backend request.
+    const zero = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: [] }),
+    });
+    expect(zero.status).toBe(201);
+    expect((await zero.json()).secrets_allowlist).toEqual([]);
+  });
+
+  test('rejects an allowlist whose identifiers collide on one env key (409, not a bricked session)', async () => {
+    const mk = (identifier: string, value: string) => ({
+      secretId: crypto.randomUUID(),
+      projectId: PROJECT_ID,
+      identifier,
+      name: 'GOOGLE_MAPS_API_KEY',
+      valueEnc: encryptProjectSecret(PROJECT_ID, value),
+      scope: 'runtime' as const,
+      ownerUserId: null,
+      active: true,
+      createdBy: USER_ID,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    });
+    secretRows = [mk('GMAPS_PRIMARY', 'a'), mk('GMAPS_BACKUP', 'b')];
+    const app = createApp();
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAPS_PRIMARY', 'GMAPS_BACKUP'],
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {

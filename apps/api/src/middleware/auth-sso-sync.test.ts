@@ -4,6 +4,7 @@ let verifyResult: unknown;
 let networkUser: unknown;
 
 mock.module('../shared/jwt-verify', () => ({
+  decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => verifyResult,
 }));
 

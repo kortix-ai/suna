@@ -27,7 +27,7 @@ interface CrController {
 }
 
 function useOpenCrController(): CrController {
-  const { data } = useChangeRequests('open', { refetchInterval: 20_000 });
+  const { data } = useChangeRequests('open', { refetchInterval: 60_000 });
   const crs = useMemo(() => data?.change_requests ?? [], [data?.change_requests]);
   const count = crs.length;
 

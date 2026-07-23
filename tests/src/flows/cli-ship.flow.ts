@@ -73,7 +73,7 @@ flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
   ctx.track('cli-sandbox', sb.cwd);
   try {
     await initProject(sb);
-    const login = await sb.login(pat);
+    const login = await sb.login(pat, { noProject: true });
     check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
     await ctx.step(
@@ -171,7 +171,7 @@ flow(
   'SHIP-1',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -186,7 +186,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -242,7 +242,7 @@ flow(
       // Pre-set a non-GitHub origin so ship takes the BYO POST /projects path.
       const byoUrl = 'https://git.example.test/ke2e/byo.git';
       Bun.spawnSync(['git', '-C', sb.cwd, 'remote', 'add', 'origin', byoUrl]);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -298,7 +298,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -339,7 +339,7 @@ flow(
   'SHIP-4',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -364,7 +364,7 @@ flow(
         'origin',
         'https://git.example.test/ke2e/ignored.git',
       ]);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -411,7 +411,7 @@ flow('SHIP-5', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
   ctx.track('cli-sandbox', sb.cwd);
   try {
     await initProject(sb);
-    const login = await sb.login(pat);
+    const login = await sb.login(pat, { noProject: true });
     check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
     await ctx.step(
@@ -448,7 +448,7 @@ flow(
   'SHIP-6',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -464,7 +464,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       // First ship (managed) to establish the link.
@@ -510,7 +510,7 @@ flow(
   'SHIP-9',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -526,7 +526,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       // Establish the link via a first managed ship (clean push of the scaffold).
@@ -585,6 +585,7 @@ flow(
     domain: 'cli',
     requires: ['funded'],
     serial: true,
+    timeoutMs: 600_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -617,17 +618,15 @@ flow(
 
     const started = await waitFor(
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions/:sessionId/start',
-            {},
-            {
-              params: { projectId: project.id, sessionId: session.id },
-              query: { wait_ms: '8000' },
-              timeoutMs: 25_000,
-            },
-          );
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          {
+            params: { projectId: project.id, sessionId: session.id },
+            query: { wait_ms: '8000' },
+            timeoutMs: 25_000,
+          },
+        );
         r.status(200);
         return r.json<any>();
       },

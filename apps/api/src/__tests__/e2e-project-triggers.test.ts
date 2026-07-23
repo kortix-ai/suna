@@ -37,6 +37,7 @@ let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let manifestReadCalls = 0;
 
 function setTestAuth(userId = USER_ID, userEmail = 'triggers@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -74,6 +75,7 @@ function resetState() {
   activeSessionCount = 0;
   provisioningSessionCount = 0;
   secretRows = [];
+  manifestReadCalls = 0;
   secretValues.clear();
 }
 
@@ -116,6 +118,7 @@ mock.module('../projects/git', () => ({
     return content;
   },
   readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
+    manifestReadCalls += 1;
     for (const path of candidatePaths) {
       const content = repoFiles.get(path);
       if (content !== undefined) return { path, content };
@@ -371,6 +374,7 @@ const triggerDbMock: any = {
               visibility: values.visibility ?? 'private',
               origin: values.origin ?? 'user',
               originRef: values.originRef ?? null,
+              secretsAllowlist: values.secretsAllowlist ?? null,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
@@ -1014,6 +1018,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(missing.status).toBe(401);
+    expect(manifestReadCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
 
     const wrong = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
@@ -1025,6 +1030,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(wrong.status).toBe(401);
+    expect(manifestReadCalls).toBe(1);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {
