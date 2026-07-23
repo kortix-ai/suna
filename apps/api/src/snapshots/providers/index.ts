@@ -85,15 +85,28 @@ export interface BuildLogTap {
   heartbeat?: () => void | Promise<void>;
 }
 
+/**
+ * The exact provider-side identity a build produced. Threaded from the build
+ * call straight to the transition / per-project-warm path so the runner can pin
+ * the id the build PROVED (Platinum's `requireExternalTemplateId` — the id
+ * already in hand at registration) instead of re-deriving it via a fragile,
+ * truncation-prone name-list lookup. `externalTemplateId` is absent on providers
+ * with no external-id concept (Daytona / e2b / local-docker return void).
+ */
+export interface BuildSnapshotResult {
+  externalTemplateId?: string;
+}
+
 export interface SandboxProviderAdapter {
   readonly id: string;
 
   /**
    * Build the snapshot. The caller has already composed the layered Dockerfile
    * (user Dockerfile + Kortix runtime). Returns when the snapshot is `active`,
-   * throws on terminal failure.
+   * throws on terminal failure. May return the exact external template id the
+   * build produced (Platinum); providers with no external-id concept return void.
    */
-  buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<void>;
+  buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<BuildSnapshotResult | void>;
 
   /** Query the live provider state. Returns 'missing' if not found. */
   getSnapshotState(snapshotName: string): Promise<ProviderState>;
@@ -142,7 +155,7 @@ export interface SandboxProviderAdapter {
    * Implemented by providers that control the host filesystem (Platinum). Absent
    * on providers without a rootfs handle (Daytona) — callers fall back to build.
    */
-  swapAgent?(newSnapshotName: string, sourceSnapshotName: string): Promise<void>;
+  swapAgent?(newSnapshotName: string, sourceSnapshotName: string): Promise<BuildSnapshotResult | void>;
 
   /** True iff the platform is wired up for this provider in the current env. */
   isConfigured(): boolean;

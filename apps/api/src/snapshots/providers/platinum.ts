@@ -27,6 +27,7 @@ import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
+  BuildSnapshotResult,
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
@@ -350,7 +351,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     return isPlatinumConfigured();
   }
 
-  async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<void> {
+  async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
     if (!input.image && !input.userDockerfile) {
       throw new Error('PlatinumAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
@@ -359,9 +360,12 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
       observeTemplates.invalidate();
       try {
-        await this.buildOnce(input, userDockerfile, tap);
+        // Return the EXACT external template id the build proved
+        // (requireExternalTemplateId inside buildOnce) — threaded to the caller
+        // so the transition runner pins THAT id, never a name-list re-derivation.
+        const result = await this.buildOnce(input, userDockerfile, tap);
         observeTemplates.invalidate();
-        return;
+        return result;
       } catch (err) {
         observeTemplates.invalidate();
         lastErr = err;
@@ -379,7 +383,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   /** One build attempt: stage a FRESH context, ship it, register, wait active.
    *  Re-staged per attempt by buildSnapshot so a context disturbed between
    *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
-  private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<void> {
+  private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
     const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
@@ -431,6 +435,9 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // poll THAT id (never the truncated name list) — see waitForActive.
       const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
       await waitForActive(input.snapshotName, tap, externalId);
+      // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
+      // runner) — no name-list re-derivation downstream.
+      return { externalTemplateId: externalId };
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       await rm(tarPath, { force: true }).catch(() => {});
@@ -445,7 +452,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    * uses this ONLY when the user image is unchanged AND the predecessor is active
    * on Platinum — otherwise it falls back to a normal buildSnapshot.
    */
-  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<void> {
+  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<BuildSnapshotResult> {
     observeTemplates.invalidate();
     const { gzPath, cleanup } = await stageAgentBinaryGz();
     try {
@@ -473,6 +480,8 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // the name list.
       const externalId = requireExternalTemplateId(patched?.id, `from-patch for ${newSnapshotName}`);
       await waitForActive(newSnapshotName, undefined, externalId);
+      // FIX-B: return the exact patched-template id (same contract as buildSnapshot).
+      return { externalTemplateId: externalId };
     } finally {
       observeTemplates.invalidate();
       await cleanup();

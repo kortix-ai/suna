@@ -111,7 +111,7 @@ export interface TransitionDeps {
   ensureWarmImage: (
     project: GitBackedProject,
     opts: { provider: string; accountId?: string; heartbeat?: () => Promise<void> },
-  ) => Promise<{ snapshotName: string; built: boolean }>;
+  ) => Promise<{ snapshotName: string; built: boolean; externalTemplateId?: string | null }>;
   /** Resolve the CURRENT prep identity (tip + base runtime + ppwarm name). */
   resolvePrepIdentity: (project: GitBackedProject, targetProvider: string) => Promise<ResolvedPrepIdentity>;
   /** Load a project as GitBackedProject + accountId (null ⇒ gone). */
@@ -382,6 +382,11 @@ export async function driveProviderTransition(
 
     const provider = deps.getProvider(leased.targetProvider);
     const snapshotName = current.snapshotName;
+    // FIX-B: the EXACT external template id a FRESH build proved, threaded from
+    // the provider build (Platinum's requireExternalTemplateId) through
+    // ensureWarmImage. Stays null on the existing-image-reuse path (no build ran)
+    // so the name-list fallback below still covers reuse.
+    let builtExternalTemplateId: string | null = null;
 
     // ── Build / adopt phase ──────────────────────────────────────────────────
     let readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
@@ -425,11 +430,13 @@ export async function driveProviderTransition(
       });
       const buildStart = deps.now().getTime();
       try {
-        await deps.ensureWarmImage(project, {
+        const buildResult = await deps.ensureWarmImage(project, {
           provider: leased.targetProvider,
           accountId: leased.accountId,
           heartbeat: heartbeatCb,
         });
+        // FIX-B: keep the id the build PROVED (never re-derive it by name below).
+        builtExternalTemplateId = buildResult.externalTemplateId ?? null;
       } catch (err) {
         // A heartbeat inside the build wait detected a lost lease → cease silently.
         if (err instanceof LeaseLostError) throw err;
@@ -479,9 +486,15 @@ export async function driveProviderTransition(
     }
 
     // Record the exact external template id + mark ready.
-    const externalTemplateId = provider.getSnapshotExternalId
-      ? await provider.getSnapshotExternalId(snapshotName).catch(() => null)
-      : null;
+    // FIX-B: consume the id the FRESH build proved (threaded from the provider
+    // build). Fall back to the name-list lookup ONLY when no build ran (the
+    // existing-image-reuse path) or a build surfaced no id — never silently drop
+    // the build-returned id (that dropping WAS the bug: the drive re-derived the
+    // id by NAME via findTemplateByName, which hits the truncated list).
+    const externalTemplateId = builtExternalTemplateId
+      ?? (provider.getSnapshotExternalId
+        ? await provider.getSnapshotExternalId(snapshotName).catch(() => null)
+        : null);
     await mustOwn(updateTransition(deps.db, transitionId, {
       status: 'ready',
       readyAt: leased.readyAt ?? deps.now(),

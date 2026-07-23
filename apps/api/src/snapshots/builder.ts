@@ -17,7 +17,7 @@ import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider, type BuildLogTap, type ProviderState, type SandboxProviderAdapter } from './providers';
+import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
 import { PPWARM_REAP_PROTECT_MS, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
@@ -1250,6 +1250,13 @@ export interface PerProjectWarmResult {
   tip: string;
   built: boolean;
   provider: string;
+  /**
+   * FIX-B: the EXACT external template id the provider build produced (Platinum),
+   * threaded straight from `buildSnapshot` so the transition runner pins the id
+   * the build PROVED instead of a name-list re-derivation. Absent when no fresh
+   * build ran (idempotent reuse) or for providers with no external-id concept.
+   */
+  externalTemplateId?: string;
 }
 
 /**
@@ -1364,9 +1371,10 @@ export async function ensurePerProjectWarmImage(
       isShared: false,
       warmRepo,
     };
+    let buildResult: BuildSnapshotResult | void;
     if (baseImageRef) {
       try {
-        await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef }, buildTap);
+        buildResult = await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef }, buildTap);
       } catch (fastPathErr) {
         // Never let a fast-path failure (a stale/unpullable base ref, a
         // provider-side hiccup building FROM it, …) take down session boot —
@@ -1377,14 +1385,15 @@ export async function ensurePerProjectWarmImage(
           `[snapshots] per-project warm: FROM-base fast path failed for ${snapshotName} ` +
           `(base=${baseImageRef}) — falling back to full rebuild: ${msg.slice(0, 200)}`,
         );
-        await provider.buildSnapshot(fullRebuildInput, buildTap);
+        buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
       }
     } else {
-      await provider.buildSnapshot(fullRebuildInput, buildTap);
+      buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
     }
     if (buildId) await closeBuildLogReady(buildId);
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
-    return { snapshotName, tip, built: true, provider: buildProvider };
+    // FIX-B: carry the build-proven external template id up to the transition runner.
+    return { snapshotName, tip, built: true, provider: buildProvider, externalTemplateId: buildResult?.externalTemplateId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (buildId) await closeBuildLogFailed(buildId, message);

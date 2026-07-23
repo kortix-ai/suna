@@ -59,6 +59,11 @@ interface FakeWorld {
   byIdState: Map<string, string> | null;
   /** External ids the by-id verifier was actually asked about (proves wiring). */
   byIdCalls: string[];
+  /** FIX-B: when set, the fake build RETURNS this exact external template id (the
+   *  id a real provider build proves via requireExternalTemplateId) — distinct
+   *  from the name-list `externalIds` lookup, so a test can prove the runner
+   *  consumes the build-returned id and never silently re-derives it by name. */
+  buildReturnsExternalId: string | null;
 }
 
 function makeWorld(identity: ResolvedPrepIdentity): FakeWorld {
@@ -74,6 +79,7 @@ function makeWorld(identity: ResolvedPrepIdentity): FakeWorld {
     stateThrows: null,
     byIdState: null,
     byIdCalls: [],
+    buildReturnsExternalId: null,
   };
 }
 
@@ -111,14 +117,20 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
       const name = world.currentIdentity.snapshotName;
       if (world.ensureBehavior === 'activate') {
         world.state.set(name, 'active');
-        world.externalIds.set(name, `tpl_${name.slice(-8)}`);
+        // The name-list lookup id (getSnapshotExternalId). Seeded only when a test
+        // hasn't already put a DIFFERENT (stale) id there — so a FIX-B test can
+        // prove the runner consumes the BUILD-returned id, not this name-lookup one.
+        if (!world.externalIds.has(name)) world.externalIds.set(name, `tpl_${name.slice(-8)}`);
       }
       // Models Platinum's async build: from-build registers a build and returns,
       // but the provider still reports `building` well past this drive.
       if (world.ensureBehavior === 'leave_provider_building') {
         world.state.set(name, 'building');
       }
-      return { snapshotName: name, built: true, provider: opts.provider } as never;
+      // FIX-B: the build result carries the EXACT external template id the provider
+      // build proved (requireExternalTemplateId), threaded straight to the runner.
+      const externalTemplateId = world.buildReturnsExternalId ?? world.externalIds.get(name) ?? null;
+      return { snapshotName: name, built: true, provider: opts.provider, externalTemplateId } as never;
     },
     resolvePrepIdentity: async () => {
       const scripted = world.identityByCall[world.callIndex];
@@ -647,6 +659,34 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(row?.attempts).toBe(1); // an absent image consumes an attempt (unlike building)
     expect(row?.errorClass).toBe('transient');
     expect(world.buildCount).toBe(1);
+  });
+
+  // ── FIX-B: the runner consumes the BUILD-returned id (never a name re-derivation) ──
+
+  test('FIX-B: the runner pins the id the BUILD returned, never the name-list lookup id', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    // A fresh build runs (image absent pre-build). The build PROVES this exact id
+    // (Platinum requireExternalTemplateId), threaded straight from buildSnapshot.
+    world.buildReturnsExternalId = 'tpl_from_build';
+    // The truncated name-list lookup (getSnapshotExternalId) would return a
+    // DIFFERENT, stale id. If the runner re-derived by NAME (the bug), it would
+    // pin the wrong id AND the by-id verify would miss → rebuild, not activate.
+    world.externalIds.set(id.snapshotName, 'tpl_stale_namelookup');
+    // Only the build-proven id resolves via the by-id verifier.
+    world.byIdState = new Map([['tpl_from_build', 'active']]);
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(world.buildCount).toBe(1); // a fresh build ran — its id is the one in hand
+    expect(outcome).toBe('activated'); // used the build id → by-id verify passed
+    expect(world.byIdCalls).toContain('tpl_from_build'); // verified BY the build id
+    expect(world.byIdCalls).not.toContain('tpl_stale_namelookup'); // never the name-lookup id
+    const routing = await readActiveRouting(db, projectId);
+    expect(routing?.activeProvider).toBe('platinum');
+    expect(routing?.activeExternalTemplateId).toBe('tpl_from_build'); // pinned the build-proven id
   });
 
   // ── FIX 3: activation verifies + pins the EXACT external template id ─────────

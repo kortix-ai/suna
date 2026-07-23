@@ -81,7 +81,8 @@ export function defaultTransitionDeps(database: Database = appDb): TransitionDep
         // build never lets the 10-min TTL lapse into a double-drive.
         heartbeat: opts.heartbeat,
       });
-      return { snapshotName: r.snapshotName, built: r.built };
+      // FIX-B: surface the build-proven external template id so the runner pins it.
+      return { snapshotName: r.snapshotName, built: r.built, externalTemplateId: r.externalTemplateId ?? null };
     },
     resolvePrepIdentity,
     loadProject: async (projectId) => {
