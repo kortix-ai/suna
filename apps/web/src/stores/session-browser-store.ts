@@ -2,6 +2,7 @@
 
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -160,11 +161,25 @@ export function getActivePanelSessionId(): string | null {
 }
 
 /**
- * Reveal a file in the active session's side-panel Files (explorer) tab and
- * make sure the panel is open — the file-path equivalent of clicking a
- * localhost link (which opens the Browser tab via LocalhostLinkInterceptor).
+ * Reveal a file in the active session's side panel and make sure the panel
+ * is open — the file-path equivalent of clicking a localhost link (which
+ * opens the Browser tab via LocalhostLinkInterceptor).
+ *
+ * Branches on panel mode the same way `openSessionQuickView` does, for the
+ * same reason: Advanced has no `fileOpenBySession` consumer of its own, so
+ * it needs `requestFileOpen` to flip `viewBySession` to `'explorer'` and
+ * mount `SessionFilesExplorer`. Easy mode's `EasyPanel` consumes the request
+ * directly and must use `requestFileOpenSilently` so `viewBySession` — the
+ * key Advanced mode's tab strip resumes from — is left untouched.
  */
 export function openFileInSessionPanel(sessionId: string, path: string, line?: number): void {
-  useSessionBrowserStore.getState().requestFileOpenSilently(sessionId, path, line);
+  const panelMode = useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
+
+  if (panelMode === 'advanced') {
+    useSessionBrowserStore.getState().requestFileOpen(sessionId, path, line);
+  } else {
+    useSessionBrowserStore.getState().requestFileOpenSilently(sessionId, path, line);
+  }
+
   useKortixComputerStore.getState().setIsSidePanelOpen(true);
 }
