@@ -11,7 +11,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'crypto'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'bun:test'
@@ -220,6 +220,45 @@ describe('daemon proxy auth gate', () => {
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('materializes inside a writable target when its parent is read-only', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-readonly-parent-'))
+    const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      const globalGitConfig = join(root, 'gitconfig')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'read-only parent\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'seed'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      mkdirSync(target)
+      writeFileSync(globalGitConfig, '')
+      process.env.GIT_CONFIG_GLOBAL = globalGitConfig
+
+      chmodSync(root, 0o555)
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+      }))
+
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('read-only parent\n')
+      expect(readdirSync(root).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
+      expect(readdirSync(target).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
+    } finally {
+      chmodSync(root, 0o755)
+      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
       rmSync(root, { recursive: true, force: true })
     }
   })
