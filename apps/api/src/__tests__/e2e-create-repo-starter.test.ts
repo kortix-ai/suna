@@ -86,6 +86,7 @@ let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let githubInstallationStateConsumed: boolean;
 let ownerRepoListCalls: any[];
+let installationRepoListCalls: any[];
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -120,6 +121,7 @@ function resetState() {
   gitConnectionRows = [];
   githubInstallationStateConsumed = false;
   ownerRepoListCalls = [];
+  installationRepoListCalls = [];
   installationRows = [{
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
@@ -261,8 +263,9 @@ mock.module('../projects/github', () => ({
     name: branch,
     protected: false,
   }),
-  listInstallationRepositories: async (installationId: string) => installationId === '84'
-    ? [{
+  listInstallationRepositories: async (installationId: string, options?: any) => {
+    installationRepoListCalls.push({ installationId, options });
+    return installationId === '84' ? [{
         id: 84,
         name: 'portal',
         full_name: 'acme/portal',
@@ -272,8 +275,8 @@ mock.module('../projects/github', () => ({
         ssh_url: 'git@github.com:acme/portal.git',
         default_branch: 'trunk',
         description: null,
-      }]
-    : [],
+      }] : [];
+  },
   // Not exercised by this file's scenarios (App installations only, no
   // managed-git PAT fallback here) — stubbed so the mocked module still
   // satisfies github-repositories.ts's named import.
@@ -688,7 +691,8 @@ describe('create-repo starter scaffold contract', () => {
     ]));
 
     const repos = await app.request(
-      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=84`,
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
+        '&installation_id=84&search=portal&limit=25',
     );
     expect(repos.status).toBe(200);
     expect(await repos.json()).toMatchObject({
@@ -696,6 +700,14 @@ describe('create-repo starter scaffold contract', () => {
       installation_id: '84',
       owner_login: 'acme',
       repositories: [{ full_name: 'acme/portal', default_branch: 'trunk' }],
+    });
+    expect(installationRepoListCalls).toContainEqual({
+      installationId: '84',
+      options: {
+        owner: 'acme',
+        search: 'portal',
+        limit: 25,
+      },
     });
 
     const branches = await app.request(
