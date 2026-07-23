@@ -1010,14 +1010,16 @@ test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes re
   ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
 });
 
-test('ensureReady() rides transient null /start results (5xx / create→start race) and resolves once ready', async () => {
+test('ensureReady() treats a transient null /start result as retriable and resolves once ready', async () => {
   let n = 0;
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
     if (url.includes('/start')) {
       n += 1;
-      // startProjectSession returns null (not throws) for a 5xx / the create→
-      // start 404 race — ensureReady must poll through it, not give up.
+      // startProjectSession returns null (not throws) for a 5xx/408/429/network
+      // blip AND the create→start 404 race — ensureReady only ever sees `null`,
+      // not the cause, so this one 503 stands in for all of them. It must poll
+      // through the null, not give up.
       if (n <= 1) return jsonResponse({ error: 'gateway' }, 503);
       return jsonResponse({
         stage: 'ready',
