@@ -4,7 +4,6 @@ import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
   getTranscriptFilename,
-  type MessageWithParts,
   type SessionInfo,
 } from './transcript';
 
@@ -14,39 +13,63 @@ const session: SessionInfo = {
   time: { created: 1_700_000_000_000, updated: 1_700_000_060_000 },
 };
 
-function userMessage(text: string): MessageWithParts {
+function userMessage(text: string) {
   return {
-    info: { id: 'msg_1', role: 'user' } as unknown as MessageWithParts['info'],
-    parts: [{ id: 'prt_1', type: 'text', text } as unknown as MessageWithParts['parts'][number]],
+    info: { id: 'msg_1', role: 'user' as const },
+    parts: [{ id: 'prt_1', type: 'text' as const, text }],
   };
 }
 
-function assistantMessage(): MessageWithParts {
+function assistantMessage() {
   return {
     info: {
       id: 'msg_2',
-      role: 'assistant',
+      role: 'assistant' as const,
       agent: 'build',
       modelID: 'glm-5.2',
       time: { created: 1_700_000_000_000, completed: 1_700_000_005_000 },
-    } as unknown as MessageWithParts['info'],
+    },
     parts: [
       {
         id: 'prt_2',
-        type: 'text',
+        type: 'text' as const,
         text: 'Sure, looking now.',
-      } as unknown as MessageWithParts['parts'][number],
+      },
       {
         id: 'prt_3',
-        type: 'tool',
+        type: 'tool' as const,
         tool: 'bash',
         state: { status: 'completed', input: 'echo hi', output: 'hi' },
-      } as unknown as MessageWithParts['parts'][number],
+      },
     ],
   };
 }
 
 describe('formatTranscript', () => {
+  test('accepts the legacy mobile transcript shape without a cast', () => {
+    const mobileMessage = {
+      info: {
+        id: 'msg_mobile',
+        role: 'assistant' as const,
+        sessionID: 'ses_abc123',
+        time: { created: 1_700_000_000_000 },
+        error: 'legacy mobile error',
+      },
+      parts: [
+        {
+          id: 'prt_mobile',
+          type: 'tool' as const,
+          callID: 'call_mobile',
+          tool: 'bash',
+          input: { command: 'echo mobile' },
+          state: { status: 'completed' as const, output: 'mobile' },
+        },
+      ],
+    };
+
+    expect(formatTranscript(session, [mobileMessage])).toContain('**Tool: bash**');
+  });
+
   test('renders the session header', () => {
     const md = formatTranscript(session, [], DEFAULT_TRANSCRIPT_OPTIONS);
     expect(md).toContain('# Fix the flaky test');

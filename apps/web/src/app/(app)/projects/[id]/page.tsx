@@ -1,20 +1,20 @@
 'use client';
 
+import type { AttachedFile } from '@/features/session/session-chat-input';
+
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
 } from '@/features/workspace/project-layout/project-home';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
-import type { AttachedFile } from '@/features/session/session-chat-input';
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
-import { writeStartStash } from '@kortix/sdk/react';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -111,9 +111,5 @@ export default function ProjectIndexPage() {
     [billingLoading, canRun, projectAccountId, openUpgradeDialog, newSession],
   );
 
-  return (
-    <ProjectShell projectId={projectId}>
-      <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />
-    </ProjectShell>
-  );
+  return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;
 }

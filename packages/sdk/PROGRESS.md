@@ -540,6 +540,73 @@ claim is closed.
 
 ---
 
+### 2026-07-23 — session `session-sync-latency` (local completion)
+
+Completed bounded session synchronization and persistent project navigation in
+`session-sync-latency`. Initial and background history reads request 10 messages.
+Older history uses cursor pagination. One active session owns the SSE stream.
+Inactive running sessions receive one bounded tail prefetch. The 20-entry
+controller registry owns and evicts prefetch state.
+
+The shared project layout now owns `ProjectShell`. Session navigation keeps the
+committed route visible until the target renders. The current session remains
+selected during a pending switch. File selections, Customize state, onboarding,
+and the presentation dialog persist across project routes. Session file stores
+are bounded to 20 entries.
+
+Connector reads no longer synchronize or write. The list path loads actions,
+credential state, and channel state in parallel. Shared credential discovery is
+one batched query. Explicit synchronization materializes connector icons.
+
+The final maintainability review deleted the background SSE fan-out, removed
+passive project-home reads, moved prefetch state into the bounded registry, and
+removed a second mobile transcript compatibility cast. `formatTranscript`
+accepts a narrow structural input while the exported `MessageWithParts` contract
+remains unchanged. No changed file crosses from below 1,000 lines to above 1,000
+lines.
+
+**TDD evidence:** the new mobile transcript-shape test first failed SDK
+typecheck with `TS2322`. The focused GREEN run reported **9 pass / 0 fail** with
+16 assertions. The mobile older-page hydration test first returned only the
+older page. Its GREEN run reported **1 pass / 0 fail**.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0. The full
+suite reported **1171 pass / 0 fail** with 5170 assertions across 88 files.
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed the package successfully.
+
+**Other local gates:** API typecheck exited 0. Focused API tests reported **38
+pass / 0 fail**. Focused web tests reported **22 pass / 0 fail**. The focused
+mobile test reported **1 pass / 0 fail**. Changed-file web ESLint reported 0
+errors and one pre-existing hook warning. Terraform formatting and validation
+passed. Mobile typecheck still reports 56 baseline errors; none reference the
+changed mobile files.
+
+**Runtime evidence:** the authenticated connector list returned `200` twice in
+10 ms and 5 ms. Legacy and default-profile credentials both returned
+`secretSet: true`. Connector, action, and credential row counts did not change.
+The real cloud session smoke reported **21 pass / 0 fail**. Project provisioning
+took 4 seconds. The sandbox reached `ready` 18 seconds after session creation.
+OpenCode and `kortix.yaml` returned `200`. Cleanup returned `200`.
+
+**Infrastructure evidence:** `dev-api.kortix.com` returns
+`x-backend: ecs-fargate`. ECS runs three tasks at its current three-task ceiling.
+The 24-hour target-response maximum was 47.132 seconds. The API logged 1,904
+target `5xx` responses. Stale background `/global/event` requests retried missing
+sandboxes four times and consumed about 7 seconds each. This branch deletes that
+fan-out and raises the ECS fallback maximum from 3 to 6.
+
+**Unverified:** the browser runtime returned an empty browser list. Required DOM
+and network assertions for persistent navigation, cached rendering, bounded
+prefetch, cursor pagination, transcript export, and dialog persistence could not
+run. The shared local migration ledger also has one pending concurrent migration
+that precedes an applied migration. The shared ledger was not mutated.
+
+**Shippable to production: NOT YET.** Browser DOM and network verification
+remains required.
+
+---
+
 ### 2026-07-19 — session `git-management-ux` (completion)
 
 Completed the additive GitHub repository-template input. The public
@@ -1342,3 +1409,54 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. API typecheck, focused API
 authorization tests, focused web tests, and focused web lint also pass.
 Repository merge, Deploy Dev, and live-dev verification remain pending.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (claim)
+
+Claimed the additive existing-GitHub-App installation discovery contract. The
+SDK will request installations that the authorized GitHub user can link to one
+Kortix account. The API will verify personal ownership or active organization
+admin access before it returns or saves an installation. Existing install and
+save contracts remain backward compatible.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (completion)
+
+Completed the additive existing-installation discovery and link surface. The SDK
+exposes typed list and link functions. The API lists this GitHub App's
+installations with the App JWT, then filters them against the authorized GitHub
+user and active organization-admin memberships. The link route re-fetches the
+selected installation with the App JWT and repeats the GitHub authorization check
+before the database write. No exported name was removed or renamed.
+
+**TDD and focused evidence:** the GitHub SDK client reported **5 pass / 0 fail**;
+the GitHub App API suite reported **9 pass / 0 fail** with 30 assertions; and the
+web GitHub setup and connection regressions passed inside the full web suite.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1158 pass / 0 fail** across 86 files with 5110 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Cross-surface evidence:** API typecheck exited 0; the full web suite reported
+**1952 pass / 0 fail** across 212 files with 5455 assertions; focused web ESLint
+exited 0; and `git diff --check` exited 0. The full web typecheck reports only the
+two existing `origin/main` errors in `template-url.test.ts`.
+
+**Real local proof:** authenticated `POST
+/v1/projects/github/installations/linkable` returned 200 for GitHub login
+`markokraemer` and three verified installations. Authenticated `POST
+/v1/projects/github/installations/link` returned 200 for personal installation
+`148404669`. The account installation read-back returned the same owner and
+installation. Chromium rendered the same-origin `Link a GitHub account` page and
+opened GitHub OAuth in a popup with `read:user read:org`. The local OAuth callback
+cannot complete because the local Supabase container has the literal placeholder
+GitHub client ID; deployed-dev OAuth remains the repository delivery gate.
+
+**Shippable to production: YES** for the SDK and locally verified API contract.
+Repository PR, Deploy Dev, deployed-SHA proof, and full live-dev OAuth UI
+verification remain part of the parent feature lifecycle.

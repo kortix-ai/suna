@@ -59,8 +59,8 @@ describe('session switch state', () => {
 });
 
 describe('shouldShowSessionSwitchLoading', () => {
-  test('covers both the route transition and the target runtime boot', () => {
-    expect(shouldShowSessionSwitchLoading('session-b', 'session-a', false)).toBe(true);
+  test('keeps the committed route visible until the target route renders', () => {
+    expect(shouldShowSessionSwitchLoading('session-b', 'session-a', false)).toBe(false);
     expect(shouldShowSessionSwitchLoading('session-b', 'session-b', false)).toBe(true);
     expect(shouldShowSessionSwitchLoading('session-b', 'session-b', true)).toBe(false);
   });

@@ -1796,11 +1796,13 @@ test('does NOT suppress a frameless "No error message" event (origin unverifiabl
 // async callback so the React error boundary can't catch it → global error →
 // Sentry → Better Stack. The matcher is the leak-path backstop; the
 // `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard. Covers
-// all three JS engine wordings for the same bug: V8
+// all four JS engine wordings for the same bug: V8
 // (`Cannot read properties of null (reading '<m>')`), old JSC
-// (`Cannot read property '<m>' of null`), and SpiderMonkey/Firefox
+// (`Cannot read property '<m>' of null`), SpiderMonkey/Firefox
 // (`can't access property "<m>"<…>` — the recurrence that shipped through
-// PR #4544's V8/JSC-only filter).
+// PR #4544's V8/JSC-only filter), and modern JSC (Safari / Chrome-on-iOS CriOS,
+// which uses WebKit/JSC rather than V8: `null is not an object (evaluating
+// 'this.gl.<m>')` — pattern `a8754de5…`).
 const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
   // V8 (Chrome/Edge).
   "Cannot read properties of null (reading 'getSupportedExtensions')",
@@ -1824,6 +1826,21 @@ const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
   // SpiderMonkey alternate phrasing seen on some Firefox versions
   // (` of <var>. <var> is null` form) — the prefix anchor still matches.
   'can\'t access property "getSupportedExtensions" of this.gl. this.gl is null',
+  // Modern JSC (JavaScriptCore — Safari / Chrome-on-iOS CriOS, which uses
+  // WebKit/JSC rather than V8). JSC wraps the offending expression as
+  // `null is not an object (evaluating '<expr>')`; the Paper Shaders library
+  // accesses the WebGL2 context as `this.gl.<method>`, so the prod wording
+  // (Better Stack pattern `a8754de5…`, 1 occurrence / 0 users, Chrome 150 on
+  // iOS 26.5.2, route `/projects/:id/sessions/:sessionId`) is the exact full
+  // message per method. The raw `exception.values[].value` has no `TypeError: `
+  // prefix, but Sentry capture paths vary, so pin all three forms like the
+  // SpiderMonkey entries above.
+  "null is not an object (evaluating 'this.gl.getSupportedExtensions')",
+  "TypeError: null is not an object (evaluating 'this.gl.getSupportedExtensions')",
+  "Unhandled promise rejection: TypeError: null is not an object (evaluating 'this.gl.getSupportedExtensions')",
+  "null is not an object (evaluating 'this.gl.getAttribLocation')",
+  "TypeError: null is not an object (evaluating 'this.gl.getAttribLocation')",
+  "Unhandled promise rejection: TypeError: null is not an object (evaluating 'this.gl.getAttribLocation')",
 ]
 
 test('classifies every Paper Shaders null-context WebGL message as noise', () => {
@@ -1884,9 +1901,10 @@ test('does NOT suppress a real app TypeError with a different null-property name
   // `Cannot read properties of null (reading '<name>')` SHAPE but with an
   // app-property name, not a WebGL2 API method — it must keep reporting so a
   // real null-deref regression is never hidden by the Paper Shaders guard.
-  // Covers all three engine wordings (V8, old JSC, SpiderMonkey/Firefox) so
-  // the Firefox `can't access property "<m>"` pattern can't swallow a real
-  // first-party SpiderMonkey null-deref with a non-WebGL property name.
+  // Covers all four engine wordings (V8, old JSC, SpiderMonkey/Firefox,
+  // modern JSC) so the Firefox `can't access property "<m>"` pattern and the
+  // modern-JSC `null is not an object (evaluating '<expr>')` pattern can't
+  // swallow a real first-party null-deref with a non-WebGL property name.
   const realAppNullDerefMessages = [
     "Cannot read properties of null (reading 'map')",
     "Cannot read properties of null (reading 'length')",
@@ -1901,6 +1919,13 @@ test('does NOT suppress a real app TypeError with a different null-property name
     'can\'t access property "map", this.foo is null',
     'TypeError: can\'t access property "id", this.bar is null',
     'can\'t access property "length" of this.baz. this.baz is null',
+    // Modern JSC generic `null is not an object (evaluating '<expr>')` throws
+    // that share the JSC wrapper SHAPE but are NOT the Paper Shaders WebGL2
+    // `this.gl.<method>` expression — must keep reporting so the modern-JSC
+    // patterns can't swallow a real first-party JSC null-deref.
+    "null is not an object (evaluating 'this.gl.someOtherMethod')",
+    "null is not an object (evaluating 'foo.bar')",
+    "TypeError: null is not an object (evaluating 'this.gl.unsupportedMethod')",
   ]
   for (const message of realAppNullDerefMessages) {
     assert.equal(

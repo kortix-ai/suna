@@ -16,6 +16,10 @@ extraEnv:
   SLACK_REQUIRE_USER_IDENTITY: "true"
   LLM_GATEWAY_BASE_URL: "https://gateway-staging.kortix.com/v1/llm"
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  # Staging uses a 60-connection Supabase database. ECS can run 3 API tasks
+  # while EKS runs 4 pods. Four app connections plus one leader connection per
+  # process keeps the combined fleet below the database limit.
+  DB_POOL_MAX: "4"
 # Staging has its own DB/Supabase data plane via `kortix-staging-env`, so the
 # singleton background workers are safe to run here. This makes staging a true
 # production rehearsal instead of a read-only preview.

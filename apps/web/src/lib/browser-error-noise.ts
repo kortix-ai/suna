@@ -232,7 +232,7 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 // first-party app code (only from Paper Shaders' library internals), so the
 // message wording alone is specific enough to safely classify as noise without
 // a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
-// matching covers all three JS engine wordings for the same null-context bug:
+// matching covers all four JS engine wordings for the same null-context bug:
 //   - V8 (Chrome/Edge):          `Cannot read properties of null (reading '<m>')`
 //   - old JSC (old Safari/iOS):  `Cannot read property '<m>' of null`
 //   - SpiderMonkey (Firefox):    `can't access property "<m>"<…>` (the variable
@@ -243,6 +243,14 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 //                                V8/JSC-only filter as
 //                                `can't access property "getSupportedExtensions",
 //                                this.gl is null`).
+//   - modern JSC (Safari / Chrome-on-iOS CriOS, which uses WebKit/JSC rather
+//                                than V8): `null is not an object (evaluating
+//                                'this.gl.<m>')` — the `this.gl.` token and the
+//                                `(evaluating '...')` wrapper are JSC-specific;
+//                                the pattern is the exact full message per
+//                                method so a generic JSC `null is not an object
+//                                (evaluating '<other expr>')` throw does NOT
+//                                match (pattern `a8754de5…`).
 // `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
 // stripped before matching so all capture paths (window.onerror,
 // onunhandledrejection, Sentry exception) classify consistently.
@@ -266,6 +274,20 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // the null context.
   'can\'t access property "getSupportedExtensions"',
   'can\'t access property "getAttribLocation"',
+  // Modern JSC (JavaScriptCore — Safari / Chrome-on-iOS CriOS, which uses
+  // WebKit/JSC rather than V8). JSC wraps the offending expression as
+  // `null is not an object (evaluating '<expr>')`; the Paper Shaders library
+  // accesses the WebGL2 context as `this.gl.<method>`, so the prod wording is
+  // `null is not an object (evaluating 'this.gl.getSupportedExtensions')` and
+  // the `getAttribLocation` sibling. The `this.gl.` token and the
+  // `(evaluating '...')` wrapper are JSC-specific; the stable anchor is the
+  // exact full JSC message (per-method), so a generic JSC `null is not an
+  // object (evaluating '<other expr>')` throw does NOT match. Seen as pattern
+  // `a8754de5…` (1 occurrence, 0 users) from Chrome 150 on iOS 26.5.2 on
+  // `/projects/:id/sessions/:sessionId`, the fourth engine variant of this
+  // class after V8 (#4544), old JSC, and SpiderMonkey (#5172).
+  "null is not an object (evaluating 'this.gl.getSupportedExtensions')",
+  "null is not an object (evaluating 'this.gl.getAttribLocation')",
 ] as const;
 
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
@@ -1104,12 +1126,15 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Matches all three JS engine wordings: V8
+ * Matches all four JS engine wordings: V8
  * (`Cannot read properties of null (reading '<m>')`), old JSC
- * (`Cannot read property '<m>' of null`), and SpiderMonkey/Firefox
- * (`can't access property "<m>"<…>`). Never page Better Stack for this class.
- * See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and
- * the `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
+ * (`Cannot read property '<m>' of null`), SpiderMonkey/Firefox
+ * (`can't access property "<m>"<…>`), and modern JSC (Safari / Chrome-on-iOS
+ * CriOS, which uses WebKit/JSC rather than V8:
+ * `null is not an object (evaluating 'this.gl.<m>')`). Never page Better Stack
+ * for this class. See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full
+ * rationale and the `supportsWebGL2()` probe in `shader-safe.tsx` for the
+ * primary guard.
  */
 export function isPaperShaderNullContextNoise(message: unknown): boolean {
   const stripped = stripErrorWrappers(normalizeString(message));
