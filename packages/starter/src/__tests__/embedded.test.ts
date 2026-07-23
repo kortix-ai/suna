@@ -19,9 +19,7 @@ describe('embedded starter snapshot', () => {
     const gkw = (embeddedStarter as Record<string, { files: { path: string }[] }>)[
       'general-knowledge-worker'
     ];
-    const skillFiles = gkw.files.filter((f) =>
-      f.path.startsWith('.opencode/skills/'),
-    );
+    const skillFiles = gkw.files.filter((f) => f.path.startsWith('.opencode/skills/'));
     expect(skillFiles.length).toBeGreaterThan(0);
   });
 
@@ -31,5 +29,16 @@ describe('embedded starter snapshot', () => {
     )) {
       expect(starter.files.some((f) => f.path.includes('/agent-tunnel/'))).toBe(false);
     }
+  });
+
+  test('documents the current four-agent init fleet', () => {
+    const base = (embeddedStarter as Record<string, { files: { path: string; content: string }[] }>)
+      .base;
+    const cliReference = base.files.find((file) =>
+      file.path.endsWith('/references/kortix/kortix-cli.md'),
+    );
+
+    expect(cliReference?.content).toContain('OpenCode, Claude Code, Codex, and Pi');
+    expect(cliReference?.content).not.toContain('opencode/claude/codex/cursor');
   });
 });

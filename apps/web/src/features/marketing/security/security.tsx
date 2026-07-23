@@ -7,8 +7,8 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
-import { Heatmap } from '@paper-design/shaders-react';
 import { ShaderSafe } from '@/components/ui/shader-safe';
+import { Heatmap } from '@paper-design/shaders-react';
 import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -22,6 +22,9 @@ const ACCORDION_ICONS: Record<AccordionIcon, React.ReactNode> = {
   shield: <Shield className="size-4" aria-hidden />,
   server: <Server className="size-4" aria-hidden />,
 };
+
+// Paper Shaders accepts hex, RGB, and HSL strings. It rejects CSS variables and OKLCH.
+const KORTIX_ORANGE_SHADER_COLOR = '#d18b19';
 
 const Block = ({ tab }: { tab: string }) => {
   switch (tab) {
@@ -91,7 +94,7 @@ const Security = () => {
                 scale={0.65}
                 image="/shaders/heatmap-mark.svg"
                 frame={407072.499999992}
-                colors={['var(--kortix-orange)', '#fafafa', '#242424']}
+                colors={[KORTIX_ORANGE_SHADER_COLOR, '#fafafa', '#242424']}
                 colorBack="#ffffff00"
                 className="shrink-0"
                 style={{

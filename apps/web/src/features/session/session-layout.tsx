@@ -6,6 +6,7 @@ import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { acpItemsToPanelMessages } from '@/features/session/acp-panel-messages';
 import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
@@ -15,7 +16,6 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { acpItemsToPanelMessages } from '@/features/session/acp-panel-messages';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -40,6 +40,7 @@ interface SessionLayoutProps {
   projectSessionId?: string;
   children: React.ReactNode;
   bootStage?: SessionStartStage | null;
+  bootReason?: string | null;
   transient?: boolean;
   /**
    * The ACP session's `chatItems` (from `projectAcpChatItems`). This is the
@@ -64,6 +65,7 @@ export const SessionLayout = memo(function SessionLayout({
   projectSessionId,
   children,
   bootStage = null,
+  bootReason = null,
   transient = false,
   acpItems,
   isSessionBusy = false,
@@ -377,6 +379,7 @@ export const SessionLayout = memo(function SessionLayout({
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
       stage={bootStage ?? 'provisioning'}
+      reason={bootReason}
       delayMs={0}
       projectId={projectId}
       sessionId={projectSessionId}

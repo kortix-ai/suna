@@ -73,7 +73,7 @@ function buildRegistryProjectInstallPrompt(
     targetManifestRaw ?? '(no manifest found)',
     '```',
     '',
-    'The template contributes these files. Its own kortix.yaml is a reference for what agent it expects to exist — do NOT overwrite this project\'s kortix.yaml with it verbatim.',
+    "The template contributes these files. Its own kortix.yaml is a reference for what agent it expects to exist — do NOT overwrite this project's kortix.yaml with it verbatim.",
   ];
   for (const file of ownFiles) {
     lines.push('', `--- ${file.path} ---`, '```', file.content ?? '', '```');
@@ -89,7 +89,7 @@ function buildRegistryProjectInstallPrompt(
     '',
     'Steps:',
     "1. Read this project's current kortix.yaml and .opencode/agents/ to see what already exists.",
-    '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
+    "2. Add the template's agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.",
     "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
     '4. Install the marketplace skills listed above.',
     '5. Open a change request with the result — do not push directly to the default branch.',
@@ -106,7 +106,9 @@ function buildItemInstallPrompt(
 ): string {
   const item = entry.item;
   const typeLabel = item.type.replace('registry:', '');
-  const meta = (item.meta ?? {}) as { capabilities?: { connectors?: string[]; secrets?: string[] } };
+  const meta = (item.meta ?? {}) as {
+    capabilities?: { connectors?: string[]; secrets?: string[] };
+  };
   const needs = [
     ...(meta.capabilities?.connectors ?? []),
     ...(meta.capabilities?.secrets ?? []),
@@ -164,13 +166,13 @@ async function handleMarketplaceInstallSession(c: any) {
   const result = await createProjectSession({
     project: loaded.row,
     userId: loaded.userId,
-    requestingPrincipalType:
-      c.get('authType') === 'service_account' ? 'service_account' : 'human',
+    requestingPrincipalType: c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,
       metadata: { kind: 'marketplace-install', item_id: id },
     },
+    metadata: { source: 'marketplace-install' },
     visibility: 'project',
     // Derive origin from the caller's token kind, same as POST /sessions (r7),
     // so a backend-driven install records origin='backend' rather than 'user'.

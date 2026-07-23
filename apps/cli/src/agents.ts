@@ -1,9 +1,23 @@
-import { existsSync, lstatSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
-export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'cursor';
+export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'pi';
 
-export const SUPPORTED_AGENTS: readonly CodingAgent[] = ['opencode', 'claude', 'codex', 'cursor'] as const;
+export const SUPPORTED_AGENTS: readonly CodingAgent[] = [
+  'opencode',
+  'claude',
+  'codex',
+  'pi',
+] as const;
 
 // Was 'codex' pre-`876742672`, when a fresh project's kortix.yaml declared
 // all four runtimes and any local default was non-contradictory. Since
@@ -33,26 +47,22 @@ const OPENCODE_DIR = '.opencode';
 const LEGACY_OPENCODE_TARGET = '.kortix/opencode';
 
 /**
- * Native discovery directory each local coding agent reads. `.opencode` is
- * the real, canonical OpenCode harness config dir at repo root, so it needs
- * no link of its own. Claude Code and Codex get a compatibility link onto it
- * so local tools can reuse the same skills/agents:
+ * Native discovery paths for the local coding agents. `.opencode/skills` is
+ * the canonical tree. Claude Code, Codex, and Pi receive direct skill links.
+ * Codex also receives the cross-tool `.agents` compatibility link:
  *
- *   .claude   → .opencode   (Claude Code: .claude/skills, .claude/agents — flat, depth-1)
- *   .agents   → .opencode   (Codex + the cross-tool AGENTS standard: .agents/skills, recursive)
- *
- * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), so
- * the codex choice wires `.agents`. Cursor has no dir of its own — it reads
- * the root `AGENTS.md` natively.
- *
- * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
- * under a grouping folder (e.g. `<skill>/SKILL.md`) are
- * NOT discovered locally by Claude. They still load in the OpenCode sandbox and
- * for Codex, both of which discover skills recursively.
+ *   .claude/skills → ../.opencode/skills
+ *   .codex/skills  → ../.opencode/skills
+ *   .pi/skills     → ../.opencode/skills
+ *   .agents        → .opencode
  */
-const AGENT_LINK: Partial<Record<CodingAgent, string>> = {
-  claude: '.claude',
-  codex: '.agents',
+const AGENT_LINKS: Partial<Record<CodingAgent, ReadonlyArray<{ path: string; target: string }>>> = {
+  claude: [{ path: '.claude/skills', target: '../.opencode/skills' }],
+  codex: [
+    { path: '.codex/skills', target: '../.opencode/skills' },
+    { path: '.agents', target: '.opencode' },
+  ],
+  pi: [{ path: '.pi/skills', target: '../.opencode/skills' }],
 };
 
 export interface WireAgentsInput {
@@ -67,12 +77,8 @@ export interface WireAgentsResult {
 }
 
 /**
- * Wire each chosen local coding agent to the starter compatibility config.
- * claude / codex get a symlink from their native discovery dir onto the real
- * `.opencode` (sharing its skills + agents). `.opencode` itself needs no
- * link — it's the real directory. codex and cursor also get a root
- * `AGENTS.md` pointer — the universal, always-loaded instructions file they
- * read natively (which is why Cursor needs no rule file of its own).
+ * Wire each chosen local coding agent to the canonical skill tree. Codex and
+ * Pi also receive a root `AGENTS.md` pointer, which both tools read natively.
  *
  * Every call also reconciles a legacy `.opencode` symlink left by a pre-1.x
  * scaffold (which pointed `.opencode` at `.kortix/opencode`) — see
@@ -86,31 +92,37 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const skipped: string[] = [];
   let wantAgentsMd = false;
 
-  const legacySkip = reconcileLegacyOpencodeSymlink(input.repoRoot, { keepIfTargetExists: true });
+  const legacySkip = reconcileLegacyOpencodeSymlink(input.repoRoot, {
+    keepIfTargetExists: true,
+  });
   if (legacySkip) skipped.push(legacySkip);
 
   for (const agent of input.agents) {
-    const link = AGENT_LINK[agent];
-    if (link) {
-      const abs = resolve(input.repoRoot, link);
+    for (const link of AGENT_LINKS[agent] ?? []) {
+      const abs = resolve(input.repoRoot, link.path);
+      try {
+        if (lstatSync(abs).isSymbolicLink() && readlinkSync(abs) === link.target) continue;
+      } catch {
+        // Missing paths continue into creation.
+      }
       if (!handleExisting(abs, input.overwrite)) {
-        skipped.push(link);
+        skipped.push(link.path);
       } else {
         try {
-          symlinkSync(OPENCODE_DIR, abs);
-          written.push(`${link} → ${OPENCODE_DIR}`);
+          mkdirSync(dirname(abs), { recursive: true });
+          symlinkSync(link.target, abs);
+          written.push(`${link.path} → ${link.target}`);
         } catch (err) {
           // Symlinks need elevated privileges on some platforms (e.g. Windows
           // without Developer Mode). Never fail init over it — just note it.
-          skipped.push(`${link} (symlink unsupported: ${(err as Error).message})`);
+          skipped.push(`${link.path} (symlink unsupported: ${(err as Error).message})`);
         }
       }
     }
-    if (agent === 'codex' || agent === 'cursor') wantAgentsMd = true;
+    if (agent === 'codex' || agent === 'pi') wantAgentsMd = true;
   }
 
-  // AGENTS.md — the universal, always-loaded instructions file Codex injects on
-  // the first turn and Cursor applies as a rule. Written once if either is wired.
+  // AGENTS.md — project instructions loaded natively by Codex and Pi.
   if (wantAgentsMd) {
     const abs = resolve(input.repoRoot, 'AGENTS.md');
     if (handleExisting(abs, input.overwrite)) {
@@ -228,14 +240,14 @@ export function reconcileLegacyOpencodeSymlink(
 function handleExisting(abs: string, overwrite: boolean): boolean {
   let st;
   try {
-    st = lstatSync(abs, { throwIfNoEntry: false } as any) as ReturnType<typeof lstatSync> | undefined;
+    st = lstatSync(abs, { throwIfNoEntry: false } as any) as
+      ReturnType<typeof lstatSync> | undefined;
   } catch {
     st = undefined;
   }
   if (!st && !existsSync(abs)) return true;
   if (overwrite) {
-    // force + non-recursive: removes a stale symlink or file without ever
-    // recursively wiping a real directory the user may have created.
+    if (st?.isDirectory() && !st.isSymbolicLink()) return false;
     rmSync(abs, { force: true, recursive: false });
     return true;
   }
@@ -245,11 +257,11 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
 function agentsPointer(): string {
   return `# Kortix project
 
-This repository is a [Kortix](https://kortix.ai) project — its agent runtime
+This repository is a [Kortix](https://kortix.ai) project. Its agent runtime
 manifest is \`kortix.yaml\`. Kortix cloud sessions use the manifest's v3 runtime
-profiles and launch ACP harness adapters. This starter also symlinks the legacy
-OpenCode harness config into wired local coding-agent discovery dirs
-(\`.opencode\`, \`.claude\`, \`.agents\`) for local editing compatibility.
+profiles and launch ACP harness adapters. The canonical skill tree is
+\`.opencode/skills\`. Native Claude Code, Codex, and Pi skill directories link
+to that tree. Codex also receives the \`.agents\` compatibility path.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
 sandbox image, sessions, connectors, deployed services, runtime profiles, or how

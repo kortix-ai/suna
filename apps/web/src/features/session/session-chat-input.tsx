@@ -57,6 +57,9 @@ import { ModelConnectionBar } from './model-connection-gate';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
+const SELECT_MODEL_ACTION_MESSAGE = 'Select a model before starting this agent.';
+const LOADING_MODELS_ACTION_MESSAGE = 'Loading models…';
+
 export type { ProviderListResponse };
 
 // Re-exported for existing external consumers (schedule-view.tsx,
@@ -828,8 +831,8 @@ export interface SessionChatInputProps {
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
-  /** Static state for a harness that manages its own model (Claude Code,
-   *  Codex, Pi) — see {@link HarnessManagedModelState}. */
+  /** Static state for a harness that manages its own model (Claude Code and
+   *  Codex) — see {@link HarnessManagedModelState}. */
   harnessManagedModel?: HarnessManagedModelState;
   messages?: MessageWithParts[];
   /** Protocol-native context and token usage projected by @kortix/sdk. */
@@ -867,12 +870,9 @@ export interface SessionChatInputProps {
   /** Deep-link kind for the blocking action (e.g. claude_subscription so
    *  "Connect Claude Code" opens straight into that form). */
   composerConnectKind?: import('@kortix/sdk/projects-client').HarnessAuthKind | null;
-  /** True when this composer's send gate is governed by composer-capabilities
-   *  (a real project + resolved agent) — makes `composerBlockingReason` the
-   *  ONLY hard send gate and turns off the legacy catalog-entitlement gate
-   *  (`hasSelectableModels`/`NO_MODEL_AVAILABLE_ACTION_MESSAGE`). False for
-   *  hosts with no capability signal (e.g. the instance dashboard's
-   *  pure-gateway composer), which keep the legacy gate unchanged. */
+  /** True when this composer's connection gate is governed by
+   *  composer-capabilities. Explicit model selection remains a separate send
+   *  gate for catalog-based agents. */
   composerCapabilityGoverned?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
@@ -1416,16 +1416,13 @@ function SessionChatInputImpl({
     }
   }, [mentionItems.length]);
 
-  // composer-capabilities (`composerBlockingReason`) is the ONLY hard send
-  // gate for agents it governs (a real project + resolved agent — see
-  // `composerCapabilityGoverned`). The legacy catalog-entitlement gate below
-  // (`hasSelectableModels`/`NO_MODEL_AVAILABLE_ACTION_MESSAGE`) only still
-  // applies to hosts with no capability signal at all (e.g. the instance
-  // dashboard's pure-gateway composer) so that path is untouched.
-  const legacyModelGateActive = !composerCapabilityGoverned;
-  const modelUnavailable =
-    legacyModelGateActive &&
-    isModelRequiredButUnavailable({ modelRequired, selectedModel, lockForQuestion });
+  // Composer capabilities gate connection readiness. Catalog-based agents
+  // also require an explicit model selection before the first send.
+  const modelUnavailable = isModelRequiredButUnavailable({
+    modelRequired,
+    selectedModel,
+    lockForQuestion,
+  });
   // Drives the "connect a model" bar under the input. Two distinct dead-end
   // states both surface it — either way the composer cannot send and needs to
   // say why:
@@ -1440,13 +1437,18 @@ function SessionChatInputImpl({
   // the bar renders exactly once with the final answer instead of flashing in
   // on half-loaded data and vanishing when the account state arrives.
   const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const modelUnavailableMessage =
+    modelsLoading || entitlementsPending
+      ? LOADING_MODELS_ACTION_MESSAGE
+      : hasSelectableModels
+        ? SELECT_MODEL_ACTION_MESSAGE
+        : NO_MODEL_AVAILABLE_ACTION_MESSAGE;
   const noModelsConnected =
-    legacyModelGateActive &&
     modelRequired &&
     !lockForQuestion &&
     !modelsLoading &&
     !entitlementsPending &&
-    (!selectedModel || !hasSelectableModels);
+    !hasSelectableModels;
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const capabilityBlocked =
     composerCapabilityGoverned && !modelsLoading && Boolean(composerBlockingReason);
@@ -1462,7 +1464,7 @@ function SessionChatInputImpl({
       return;
     }
     if (modelUnavailable) {
-      toast.error(NO_MODEL_AVAILABLE_ACTION_MESSAGE);
+      toast.error(modelUnavailableMessage);
       return;
     }
 
@@ -1564,6 +1566,7 @@ function SessionChatInputImpl({
     text,
     submitDisabled,
     modelUnavailable,
+    modelUnavailableMessage,
     capabilityBlocked,
     composerBlockingReason,
     composerBlockingActionLabel,
@@ -2045,7 +2048,7 @@ function SessionChatInputImpl({
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
-                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto  border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2124,9 +2127,7 @@ function SessionChatInputImpl({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
-                    {commandsSourceLabel
-                      ? `Commands from ${commandsSourceLabel}`
-                      : 'Run a command'}
+                    {commandsSourceLabel ? `Commands from ${commandsSourceLabel}` : 'Run a command'}
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -2228,7 +2229,7 @@ function SessionChatInputImpl({
                               capabilityBlocked
                                 ? composerBlockingActionLabel || composerBlockingReason || 'Blocked'
                                 : modelUnavailable
-                                  ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
+                                  ? modelUnavailableMessage
                                   : 'Send message'
                             }
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
@@ -2246,7 +2247,7 @@ function SessionChatInputImpl({
                           <p>
                             {capabilityBlocked
                               ? composerBlockingActionLabel || composerBlockingReason
-                              : NO_MODEL_AVAILABLE_ACTION_MESSAGE}
+                              : modelUnavailableMessage}
                           </p>
                         </TooltipContent>
                       )}

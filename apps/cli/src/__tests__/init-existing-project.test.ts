@@ -29,7 +29,9 @@ function seedGitRepo(repo: string): void {
       "-m",
       "seed",
     ],
-    { cwd: repo },
+    {
+      cwd: repo,
+    },
   );
 }
 
@@ -55,7 +57,9 @@ describe("init in an existing cloned project", () => {
         "-m",
         "seed",
       ],
-      { cwd: repo },
+      {
+        cwd: repo,
+      },
     );
 
     const result = spawnSync("bun", [cli, "init", "--force"], {
@@ -70,7 +74,13 @@ describe("init in an existing cloned project", () => {
     expect(lstatSync(resolve(repo, ".agents")).isSymbolicLink()).toBe(true);
     // `.opencode` is the real, checked-in config dir — no self-link.
     expect(lstatSync(resolve(repo, ".opencode")).isSymbolicLink()).toBe(false);
-    expect(lstatSync(resolve(repo, ".claude")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(resolve(repo, ".claude")).isDirectory()).toBe(true);
+    expect(lstatSync(resolve(repo, ".claude/skills")).isSymbolicLink()).toBe(
+      true,
+    );
+    expect(readlinkSync(resolve(repo, ".claude/skills"))).toBe(
+      "../.opencode/skills",
+    );
     expect(readFileSync(resolve(repo, "AGENTS.md"), "utf8")).toContain(
       "This repository is a",
     );
@@ -116,17 +126,29 @@ describe("init in an existing cloned project", () => {
 
     expect(result.status).toBe(0);
     // The gate accepted the legacy layout, and the downstream reconciliation
-    // created the `.opencode -> .kortix/opencode` compat link so `.claude`/
-    // `.agents` don't dangle.
+    // created the `.opencode -> .kortix/opencode` compat link so the native
+    // skill links and `.agents` compatibility link do not dangle.
     expect(lstatSync(resolve(repo, ".opencode")).isSymbolicLink()).toBe(true);
     expect(readlinkSync(resolve(repo, ".opencode"))).toBe(".kortix/opencode");
-    expect(lstatSync(resolve(repo, ".claude")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(resolve(repo, ".claude")).isDirectory()).toBe(true);
+    expect(lstatSync(resolve(repo, ".claude/skills")).isSymbolicLink()).toBe(
+      true,
+    );
+    expect(readlinkSync(resolve(repo, ".claude/skills"))).toBe(
+      "../.opencode/skills",
+    );
     expect(lstatSync(resolve(repo, ".agents")).isSymbolicLink()).toBe(true);
     expect(
-      readFileSync(resolve(repo, ".claude/skills/kortix-system/SKILL.md"), "utf8"),
+      readFileSync(
+        resolve(repo, ".claude/skills/kortix-system/SKILL.md"),
+        "utf8",
+      ),
     ).toBe("canonical skill\n");
     expect(
-      readFileSync(resolve(repo, ".agents/skills/kortix-system/SKILL.md"), "utf8"),
+      readFileSync(
+        resolve(repo, ".agents/skills/kortix-system/SKILL.md"),
+        "utf8",
+      ),
     ).toBe("canonical skill\n");
     // `.opencode` is local compat wiring here (a legacy clone), so it must be
     // excluded from git same as the other local wiring entries.

@@ -8,13 +8,10 @@ import { useParams } from 'next/navigation';
 import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { useAuth } from '@/features/providers/auth-provider';
+import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
-import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
-import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   hasSessionBootTimedOut,
@@ -23,6 +20,8 @@ import {
   shouldShowAcpBootstrapErrorCard,
   shouldShowSessionBootLoader,
 } from '@/features/session/session-page-lifecycle';
+import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -34,6 +33,7 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { projectAcpChatItems } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
@@ -42,7 +42,6 @@ import {
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
 import { readStartStash, useSession } from '@kortix/sdk/react';
-import { projectAcpChatItems } from '@kortix/sdk';
 
 // The fullscreen deck viewer (W14's Present action), mounted ONCE at the page
 // level, outside `SessionLayout` — the wrapper renders `null` until the
@@ -112,9 +111,13 @@ export default function ProjectSessionPage() {
     replayStartStash: true,
     chatEngine: false,
   });
-  const acpItems = useMemo(() => projectAcpChatItems(session.acp.envelopes), [session.acp.envelopes]);
+  const acpItems = useMemo(
+    () => projectAcpChatItems(session.acp.envelopes),
+    [session.acp.envelopes],
+  );
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
+  const startReason = session.reason;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const completeSessionSwitch = useSessionSwitchStore((state) => state.completeSwitch);
 
@@ -302,6 +305,7 @@ export default function ProjectSessionPage() {
       return (
         <SessionStartingLoader
           stage={switchingToSessionId === sessionId ? startStage : 'starting'}
+          reason={switchingToSessionId === sessionId ? startReason : null}
           projectId={projectId}
           sessionId={switchingToSessionId ?? sessionId}
         />
@@ -364,7 +368,12 @@ export default function ProjectSessionPage() {
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
         return (
-          <SessionStartingLoader stage="starting" projectId={projectId} sessionId={sessionId} />
+          <SessionStartingLoader
+            stage="starting"
+            reason="runtime_waking"
+            projectId={projectId}
+            sessionId={sessionId}
+          />
         );
       }
       // Auto-resume exhausted (or genuinely un-resumable): give an in-place
@@ -479,12 +488,14 @@ export default function ProjectSessionPage() {
                 projectId={projectId}
                 sessionId={sessionId}
                 stage={authLoading || !user ? 'provisioning' : startStage}
+                reason={authLoading || !user ? null : startReason}
                 boundAgentName={session.agentName}
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (
               <SessionStartingLoader
                 stage={authLoading || !user ? 'provisioning' : startStage}
+                reason={authLoading || !user ? null : startReason}
                 projectId={projectId}
                 sessionId={sessionId}
               />
@@ -509,6 +520,11 @@ export default function ProjectSessionPage() {
         bootStage={
           shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
             ? startStage
+            : null
+        }
+        bootReason={
+          shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
+            ? startReason
             : null
         }
         acpItems={acpItems}

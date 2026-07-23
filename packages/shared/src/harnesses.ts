@@ -149,15 +149,11 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
     // actual launch behavior (`harness-registry.ts`'s `id === 'pi'` branch
     // builds a full gateway-catalog-shaped config, the same shape as
     // OpenCode's — never a harness-native default the way Claude/Codex
-    // genuinely work). Flipping this one authored fact is what makes Pi
-    // resolve through the SAME credential-conditioned catalog path as
-    // OpenCode (`llm-gateway/resolution/harness-models.ts`) instead of the
-    // no-catalog `harness_default` shape. Known fallout (out of this
-    // change's lane): `apps/cli/src/commands/agents.ts`'s
-    // `ownsDefaultModelHarness` guard and its test
-    // (`apps/cli/src/__tests__/agents-model.test.ts`) still assert the old
-    // `true` value for 'pi' — that CLI copy/behavior is now stale and needs
-    // its own fast-follow, tracked separately.
+    // genuinely work). This makes Pi resolve through the same
+    // credential-conditioned catalog path as OpenCode
+    // (`llm-gateway/resolution/harness-models.ts`) instead of the no-catalog
+    // `harness_default` shape. The CLI derives the same behavior through
+    // `apps/cli/src/commands/agents.ts`'s `ownsDefaultModelHarness` guard.
     ownsDefaultModel: false,
     liveModelChange: false,
     // 2026-07-22 Codex-subscription widening (docs/specs/2026-07-21-llm-

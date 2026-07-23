@@ -81,7 +81,10 @@ describe('getStarterFiles', () => {
   });
 
   test('interpolates the projectName placeholder', () => {
-    const files = getStarterFiles({ projectName: 'My Cool Project', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'My Cool Project',
+      template: 'general-knowledge-worker',
+    });
     const memory = byPath(files).get('.kortix/memory/MEMORY.md');
     expect(memory).toBeDefined();
     expect(memory!).toContain('My Cool Project');
@@ -89,8 +92,15 @@ describe('getStarterFiles', () => {
   });
 
   test('defaults repoFullName when omitted', () => {
-    const withoutRepo = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    const withRepo = getStarterFiles({ projectName: 'X', template: 'minimal', repoFullName: 'me/mine' });
+    const withoutRepo = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+    });
+    const withRepo = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+      repoFullName: 'me/mine',
+    });
     const joinedDefault = withoutRepo.map((f) => f.content).join('\n');
     const joinedCustom = withRepo.map((f) => f.content).join('\n');
     if (joinedDefault.includes('your-org/your-repo') || joinedCustom.includes('me/mine')) {
@@ -101,41 +111,69 @@ describe('getStarterFiles', () => {
   });
 
   test('an unknown template value falls back to the default template layers', () => {
-    const fallback = getStarterFiles({ projectName: 'X', template: 'bogus' as never });
-    const dflt = getStarterFiles({ projectName: 'X', template: DEFAULT_STARTER_TEMPLATE_ID });
+    const fallback = getStarterFiles({
+      projectName: 'X',
+      template: 'bogus' as never,
+    });
+    const dflt = getStarterFiles({
+      projectName: 'X',
+      template: DEFAULT_STARTER_TEMPLATE_ID,
+    });
     expect(fallback.map((f) => f.path)).toEqual(dflt.map((f) => f.path));
   });
 
   test('general-knowledge-worker includes more files than minimal', () => {
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    const general = getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' });
+    const general = getStarterFiles({
+      projectName: 'X',
+      template: 'general-knowledge-worker',
+    });
     expect(general.length).toBeGreaterThanOrEqual(minimal.length);
   });
 
   test('minimal template files are a subset of general-knowledge-worker paths', () => {
-    const minimalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path));
-    const generalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map((f) => f.path));
+    const minimalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path),
+    );
+    const generalPaths = new Set(
+      getStarterFiles({
+        projectName: 'X',
+        template: 'general-knowledge-worker',
+      }).map((f) => f.path),
+    );
     for (const p of minimalPaths) {
       expect(generalPaths.has(p)).toBe(true);
     }
   });
 
   test('leaves unknown placeholders intact', () => {
-    const files = getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'X',
+      template: 'general-knowledge-worker',
+    });
     const joined = files.map((f) => f.content).join('\n');
     expect(joined).not.toContain('{{projectName}}');
   });
 
   test('produces no content containing a leftover {{projectName}} token', () => {
-    const files = getStarterFiles({ projectName: 'Determinism', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'Determinism',
+      template: 'general-knowledge-worker',
+    });
     for (const file of files) {
       expect(file.content.includes('{{projectName}}')).toBe(false);
     }
   });
 
   test('is deterministic across repeated calls', () => {
-    const a = getStarterFiles({ projectName: 'Same', template: 'general-knowledge-worker' });
-    const b = getStarterFiles({ projectName: 'Same', template: 'general-knowledge-worker' });
+    const a = getStarterFiles({
+      projectName: 'Same',
+      template: 'general-knowledge-worker',
+    });
+    const b = getStarterFiles({
+      projectName: 'Same',
+      template: 'general-knowledge-worker',
+    });
     expect(a).toEqual(b);
   });
 
@@ -157,25 +195,47 @@ describe('getStarterFiles', () => {
     expect(manifest).toContain('pi:\n    runtime: pi');
   });
 
-  test('base template does not seed native config dirs for the non-default harnesses', () => {
+  test('base template keeps one skill tree and links every native harness to it', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    for (const dir of ['.claude', '.codex', '.pi']) {
-      expect(files.some((f) => f.path === dir || f.path.startsWith(`${dir}/`))).toBe(false);
+    expect(files.some((f) => f.path === '.opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    for (const path of ['.claude/skills', '.codex/skills', '.pi/skills']) {
+      const link = files.find((file) => file.path === path) as
+        (StarterFile & { mode?: string }) | undefined;
+      expect(link).toMatchObject({
+        path,
+        content: '../.opencode/skills',
+        mode: '120000',
+      });
     }
-    // OpenCode, the one stable/default harness, is still seeded.
-    expect(files.some((f) => f.path.startsWith('.opencode/'))).toBe(true);
   });
 
-  test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
-    // The one user-facing starter (the default) carries the full skill kit.
+  test('default starter ships one full general knowledge worker kit', () => {
     const dflt = getStarterFiles({ projectName: 'X' });
-    expect(dflt.some((f) => f.path === '.opencode/skills/account-research/SKILL.md')).toBe(true);
-    expect(dflt.some((f) => f.path === '.opencode/skills/pdf/SKILL.md')).toBe(true);
+    const skillNames = listGeneralKnowledgeWorkerSkills();
+    for (const skillName of skillNames) {
+      expect(dflt.some((f) => f.path === `.opencode/skills/${skillName}/SKILL.md`)).toBe(true);
+    }
+    expect(
+      dflt.filter(
+        (file) => file.path.endsWith('/SKILL.md') && !file.path.startsWith('.opencode/skills/'),
+      ),
+    ).toEqual([]);
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(minimal.some((f) => f.path === '.opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === '.opencode/skills/account-research/SKILL.md')).toBe(
+      false,
+    );
     expect(minimal.some((f) => f.path === '.opencode/skills/pdf/SKILL.md')).toBe(false);
+  });
+
+  test('kortix-system metadata fits the strictest shipped harness parser', () => {
+    const skill = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
+      '.opencode/skills/kortix-system/SKILL.md',
+    );
+    const description = skill?.match(/^description:\s*"([^"]*)"/m)?.[1];
+    expect(description).toBeDefined();
+    expect(description!.length).toBeLessThanOrEqual(1_024);
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {

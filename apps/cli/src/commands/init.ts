@@ -25,11 +25,11 @@ function agentSublabel(agent: CodingAgent): string {
     case 'opencode':
       return "OpenCode harness: this project's real .opencode/ config dir";
     case 'claude':
-      return 'Claude Code local compatibility: .claude → .opencode';
+      return 'Claude Code harness: native .claude config and skills';
     case 'codex':
-      return 'Codex local compatibility: .agents → .opencode + AGENTS.md';
-    case 'cursor':
-      return 'AGENTS.md (read natively — no rule file)';
+      return 'Codex harness: native .codex skills + local .agents compatibility';
+    case 'pi':
+      return 'Pi harness: native .pi skills + AGENTS.md';
     default:
       return '';
   }
@@ -52,14 +52,14 @@ Arguments:
 
 Pick the local coding agent(s) to wire up for editing the project. This is
 local compatibility wiring only: Kortix cloud sessions use the v3 \`runtimes\`
-profiles in kortix.yaml and launch the selected ACP harness. Codex and Cursor
+profiles in kortix.yaml and launch the selected ACP harness. Codex and Pi
 also get a root AGENTS.md pointer they read natively.
 
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
-                       Example: --agents claude,cursor
+                       Example: --agents claude,pi
   --template <name>    Starter template: general-knowledge-worker (default, full
                        skill kit) or minimal (base plumbing only).
   --force              Configure the current cloned Kortix repository in place.
@@ -178,7 +178,9 @@ function parseFlags(argv: string[]): InitFlags {
 function normalizeProjectName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return 'kortix-project';
-  return trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project';
+  return (
+    trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project'
+  );
 }
 
 function dirIsGitRepo(path: string): boolean {
@@ -218,7 +220,7 @@ function hasOpencodeRuntime(cwd: string): boolean {
  * tree, and excluding it would hide new files written under it from `git
  * status`/`git add`. */
 function excludeLocalAgentWiring(repoRoot: string): void {
-  const entries = ['/.agents', '/.claude'];
+  const entries = ['/.agents', '/.claude/skills', '/.codex/skills', '/.pi/skills'];
   if (isOpencodeCompatSymlink(repoRoot)) entries.push('/.opencode');
   entries.push('/AGENTS.md');
   appendGitExcludeEntries(repoRoot, entries, 'Kortix local coding-agent wiring');
@@ -246,8 +248,8 @@ function printAgentPreamble(): void {
     '',
     `  ${dim}This wires local editor/CLI compatibility. Cloud sessions use${reset}`,
     `  ${dim}kortix.yaml v3 runtime profiles and launch ACP harness adapters.${reset}`,
-    `  ${dim}The default starter still includes an OpenCode harness profile at${reset}`,
-    `  ${dim}.opencode; add Claude/Codex native config as needed.${reset}`,
+    `  ${dim}The starter includes OpenCode, Claude Code, Codex, and Pi ACP${reset}`,
+    `  ${dim}runtime profiles. OpenCode remains the default.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -291,7 +293,9 @@ export async function runInit(argv: string[]): Promise<number> {
   } else if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
-    process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
+    process.stderr.write(
+      `kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`,
+    );
     return 2;
   } else {
     const answer = await prompt(`Project name`, 'my-kortix-project');
@@ -300,9 +304,7 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // Create the project in a fresh directory next to the shell's cwd. Refuse to
   // scaffold into an existing non-empty folder — a Kortix project is standalone.
-  const cwd = configureExisting
-    ? resolve(process.cwd())
-    : resolve(process.cwd(), projectName);
+  const cwd = configureExisting ? resolve(process.cwd()) : resolve(process.cwd(), projectName);
   if (
     !configureExisting &&
     existsSync(cwd) &&
@@ -319,13 +321,12 @@ export async function runInit(argv: string[]): Promise<number> {
 
   if (configureExisting) {
     const hasManifest =
-      existsSync(resolve(cwd, "kortix.yaml")) ||
-      existsSync(resolve(cwd, "kortix.toml"));
+      existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
     const hasRuntime = hasOpencodeRuntime(cwd);
     if (!hasManifest || !hasRuntime) {
       process.stderr.write(
-        "kortix init --force: this directory is not a cloned Kortix project.\n" +
-          "Expected kortix.yaml (or kortix.toml) and .opencode (or .kortix/opencode).\n",
+        'kortix init --force: this directory is not a cloned Kortix project.\n' +
+          'Expected kortix.yaml (or kortix.toml) and .opencode (or .kortix/opencode).\n',
       );
       return 1;
     }
@@ -390,11 +391,11 @@ export async function runInit(argv: string[]): Promise<number> {
   const result = configureExisting
     ? { written: [] as string[], skipped: [] as string[] }
     : applyScaffold({
-    repoRoot: cwd,
-    projectName,
-    template,
-    preserveExisting: !flags.overwrite,
-  });
+        repoRoot: cwd,
+        projectName,
+        template,
+        preserveExisting: !flags.overwrite,
+      });
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
   // Wire local coding-agent compatibility. This is not the cloud runtime
@@ -409,7 +410,10 @@ export async function runInit(argv: string[]): Promise<number> {
   // ── Optional `git init` ──────────────────────────────────────────────
   let gitNote = '';
   if (!flags.noGit && !dirIsGitRepo(cwd) && gitAvailable()) {
-    const r = spawnSync('git', ['init', '-b', 'main'], { cwd, encoding: 'utf8' });
+    const r = spawnSync('git', ['init', '-b', 'main'], {
+      cwd,
+      encoding: 'utf8',
+    });
     gitNote = r.status === 0 ? 'Git: initialized (main)' : `Git: init failed — ${r.stderr.trim()}`;
   } else if (flags.noGit) {
     gitNote = 'Git: skipped (--no-git)';
@@ -431,9 +435,7 @@ export async function runInit(argv: string[]): Promise<number> {
 
   const totalSkipped = result.skipped.length + agentInstall.skipped.length;
   if (totalSkipped > 0) {
-    lines.push(
-      `Preserved ${totalSkipped} existing file${totalSkipped === 1 ? '' : 's'} (pass --overwrite to replace):`,
-    );
+    lines.push(`Preserved ${totalSkipped} existing path${totalSkipped === 1 ? '' : 's'}:`);
     for (const f of result.skipped) lines.push(`  · ${f}`);
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }

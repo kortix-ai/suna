@@ -155,15 +155,17 @@ const INIT_INTRO: Line[] = [
 
 const AGENT_PICK_INTRO: Line[] = [
   [],
-  [t('  Pick your local coding agent to configure this Kortix project.', 'dim')],
+  [t('  Pick the agent that will configure this Kortix project.', 'dim')],
   [],
   [t('  Local tools get compatibility files for editing the repo.', 'dim')],
-  [t('  Cloud sessions use kortix.yaml runtime profiles and ACP harnesses.', 'dim')],
-  [t('  The starter includes an OpenCode harness profile by default.', 'dim')],
+  [t('  This Git-owned project includes four ACP profiles:', 'dim')],
+  [t('  OpenCode · Claude Code · Codex · Pi', 'fg')],
+  [t('  One Kortix SDK session contract powers web', 'dim')],
+  [t('  and reference apps across platforms.', 'dim')],
   [],
 ];
 
-const AGENTS = ['opencode', 'claude', 'codex', 'cursor'];
+const AGENTS = ['OpenCode', 'Claude Code', 'Codex', 'Pi'];
 const PROJECT_NAME_LABEL: Line = [t('Project name '), t('(my-app)', 'dim'), t(': ')];
 
 const initTail = (name: string): Line[] => [

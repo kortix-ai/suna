@@ -31,6 +31,8 @@ export interface StarterFile {
   path: string;
   /** UTF-8 content with `{{var}}` placeholders resolved. */
   content: string;
+  /** Git tree mode. `120000` stores `content` as a symbolic-link target. */
+  mode?: '100644' | '120000';
 }
 
 // There is one USER-FACING starter kit: `general-knowledge-worker` (base
@@ -101,13 +103,10 @@ export function normalizeStarterTemplateId(value: unknown): StarterTemplateId {
 }
 
 const GENERAL_KNOWLEDGE_WORKER_SKILLS_PREFIX = '.opencode/skills/';
+const NATIVE_HARNESS_SKILL_LINKS = ['.claude/skills', '.codex/skills', '.pi/skills'] as const;
 
 export function listGeneralKnowledgeWorkerSkills(): string[] {
-  const skillsDir = join(
-    GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR,
-    '.opencode',
-    'skills',
-  );
+  const skillsDir = join(GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR, '.opencode', 'skills');
   try {
     return readdirSync(skillsDir)
       .filter((entry) => statSync(join(skillsDir, entry)).isDirectory())
@@ -149,12 +148,38 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
   const byPath = new Map<string, StarterFile>();
   for (const root of roots) {
     for (const raw of rawFilesForRoot(root.name, root.dir)) {
-      byPath.set(raw.path, { path: raw.path, content: interpolate(raw.content, resolvedVars) });
+      byPath.set(raw.path, {
+        path: raw.path,
+        content: interpolate(raw.content, resolvedVars),
+      });
     }
   }
 
+  addNativeHarnessSkillLinks(byPath);
+
   const files = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+/**
+ * Keep one canonical Agent Skills tree under OpenCode's native config
+ * directory. Git symlinks expose it through every other harness's native
+ * discovery path. Later marketplace installs update the canonical tree and
+ * become visible to all four harnesses without duplicate UI resources.
+ */
+function addNativeHarnessSkillLinks(byPath: Map<string, StarterFile>): void {
+  if (![...byPath.keys()].some((path) => path.startsWith(GENERAL_KNOWLEDGE_WORKER_SKILLS_PREFIX))) {
+    return;
+  }
+  for (const path of NATIVE_HARNESS_SKILL_LINKS) {
+    if (!byPath.has(path)) {
+      byPath.set(path, {
+        path,
+        content: '../.opencode/skills',
+        mode: '120000',
+      });
+    }
+  }
 }
 
 /**
@@ -162,7 +187,9 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
  * not part of the starter floor.
  */
 export function getMarketplaceFiles(): StarterFile[] {
-  return rawFilesForRoot('marketplace', MARKETPLACE_TEMPLATE_DIR).sort((a, b) => a.path.localeCompare(b.path));
+  return rawFilesForRoot('marketplace', MARKETPLACE_TEMPLATE_DIR).sort((a, b) =>
+    a.path.localeCompare(b.path),
+  );
 }
 
 /**
@@ -191,7 +218,10 @@ export function getProjectTemplateFiles(): StarterFile[] {
 export function getStarterCatalogSourceMap(): Map<string, string> {
   const roots: Array<{ name: string; dir: string }> = [
     { name: 'base', dir: BASE_TEMPLATE_DIR },
-    { name: 'general-knowledge-worker', dir: GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR },
+    {
+      name: 'general-knowledge-worker',
+      dir: GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR,
+    },
     { name: 'marketplace', dir: MARKETPLACE_TEMPLATE_DIR },
   ];
   const map = new Map<string, string>();

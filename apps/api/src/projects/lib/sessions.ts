@@ -4,6 +4,7 @@ import {
   projectSessionRuntimeContexts,
   projectSessions,
 } from '@kortix/db';
+import { HARNESSES } from '@kortix/shared/harnesses';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
@@ -30,11 +31,11 @@ import {
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
-import { resolveCompiledRuntimeConfigForSession, type CompiledRuntimeConfig } from './compile-runtime-config';
 import {
-  resolveProjectComposerState,
-  type HarnessAuthKind,
-} from './composer-capabilities';
+  resolveCompiledRuntimeConfigForSession,
+  type CompiledRuntimeConfig,
+} from './compile-runtime-config';
+import { resolveProjectComposerState, type HarnessAuthKind } from './composer-capabilities';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -54,6 +55,7 @@ import {
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import { requiresExplicitModelSelection } from './session-model-selection';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import {
   buildSessionRuntimeContextEnv,
@@ -81,8 +83,8 @@ export async function countActiveProjectSessions(accountId: string): Promise<num
     .from(projectSessions)
     .where(
       and(
-      eq(projectSessions.accountId, accountId),
-      inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        eq(projectSessions.accountId, accountId),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
       ),
     )
     .limit(1);
@@ -96,8 +98,8 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
     .from(projectSessions)
     .where(
       and(
-      eq(projectSessions.projectId, projectId),
-      inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
+        eq(projectSessions.projectId, projectId),
+        inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
       ),
     )
     .limit(1);
@@ -284,7 +286,11 @@ export async function buildSessionSandboxEnvVars(input: {
     agentGrantEnv = grant?.env;
   }
 
-  let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
+  let runtimeSecrets: {
+    env: Record<string, string>;
+    names: string[];
+    revision: string;
+  };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
@@ -506,11 +512,13 @@ export async function createProjectSession(input: {
   // override fields the caller may set. `origin_ref` (the wrapper end-user this
   // session acts for) is backend-only: a non-backend caller that supplies it is
   // rejected rather than silently attributing to a phantom identity.
+  const sessionSource = (input.metadata as Record<string, unknown> | undefined)?.source as
+    string | undefined;
   const origin = resolveSessionOrigin({
     authType: input.authType,
     apiKeyType: input.apiKeyType,
     inSession: input.inSession,
-    source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+    source: sessionSource,
   });
   const requestedOriginRef = normalizeString(body.origin_ref);
   // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
@@ -626,32 +634,66 @@ export async function createProjectSession(input: {
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
-    const loadedAgents = loadedAgentsForDefault ?? await loadProjectAgents(project);
+    const loadedAgents = loadedAgentsForDefault ?? (await loadProjectAgents(project));
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
       subject: true,
       projectDefaultAgent,
     });
     if (!governed.ok) {
-      return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
+      return {
+        error: {
+          status: 400,
+          body: { error: governed.error, code: governed.code },
+        },
+      };
     }
   }
 
-  const requestedConnection = normalizeString(body.connection_id ?? body.connectionId) as HarnessAuthKind | null;
+  const requestedConnection = normalizeString(
+    body.connection_id ?? body.connectionId,
+  ) as HarnessAuthKind | null;
   const rawModelSelection = body.model_selection ?? body.modelSelection;
-  const modelSelection = rawModelSelection && typeof rawModelSelection === 'object' && !Array.isArray(rawModelSelection)
-    ? rawModelSelection as Record<string, unknown>
-    : null;
+  const modelSelection =
+    rawModelSelection && typeof rawModelSelection === 'object' && !Array.isArray(rawModelSelection)
+      ? (rawModelSelection as Record<string, unknown>)
+      : null;
   const selectionKind = normalizeString(modelSelection?.kind);
   if (selectionKind && !['default', 'preset', 'custom'].includes(selectionKind)) {
-    return { error: { status: 400, body: { error: 'model_selection.kind must be default, preset, or custom', code: 'INVALID_MODEL_SELECTION' } } };
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'model_selection.kind must be default, preset, or custom',
+          code: 'INVALID_MODEL_SELECTION',
+        },
+      },
+    };
   }
   const selectionModel = normalizeString(modelSelection?.model_id ?? modelSelection?.modelId);
   if ((selectionKind === 'preset' || selectionKind === 'custom') && !selectionModel) {
-    return { error: { status: 400, body: { error: `${selectionKind} model selection requires model_id`, code: 'INVALID_MODEL_SELECTION' } } };
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `${selectionKind} model selection requires model_id`,
+          code: 'INVALID_MODEL_SELECTION',
+        },
+      },
+    };
   }
-  const selectionConnection = normalizeString(modelSelection?.connection_id ?? modelSelection?.connectionId) as HarnessAuthKind | null;
+  const selectionConnection = normalizeString(
+    modelSelection?.connection_id ?? modelSelection?.connectionId,
+  ) as HarnessAuthKind | null;
   if (requestedConnection && selectionConnection && requestedConnection !== selectionConnection) {
-    return { error: { status: 400, body: { error: 'connection_id conflicts with model_selection.connection_id', code: 'INVALID_MODEL_SELECTION' } } };
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'connection_id conflicts with model_selection.connection_id',
+          code: 'INVALID_MODEL_SELECTION',
+        },
+      },
+    };
   }
   let composerCapability;
   try {
@@ -661,7 +703,10 @@ export async function createProjectSession(input: {
       metadata: project.metadata,
       accountId,
     });
-    composerCapability = await state.capabilities(agentName, requestedConnection ?? selectionConnection);
+    composerCapability = await state.capabilities(
+      agentName,
+      requestedConnection ?? selectionConnection,
+    );
   } catch (error) {
     return {
       error: {
@@ -685,11 +730,51 @@ export async function createProjectSession(input: {
       },
     };
   }
-  if (selectionKind === 'preset' && !composerCapability.model.presets.some((preset) => preset.id === selectionModel)) {
-    return { error: { status: 400, body: { error: `Model preset "${selectionModel}" is not available for the selected connection`, code: 'INVALID_MODEL_SELECTION' } } };
+  const hasExplicitModelSelection =
+    selectionKind !== null || normalizeString(body.model ?? body.runtime_model) !== null;
+  if (
+    requiresExplicitModelSelection({
+      authType: input.authType,
+      source: sessionSource,
+      ownsDefaultModel: HARNESSES[composerCapability.agent.harness].ownsDefaultModel,
+      hasExplicitSelection: hasExplicitModelSelection,
+    })
+  ) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'Select a model before starting this agent.',
+          code: 'MODEL_SELECTION_REQUIRED',
+          model_policy: composerCapability.model.policy,
+        },
+      },
+    };
+  }
+  if (
+    selectionKind === 'preset' &&
+    !composerCapability.model.presets.some((preset) => preset.id === selectionModel)
+  ) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `Model preset "${selectionModel}" is not available for the selected connection`,
+          code: 'INVALID_MODEL_SELECTION',
+        },
+      },
+    };
   }
   if (selectionKind === 'custom' && !composerCapability.model.custom_allowed) {
-    return { error: { status: 400, body: { error: 'Custom model ids are not supported by the selected harness', code: 'INVALID_MODEL_SELECTION' } } };
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'Custom model ids are not supported by the selected harness',
+          code: 'INVALID_MODEL_SELECTION',
+        },
+      },
+    };
   }
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`sandbox.default` in kortix.yaml — `[sandbox] default` in a
@@ -719,7 +804,9 @@ export async function createProjectSession(input: {
     return {
       error: {
         status: 400,
-        body: { error: `Unknown or disabled sandbox provider: ${picked.badRequest}` },
+        body: {
+          error: `Unknown or disabled sandbox provider: ${picked.badRequest}`,
+        },
       },
     };
   }
@@ -729,7 +816,10 @@ export async function createProjectSession(input: {
   const callbackUnreachable = sandboxCallbackUnreachableReason(providerName);
   if (callbackUnreachable) {
     return {
-      error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },
+      error: {
+        status: 503,
+        body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' },
+      },
     };
   }
 
@@ -807,16 +897,20 @@ export async function createProjectSession(input: {
     return {
       error: {
         status: 400,
-        body: { error: 'Use model or runtime_model for session model overrides', code: 'invalid_body' },
+        body: {
+          error: 'Use model or runtime_model for session model overrides',
+          code: 'invalid_body',
+        },
       },
     };
   }
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const runtimeModel = selectionKind === 'default'
-    ? null
-    : selectionModel ?? normalizeString(body.model ?? body.runtime_model);
+  const runtimeModel =
+    selectionKind === 'default'
+      ? null
+      : (selectionModel ?? normalizeString(body.model ?? body.runtime_model));
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
@@ -838,29 +932,29 @@ export async function createProjectSession(input: {
   try {
     sessionRow = await db.transaction(async (tx) => {
       const [row] = await tx
-      .insert(projectSessions)
-      .values({
-        sessionId,
-        accountId,
-        projectId,
-        branchName: sessionId,
-        baseRef,
-        sandboxProvider: providerName,
-        sandboxId: sessionId,
-        agentName,
-        status: 'provisioning',
-        // Sessions are private to their creator by default; share via the
-        // session-header control (visibility = project | restricted).
-        createdBy: userId,
-        visibility,
-        origin,
-        originRef,
-        metadata,
-        updatedAt: new Date(),
-      })
-      .returning();
-    if (!row) throw new Error('Session insert returned no row');
-    if (parsedRuntimeContext.context !== undefined) {
+        .insert(projectSessions)
+        .values({
+          sessionId,
+          accountId,
+          projectId,
+          branchName: sessionId,
+          baseRef,
+          sandboxProvider: providerName,
+          sandboxId: sessionId,
+          agentName,
+          status: 'provisioning',
+          // Sessions are private to their creator by default; share via the
+          // session-header control (visibility = project | restricted).
+          createdBy: userId,
+          visibility,
+          origin,
+          originRef,
+          metadata,
+          updatedAt: new Date(),
+        })
+        .returning();
+      if (!row) throw new Error('Session insert returned no row');
+      if (parsedRuntimeContext.context !== undefined) {
         await tx
           .insert(projectSessionRuntimeContexts)
           .values({
@@ -870,7 +964,7 @@ export async function createProjectSession(input: {
               .byteLength,
           })
           .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
-    }
+      }
       if (validatedConnectorBindings.bindings.length > 0) {
         await tx
           .insert(projectSessionConnectorBindings)
@@ -935,28 +1029,28 @@ export async function createProjectSession(input: {
       ]);
       const envPromise = baseShaPromise
         .then((baseSha) =>
-        buildSessionSandboxEnvVars({
-          accountId,
-          projectId,
-          sessionId,
-          userId,
-          repoUrl: project.repoUrl,
-          baseRef,
-          agentName,
-          initialPrompt,
-          runtimeModel,
-          runtimeAuthKind: composerCapability.auth.active,
-          llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
-          freshSession: true,
-          baseSha,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath,
-        }),
+          buildSessionSandboxEnvVars({
+            accountId,
+            projectId,
+            sessionId,
+            userId,
+            repoUrl: project.repoUrl,
+            baseRef,
+            agentName,
+            initialPrompt,
+            runtimeModel,
+            runtimeAuthKind: composerCapability.auth.active,
+            llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
+            freshSession: true,
+            baseSha,
+            defaultBranch: project.defaultBranch,
+            manifestPath: project.manifestPath,
+          }),
         )
         .then((envVars) => {
-        tl.mark('env-vars');
-        return envVars;
-      });
+          tl.mark('env-vars');
+          return envVars;
+        });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
         const [current] = await db
@@ -988,18 +1082,18 @@ export async function createProjectSession(input: {
         ? Promise.resolve()
         : projectWithGitAuthPromise
             .then((projectWithGitAuth) =>
-            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
+              createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
             )
             .then(() => {
-            tl.mark('branch-pushed');
-            void mergeSessionMetadata({
+              tl.mark('branch-pushed');
+              void mergeSessionMetadata({
                 remote_branch: {
                   status: 'ready',
                   branch: sessionId,
                   updated_at: new Date().toISOString(),
                 },
-            }).catch(() => {});
-          });
+              }).catch(() => {});
+            });
       branchPromise.catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
@@ -1021,7 +1115,11 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         provider: providerName,
-        metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        metadata: {
+          session_id: sessionId,
+          project_id: projectId,
+          ...(input.metadata ?? {}),
+        },
         extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {
@@ -1043,7 +1141,9 @@ export async function createProjectSession(input: {
       const sessionStartTimeline = tl.log();
       // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
       // here used to add ~30-80ms of DB round-trip to every session start.
-      void mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
+      void mergeSessionMetadata({
+        session_start_timeline: sessionStartTimeline,
+      }).catch(() => {});
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);

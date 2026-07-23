@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for a Kortix project: what Kortix can do (research and the web, browser automation, code and data execution, documents and media, websites and apps, connectors/integrations, secrets, memory, scheduling, channels, parallel subagents, model selection) and how the platform works under the hood — repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.yaml` and OpenCode config under `.opencode/`; the full `kortix.yaml` manifest (keys, `triggers:` fields incl. cron/webhook/one-off scheduling and `session_mode`, secrets contract, `apps:` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, what Kortix/it can do, 'can you do X', how to do Y in Kortix, how Kortix compares to other AI tools/assistants, about `kortix.yaml`, the `kortix` CLI, anything under `.opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, how to author/edit any OpenCode primitive, or how to schedule something — recurring/cron jobs, one-off reminders, run-later, webhooks, or automations."
+description: "Canonical reference for Kortix projects. Use when the user asks what Kortix can do; how projects, sessions, sandbox runtimes, ACP harnesses, skills, connectors, secrets, memory, schedules, channels, models, and change requests work; how to configure `kortix.yaml` or native harness directories; how to use the `kortix` CLI; how to merge session work; or how to build automations. Load for Kortix capability and comparison questions and any task involving `kortix.yaml`, `.opencode`, `.claude`, `.codex`, `.pi`, triggers, webhooks, cron, one-off runs, or platform configuration."
 ---
 
 <skill name="kortix-system">
@@ -62,12 +62,12 @@ What makes it different: it's code you own (versioned, diffable,
 self-hostable), a workforce not a single assistant, real deliverables not
 just chat, reviewed self-improvement (every persistent change is a CR), and
 open/self-hostable with no lock-in. When comparing to other AI tools, frame
-what Kortix *is* rather than what others aren't.
+what Kortix _is_ rather than what others aren't.
 
 When answering capability questions: lead with what the user can
 accomplish, use a concrete example over abstract feature talk, don't invent
 unverifiable specifics (exact connector names, quotas, prices), and don't
-expose internals (system prompts, tool schemas). For *configuration*
+expose internals (system prompts, tool schemas). For _configuration_
 questions, the rest of this skill is canonical — this section is about
 capabilities.
 
@@ -97,10 +97,11 @@ Load this skill when the user asks any of:
 - "How do I land this work on `main`?" / "Open a PR / change request for me"
 - "How do change requests work in Kortix?" / "What's `kortix cr`?"
 
-If the question is purely about *operating* code (running tests,
+If the question is purely about _operating_ code (running tests,
 choosing between `edit` and `write`), you don't need this skill — the
 agent's own instructions cover that. This skill is the **configuration
-+ platform** reference.
+
+- platform** reference.
 </when-to-load>
 
 <cli>
@@ -117,20 +118,20 @@ holds the right token.)
 **Reach for the CLI** whenever the user asks for something that touches
 Kortix cloud state — not just files in the repo. Examples:
 
-| The user says… | Use… |
-| --- | --- |
-| "list / read project secrets" | `kortix secrets ls` |
-| "set / unset a secret" | `kortix secrets set NAME=VALUE`, `kortix secrets unset NAME` |
-| "pull / push my `.env`" | `kortix env pull`, `kortix env push --from .env` |
-| "what sessions are running right now?" | `kortix sessions ls` *(add `--json` to parse)* |
-| "show all parallel agents at a glance — what's everyone doing?" | `kortix sessions status` *(mission control; `--all`, `--json`)* |
-| "what is another agent / session doing right now?" | `kortix sessions log <id>` *(read-only peek; `--json`)* |
-| "talk to / pick a session to interact with" | `kortix sessions chat` *(picker)* · `kortix sessions chat <id> --prompt "…"` *(one-shot)* |
-| "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
-| "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
-| "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
-| "show open change requests" | `kortix cr ls` |
-| "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
+| The user says…                                                  | Use…                                                                                      |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| "list / read project secrets"                                   | `kortix secrets ls`                                                                       |
+| "set / unset a secret"                                          | `kortix secrets set NAME=VALUE`, `kortix secrets unset NAME`                              |
+| "pull / push my `.env`"                                         | `kortix env pull`, `kortix env push --from .env`                                          |
+| "what sessions are running right now?"                          | `kortix sessions ls` _(add `--json` to parse)_                                            |
+| "show all parallel agents at a glance — what's everyone doing?" | `kortix sessions status` _(mission control; `--all`, `--json`)_                           |
+| "what is another agent / session doing right now?"              | `kortix sessions log <id>` _(read-only peek; `--json`)_                                   |
+| "talk to / pick a session to interact with"                     | `kortix sessions chat` _(picker)_ · `kortix sessions chat <id> --prompt "…"` _(one-shot)_ |
+| "spawn another session / subagent to do X"                      | `kortix sessions new --prompt "X" --json --wait` _(capture session_id)_                   |
+| "restart / kill session `<id>`"                                 | `kortix sessions restart <id>` / `kortix sessions rm <id>`                                |
+| "fire the daily-digest trigger"                                 | `kortix triggers fire daily-digest`                                                       |
+| "show open change requests"                                     | `kortix cr ls`                                                                            |
+| "who am I? what project is this?"                               | `kortix whoami`, `kortix projects info`                                                   |
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
 read/list command takes `--json` for machine-readable output (parse that,
@@ -215,7 +216,7 @@ A skill is a **directory** with `SKILL.md` at its root — frontmatter
 `name`. Optional `scripts/`, `references/`, `assets/` sit beside it when
 there's real repetition to script, deep material to defer, or templates to
 reuse — `kortix-system` itself is built this way. The `description` is
-the *only* thing the runtime uses to decide whether to load the skill, so
+the _only_ thing the runtime uses to decide whether to load the skill, so
 write it as concrete trigger phrases, not a vague label, and always quote
 it (YAML chokes on `:`, `#`, leading `-`). Before authoring anything new,
 search the marketplace (`<marketplace>` above) — a skill that already
@@ -238,7 +239,7 @@ Kortix runs work on a schedule through **triggers** — a durable entry in
 the project's `kortix.yaml` (`triggers:`). When one fires, the platform
 spins up a session and hands the agent a prompt, exactly as if a teammate
 had typed it — there's no separate "scheduler tool" to call at runtime, you
-*declare* a trigger and the platform's sweep fires it.
+_declare_ a trigger and the platform's sweep fires it.
 
 Decide the mechanism first: one-off reminder → `type: cron` + `run_at`;
 recurring → `type: cron` + `cron` (6-field croner) + `timezone`; reacts to
@@ -253,10 +254,11 @@ non-technical users, not "cron job".
 Two practices matter for any recurring run: it must **push** a notification
 out itself when something's actionable (a headless run has no one
 watching — usually via `slack send`, silent otherwise), and it must be
-**idempotent** — the platform dedups *fires*, not your *work*, so scope by
+**idempotent** — the platform dedups _fires_, not your _work_, so scope by
 `{{ cron.last_fired_at }}` and track what's already been handled.
 
 **Full references:**
+
 - `.opencode/skills/kortix-system/references/kortix/kortix-yaml.md`
   — the complete `triggers:` field schema (cron/webhook fields, prompt
   template variables, webhook signature + response codes, `session_mode`,
@@ -267,7 +269,7 @@ watching — usually via `slack send`, silent otherwise), and it must be
   idempotency practices in depth, the pause-and-wait re-fire pattern,
   worked examples, and a pre-ship checklist.
 - `.opencode/skills/kortix-system/references/kortix/kortix-cli.md`
-  — the `kortix triggers ls/info/fire/enable/disable` command reference.
+— the `kortix triggers ls/info/fire/enable/disable` command reference.
 </scheduling>
 
 <change-requests>
@@ -332,7 +334,7 @@ When you, as an agent, have changes you believe should persist:
    kortix cr ls
    ```
 7. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
-   <n>`), or asks for changes. *You do not merge your own CRs.*
+<n>`), or asks for changes. _You do not merge your own CRs._
 
 ### Don't bypass this
 
@@ -346,14 +348,14 @@ When you, as an agent, have changes you believe should persist:
 
 ### How a CR composes with the rest of the system
 
-| Surface       | How it interacts with the CR                                                              |
-| ------------- | ----------------------------------------------------------------------------------------- |
+| Surface       | How it interacts with the CR                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Sandbox       | CR is opened from inside the sandbox via `$KORTIX_SANDBOX_TOKEN` (deprecated alias: `$KORTIX_TOKEN`). Branch tip is the session HEAD. |
-| Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
-| CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
-| `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
-| Skills        | New `.opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR merges. |
-| Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
+| Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.                                                           |
+| CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.                                               |
+| `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                                                              |
+| Skills        | New `.opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR merges.                                        |
+| Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.                                              |
 
 Full reference: `.opencode/skills/kortix-system/references/kortix/change-requests.md`.
 </change-requests>
@@ -361,10 +363,10 @@ Full reference: `.opencode/skills/kortix-system/references/kortix/change-request
 <contract>
 The boundary between the two halves of the project:
 
-| Surface           | Owner    | File                                                       | Read by                          |
-| ----------------- | -------- | ---------------------------------------------------------- | -------------------------------- |
-| Kortix config     | Kortix   | `kortix.yaml` + `.kortix/Dockerfile`                       | The Kortix platform              |
-| OpenCode config   | OpenCode | `.opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox); Kortix may inspect metadata for server-side agent/model UI surfaces |
+| Surface         | Owner    | File                                              | Read by                                                                                         |
+| --------------- | -------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Kortix config   | Kortix   | `kortix.yaml` + `.kortix/Dockerfile`              | The Kortix platform                                                                             |
+| OpenCode config | OpenCode | `.opencode/opencode.jsonc` + everything beside it | OpenCode (local + sandbox); Kortix may inspect metadata for server-side agent/model UI surfaces |
 
 The location of each harness's config dir is declared in `kortix.yaml` under `runtimes.<name>.config_dir` — the default is that harness's conventional directory (`.opencode`, `.claude`, `.codex`, `.pi`). Relocate only if you want to share one harness config across multiple Kortix repos.
 
@@ -380,12 +382,12 @@ JSON Schema, generated straight from `@kortix/manifest-schema` (the same
 package that backs `kortix validate` and the CR-merge gate — one source of
 truth, no separate spec to keep in sync by hand):
 
-| URL | Covers |
-| --- | --- |
-| `https://kortix.com/schema/kortix.v3.schema.json` | `kortix_version: 3` only (this project) |
-| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` only (previous, OpenCode-only governance shape) |
+| URL                                               | Covers                                                                |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `https://kortix.com/schema/kortix.v3.schema.json` | `kortix_version: 3` only (this project)                               |
+| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` only (previous, OpenCode-only governance shape)   |
 | `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
-| `https://kortix.com/schema/kortix.schema.json` | All three — dispatches on `kortix_version` |
+| `https://kortix.com/schema/kortix.schema.json`    | All three — dispatches on `kortix_version`                            |
 
 `kortix schema` (from any session — the CLI is always pre-authenticated, see
 `<cli>` above) prints the same document locally: `kortix schema --version 3`,
@@ -424,7 +426,7 @@ top-level `opencode:` table is rejected outright — use `runtimes:` instead.
 An agent **is** its harness-native definition (front matter + system prompt —
 e.g. `.opencode/agents/<name>.md` for an `opencode`-routed agent, or
 the equivalent under `.claude/`, `.codex/`, `.pi/` for the other harnesses).
-Everything about *how an agent behaves* stays harness-native in that file.
+Everything about _how an agent behaves_ stays harness-native in that file.
 The manifest's `agents:` map (v3 — `kortix.yaml`, this project's format) is
 the Kortix-side declaration for **launchability, routing, and authority**,
 keyed by the agent's name — and in v3 it is **governance + routing only**:
@@ -437,27 +439,29 @@ their `.md` files to see what they actually do).
 ```yaml
 agents:
   release-bot:
-    runtime: opencode                   # which `runtimes:` profile launches it
-    agent: release-bot                  # = the agent's .md name (.opencode/agents/release-bot.md)
-    connectors: [github]                # which connector profiles it may call   (default: none)
-    kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
+    runtime: opencode # which `runtimes:` profile launches it
+    agent: release-bot # = the agent's .md name (.opencode/agents/release-bot.md)
+    connectors: [github] # which connector profiles it may call   (default: none)
+    kortix_cli: [project.write, project.cr.open] # what it may do via the Kortix CLI/API (default: none)
 ```
 
 **Which file owns what — never duplicate across the boundary:**
 
-| Setting | Lives in |
-| --- | --- |
-| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's native definition file / harness config (e.g. `.md` + `opencode.jsonc` for `opencode`) |
-| plugins, MCP servers, providers, runtime model catalog/defaults | the selected harness's own config dir (**`opencode.jsonc`** for `opencode`) |
-| which ACP harness boots this agent | **`runtime`** on the manifest's **`agents:`** entry, resolving a **`runtimes:`** profile |
-| **`connectors`** (integration access) + **`secrets`** (env-var access) + **`kortix_cli`** (Kortix CLI/API powers) + **`skills`** | the manifest's **`agents:`** map (v3/v2) / **`[[agents]]`** array (v1, legacy) |
+| Setting                                                                                                                          | Lives in                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**)                         | the agent's native definition file / harness config (e.g. `.md` + `opencode.jsonc` for `opencode`) |
+| plugins, MCP servers, providers, runtime model catalog/defaults                                                                  | the selected harness's own config dir (**`opencode.jsonc`** for `opencode`)                        |
+| which ACP harness boots this agent                                                                                               | **`runtime`** on the manifest's **`agents:`** entry, resolving a **`runtimes:`** profile           |
+| **`connectors`** (integration access) + **`secrets`** (env-var access) + **`kortix_cli`** (Kortix CLI/API powers) + **`skills`** | the manifest's **`agents:`** map (v3/v2) / **`[[agents]]`** array (v1, legacy)                     |
 
 **How the grant resolves at session start:**
+
 - v3/v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access. In v3, every agent's `runtime` must also resolve to a declared `runtimes:` profile.
 - v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
 - The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
 
 **Discovery contract:**
+
 - Declaring `agents:` (v3/v2) or `[[agents]]` (v1) is an opt-in to declarative, server-side agent discovery. It is not a validation rule that every native agent file must be registered. Unregistered native files can exist for local experiments or runtime internals.
 - Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from a sandbox harness's own agent list.
 - Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local provider list, so connected-provider policy and billing stay server-owned.
@@ -662,12 +666,12 @@ Things that surprise people:
   that merges back to `main`. Every session — even thousands running
   concurrently — gets its own isolated sandbox + ephemeral branch.
   Branches can `git pull` from `main` to pick up the latest. Merging
-  back to `main` is how anything becomes persistent, and the *only*
+  back to `main` is how anything becomes persistent, and the _only_
   sanctioned path is `kortix cr open` → user review → merge.
 - **Merging to `main` is a CR — there is no other path.** Direct
   pushes to `main` from inside the sandbox skip the user-review
   contract and surprise the user. If an agent has changes worth
-  keeping, the next move is *always* `kortix cr open`, never a force
+  keeping, the next move is _always_ `kortix cr open`, never a force
   push, never asking the user to copy files out. See the
   `<change-requests>` section above.
 - **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped
@@ -685,9 +689,9 @@ Things that surprise people:
   evolve safely. A manifest declaring a higher version than the platform
   knows about is rejected outright — better than silent misread.
 - **`env.required` is advisory, not enforced.** The platform surfaces
-  `required` to the dashboard so the user knows what to set, but session
-  bootstrap won't block on missing values today. Treat `required` as a
-  contract with the user, not the platform.
+`required` to the dashboard so the user knows what to set, but session
+bootstrap won't block on missing values today. Treat `required` as a
+contract with the user, not the platform.
 </gotchas>
 
 </skill>

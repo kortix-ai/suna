@@ -78,7 +78,10 @@ function ref(overrides: Partial<GitConnectionRef> = {}): GitConnectionRef {
 
 describe('mintCodeStorageJwt', () => {
   test('signs ES256 for an EC private key, verifiable by a spec-compliant verifier', async () => {
-    const jwt = mintCodeStorageJwt({ repo: 'team/project-alpha', scopes: ['git:read'] });
+    const jwt = mintCodeStorageJwt({
+      repo: 'team/project-alpha',
+      scopes: ['git:read'],
+    });
     expect(decodeJwtHeader(jwt)).toEqual({ alg: 'ES256', typ: 'JWT' });
     const key = await importSPKI(EC_PUBLIC_PEM, 'ES256');
     const { payload } = await jwtVerify(jwt, key);
@@ -131,7 +134,9 @@ describe('mintCodeStorageJwt', () => {
 
   test('throws on an unsupported (e.g. Ed25519) key type', () => {
     const ed = generateKeyPairSync('ed25519');
-    config.CODE_STORAGE_PRIVATE_KEY = ed.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    config.CODE_STORAGE_PRIVATE_KEY = ed.privateKey
+      .export({ type: 'pkcs8', format: 'pem' })
+      .toString();
     expect(() => mintCodeStorageJwt({ scopes: ['git:read'] })).toThrow(/unsupported/);
   });
 
@@ -139,7 +144,9 @@ describe('mintCodeStorageJwt', () => {
     // secp384r1 (P-384) is a valid EC curve but NOT one ES256 supports —
     // `asymmetricKeyType === 'ec'` alone isn't enough to pick ES256.
     const p384 = generateKeyPairSync('ec', { namedCurve: 'secp384r1' });
-    config.CODE_STORAGE_PRIVATE_KEY = p384.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    config.CODE_STORAGE_PRIVATE_KEY = p384.privateKey
+      .export({ type: 'pkcs8', format: 'pem' })
+      .toString();
     expect(() => mintCodeStorageJwt({ scopes: ['git:read'] })).toThrow(/unsupported/);
   });
 
@@ -149,7 +156,10 @@ describe('mintCodeStorageJwt', () => {
     // newlines flattened to the two-character sequence `\n`.
     const mangled = `"${EC_PRIVATE_PEM.trim().replace(/\n/g, '\\n')}"`;
     config.CODE_STORAGE_PRIVATE_KEY = mangled;
-    const jwt = mintCodeStorageJwt({ repo: 'team/project-alpha', scopes: ['git:read'] });
+    const jwt = mintCodeStorageJwt({
+      repo: 'team/project-alpha',
+      scopes: ['git:read'],
+    });
     expect(decodeJwtHeader(jwt)).toEqual({ alg: 'ES256', typ: 'JWT' });
     // Verifiable against the ORIGINAL (un-mangled) public key — proves the
     // normalized PEM signs identically to the clean one.
@@ -282,7 +292,8 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
   });
 
   test('createRepo: falls back to the requested slug as repo path when http_url is missing', async () => {
-    globalThis.fetch = (async () => json({ repo_id: 'repo_x', message: 'ok' })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      json({ repo_id: 'repo_x', message: 'ok' })) as unknown as typeof fetch;
     const repo = await codeStorageBackend.createRepo({
       accountId: 'a',
       projectId: 'p',
@@ -295,7 +306,15 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
 
   test('createRepo: throws with the RFC 9457 problem detail on failure', async () => {
     globalThis.fetch = (async () =>
-      json({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'repo already exists' }, 409)) as unknown as typeof fetch;
+      json(
+        {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'repo already exists',
+        },
+        409,
+      )) as unknown as typeof fetch;
     await expect(
       codeStorageBackend.createRepo({
         accountId: 'a',
@@ -312,7 +331,11 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
       requests.push({ url: href, init });
-      return json({ repo_id: 'repo_x', http_url: 'https://git.code.storage/acme/my-project', message: 'ok' });
+      return json({
+        repo_id: 'repo_x',
+        http_url: 'https://git.code.storage/acme/my-project',
+        message: 'ok',
+      });
     }) as unknown as typeof fetch;
 
     await codeStorageBackend.createRepo({
@@ -340,7 +363,10 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
       `https://api.acme.code.storage/api/repos/${encodeURIComponent('team/project-alpha')}`,
     );
     expect(requests[0]!.init?.method).toBe('DELETE');
-    const token = (requests[0]!.init?.headers as Record<string, string>).Authorization!.replace('Bearer ', '');
+    const token = (requests[0]!.init?.headers as Record<string, string>).Authorization!.replace(
+      'Bearer ',
+      '',
+    );
     const payload = decodeJwtPayload(token);
     expect(payload.repo).toBe('team/project-alpha');
     expect(payload.scopes).toEqual(['repo:write']);
@@ -404,8 +430,20 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
       headersSeen.push((init?.headers as Record<string, string>) ?? {});
       return new Response(
         JSON.stringify({
-          commit: { commit_sha: 'sha1', tree_sha: 'tree1', target_branch: 'main', pack_bytes: 10, blob_count: 1 },
-          result: { branch: 'main', old_sha: '0'.repeat(40), new_sha: 'sha1', success: true, status: 'ok' },
+          commit: {
+            commit_sha: 'sha1',
+            tree_sha: 'tree1',
+            target_branch: 'main',
+            pack_bytes: 10,
+            blob_count: 1,
+          },
+          result: {
+            branch: 'main',
+            old_sha: '0'.repeat(40),
+            new_sha: 'sha1',
+            success: true,
+            status: 'ok',
+          },
         }),
         { status: 201, headers: { 'Content-Type': 'application/json' } },
       );
@@ -417,14 +455,24 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
   });
 
   function parseNdjson(body: string) {
-    return body.trim().split('\n').map((line) => JSON.parse(line));
+    return body
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
   }
 
   test('single commit when there are no baseFiles', async () => {
     await codeStorageBackend.seedFiles!(
       ref(),
       'git-write-token',
-      [{ path: 'README.md', content: '# hello' }],
+      [
+        { path: 'README.md', content: '# hello' },
+        {
+          path: '.claude/skills',
+          content: '../.opencode/skills',
+          mode: '120000',
+        },
+      ],
       { branch: 'main', message: 'chore: scaffold Kortix project' },
     );
 
@@ -436,12 +484,26 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
     expect(lines[0].metadata.target_branch).toBe('main');
     expect(lines[0].metadata.commit_message).toBe('chore: scaffold Kortix project');
     expect(lines[0].metadata.files).toEqual([
-      { path: 'README.md', operation: 'upsert', content_id: 'blob-0', mode: '100644' },
+      {
+        path: 'README.md',
+        operation: 'upsert',
+        content_id: 'blob-0',
+        mode: '100644',
+      },
+      {
+        path: '.claude/skills',
+        operation: 'upsert',
+        content_id: 'blob-1',
+        mode: '120000',
+      },
     ]);
     expect(lines[0].metadata).not.toHaveProperty('expected_head_sha');
     expect(lines[1].blob_chunk.content_id).toBe('blob-0');
     expect(Buffer.from(lines[1].blob_chunk.data, 'base64').toString('utf8')).toBe('# hello');
     expect(lines[1].blob_chunk.eof).toBe(true);
+    expect(Buffer.from(lines[2].blob_chunk.data, 'base64').toString('utf8')).toBe(
+      '../.opencode/skills',
+    );
   });
 
   test('two sequential commits when baseFiles is set: deterministic scaffold, then project files', async () => {
@@ -471,7 +533,10 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
       ref(),
       'caller-token-123',
       [{ path: 'a.txt', content: 'x' }],
-      { branch: 'main', message: 'msg' },
+      {
+        branch: 'main',
+        message: 'msg',
+      },
     );
     expect(headersSeen[0]!.Authorization).toBe('Bearer caller-token-123');
     expect(headersSeen[0]!['Content-Type']).toBe('application/x-ndjson');
@@ -489,11 +554,21 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
   test('propagates a commit-pack failure (e.g. 409 branch-moved conflict)', async () => {
     globalThis.fetch = (async () =>
       new Response(
-        JSON.stringify({ result: { branch: 'main', message: 'expected branch head did not match current tip', success: false, status: 'precondition_failed' } }),
+        JSON.stringify({
+          result: {
+            branch: 'main',
+            message: 'expected branch head did not match current tip',
+            success: false,
+            status: 'precondition_failed',
+          },
+        }),
         { status: 409, headers: { 'Content-Type': 'application/json' } },
       )) as unknown as typeof fetch;
     await expect(
-      codeStorageBackend.seedFiles!(ref(), 'tok', [{ path: 'a', content: 'b' }], { branch: 'main', message: 'm' }),
+      codeStorageBackend.seedFiles!(ref(), 'tok', [{ path: 'a', content: 'b' }], {
+        branch: 'main',
+        message: 'm',
+      }),
     ).rejects.toThrow(/did not match current tip/);
   });
 });

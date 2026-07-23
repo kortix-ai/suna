@@ -16,6 +16,7 @@ import {
   setProjectSessionSharing,
   stopProjectSession,
   updateProjectSession,
+  type ProjectSession,
 } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -37,7 +38,10 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+configureKortix({
+  backendUrl: 'http://test.local',
+  getToken: async () => 'tok',
+});
 const last = () => calls[calls.length - 1];
 
 test('listProjectSessions hits GET /projects/:id/sessions', async () => {
@@ -110,7 +114,10 @@ test('createProjectSession POSTs the input and marks the new session fresh', asy
 });
 
 test('createProjectSession serializes non-secret runtime_context unchanged', async () => {
-  nextResponse = { status: 200, body: { session_id: 'NEW-CONTEXT', name: null } };
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'NEW-CONTEXT', name: null },
+  };
   await createProjectSession('P1', {
     runtime_context: {
       workspace_id: 'org_123',
@@ -129,6 +136,26 @@ test('createProjectSession serializes non-secret runtime_context unchanged', asy
       optional: null,
     },
   });
+});
+
+test('createProjectSession forwards the backend-origin KaaB user reference', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      session_id: 'NEW-BACKEND',
+      origin: 'backend',
+      origin_ref: 'customer_42',
+    },
+  };
+  const result = await createProjectSession('P1', {
+    origin_ref: 'customer_42',
+  });
+  const origin: ProjectSession['origin'] = result.origin;
+  const originRef: ProjectSession['origin_ref'] = result.origin_ref;
+
+  expect(last().body).toEqual({ origin_ref: 'customer_42' });
+  expect(origin).toBe('backend');
+  expect(originRef).toBe('customer_42');
 });
 
 test('createProjectSession does NOT mark the session fresh when an initial_prompt is set', async () => {
@@ -151,7 +178,10 @@ test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showEr
 });
 
 test('getSessionAudit appends ?limit= only when a limit is given', async () => {
-  nextResponse = { status: 200, body: { session_id: 'S1', agent: null, count: 0, actions: [] } };
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', agent: null, count: 0, actions: [] },
+  };
   await getSessionAudit('P1', 'S1', 10);
   expect(last().url).toContain('/projects/P1/sessions/S1/audit?limit=10');
 
@@ -162,7 +192,13 @@ test('getSessionAudit appends ?limit= only when a limit is given', async () => {
 test('getSessionTranscript builds the query string from limit/chars options', async () => {
   nextResponse = {
     status: 200,
-    body: { available: true, reason: null, runtime_session_id: 'ocs-1', message_count: 0, messages: [] },
+    body: {
+      available: true,
+      reason: null,
+      runtime_session_id: 'ocs-1',
+      message_count: 0,
+      messages: [],
+    },
   };
   await getSessionTranscript('P1', 'S1', { limit: 5, chars: 200 });
   expect(last().url).toContain('/projects/P1/sessions/S1/transcript?limit=5&chars=200');
@@ -187,7 +223,10 @@ test('deleteProjectSession DELETEs the session', async () => {
 });
 
 test('restartProjectSession POSTs to /restart', async () => {
-  nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'provisioning' } };
+  nextResponse = {
+    status: 200,
+    body: { ok: true, session_id: 'S1', status: 'provisioning' },
+  };
   const result = await restartProjectSession('P1', 'S1');
   expect(last().url).toContain('/projects/P1/sessions/S1/restart');
   expect(last().method).toBe('POST');
@@ -195,7 +234,10 @@ test('restartProjectSession POSTs to /restart', async () => {
 });
 
 test('stopProjectSession POSTs to /stop', async () => {
-  nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'stopped' } };
+  nextResponse = {
+    status: 200,
+    body: { ok: true, session_id: 'S1', status: 'stopped' },
+  };
   const result = await stopProjectSession('P1', 'S1');
   expect(last().url).toContain('/projects/P1/sessions/S1/stop');
   expect(last().method).toBe('POST');

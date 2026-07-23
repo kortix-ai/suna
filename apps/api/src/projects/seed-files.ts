@@ -1,4 +1,4 @@
-import { interpolateVars, type StarterTemplateId } from '@kortix/starter';
+import { interpolateVars, type StarterFile, type StarterTemplateId } from '@kortix/starter';
 import { parseManifestText } from '@kortix/manifest-schema';
 import { findCatalogEntryByName, getCatalogEntry } from '../marketplace/catalog';
 import { buildStarterFiles } from './starter';
@@ -17,25 +17,16 @@ export interface ProjectSeedFilesInput {
 }
 
 export function normalizeMarketplaceItems(value: unknown): string[] {
-  const raw = Array.isArray(value)
-    ? value
-    : typeof value === 'string'
-      ? value.split(',')
-      : [];
-  return [...new Set(raw
-    .map((item) => (typeof item === 'string' ? item.trim() : ''))
-    .filter(Boolean))];
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return [
+    ...new Set(raw.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)),
+  ];
 }
 
-function mergeSeedFiles(
-  base: Array<{ path: string; content: string }>,
-  extra: Array<{ path: string; content: string }>,
-): Array<{ path: string; content: string }> {
-  const byPath = new Map(base.map((file) => [file.path, file.content] as const));
-  for (const file of extra) byPath.set(file.path, file.content);
-  return [...byPath.entries()]
-    .map(([path, content]) => ({ path, content }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+function mergeSeedFiles(base: StarterFile[], extra: StarterFile[]): StarterFile[] {
+  const byPath = new Map(base.map((file) => [file.path, file] as const));
+  for (const file of extra) byPath.set(file.path, file);
+  return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**
@@ -45,8 +36,8 @@ function mergeSeedFiles(
  * installed at provision time; adding one to a project is an agent import.
  */
 export async function buildProjectSeedFiles(input: ProjectSeedFilesInput): Promise<{
-  files: Array<{ path: string; content: string }>;
-  baseFiles: Array<{ path: string; content: string }>;
+  files: StarterFile[];
+  baseFiles: StarterFile[];
 }> {
   const baseFiles = buildStarterFiles({
     projectName: 'kortix-project',
@@ -84,8 +75,8 @@ export interface ProjectSeedFilesFromItemInput {
  * project's name interpolated in.
  */
 export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromItemInput): Promise<{
-  files: Array<{ path: string; content: string }>;
-  baseFiles: Array<{ path: string; content: string }>;
+  files: StarterFile[];
+  baseFiles: StarterFile[];
 }> {
   const baseFiles = buildStarterFiles({
     projectName: 'kortix-project',
@@ -106,10 +97,16 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
   // so they can be resolved here against the real destination project's name
   // instead of a generic catalog-display placeholder. Reuses @kortix/starter's
   // own `{{var}}` convention rather than a local reimplementation.
-  const vars = { projectName: input.projectName, repoFullName: input.repoFullName };
+  const vars = {
+    projectName: input.projectName,
+    repoFullName: input.repoFullName,
+  };
   const ownFiles = (entry.item.files ?? [])
     .filter((f) => typeof f.content === 'string')
-    .map((f) => ({ path: f.path, content: interpolateVars(f.content as string, vars) }));
+    .map((f) => ({
+      path: f.path,
+      content: interpolateVars(f.content as string, vars),
+    }));
 
   const files = mergeSeedFiles(starterFiles, ownFiles);
 
@@ -138,7 +135,8 @@ export function defaultAgentFromSeedFiles(
   files: Array<{ path: string; content: string }>,
   manifestPath: string,
 ): string | null {
-  const manifestFile = files.find((f) => f.path === manifestPath) ?? files.find((f) => f.path === 'kortix.yaml');
+  const manifestFile =
+    files.find((f) => f.path === manifestPath) ?? files.find((f) => f.path === 'kortix.yaml');
   if (!manifestFile) return null;
   try {
     const raw = parseManifestText(manifestFile.content, 'yaml');

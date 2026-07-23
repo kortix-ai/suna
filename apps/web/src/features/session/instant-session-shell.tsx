@@ -14,13 +14,13 @@ import { SessionWelcome } from '@/features/session/session-welcome';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import type { Command } from '@/hooks/runtime/use-runtime-sessions';
-import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { usePendingQueueStore } from '@/stores/pending-queue-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { GridFileCard } from './grid-file-card';
 
 /**
@@ -44,6 +44,7 @@ export function InstantSessionShell({
   projectId,
   sessionId,
   stage,
+  reason,
   boundAgentName,
   onSubmit,
 }: {
@@ -51,6 +52,7 @@ export function InstantSessionShell({
   /** The route's session id (== the pending-prompt namespace the page migrates). */
   sessionId: string;
   stage: SessionStartStage;
+  reason?: string | null;
   /** Immutable project-session agent returned by /start. */
   boundAgentName?: string | null;
   /** Fired on the first send so the page can mount the real chat (which auto-sends
@@ -256,7 +258,11 @@ export function InstantSessionShell({
                       panel. Once ready it falls back to the regular thinking text. */}
                   <AssistantPendingRow
                     className="mt-6"
-                    body={ready ? undefined : <SessionBootChecklistInline stage={stage} />}
+                    body={
+                      ready ? undefined : (
+                        <SessionBootChecklistInline stage={stage} reason={reason} />
+                      )
+                    }
                   />
                 </div>
               </div>

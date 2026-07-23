@@ -10,7 +10,10 @@ import {
   resolveDeferredModelApply,
   shouldAttemptDeferredModelApply,
 } from '@/features/session/acp-composer-adapters';
-import { AcpConfigOptionPill, AcpConfigOptionSegment } from '@/features/session/acp-config-option-pills';
+import {
+  AcpConfigOptionPill,
+  AcpConfigOptionSegment,
+} from '@/features/session/acp-config-option-pills';
 import type { HarnessManagedModelState } from '@/features/session/composer-model-controls';
 import { deriveComposerBlockingAction } from '@/features/session/model-availability';
 import {
@@ -30,7 +33,12 @@ import {
   useRuntimeSessions,
 } from '@/hooks/runtime/use-runtime-sessions';
 import { AUTO_MODEL_ID, CATALOG } from '@kortix/llm-catalog';
-import type { AcpAvailableCommand, AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
+import type {
+  AcpAvailableCommand,
+  AcpSessionConfigOption,
+  AcpUsageProjection,
+  HarnessAuthKind,
+} from '@kortix/sdk';
 import type { FlatModel } from '@kortix/sdk/react';
 import {
   agentHarness,
@@ -295,11 +303,7 @@ export function resolveExplicitCatalogModel(input: {
   return valid ? candidate : undefined;
 }
 
-/** The synthetic managed-default selection — `{ kortix, auto }`, the gateway's
- *  own smart-router sentinel (`AUTO_MODEL_ID`). NEVER an explicit catalog pick
- *  and never sent as a `model_id`; a bare `kind: 'default'` create lets the
- *  server resolve it (see `buildComposerOptions`, which drops it back to the
- *  default path). */
+/** The managed router's explicit Auto option. It is not selected implicitly. */
 export const AUTO_CATALOG_MODEL: ModelKey = { providerID: 'kortix', modelID: AUTO_MODEL_ID };
 
 export function isAutoCatalogModel(model: ModelKey | null | undefined): boolean {
@@ -307,27 +311,16 @@ export function isAutoCatalogModel(model: ModelKey | null | undefined): boolean 
 }
 
 /**
- * The composer's EFFECTIVE model for DISPLAY (the pill), separate from what a
- * send actually carries. An explicit user pick always wins. Otherwise, when
- * the harness is catalog-driven and the server reports it can start on the
- * managed default (`default_allowed` — identical to `can_start`/`model.state
- * === 'ready'`, see composer-capabilities.ts), the effective model is Auto
- * (`AUTO_CATALOG_MODEL`) so the pill reads "Auto", never a blank "No model"
- * with a live Send. When the default is NOT allowed (e.g. `no_credential`),
- * this stays `null`: the pill reads "No model" AND the capability gate blocks
- * the Send with a connect CTA — the only other valid state. This value is for
- * rendering only; `buildComposerOptions` is fed the EXPLICIT pick, so a
- * defaulted-to-Auto composer sends `kind: 'default'` (no `model_id`) and lets
- * the server resolve the managed default.
+ * The composer's displayed catalog model. Catalog agents require an explicit
+ * user selection. A ready default route only makes models available; it does
+ * not select Auto on the user's behalf.
  */
 export function resolveDisplayCatalogModel(input: {
   explicitModel: ModelKey | null;
   catalogModelRequired: boolean;
   defaultAllowed: boolean;
 }): ModelKey | null {
-  if (input.explicitModel) return input.explicitModel;
-  if (input.catalogModelRequired && input.defaultAllowed) return AUTO_CATALOG_MODEL;
-  return null;
+  return input.explicitModel;
 }
 
 export function buildComposerOptions(input: {
@@ -342,12 +335,7 @@ export function buildComposerOptions(input: {
   const agentName = input.lockedAgentName?.trim() || input.agent?.name;
   if (agentName) options.agent = agentName;
   const catalogModel = agentRequiresCatalogModel(input.agent);
-  // AUTO (`{ kortix, auto }`) is the MANAGED DEFAULT, never an explicit catalog
-  // id — sending it as a `preset`/`custom` `model_id` would make the create
-  // path stamp `metadata.model = 'kortix/auto'` and validate it as a concrete
-  // catalog model. Drop it here so it flows through the `kind: 'default'` path
-  // below (no `model_id`), letting the server resolve the managed default.
-  const explicitModel = isAutoCatalogModel(input.model) ? undefined : input.model;
+  const explicitModel = input.model;
   if (catalogModel && explicitModel) options.model = explicitModel;
   if (!catalogModel && input.runtimeModel?.trim()) {
     options.runtimeModel = input.runtimeModel.trim();
@@ -579,13 +567,8 @@ export function ComposerChatInput({
   // pipeline (open, search, filter) stays small — see `capFeedModels`'s doc
   // comment for why this lives here instead of inside the restored file.
   const capabilityModels = capFeedModels(capabilityModelsRaw, selectedCatalogModel);
-  // The pill's EFFECTIVE selection: the explicit pick, else Auto (the managed
-  // default) when the server says this catalog harness can start on its default
-  // (`default_allowed` === `can_start` === `model.state === 'ready'`). This is
-  // display-only — `selectedCatalogModel` (the explicit pick) is what feeds the
-  // send below, so a defaulted-to-Auto composer sends `kind: 'default'` and
-  // lets the server resolve the managed default, never a blank "No model" with
-  // a live Send. See `resolveDisplayCatalogModel`'s doc comment.
+  // Catalog agents stay unselected until the user picks a model. A managed
+  // default route controls availability, not the user's selection.
   const displayCatalogModel = resolveDisplayCatalogModel({
     explicitModel: selectedCatalogModel,
     catalogModelRequired,
@@ -723,7 +706,9 @@ export function ComposerChatInput({
   // speak for them) and for a native harness this store has no cache/
   // fallback for (never claude/codex).
   const harnessConfigOptions = useHarnessConfigOptionsCache();
-  const preSessionOtherConfigOptions = nativeHarness ? harnessConfigOptions.resolve(nativeHarness) : [];
+  const preSessionOtherConfigOptions = nativeHarness
+    ? harnessConfigOptions.resolve(nativeHarness)
+    : [];
 
   // Deferred-apply, generalized: the SAME `resolveDeferredModelApply`/
   // `shouldAttemptDeferredModelApply` pair the model pill uses above is
@@ -769,7 +754,9 @@ export function ComposerChatInput({
           const deferredKey = capabilityAgentName
             ? otherConfigOptionDeferredKey(capabilityAgentName, cached.id)
             : null;
-          const deferredValue = deferredKey ? runtimeModelStore.getRuntimeModel(deferredKey) : undefined;
+          const deferredValue = deferredKey
+            ? runtimeModelStore.getRuntimeModel(deferredKey)
+            : undefined;
           const option: AcpSessionConfigOption = {
             ...cached,
             currentValue: deferredValue ?? firstModelOptionValue(cached) ?? undefined,
@@ -1009,7 +996,7 @@ export function ComposerChatInput({
           : undefined
       }
       harnessManagedModel={harnessManagedModel}
-      modelRequired={capability.data ? !capability.data.model.default_allowed : false}
+      modelRequired={!live && catalogModelRequired}
       modelsLoading={capability.isLoading || providersLoading}
       composerBlockingReason={composerBlockingReason}
       composerBlockingActionLabel={composerBlockingActionLabel}

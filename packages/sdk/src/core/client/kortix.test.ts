@@ -21,7 +21,10 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+const kortix = createKortix({
+  backendUrl: 'http://test.local',
+  getToken: async () => 'tok',
+});
 const last = () => calls[calls.length - 1];
 
 test('createKortix wires the platform seam', () => {
@@ -318,7 +321,8 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
   await kortix.project('PID123').connectors.auth.discover({
-    slug: 'hubspot', provider: 'postman',
+    slug: 'hubspot',
+    provider: 'postman',
     spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
   });
   expect(last().url).toContain('/executor/projects/PID123/connectors/auth-discovery');
@@ -340,7 +344,9 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('GET');
 
-  await kortix.project('PID123').connectors.policies.set('slack-1', [{ match: '*', action: 'block' }]);
+  await kortix
+    .project('PID123')
+    .connectors.policies.set('slack-1', [{ match: '*', action: 'block' }]);
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('PUT');
 
@@ -351,7 +357,9 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/executor/projects/PID123/discover/integrations?q=notion');
 
   await kortix.project('PID123').connectors.discover.detail('mcp/notion');
-  expect(last().url).toContain('/executor/projects/PID123/discover/integrations/detail?id=mcp%2Fnotion');
+  expect(last().url).toContain(
+    '/executor/projects/PID123/discover/integrations/detail?id=mcp%2Fnotion',
+  );
 
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect');
@@ -407,7 +415,11 @@ test('kortix.accounts.tokens covers list/create/revoke (account-scoped CLI PATs)
   expect(last().url).toContain('/accounts/tokens?account_id=ACC1');
   expect(last().method).toBe('GET');
 
-  await kortix.accounts.tokens.create({ name: 'ci-key', accountId: 'ACC1', projectId: 'PID1' });
+  await kortix.accounts.tokens.create({
+    name: 'ci-key',
+    accountId: 'ACC1',
+    projectId: 'PID1',
+  });
   expect(last().url).toContain('/accounts/tokens');
   expect(last().method).toBe('POST');
 
@@ -477,11 +489,16 @@ test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
   expect(last().method).toBe('GET');
 
-  await kortix.accounts.audit.webhooks.create('ACC1', { name: 'siem', url: 'https://siem.example.com/hook' });
+  await kortix.accounts.audit.webhooks.create('ACC1', {
+    name: 'siem',
+    url: 'https://siem.example.com/hook',
+  });
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
   expect(last().method).toBe('POST');
 
-  await kortix.accounts.audit.webhooks.update('ACC1', 'WH1', { enabled: false });
+  await kortix.accounts.audit.webhooks.update('ACC1', 'WH1', {
+    enabled: false,
+  });
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
   expect(last().method).toBe('PATCH');
 
@@ -587,7 +604,11 @@ test('kortix.billing.credits covers purchase + auto-topup get/configure', async 
   expect(last().url).toContain('/billing/auto-topup/settings');
   expect(last().method).toBe('GET');
 
-  await kortix.billing.credits.configureAutoTopup({ enabled: true, threshold: 5, amount: 20 });
+  await kortix.billing.credits.configureAutoTopup({
+    enabled: true,
+    threshold: 5,
+    amount: 20,
+  });
   expect(last().url).toContain('/billing/auto-topup/configure');
   expect(last().method).toBe('POST');
 });
@@ -613,7 +634,9 @@ test('kortix.marketplace covers public catalog browse + authed sources CRUD (top
   expect(last().url).toContain('/marketplace/sources');
   expect(last().method).toBe('GET');
 
-  await kortix.marketplace.sources.add({ address: 'https://github.com/acme/registry' });
+  await kortix.marketplace.sources.add({
+    address: 'https://github.com/acme/registry',
+  });
   expect(last().url).toContain('/marketplace/sources');
   expect(last().method).toBe('POST');
 
@@ -672,7 +695,10 @@ function mockTwoSessionRuntimes() {
 
 test('two session handles resolve independent ACP runtimes without crossing preview state', async () => {
   globalThis.fetch = mockTwoSessionRuntimes();
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
 
   const a = k.session('PROJ', 'SESS-A');
   const b = k.session('PROJ', 'SESS-B');
@@ -684,9 +710,12 @@ test('two session handles resolve independent ACP runtimes without crossing prev
   expect(b.previewUrl(3000)).toContain('/p/sb-B/3000/');
 });
 
-test('previewUrl uses the handle\'s own sandbox id, not whichever session resolved last', async () => {
+test("previewUrl uses the handle's own sandbox id, not whichever session resolved last", async () => {
   globalThis.fetch = mockTwoSessionRuntimes();
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
 
   const a = k.session('PROJ', 'SESS-A');
   const b = k.session('PROJ', 'SESS-B');
@@ -699,7 +728,10 @@ test('previewUrl uses the handle\'s own sandbox id, not whichever session resolv
 });
 
 test('previewUrl()/proxyUrl() throw SessionNotReadyError before ensureReady()', () => {
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const s = k.session('PROJ', 'SESS-NEW');
 
   expect(() => s.previewUrl(3000)).toThrow(SessionNotReadyError);
@@ -712,7 +744,10 @@ test('previewUrl()/proxyUrl() throw SessionNotReadyError before ensureReady()', 
 // must be able to call it before the session has ever resolved a runtime, so
 // it degrades to the graceful "no URL yet" shape instead of throwing.
 test('health() resolves gracefully (ok: false) before ensureReady() instead of throwing', async () => {
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const s = k.session('PROJ', 'SESS-NEVER-STARTED');
 
   const result = await s.health();
@@ -720,9 +755,12 @@ test('health() resolves gracefully (ok: false) before ensureReady() instead of t
   expect(result.status).toBe(0);
 });
 
-test('health() resolves against the handle\'s own runtime URL once ready', async () => {
+test("health() resolves against the handle's own runtime URL once ready", async () => {
   globalThis.fetch = mockTwoSessionRuntimes();
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const a = k.session('PROJ', 'SESS-A');
 
   await a.ensureReady();
@@ -749,7 +787,10 @@ test('a second fresh handle for the same session adopts the registry entry — n
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const first = k.session('PROJ', 'SESS-REG-1');
   await first.ensureReady();
 
@@ -776,7 +817,10 @@ test('restart clears the registry entry so ensureReady re-resolves the ACP runti
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const handle = k.session('PROJ', 'SESS-REG-2');
 
   await handle.ensureReady();
@@ -812,7 +856,10 @@ test('ensureReady() dedupes concurrent starts for the same session: only one /st
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const handle = k.session('PROJ', 'SESS-DEDUP');
 
   // Fire twice concurrently, before the (deferred) /start response arrives.
@@ -848,7 +895,10 @@ test('ensureReady() dedup also covers TWO DIFFERENT handles for the same session
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const handleA = k.session('PROJ', 'SESS-DEDUP-2');
   const handleB = k.session('PROJ', 'SESS-DEDUP-2'); // fresh handle, same (project, session) id
 
@@ -869,13 +919,23 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
     if (url.includes('/sessions/SESS-DEDUP-FAIL/start')) {
       startCalls += 1;
       // First attempt: a failure shape (no sandbox / not ready).
-      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, runtime_session_id: null, agent_name: 'agent' });
+      if (startCalls === 1)
+        return jsonResponse({
+          stage: 'failed',
+          retriable: true,
+          sandbox: null,
+          runtime_session_id: null,
+          agent_name: 'agent',
+        });
       return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
     }
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const handle = k.session('PROJ', 'SESS-DEDUP-FAIL');
 
   await expect(handle.ensureReady()).rejects.toBeInstanceOf(ApiError);
@@ -886,22 +946,313 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
   expect(startCalls).toBe(2);
 });
 
+test('ensureReady() polls retriable boot stages until ready and reports each observed stage', async () => {
+  const responses = [
+    {
+      stage: 'provisioning',
+      agent_name: 'agent',
+      retriable: true,
+      sandbox: null,
+      reason: 'sandbox_allocating',
+    },
+    {
+      stage: 'starting',
+      agent_name: 'agent',
+      retriable: true,
+      sandbox: { external_id: 'sb-progress' },
+      reason: 'acp_starting',
+    },
+    sessionStartPayload('sb-progress', 'ocs-progress'),
+  ];
+  let startCalls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-PROGRESS/start')) {
+      const response = responses[Math.min(startCalls, responses.length - 1)];
+      startCalls += 1;
+      return jsonResponse(response);
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const observed: Array<{ stage: string; reason?: string }> = [];
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const ready = await k.session('PROJ', 'SESS-PROGRESS').ensureReady({
+    deadlineMs: 1_000,
+    pollIntervalMs: 0,
+    onProgress: (progress) =>
+      observed.push({
+        stage: progress.stage,
+        ...(progress.reason ? { reason: progress.reason } : {}),
+      }),
+  });
+
+  expect(startCalls).toBe(3);
+  expect(ready.runtimeSessionId).toBe('ocs-progress');
+  expect(observed).toEqual([
+    { stage: 'provisioning', reason: 'sandbox_allocating' },
+    { stage: 'starting', reason: 'acp_starting' },
+    { stage: 'ready' },
+  ]);
+});
+
+test('a late ensureReady() caller receives current progress and wakes a slower poll delay', async () => {
+  let startCalls = 0;
+  let releaseFirstProgress!: () => void;
+  const firstProgress = new Promise<void>((resolve) => {
+    releaseFirstProgress = resolve;
+  });
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (!url.includes('/sessions/SESS-LATE-JOIN/start')) {
+      return jsonResponse({ ok: true });
+    }
+    startCalls += 1;
+    if (startCalls === 1) {
+      return jsonResponse({
+        stage: 'provisioning',
+        agent_name: 'agent',
+        retriable: true,
+        sandbox: null,
+        reason: 'sandbox_allocating',
+      });
+    }
+    return jsonResponse(sessionStartPayload('sb-late-join', 'ocs-late-join'));
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-LATE-JOIN');
+  const first = handle.ensureReady({
+    deadlineMs: 1_000,
+    pollIntervalMs: 200,
+    onProgress: () => releaseFirstProgress(),
+  });
+  await firstProgress;
+
+  const joinedAt = Date.now();
+  const lateProgress: string[] = [];
+  const second = handle.ensureReady({
+    deadlineMs: 1_000,
+    pollIntervalMs: 0,
+    onProgress: (progress) => lateProgress.push(progress.stage),
+  });
+
+  await Promise.all([first, second]);
+  expect(startCalls).toBe(2);
+  expect(Date.now() - joinedAt).toBeLessThan(100);
+  expect(lateProgress).toEqual(['provisioning', 'ready']);
+});
+
+test('ensureReady() does not fail when progress listeners throw or reject', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-LISTENER/start')) {
+      return jsonResponse(sessionStartPayload('sb-listener', 'ocs-listener'));
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const ready = await k.session('PROJ', 'SESS-LISTENER').ensureReady({
+    onProgress: async () => {
+      throw new Error('host render failed');
+    },
+  });
+
+  expect(ready.runtimeSessionId).toBe('ocs-listener');
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+});
+
+test('ensureReady() shares one start driver while enforcing each caller deadline', async () => {
+  let startCalls = 0;
+  const releases: Array<() => void> = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEADLINES/start')) {
+      startCalls += 1;
+      return await new Promise<Response>((resolve) => {
+        releases.push(() =>
+          resolve(jsonResponse(sessionStartPayload('sb-deadline', 'ocs-deadline'))),
+        );
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-DEADLINES');
+  const first = handle.ensureReady({ deadlineMs: 1_000, pollIntervalMs: 50 });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const second = handle.ensureReady({ deadlineMs: 20, pollIntervalMs: 0 }).then(
+    (value) => ({ status: 'fulfilled' as const, value }),
+    (reason: unknown) => ({ status: 'rejected' as const, reason }),
+  );
+  await new Promise<void>((resolve) => setTimeout(resolve, 40));
+
+  try {
+    expect(startCalls).toBe(1);
+    expect(await second).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'RUNTIME_UNAVAILABLE' },
+    });
+  } finally {
+    for (const release of releases) release();
+  }
+  expect((await first).runtimeSessionId).toBe('ocs-deadline');
+});
+
+test('ensureReady() aborts a stalled start request at the caller deadline', async () => {
+  let requestAborted = false;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (!url.includes('/sessions/SESS-STALLED/start')) return jsonResponse({ ok: true });
+
+    return await new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener(
+        'abort',
+        () => {
+          requestAborted = true;
+          reject(new DOMException('The request was aborted.', 'AbortError'));
+        },
+        { once: true },
+      );
+    });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const startedAt = Date.now();
+
+  await expect(
+    k.session('PROJ', 'SESS-STALLED').ensureReady({
+      deadlineMs: 20,
+      pollIntervalMs: 0,
+    }),
+  ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+
+  expect(requestAborted).toBe(true);
+  expect(Date.now() - startedAt).toBeLessThan(250);
+});
+
+test('ensureReady() with deadlineMs 0 rejects before sending a request', async () => {
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+
+  await expect(
+    k.session('PROJ', 'SESS-ZERO-DEADLINE').ensureReady({
+      deadlineMs: 0,
+      pollIntervalMs: 0,
+    }),
+  ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+
+  expect(calls.filter((call) => call.url.includes('/SESS-ZERO-DEADLINE/start'))).toHaveLength(0);
+});
+
+test('stop() cancels an in-flight readiness driver and rejects its stale completion', async () => {
+  let requestAborted = false;
+  let releaseStart!: () => void;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: init?.method ?? 'GET' });
+    if (url.includes('/sessions/SESS-LIFECYCLE/start')) {
+      return await new Promise<Response>((resolve) => {
+        releaseStart = () => resolve(jsonResponse(sessionStartPayload('sb-stale', 'ocs-stale')));
+        init?.signal?.addEventListener(
+          'abort',
+          () => {
+            requestAborted = true;
+            releaseStart();
+          },
+          { once: true },
+        );
+      });
+    }
+    if (url.includes('/sessions/SESS-LIFECYCLE/stop')) {
+      return jsonResponse({ ok: true });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-LIFECYCLE');
+  const readiness = handle.ensureReady({
+    deadlineMs: 1_000,
+    pollIntervalMs: 0,
+  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  await handle.stop();
+  releaseStart();
+
+  expect(requestAborted).toBe(true);
+  await expect(readiness).rejects.toMatchObject({
+    code: 'RUNTIME_UNAVAILABLE',
+  });
+  expect(() => handle.previewUrl(3000)).toThrow(SessionNotReadyError);
+});
+
+test('ensureReady() rejects non-finite readiness options before sending a request', async () => {
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-NON-FINITE');
+
+  await expect(handle.ensureReady({ deadlineMs: Number.NaN })).rejects.toBeInstanceOf(RangeError);
+  await expect(handle.ensureReady({ deadlineMs: Number.POSITIVE_INFINITY })).rejects.toBeInstanceOf(
+    RangeError,
+  );
+  await expect(
+    handle.ensureReady({ pollIntervalMs: Number.NEGATIVE_INFINITY }),
+  ).rejects.toBeInstanceOf(RangeError);
+  expect(calls.filter((call) => call.url.includes('/SESS-NON-FINITE/start'))).toHaveLength(0);
+});
+
 // ── session(...).files — bound to THIS session's own runtime, never the
 // module-global "active" sandbox the top-level `@kortix/sdk` `files` export
 // follows (P0 fix: cross-session bleed for a host juggling multiple open
 // sessions concurrently) ─────────────────────────────────────────────────────
 
-test("session(...).files hits THIS session's own runtime URL, not whichever session is globally \"active\"", async () => {
+test('session(...).files hits THIS session\'s own runtime URL, not whichever session is globally "active"', async () => {
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
     calls.push({ url, method: 'GET' });
-    if (url.includes('/sessions/FILES-A/start')) return jsonResponse(sessionStartPayload('sb-files-a', 'ocs-files-a'));
-    if (url.includes('/sessions/FILES-B/start')) return jsonResponse(sessionStartPayload('sb-files-b', 'ocs-files-b'));
+    if (url.includes('/sessions/FILES-A/start'))
+      return jsonResponse(sessionStartPayload('sb-files-a', 'ocs-files-a'));
+    if (url.includes('/sessions/FILES-B/start'))
+      return jsonResponse(sessionStartPayload('sb-files-b', 'ocs-files-b'));
     if (url.includes('/file?path=')) return jsonResponse([]);
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const a = k.session('PROJ', 'FILES-A');
   const b = k.session('PROJ', 'FILES-B');
 
@@ -929,12 +1280,16 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
     calls.push({ url, method: 'GET' });
-    if (url.includes('/sessions/FILES-AUTO/start')) return jsonResponse(sessionStartPayload('sb-files-auto', 'ocs-files-auto'));
+    if (url.includes('/sessions/FILES-AUTO/start'))
+      return jsonResponse(sessionStartPayload('sb-files-auto', 'ocs-files-auto'));
     if (url.includes('/file/mkdir')) return jsonResponse(true);
     return jsonResponse({ ok: true });
   }) as unknown as typeof fetch;
 
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
   const s = k.session('PROJ', 'FILES-AUTO');
 
   // Never called ensureReady() directly — mkdir should still resolve against

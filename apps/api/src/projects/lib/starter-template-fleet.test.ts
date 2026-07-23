@@ -4,9 +4,6 @@
  *  1. Every shipped `kortix.yaml` in `packages/starter/templates/` (the base
  *     floor + every `marketplace-projects/*` clonable project) is
  *     `kortix_version: 3` and passes `validateManifest` with zero errors.
- *  2. The base template declares all four official runtime profiles. OpenCode
- *     remains the default and owns the only seeded native config directory.
- *
  * Also proves the web-studio v2→v3 migration (done by hand in the template
  * file, since the migration function only operates on a live `kortix.yaml`
  * string, not a template on disk) is semantically equivalent to what
@@ -43,7 +40,10 @@ function fileContent(files: StarterFile[], path: string): string {
 // template id is explicitly requested), which is exactly the floor every
 // project — including `general-knowledge-worker` and every marketplace
 // project — starts from.
-const BASE_FILES = getStarterFiles({ projectName: 'Test Project', template: 'minimal' });
+const BASE_FILES = getStarterFiles({
+  projectName: 'Test Project',
+  template: 'minimal',
+});
 // Slug-prefixed (e.g. `web-studio/kortix.yaml`) — every `marketplace-projects/*`
 // clone in one flat array, raw/uninterpolated.
 const PROJECT_FILES = getProjectTemplateFiles();
@@ -67,40 +67,42 @@ describe('starter template fleet — manifest v3', () => {
     for (const path of manifestPaths) {
       const content = fileContent(PROJECT_FILES, path);
       const result = validateManifest(content, 'yaml');
-      expect({ path, version: result.parsed?.kortix_version }).toEqual({ path, version: 3 });
+      expect({ path, version: result.parsed?.kortix_version }).toEqual({
+        path,
+        version: 3,
+      });
       expect(result.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
     }
   });
 });
 
 describe('starter template fleet — seeded native config dirs (base)', () => {
-  test("opencode: base template's .opencode seed is non-empty and passes validateHarnessConfig with zero issues", () => {
-    const configDir = HARNESSES.opencode.configDir;
-    const files: FileTreeEntry[] = BASE_FILES.filter(
-      (f) => f.path === configDir || f.path.startsWith(`${configDir}/`),
-    ).map((f) => ({ path: f.path, content: f.content }));
-
-    expect(files.length).toBeGreaterThan(0);
-    expect(validateHarnessConfig('opencode', configDir, files)).toEqual([]);
-  });
-
-  // Claude, Codex, and Pi use their native defaults until the project adds
-  // files to the declared config directory. The starter does not seed empty
-  // harness-specific instructions.
-  for (const harness of HARNESS_IDS.filter((id) => id !== 'opencode')) {
-    test(`${harness}: base template does NOT seed ${HARNESSES[harness].configDir} by default (non-default harness)`, () => {
+  for (const harness of HARNESS_IDS) {
+    test(`${harness}: base template exposes the canonical skill tree and passes validateHarnessConfig`, () => {
       const configDir = HARNESSES[harness].configDir;
-      const files = BASE_FILES.filter(
+      const files: FileTreeEntry[] = BASE_FILES.filter(
         (f) => f.path === configDir || f.path.startsWith(`${configDir}/`),
-      );
-      expect(files).toEqual([]);
+      ).map((f) => ({ path: f.path, content: f.content }));
+
+      if (harness === 'opencode') {
+        expect(files.some((f) => f.path === '.opencode/skills/kortix-system/SKILL.md')).toBe(true);
+      } else {
+        expect(BASE_FILES.find((file) => file.path === `${configDir}/skills`)).toMatchObject({
+          content: '../.opencode/skills',
+          mode: '120000',
+        });
+      }
+      expect(validateHarnessConfig(harness, configDir, files)).toEqual([]);
     });
   }
 
-  test("base kortix.yaml declares all four official runtime profiles with canonical config dirs", () => {
+  test('base kortix.yaml declares all four official runtime profiles with canonical config dirs', () => {
     const content = fileContent(BASE_FILES, 'kortix.yaml');
     const result = validateManifest(content, 'yaml');
-    const runtimes = result.parsed?.runtimes as Record<string, { harness: string; config_dir?: string }>;
+    const runtimes = result.parsed?.runtimes as Record<
+      string,
+      { harness: string; config_dir?: string }
+    >;
 
     expect(Object.keys(runtimes)).toEqual(['opencode', 'claude', 'codex', 'pi']);
     for (const harness of HARNESS_IDS) {

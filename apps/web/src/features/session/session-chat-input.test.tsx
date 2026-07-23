@@ -17,6 +17,7 @@ const ReactModule = await import('react');
 const { TooltipProvider } = await import('@/components/ui/tooltip');
 
 import type { Agent } from '@/hooks/runtime/use-runtime-sessions';
+import type { FlatModel } from './model-flatten';
 
 // Every OTHER direct child `SessionChatInput` renders is stubbed to a
 // props-capturing/no-op marker — this file tests ONLY the `projectId` ->
@@ -31,10 +32,12 @@ mock.module('./model-connection-gate', () => ({
 mock.module('./voice-recorder', () => ({
   VoiceRecorder: () => null,
 }));
+let hasSelectableModels = true;
+let entitlementsPending = false;
 mock.module('./use-model-connection-gate', () => ({
   useModelConnectionGate: () => ({
-    hasSelectableModels: true,
-    entitlementsPending: false,
+    hasSelectableModels,
+    entitlementsPending,
     openConnectProvider: () => {},
     openUpgrade: () => {},
     modal: null,
@@ -103,6 +106,8 @@ afterEach(() => {
   cleanup();
   modelsPageRuntimes = [];
   capturedModelsPageProjectId = 'UNSET';
+  hasSelectableModels = true;
+  entitlementsPending = false;
 });
 
 afterAll(() => {
@@ -201,5 +206,49 @@ describe('SessionChatInput — projectId wiring into AgentSelector (Task 14)', (
     renderComposer();
 
     expect(capturedModelsPageProjectId).toBeUndefined();
+  });
+
+  it('disables Send when a catalog agent has ready models but no explicit model', () => {
+    renderComposer({
+      projectId: 'proj_catalog_gate',
+      selectedAgent: 'kortix',
+      modelRequired: true,
+      models: [
+        {
+          providerID: 'openai',
+          providerName: 'OpenAI',
+          modelID: 'gpt-5.4',
+          modelName: 'GPT-5.4',
+        } satisfies FlatModel,
+      ],
+      selectedModel: null,
+      composerCapabilityGoverned: true,
+    });
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Start the task' } });
+
+    const send = screen.getByRole('button', {
+      name: 'Select a model before starting this agent.',
+    });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows model loading state before entitlement and catalog queries settle', () => {
+    hasSelectableModels = false;
+    entitlementsPending = true;
+    renderComposer({
+      projectId: 'proj_catalog_loading',
+      selectedAgent: 'kortix',
+      modelRequired: true,
+      models: [],
+      modelsLoading: true,
+      selectedModel: null,
+      composerCapabilityGoverned: true,
+    });
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Start the task' } });
+
+    const send = screen.getByRole('button', { name: 'Loading models…' });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
   });
 });

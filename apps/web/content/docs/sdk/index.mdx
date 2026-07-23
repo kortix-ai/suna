@@ -5,7 +5,7 @@ description: Install, authenticate, and send your first message with the typed S
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
 
-`@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix REST API and the OpenCode runtime in one interface — your app never calls the raw API or runtime directly. The core client is fetch-based and runs in Node, Bun, and browsers.
+`@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix REST API and ACP session runtimes in one interface. Your app never calls the raw API or a harness-specific client directly. The core client is fetch-based and runs in Node, Bun, and browsers.
 
 ## Install
 
@@ -47,7 +47,7 @@ Create an API key at **User settings → API keys**. The key starts with `kortix
    await session.ensureReady();
    ```
 
-   `ensureReady()` starts or resumes the session sandbox. If the sandbox is still starting, it throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`. Retry after a short delay. See [Sessions](/docs/sdk/sessions).
+   `ensureReady()` starts or resumes the session runtime. It polls retriable boot stages for up to five minutes by default. Use its `onProgress` callback to render the server's boot status. See [Sessions](/docs/sdk/sessions).
 
 3. Send a message to the agent.
 

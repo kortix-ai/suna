@@ -12,12 +12,8 @@ import {
 
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
-// The project default-model picker itself relocated from `gateway-view.tsx`'s
-// tab bar into the Models tab's own "Default model" section (Task 17) — the
-// wiring this suite pins (project-default scope, the routing-mutation race
-// guard) now lives here.
-const modelsViewSource = readFileSync(
-  join(import.meta.dir, '../../llm-provider/models-view.tsx'),
+const manageConnectionModalSource = readFileSync(
+  join(import.meta.dir, '../../llm-provider/manage-connection-modal.tsx'),
   'utf8',
 );
 const modelDefaultsSource = readFileSync(
@@ -151,16 +147,15 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('the "Default model" section reads and writes the project default scope', () => {
-    // Task 17 relocated this picker into ModelsView's first section — see
-    // `models-view.tsx`. `gateway-view.tsx` still reads `modelDefaults.isUpdating`
-    // (to gate Routing below) but no longer owns the write path itself.
-    expect(modelsViewSource).toContain('modelDefaults.projectDefault');
-    expect(modelsViewSource).toContain('.setProjectDefault(m)');
-    expect(modelsViewSource).toContain('useProjectModels(projectId)');
-    expect(modelsViewSource).not.toContain('useOpenCodeProviders');
-    expect(modelsViewSource).not.toContain('modelDefaults.setAccountDefault');
-    expect(modelsViewSource).toContain('modelDefaults.isUpdating');
-    expect(modelsViewSource).toContain("errorToast('Could not update the project default')");
+    expect(manageConnectionModalSource).toContain('modelDefaults.projectDefault');
+    expect(manageConnectionModalSource).toContain('.setProjectDefault(m)');
+    expect(manageConnectionModalSource).toContain('useProjectModels(projectId)');
+    expect(manageConnectionModalSource).not.toContain('useOpenCodeProviders');
+    expect(manageConnectionModalSource).not.toContain('modelDefaults.setAccountDefault');
+    expect(manageConnectionModalSource).toContain('modelDefaults.isUpdating');
+    expect(manageConnectionModalSource).toContain(
+      "errorToast('Could not update the project default')",
+    );
     expect(gatewayViewSource).not.toContain('.setProjectDefault(m)');
   });
 
@@ -196,13 +191,14 @@ describe('gateway routing editor helpers', () => {
     // component's hook instance issued it.
     expect(gatewayViewSource).not.toMatch(/import\s*\{[^}]*\buseModelDefaults\b/);
     expect(gatewayViewSource).toContain('modelDefaultsKey');
-    expect(gatewayViewSource).toContain('useIsMutating({ mutationKey: modelDefaultsKey(projectId) })');
+    expect(gatewayViewSource).toContain(
+      'useIsMutating({ mutationKey: modelDefaultsKey(projectId) })',
+    );
     expect(gatewayViewSource).toContain('projectDefaultPending={projectDefaultPending}');
     expect(routingSource).toContain('projectDefaultPending: boolean');
     expect(routingSource).toContain('projectDefaultPending ||');
-    // The picker's own routing-mutation guard moved along with it (Task 17).
-    expect(modelsViewSource).toContain('useIsMutating');
-    expect(modelsViewSource).toContain('gatewayRoutingPolicyKey(projectId)');
+    expect(manageConnectionModalSource).toContain('useIsMutating');
+    expect(manageConnectionModalSource).toContain('gatewayRoutingPolicyKey(projectId)');
     // The set/clear mutations carry an explicit shared mutationKey so a
     // non-owning consumer (gateway-view) can observe them via useIsMutating.
     expect(modelDefaultsSource).toContain('modelDefaultsKey');
@@ -218,9 +214,7 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('renders a capability-gated generation-controls panel for the resolved primary model', () => {
-    expect(routingSource).toContain(
-      "from './generation-controls'",
-    );
+    expect(routingSource).toContain("from './generation-controls'");
     expect(routingSource).toContain('<GenerationControlsPanel');
     expect(routingSource).toContain('draft.modelGenerationConfig?.[primaryModel]');
   });

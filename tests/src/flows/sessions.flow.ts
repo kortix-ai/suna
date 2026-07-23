@@ -16,12 +16,36 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ seed: true });
-    await ctx.step('create session → 201 provisioning', async () => {
+    await ctx.step('interactive catalog session without model selection → 409', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/sessions',
-          { initial_prompt: 'noop' },
+          { agent_name: 'kortix', initial_prompt: 'noop' },
+          { params: { projectId: p.id } },
+        );
+      r.status(409).body().has('$.code', 'MODEL_SELECTION_REQUIRED');
+    });
+    await ctx.step('explicit Auto selection → 201 provisioning', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/sessions',
+        {
+          agent_name: 'kortix',
+          initial_prompt: 'noop',
+          model_selection: { kind: 'default' },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(201);
+      const id = r.json<any>()?.session_id ?? r.json<any>()?.id;
+      if (id) ctx.track('session', id, { projectId: p.id });
+    });
+    await ctx.step('PAT catalog session without model selection → 201 provisioning', async () => {
+      const r = await ctx.client
+        .as(ctx.P.PAT_ACCT)
+        .post(
+          '/v1/projects/:projectId/sessions',
+          { agent_name: 'kortix', initial_prompt: 'noop' },
           { params: { projectId: p.id } },
         );
       r.status(201);
@@ -42,9 +66,9 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('list sessions', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions', { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+      });
       r.status(200);
     });
   },
@@ -203,9 +227,9 @@ flow(
     });
 
     await ctx.step('unauthenticated resolution of an unknown token → 404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/p/public-share/:token', { params: { token: 'kps_ke2e_does_not_exist' } });
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/p/public-share/:token', {
+        params: { token: 'kps_ke2e_does_not_exist' },
+      });
       r.status(404);
     });
 
@@ -272,7 +296,11 @@ flow(
       const r = await owner.del(
         '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
         {
-          params: { projectId: project.id, sessionId: session.id, shareId: crypto.randomUUID() },
+          params: {
+            projectId: project.id,
+            sessionId: session.id,
+            shareId: crypto.randomUUID(),
+          },
         },
       );
       r.status(404);
@@ -282,7 +310,11 @@ flow(
       const r = await owner.del(
         '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
         {
-          params: { projectId: project.id, sessionId: session.id, shareId: 'not-a-uuid' },
+          params: {
+            projectId: project.id,
+            sessionId: session.id,
+            shareId: 'not-a-uuid',
+          },
         },
       );
       r.status(400);
@@ -570,7 +602,9 @@ flow(
     await ctx.step(
       'anon: view metadata for the real share → 200 (sandbox ready) or 503 (not yet) — never an auth error',
       async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
+        const r = await anon.get('/v1/public/session-shares/:shareId', {
+          params: { shareId },
+        });
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body()
@@ -607,7 +641,9 @@ flow(
     });
 
     await ctx.step("anon: revoked share's metadata → 410 Gone (not 404)", async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
+      const r = await anon.get('/v1/public/session-shares/:shareId', {
+        params: { shareId },
+      });
       r.status(410);
     });
 

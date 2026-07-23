@@ -38,7 +38,11 @@ const GKW_SKILL_PATHS = [
 function baseStarterPaths(): string[] {
   const probe = mkdtempSync(join(tmpdir(), 'kortix-scaffold-base-'));
   try {
-    return applyScaffold({ repoRoot: probe, projectName: 'Base', template: 'minimal' }).written.sort();
+    return applyScaffold({
+      repoRoot: probe,
+      projectName: 'Base',
+      template: 'minimal',
+    }).written.sort();
   } finally {
     rmSync(probe, { recursive: true, force: true });
   }
@@ -57,7 +61,7 @@ function walk(root: string, relPrefix = ''): string[] {
   for (const entry of readdirSync(root)) {
     const abs = join(root, entry);
     const rel = relPrefix ? `${relPrefix}/${entry}` : entry;
-    if (statSync(abs).isDirectory()) out.push(...walk(abs, rel));
+    if (lstatSync(abs).isDirectory()) out.push(...walk(abs, rel));
     else out.push(rel.split(sep).join('/'));
   }
   return out.sort();
@@ -87,6 +91,10 @@ describe('applyScaffold', () => {
     expect(manifest).toContain('pi:\n    runtime: pi');
 
     expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
+    for (const path of ['.claude/skills', '.codex/skills', '.pi/skills']) {
+      expect(lstatSync(join(dir, path)).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(join(dir, path))).toBe('../.opencode/skills');
+    }
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
     expect(result.written).not.toContain('.kortix/memory/overview.md');
   });
@@ -104,7 +112,11 @@ describe('applyScaffold', () => {
 
   test('minimal template writes only the shared Kortix starter', () => {
     const base = baseStarterPaths();
-    const result = applyScaffold({ repoRoot: dir, projectName: 'Minimal', template: 'minimal' });
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Minimal',
+      template: 'minimal',
+    });
 
     expect(result.written.sort()).toEqual(base);
     for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
@@ -142,20 +154,26 @@ describe('applyScaffold', () => {
     mkdirSync(join(dir, '.kortix/opencode'), { recursive: true });
     symlinkSync('.kortix/opencode', join(dir, '.opencode'));
 
-    const result = applyScaffold({ repoRoot: dir, projectName: 'Cleared', template: 'minimal' });
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Cleared',
+      template: 'minimal',
+    });
 
     expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(false);
     expect(statSync(join(dir, '.opencode')).isDirectory()).toBe(true);
     expect(result.written).toContain('.opencode/agents/kortix.md');
-    expect(
-      readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8'),
-    ).toContain('Cleared');
+    expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8')).toContain('Cleared');
   });
 
   test('clears a DANGLING legacy .opencode symlink before writing (no target at all)', () => {
     symlinkSync('.kortix/opencode', join(dir, '.opencode'));
 
-    const result = applyScaffold({ repoRoot: dir, projectName: 'Cleared', template: 'minimal' });
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Cleared',
+      template: 'minimal',
+    });
 
     expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(false);
     expect(result.written).toContain('.opencode/agents/kortix.md');

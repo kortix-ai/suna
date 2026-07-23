@@ -26,6 +26,7 @@ import { setCurrentRuntime } from '../session/current-runtime';
 import {
   clearSessionRuntime,
   getSessionRuntime,
+  setSessionRuntime,
   type SessionRuntimeEntry,
 } from '../session/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
@@ -42,16 +43,104 @@ export type SessionModel = { providerID: string; modelID: string };
  */
 /**
  * Dedupes concurrent `ensureReady()` calls that would otherwise both drive a
- * `/start` long-poll for the SAME (projectId, sessionId) — e.g. two session
- * handles for the same session (or the facade racing the React `useSession`
- * hook) both calling `ensureReady()`/`start()` before either has resolved a
- * runtime. Keyed by `${projectId}\n${sessionId}` (not the process-global
- * "active runtime" — every other handle for a DIFFERENT session gets its own
- * entry and is unaffected). Cleared on settle (success or failure) so a
- * transient failure doesn't wedge the key — the next call issues a fresh
- * `/start` instead of replaying a stale rejected promise forever.
+ * `/start` long-poll for the SAME session. Each caller keeps its own deadline
+ * and progress listener. The shared driver uses the fastest active poll
+ * interval and the latest active deadline. Cleared on settle so a transient
+ * failure does not wedge the session key.
  */
-const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
+type SessionReadyOptions = {
+  /** Maximum wall-clock time for retriable provisioning and runtime boot stages. */
+  deadlineMs?: number;
+  /** Delay between completed `/start` requests. The server long-polls each request. */
+  pollIntervalMs?: number;
+  /** Receives each non-null readiness payload in observation order. */
+  onProgress?: (progress: P.SessionStartResult) => void;
+};
+
+type SessionReadyCaller = {
+  deadlineAt: number;
+  pollIntervalMs: number;
+  onProgress?: NonNullable<SessionReadyOptions['onProgress']>;
+};
+
+type InFlightSessionStart = {
+  promise: Promise<SessionRuntimeEntry>;
+  callers: Map<symbol, SessionReadyCaller>;
+  lastProgress: P.SessionStartResult | null;
+  requestController: AbortController | null;
+  wakePoll: (() => void) | null;
+  cancelledError: ApiError | null;
+};
+
+const inFlightSessionStarts = new Map<string, InFlightSessionStart>();
+const DEFAULT_SESSION_READY_DEADLINE_MS = 5 * 60_000;
+const DEFAULT_SESSION_READY_POLL_INTERVAL_MS = 1_500;
+
+async function waitForNextSessionStartPoll(
+  entry: InFlightSessionStart,
+  delayMs: number,
+): Promise<void> {
+  if (delayMs <= 0) return;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (entry.wakePoll === finish) entry.wakePoll = null;
+      resolve();
+    };
+    const timer = setTimeout(finish, delayMs);
+    entry.wakePoll = finish;
+  });
+}
+
+function normalizeSessionReadyOption(value: number | undefined, fallback: number, name: string) {
+  const resolved = value ?? fallback;
+  if (!Number.isFinite(resolved)) {
+    throw new RangeError(`${name} must be a finite number`);
+  }
+  return Math.max(0, resolved);
+}
+
+function sessionReadyDeadlineError(
+  deadlineMs: number,
+  progress: P.SessionStartResult | null,
+): ApiError {
+  return new ApiError(
+    `Session runtime did not become ready within ${deadlineMs}ms (stage: ${progress?.stage ?? 'unknown'})`,
+    { code: 'RUNTIME_UNAVAILABLE' },
+  );
+}
+
+function notifySessionStartProgress(
+  callers: Iterable<SessionReadyCaller>,
+  progress: P.SessionStartResult,
+): void {
+  for (const caller of callers) {
+    const listener = caller.onProgress;
+    if (!listener) continue;
+    try {
+      void Promise.resolve(listener(progress)).catch(() => {});
+    } catch {
+      // Host rendering callbacks cannot cancel readiness for every caller.
+    }
+  }
+}
+
+function cancelInFlightSessionStart(
+  projectId: string,
+  sessionId: string,
+  action: 'delete' | 'restart' | 'stop',
+): void {
+  const entry = inFlightSessionStarts.get(`${projectId}\n${sessionId}`);
+  if (!entry || entry.cancelledError) return;
+  entry.cancelledError = new ApiError(`Session readiness was cancelled by ${action}()`, {
+    code: 'RUNTIME_UNAVAILABLE',
+  });
+  entry.requestController?.abort();
+  entry.wakePoll?.();
+}
 
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
@@ -683,7 +772,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * cache the resolved runtime for THIS handle. Also points the app's shared
      * "current runtime" store there, for React hosts that still read it.
      */
-    async function ensureReady(): Promise<SessionRuntimeEntry> {
+    async function ensureReady(options: SessionReadyOptions = {}): Promise<SessionRuntimeEntry> {
       const cached = tryResolveReady();
       if (cached) return cached;
 
@@ -691,53 +780,163 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       // `inFlightSessionStarts`'s doc comment. If another call (this handle or
       // a different one) already kicked off `/start`, ride its result instead
       // of issuing a second POST.
+      const deadlineMs = normalizeSessionReadyOption(
+        options.deadlineMs,
+        DEFAULT_SESSION_READY_DEADLINE_MS,
+        'deadlineMs',
+      );
+      const pollIntervalMs = normalizeSessionReadyOption(
+        options.pollIntervalMs,
+        DEFAULT_SESSION_READY_POLL_INTERVAL_MS,
+        'pollIntervalMs',
+      );
       const key = `${projectId}\n${sessionId}`;
-      const inFlight = inFlightSessionStarts.get(key);
-      if (inFlight) {
-        _ready = await inFlight;
-        return _ready;
+      const callerId = Symbol('ensureReady caller');
+      const caller = {
+        deadlineAt: Date.now() + deadlineMs,
+        pollIntervalMs,
+        ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      };
+      let entry = inFlightSessionStarts.get(key);
+
+      if (!entry) {
+        entry = {
+          promise: null as unknown as Promise<SessionRuntimeEntry>,
+          callers: new Map([[callerId, caller]]),
+          lastProgress: null,
+          requestController: null,
+          wakePoll: null,
+          cancelledError: null,
+        };
+        inFlightSessionStarts.set(key, entry);
+
+        const sharedEntry = entry;
+        entry.promise = (async (): Promise<SessionRuntimeEntry> => {
+          while (true) {
+            if (sharedEntry.cancelledError) throw sharedEntry.cancelledError;
+            const activeCallers = [...sharedEntry.callers.values()];
+            const driverDeadlineAt = Math.max(
+              ...activeCallers.map((activeCaller) => activeCaller.deadlineAt),
+            );
+            const remainingMs = driverDeadlineAt - Date.now();
+            if (activeCallers.length === 0 || remainingMs <= 0) {
+              throw sessionReadyDeadlineError(0, sharedEntry.lastProgress);
+            }
+            const requestBudgetMs = Math.max(1, Math.min(30_000, Math.ceil(remainingMs)));
+            const requestController = new AbortController();
+            sharedEntry.requestController = requestController;
+            let started: P.SessionStartResult | null;
+            try {
+              started = await P.startProjectSession(
+                projectId,
+                sessionId,
+                requestBudgetMs,
+                Math.max(1, Math.ceil(remainingMs)),
+                { signal: requestController.signal, registerRuntime: false },
+              );
+            } finally {
+              if (sharedEntry.requestController === requestController) {
+                sharedEntry.requestController = null;
+              }
+            }
+            if (sharedEntry.cancelledError) throw sharedEntry.cancelledError;
+            if (started) {
+              sharedEntry.lastProgress = started;
+              notifySessionStartProgress(sharedEntry.callers.values(), started);
+            }
+
+            const runtimeProtocol = started?.runtime_protocol ?? null;
+            const runtimeSessionId = started?.runtime_session_id ?? null;
+            const runtimeId = started?.runtime_id ?? runtimeSessionId;
+            if (
+              started?.stage === 'ready' &&
+              started.sandbox &&
+              runtimeProtocol === 'acp' &&
+              runtimeId
+            ) {
+              const externalId = (started.sandbox as { external_id?: string | null }).external_id;
+              if (!externalId) {
+                throw new ApiError(
+                  'Session sandbox has no external_id — cannot resolve its runtime URL',
+                  {
+                    code: 'RUNTIME_UNAVAILABLE',
+                  },
+                );
+              }
+              if (sharedEntry.cancelledError) throw sharedEntry.cancelledError;
+              const runtimeUrl = getSandboxUrlForExternalId(externalId);
+              const ready = {
+                runtimeProtocol,
+                runtimeId,
+                runtimeSessionId,
+                runtimeUrl,
+                sandboxId: externalId,
+              } satisfies SessionRuntimeEntry;
+              setSessionRuntime(projectId, sessionId, ready);
+              setCurrentRuntime(runtimeUrl, externalId);
+              return ready;
+            }
+
+            const terminal =
+              started?.stage === 'failed' ||
+              started?.stage === 'stopped' ||
+              started?.retriable === false;
+            if (terminal) {
+              throw new ApiError(
+                `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`,
+                {
+                  code: 'RUNTIME_UNAVAILABLE',
+                },
+              );
+            }
+
+            const remainingCallers = [...sharedEntry.callers.values()];
+            const latestDeadlineAt = Math.max(
+              ...remainingCallers.map((activeCaller) => activeCaller.deadlineAt),
+            );
+            const remainingAfterResponse = latestDeadlineAt - Date.now();
+            if (remainingCallers.length === 0 || remainingAfterResponse <= 0) {
+              throw sessionReadyDeadlineError(0, sharedEntry.lastProgress);
+            }
+            const fastestPollIntervalMs = Math.min(
+              ...remainingCallers.map((activeCaller) => activeCaller.pollIntervalMs),
+            );
+            await waitForNextSessionStartPoll(
+              sharedEntry,
+              Math.min(fastestPollIntervalMs, remainingAfterResponse),
+            );
+          }
+        })().finally(() => {
+          if (inFlightSessionStarts.get(key) === sharedEntry) {
+            inFlightSessionStarts.delete(key);
+          }
+        });
+      } else {
+        entry.callers.set(callerId, caller);
+        if (entry.lastProgress && caller.onProgress) {
+          notifySessionStartProgress([caller], entry.lastProgress);
+        }
+        entry.wakePoll?.();
       }
 
-      const startPromise = (async (): Promise<SessionRuntimeEntry> => {
-        const started = await P.startProjectSession(projectId, sessionId, 30_000);
-        const runtimeProtocol = started?.runtime_protocol ?? null;
-        const runtimeSessionId = started?.runtime_session_id ?? null;
-        const runtimeId = started?.runtime_id ?? runtimeSessionId;
-        if (!started || started.stage !== 'ready' || !started.sandbox || runtimeProtocol !== 'acp' || !runtimeId) {
-          throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
-            code: 'RUNTIME_UNAVAILABLE',
-          });
-        }
-        const externalId = (started.sandbox as { external_id?: string | null }).external_id;
-        if (!externalId) {
-          throw new ApiError(
-            'Session sandbox has no external_id — cannot resolve its runtime URL',
-            {
-            code: 'RUNTIME_UNAVAILABLE',
-            },
-          );
-        }
-        const runtimeUrl = getSandboxUrlForExternalId(externalId);
-        // Point the app's shared runtime store at this session too, so React
-        // hosts (which read the global current-runtime) keep working — but this
-        // handle's own operations never read it back, only `_ready` below.
-        setCurrentRuntime(runtimeUrl, externalId);
-        return {
-          runtimeProtocol,
-          runtimeId,
-          runtimeSessionId,
-          runtimeUrl,
-          sandboxId: externalId,
-        };
-      })();
-
-      inFlightSessionStarts.set(key, startPromise);
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      const callerDeadline = new Promise<never>((_resolve, reject) => {
+        deadlineTimer = setTimeout(
+          () => reject(sessionReadyDeadlineError(deadlineMs, entry!.lastProgress)),
+          deadlineMs + 1,
+        );
+      });
       try {
-        _ready = await startPromise;
+        const ready = await Promise.race([entry.promise, callerDeadline]);
+        if (entry.cancelledError) throw entry.cancelledError;
+        _ready = ready;
         return _ready;
       } finally {
-        if (inFlightSessionStarts.get(key) === startPromise) {
-          inFlightSessionStarts.delete(key);
+        if (deadlineTimer) clearTimeout(deadlineTimer);
+        entry.callers.delete(callerId);
+        if (entry.callers.size === 0) {
+          entry.requestController?.abort();
+          entry.wakePoll?.();
         }
       }
     }
@@ -750,7 +949,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     }
 
     /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
-    function forgetReady(): void {
+    function forgetReady(action: 'delete' | 'restart' | 'stop'): void {
+      cancelInFlightSessionStart(projectId, sessionId, action);
       _ready = null;
       _acpClient = null;
       _acpSessionId = null;
@@ -768,21 +968,34 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           code: 'RUNTIME_PROTOCOL_MISMATCH',
         });
       }
-      const client = _acpClient ?? createAcpClient({
-        endpoint: `${config.backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
-      });
+      const client =
+        _acpClient ??
+        createAcpClient({
+          endpoint: `${config.backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
+        });
       _acpClient = client;
       if (!_acpSessionId) {
         await client.initialize({
           protocolVersion: 1,
           clientCapabilities: {},
-          clientInfo: { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' },
+          clientInfo: {
+            name: '@kortix/sdk',
+            title: 'Kortix SDK',
+            version: '0.2.0',
+          },
         });
         if (ready.runtimeSessionId) {
-          await client.loadSession({ sessionId: ready.runtimeSessionId, cwd: '/workspace', mcpServers: [] });
+          await client.loadSession({
+            sessionId: ready.runtimeSessionId,
+            cwd: '/workspace',
+            mcpServers: [],
+          });
           _acpSessionId = ready.runtimeSessionId;
         } else {
-          const created = await client.newSession({ cwd: '/workspace', mcpServers: [] });
+          const created = await client.newSession({
+            cwd: '/workspace',
+            mcpServers: [],
+          });
           _acpSessionId = created.sessionId;
         }
         ready.runtimeSessionId = _acpSessionId;
@@ -798,7 +1011,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       delete: () => {
         // A deleted session's sandbox is gone — never let a later handle for
         // this (projectId, sessionId) resolve a runtime that no longer exists.
-        forgetReady();
+        forgetReady('delete');
         return P.deleteProjectSession(projectId, sessionId);
       },
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
@@ -806,11 +1019,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       restart: () => {
         // Restart preserves the established sandbox identity, but readiness
         // and the proxy connection must still be resolved again after reboot.
-        forgetReady();
+        forgetReady('restart');
         return P.restartProjectSession(projectId, sessionId);
       },
       stop: () => {
-        forgetReady();
+        forgetReady('stop');
         return P.stopProjectSession(projectId, sessionId);
       },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>

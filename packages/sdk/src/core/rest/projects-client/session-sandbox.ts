@@ -12,11 +12,7 @@ import { getSandboxUrlForExternalId } from '../../session/server-store/url-helpe
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionSandboxStatus =
-  | 'provisioning'
-  | 'active'
-  | 'stopped'
-  | 'error'
-  | 'archived';
+  'provisioning' | 'active' | 'stopped' | 'error' | 'archived';
 
 export interface ProjectSessionSandbox {
   sandbox_id: string;
@@ -78,7 +74,11 @@ export function isSessionStartError(error: unknown): error is SessionStartError 
 
 function classifySessionStartFailure(error?: Error): SessionStartError | null {
   const apiError = error as
-    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string } })
+    | (Error & {
+        status?: number;
+        code?: string;
+        details?: { code?: string; error?: string };
+      })
     | undefined;
   const status = apiError?.status;
   const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
@@ -103,6 +103,15 @@ export async function startProjectSession(
   // until readiness flips (or its bounded deadline), so we learn `ready` the
   // instant it happens instead of on a fixed poll tick. Omit = one-shot.
   waitMs?: number,
+  // Optional client-side HTTP deadline. The facade uses this to stop a stalled
+  // request at the active ensureReady callers' latest deadline.
+  requestTimeoutMs?: number,
+  options?: {
+    /** Cancels this HTTP request without cancelling other session callers. */
+    signal?: AbortSignal;
+    /** Disable registry writes when the caller must validate lifecycle state first. */
+    registerRuntime?: boolean;
+  },
 ): Promise<SessionStartResult | null> {
   const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : '';
   const response = await backendApi.post<SessionStartResult>(
@@ -110,7 +119,13 @@ export async function startProjectSession(
     {},
     // Keep toasts quiet here. Terminal client errors are rendered by the host;
     // transient transport/server failures still yield null so polling can recover.
-    { showErrors: false },
+    {
+      showErrors: false,
+      ...(requestTimeoutMs !== undefined
+        ? { timeout: Math.max(1, Math.floor(requestTimeoutMs)) }
+        : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    },
   );
   if (!response.success || !response.data) {
     const terminal = classifySessionStartFailure(response.error);
@@ -132,7 +147,13 @@ export async function startProjectSession(
   const runtimeSessionId = result.runtime_session_id;
   const runtimeId = result.runtime_id ?? runtimeSessionId;
   const runtimeProtocol = result.runtime_protocol;
-  if (result.stage === 'ready' && externalId && runtimeId && runtimeProtocol === 'acp') {
+  if (
+    options?.registerRuntime !== false &&
+    result.stage === 'ready' &&
+    externalId &&
+    runtimeId &&
+    runtimeProtocol === 'acp'
+  ) {
     setSessionRuntime(projectId, sessionId, {
       runtimeProtocol,
       runtimeId,

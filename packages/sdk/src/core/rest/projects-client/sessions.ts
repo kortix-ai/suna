@@ -11,13 +11,7 @@ import { type ConnectorSharing, unwrap } from './shared';
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionStatus =
-  | 'queued'
-  | 'branching'
-  | 'provisioning'
-  | 'running'
-  | 'stopped'
-  | 'failed'
-  | 'completed';
+  'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
 
 export interface ProjectSession {
   session_id: string;
@@ -54,6 +48,10 @@ export interface ProjectSession {
   owner_name?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
+  /** Server-derived policy class. Older compatible servers may omit it. */
+  origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
+  /** Opaque wrapper user reference. Non-null only for backend-origin sessions. */
+  origin_ref?: string | null;
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
   can_manage_sharing?: boolean;
@@ -102,6 +100,11 @@ export interface CreateProjectSessionInput {
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
   runtime_context?: SessionRuntimeContext;
+  /**
+   * Opaque wrapper user reference for Kortix-as-a-Backend sessions.
+   * The API accepts this only from backend-origin credentials.
+   */
+  origin_ref?: string;
   /** Logical connector alias -> active profile available to the caller: their
    * own member profile, a project default, or an operator-managed profile when
    * the caller holds the management capability. */

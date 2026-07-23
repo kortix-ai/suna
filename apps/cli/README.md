@@ -49,10 +49,9 @@ my-project/
 ```
 
 The coding agent(s) you wire up (`--primary`/`--agents`, default OpenCode)
-each get their native discovery directory symlinked straight at
-`.opencode/` — `.opencode` for OpenCode, `.claude` for Claude Code,
-`.agents` for Codex — so skills and agents stay shared from one source
-of truth. Codex and Cursor also get a root `AGENTS.md` pointer.
+receive native skill directories under `.opencode`, `.claude`, `.codex`, and
+`.pi`. The CLI also adds `.agents → .opencode` for local Codex compatibility.
+Codex and Pi get a root `AGENTS.md` pointer.
 
 After the scaffold lands, one commit is made:
 
