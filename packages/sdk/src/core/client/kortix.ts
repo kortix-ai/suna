@@ -251,8 +251,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkRepository: P.linkRepository,
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
+    listLinkableInstallations: P.listLinkableGitHubInstallations,
     listRepositories: P.listGitHubRepositories,
     listRepositoryBranches: P.listGitHubRepositoryBranches,
+    linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
   };

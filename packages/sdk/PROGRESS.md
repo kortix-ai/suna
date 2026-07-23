@@ -1342,3 +1342,54 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. API typecheck, focused API
 authorization tests, focused web tests, and focused web lint also pass.
 Repository merge, Deploy Dev, and live-dev verification remain pending.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (claim)
+
+Claimed the additive existing-GitHub-App installation discovery contract. The
+SDK will request installations that the authorized GitHub user can link to one
+Kortix account. The API will verify personal ownership or active organization
+admin access before it returns or saves an installation. Existing install and
+save contracts remain backward compatible.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (completion)
+
+Completed the additive existing-installation discovery and link surface. The SDK
+exposes typed list and link functions. The API lists this GitHub App's
+installations with the App JWT, then filters them against the authorized GitHub
+user and active organization-admin memberships. The link route re-fetches the
+selected installation with the App JWT and repeats the GitHub authorization check
+before the database write. No exported name was removed or renamed.
+
+**TDD and focused evidence:** the GitHub SDK client reported **5 pass / 0 fail**;
+the GitHub App API suite reported **9 pass / 0 fail** with 30 assertions; and the
+web GitHub setup and connection regressions passed inside the full web suite.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1158 pass / 0 fail** across 86 files with 5110 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Cross-surface evidence:** API typecheck exited 0; the full web suite reported
+**1952 pass / 0 fail** across 212 files with 5455 assertions; focused web ESLint
+exited 0; and `git diff --check` exited 0. The full web typecheck reports only the
+two existing `origin/main` errors in `template-url.test.ts`.
+
+**Real local proof:** authenticated `POST
+/v1/projects/github/installations/linkable` returned 200 for GitHub login
+`markokraemer` and three verified installations. Authenticated `POST
+/v1/projects/github/installations/link` returned 200 for personal installation
+`148404669`. The account installation read-back returned the same owner and
+installation. Chromium rendered the same-origin `Link a GitHub account` page and
+opened GitHub OAuth in a popup with `read:user read:org`. The local OAuth callback
+cannot complete because the local Supabase container has the literal placeholder
+GitHub client ID; deployed-dev OAuth remains the repository delivery gate.
+
+**Shippable to production: YES** for the SDK and locally verified API contract.
+Repository PR, Deploy Dev, deployed-SHA proof, and full live-dev OAuth UI
+verification remain part of the parent feature lifecycle.
