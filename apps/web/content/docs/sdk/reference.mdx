@@ -219,7 +219,7 @@ agent, a skill, a secret) instead of the whole project.
 | `profiles.updateCredential(profileId, input)` | rotate a profile's credential |
 | `profiles.revoke(profileId)` · `profiles.activate(profileId)` | deny · restore the identity live |
 
-`p.connectors.discover` browses the direct-integration catalog.
+`p.connectors.discover` browses the direct-integration catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
 | method | what |
 | --- | --- |

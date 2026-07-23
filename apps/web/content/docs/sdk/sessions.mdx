@@ -154,14 +154,19 @@ Turn raw messages and parts into renderable output with `classifyTurn`. See
 
 ## Retry on a cold boot
 
-`ensureReady()` sends one long-poll request to the session's `/start`
-endpoint. On a warm session it resolves right away. On a cold boot, the
-sandbox can still be provisioning when the long-poll returns. In that case,
-`ensureReady()` throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`.
+`ensureReady()` polls the session's `/start` endpoint — each call long-polls up
+to 30 s — until the runtime reaches a terminal `ready`/`failed`/`stopped` stage
+or its deadline (`readyTimeoutMs`, default ~180 s) elapses. On a warm session
+the first poll resolves `ready` immediately. On a cold boot it keeps polling
+while the sandbox reports `retriable: true`, so a slow start just takes longer
+rather than throwing. It only throws an `ApiError` with `code:
+'RUNTIME_UNAVAILABLE'` if the runtime is still not `ready` when the deadline
+expires.
 
-This code means the sandbox is not ready yet, not that it failed. Retry the
-call. `ensureReady()` is idempotent, so concurrent calls for the same session
-share one `/start` request instead of sending several.
+`ensureReady()` is idempotent, so concurrent calls for the same session share
+one `/start` request instead of sending several. The `retryUntilReady` helper
+below is now optional — `ensureReady()` already retries internally — but stays
+useful if you want a longer total budget than the default `readyTimeoutMs`.
 
 ```ts
 async function retryUntilReady<T>(ensure: () => Promise<T>): Promise<T> {
