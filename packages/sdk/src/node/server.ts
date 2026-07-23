@@ -120,7 +120,32 @@ function wrapScoped<T>(value: T, config: KortixPlatformConfig, seen: WeakSet<obj
  * process — unlike two concurrent `createKortix()` calls, which share (and
  * race on) the global singleton.
  */
+/**
+ * The top-level `runtime()` escape hatch resolves the PROCESS-GLOBAL "active"
+ * runtime — whatever session most recently called `ensureReady()`. That's fine
+ * for a single-tenant host (a browser tab, a CLI), but on a scoped client it is
+ * a cross-tenant leak: in a multi-tenant server the "active" runtime is a
+ * DIFFERENT request's/end-user's sandbox, and `wrapScoped` only scopes the token,
+ * not this global URL resolution. A scoped client has no single ambient session,
+ * so there is no safe top-level runtime — reach a specific session's runtime via
+ * `kortix.session(projectId, sessionId).runtime` (await `.ensureReady()` first),
+ * which resolves that session's OWN sandbox and never the global.
+ */
+function scopedRuntimeUnavailable(): never {
+  throw new Error(
+    'kortix.runtime() is not available on a @kortix/sdk/server (scoped) client: it resolves the ' +
+      "process-global active runtime, which in a multi-tenant server is another request's sandbox. " +
+      'Reach a specific session\'s runtime via kortix.session(projectId, sessionId).runtime ' +
+      '(await .ensureReady() first).',
+  );
+}
+
 export function createScopedKortix(config: KortixPlatformConfig): Kortix {
   const inner = createKortix(config, { global: false });
-  return wrapScoped(inner, config, new WeakSet());
+  const scoped = wrapScoped(inner, config, new WeakSet());
+  // Neutralize the ambient top-level runtime() on the scoped surface (see
+  // scopedRuntimeUnavailable). The session-scoped `session(pid, sid).runtime`
+  // getter is untouched — it resolves its own sandbox, never the global.
+  scoped.runtime = scopedRuntimeUnavailable;
+  return scoped;
 }
