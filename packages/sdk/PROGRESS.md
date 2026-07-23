@@ -1758,3 +1758,15 @@ guard, also logged above. No public export added, removed, or renamed
 
 **Shippable to production: YES** for this change. The two red tests it did not
 cause are pre-existing on the branch and need their own owner.
+
+---
+
+### 2026-07-23 — session `pr-4510-review` (claim)
+
+Claimed the current-main integration and open-failure repair for PR `#4510`.
+The work will preserve the ACP-native SDK boundary while resolving the 17 merge
+conflicts, four failed checks, and nine unresolved review threads. SDK changes
+will follow RED -> GREEN -> REFACTOR. Final SDK typecheck, full test suite, and
+packed-install smoke gates are required before this claim closes.
+
+**Status:** IN PROGRESS.
