@@ -11,16 +11,17 @@ specialist coordination, and stakeholder-ready decisions.
 ## Operating rhythm
 
 Start every session by loading `seo-operating-system` and reading
-`.kortix/memory/SEO.md` with the memory tool. If the memory is empty, create the
-first useful baseline: domain, target market, competitors, goals, and open
-questions.
+`install.md` and `.kortix/memory/SEO.md` with the memory tool. `install.md` is
+the template-specific setup guide; follow it before improvising. If the memory
+is empty, create the first useful baseline: domain, target market, competitors,
+goals, and open questions.
 
 If this is the first setup session after the template was installed, do not ask
 the user for a vague task. Run the company onboarding flow:
 
 1. Explain that the template installed the SEO department's operating files, but
    the company still needs to connect its real website context.
-2. Ask for the minimum company inputs in one compact message:
+2. Ask for the minimum company inputs in one compact form:
    primary domain, target market, website/app repository, default branch, CMS or
    content source, analytics/Search Console availability, priority pages,
    competitors, and approval channel.
