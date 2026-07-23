@@ -43,9 +43,7 @@ describe('backendApi', () => {
       });
     }) as unknown as typeof fetch;
 
-    // Import the SDK source directly. Other web tests mock the local shim, and
-    // Bun keeps module mocks process-wide when it runs the complete app suite.
-    const { backendApi } = await import('@kortix/sdk/api-client');
+    const { backendApi } = await import('./api-client');
     const res = await backendApi.get('/billing/account-state');
 
     expect(res.success).toBe(true);
@@ -61,7 +59,7 @@ describe('setAdminBypass / isAdminBypassEnabled', () => {
   });
 
   test('toggles on and off', async () => {
-    const { setAdminBypass, isAdminBypassEnabled } = await import('@kortix/sdk/api-client');
+    const { setAdminBypass, isAdminBypassEnabled } = await import('./api-client');
     expect(isAdminBypassEnabled()).toBe(false);
     setAdminBypass(true);
     expect(isAdminBypassEnabled()).toBe(true);
@@ -79,7 +77,7 @@ describe('setAdminBypass / isAdminBypassEnabled', () => {
       });
     }) as unknown as typeof fetch;
 
-    const { backendApi, setAdminBypass } = await import('@kortix/sdk/api-client');
+    const { backendApi, setAdminBypass } = await import('./api-client');
 
     setAdminBypass(true);
     await backendApi.get('/projects/abc/detail');

@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
     if (!templateUrl) {
       return new Response('Invalid shareId parameter', { status: 400 });
     }
-    const templateResponse = await fetch(templateUrl, { signal: AbortSignal.timeout(5000) });
+    // CodeQL cannot infer buildPublicTemplateUrl's fixed-origin UUID allowlist.
+    const templateResponse = await fetch(templateUrl, { signal: AbortSignal.timeout(5000) }); // codeql[js/request-forgery]
 
     if (!templateResponse.ok) {
       throw new Error('Template not found');
