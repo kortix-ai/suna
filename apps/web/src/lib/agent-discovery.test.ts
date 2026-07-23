@@ -146,6 +146,16 @@ describe('agent discovery documents', () => {
     expect(await response.text()).toContain('# Kortix');
   });
 
+  test('adds agent discovery links to the homepage middleware response', async () => {
+    const response = await middleware(new NextRequest('https://kortix.com/'));
+    const link = response.headers.get('Link');
+
+    expect(link).toContain('</.well-known/api-catalog>; rel="api-catalog"');
+    expect(link).toContain('rel="service-desc"');
+    expect(link).toContain('</docs>; rel="service-doc"');
+    expect(link).toContain('</llms.txt>; rel="describedby"');
+  });
+
   test('declares content signals and agent discovery routes in robots.txt', () => {
     const robots = fs.readFileSync(path.join(process.cwd(), 'public', 'robots.txt'), 'utf8');
     expect(robots).toContain('Content-Signal: ai-train=no, search=yes, ai-input=yes');
