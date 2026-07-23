@@ -1,20 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 import {
   AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
+  PNPM_SHA256_AMD64,
   PNPM_VERSION,
+  UV_SHA256_AMD64,
+  UV_VERSION,
 } from '@kortix/shared';
 import {
-  buildDefaultSandboxTemplate,
-  buildLayeredDockerfile,
   DEFAULT_SANDBOX_SLUG,
-  extractSandboxDefault,
-  extractSandboxTemplates,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
+  buildDefaultSandboxTemplate,
+  buildLayeredDockerfile,
+  extractSandboxDefault,
+  extractSandboxTemplates,
 } from '../snapshots/dockerfile-layer';
 
 const COMMON = {
@@ -30,17 +35,39 @@ const COMMON = {
 };
 
 describe('buildLayeredDockerfile', () => {
-  test('installs the JavaScript runtime floor through pinned pnpm managed runtimes', () => {
+  test('installs the runtime floor from pinned, checksum-verified release artifacts', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     expect(merged).not.toContain('ca-certificates curl git gzip nodejs npm unzip');
-    expect(merged).toContain(`ENV PNPM_VERSION=${PNPM_VERSION}`);
     expect(merged).toContain('USER kortix');
+    expect(merged).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
     expect(merged).toContain('/home/kortix/.local/share/pnpm/bin');
-    expect(merged).toContain('curl -fsSL https://get.pnpm.io/install.sh | sh -');
+    expect(merged).toContain(
+      `https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz`,
+    );
+    expect(merged).toContain(PNPM_SHA256_AMD64);
+    expect(merged).toContain(
+      `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-\${uv_arch}-unknown-linux-gnu.tar.gz`,
+    );
+    expect(merged).toContain(UV_SHA256_AMD64);
+    expect(merged).toContain(
+      `https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-\${bun_arch}.zip`,
+    );
+    expect(merged).toContain(BUN_SHA256_AMD64);
+    expect(merged).toContain('sha256sum -c -');
+    expect(merged).not.toContain('get.pnpm.io/install.sh');
+    expect(merged).not.toContain('astral.sh/uv/');
+    expect(merged).not.toContain('bun.com/install');
     expect(merged).toContain(`pnpm runtime set node ${NODE_VERSION} -g`);
+    expect(merged).toContain(`test "$(node --version)" = "v${NODE_VERSION}"`);
     expect(merged).toContain(`pnpm add -g "npm@${NPM_VERSION}"`);
-    expect(merged).toContain(`pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}"`);
-    expect(merged).toContain(`pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`);
+    expect(merged).toContain(`test "$(npm --version)" = "${NPM_VERSION}"`);
+    expect(merged).toContain(`test "$(bun --version)" = "${BUN_VERSION}"`);
+    expect(merged).toContain(
+      `pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}"`,
+    );
+    expect(merged).toContain(
+      `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
+    );
     expect(merged).not.toContain('npm install -g');
     expect(merged).not.toContain('npx -y');
   });
@@ -49,7 +76,9 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
     expect(merged).toContain("printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix");
-    expect(merged).toContain('chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral');
+    expect(merged).toContain(
+      'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral',
+    );
     expect(merged).not.toContain('ENV HOME=');
     expect(merged).not.toContain('XDG_DATA_HOME=');
     expect(merged).not.toContain('XDG_CONFIG_HOME=');
@@ -143,7 +172,9 @@ describe('buildLayeredDockerfile', () => {
         originUrl: 'https://proxy.kortix.ai/git/acme/repo.git',
       },
     });
-    const chromiumIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
+    const chromiumIdx = merged.indexOf(
+      `playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`,
+    );
     const cloneIdx = merged.indexOf('Per-project COLD warm: bake repo checkout into /workspace');
     const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance keep');
     expect(chromiumIdx).toBeGreaterThanOrEqual(0);
@@ -188,7 +219,10 @@ describe('buildLayeredDockerfile', () => {
     // Without opencodeConfigPath there's no starter tool tree to verify, so
     // this stricter check is correctly absent — only the axios/form-data
     // override check (always present) still runs.
-    const withoutConfig = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    const withoutConfig = buildLayeredDockerfile({
+      userDockerfile: 'FROM ubuntu:24.04',
+      ...COMMON,
+    });
     expect(withoutConfig).not.toContain('bun build tools/*.ts');
     expect(withoutConfig).toContain(
       'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
@@ -198,7 +232,6 @@ describe('buildLayeredDockerfile', () => {
   test('does NOT bake the project workspace into the image', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged).not.toContain('kortix-workspace.tar.gz');
-    expect(merged).not.toContain('tar -xzf');
     // The daemon clones at boot via KORTIX_PROJECT_AUTO_CLONE; the layer just
     // creates an empty /workspace.
     expect(merged).toContain('mkdir -p /workspace');

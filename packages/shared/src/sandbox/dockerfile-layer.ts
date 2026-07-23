@@ -23,11 +23,18 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  BUN_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   PLAYWRIGHT_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
   PNPM_VERSION,
   PYTHON_VERSION,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
   UV_VERSION,
 } from '../runtime-versions';
 
@@ -412,32 +419,49 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     "    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\",
     '    && chmod 0440 /etc/sudoers.d/kortix \\',
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
-    '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral',
-    `ENV PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
+    '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
+    '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    'ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\',
+    `    PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
     'USER kortix',
     '',
     // Install one exact managed Python and expose it as python/python3. Agents
     // use `uv run --with` for dependencies instead of sharing a global venv.
-    `RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh \\`,
-    '    && uv --version \\',
+    `RUN case "$(uname -m)" in \\`,
+    `      x86_64) uv_arch=x86_64; uv_sha=${UV_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) uv_arch=aarch64; uv_sha=${UV_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \\',
+    `         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-\${uv_arch}-unknown-linux-gnu.tar.gz" \\`,
+    '    && echo "${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\',
+    '    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\',
+    '    && rm /tmp/uv.tar.gz \\',
+    `    && test "$(uv --version)" = "uv ${UV_VERSION}" \\`,
     `    && UV_PYTHON_DOWNLOADS=automatic uv python install --default ${PYTHON_VERSION} \\`,
     `    && python -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')}); print("managed python:", sys.version)' \\`,
     `    && python3 -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')})'`,
     '',
-    // Bootstrap pnpm without relying on a Node/npm already being present in the
-    // user's image. pnpm's standalone executable then owns the JavaScript
-    // runtime floor: Node comes from `pnpm runtime`, while npm and the global
-    // CLIs come from pnpm's isolated global package store. pnpm 11 puts global
-    // executables in $PNPM_HOME/bin, so that directory must be on PATH in every
-    // subsequent build layer and in the running sandbox.
-    `ENV PNPM_VERSION=${PNPM_VERSION} \\`,
-    '    SHELL=/bin/bash',
-    'RUN curl -fsSL https://get.pnpm.io/install.sh | sh - \\',
-    '    && pnpm --version \\',
+    // Install pnpm's versioned standalone release artifact after verifying the
+    // repository-controlled checksum. pnpm then owns the JavaScript runtime
+    // floor: Node comes from `pnpm runtime`, while npm and global CLIs live in
+    // pnpm's isolated global package store.
+    'ENV SHELL=/bin/bash',
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\',
+    `         "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz" \\`,
+    '    && echo "${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\',
+    '    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\',
+    '    && rm /tmp/pnpm.tar.gz \\',
+    `    && test "$(pnpm --version)" = "${PNPM_VERSION}" \\`,
     `    && pnpm runtime set node ${NODE_VERSION} -g \\`,
-    '    && node --version \\',
+    `    && test "$(node --version)" = "v${NODE_VERSION}" \\`,
     `    && pnpm add -g "npm@${NPM_VERSION}" \\`,
-    '    && npm --version',
+    `    && test "$(npm --version)" = "${NPM_VERSION}"`,
     '',
     // agent-browser (Vercel) — the browser-automation CLI the agent-browser
     // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
@@ -541,9 +565,22 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
       'RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup',
     ] : []),
     '',
-    // bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
-    'RUN curl -fsSL https://bun.com/install | bash \\',
-    '    && bun --version',
+    // Bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
+    // Download one versioned release artifact and verify its checksum before
+    // extracting it. The public installer script is not part of the trust path.
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) bun_arch=x64; bun_sha=${BUN_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) bun_arch=aarch64; bun_sha=${BUN_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \\',
+    `         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-\${bun_arch}.zip" \\`,
+    '    && echo "${bun_sha}  /tmp/bun.zip" | sha256sum -c - \\',
+    '    && unzip -q /tmp/bun.zip -d /tmp/bun \\',
+    '    && install -m 0755 "/tmp/bun/bun-linux-${bun_arch}/bun" /home/kortix/.bun/bin/bun \\',
+    '    && ln -sf bun /home/kortix/.bun/bin/bunx \\',
+    '    && rm -rf /tmp/bun /tmp/bun.zip \\',
+    `    && test "$(bun --version)" = "${BUN_VERSION}"`,
     '',
     // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
     // into a stable baked location. The cloned config dir's plugin + tools import

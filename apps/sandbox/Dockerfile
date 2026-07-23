@@ -30,7 +30,7 @@
 
 # ─── Stage 1: build the agent binary ────────────────────────────────────
 
-FROM oven/bun:1-debian AS builder
+FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS builder
 
 ARG TARGETARCH
 
@@ -55,7 +55,7 @@ RUN case "${TARGETARCH:-}" in \
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
 # can resolve the `@kortix/*` names to their source, then compile.
 
-FROM oven/bun:1-debian AS cli-builder
+FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS cli-builder
 
 ARG TARGETARCH
 
@@ -96,18 +96,31 @@ RUN useradd --create-home --shell /bin/bash --user-group kortix \
     && printf 'kortix ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/kortix \
     && chmod 0440 /etc/sudoers.d/kortix \
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
-    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral
+        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
 
-ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
+ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
 USER kortix
 
 COPY packages/shared/src/runtime-versions.json /tmp/kortix-runtime-versions.json
 RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && PYTHON_VERSION="$(sed -n 's/.*"python": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && UV_SHA256_AMD64="$(sed -n 's/.*"uvSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && UV_SHA256_ARM64="$(sed -n 's/.*"uvSha256Arm64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && test -n "$UV_VERSION" \
     && test -n "$PYTHON_VERSION" \
-    && curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh \
-    && uv --version \
+    && case "$(uname -m)" in \
+         x86_64) uv_arch=x86_64; uv_sha="$UV_SHA256_AMD64" ;; \
+         aarch64|arm64) uv_arch=aarch64; uv_sha="$UV_SHA256_ARM64" ;; \
+         *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \
+         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && echo "${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \
+    && rm /tmp/uv.tar.gz \
+    && test "$(uv --version)" = "uv ${UV_VERSION}" \
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default "$PYTHON_VERSION" \
     && python -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'; print('managed python:', sys.version)" \
     && python3 -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'"
@@ -116,13 +129,23 @@ ENV SHELL=/bin/bash
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
     && NODE_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['node'])")" \
     && NPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['npm'])")" \
-    && export PNPM_VERSION \
-    && curl -fsSL https://get.pnpm.io/install.sh | sh - \
-    && pnpm --version \
+    && PNPM_SHA256_AMD64="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpmSha256Amd64'])")" \
+    && PNPM_SHA256_ARM64="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpmSha256Arm64'])")" \
+    && case "$(uname -m)" in \
+         x86_64) pnpm_arch=x64; pnpm_sha="$PNPM_SHA256_AMD64" ;; \
+         aarch64|arm64) pnpm_arch=arm64; pnpm_sha="$PNPM_SHA256_ARM64" ;; \
+         *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \
+         "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-${pnpm_arch}.tar.gz" \
+    && echo "${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \
+    && rm /tmp/pnpm.tar.gz \
+    && test "$(pnpm --version)" = "$PNPM_VERSION" \
     && pnpm runtime set node "$NODE_VERSION" -g \
-    && node --version \
+    && test "$(node --version)" = "v${NODE_VERSION}" \
     && pnpm add -g "npm@${NPM_VERSION}" \
-    && npm --version
+    && test "$(npm --version)" = "$NPM_VERSION"
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
@@ -151,8 +174,22 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && command -v opencode \
     && opencode --version
 
-RUN curl -fsSL https://bun.com/install | bash \
-    && bun --version
+RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
+    && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
+    && BUN_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Arm64)")" \
+    && case "$(uname -m)" in \
+         x86_64) bun_arch=x64; bun_sha="$BUN_SHA256_AMD64" ;; \
+         aarch64|arm64) bun_arch=aarch64; bun_sha="$BUN_SHA256_ARM64" ;; \
+         *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \
+         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${bun_arch}.zip" \
+    && echo "${bun_sha}  /tmp/bun.zip" | sha256sum -c - \
+    && unzip -q /tmp/bun.zip -d /tmp/bun \
+    && install -m 0755 "/tmp/bun/bun-linux-${bun_arch}/bun" /home/kortix/.bun/bin/bun \
+    && ln -sf bun /home/kortix/.bun/bin/bunx \
+    && rm -rf /tmp/bun /tmp/bun.zip \
+    && test "$(bun --version)" = "$BUN_VERSION"
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \
     && cd /opt/kortix/opencode-config-deps \

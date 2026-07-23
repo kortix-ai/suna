@@ -19,7 +19,16 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '../../runtime-versions';
+import {
+  AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
+} from '../../runtime-versions';
 import {
   type BuildLayeredDockerfileOpts,
   KORTIX_USER_PATH_DIRS,
@@ -90,6 +99,31 @@ describe('rendered layer (golden)', () => {
   }
 });
 
+describe('runtime artifact integrity', () => {
+  const rendered = kortixToolchainLayer(COMMON);
+
+  test('verifies both supported architectures against repository-controlled SHA-256 digests', () => {
+    for (const digest of [
+      PNPM_SHA256_AMD64,
+      PNPM_SHA256_ARM64,
+      UV_SHA256_AMD64,
+      UV_SHA256_ARM64,
+      BUN_SHA256_AMD64,
+      BUN_SHA256_ARM64,
+    ]) {
+      expect(rendered).toContain(digest);
+    }
+    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(3);
+  });
+
+  test('does not execute remote installer scripts', () => {
+    expect(rendered).not.toContain('get.pnpm.io/install.sh');
+    expect(rendered).not.toContain('astral.sh/uv/');
+    expect(rendered).not.toContain('bun.com/install');
+    expect(rendered).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
+  });
+});
+
 describe('the Python runtime is managed by uv', () => {
   const toolchain = kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION });
 
@@ -100,7 +134,9 @@ describe('the Python runtime is managed by uv', () => {
   });
 
   test('installs an exact managed Python as python and python3', () => {
-    expect(toolchain).toContain('UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13');
+    expect(toolchain).toContain(
+      'UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13',
+    );
     expect(toolchain).toContain('assert sys.version_info[:3] == (3, 12, 13)');
     expect(toolchain).toContain("&& python3 -c 'import sys;");
   });
@@ -128,10 +164,8 @@ describe('Chromium sits on deterministic parents (cache order is load-bearing)',
   // with live timestamps) or the warm-repo clone (fresh credential in the RUN
   // text), it re-downloaded and overran the session-ready window. Chromium must
   // stay directly on the deterministic apt + pip floors, ABOVE all of them.
-  const chromiumAt = (t: string) =>
-    t.indexOf('pnpm dlx playwright@');
-  const opencodeInstallAt = (t: string) =>
-    t.indexOf('"opencode-ai@');
+  const chromiumAt = (t: string) => t.indexOf('pnpm dlx playwright@');
+  const opencodeInstallAt = (t: string) => t.indexOf('"opencode-ai@');
   const migrationBakeAt = (t: string) => t.indexOf('kortix-opencode-warmup migration');
 
   test('the base default image installs Chromium before opencode + the migration-bake', () => {
@@ -224,7 +258,7 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
   });
 
   test('entrypoint PATH dirs cannot drift from the toolchain ENV PATH', () => {
-    expect(rendered).toContain(`ENV PATH=${KORTIX_USER_PATH_DIRS}:$PATH`);
+    expect(rendered).toContain(`PATH=${KORTIX_USER_PATH_DIRS}:$PATH`);
   });
 
   test('carries ONLY the two temporary Platinum mitigations, before the privilege drop, each best-effort', () => {
@@ -295,7 +329,9 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
     expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
     expect(rendered).toContain(FROM_BASE_OPTS.warmRepo.cloneUrl);
-    expect(rendered).toContain('RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup');
+    expect(rendered).toContain(
+      'RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup',
+    );
   });
 
   test('renders the clone + warm-up steps byte-identically to the monolithic build', () => {

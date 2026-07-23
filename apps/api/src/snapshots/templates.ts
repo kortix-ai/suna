@@ -16,11 +16,18 @@ import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 import {
   AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  BUN_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
   PNPM_VERSION,
   PYTHON_VERSION,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
   UV_VERSION,
 } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
@@ -197,7 +204,10 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v30: run the toolchain and daemon as `kortix`, restore the runtime environment
 // when a provider discards image USER/ENV, extract OpenCode cache warming, and
 // bake the platform machine guide at /MACHINE.md.
-const RUNTIME_LAYER_VERSION = 'kortix-runtime-user-v30';
+// v31: replace remote installer-script execution with versioned release
+// artifacts whose amd64 and arm64 SHA-256 digests live in the runtime manifest.
+// Pin Bun and include every artifact digest in the runtime fingerprint.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v31';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -902,10 +912,19 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
+const runtimeIntegrityKey = () =>
+  [
+    PNPM_SHA256_AMD64,
+    PNPM_SHA256_ARM64,
+    UV_SHA256_AMD64,
+    UV_SHA256_ARM64,
+    BUN_SHA256_AMD64,
+    BUN_SHA256_ARM64,
+  ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;
