@@ -1,4 +1,5 @@
 import { auth } from '../../openapi';
+import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
@@ -58,7 +59,12 @@ export async function getAccountGitHubInstallation(accountId: string, installati
 export async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
   if (!isGithubAppConfigured()) return null;
   const nonce = randomUUID();
-  const installUrl = buildGitHubAppInstallUrl(accountId, nonce);
+  const installUrl = buildGitHubAppInstallUrl(
+    accountId,
+    nonce,
+    'account_link',
+    config.FRONTEND_URL,
+  );
   if (!installUrl) return null;
   await db.insert(accountGithubInstallationStates).values({
     stateNonce: nonce,

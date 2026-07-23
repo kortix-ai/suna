@@ -141,6 +141,7 @@ export async function listGitHubRepositoryBranches(
 export async function saveGitHubInstallation(input: {
   state: string;
   installation_id: string;
+  github_user_token?: string;
 }) {
   return unwrap(
     await backendApi.post<GitHubInstallationStatus>(

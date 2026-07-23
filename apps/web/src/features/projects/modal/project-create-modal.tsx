@@ -855,15 +855,9 @@ export const ProjectCreateModal = ({
                           <Icon.Github />
                         </ItemMedia>
                         <ItemContent>
-                          <ItemTitle>
-                            {tHardcodedUi.raw(
-                              'componentsProjectsProjectCreateModal.line362JsxAttrTitleConnectTheKortixGithubApp',
-                            )}
-                          </ItemTitle>
+                          <ItemTitle>Link a GitHub account</ItemTitle>
                           <ItemDescription>
-                            {tHardcodedUi.raw(
-                              'componentsProjectsProjectCreateModal.line383JsxTextKortixUsesTheGithubAppToListRepositories',
-                            )}
+                            Select Configure in GitHub when the Kortix App is already installed.
                           </ItemDescription>
                         </ItemContent>
                         <ItemActions>
@@ -878,7 +872,7 @@ export const ProjectCreateModal = ({
                             onClick={handleConnectGitHub}
                           >
                             {isConnectingGitHub ? <Loading /> : <Icon.Github />}
-                            {isConnectingGitHub ? 'Connecting' : 'Connect'}
+                            {isConnectingGitHub ? 'Connecting' : 'Link GitHub'}
                           </Button>
                         </ItemActions>
                       </Item>

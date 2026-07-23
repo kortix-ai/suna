@@ -1310,3 +1310,15 @@ blocked by two unrelated `origin/main` errors in `template-url.test.ts`.
 **Shippable to production: YES** for the SDK surface. Repository merge, Deploy
 Dev, deployed-SHA proof, and live-dev verification remain part of the parent
 feature lifecycle.
+
+---
+
+### 2026-07-23 — session `github-repo-selector` (GitHub installation linking claim)
+
+Claimed the additive GitHub installation-save request field for secure
+cross-account linking. The SDK sends an optional GitHub user token to the API.
+The API verifies that the GitHub user owns the personal installation or
+administers the organization installation. Existing callers remain compatible
+at the type level.
+
+**Status:** IN PROGRESS. Final SDK gates and repository delivery remain pending.

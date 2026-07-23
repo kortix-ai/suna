@@ -37,4 +37,12 @@ describe('new project git provider default', () => {
     expect(source).toContain('Could not load repositories');
     expect(source).toContain('githubReposQuery.refetch()');
   });
+
+  test('explains how to link an existing GitHub App installation', () => {
+    expect(source).toContain('Link a GitHub account');
+    expect(source).toContain(
+      'Select Configure in GitHub when the Kortix App is already installed.',
+    );
+    expect(source).toContain("isConnectingGitHub ? 'Connecting' : 'Link GitHub'");
+  });
 });

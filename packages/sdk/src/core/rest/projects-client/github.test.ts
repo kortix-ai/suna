@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import {
   listGitHubRepositories,
   listGitHubRepositoryBranches,
+  saveGitHubInstallation,
   type GitHubRepositoriesResponse,
   type GitHubRepositoryBranchesResponse,
 } from './github';
@@ -26,6 +27,40 @@ beforeEach(() => {
       ],
     } satisfies GitHubRepositoryBranchesResponse);
   }) as unknown as typeof fetch;
+});
+
+test('sends the GitHub user proof when saving an installation', async () => {
+  let requestBody: unknown;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      account_id: 'account 1',
+      installation_row_id: 'row-1',
+      installed: true,
+      configured: true,
+      requires_installation: false,
+      install_url: null,
+      installation_id: '84',
+      owner_login: 'acme',
+      owner_type: 'Organization',
+      repository_selection: 'all',
+      permissions: {},
+      installation_url: null,
+      updated_at: null,
+    });
+  }) as unknown as typeof fetch;
+
+  await saveGitHubInstallation({
+    state: 'signed-state',
+    installation_id: '84',
+    github_user_token: 'github-user-token',
+  });
+
+  expect(requestBody).toEqual({
+    state: 'signed-state',
+    installation_id: '84',
+    github_user_token: 'github-user-token',
+  });
 });
 
 configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });

@@ -1,5 +1,6 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
 import {
   createInstallationToken,
@@ -43,7 +44,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'Repositories available to the installation'),
-      ...errors(409, 502),
+      ...errors(403, 409, 502),
     },
   }),
   async (c: any) => {
@@ -64,6 +65,12 @@ projectsApp.openapi(
     // no real GitHub App installation to list repos from — list via the PAT
     // itself instead of an installation token.
     if (installationId === PAT_MANAGED_GIT_INSTALLATION_ID) {
+      if (!(await isPlatformAdmin(scope.userId))) {
+        return c.json(
+          { error: 'Managed GitHub repository import requires platform admin access' },
+          403,
+        );
+      }
       const owner = managedGithubOwner();
       const token = managedGithubToken();
       if (!owner || !token) {

@@ -87,6 +87,7 @@ let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let githubInstallationStateConsumed: boolean;
 let ownerRepoListCalls: any[];
 let installationRepoListCalls: any[];
+let platformAdmin: boolean;
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -122,6 +123,7 @@ function resetState() {
   githubInstallationStateConsumed = false;
   ownerRepoListCalls = [];
   installationRepoListCalls = [];
+  platformAdmin = false;
   installationRows = [{
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
@@ -139,6 +141,12 @@ function resetState() {
 mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
+
+const realPlatformRoles = await import('../shared/platform-roles');
+mock.module('../shared/platform-roles', () => ({
+  ...realPlatformRoles,
+  isPlatformAdmin: async () => platformAdmin,
+}));
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
@@ -248,6 +256,10 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: { contents: 'write' },
   }),
+  verifyGitHubInstallationAdmin: async (token: string) => {
+    expect(token).toBe('github-user-token');
+    return { login: 'github-admin' };
+  },
   getRepo: async (input: any) => ({
     id: input.owner === 'acme' ? 84 : 7,
     name: input.repo,
@@ -620,6 +632,7 @@ describe('create-repo starter scaffold contract', () => {
       body: JSON.stringify({
         state: 'valid-install-state',
         installation_id: '42',
+        github_user_token: 'github-user-token',
       }),
     });
     expect(upsert.status).toBe(200);
@@ -636,6 +649,7 @@ describe('create-repo starter scaffold contract', () => {
       body: JSON.stringify({
         state: 'valid-install-state',
         installation_id: '42',
+        github_user_token: 'github-user-token',
       }),
     });
     expect(replay.status).toBe(200);
@@ -764,6 +778,7 @@ describe('create-repo starter scaffold contract', () => {
   test('forwards bounded search options to the managed GitHub repository lister', async () => {
     process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
     process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
+    platformAdmin = true;
 
     const app = createApp();
     const response = await app.request(
@@ -779,6 +794,45 @@ describe('create-repo starter scaffold contract', () => {
         limit: 25,
       }),
     ]);
+  });
+
+  test('does not expose the server managed PAT to a normal account user', async () => {
+    installationRows = [];
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
+
+    const app = createApp();
+    const installations = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
+    expect(installations.status).toBe(200);
+    expect(await installations.json()).toMatchObject({
+      installed: false,
+      installations: [],
+    });
+
+    const repositories = await app.request(
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
+    );
+    expect(repositories.status).toBe(403);
+    expect(await repositories.json()).toEqual({
+      error: 'Managed GitHub repository import requires platform admin access',
+    });
+    expect(ownerRepoListCalls).toEqual([]);
+
+    const linked = await app.request('/v1/projects/link-repository', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        installation_id: 'pat',
+        repo_full_name: 'managed-kortix/private-repo',
+      }),
+    });
+    expect(linked.status).toBe(403);
+    expect(await linked.json()).toEqual({
+      error: 'Managed GitHub repository import requires platform admin access',
+    });
   });
 
   test('commits the default starter scaffold with the account GitHub App token before registering the project', async () => {

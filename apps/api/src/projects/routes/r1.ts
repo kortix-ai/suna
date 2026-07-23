@@ -3,11 +3,17 @@ import { deriveRequestContext } from '../../iam/cache';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
-import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
+import {
+  createRepo,
+  getGitHubAppInstallation,
+  verifyGitHubAppInstallStatePayload,
+  verifyGitHubInstallationAdmin,
+} from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { normalizeStarterTemplateId } from '../starter';
 import {
@@ -821,7 +827,10 @@ projectsApp.openapi(
   // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
   // account isn't told "GitHub isn't connected" just because it never
   // installed an App (see serializeGitHubInstallations).
-  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  const patFallbackOwner =
+    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+      ? managedGithubOwner()
+      : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
@@ -854,7 +863,10 @@ projectsApp.openapi(
   // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
   // account isn't told "GitHub isn't connected" just because it never
   // installed an App (see serializeGitHubInstallations).
-  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  const patFallbackOwner =
+    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+      ? managedGithubOwner()
+      : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
@@ -876,7 +888,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(400, 502),
+        ...errors(400, 403, 502),
     },
   }),
   async (c: any) => {
@@ -896,6 +908,25 @@ projectsApp.openapi(
   if (!/^[0-9]+$/.test(installationId)) {
     return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
   }
+  const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+  if (!githubUserToken) {
+    return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
+  }
+
+  let installation;
+  try {
+    installation = await getGitHubAppInstallation(installationId);
+  } catch (error) {
+    const message = (error as Error).message || 'Failed to verify GitHub App installation';
+    return c.json({ error: message }, 502);
+  }
+
+  try {
+    await verifyGitHubInstallationAdmin(githubUserToken, installation);
+  } catch (error) {
+    const message = (error as Error).message || 'GitHub administrator verification failed';
+    return c.json({ error: message }, 403);
+  }
 
   const stateStatus = await consumeGitHubInstallationState({
     accountId: scope.accountId,
@@ -909,14 +940,6 @@ projectsApp.openapi(
       return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
     }
     return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
-  }
-
-  let installation;
-  try {
-    installation = await getGitHubAppInstallation(installationId);
-  } catch (error) {
-    const message = (error as Error).message || 'Failed to verify GitHub App installation';
-    return c.json({ error: message }, 502);
   }
 
   const ownerLogin = normalizeString(installation.account?.login);

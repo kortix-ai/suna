@@ -158,17 +158,40 @@ function signGitHubAppStatePayload(payload: string) {
 export interface GitHubAppInstallState {
   accountId: string;
   nonce?: string;
+  purpose?: 'account_link' | 'platform_setup';
+  frontendOrigin?: string;
   issuedAt: number;
+}
+
+function normalizeGitHubFrontendOrigin(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const url = new URL(value);
+    const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalhost)) {
+      return undefined;
+    }
+    if (url.username || url.password) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildGitHubAppInstallState(
   accountId: string,
-  options: { nonce?: string } = {},
+  options: {
+    nonce?: string;
+    purpose?: 'account_link' | 'platform_setup';
+    frontendOrigin?: string;
+  } = {},
   nowMs = Date.now(),
 ) {
   const payload = Buffer.from(JSON.stringify({
     account_id: accountId,
     nonce: options.nonce,
+    purpose: options.purpose,
+    frontend_origin: normalizeGitHubFrontendOrigin(options.frontendOrigin),
     iat: Math.floor(nowMs / 1000),
   })).toString('base64url');
   return `v1.${payload}.${signGitHubAppStatePayload(payload)}`;
@@ -208,26 +231,41 @@ export function verifyGitHubAppInstallStatePayload(
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
       account_id?: unknown;
       nonce?: unknown;
+      purpose?: unknown;
+      frontend_origin?: unknown;
       iat?: unknown;
     };
     const accountId = typeof decoded.account_id === 'string' ? decoded.account_id : '';
     const nonce = typeof decoded.nonce === 'string' ? decoded.nonce : undefined;
+    const purpose =
+      decoded.purpose === 'account_link' || decoded.purpose === 'platform_setup'
+        ? decoded.purpose
+        : undefined;
+    const frontendOrigin = normalizeGitHubFrontendOrigin(decoded.frontend_origin);
     const issuedAt = typeof decoded.iat === 'number' ? decoded.iat : 0;
     const now = Math.floor(nowMs / 1000);
     if (!accountId || issuedAt < now - 30 * 60 || issuedAt > now + 60) return null;
-    return { accountId, nonce, issuedAt };
+    return { accountId, nonce, purpose, frontendOrigin, issuedAt };
   } catch {
     return null;
   }
 }
 
-export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: string) {
+export function buildGitHubAppInstallUrl(
+  accountId?: string | null,
+  nonce?: string,
+  purpose: 'account_link' | 'platform_setup' = 'account_link',
+  frontendOrigin?: string,
+) {
   const slug = githubAppSlug()?.trim();
   if (!slug) return null;
   const url = new URL(`https://github.com/apps/${slug}/installations/new`);
   if (accountId) {
     try {
-      url.searchParams.set('state', buildGitHubAppInstallState(accountId, { nonce }));
+      url.searchParams.set(
+        'state',
+        buildGitHubAppInstallState(accountId, { nonce, purpose, frontendOrigin }),
+      );
     } catch {
       return null;
     }
@@ -334,6 +372,51 @@ export async function getGitHubAppInstallation(installationId: string): Promise<
     { method: 'GET' },
     { token: createGitHubAppJwt() },
   );
+}
+
+export async function verifyGitHubInstallationAdmin(
+  userToken: string,
+  installation: GitHubAppInstallation,
+): Promise<{ login: string }> {
+  const token = userToken.trim();
+  if (!token) throw new Error('GitHub authorization is required to link this installation');
+
+  const ownerLogin = installation.account?.login?.trim();
+  if (!ownerLogin) throw new Error('GitHub installation did not include an owner account');
+
+  let user: { login?: string };
+  try {
+    user = await ghFetch<{ login?: string }>('/user', { method: 'GET' }, { token });
+  } catch {
+    throw new Error('GitHub user authorization is invalid or expired');
+  }
+
+  const login = user.login?.trim();
+  if (!login) throw new Error('GitHub did not return the authorized user login');
+
+  const ownerType = installation.account?.type ?? installation.target_type;
+  if (ownerType === 'User') {
+    if (login.toLowerCase() !== ownerLogin.toLowerCase()) {
+      throw new Error('The authorized GitHub user does not own this installation');
+    }
+    return { login };
+  }
+
+  let membership: { state?: string; role?: string };
+  try {
+    membership = await ghFetch<{ state?: string; role?: string }>(
+      `/orgs/${encodeURIComponent(ownerLogin)}/memberships/${encodeURIComponent(login)}`,
+      { method: 'GET' },
+      { token },
+    );
+  } catch {
+    throw new Error('GitHub organization admin access is required to link this installation');
+  }
+
+  if (membership.state !== 'active' || membership.role !== 'admin') {
+    throw new Error('GitHub organization admin access is required to link this installation');
+  }
+  return { login };
 }
 
 export async function createInstallationToken(
