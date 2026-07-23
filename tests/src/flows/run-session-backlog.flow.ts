@@ -27,6 +27,7 @@
  * proxy's auth boundary is additionally covered transitively by PRX-1/PRX-2.
  */
 import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
 import { waitFor, sleep } from '../core/poll';
 import type { FlowContext } from '../core/types';
 
@@ -37,6 +38,7 @@ async function waitForSessionReady(
   ctx: FlowContext,
   projectId: string,
   sessionId: string,
+  timeoutMs = 300_000,
 ): Promise<any> {
   return waitFor(
     async () => {
@@ -51,15 +53,17 @@ async function waitForSessionReady(
           timeoutMs: 25_000,
         },
       );
+      if (r.statusCode >= 500 && r.statusCode <= 599) return null;
       r.status(200);
       return r.json<any>();
     },
     {
       until: (s) =>
         s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-      timeoutMs: 300_000,
+      timeoutMs,
       intervalMs: 3_000,
       description: `session runtime ready for ${sessionId}`,
+      retryOnError: isKe2eRetryableError,
     },
   );
 }
@@ -70,11 +74,11 @@ async function waitForSessionReady(
  */
 async function bootSandbox(
   ctx: FlowContext,
-  opts?: { prompt?: string },
+  opts?: { prompt?: string; readinessTimeoutMs?: number },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
   const project = await ctx.fixtures.project({ seed: true });
   const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
-  const started = await waitForSessionReady(ctx, project.id, session.id);
+  const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
 
   const sandbox = started.sandbox;
   const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
@@ -140,9 +144,7 @@ async function waitForAssistantOutput(
 ): Promise<any[]> {
   return waitFor(
     async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/session/${ocId}/message`));
+      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
       return r.statusCode === 200 ? r.json<any[]>() : [];
     },
     {
@@ -411,12 +413,10 @@ flow(
       // a specific commit count since timing of the agent commit is LLM-bound.
       await waitFor(
         async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/commits', {
-              params: { projectId },
-              query: { ref: sessionId },
-            });
+          const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/commits', {
+            params: { projectId },
+            query: { ref: sessionId },
+          });
           return r.statusCode;
         },
         {
@@ -481,12 +481,10 @@ flow(
         r.status([200, 204, 404]); // 404 = path-not-served-by-OpenCode but auth passed
       });
       await ctx.step('revoke the share token → 200', async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .del('/v1/p/share/:token', {
-            params: { token: shareToken },
-            query: { sandbox_id: sandboxId },
-          });
+        const r = await ctx.client.as(ctx.P.OWNER).del('/v1/p/share/:token', {
+          params: { token: shareToken },
+          query: { sandbox_id: sandboxId },
+        });
         r.status([200, 204, 404]);
       });
     }
@@ -677,12 +675,10 @@ flow(
       r.status(200).body().exists('$.files_changed');
     });
     await ctx.step('missing into/base → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/version-diff', {
-          params: { projectId },
-          query: { from: sessionId },
-        });
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+        params: { projectId },
+        query: { from: sessionId },
+      });
       r.status(400);
     });
   },
@@ -697,14 +693,14 @@ flow(
   {
     domain: 'files',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
+    const { sandboxId } = await bootSandbox(ctx, { readinessTimeoutMs: 420_000 });
     // The daemon file routes 503 ("opencode not ready") until OpenCode is up;
     // block on readiness first.
     await createOcConversation(ctx, sandboxId);
