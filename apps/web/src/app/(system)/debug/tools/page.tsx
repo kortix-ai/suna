@@ -185,8 +185,9 @@ export function useCounter(initial = 0): Counter {
 }
 `;
 
-/** HTML is the ONE file type whose rendered form and source are both worth
- *  seeing, so it is the only one FileViewer gives a Preview/Source toggle. */
+/** HTML and SVG are the file types whose rendered form and source are both
+ *  worth seeing, so they are the ones FileViewer gives a Preview/Source
+ *  toggle. */
 const HTML_PREVIEW_CONTENT = `<!doctype html>
 <meta charset="utf-8" />
 <title>Pricing comparison</title>
@@ -206,6 +207,23 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
   <tr><td>Team</td><td>$49/mo</td><td>$45/mo</td></tr>
   <tr><td>Enterprise</td><td>Custom</td><td>Custom</td></tr>
 </table>
+`;
+
+/**
+ * Deliberately transparent, and deliberately drawn in BOTH near-black and
+ * near-white ink — that is the whole case for the backdrop swatches. On the
+ * checkerboard both halves are legible; on white the light half disappears; on
+ * black the dark half does. A logo fixture in a single mid-tone would make the
+ * control look decorative.
+ */
+const SVG_PREVIEW_CONTENT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" width="240" height="160">
+  <title>Deployment status</title>
+  <circle cx="60" cy="60" r="34" fill="#111111" />
+  <circle cx="120" cy="60" r="34" fill="#f5f5f5" />
+  <circle cx="180" cy="60" r="34" fill="#5b8def" />
+  <rect x="24" y="112" width="192" height="10" rx="5" fill="#111111" />
+  <rect x="24" y="132" width="120" height="10" rx="5" fill="#f5f5f5" />
+</svg>
 `;
 
 // ---------------------------------------------------------------------------
@@ -823,9 +841,7 @@ const EASY_PARTS = [
       { query: 'Acme Corp pricing plans 2026' },
       JSON.stringify({
         query: 'Acme Corp pricing plans 2026',
-        results: [
-          { title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' },
-        ],
+        results: [{ title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' }],
       }),
     ),
   ),
@@ -929,10 +945,7 @@ const EASY_PARTS = [
   // as something the user can open.
   part(
     'write',
-    errored(
-      { filePath: '/workspace/reports/failed-draft.md' },
-      'ENOSPC: no space left on device',
-    ),
+    errored({ filePath: '/workspace/reports/failed-draft.md' }, 'ENOSPC: no space left on device'),
   ),
 
   // 5. create — image_gen, its own step (Outputs card, kind "image"). Uses a
@@ -941,7 +954,10 @@ const EASY_PARTS = [
   part(
     'image_gen',
     done(
-      { action: 'generate', prompt: 'Minimal editorial cover image for a pricing comparison report' },
+      {
+        action: 'generate',
+        prompt: 'Minimal editorial cover image for a pricing comparison report',
+      },
       JSON.stringify({
         path: '/workspace/outputs/pricing-cover.png',
         replicate_url: '/wallpapers/nebula-dark.jpg',
@@ -955,16 +971,13 @@ const EASY_PARTS = [
   // BLOCKER 2 — a raw path/URL must never reach a non-technical user); the
   // fixed narration must show a basename instead ("Showed you
   // pricing-comparison.html").
-  part(
-    'show',
-    done(
-      { type: 'file', path: '/workspace/reports/pricing-comparison.html' },
-      '',
-    ),
-  ),
+  part('show', done({ type: 'file', path: '/workspace/reports/pricing-comparison.html' }, '')),
 
   // 7. Still going — the run isn't finished, so Progress shows the shimmer.
-  part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
+  part(
+    'bash',
+    running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' }),
+  ),
 ];
 
 const EASY_MESSAGES: MessageWithParts[] = [
@@ -1200,12 +1213,14 @@ export default function DebugToolsPage() {
 
       {/* FileViewer fixture — /debug/tools has no live sandbox, so FilePreview's
           fetch always fails and the viewer can never be reached through Outputs.
-          Render it directly, three times, one per toolbar shape:
+          Render it directly, four times, one per toolbar shape:
             - markdown  → file icon + name, rendered document, NO toggle
-            - html      → Preview/Source toggle at the far left (the only type
-                          whose rendered form and source are both worth seeing)
+            - html      → Preview/Source toggle at the far left (one of the two
+                          types whose rendered form and source both matter)
+            - svg       → same toggle; the preview is the pannable image canvas
+                          with its own zoom + backdrop shelf pinned open
             - other     → file icon + name, source only, NO toggle
-          All three share the same right-hand actions. */}
+          All four share the same right-hand actions. */}
       <div className="mx-auto w-full max-w-6xl px-6 pt-10">
         <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
           FileViewer
@@ -1233,6 +1248,19 @@ export default function DebugToolsPage() {
                 content={HTML_PREVIEW_CONTENT}
                 fileName="report.html"
                 path="/workspace/report.html"
+                onClose={() => {}}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              svg — preview / source toggle + backdrop
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={SVG_PREVIEW_CONTENT}
+                fileName="deployment-status.svg"
+                path="/workspace/deployment-status.svg"
                 onClose={() => {}}
               />
             </div>
