@@ -1,7 +1,6 @@
 import { projectSessionStartSeed, type ProjectSession } from '@kortix/sdk/projects-client';
 
 export interface RunningSessionWarmupTarget {
-  projectSessionId: string;
   openCodeSessionId: string;
   runtimeUrl: string;
 }
@@ -22,7 +21,6 @@ export function runningSessionWarmupTargets(
     const runtimeUrl = projectSessionStartSeed(session)?.runtime_url;
     if (!runtimeUrl) continue;
     targets.push({
-      projectSessionId: session.session_id,
       openCodeSessionId: session.opencode_session_id,
       runtimeUrl,
     });

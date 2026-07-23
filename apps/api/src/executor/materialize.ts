@@ -23,7 +23,12 @@ export function connectorConfig(
   openapiServer?: string | null,
   iconUrl?: string | null,
 ): Record<string, unknown> {
-  const auth = { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix };
+  const auth = {
+    type: spec.auth.type,
+    in: spec.auth.in,
+    name: spec.auth.name,
+    prefix: spec.auth.prefix,
+  };
   const base: Record<string, unknown> = (() => {
     switch (spec.provider) {
       case 'pipedream':

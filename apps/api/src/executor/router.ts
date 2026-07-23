@@ -173,7 +173,7 @@ export interface ExecutorRouterDeps {
     c: Context,
     projectId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
-  listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
+  listConnectors(projectId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
@@ -626,7 +626,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ? await deps.resolveReader(c, projectId)
         : await deps.resolveAdmin(c, projectId);
       if (!reader) return c.json({ error: 'forbidden' }, 403);
-      return c.json({ connectors: await deps.listConnectors(projectId, reader.userId) });
+      return c.json({ connectors: await deps.listConnectors(projectId) });
     },
   );
 

@@ -49,6 +49,7 @@ import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import {
+  connectorIdsWithSharedCredentials,
   credentialExists,
   deleteCredential,
   profileCredentialExists,
@@ -814,14 +815,8 @@ async function resolveReader(
   return resolveProjectUserWith(c, projectId, 'project.connector.read');
 }
 
-/** Admin list — sharing + credential mode + whether the shared credential is set.
- *  `viewerUserId` is vestigial (kept for interface stability): it only mattered
- *  for `per_user` connectors, removed 2026-07-05 — every connector now checks
- *  the one shared credential regardless of who's viewing. */
-async function listConnectors(
-  projectId: string,
-  _viewerUserId: string,
-): Promise<AdminConnectorView[]> {
+/** Admin list — sharing + credential mode + whether the shared credential is set. */
+async function listConnectors(projectId: string): Promise<AdminConnectorView[]> {
   const conns = hideSupersededSlack(
     await db
       .select()
@@ -830,10 +825,30 @@ async function listConnectors(
   );
   if (conns.length === 0) return [];
 
-  const actions = await db
-    .select()
-    .from(executorConnectorActions)
-    .where(inArray(executorConnectorActions.connectorId, conns.map((row) => row.connectorId)));
+  const credentialRows = conns.filter((row) => {
+    const { hasAuth } = authOf(row);
+    return hasAuth && row.providerType !== 'channel';
+  });
+  const channelRows = conns.filter((row) => {
+    const { hasAuth } = authOf(row);
+    return hasAuth && row.providerType === 'channel';
+  });
+  const [actions, credentialConnectorIds, connectedChannelSlugs] = await Promise.all([
+    db
+      .select()
+      .from(executorConnectorActions)
+      .where(inArray(executorConnectorActions.connectorId, conns.map((row) => row.connectorId))),
+    connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
+    Promise.all(
+      channelRows.map(async (row) => [
+        row.slug,
+        await connectorConnected(row, null),
+      ] as const),
+    ).then(
+      (entries) =>
+        new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
+    ),
+  ]);
   const actionsByConnector = new Map<string, typeof actions>();
   for (const action of actions) {
     const current = actionsByConnector.get(action.connectorId) ?? [];
@@ -841,7 +856,10 @@ async function listConnectors(
     actionsByConnector.set(action.connectorId, current);
   }
 
-  const rowsBySlug = new Map(conns.map((row) => [row.slug, row]));
+  const connectedSlugs = new Set(connectedChannelSlugs);
+  for (const row of credentialRows) {
+    if (credentialConnectorIds.has(row.connectorId)) connectedSlugs.add(row.slug);
+  }
   const candidates = conns.map((row) => {
     const { hasAuth } = authOf(row);
     const config = row.config as { icon_url?: unknown; sensitive?: unknown } | null;
@@ -863,10 +881,7 @@ async function listConnectors(
       requiresAuth: hasAuth,
     };
   });
-  return buildAdminConnectorViews(candidates, async (candidate) => {
-    const row = rowsBySlug.get(candidate.slug);
-    return row ? connectorConnected(row, null) : false;
-  });
+  return buildAdminConnectorViews(candidates, connectedSlugs);
 }
 
 /**

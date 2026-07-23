@@ -373,42 +373,42 @@ type SetupTile = {
 
 /** Static navigation does not fetch counts before the user opens Customize. */
 const PROJECT_SETUP_TILES: SetupTile[] = [
-    {
-      icon: HiOutlineViewGrid,
-      title: 'Integrations',
-      desc: 'Connect tools your agent can act in.',
+  {
+    icon: HiOutlineViewGrid,
+    title: 'Integrations',
+    desc: 'Connect tools your agent can act in.',
     section: 'connectors',
-    },
-    {
-      icon: CalendarClock,
-      title: 'Scheduled tasks',
-      desc: 'Run work on a schedule or from an event.',
+  },
+  {
+    icon: CalendarClock,
+    title: 'Scheduled tasks',
+    desc: 'Run work on a schedule or from an event.',
     section: 'schedules',
-    },
-    {
-      icon: SparklesSolid,
-      title: 'Skills',
-      desc: 'Repeatable workflows your agent reuses.',
-      section: 'skills',
-    },
-    {
-      icon: Icon.Slack,
-      title: 'Slack',
-      desc: 'Run this project right from chat.',
+  },
+  {
+    icon: SparklesSolid,
+    title: 'Skills',
+    desc: 'Repeatable workflows your agent reuses.',
+    section: 'skills',
+  },
+  {
+    icon: Icon.Slack,
+    title: 'Slack',
+    desc: 'Run this project right from chat.',
     section: 'channels',
-    },
-    {
-      icon: UsersGroupSolid,
-      title: 'Your team',
-      desc: 'Invite people to run and review work.',
-      section: 'members',
-    },
-    {
-      icon: Icon.Kortix,
-      title: 'Agent',
-      desc: 'Shape how your agent thinks and acts.',
-      section: 'agents',
-    },
+  },
+  {
+    icon: UsersGroupSolid,
+    title: 'Your team',
+    desc: 'Invite people to run and review work.',
+    section: 'members',
+  },
+  {
+    icon: Icon.Kortix,
+    title: 'Agent',
+    desc: 'Shape how your agent thinks and acts.',
+    section: 'agents',
+  },
 ];
 
 function ProjectHomeSections() {

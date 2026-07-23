@@ -1,18 +1,12 @@
 /** Session synchronization through the framework-free @kortix/sdk controller. */
 
 import { getAuthToken } from '@/api/config';
-import {
-  createHttpSessionSyncController,
-  type SessionSyncMessage,
-} from '@kortix/sdk';
+import { createHttpSessionSyncController, type SessionSyncMessage } from '@kortix/sdk';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useSyncStore } from './sync-store';
 import type { MessageWithParts } from './types';
 
-export function useSessionSync(
-  sandboxUrl: string | undefined,
-  sessionId: string | undefined,
-) {
+export function useSessionSync(sandboxUrl: string | undefined, sessionId: string | undefined) {
   const controller = useMemo(() => {
     if (!sandboxUrl || !sessionId) return null;
     return createHttpSessionSyncController({
@@ -23,9 +17,7 @@ export function useSessionSync(
         // Mobile still carries a legacy local OpenCode type mirror. The wire
         // payload is identical; keep the compatibility assertion at this one
         // adapter boundary until that mirror is retired.
-        useSyncStore
-          .getState()
-          .hydrate(sessionId, messages as unknown as MessageWithParts[]);
+        useSyncStore.getState().hydrate(sessionId, messages as unknown as MessageWithParts[]);
       },
       markLoaded: () => {
         const store = useSyncStore.getState();
@@ -42,12 +34,8 @@ export function useSessionSync(
     controller?.getSnapshot ?? EMPTY_SNAPSHOT,
     controller?.getSnapshot ?? EMPTY_SNAPSHOT,
   );
-  const status = useSyncStore((state) =>
-    sessionId ? state.sessionStatus[sessionId] : undefined,
-  );
-  const messages = useSyncStore((state) =>
-    sessionId ? state.messages[sessionId] : undefined,
-  );
+  const status = useSyncStore((state) => (sessionId ? state.sessionStatus[sessionId] : undefined));
+  const messages = useSyncStore((state) => (sessionId ? state.messages[sessionId] : undefined));
 
   useEffect(() => {
     if (!controller) return;

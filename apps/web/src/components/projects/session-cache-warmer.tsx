@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 
-import { logger } from '@/lib/logger';
 import {
   listProjectSessions,
   projectSessionStartSeed,
@@ -40,12 +39,7 @@ export function SessionCacheWarmer({ projectId }: { projectId: string }) {
       if (queryClient.getQueryData(key) == null) queryClient.setQueryData(key, seed);
     }
     for (const target of targets) {
-      void prefetchSession(target.openCodeSessionId, target.runtimeUrl).catch((error) => {
-        logger.warn('[session-cache-warmer] bounded tail prefetch failed', {
-          sessionId: target.projectSessionId,
-          error: String(error),
-        });
-      });
+      void prefetchSession(target.openCodeSessionId, target.runtimeUrl);
     }
   }, [projectId, queryClient, sessions, targets]);
 

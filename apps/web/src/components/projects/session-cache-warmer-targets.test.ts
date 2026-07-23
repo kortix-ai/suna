@@ -58,12 +58,10 @@ describe('runningSessionWarmupTargets', () => {
       ),
     ).toEqual([
       {
-        projectSessionId: 'running-1',
         openCodeSessionId: 'oc-running-1',
         runtimeUrl: 'https://api.test/v1/p/external-running-1/8000',
       },
       {
-        projectSessionId: 'running-2',
         openCodeSessionId: 'oc-running-2',
         runtimeUrl: 'https://api.test/v1/p/external-running-2/8000',
       },

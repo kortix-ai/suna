@@ -5,10 +5,7 @@
 import React, { forwardRef, useMemo, useState, useCallback } from 'react';
 import { View, TouchableOpacity, Switch, Platform, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +14,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { getSheetBg } from '@/lib/theme-colors';
+
 import { getAuthToken } from '@/api/config';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
@@ -61,12 +59,14 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           time: session.time,
         },
         history,
-        options
+        options,
       );
     }, [options, sandboxUrl, session, sessionId]);
 
     // Messages from sync store
-    const messages = useSyncStore((s: any) => (sessionId ? s.messages[sessionId] : undefined));
+    const messages = useSyncStore((state) =>
+      sessionId ? state.messages[sessionId] : undefined,
+    );
 
     // Build transcript
     const transcript = useMemo(() => {
@@ -78,7 +78,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           time: session.time,
         },
         messages,
-        options
+        options,
       );
     }, [session, messages, options]);
 
@@ -117,7 +117,8 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
         const completeTranscript = await loadTranscript();
         if (!completeTranscript) return;
         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-        await FileSystem.writeAsStringAsync(fileUri, completeTranscript, { encoding: FileSystem.EncodingType.UTF8,
+        await FileSystem.writeAsStringAsync(fileUri, completeTranscript, {
+          encoding: FileSystem.EncodingType.UTF8,
         });
         await Sharing.shareAsync(fileUri, {
           mimeType: 'text/markdown',
@@ -141,7 +142,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
       () => (props: BottomSheetBackdropProps) => (
         <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
       ),
-      []
+      [],
     );
 
     const bg = isDark ? '#161618' : '#FFFFFF';
@@ -149,7 +150,9 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
     const muted = isDark ? '#71717a' : '#a1a1aa';
     const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
     const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    const trackColor = { false: isDark ? '#3f3f46' : '#d4d4d8', true: isDark ? '#4ade80' : '#16a34a',
+    const trackColor = {
+      false: isDark ? '#3f3f46' : '#d4d4d8',
+      true: isDark ? '#4ade80' : '#16a34a',
     };
 
     return (
@@ -170,7 +173,9 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
         }}
         backdropComponent={renderBackdrop}
       >
-        <BottomSheetView style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}>
+        <BottomSheetView
+          style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}
+        >
           {/* Title */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <Ionicons name="download-outline" size={18} color={fg} />
@@ -180,8 +185,15 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           </View>
 
           {/* Description */}
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18, marginBottom: 16,
-            }}>
+          <Text
+            style={{
+              fontSize: 13,
+              fontFamily: 'Roobert',
+              color: muted,
+              lineHeight: 18,
+              marginBottom: 16,
+            }}
+          >
             Export this session as a Markdown file. Configure what to include below.
           </Text>
 
@@ -244,8 +256,13 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               {messageCount} message{messageCount !== 1 ? 's' : ''} · ~{wordCount.toLocaleString()}{' '}
               words
             </Text>
-            <Text style={{ fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: muted,
-              }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                color: muted,
+              }}
+            >
               {filename}
             </Text>
           </View>
@@ -276,8 +293,13 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 size={16}
                 color={copied ? (isDark ? '#4ade80' : '#16a34a') : fg}
               />
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: copied ? (isDark ? '#4ade80' : '#16a34a') : fg,
-                }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: 'Roobert-Medium',
+                  color: copied ? (isDark ? '#4ade80' : '#16a34a') : fg,
+                }}
+              >
                 {copied ? 'Copied' : 'Copy'}
               </Text>
             </TouchableOpacity>
@@ -314,7 +336,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
         </BottomSheetView>
       </BottomSheetModal>
     );
-  }
+  },
 );
 
 // ─── Option row ─────────────────────────────────────────────────────────────
