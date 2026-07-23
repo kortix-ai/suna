@@ -43,6 +43,10 @@ one concise intake:
 - competitor domains and protected brand terms,
 - approval owner/channel for publishing, repo changes, and trigger enablement.
 
+Finish setup in the current session. Do not start a separate specialist agent
+session for install. Use specialist skills here, then tell the user which
+future trigger or specialist will own each workflow after setup.
+
 For every missing private integration, mint a setup link with
 `request_secret` / `connect` or `kortix secrets request` /
 `kortix connectors link`. Never ask the user to paste raw keys or tokens. Ask

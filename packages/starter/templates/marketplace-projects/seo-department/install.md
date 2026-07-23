@@ -14,6 +14,18 @@ and webhook secrets.
 
 Your job is to guide the user all the way to a usable setup.
 
+## One-Session Setup Rule
+
+The setup session created immediately after "Add to project" is the install
+session. Complete setup in this current session. Do not start a new agent
+session just to install or configure the SEO Department.
+
+Specialist agents in this template are operating personas for future work and
+trigger routing. During install, use their skills and checklists from this
+session, then explain which specialist will own each future workflow. Only
+recommend starting a separate session if the user explicitly asks to run a
+large audit or content workflow after setup is complete.
+
 ## First Response
 
 Ask for everything needed in one structured intake. Do not ask one tiny question
