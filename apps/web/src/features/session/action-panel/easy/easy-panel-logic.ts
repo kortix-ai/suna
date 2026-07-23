@@ -37,6 +37,30 @@ export function quickBrowserOutput(apps: OutputItem[]): OutputItem {
 }
 
 /**
+ * A synthetic `OutputItem` for a bare sandbox path — what a file-path click in
+ * the chat produces, where there is no Outputs row to open.
+ *
+ * Same trick as `quickBrowserOutput`: routing through `handleOpenOutput`
+ * instead of a second open funnel means a clicked path inherits the detail
+ * layer's ask-for-changes, panel-split default and tracking for free, and
+ * cannot drift from how an Outputs row opens the same file.
+ *
+ * `callID` is the path itself so `outputKey` stays unique per file — two
+ * different files clicked in a row must produce two different keys, or the
+ * detail layer treats the second as the same detail and skips its animation.
+ * `fresh` is deliberately unset: freshness means "this run produced it", and a
+ * click says nothing about which run the file came from.
+ */
+export function pathOutput(path: string): OutputItem {
+  return {
+    callID: `path:${path}`,
+    name: path.split('/').filter(Boolean).pop() ?? path,
+    kind: 'file',
+    path,
+  };
+}
+
+/**
  * The recents `AppPreview`'s no-app landing can actually navigate to. The
  * shared recents store also holds external browsing history (BrowserPanel's
  * web mode), but the in-panel browser is sandbox-ports-only — offering a

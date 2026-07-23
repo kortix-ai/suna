@@ -6,6 +6,7 @@ import {
   isWideDeliverable,
   neighborOutputs,
   outputKey,
+  pathOutput,
   quickBrowserOutput,
   sandboxRecents,
   shouldAutoExpandOutputs,
@@ -242,5 +243,26 @@ describe('sandboxRecents (AppPreview landing "Recents")', () => {
 
   test('empty in, empty out — the landing falls back to the search hint', () => {
     expect(sandboxRecents([])).toEqual([]);
+  });
+});
+
+describe('pathOutput', () => {
+  it('names the output after the file, not the whole path', () => {
+    const out = pathOutput('/workspace/reports/q3-summary.md');
+    expect(out.name).toBe('q3-summary.md');
+    expect(out.path).toBe('/workspace/reports/q3-summary.md');
+    expect(out.kind).toBe('file');
+  });
+
+  it('handles a bare filename with no directory', () => {
+    expect(pathOutput('notes.txt').name).toBe('notes.txt');
+  });
+
+  it('gives each path a distinct outputKey so re-opening re-animates', () => {
+    expect(outputKey(pathOutput('/a/one.md'))).not.toBe(outputKey(pathOutput('/a/two.md')));
+  });
+
+  it('never reports fresh — a path opened by click is not this run\'s deliverable', () => {
+    expect(pathOutput('/a/one.md').fresh).toBeUndefined();
   });
 });

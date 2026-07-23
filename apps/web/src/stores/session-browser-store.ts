@@ -165,6 +165,6 @@ export function getActivePanelSessionId(): string | null {
  * localhost link (which opens the Browser tab via LocalhostLinkInterceptor).
  */
 export function openFileInSessionPanel(sessionId: string, path: string, line?: number): void {
-  useSessionBrowserStore.getState().requestFileOpen(sessionId, path, line);
+  useSessionBrowserStore.getState().requestFileOpenSilently(sessionId, path, line);
   useKortixComputerStore.getState().setIsSidePanelOpen(true);
 }

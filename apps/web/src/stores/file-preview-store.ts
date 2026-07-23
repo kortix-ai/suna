@@ -24,9 +24,12 @@ export const useFilePreviewStore = create<FilePreviewState>((set) => ({
   lineNumber: undefined,
 
   openPreview: (filePath, lineNumber) => {
-    // Inside a session, files open in the side panel's Files tab (inline, with
-    // an Expand button) rather than this full-screen modal. The modal is the
-    // fallback for surfaces with no side panel (e.g. the dashboard).
+    // Inside a session the file opens in the panel's detail layer — the THING,
+    // not the file manager around it (see easy-panel.tsx's handleOpenOutput).
+    // `…Silently` because Easy must never write `viewBySession`: that key is
+    // Advanced's resume point, and session-layout.tsx promises Easy leaves it
+    // untouched. The modal below is the fallback for surfaces with no side
+    // panel — the dashboard and project pages.
     const sessionId = getActivePanelSessionId();
     if (sessionId) {
       openFileInSessionPanel(sessionId, filePath, lineNumber);

@@ -34,6 +34,7 @@ import {
 } from '@/stores/kortix-computer-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
@@ -62,6 +63,7 @@ import {
   isWideDeliverable,
   neighborOutputs,
   outputKey,
+  pathOutput,
   quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
@@ -490,6 +492,25 @@ export const EasyPanel = memo(function EasyPanel({
     const primary = selectPrimaryDeliverable(apps, files);
     if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
   }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
+
+  // A file path clicked in the chat, or in a read/write/edit tool card, lands
+  // here. Same one-shot handoff shape as the chip- and quick-view-consume
+  // effects above, and for the same reason: on desktop this panel stays
+  // mounted behind a CLOSED side panel, so subscribing to the request VALUE —
+  // not a stable action — is what re-renders us when the click happens.
+  //
+  // The nonce, not the path, is the guard: clicking the same file twice must
+  // re-open it, and `requestFileOpenSilently` bumps the nonce on every call.
+  // A ref rather than state — consuming must not itself schedule a render.
+  const fileOpenRequest = useSessionBrowserStore((s) => s.fileOpenBySession[sessionId]);
+  const lastFileOpenNonce = useRef(0);
+  useEffect(() => {
+    if (!fileOpenRequest || fileOpenRequest.nonce === lastFileOpenNonce.current) return;
+    lastFileOpenNonce.current = fileOpenRequest.nonce;
+    // No siblings: a path clicked in prose belongs to no list, so there is
+    // nothing for prev/next to page through and the detail earns no nav row.
+    handleOpenOutput(pathOutput(fileOpenRequest.path), undefined, 'row');
+  }, [fileOpenRequest, handleOpenOutput]);
 
   // Command-palette quick-view consume effect lives below `openAudit`'s
   // declaration — see the comment there.
