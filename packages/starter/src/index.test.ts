@@ -7,6 +7,7 @@ import {
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
   getMarketplaceFiles,
+  getProjectTemplateFiles,
   isKortixManagedSkillName,
   type StarterFile,
 } from './index';
@@ -303,5 +304,57 @@ describe('marketplace registry — first-party use-case templates', () => {
       const optional = ((t.meta as Record<string, any>)?.template?.env_optional as string[]) ?? [];
       for (const key of Object.keys(envVars)) expect(optional).toContain(key);
     }
+  });
+});
+
+describe('marketplace projects — full project templates', () => {
+  const files = getProjectTemplateFiles();
+  const paths = new Set(files.map((f) => f.path));
+
+  test('ships the SEO Department as a full cloneable project template', () => {
+    expect(paths.has('seo-department/project.json')).toBe(true);
+    expect(paths.has('seo-department/kortix.yaml')).toBe(true);
+    expect(paths.has('seo-department/README.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/memory/SEO.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/agents/seo-director.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/agents/technical-seo.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/agents/content-strategist.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/agents/serp-analyst.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/agents/seo-repo-watchdog.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/skills/seo-operating-system/SKILL.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/skills/technical-seo-audit/SKILL.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/skills/content-seo-workflow/SKILL.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(true);
+  });
+
+  test('SEO Department metadata is visible and dependency-backed', () => {
+    const metaFile = files.find((f) => f.path === 'seo-department/project.json');
+    const meta = JSON.parse(metaFile?.content ?? '{}') as {
+      title?: string;
+      hidden?: boolean;
+      dependencies?: string[];
+    };
+
+    expect(meta.title).toBe('SEO Department');
+    expect(meta.hidden).toBeUndefined();
+    expect(meta.dependencies).toEqual(
+      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
+    );
+  });
+
+  test('SEO Department guides company setup around real website repo access', () => {
+    const readme = files.find((f) => f.path === 'seo-department/README.md')?.content ?? '';
+    const director = files.find((f) =>
+      f.path === 'seo-department/.kortix/opencode/agents/seo-director.md'
+    )?.content ?? '';
+    const repoSkill = files.find((f) =>
+      f.path === 'seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md'
+    )?.content ?? '';
+
+    expect(readme).toContain('your company still needs to bring its real website context');
+    expect(director).toContain('Run the company onboarding flow');
+    expect(director).toContain('website/app repository');
+    expect(repoSkill).toContain('do not assume the current project repo is the site');
   });
 });

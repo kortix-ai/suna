@@ -156,6 +156,53 @@ describe('marketplace catalog', () => {
     expect((await listCatalogItems({ query: 'zzzznotathing' })).length).toBe(0);
   });
 
+  test('surfaces SEO Department as a full cloneable project with agents and schedules', async () => {
+    const projects = await listCatalogItems({ type: 'project', source: 'kortix' });
+    const seo = projects.find((i) => i.id === 'kortix-projects:seo-department');
+    expect(seo).toBeTruthy();
+    expect(seo!.title).toBe('SEO Department');
+    expect(seo!.categories).toEqual(expect.arrayContaining(['marketing', 'seo', 'automation']));
+    expect(seo!.dependencies).toEqual(
+      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
+    );
+
+    const detail = await getCatalogItemDetail('kortix-projects:seo-department');
+    expect(detail).toBeTruthy();
+    expect(detail!.readme).toContain('# SEO Department');
+    expect(detail!.files.map((f) => f.target)).toEqual(
+      expect.arrayContaining([
+        'kortix.yaml',
+        '.kortix/memory/SEO.md',
+        '.kortix/opencode/agents/seo-director.md',
+        '.kortix/opencode/agents/technical-seo.md',
+        '.kortix/opencode/agents/content-strategist.md',
+        '.kortix/opencode/agents/serp-analyst.md',
+        '.kortix/opencode/agents/seo-repo-watchdog.md',
+        '.kortix/opencode/skills/seo-operating-system/SKILL.md',
+        '.kortix/opencode/skills/technical-seo-audit/SKILL.md',
+        '.kortix/opencode/skills/seo-repo-monitoring/SKILL.md',
+        '.kortix/opencode/skills/content-seo-workflow/SKILL.md',
+        '.kortix/opencode/skills/serp-intelligence/SKILL.md',
+      ]),
+    );
+    expect(detail!.projectAgents?.map((a) => a.name).sort()).toEqual([
+      'content-strategist',
+      'seo-director',
+      'seo-repo-watchdog',
+      'serp-analyst',
+      'technical-seo',
+    ]);
+    expect(detail!.projectTriggers?.map((t) => t.slug).sort()).toEqual([
+      'daily-repo-seo-sweep',
+      'daily-serp-watch',
+      'monthly-seo-growth-report',
+      'repo-seo-watch',
+      'seo-request-intake',
+      'weekly-content-refresh',
+      'weekly-technical-audit',
+    ]);
+  });
+
   test('source safety — rejects local + private/non-https URLs (LFI/SSRF guard)', () => {
     // Allowed: github + public https.
     expect(() => assertAllowedSourceAddress('anthropics/skills')).not.toThrow();
