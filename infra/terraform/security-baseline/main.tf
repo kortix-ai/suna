@@ -447,8 +447,41 @@ resource "aws_kms_key" "backup" {
         Sid       = "EnableAccountAdministration"
         Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
-        Action    = "kms:*"
-        Resource  = "*"
+        Action = [
+          "kms:CreateAlias",
+          "kms:CreateGrant",
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:DisableKey",
+          "kms:DisableKeyRotation",
+          "kms:EnableKey",
+          "kms:EnableKeyRotation",
+          "kms:Encrypt",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyPair",
+          "kms:GenerateDataKeyPairWithoutPlaintext",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:GetPublicKey",
+          "kms:ListGrants",
+          "kms:ListKeyPolicies",
+          "kms:ListResourceTags",
+          "kms:PutKeyPolicy",
+          "kms:ReEncryptFrom",
+          "kms:ReEncryptTo",
+          "kms:ReplicateKey",
+          "kms:RetireGrant",
+          "kms:RevokeGrant",
+          "kms:ScheduleKeyDeletion",
+          "kms:Sign",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:UpdateKeyDescription",
+          "kms:UpdatePrimaryRegion",
+          "kms:Verify",
+        ]
+        Resource = "*"
       },
       {
         Sid       = "AllowAWSBackup"
@@ -458,8 +491,10 @@ resource "aws_kms_key" "backup" {
           "kms:CreateGrant",
           "kms:Decrypt",
           "kms:DescribeKey",
-          "kms:GenerateDataKey*",
-          "kms:ReEncrypt*",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:ReEncryptFrom",
+          "kms:ReEncryptTo",
         ]
         Resource = "*"
         Condition = {
@@ -474,16 +509,20 @@ resource "aws_kms_alias" "backup" {
   name          = "alias/kortix-backup"
   target_key_id = aws_kms_key.backup.key_id
 }
-resource "aws_backup_vault" "this" {
-  name        = "kortix-backup-vault"
+resource "aws_backup_vault" "encrypted" {
+  name        = "kortix-backup-vault-cmk"
   kms_key_arn = aws_kms_key.backup.arn
   tags        = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 resource "aws_backup_plan" "daily" {
   name = "kortix-daily"
   rule {
     rule_name         = "daily-35d"
-    target_vault_name = aws_backup_vault.this.name
+    target_vault_name = aws_backup_vault.encrypted.name
     schedule          = "cron(0 5 * * ? *)"
     start_window      = 60
     completion_window = 180
