@@ -30,7 +30,8 @@ blank, run setup before doing strategy work. A company needs to bring its real
 assets; this starter only provides the department's agents, skills, triggers,
 and operating memory.
 
-Collect these inputs in one concise intake:
+Read `install.md` first and follow its setup checklist. Collect these inputs in
+one concise intake:
 
 - primary public domain and canonical host,
 - target market, language, and main conversion goals,
@@ -41,6 +42,10 @@ Collect these inputs in one concise intake:
 - priority product, landing, docs, blog, and comparison pages,
 - competitor domains and protected brand terms,
 - approval owner/channel for publishing, repo changes, and trigger enablement.
+
+Finish setup in the current session. Do not start a separate specialist agent
+session for install. Use specialist skills here, then tell the user which
+future trigger or specialist will own each workflow after setup.
 
 For every missing private integration, mint a setup link with
 `request_secret` / `connect` or `kortix secrets request` /

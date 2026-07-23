@@ -172,6 +172,7 @@ describe('marketplace catalog', () => {
     expect(detail!.files.map((f) => f.target)).toEqual(
       expect.arrayContaining([
         'kortix.yaml',
+        'install.md',
         '.kortix/memory/SEO.md',
         '.kortix/opencode/agents/seo-director.md',
         '.kortix/opencode/agents/technical-seo.md',

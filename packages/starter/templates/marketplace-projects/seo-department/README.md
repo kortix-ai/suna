@@ -28,6 +28,7 @@ team.
 
 1. Start the setup session. The installed files are the SEO department's
    operating system; your company still needs to bring its real website context.
+   The setup agent reads `install.md` for the template-specific install guide.
 2. Give the director the core inputs: primary domain, target market, website
    repository, default branch, CMS/content source, analytics/Search Console,
    priority pages, competitors, brand terms, and approval channel.
@@ -49,7 +50,14 @@ team.
 The first session should not be a blank chat. Ask the director to set up the SEO
 department and it will request the repo and private data sources, mint setup
 links for missing connectors/secrets, and fall back to a public-data audit if
-some access is not ready yet.
+some access is not ready yet. Setup happens in that same install session; the
+specialist agents are future operating roles and trigger targets, not extra
+setup sessions to spawn.
+
+When adding this template into an existing project, the template files first
+land through a change request. The installer should ask to apply that CR and,
+after approval, start the first `seo-director` setup session from the merged
+main branch instead of leaving the user to do that handoff manually.
 
 ## Safety model
 

@@ -25,10 +25,14 @@ export function mockIamMembershipSyncNoop(): void {
  *  from `../iam` via `./dispatcher` (the V1 engine + flag-routing were retired),
  *  so the mock MUST target the dispatcher — mocking the old `./engine` is a
  *  dead no-op and lets the real V2 engine hit unmocked account-group tables. */
-export function mockIamEngineAllowAll(): void {
+export function mockIamEngineAllowAll(
+  onAssertAuthorized?: (action: string) => void | Promise<void>,
+): void {
   mock.module('../../iam/dispatcher', () => ({
     authorize: async () => ({ allowed: true }),
-    assertAuthorized: async () => {},
+    assertAuthorized: async (_userId: string, _accountId: string, action: string) => {
+      await onAssertAuthorized?.(action);
+    },
     listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
     // Per-resource (agent/skill) list filter, re-exported from the dispatcher.
     // Allow-all → no filtering: every resource id passes through.
