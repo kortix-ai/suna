@@ -705,6 +705,7 @@ describe('create-repo starter scaffold contract', () => {
       installationId: '84',
       options: {
         owner: 'acme',
+        ownerType: 'Organization',
         search: 'portal',
         limit: 25,
       },

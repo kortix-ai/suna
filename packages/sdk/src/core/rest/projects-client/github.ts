@@ -105,9 +105,13 @@ export async function listGitHubInstallations(accountId: string) {
 export async function listGitHubRepositories(
   accountId: string,
   installationId?: string | null,
+  options?: { search?: string; limit?: number },
 ) {
   const params = new URLSearchParams({ account_id: accountId });
   if (installationId) params.set('installation_id', installationId);
+  const search = options?.search?.trim();
+  if (search) params.set('search', search);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<GitHubRepositoriesResponse>(
       `/projects/github/repositories?${params.toString()}`,

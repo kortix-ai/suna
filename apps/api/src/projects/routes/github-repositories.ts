@@ -53,6 +53,11 @@ projectsApp.openapi(
     const installationId = normalizeString(
       c.req.query('installation_id') ?? c.req.query('installationId'),
     );
+    const search = normalizeString(c.req.query('search'))?.slice(0, 120) ?? undefined;
+    const requestedLimit = Number.parseInt(c.req.query('limit') ?? '', 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(100, Math.max(1, requestedLimit))
+      : 100;
 
     // The managed-git PAT ("Use a token" self-host setup) surfaces as a
     // synthetic installation (see serializeGitHubInstallations) since it has
@@ -69,6 +74,8 @@ projectsApp.openapi(
           owner,
           ownerType: managedGithubOwnerType(),
           auth: { token },
+          search,
+          limit,
         });
         return c.json({
           account_id: scope.accountId,
@@ -94,7 +101,12 @@ projectsApp.openapi(
     }
 
     try {
-      const repos = await listInstallationRepositories(installation.installationId);
+      const repos = await listInstallationRepositories(installation.installationId, {
+        owner: installation.ownerLogin,
+        ownerType: installation.ownerType === 'User' ? 'User' : 'Organization',
+        search,
+        limit,
+      });
       return c.json({
         account_id: scope.accountId,
         installation_id: installation.installationId,

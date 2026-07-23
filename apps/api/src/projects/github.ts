@@ -52,6 +52,19 @@ interface GitHubInstallationRepositories {
   repositories: GitHubRepo[];
 }
 
+interface GitHubRepositorySearchResponse {
+  total_count: number;
+  incomplete_results: boolean;
+  items: GitHubRepo[];
+}
+
+interface RepositoryListOptions {
+  owner?: string;
+  ownerType?: 'User' | 'Organization';
+  search?: string;
+  limit?: number;
+}
+
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
   const m =
     repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i) ??
@@ -348,27 +361,28 @@ export async function createInstallationToken(
 
 export async function listInstallationRepositories(
   installationId: string,
+  options: RepositoryListOptions = {},
 ): Promise<GitHubRepo[]> {
   const token = await createInstallationToken(installationId);
-  const perPage = 100;
-  const repositories: GitHubRepo[] = [];
-  let page = 1;
-  let totalCount: number | null = null;
+  const limit = normalizeRepositoryLimit(options.limit);
+  const search = options.search?.trim();
+  if (search) {
+    if (!options.owner) throw new Error('owner is required when searching repositories');
+    return searchRepositories({
+      owner: options.owner,
+      ownerType: options.ownerType ?? 'Organization',
+      search,
+      limit,
+      auth: { token: token.token },
+    });
+  }
 
-  do {
-    const body = await ghFetch<GitHubInstallationRepositories>(
-      `/installation/repositories?per_page=${perPage}&page=${page}`,
-      { method: 'GET' },
-      { token: token.token },
-    );
-    totalCount = body.total_count;
-    const pageRepositories = body.repositories ?? [];
-    if (pageRepositories.length === 0) break;
-    repositories.push(...pageRepositories);
-    page += 1;
-  } while (totalCount !== null && repositories.length < totalCount);
-
-  return repositories;
+  const body = await ghFetch<GitHubInstallationRepositories>(
+    `/installation/repositories?per_page=${limit}&page=1`,
+    { method: 'GET' },
+    { token: token.token },
+  );
+  return body.repositories ?? [];
 }
 
 /**
@@ -378,7 +392,9 @@ export async function listInstallationRepositories(
  * enumerate repos from, so this hits the same org-vs-personal-account
  * endpoint `createRepo`/`resolveDefaultOwner` already branch on: an org owner
  * lists via `/orgs/{owner}/repos` (what a fine-grained token scoped to an
- * organization resource-owner can see), a personal owner via `/user/repos`
+ * organization resource-owner can see), a personal owner via `/user/repos`.
+ * Empty queries return one recently updated page. Search queries use GitHub's
+ * repository search endpoint, scoped to the configured owner.
  * (filtered back down to that owner — a classic token can see collaborator
  * repos under other owners too, which don't belong in "repos for this
  * configured owner").
@@ -387,29 +403,70 @@ export async function listOwnerRepositories(input: {
   owner: string;
   ownerType?: 'User' | 'Organization';
   auth: Pick<GitHubAuthContext, 'token'>;
+  search?: string;
+  limit?: number;
 }): Promise<GitHubRepo[]> {
   const isOrg = input.ownerType
     ? input.ownerType !== 'User'
     : await isOrgAccount(input.owner, input.auth);
-  const path = isOrg
-    ? `/orgs/${encodeURIComponent(input.owner)}/repos?type=all`
-    : '/user/repos?affiliation=owner,collaborator';
-  const perPage = 100;
-  const repositories: GitHubRepo[] = [];
-  for (let page = 1; ; page += 1) {
-    const pageRepositories = await ghFetch<GitHubRepo[]>(
-      `${path}&per_page=${perPage}&page=${page}`,
-      { method: 'GET' },
-      input.auth,
-    );
-    repositories.push(...pageRepositories);
-    if (pageRepositories.length < perPage) break;
+  const limit = normalizeRepositoryLimit(input.limit);
+  const search = input.search?.trim();
+  if (search) {
+    return searchRepositories({
+      owner: input.owner,
+      ownerType: isOrg ? 'Organization' : 'User',
+      search,
+      limit,
+      auth: input.auth,
+    });
   }
+
+  const params = new URLSearchParams(
+    isOrg
+      ? { type: 'all' }
+      : { affiliation: 'owner,collaborator' },
+  );
+  params.set('sort', 'updated');
+  params.set('direction', 'desc');
+  params.set('per_page', String(limit));
+  params.set('page', '1');
+  const path = isOrg
+    ? `/orgs/${encodeURIComponent(input.owner)}/repos?${params.toString()}`
+    : `/user/repos?${params.toString()}`;
+  const repositories = await ghFetch<GitHubRepo[]>(path, { method: 'GET' }, input.auth);
   return isOrg
     ? repositories
     : repositories.filter(
         (repo) => repo.full_name.split('/')[0]?.toLowerCase() === input.owner.toLowerCase(),
       );
+}
+
+function normalizeRepositoryLimit(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 100;
+  return Math.min(100, Math.max(1, Math.trunc(value)));
+}
+
+async function searchRepositories(input: {
+  owner: string;
+  ownerType: 'User' | 'Organization';
+  search: string;
+  limit: number;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubRepo[]> {
+  const qualifier = input.ownerType === 'Organization' ? 'org' : 'user';
+  const params = new URLSearchParams({
+    q: `${qualifier}:${input.owner} ${input.search} in:name,description`,
+    sort: 'updated',
+    order: 'desc',
+    per_page: String(input.limit),
+    page: '1',
+  });
+  const result = await ghFetch<GitHubRepositorySearchResponse>(
+    `/search/repositories?${params.toString()}`,
+    { method: 'GET' },
+    input.auth,
+  );
+  return result.items ?? [];
 }
 
 export async function listRepositoryBranches(input: {
