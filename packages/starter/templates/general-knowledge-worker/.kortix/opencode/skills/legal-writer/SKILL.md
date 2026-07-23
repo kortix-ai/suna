@@ -359,12 +359,10 @@ All checks must pass:
 The deliverable is `legal/{slug}/document.docx`. If the user needs PDF, convert:
 
 ```bash
-# If libreoffice is available:
-libreoffice --headless --convert-to pdf "legal/$SLUG/document.docx" --outdir "legal/$SLUG/"
-
-# Or use python-docx2pdf:
-uv run --with docx2pdf python -c "from docx2pdf import convert; convert('legal/$SLUG/document.docx')"
+soffice --headless --convert-to pdf --outdir "legal/$SLUG" "legal/$SLUG/document.docx"
 ```
+
+Never use `docx2pdf` — it drives Microsoft Word via COM and hard-fails on Linux (`NotImplementedError`). Use `soffice` for any Office→PDF conversion.
 
 ## DOCX Formatting Standards
 
