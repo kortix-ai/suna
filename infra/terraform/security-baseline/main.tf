@@ -38,7 +38,10 @@ resource "aws_kms_key" "cloudtrail" {
       # AWS-0017 / Checkov CKV_AWS_158).
       { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-east-1.amazonaws.com" },
         Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
-      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-east-1:${local.account_id}:log-group:*" } } }
+      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-east-1:${local.account_id}:log-group:*" } } },
+      { Sid    = "AllowSNSEncryption", Effect = "Allow", Principal = { Service = "sns.amazonaws.com" },
+        Action = ["kms:Decrypt", "kms:GenerateDataKey*"], Resource = "*",
+      Condition = { StringEquals = { "kms:CallerAccount" = local.account_id } } }
     ]
   })
   tags = {
@@ -59,6 +62,7 @@ resource "aws_cloudtrail" "management_events" {
   provider                      = aws.use1
   name                          = "management-events"
   s3_bucket_name                = "aws-cloudtrail-logs-${local.account_id}-338918c1"
+  sns_topic_name                = aws_sns_topic.cloudtrail.name
   kms_key_id                    = aws_kms_key.cloudtrail.arn
   is_multi_region_trail         = true
   include_global_service_events = true
@@ -86,6 +90,48 @@ resource "aws_cloudtrail" "management_events" {
     Stack      = "security-baseline"
     Compliance = "soc2"
   }
+}
+
+resource "aws_sns_topic" "cloudtrail" {
+  provider          = aws.use1
+  name              = "kortix-cloudtrail-events"
+  kms_master_key_id = aws_kms_key.cloudtrail.arn
+  signature_version = 2
+  tracing_config    = "Active"
+  tags              = local.tags
+}
+
+data "aws_iam_policy_document" "cloudtrail_sns" {
+  statement {
+    sid       = "AccountAdministration"
+    actions   = ["SNS:*"]
+    resources = [aws_sns_topic.cloudtrail.arn]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${local.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "AllowCloudTrailPublish"
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.cloudtrail.arn]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:cloudtrail:us-east-1:${local.account_id}:trail/management-events"]
+    }
+  }
+}
+
+resource "aws_sns_topic_policy" "cloudtrail" {
+  provider = aws.use1
+  arn      = aws_sns_topic.cloudtrail.arn
+  policy   = data.aws_iam_policy_document.cloudtrail_sns.json
 }
 
 # CloudWatch Logs destination + delivery role for the trail above (AWS-0162).
@@ -390,15 +436,93 @@ resource "aws_iam_role_policy_attachment" "backup_restore" {
   role       = aws_iam_role.backup.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
 }
-resource "aws_backup_vault" "this" {
-  name = "kortix-backup-vault"
+resource "aws_kms_key" "backup" {
+  description             = "AWS Backup vault encryption (SOC2 DCF-99)"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableAccountAdministration"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
+        Action = [
+          "kms:CreateAlias",
+          "kms:CreateGrant",
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:DisableKey",
+          "kms:DisableKeyRotation",
+          "kms:EnableKey",
+          "kms:EnableKeyRotation",
+          "kms:Encrypt",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyPair",
+          "kms:GenerateDataKeyPairWithoutPlaintext",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:GetPublicKey",
+          "kms:ListGrants",
+          "kms:ListKeyPolicies",
+          "kms:ListResourceTags",
+          "kms:PutKeyPolicy",
+          "kms:ReEncryptFrom",
+          "kms:ReEncryptTo",
+          "kms:ReplicateKey",
+          "kms:RetireGrant",
+          "kms:RevokeGrant",
+          "kms:ScheduleKeyDeletion",
+          "kms:Sign",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:UpdateKeyDescription",
+          "kms:UpdatePrimaryRegion",
+          "kms:Verify",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid       = "AllowAWSBackup"
+        Effect    = "Allow"
+        Principal = { Service = "backup.amazonaws.com" }
+        Action = [
+          "kms:CreateGrant",
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:ReEncryptFrom",
+          "kms:ReEncryptTo",
+        ]
+        Resource = "*"
+        Condition = {
+          Bool = { "kms:GrantIsForAWSResource" = "true" }
+        }
+      },
+    ]
+  })
   tags = local.tags
+}
+resource "aws_kms_alias" "backup" {
+  name          = "alias/kortix-backup"
+  target_key_id = aws_kms_key.backup.key_id
+}
+resource "aws_backup_vault" "encrypted" {
+  name        = "kortix-backup-vault-cmk"
+  kms_key_arn = aws_kms_key.backup.arn
+  tags        = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 resource "aws_backup_plan" "daily" {
   name = "kortix-daily"
   rule {
     rule_name         = "daily-35d"
-    target_vault_name = aws_backup_vault.this.name
+    target_vault_name = aws_backup_vault.encrypted.name
     schedule          = "cron(0 5 * * ? *)"
     start_window      = 60
     completion_window = 180
@@ -440,7 +564,7 @@ resource "aws_iam_role_policy" "flow_logs" {
 }
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/vpc/flowlogs"
-  retention_in_days = 90
+  retention_in_days = 365
   kms_key_id        = aws_kms_key.cloudwatch_logs.arn
   tags              = local.tags
 }

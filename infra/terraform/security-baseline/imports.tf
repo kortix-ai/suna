@@ -98,10 +98,6 @@ import {
   id = "AWSBackupDefaultServiceRole"
 }
 import {
-  to = aws_backup_vault.this
-  id = "kortix-backup-vault"
-}
-import {
   to = aws_backup_plan.daily
   id = "0f55c185-2a80-467e-95dd-e0d969c93f52"
 }
