@@ -59,14 +59,12 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           time: session.time,
         },
         history,
-        options,
+        options
       );
     }, [options, sandboxUrl, session, sessionId]);
 
     // Messages from sync store
-    const messages = useSyncStore((state) =>
-      sessionId ? state.messages[sessionId] : undefined,
-    );
+    const messages = useSyncStore((state) => (sessionId ? state.messages[sessionId] : undefined));
 
     // Build transcript
     const transcript = useMemo(() => {
@@ -78,7 +76,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           time: session.time,
         },
         messages,
-        options,
+        options
       );
     }, [session, messages, options]);
 
@@ -142,7 +140,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
       () => (props: BottomSheetBackdropProps) => (
         <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
       ),
-      [],
+      []
     );
 
     const bg = isDark ? '#161618' : '#FFFFFF';
@@ -171,11 +169,9 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        backdropComponent={renderBackdrop}
-      >
+        backdropComponent={renderBackdrop}>
         <BottomSheetView
-          style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}
-        >
+          style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}>
           {/* Title */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <Ionicons name="download-outline" size={18} color={fg} />
@@ -192,8 +188,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               color: muted,
               lineHeight: 18,
               marginBottom: 16,
-            }}
-          >
+            }}>
             Export this session as a Markdown file. Configure what to include below.
           </Text>
 
@@ -250,8 +245,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               paddingHorizontal: 12,
               paddingVertical: 10,
               marginBottom: 20,
-            }}
-          >
+            }}>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>
               {messageCount} message{messageCount !== 1 ? 's' : ''} · ~{wordCount.toLocaleString()}{' '}
               words
@@ -261,8 +255,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 fontSize: 11,
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                 color: muted,
-              }}
-            >
+              }}>
               {filename}
             </Text>
           </View>
@@ -286,8 +279,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 borderColor: border,
                 backgroundColor: cardBg,
                 opacity: canExport && !sharing ? 1 : 0.4,
-              }}
-            >
+              }}>
               <Ionicons
                 name={copied ? 'checkmark' : 'copy-outline'}
                 size={16}
@@ -298,8 +290,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                   fontSize: 14,
                   fontFamily: 'Roobert-Medium',
                   color: copied ? (isDark ? '#4ade80' : '#16a34a') : fg,
-                }}
-              >
+                }}>
                 {copied ? 'Copied' : 'Copy'}
               </Text>
             </TouchableOpacity>
@@ -319,8 +310,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 borderRadius: 9999,
                 backgroundColor: fg,
                 opacity: canExport && !sharing ? 1 : 0.4,
-              }}
-            >
+              }}>
               {sharing ? (
                 <ActivityIndicator size="small" color={bg} />
               ) : (
@@ -336,7 +326,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
         </BottomSheetView>
       </BottomSheetModal>
     );
-  },
+  }
 );
 
 // ─── Option row ─────────────────────────────────────────────────────────────
@@ -377,8 +367,7 @@ function OptionRow({
         borderColor: border,
         paddingHorizontal: 12,
         paddingVertical: 10,
-      }}
-    >
+      }}>
       <Ionicons name={icon as any} size={15} color={muted} style={{ marginRight: 10 }} />
       <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert', color: fg }}>{label}</Text>
       <Switch
