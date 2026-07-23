@@ -104,7 +104,7 @@ triggers:
 | `opencode.config_dir` | no | default `.kortix/opencode` |
 | `triggers` | no | list of cron and webhook triggers |
 | `connectors` | no | list of integration definitions |
-| `policy.default_mode` | no | `risk` (default) or `allow_all`; project-wide connector approval mode |
+| `policy.default_mode` | no | `allow_all` (default) or `risk`; project-wide connector approval mode |
 | `agents` | yes | name-to-block governance map; must not be empty |
 
 ## `project:`
@@ -251,15 +251,15 @@ Provider-specific fields:
 
 `channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_meet`, and `computer` are platform-owned; using one with a different provider is a validation error.
 
-`connectors.auth`: optional, for providers other than `pipedream`. `type` is `bearer`, `basic`, `custom`, or `none` (default). `in` is `header` (default) or `query`. `name` is required when `type` is `custom`.
+`connectors.auth`: optional, for providers other than `pipedream`. `type` is `bearer`, `basic`, `custom`, `oauth1`, or `none` (default). `oauth1` is restricted to `openapi`, `postman`, and `http` providers. `in` is `header` (default) or `query`. `name` is required when `type` is `custom`.
 
 `connectors.policies`: a list of `{match, action}` pairs. `match` is a glob over tool names. `action` is `always_run`, `require_approval`, or `block`.
 
-`policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `risk` (default; require approval per each connector's own policy) or `allow_all`. Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI](/docs/cli).
+`policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `allow_all` (default; every unmatched tool runs) or `risk` (require approval for write and destructive unmatched calls). Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI](/docs/cli).
 
 ## Channels
 
-v2 removes `channels:` from the schema. Channel-to-agent routing (Slack and Microsoft Teams today) is live operational state, not declarative config. You set it from the dashboard's Channels page or from chat commands, the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Slack & channels](/docs/connect/slack). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/project/legacy-toml).
+v2 removes `channels:` from the schema. Channel-to-agent routing (Slack, Microsoft Teams, email, and meeting bots today) is live operational state, not declarative config. You set it from the dashboard's Channels page or from chat commands, the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Slack & channels](/docs/connect/slack). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/project/legacy-toml).
 
 ## `agents:`
 

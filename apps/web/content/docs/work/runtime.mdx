@@ -192,7 +192,7 @@ sandbox:
       disk: 50
 ```
 
-`cpu` takes 1–32 cores, `memory` takes 1–128 GiB, and `disk` takes 1–500 GiB. Kortix clamps any value above these limits down to the limit. Kortix does not support GPUs; a `gpu` key on a template is rejected.
+`cpu` takes 1–32 cores, `memory` takes 1–128 GiB, and `disk` takes 1–500 GiB. Kortix clamps any value above these limits down to the limit. Kortix does not support GPUs; a `gpu` key on a template produces a warning, not an error.
 
 The spec is part of the template's snapshot, not a per-session setting. Changing it rebuilds the snapshot and applies to the next session. The current session keeps its already-booted spec.
 
