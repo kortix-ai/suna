@@ -102,15 +102,105 @@ interface PlatinumTemplate {
   state?: string;
 }
 
-async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
-  const list = await observeTemplates();
-  return list.find((t) => t.name === name) ?? null;
+/**
+ * FIX-C: the template LIST endpoint (GET /v1/templates) is paginated (≤50 rows,
+ * created_at DESC — see the module header). Reading only the first page turned an
+ * older-but-live template on a >50-template org into a FALSE ABSENT → a needless
+ * rebuild. We now walk every page and, critically, a page-fetch error OR the hard
+ * page cap surfaces as PlatinumTemplateListingError (a listing FAILURE), NEVER as
+ * absent: a `null` from findTemplateByName means "definitively not in the full
+ * list", not "the listing errored". Callers that treat absent as "needs rebuild"
+ * therefore never see a failed listing as a missing template.
+ */
+export class PlatinumTemplateListingError extends Error {
+  constructor(message: string) {
+    super(`platinum template listing failed: ${message}`);
+    this.name = 'PlatinumTemplateListingError';
+  }
+}
+
+/** Page size we request; the server default is also 50 (see module header). */
+const TEMPLATES_PAGE_SIZE = 50;
+/** Hard page cap so an API bug (an ignored/broken cursor) can NEVER spin forever.
+ *  Hitting it with full, still-advancing pages is a listing FAILURE (throw), not
+ *  an exhausted/absent list. */
+const TEMPLATES_MAX_PAGES = 40; // 40 * 50 = 2000 templates
+
+async function fetchTemplatePage(offset: number): Promise<PlatinumTemplate[]> {
+  const rows = await platinumJson<PlatinumTemplate[]>(
+    `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}`,
+  );
+  if (!Array.isArray(rows)) {
+    throw new PlatinumTemplateListingError(`expected an array page, got ${typeof rows}`);
+  }
+  return rows;
+}
+
+/**
+ * Walk /v1/templates pages (offset-paginated). `onPage` may return a non-undefined
+ * value to EARLY-EXIT (name-scoped callers stop the moment the sought template
+ * appears — most are recent → page 1). Pagination stops when a page is short/empty
+ * (last page) OR adds no new template ids — a defensive cursor-loop guard: a server
+ * that ignored `offset` would otherwise repeat page 0 forever, so we stop and
+ * degrade to the first-page view rather than spin. A page-fetch error re-throws an
+ * auth failure verbatim (401/403 stays classifiable) and wraps anything else as
+ * PlatinumTemplateListingError; exceeding the hard page cap with full, distinct
+ * pages likewise throws — never a silent truncation, never "absent".
+ */
+async function paginateTemplates<R>(
+  onPage: (page: PlatinumTemplate[], all: PlatinumTemplate[]) => R | undefined,
+): Promise<{ early: R | undefined; all: PlatinumTemplate[] }> {
+  const all: PlatinumTemplate[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
+    let rows: PlatinumTemplate[];
+    try {
+      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE);
+    } catch (err) {
+      // Preserve the 401/403 signature end to end (getSnapshotState rethrows it;
+      // the transition classifier recognizes it as permanent). Everything else is
+      // a listing FAILURE, surfaced as such — never swallowed into "absent".
+      if (isPlatinumAuthFailure(err) || err instanceof PlatinumTemplateListingError) throw err;
+      throw new PlatinumTemplateListingError(err instanceof Error ? err.message : String(err));
+    }
+    let newInPage = 0;
+    for (const t of rows) {
+      const key = typeof t.id === 'string' && t.id ? t.id : `name:${t.name ?? ''}`;
+      if (!seen.has(key)) { seen.add(key); all.push(t); newInPage += 1; }
+    }
+    const early = onPage(rows, all);
+    if (early !== undefined) return { early, all };
+    if (rows.length < TEMPLATES_PAGE_SIZE) return { early: undefined, all }; // last page
+    if (newInPage === 0) return { early: undefined, all }; // offset ignored → stop, don't spin
+  }
+  throw new PlatinumTemplateListingError(
+    `exceeded ${TEMPLATES_MAX_PAGES} pages (> ${TEMPLATES_MAX_PAGES * TEMPLATES_PAGE_SIZE} templates) without exhausting the list`,
+  );
+}
+
+/** Full paginated template list. Throws PlatinumTemplateListingError on a page
+ *  error / cap-hit — a partial or failed listing is NEVER returned as a shorter
+ *  (falsely-complete) list. */
+async function fetchAllTemplates(): Promise<PlatinumTemplate[]> {
+  const { all } = await paginateTemplates(() => undefined);
+  return all;
 }
 
 const observeTemplates = shortLivedObservation(
-  () => platinumJson<PlatinumTemplate[]>('/v1/templates'),
+  () => fetchAllTemplates(),
   process.env.NODE_ENV === 'test' ? 0 : 2_000,
 );
+
+/**
+ * Resolve a template by NAME across the FULL paginated list, early-exiting the
+ * moment it appears. A `null` return means "walked the whole list, definitively
+ * absent"; a listing FAILURE throws PlatinumTemplateListingError (or the raw
+ * 401/403) — callers must NOT treat that as absent.
+ */
+export async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
+  const { early } = await paginateTemplates<PlatinumTemplate>((page) => page.find((t) => t.name === name));
+  return early ?? null;
+}
 
 /**
  * Direct GET /v1/templates/:id lookup — the PRIMARY signal `waitForActive`
@@ -563,7 +653,11 @@ class PlatinumAdapter implements SandboxProviderAdapter {
 
   async listSnapshots(): Promise<Array<{ name: string }>> {
     if (!isPlatinumConfigured()) return [];
-    return (await platinumJson<PlatinumTemplate[]>('/v1/templates'))
+    // FIX-C: walk the FULL paginated list — the reaper needs every superseded
+    // ppwarm image, not just the first 50 (created_at DESC), or an older tip past
+    // page 1 lingers forever. A listing FAILURE throws (never returns a truncated
+    // list the caller would mistake for "these are all the templates").
+    return (await fetchAllTemplates())
       .map((template) => template.name)
       .filter((name): name is string => !!name)
       .map((name) => ({ name }));
