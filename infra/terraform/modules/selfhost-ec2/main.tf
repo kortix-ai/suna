@@ -97,6 +97,7 @@ data "aws_subnets" "default" {
 # ── Security group: 80 (ACME) + 443 (app) in, all out ──────────────────────
 resource "aws_security_group" "this" {
   #checkov:skip=CKV_AWS_24:SSH ingress is opt-in only (empty by default — dynamic block below only exists when var.ssh_ingress_cidrs is set); SSM Session Manager (AmazonSSMManagedInstanceCore on the instance profile) is the supported no-open-port path.
+  #checkov:skip=CKV_AWS_260:Public port 80 is limited to ACME HTTP-01 certificate issuance and redirects application traffic to HTTPS.
   #checkov:skip=CKV_AWS_382:this is a general-purpose self-host box, not an internal service — it needs outbound to Docker Hub/GHCR (image pulls + the in-compose updater), GitHub Releases (CLI install/update), ACME servers, apt/package mirrors, and whatever a sandboxed build reaches; there is no fixed egress allowlist to scope this to.
   name        = "${local.name}-sg"
   description = "kortix self-host box: 80/443 in, all out"
