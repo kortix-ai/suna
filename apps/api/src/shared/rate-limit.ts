@@ -163,6 +163,7 @@ const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
+const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
@@ -310,11 +311,36 @@ export function createCheckEmailRateLimitMiddleware() {
   };
 }
 
+/**
+ * Guards public project webhooks before the handler loads Git-backed trigger
+ * configuration. The rejection path does not write an audit row. An attacker
+ * must not convert a request flood into a database-write flood.
+ */
+export function createProjectWebhookRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const projectId = c.req.param('projectId') || 'unknown';
+    const result = projectWebhookLimiter.check(`${projectId}:${clientIp(c)}`, {
+      limit: positiveInt((config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN, 120),
+      windowMs: 60_000,
+    });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json({
+        error: 'rate_limit_exceeded',
+        message: 'Rate limit exceeded. Please retry shortly.',
+        retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+      }, 429);
+    }
+    await next();
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
   publicSessionShareLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
+  projectWebhookLimiter.reset();
   sessionLlmLimiter.reset();
 }

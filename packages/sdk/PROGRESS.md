@@ -197,6 +197,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B12 | **`acpToolName` misclassifies a harness-declared tool by a free-text substring.** The `/write\|create file/` hint check (`tool-part.ts:48`) fires on any title *containing* "write" — so codex's `write_stdin` (an MCP-wrapped PTY-poll tool, `rawInput: { name: "write_stdin", arguments: {...} }`, NO file path) resolves to `'write'` → family `edit` → dropped from BOTH Context and Outputs (44% of one real codex session's tool volume, 16/16 false positives). Fix generically: prefer the harness's own declared name (`rawInput.name`, the MCP wrapper) BEFORE the substring guesses, and reorder the web-search hint ahead of `/search\|grep/` so a native web search lands in the `web` family, not `explore`. No harness branch, no `write_stdin` literal. | W3 diagnosis `.superpowers/sdd/w3-context-diagnosis.md` (Mechanisms 2 & 3), DB-verified real shapes from session `8023ee8f…`. | **DONE (Task W4)** — `1254f53201` (SDK); web dedup `243b856fff`. See session log below. |
 | B14 | **ModelPicker `defaultControls` omitted.** The unified ModelPicker (commits `9dbe2c24b`, `6be202616`) omits the old picker's "Set as my/project/agent default" footer because `ModelPickerViewModel` has no persistence seam. Restoring it requires either a vm seam (follow-up P0-a) or wiring the footer to `useModelStore`; **must be resolved or explicitly cut by Jay before `unified_model_picker` flag defaults on**. | `apps/web/src/features/session/model-picker.tsx` (new); `packages/sdk/PROGRESS.md` (TS SDK takeover) | **RESOLVED — no cut needed, WS5-P0-c.** Verified (`grep -rn "modelDefaultControls" apps/web/src`) that `modelDefaultControls`/`ModelDefaultControls` is declared and consumed ONLY inside `model-selector.tsx` and `session-chat-input.tsx`'s own prop plumbing — **zero call sites ever populate it**: `ComposerChatInput` (the composer's only `SessionChatInput` wiring path, confirmed the sole non-test caller via `grep -rln "SessionChatInput" apps/web/src`) never passes `modelDefaultControls`, so the "Set as my/project/agent default" footer was already unreachable dead code in the live composer BEFORE this flag existed. Flag OFF and flag ON are therefore both "no default-controls footer in the composer" — not a regression, a parity. (Every other `<ModelSelector>` call site — Customize/schedule/task-config pages — is untouched, out of this task's composer-only scope, and keeps whatever `defaultControls` behavior it already had.) See Open decisions and the 2026-07-17 session log entry for the full evidence trail. |
 | B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
+| B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1770,3 +1771,57 @@ will follow RED -> GREEN -> REFACTOR. Final SDK typecheck, full test suite, and
 packed-install smoke gates are required before this claim closes.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-23 — session `pr-4510-review` (completion)
+
+Merged current `origin/main` into PR `#4510`. The PTY hooks retain the
+ACP-neutral `useRuntimePtyList` public name. List, create, update, remove, and
+WebSocket operations bind to the selected session runtime URL. The daemon-owned
+PTY query no longer waits for harness readiness.
+
+**Focused evidence:** `bun test src/react/use-runtime-pty.test.ts` reported
+**5 pass / 0 fail** with 11 assertions. Web terminal recovery reported
+**9 pass / 0 fail** with 16 assertions.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0. The full
+SDK suite reported **1285 pass / 2 skip / 0 fail** across 96 files with 5475
+assertions. `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK merge resolution. PR-wide CI and
+human review remain outside this SDK verdict.
+
+---
+
+### 2026-07-22 — session `terminal-connect-recovery` (B12 completion)
+
+Removed the false OpenCode-health dependency from the daemon-owned PTY query.
+The React hooks now subscribe to the session runtime URL directly. PTY create
+and resize mutations stay pinned to that URL. The web panel replaces every
+unbounded loading state with a 15-second server-URL deadline, a visible error,
+and an explicit retry action. A WebSocket that never opens now expires after 15
+seconds and enters the existing bounded backoff loop.
+
+**TDD evidence:** the focused RED run failed because `isPtyQueryEnabled`,
+`deriveTerminalPanelState`, and `shouldExpirePtyConnect` did not exist. The
+focused GREEN run reported **14 pass / 0 fail** with 27 assertions.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1148 pass / 2 skip / 0 fail** across 86 files with 5082
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. The full web
+suite reported **1891 pass / 0 fail** with 5318 assertions. Focused web ESLint
+exited 0.
+
+**Runtime evidence:** isolated sandbox-agent and API proxy coverage reported 77
+pass after the known Bun module-mock-contaminated file was rerun in isolation at
+**6 pass / 0 fail**. Fresh local-stack smokes passed on both Platinum and
+Daytona. Each smoke created a real PTY, opened two WebSocket attachments, wrote
+and observed a marker, replayed scrollback, listed the running PTY, deleted it,
+and cleaned up the session and project.
+
+**Shippable to production: YES** for the SDK and local end-to-end terminal path.
+Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
+remain part of the repository lifecycle.

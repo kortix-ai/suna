@@ -112,10 +112,10 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   // Data
-  const { data: config, refetch: refetchConfig } = useRuntimeConfig(sandboxUrl);
+  const { data: config } = useRuntimeConfig(sandboxUrl);
   const { data: providersData } = useRuntimeProviders(sandboxUrl);
   const { data: toolIds } = useRuntimeToolIds(sandboxUrl);
-  const { data: mcpStatus, refetch: refetchMcp } = useRuntimeMcpStatus(sandboxUrl);
+  const { data: mcpStatus } = useRuntimeMcpStatus(sandboxUrl);
 
   // Mutations
   const updateConfig = useUpdateRuntimeConfig(sandboxUrl);

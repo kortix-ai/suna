@@ -186,8 +186,8 @@ function SessionRow({
           : 'Unattributed';
   const created = formatTimestamp(session.created_at);
   const updated = formatTimestamp(session.updated_at || session.created_at);
-  const conversationCount = (session.opencode_sessions ?? []).length;
-  const archivedConversationCount = (session.opencode_sessions ?? []).filter(
+  const conversationCount = session.runtime_sessions.length;
+  const archivedConversationCount = session.runtime_sessions.filter(
     (item) => item.archived_at,
   ).length;
   const href = `/projects/${projectId}/sessions/${session.session_id}`;
@@ -284,7 +284,7 @@ function SessionRow({
             />
             <DetailItem
               label="Conversations"
-              value={`${conversationCount} OpenCode session${conversationCount === 1 ? '' : 's'}${
+              value={`${conversationCount} runtime session${conversationCount === 1 ? '' : 's'}${
                 archivedConversationCount > 0 ? ` · ${archivedConversationCount} archived` : ''
               }`}
             />
@@ -293,8 +293,8 @@ function SessionRow({
             <DetailItem label="Session ID" value={session.session_id} mono />
             <DetailItem label="Sandbox ID" value={session.sandbox_id || 'Missing'} mono />
             <DetailItem
-              label="Root conversation ID"
-              value={session.opencode_session_id || 'Not synced'}
+              label="Runtime conversation ID"
+              value={session.runtime_session_id || session.acp_session_id || 'Not synced'}
               mono
             />
           </dl>

@@ -1,4 +1,5 @@
 -- Migration: acp_session_envelopes
+-- Ordered after all migrations present on main when this feature merged.
 --
 -- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
 set lock_timeout = '2s';

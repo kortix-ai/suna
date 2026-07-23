@@ -752,26 +752,39 @@ async function fetchSessionActivity(
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
 ): Promise<SessionActivity | null> {
   try {
-    const msgs = await fetchAcpMessagesForSession(ctx, s, 2);
-    const last = msgs[msgs.length - 1];
-    if (!last) return { working: false, summary: 'no messages yet' };
-    return deriveAcpActivity(last);
+    const messages = await fetchAcpMessagesForSession(ctx, s, 6);
+    return deriveAcpActivity(messages, s.status);
   } catch {
     // Runtime still warming / proxy hiccup — treat as unknown, not fatal.
     return null;
   }
 }
 
-function deriveAcpActivity(m: AcpTranscriptMessage): SessionActivity {
-  const at = m.created ?? undefined;
-  if (m.role === 'user') {
-    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
+export function deriveAcpActivity(
+  messages: AcpTranscriptMessage[],
+  sessionStatus: ProjectSession['status'],
+): SessionActivity {
+  if (sessionStatus === 'provisioning' || sessionStatus === 'branching') {
+    return { working: true, summary: 'provisioning…' };
   }
-  const runningTool = m.tools.find((tool) => tool.status === 'running' || tool.status === 'pending');
+  if (sessionStatus === 'queued') {
+    return { working: true, summary: 'booting…' };
+  }
+
+  const last = messages.at(-1);
+  if (!last) return { working: false, summary: 'no messages yet' };
+  const at = last.created ?? undefined;
+  const runningTool = messages
+    .flatMap((message) => message.tools)
+    .find((tool) => tool.status === 'running' || tool.status === 'pending');
   if (runningTool) {
     return { working: true, tool: runningTool.tool, summary: `running ${runningTool.tool}…`, last_role: 'assistant', last_at: at };
   }
-  const text = m.text.trim().replace(/\s+/g, ' ');
+  if (last.role === 'user') {
+    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
+  }
+
+  const text = last.text.trim().replace(/\s+/g, ' ');
   return {
     working: false,
     summary: text ? truncate(text, 72) : 'idle',

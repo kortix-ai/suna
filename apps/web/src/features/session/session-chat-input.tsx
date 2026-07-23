@@ -1788,7 +1788,7 @@ function SessionChatInputImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-accent border-border relative z-10 w-full overflow-visible rounded-xl border shadow-sm transition-colors',
+          'bg-accent border-border relative z-10 w-full overflow-visible rounded-md border shadow-sm transition-colors',
           cardClassName,
           isDragOver && 'border-primary',
         )}

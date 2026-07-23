@@ -540,7 +540,7 @@ function useProjectSetupTiles(projectId: string): SetupTile[] {
     ...Q,
   });
 
-  const memberCount = access.data?.members.length ?? 0;
+  const memberCount = access.data?.members?.length ?? 0;
 
   return [
     {

@@ -705,124 +705,6 @@ function projectSessionRuntimeConversationId(session: ProjectSession | null | un
 }
 
 /**
- * Build a map from parent session ID → array of child session IDs.
- * Ported from childMapByParent() in @kortix/sdk/turns.
- */
-function buildChildMap(sessions: Session[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const session of sessions) {
-    if (!session.parentID) continue;
-    const existing = map.get(session.parentID);
-    if (existing) {
-      existing.push(session.id);
-    } else {
-      map.set(session.parentID, [session.id]);
-    }
-  }
-  return map;
-}
-
-/**
- * SessionGroup — renders a session row + its expanded children (recursive for nested trees).
- */
-function SessionGroup({
-  session,
-  allSessions,
-  childMap,
-  expandedNodes,
-  onToggleExpand,
-  activeSessionId,
-  onPress,
-  onArchive,
-  onDelete,
-}: {
-  session: Session;
-  allSessions: Session[];
-  childMap: Map<string, string[]>;
-  expandedNodes: Record<string, boolean>;
-  onToggleExpand: (sessionId: string) => void;
-  activeSessionId: string | null;
-  onPress: (s: Session) => void;
-  onArchive?: (id: string) => void;
-  onDelete?: (id: string) => void;
-}) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const childIds = childMap.get(session.id);
-  const hasChildren = !!childIds && childIds.length > 0;
-  const isExpanded = expandedNodes[session.id] ?? false;
-
-  const childSessions = useMemo(() => {
-    if (!childIds) return [];
-    return childIds
-      .map((id) => allSessions.find((s) => s.id === id))
-      .filter((s): s is Session => !!s)
-      .sort((a, b) => (a.time?.created ?? 0) - (b.time?.created ?? 0));
-  }, [childIds, allSessions]);
-
-  return (
-    <View>
-      <SessionListItem
-        item={session}
-        isActive={session.id === activeSessionId}
-        isChild={false}
-        childCount={hasChildren ? childSessions.length : 0}
-        isExpanded={isExpanded}
-        onToggleExpand={hasChildren ? () => onToggleExpand(session.id) : undefined}
-        onPress={onPress}
-        onArchive={onArchive}
-        onDelete={onDelete}
-      />
-
-      {/* Expanded children — indented with a subtle left border */}
-      {hasChildren && isExpanded && (
-        <View
-          className="ml-4 pl-2"
-          style={{
-            borderLeftWidth: 1,
-            borderLeftColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-          }}>
-          {childSessions.map((child) => {
-            const grandchildIds = childMap.get(child.id);
-            const hasGrandchildren = !!grandchildIds && grandchildIds.length > 0;
-
-            // Recurse for grandchildren
-            if (hasGrandchildren) {
-              return (
-                <SessionGroup
-                  key={child.id}
-                  session={child}
-                  allSessions={allSessions}
-                  childMap={childMap}
-                  expandedNodes={expandedNodes}
-                  onToggleExpand={onToggleExpand}
-                  activeSessionId={activeSessionId}
-                  onPress={onPress}
-                  onArchive={onArchive}
-                  onDelete={onDelete}
-                />
-              );
-            }
-
-            return (
-              <SessionListItem
-                key={child.id}
-                item={child}
-                isActive={child.id === activeSessionId}
-                isChild
-                onPress={onPress}
-                onArchive={onArchive}
-                onDelete={onDelete}
-              />
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
-/**
  * Probe a session sandbox's runtime health THROUGH the backend proxy — the same
  * `${sandboxUrl}/kortix/health` the web's useSandboxConnection polls. Beyond
  * reporting readiness, hitting the proxy keeps the sandbox routed/warm, so a
@@ -1268,22 +1150,7 @@ export default function ProjectSessionScreen() {
 
   // Collapsible state
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
-  const [expandedSessionNodes, setExpandedSessionNodes] = useState<Record<string, boolean>>({});
-
-  const toggleSessionExpand = useCallback((sessionId: string) => {
-    setExpandedSessionNodes((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
-  }, []);
-
-  // Build parent→children map and derive the list of top-level (root) sessions.
-  // Child sessions render nested under their parents when the parent is expanded.
-  const { childMap, rootSessions } = useMemo(() => {
-    const map = buildChildMap(activeSessions);
-    const sessionIds = new Set(activeSessions.map((s) => s.id));
-    const roots = activeSessions.filter((s) => !s.parentID || !sessionIds.has(s.parentID));
-    return { childMap: map, rootSessions: roots };
-  }, [activeSessions]);
 
   // Agent/auth/model state for the new-session composer comes from the project
   // control plane, not from whichever sandbox happened to be active last.

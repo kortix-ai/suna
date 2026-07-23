@@ -39,6 +39,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
@@ -109,6 +110,7 @@ import { useModelsPage } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Cpu, Plus, Trash2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 const RUNTIME_PROFILES_QUERY_KEY = (projectId: string) => ['runtime-profiles', projectId] as const;
@@ -212,6 +214,20 @@ export function RuntimeView({ projectId }: { projectId: string }) {
             ))}
           </ul>
         )}
+
+        {profilesQuery.data?.editable && rows.length > 0 ? (
+          <InfoBanner
+            tone="neutral"
+            title="Agent behavior lives in project files"
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/projects/${projectId}/files`}>Open files</Link>
+              </Button>
+            }
+          >
+            Edit each harness&apos;s native instructions and configuration from the Files page.
+          </InfoBanner>
+        ) : null}
 
         {profilesQuery.data?.editable ? (
           <Disclosure

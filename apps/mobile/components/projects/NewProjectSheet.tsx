@@ -2,7 +2,7 @@
  * NewProjectSheet — create a project, ported from web's ProjectCreateModal.
  *
  * Two modes (same as web):
- *  - managed: provision a private Kortix-managed repo (name + optional skills toggle)
+ *  - managed: provision a private Kortix-managed repo
  *  - github:  import an existing GitHub repo via the GitHub App installation
  */
 
@@ -100,7 +100,6 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   const reset = useCallback(() => {
     setMode('managed');
     setName('');
-    setIncludeGKW(false);
     setSelectedInstallationId('');
     setSelectedRepo('');
     setRepoSearch('');
