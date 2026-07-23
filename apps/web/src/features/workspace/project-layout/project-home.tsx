@@ -30,11 +30,8 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   getProjectDetail,
-  listConnectors,
-  listProjectAccess,
   listProjectAccessRequests,
   listProjectSandboxes,
-  listProjectTriggers,
   type SandboxTemplate,
 } from '@kortix/sdk/projects-client';
 import { chalkColors } from '@kortix/shared';
@@ -235,7 +232,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections projectId={projectId} />
+        <ProjectHomeSections />
       </div>
     </div>
   );
@@ -375,51 +372,27 @@ type SetupTile = {
   section: CustomizeSection;
 };
 
-/** The "set up your project" entries shown as the quiet pill row. */
-function useProjectSetupTiles(projectId: string): SetupTile[] {
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    ...Q,
-  });
-  const connectors = useQuery({
-    queryKey: ['project-connectors', projectId],
-    queryFn: () => listConnectors(projectId),
-    ...Q,
-  });
-  const triggers = useQuery({
-    queryKey: ['project-triggers', projectId],
-    queryFn: () => listProjectTriggers(projectId),
-    ...Q,
-  });
-  const access = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    ...Q,
-  });
-
-  const memberCount = access.data?.members?.length ?? 0;
-
-  return [
+/** Static navigation does not fetch counts before the user opens Customize. */
+const PROJECT_SETUP_TILES: SetupTile[] = [
     {
       icon: HiOutlineViewGrid,
       title: 'Integrations',
       desc: 'Connect tools your agent can act in.',
-      count: connectors.data?.connectors.length ?? 0,
+      count: null,
       section: 'connectors',
     },
     {
       icon: CalendarClock,
       title: 'Scheduled tasks',
       desc: 'Run work on a schedule or from an event.',
-      count: triggers.data?.triggers.length ?? 0,
+      count: null,
       section: 'schedules',
     },
     {
       icon: SparklesSolid,
       title: 'Skills',
       desc: 'Repeatable workflows your agent reuses.',
-      count: detail.data?.config?.skills.length ?? 0,
+      count: null,
       section: 'skills',
     },
     {
@@ -433,7 +406,7 @@ function useProjectSetupTiles(projectId: string): SetupTile[] {
       icon: UsersGroupSolid,
       title: 'Your team',
       desc: 'Invite people to run and review work.',
-      count: memberCount > 1 ? memberCount : 0,
+      count: null,
       section: 'members',
     },
     {
@@ -443,12 +416,11 @@ function useProjectSetupTiles(projectId: string): SetupTile[] {
       count: null,
       section: 'agents',
     },
-  ];
-}
+];
 
-function ProjectHomeSections({ projectId }: { projectId: string }) {
+function ProjectHomeSections() {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const tiles = useProjectSetupTiles(projectId);
+  const tiles = PROJECT_SETUP_TILES;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
