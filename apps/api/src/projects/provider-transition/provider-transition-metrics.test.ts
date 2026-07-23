@@ -24,4 +24,16 @@ describe('provider transition metrics', () => {
     emitProviderTransitionEvent('cold_fallback', { target: 'platinum', projectId: 'p1' });
     expect(providerTransitionMetricsSnapshot()['cold_fallback']).toBe(1);
   });
+
+  test('custom_template_cold_boot is tracked distinctly (FIX-M1: default-only scope observability)', () => {
+    expect(providerTransitionMetricsSnapshot()['custom_template_cold_boot']).toBeUndefined();
+    emitProviderTransitionEvent('custom_template_cold_boot', {
+      target: 'platinum',
+      source: 'daytona',
+      projectId: 'p1',
+    });
+    const snap = providerTransitionMetricsSnapshot();
+    expect(snap['custom_template_cold_boot']).toBe(1);
+    expect(snap['custom_template_cold_boot:platinum']).toBe(1);
+  });
 });

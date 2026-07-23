@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
-import { createDb, accounts, projects, providerTransitions, type Database } from '@kortix/db';
+import { and, eq, ne } from 'drizzle-orm';
+import { createDb, accounts, projects, providerTransitions, sandboxTemplates, type Database } from '@kortix/db';
 import { perProjectWarmImageName } from '../../snapshots/ppwarm-names';
+import {
+  providerTransitionMetricsSnapshot,
+  resetProviderTransitionMetricsForTest,
+} from './provider-transition-metrics';
 import {
   driveProviderTransition,
   type ResolvedPrepIdentity,
@@ -839,6 +843,81 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(await heartbeat(db, res.row.transitionId, 999)).toBe(false);
     const afterStale = (await getTransition(db, res.row.transitionId))?.heartbeatAt!;
     expect(new Date(afterStale).getTime()).toBe(new Date(beforeStale).getTime());
+  });
+
+  // ── FIX-M1: default-only eligibility scoping (custom templates cold-boot) ────
+  //
+  // The prepared warm image covers ONLY the default template. A project that
+  // declares custom (non-default-slug) templates still migrates on the default
+  // warm image WITHOUT blocking on a custom build (Fable rejects prepare-all —
+  // a broken custom template would wedge the project forever); its custom
+  // first-boot after the switch is a known COLD boot, made observable via the
+  // `custom_template_cold_boot` event at activation. `hasCustomTemplates` here is
+  // the SAME existence probe defaultTransitionDeps wires to
+  // projectDeclaresCustomTemplates (a project-scoped, non-default-slug row).
+  const customTemplateProbe = (database: Database) => async (project: { projectId: string }) => {
+    const rows = await database
+      .select({ slug: sandboxTemplates.slug })
+      .from(sandboxTemplates)
+      .where(and(eq(sandboxTemplates.projectId, project.projectId), ne(sandboxTemplates.slug, 'default')))
+      .limit(1);
+    return rows.length > 0;
+  };
+
+  test('FIX-M1: a custom-template project activates on the DEFAULT warm image (non-blocking) and emits custom_template_cold_boot', async () => {
+    resetProviderTransitionMetricsForTest();
+    const projectId = await freshProject();
+    // Declare a custom (non-default-slug) template for this project.
+    await db.insert(sandboxTemplates).values({
+      projectId,
+      accountId,
+      slug: 'gpu-runner',
+      name: 'GPU Runner',
+      source: 'ui',
+      provider: 'platinum',
+    });
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    // The DEFAULT template's warm image is ready — activation must proceed on it.
+    world.state.set(id.snapshotName, 'active');
+    world.externalIds.set(id.snapshotName, 'tpl_default_warm');
+    world.ensureBehavior = 'throw_permanent'; // no custom build is attempted (never blocks)
+    const deps = makeDeps(world);
+    deps.hasCustomTemplates = customTemplateProbe(db);
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(deps, res.row.transitionId);
+    expect(outcome).toBe('activated'); // migrated safely, never blocked on the custom template
+    expect(world.buildCount).toBe(0); // custom template was NOT built before activation
+    const routing = await readActiveRouting(db, projectId);
+    expect(routing?.activeProvider).toBe('platinum');
+    expect(routing?.activeExternalTemplateId).toBe('tpl_default_warm'); // the DEFAULT warm image
+    const snap = providerTransitionMetricsSnapshot();
+    expect(snap['custom_template_cold_boot']).toBe(1); // the cold boot is observable
+    expect(snap['custom_template_cold_boot:platinum']).toBe(1);
+  });
+
+  test('FIX-M1: a default-only project activates with NO custom_template_cold_boot event', async () => {
+    resetProviderTransitionMetricsForTest();
+    const projectId = await freshProject(); // no custom template rows
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'active');
+    world.externalIds.set(id.snapshotName, 'tpl_default_warm');
+    const deps = makeDeps(world);
+    deps.hasCustomTemplates = customTemplateProbe(db);
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(deps, res.row.transitionId);
+    expect(outcome).toBe('activated');
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
+    expect(providerTransitionMetricsSnapshot()['custom_template_cold_boot']).toBeUndefined();
   });
 
   test('heartbeat threaded through ensureWarmImage renews the lease during a long build', async () => {

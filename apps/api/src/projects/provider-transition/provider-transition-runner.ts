@@ -116,6 +116,14 @@ export interface TransitionDeps {
   resolvePrepIdentity: (project: GitBackedProject, targetProvider: string) => Promise<ResolvedPrepIdentity>;
   /** Load a project as GitBackedProject + accountId (null ⇒ gone). */
   loadProject: (projectId: string) => Promise<(GitBackedProject & { accountId: string }) | null>;
+  /** FIX-M1: true iff the project declares custom (non-default-slug) templates.
+   *  The prepared warm image covers ONLY the default template, so a switch that
+   *  activates while the project has custom templates leaves those custom-template
+   *  first-boots to cold-boot after the switch. This lets the runner emit a
+   *  `custom_template_cold_boot` observability event at activation WITHOUT blocking
+   *  the switch on custom templates. Optional/absent ⇒ never emitted (default-only
+   *  projects, and every existing caller, are unaffected). */
+  hasCustomTemplates?: (project: GitBackedProject) => Promise<boolean>;
   leaseTtlMs?: number;
   /** Fire-and-forget re-drive of a freshly created (drift) transition. */
   kick?: (transitionId: string) => void;
@@ -602,6 +610,26 @@ export async function driveProviderTransition(
         externalTemplateId,
         timeToReadySeconds,
       });
+      // FIX-M1: the switch just activated on the DEFAULT template's warm image.
+      // If this project also declares custom (non-default-slug) templates, those
+      // were deliberately NOT pre-baked for the target (Fable REJECTS a blocking
+      // prepare-all — a broken/unused custom template would wedge the project
+      // forever). Their first boot after the switch is a known COLD boot; emit a
+      // distinct event so it's observable. Best-effort — never fail an already-
+      // committed activation on the visibility check. (Async best-effort custom
+      // bakes are a documented FOLLOW-UP; see resolvePrepIdentity's TODO.)
+      if (deps.hasCustomTemplates) {
+        const custom = await deps.hasCustomTemplates(project).catch(() => false);
+        if (custom) {
+          emitProviderTransitionEvent('custom_template_cold_boot', {
+            target: leased.targetProvider,
+            source: leased.sourceProvider,
+            projectId: leased.projectId,
+            transitionId,
+            generation: leased.generation!,
+          });
+        }
+      }
       return 'activated';
     }
     if (result.reason === 'lost_cas') {

@@ -3,8 +3,8 @@
  * the injectable runner to the REAL builder / provider / git / db. Routes, the
  * resume worker, and the prebuild script all go through here.
  */
-import { eq } from 'drizzle-orm';
-import { projects, type Database } from '@kortix/db';
+import { and, eq, ne } from 'drizzle-orm';
+import { projects, sandboxTemplates, type Database } from '@kortix/db';
 import { db as appDb } from '../../shared/db';
 import { getSandboxProvider } from '../../snapshots/providers';
 import {
@@ -51,10 +51,44 @@ function toGitBackedProject(row: ProjectRow): GitBackedProject & { accountId: st
   };
 }
 
+/**
+ * FIX-M1: true iff the project declares its OWN (custom, non-default-slug)
+ * sandbox templates. Project-scoped rows in `sandbox_templates` are custom by
+ * construction (the platform default is a shared row with a null project_id and
+ * the reserved `DEFAULT_SANDBOX_SLUG`); the `ne(slug, DEFAULT_SANDBOX_SLUG)`
+ * guard is belt-and-suspenders so a project row that somehow shadows the default
+ * slug is not miscounted. A cheap existence probe (LIMIT 1) — no manifest/git
+ * sync — so it is safe to run inline on the activation hot path.
+ */
+export async function projectDeclaresCustomTemplates(
+  database: Database,
+  projectId: string,
+): Promise<boolean> {
+  const rows = await database
+    .select({ slug: sandboxTemplates.slug })
+    .from(sandboxTemplates)
+    .where(and(eq(sandboxTemplates.projectId, projectId), ne(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG)))
+    .limit(1);
+  return rows.length > 0;
+}
+
 /** Resolve the current prep identity: default-branch tip + shared-default base
  *  runtime fingerprint on the target + the resulting ppwarm image name. This is
  *  EXACTLY the name ensureSandboxImage's session-start warm lookup computes, so a
- *  ready transition guarantees the first session warm-HITs (no clone). */
+ *  ready transition guarantees the first session warm-HITs (no clone).
+ *
+ *  SCOPE (FIX-M1): the prepared warm image covers ONLY the DEFAULT template. A
+ *  project's custom (non-default-slug) templates are deliberately NOT prepared
+ *  before the switch — Fable rejects a blocking prepare-all because a broken or
+ *  unused custom template would wedge the project's migration forever. A
+ *  custom-template project therefore migrates on the default warm image and its
+ *  custom-template sessions COLD-boot on first use after the switch; that cold
+ *  boot is made observable via the `custom_template_cold_boot` metric emitted at
+ *  activation (see the runner), never hidden as a warm hit.
+ *  TODO(provider-transition): async best-effort custom-template bakes — kick a
+ *  non-blocking prepare for each custom template after (or alongside) the default
+ *  activation so the FIRST custom boot is warm too, WITHOUT ever gating the switch
+ *  on a custom build succeeding. Explicit follow-up; not implemented here. */
 export async function resolvePrepIdentity(
   project: GitBackedProject,
   targetProvider: string,
@@ -90,6 +124,11 @@ export function defaultTransitionDeps(database: Database = appDb): TransitionDep
       if (!row || row.status === 'archived') return null;
       return toGitBackedProject(row);
     },
+    // FIX-M1: default-only projects get the full warm hit; a custom-template
+    // project still migrates safely on the default warm image, and the runner
+    // emits `custom_template_cold_boot` at activation so its (un-prepared) custom
+    // first-boot is observable rather than silently cold.
+    hasCustomTemplates: (project) => projectDeclaresCustomTemplates(database, project.projectId),
     kick: (transitionId) => kickDrive(transitionId, database),
   };
 }

@@ -60,7 +60,13 @@ export type ProviderTransitionEvent =
   | 'cancelled'
   | 'first_session_warm_hit'
   | 'first_session_warm_miss'
-  | 'cold_fallback';
+  | 'cold_fallback'
+  // FIX-M1: the prepared warm image covers ONLY the default template, so a
+  // project that declares custom (non-default-slug) templates migrates on the
+  // default warm image and its custom-template sessions cold-boot on first use
+  // after the switch. This makes that (deliberately un-prepared) cold boot
+  // visible without blocking the switch on custom templates.
+  | 'custom_template_cold_boot';
 
 // Test-visible tallies. Never used to drive control flow — pure observability.
 const eventCounts = new Map<string, number>();
