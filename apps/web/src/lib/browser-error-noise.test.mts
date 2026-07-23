@@ -18,6 +18,7 @@ import {
   isNonErrorUndefinedRejectionNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
+  isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
@@ -3857,6 +3858,224 @@ test('does NOT suppress a message that only mentions the non-Error rejection wor
       }),
       false,
       `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Browser-internal DOM/binding `OperationError: Instance dropped in
+// popErrorScope` noise (Better Stack pattern
+// 5e1aca208331fa2d7540c9810b815b6c94f1373c470ff54e15f39d389dac7e0c,
+// Kortix Frontend prod, application_id 2346967, `OperationError`). A
+// browser-internal DOM/binding `OperationError` (`popErrorScope` is part of the
+// WebIDL/internal error-scope machinery — DOMQueuingStrategy, ResizeObserver,
+// IntersectionObserver, media streams, GPU, … — NOT a first-party Kortix API)
+// surfaces as a frameless unhandled promise rejection via the global
+// `onunhandledrejection` handler. 2 occurrences EVER across a 90-day window
+// (first 2026-04-28 18:41:18 UTC on `https://www.kortix.com/instances`
+// Chrome/Win, last 2026-07-22 18:26:35 UTC on
+// `https://kortix.com/projects/<id>` reached from Google account sign-in
+// Chrome/Edge/Win), 0 identified users (anonymous), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary). The exception payload is
+// `{"values":[{"type":"OperationError","value":"Instance dropped in
+// popErrorScope","mechanism":{"type":"auto.browser.global_handlers.
+// onunhandledrejection","handled":false}}]}` — NO `stacktrace`, NO frames, NO
+// `call_site_file`/`call_site_function`, NO `call_stack_hash`. A real
+// first-party `Promise.reject(new OperationError(...))` carries a stack with
+// `apps/web/src/…` frames, so the frameless shape is the noise signature.
+//
+// Same family as `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`) and `isFirefoxReactSchedulerReentryNoise` (PR #5185, pattern
+// `0f03b24e…`) — frameless browser-internal rejections dropped by a precise
+// matcher with a negative guard preserving any first-party frame.
+//
+// `OperationError` is the WebIDL type for async DOM operations (NOT a Kortix
+// error class) and is generic enough that a real first-party
+// `new OperationError(...)` could surface with the same type — so the matcher
+// anchors on the EXACT message `/^Instance dropped in popErrorScope$/`
+// (case-sensitive), never on the bare `OperationError` type. It requires the
+// frameless shape as a positive guard and a negative guard preserving any
+// first-party `apps/web/src/…` frame.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const OPERATION_ERROR_POP_ERROR_SCOPE = 'Instance dropped in popErrorScope'
+
+test('classifies the frameless OperationError popErrorScope noise', () => {
+  // Exact production shape: the canonical message, NO frames (the rejection
+  // carried no stack).
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned OperationError popErrorScope Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `OperationError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), NO
+  // stacktrace frames, request URL `https://www.kortix.com/instances` (the
+  // marketing/landing page — first occurrence).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://www.kortix.com/instances' },
+      exception: {
+        values: [
+          {
+            value: OPERATION_ERROR_POP_ERROR_SCOPE,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the post-OAuth OperationError popErrorScope Sentry event (second occurrence)', () => {
+  // The second occurrence: a project page reached from Google account
+  // sign-in (referer `https://accounts.google.com/`), Chrome/Edge/Win.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/198b319d-b710-4443-a797-d813ba16f07a',
+      },
+      exception: {
+        values: [
+          {
+            value: OPERATION_ERROR_POP_ERROR_SCOPE,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the OperationError popErrorScope noise when frames are absent entirely (no stacktrace key)', () => {
+  // The production event has no frames at all — Sentry omits the stacktrace
+  // key entirely when there is nothing to serialize. The gate must still drop
+  // it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/instances' },
+      exception: {
+        values: [{ value: OPERATION_ERROR_POP_ERROR_SCOPE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the OperationError popErrorScope rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code rejected a promise
+  // with an `OperationError` → actionable; the negative guard MUST preserve it
+  // so the call site can be found + fixed. This is the whole reason the
+  // matcher is frame-aware (`OperationError` is a generic WebIDL type a real
+  // first-party `new OperationError(...)` could surface with).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/workspace/index.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isOperationErrorPopErrorScopeNoise({
+        message: OPERATION_ERROR_POP_ERROR_SCOPE,
+        frames,
+      }),
+      false,
+      `expected first-party OperationError popErrorScope rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: OPERATION_ERROR_POP_ERROR_SCOPE, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party OperationError popErrorScope rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the OperationError popErrorScope rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject(new OperationError(...))` with a stack we can trace. Keep
+  // reporting; only the frameless capture (the production noise pattern) is
+  // dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/lib.js', function: 'init' }],
+  ]) {
+    assert.equal(
+      isOperationErrorPopErrorScopeNoise({
+        message: OPERATION_ERROR_POP_ERROR_SCOPE,
+        frames,
+      }),
+      false,
+      `expected attributable OperationError popErrorScope rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-matching message (suffix variant)', () => {
+  // The matcher anchors on the EXACT message; a near-miss wording must not be
+  // matched.
+  for (const message of [
+    'Instance dropped in popErrorScopeX',
+    'Instance dropped in popErrorScope.',
+    'Instance dropped in popErrorScope (extra)',
+    'X Instance dropped in popErrorScope',
+    'popErrorScope',
+  ]) {
+    assert.equal(
+      isOperationErrorPopErrorScopeNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless rejection with a different message', () => {
+  // A frameless rejection carrying a DIFFERENT message is a different class —
+  // keep reporting it via this matcher. (The bare-`undefined` non-Error
+  // rejection class has its own dedicated matcher + tests; not re-tested here.)
+  for (const message of [
+    'Something else entirely',
+    'OperationError: a different operation error',
+  ]) {
+    assert.equal(
+      isOperationErrorPopErrorScopeNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for frameless "${message}" to keep reporting`,
     )
   }
 })
