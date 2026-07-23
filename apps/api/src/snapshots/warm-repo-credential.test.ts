@@ -40,8 +40,10 @@ const {
 
 const exec = promisify(execFile);
 
-// A distinctive token that must NEVER appear in any staged build-context byte.
-const SENTINEL = 'ghp_PHASE1CredentialSentinel00000000000000';
+// A distinctive marker that must NEVER appear in any staged build-context byte.
+// Deliberately NOT shaped like a real provider token so secret scanners don't
+// false-positive on it — the test only needs a unique string to grep for.
+const SENTINEL = 'kortix-warmrepo-cred-sentinel-not-a-real-token-DO-NOT-SHIP';
 const PROXY_ORIGIN = 'https://proxy.kortix.test/git/proj-1234.git';
 
 const cleanup: string[] = [];

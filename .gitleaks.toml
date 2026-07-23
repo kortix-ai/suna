@@ -46,7 +46,7 @@ regexes = [
 ]
 
 [[allowlists]]
-description = "False-positive fake GitHub token sentinel in the warm-repo credential-removal test. The test requires a provider-shaped marker to prove that no credential reaches the build context."
+description = "Historical false-positive: an earlier commit in this branch used a fake ghp_-shaped sentinel in the warm-repo credential-removal test (since replaced with a non-secret marker). gitleaks scans PR history, so this scoped allowlist keeps that one old commit from tripping the scan. Not a real token."
 condition = "AND"
 paths = [
   '''apps/api/src/snapshots/warm-repo-credential\.test\.ts$''',
