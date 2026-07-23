@@ -15,15 +15,12 @@ import {
   probeEffectivePermission,
   probeEffectivePermissions,
   type PermissionProbeInput,
-  type ResourceType,
+  type PermissionProbeTarget,
 } from '@/lib/iam-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-export interface UsePermissionTarget {
-  resourceType?: ResourceType;
-  resourceId?: string;
-}
+export type UsePermissionTarget = PermissionProbeTarget;
 
 export interface UsePermissionResult {
   /** True only when the probe has resolved AND the API said yes.
@@ -56,11 +53,7 @@ function useProbeQuery(
       target?.resourceId ?? null,
     ],
     queryFn: () =>
-      probeEffectivePermission(accountId!, userId!, {
-        action,
-        resourceType: target?.resourceType,
-        resourceId: target?.resourceId,
-      }),
+      probeEffectivePermission(accountId!, userId!, target ? { action, ...target } : { action }),
     enabled: !!accountId && !!userId,
     staleTime: 5 * 60_000,
   });

@@ -540,6 +540,73 @@ claim is closed.
 
 ---
 
+### 2026-07-23 — session `session-sync-latency` (local completion)
+
+Completed bounded session synchronization and persistent project navigation in
+`session-sync-latency`. Initial and background history reads request 10 messages.
+Older history uses cursor pagination. One active session owns the SSE stream.
+Inactive running sessions receive one bounded tail prefetch. The 20-entry
+controller registry owns and evicts prefetch state.
+
+The shared project layout now owns `ProjectShell`. Session navigation keeps the
+committed route visible until the target renders. The current session remains
+selected during a pending switch. File selections, Customize state, onboarding,
+and the presentation dialog persist across project routes. Session file stores
+are bounded to 20 entries.
+
+Connector reads no longer synchronize or write. The list path loads actions,
+credential state, and channel state in parallel. Shared credential discovery is
+one batched query. Explicit synchronization materializes connector icons.
+
+The final maintainability review deleted the background SSE fan-out, removed
+passive project-home reads, moved prefetch state into the bounded registry, and
+removed a second mobile transcript compatibility cast. `formatTranscript`
+accepts a narrow structural input while the exported `MessageWithParts` contract
+remains unchanged. No changed file crosses from below 1,000 lines to above 1,000
+lines.
+
+**TDD evidence:** the new mobile transcript-shape test first failed SDK
+typecheck with `TS2322`. The focused GREEN run reported **9 pass / 0 fail** with
+16 assertions. The mobile older-page hydration test first returned only the
+older page. Its GREEN run reported **1 pass / 0 fail**.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0. The full
+suite reported **1171 pass / 0 fail** with 5170 assertions across 88 files.
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed the package successfully.
+
+**Other local gates:** API typecheck exited 0. Focused API tests reported **38
+pass / 0 fail**. Focused web tests reported **22 pass / 0 fail**. The focused
+mobile test reported **1 pass / 0 fail**. Changed-file web ESLint reported 0
+errors and one pre-existing hook warning. Terraform formatting and validation
+passed. Mobile typecheck still reports 56 baseline errors; none reference the
+changed mobile files.
+
+**Runtime evidence:** the authenticated connector list returned `200` twice in
+10 ms and 5 ms. Legacy and default-profile credentials both returned
+`secretSet: true`. Connector, action, and credential row counts did not change.
+The real cloud session smoke reported **21 pass / 0 fail**. Project provisioning
+took 4 seconds. The sandbox reached `ready` 18 seconds after session creation.
+OpenCode and `kortix.yaml` returned `200`. Cleanup returned `200`.
+
+**Infrastructure evidence:** `dev-api.kortix.com` returns
+`x-backend: ecs-fargate`. ECS runs three tasks at its current three-task ceiling.
+The 24-hour target-response maximum was 47.132 seconds. The API logged 1,904
+target `5xx` responses. Stale background `/global/event` requests retried missing
+sandboxes four times and consumed about 7 seconds each. This branch deletes that
+fan-out and raises the ECS fallback maximum from 3 to 6.
+
+**Unverified:** the browser runtime returned an empty browser list. Required DOM
+and network assertions for persistent navigation, cached rendering, bounded
+prefetch, cursor pagination, transcript export, and dialog persistence could not
+run. The shared local migration ledger also has one pending concurrent migration
+that precedes an applied migration. The shared ledger was not mutated.
+
+**Shippable to production: NOT YET.** Browser DOM and network verification
+remains required.
+
+---
+
 ### 2026-07-19 — session `git-management-ux` (completion)
 
 Completed the additive GitHub repository-template input. The public
