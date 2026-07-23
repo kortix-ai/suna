@@ -12,7 +12,7 @@ delete (globalThis as any).document;
 GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
-const { cleanup, render, screen, within } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen, within } = await import('@testing-library/react');
 const ReactModule = await import('react');
 
 const AGENTS: ProjectConfigSummary['agents'] = [
@@ -162,10 +162,51 @@ describe('AgentsView — per-agent harness badge', () => {
   test("the selected agent's detail header repeats its harness badge", () => {
     renderAgentsView();
 
-    // The split layout previews the first visible agent by default.
+    // The section opens on Coding agents, so pick an agent to get its detail.
+    fireEvent.click(screen.getByText('claude-reviewer'));
+
     const headings = screen.getAllByRole('heading', { level: 1 });
     expect(headings[0]?.textContent).toBe('claude-reviewer');
     expect(screen.getAllByText('Claude Code').length).toBeGreaterThan(1);
+  });
+});
+
+// The arrangement fix: Coding agents used to render as a full-width strip
+// ABOVE the split, which pushed the agent list — the thing this section is
+// named after — below the fold. It's now a pinned rail row that takes over the
+// detail pane, so the list keeps the whole viewport.
+describe('AgentsView — Coding agents lives in the rail, not above the list', () => {
+  test('the section OPENS on Coding agents — not on whichever agent happens to sort first', () => {
+    renderAgentsView();
+
+    const rail = screen.getByTestId('rail-entry');
+    expect(within(rail).getByText('Coding agents')).toBeDefined();
+    expect(rail.getAttribute('aria-current')).toBe('true');
+    // No agent detail is previewed on arrival.
+    expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(0);
+  });
+
+  test('the agent list stays visible while Coding agents is open — the rail never swaps out', () => {
+    renderAgentsView();
+
+    // Both agents are reachable from the landing state; picking one switches
+    // the pane to it and releases the rail entry.
+    expect(screen.getByText('claude-reviewer')).toBeDefined();
+    fireEvent.click(screen.getByText('kortix'));
+
+    expect(screen.getByTestId('rail-entry').getAttribute('aria-current')).toBe('false');
+    expect(screen.getAllByRole('heading', { level: 1 })[0]?.textContent).toBe('kortix');
+  });
+
+  test('going back to Coding agents takes over the pane again', () => {
+    renderAgentsView();
+
+    fireEvent.click(screen.getByText('kortix'));
+    fireEvent.click(screen.getByTestId('rail-entry'));
+
+    expect(screen.getByTestId('rail-entry').getAttribute('aria-current')).toBe('true');
+    expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(0);
+    expect(screen.getAllByText('Coding agents').length).toBeGreaterThan(0);
   });
 });
 

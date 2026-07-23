@@ -16,6 +16,7 @@ import Hint from '@/components/ui/hint';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { Agent } from '@/hooks/runtime/use-runtime-sessions';
 import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
   agentHarness,
   agentHarnessPresentation,
@@ -25,8 +26,8 @@ import {
   useModelsPage,
 } from '@kortix/sdk/react';
 
-import { Check, ChevronDown } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isHarnessDisconnected } from './agent-selector-helpers';
 import {
   COMPOSER_PILL_ACTIVE_CLASS,
@@ -111,6 +112,21 @@ export function AgentSelector({
   const [search, setSearch] = useState('');
   const [flash, setFlash] = useState(false);
   const prevAgentRef = useRef(selectedAgent);
+
+  // The picker lists the agents you HAVE; Customize → Agents is where you edit
+  // them. Same relationship the model picker has with its "Manage models"
+  // button (model-selector.tsx), so it gets the same affordance in the same
+  // place — a trailing icon button in the search row.
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  // …except when this picker is itself rendered INSIDE Customize (the channels
+  // section embeds one per binding). Jumping the overlay to another section
+  // from under a half-filled form is worse than no button, and "go to
+  // Customize" is meaningless when you're already there.
+  const customizeOpen = useCustomizeStore((s) => s.open);
+  const handleConfigure = useCallback(() => {
+    setOpen(false);
+    openCustomize('agents');
+  }, [openCustomize]);
 
   const { runtimes } = useModelsPage(projectId);
   const runtimeStatusByHarness = useMemo(() => {
@@ -234,6 +250,21 @@ export function AgentSelector({
           )}
           value={search}
           onValueChange={setSearch}
+          rightElement={
+            customizeOpen ? null : (
+              <Hint side="top" label="Manage agents" className="text-xs">
+                <button
+                  type="button"
+                  aria-label="Manage agents"
+                  data-testid="agent-selector-configure"
+                  onClick={handleConfigure}
+                  className="text-muted-foreground hover:text-foreground hover:bg-muted -mr-0.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+                >
+                  <SlidersHorizontal className="size-4" />
+                </button>
+              </Hint>
+            )
+          }
         />
 
         <CommandList className="max-h-[320px]">

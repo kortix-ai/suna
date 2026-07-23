@@ -26,6 +26,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -36,8 +37,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -45,26 +44,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  useAgentConfig,
-  useUpdateAgentConfig,
-} from '@/hooks/projects/use-agent-config';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import {
   type AgentConfigBlock,
   type AgentConfigResponse,
   type AgentGrantSetV2,
   listConnectors,
   listProjectSecrets,
-  type RuntimeAgentBehaviorConfig,
   type ProjectConfigSummary,
+  type RuntimeAgentBehaviorConfig,
 } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
 import { Bot, Cpu, FolderOpen, Layers, Route } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { FieldRow, SectionHeader, LayerHeader } from './agent-editor-primitives';
+import { FieldRow, LayerHeader, SectionHeader } from './agent-editor-primitives';
+import { AgentCodingAgentSelect } from './coding-agent-select';
 import { KortixLayerFields } from './kortix-layer-fields';
 import { RuntimeLayerFields } from './runtime-layer-fields';
 import { ACP_HARNESS_LABELS, projectFilesHref } from './runtime-profile-options';
@@ -82,7 +80,7 @@ export {
   WORKSPACE_MODE_HELP,
   WORKSPACE_MODES,
 } from './agent-editor-catalog';
-export { Segmented, FieldRow } from './agent-editor-primitives';
+export { FieldRow, Segmented } from './agent-editor-primitives';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -110,7 +108,10 @@ function AgentEditorModal({
 }) {
   const [draft, setDraft] = useState<AgentConfigBlock>(initial);
   const [baseline] = useState<AgentConfigBlock>(initial);
-  const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  const isDirty = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(baseline),
+    [draft, baseline],
+  );
   const update = useUpdateAgentConfig(projectId, agentName);
 
   const secretsQuery = useQuery({
@@ -165,11 +166,11 @@ function AgentEditorModal({
       return next;
     });
 
-  // "Manage runtimes ->" cross-link — the runtime `Select` here only offers
-  // profiles the project already declared; profiles are declared/renamed in
-  // this same Agents section's context header (`RuntimeProfilesManager`,
-  // `runtime-profiles-manager.tsx` — there is no separate Runtime section
-  // anymore). Closing this modal is enough to reveal it.
+  // "Manage coding agents ->" cross-link — the picker here only offers coding
+  // agents the project already turned on; turning one on/off lives in this same
+  // Agents section's context header (`CodingAgentsPanel`,
+  // `coding-agents-panel.tsx` — there is no separate Runtime section anymore).
+  // Closing this modal is enough to reveal it.
   const manageRuntimes = () => onOpenChange(false);
 
   const onSave = async () => {
@@ -189,9 +190,15 @@ function AgentEditorModal({
           <ModalTitle>Configure {agentName}</ModalTitle>
           <ModalDescription>
             {schemaVersion === 3 ? (
-              <>Logical runtime routing and governance saved to <span className="font-mono">kortix.yaml</span>.</>
+              <>
+                Logical runtime routing and governance saved to{' '}
+                <span className="font-mono">kortix.yaml</span>.
+              </>
             ) : (
-              <>Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves to this agent's runtime-native file.</>
+              <>
+                Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves
+                to this agent's runtime-native file.
+              </>
             )}
           </ModalDescription>
         </ModalHeader>
@@ -217,21 +224,26 @@ function AgentEditorModal({
             <div className="space-y-6">
               <LayerHeader
                 icon={Route}
-                label="ACP runtime"
+                label="Coding agent"
                 tone="outline"
-                description="Choose the native harness profile this logical agent runs. Kortix does not translate or own its behavior configuration."
+                description="Which coding agent runs this one, and where it reads its own settings. Kortix routes to it — it owns its own behavior."
               />
               <section className="space-y-4">
                 <SectionHeader icon={Cpu} title="Routing" />
-                <FieldRow label="Runtime profile">
+                <FieldRow label="Coding agent">
                   <div className="space-y-1.5">
-                    <Select value={draft.runtime} onValueChange={(value) => setDraft((current) => {
-                      const next = { ...current, runtime: value };
-                      if (runtimes[value]?.harness !== 'opencode') delete next.agent;
-                      return next;
-                    })}>
+                    <Select
+                      value={draft.runtime}
+                      onValueChange={(value) =>
+                        setDraft((current) => {
+                          const next = { ...current, runtime: value };
+                          if (runtimes[value]?.harness !== 'opencode') delete next.agent;
+                          return next;
+                        })
+                      }
+                    >
                       <SelectTrigger variant="popover" className="w-full">
-                        <SelectValue placeholder="Choose a runtime" />
+                        <SelectValue placeholder="Choose a coding agent" />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(runtimes).map(([name, profile]) => (
@@ -246,10 +258,10 @@ function AgentEditorModal({
                       type="button"
                       variant="text"
                       size="xs"
-                      className="-ml-2.5 active:scale-[0.96] transition-transform"
+                      className="-ml-2.5 transition-transform active:scale-[0.96]"
                       onClick={manageRuntimes}
                     >
-                      Manage runtimes →
+                      Manage coding agents →
                     </Button>
                   </div>
                 </FieldRow>
@@ -402,8 +414,25 @@ export function AgentConfigEditor({
         </Badge>
       </div>
 
+      {/* Which coding agent runs this agent — the one field people actually
+          change, so it's a live picker here rather than a read-only slug badge
+          that made you open the modal to act on it. */}
+      {data.schema_version === 3 ? (
+        <div className="space-y-1.5">
+          <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
+            Coding agent
+          </span>
+          <AgentCodingAgentSelect
+            projectId={projectId}
+            agentName={agent.name}
+            block={block}
+            runtimes={data.runtimes ?? {}}
+          />
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-1.5">
-        {block.runtime ? (
+        {data.schema_version !== 3 && block.runtime ? (
           <Badge variant="kortix" size="xs" className="font-mono">
             {block.runtime}
           </Badge>

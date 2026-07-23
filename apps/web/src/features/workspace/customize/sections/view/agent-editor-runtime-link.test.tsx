@@ -13,6 +13,18 @@ GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
 const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const ReactModule = await import('react');
+
+// The agent card now shows its coding agent as a brand mark, so `ProviderLogo`
+// (→ `next/image`) reaches this suite. `getImgProps` builds a `URL` from the
+// icon's relative path and happy-dom has no page location to resolve it
+// against — "Invalid URL". Same stub the neighbouring suites use.
+mock.module('next/image', () => ({
+  default: (props: Record<string, unknown>) => {
+    const { src, alt, ...rest } = props;
+    return ReactModule.createElement('img', { src, alt, ...rest });
+  },
+}));
 
 // `AgentConfigEditor`/`AgentEditorModal` call raw `useQuery`/`useMutation`
 // directly (no `QueryClientProvider` in this DOM-free-by-default harness) —
@@ -71,18 +83,18 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('AgentConfigEditor — "Manage runtimes ->" cross-link', () => {
-  test('the runtime profile field carries a "Manage runtimes" link', () => {
+describe('AgentConfigEditor — "Manage coding agents ->" cross-link', () => {
+  test('the coding-agent field carries a "Manage coding agents" link', () => {
     render(
       <AgentConfigEditor projectId={PROJECT_ID} agent={AGENT} skillsOptions={[]} fallback={null} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit configuration' }));
 
-    expect(screen.getByText('Manage runtimes →')).toBeDefined();
+    expect(screen.getByText('Manage coding agents →')).toBeDefined();
   });
 
-  test('clicking it closes this modal — the runtime-profiles manager already lives in this same Agents section', () => {
+  test('clicking it closes this modal — the coding-agents panel already lives in this same Agents section', () => {
     useCustomizeStore.setState({ open: true, section: 'agents' });
     render(
       <AgentConfigEditor projectId={PROJECT_ID} agent={AGENT} skillsOptions={[]} fallback={null} />,
@@ -91,10 +103,10 @@ describe('AgentConfigEditor — "Manage runtimes ->" cross-link', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit configuration' }));
     expect(screen.getByText(`Configure ${AGENT.name}`)).toBeDefined();
 
-    fireEvent.click(screen.getByText('Manage runtimes →'));
+    fireEvent.click(screen.getByText('Manage coding agents →'));
 
     // There's no separate Runtime section to switch to anymore — the
-    // profile manager (`runtime-profiles-manager.tsx`) is already visible in
+    // coding-agents panel (`coding-agents-panel.tsx`) is already visible in
     // this same Agents section's context, above the agent list. Closing this
     // modal is the whole cross-link; the overlay stays open and on 'agents'.
     expect(useCustomizeStore.getState().open).toBe(true);

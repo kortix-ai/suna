@@ -16,7 +16,8 @@ const SelectValue = SelectPrimitive.Value;
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
-    variant?: 'default' | 'outline' | 'secondary' | 'accent' | 'popover' | 'transparent';
+    variant?:
+      'default' | 'outline' | 'secondary' | 'accent' | 'popover' | 'transparent' | 'underline';
     size?: ButtonProps['size'];
     arrow?: boolean;
   }
@@ -34,6 +35,21 @@ const SelectTrigger = React.forwardRef<
       variant === 'popover' &&
         'bg-popover text-foreground border-border focus:border-kortix-blue focus:border focus:outline-none',
       variant === 'transparent' && 'text-foreground border-none bg-transparent',
+      // Underline — the box is gone and only the baseline remains, matching the
+      // `underline` Tabs treatment (rounded-none, transparent, `border-b-[1.5px]`,
+      // `border-b-foreground` when active). Focus is expressed in the underline
+      // rather than the default focus ring, since a ring around a borderless
+      // control reads as a stray box.
+      //
+      // `border-0` before `border-b-[1.5px]` is load-bearing: tailwind-merge puts
+      // `border` and `border-b` in different groups, so `border-b` alone would
+      // ADD a bottom edge to the base's full border instead of replacing it.
+      // Same story for padding — the base re-applies `px-3` via `has-[>svg]`
+      // (the chevron IS a direct svg child), so that has to be overridden too.
+      variant === 'underline' &&
+        'rounded-none border-0 border-b-[1.5px] bg-transparent px-1 transition-colors hover:bg-transparent has-[>svg]:px-1',
+      variant === 'underline' &&
+        'hover:border-b-foreground/60 focus-visible:border-b-foreground data-[state=open]:border-b-foreground focus-visible:ring-0',
       className,
     )}
     {...props}
@@ -158,7 +174,7 @@ const SelectItem = React.forwardRef<
     {description ? (
       <div className="flex min-w-0 flex-col gap-0.5">
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        <span className="max-w-[260px] text-[11px] leading-snug whitespace-normal text-muted-foreground">
+        <span className="text-muted-foreground max-w-[260px] text-[11px] leading-snug whitespace-normal">
           {description}
         </span>
       </div>

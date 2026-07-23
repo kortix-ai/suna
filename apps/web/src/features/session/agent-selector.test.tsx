@@ -65,10 +65,20 @@ mock.module('@kortix/sdk/react', () => ({
 }));
 
 const { AgentSelector } = await import('./agent-selector');
+// The real zustand store — the picker's "Manage agents" button drives the
+// Customize overlay through it, so assert on actual store state rather than a
+// mock (no provider needed; it's a plain module-level store).
+const { useCustomizeStore } = await import('@/stores/customize-store');
+const CUSTOMIZE_INITIAL = useCustomizeStore.getState();
 
 afterEach(() => {
   cleanup();
   modelsPageRuntimes = [];
+  useCustomizeStore.setState({
+    open: false,
+    section: CUSTOMIZE_INITIAL.section,
+    membersTab: CUSTOMIZE_INITIAL.membersTab,
+  });
 });
 
 afterAll(() => {
@@ -191,9 +201,44 @@ describe('AgentSelector', () => {
     // Radix renders the tooltip's text twice (the visible bubble plus a
     // visually-hidden accessibility mirror) — assert at least one is present.
     expect(
-      screen.getAllByText('Agent is fixed for this session — start a new session to switch')
-        .length,
+      screen.getAllByText('Agent is fixed for this session — start a new session to switch').length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('AgentSelector — "Manage agents" button', () => {
+  it('sits in the search row and opens the Customize overlay on the Agents section, closing the popover', async () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    // Lives inside the command input row, not the agent list — it's a way OUT
+    // of the picker, never something Enter/arrow keys can land on.
+    const configure = screen.getByTestId('agent-selector-configure');
+    expect(configure.closest('[data-slot="command-input-wrapper"]')).toBeTruthy();
+
+    fireEvent.click(configure);
+    await flush();
+
+    const state = useCustomizeStore.getState();
+    expect(state.open).toBe(true);
+    expect(state.section).toBe('agents');
+    // The picker gets out of the overlay's way.
+    expect(screen.queryAllByTestId('agent-option')).toHaveLength(0);
+  });
+
+  it('is hidden when the Customize overlay is already open (this picker is embedded in the Channels section)', async () => {
+    act(() => {
+      useCustomizeStore.setState({ open: true, section: 'channels' });
+    });
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    // Rows still render — only the "go to Customize" escape hatch is dropped,
+    // so a half-filled channels form can't be yanked to another section.
+    expect(screen.getAllByTestId('agent-option').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('agent-selector-configure')).toBeNull();
   });
 });
 
