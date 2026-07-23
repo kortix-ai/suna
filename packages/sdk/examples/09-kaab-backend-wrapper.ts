@@ -50,7 +50,7 @@ const includeOverrides = process.env.KAAB_OVERRIDES !== 'off';
 
 // Which connector/agent/model/secret this wrapper drives — all overridable.
 const CONNECTOR_SLUG = process.env.KAAB_CONNECTOR_SLUG ?? 'user-mcp';
-const CONNECTOR_ENDPOINT = process.env.KAAB_CONNECTOR_ENDPOINT ?? 'https://mcp.example.com/mcp';
+const CONNECTOR_URL = process.env.KAAB_CONNECTOR_URL ?? 'https://mcp.example.com/mcp';
 const AGENT_NAME = process.env.KAAB_AGENT; // undefined → project default agent
 const MODEL = process.env.KAAB_MODEL; // undefined → project/agent default model
 const SECRET_ID = process.env.KAAB_SECRET; // one project-secret identifier to narrow to
@@ -93,7 +93,7 @@ async function ensureConnector(kortix: ReturnType<typeof clientFor>): Promise<vo
     slug: CONNECTOR_SLUG,
     provider: 'mcp',
     transport: 'http',
-    url: CONNECTOR_ENDPOINT,
+    url: CONNECTOR_URL,
     credential: 'shared',
     auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer ' },
   });
