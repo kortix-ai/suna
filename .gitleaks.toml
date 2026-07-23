@@ -44,3 +44,13 @@ regexes = [
   '''95788432-f5df-4ffe-af9e-0ed4e03cf96e''',
   '''b4a01f33-d46c-4a96-8a1d-0a265e48978f''',
 ]
+
+[[allowlists]]
+description = "False-positive fake GitHub token sentinel in the warm-repo credential-removal test. The test requires a provider-shaped marker to prove that no credential reaches the build context."
+condition = "AND"
+paths = [
+  '''apps/api/src/snapshots/warm-repo-credential\.test\.ts$''',
+]
+regexes = [
+  '''ghp_PHASE1CredentialSentinel0+''',
+]

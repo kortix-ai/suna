@@ -1,69 +1,76 @@
 {
-	"version": "7",
-	"dialect": "postgresql",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "7",
-			"when": 1784168274293,
-			"tag": "20260716021754_rebaseline_kortix_schema_20260716",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "7",
-			"when": 1784204732306,
-			"tag": "20260716122532_sandbox_provider_add_local_docker",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "7",
-			"when": 1784298695986,
-			"tag": "20260717143135_executor_postman_provider",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "7",
-			"when": 1784375548825,
-			"tag": "20260718115228_account_model_preferences_project_id",
-			"breakpoints": true
-		},
-		{
-			"idx": 4,
-			"version": "7",
-			"when": 1784393153201,
-			"tag": "20260718164553_add_project_model_generation_config",
-			"breakpoints": true
-		},
-		{
-			"idx": 5,
-			"version": "7",
-			"when": 1784665625784,
-			"tag": "20260721202705_add_audit_events_occurred_at_index",
-			"breakpoints": true
-		},
-		{
-			"idx": 6,
-			"version": "7",
-			"when": 1784711662984,
-			"tag": "20260722091422_add_session_origin",
-			"breakpoints": true
-		},
-		{
-			"idx": 7,
-			"version": "7",
-			"when": 1784720046773,
-			"tag": "20260722113406_add_session_secrets_allowlist",
-			"breakpoints": true
-		},
-		{
-			"idx": 8,
-			"version": "7",
-			"when": 1784764450225,
-			"tag": "20260722235410_provider_transitions",
-			"breakpoints": true
-		}
-	]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784168274293,
+      "tag": "20260716021754_rebaseline_kortix_schema_20260716",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784204732306,
+      "tag": "20260716122532_sandbox_provider_add_local_docker",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784298695986,
+      "tag": "20260717143135_executor_postman_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784375548825,
+      "tag": "20260718115228_account_model_preferences_project_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784393153201,
+      "tag": "20260718164553_add_project_model_generation_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784665625784,
+      "tag": "20260721202705_add_audit_events_occurred_at_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784711662984,
+      "tag": "20260722091422_add_session_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784720046773,
+      "tag": "20260722113406_add_session_secrets_allowlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784764450225,
+      "tag": "20260722235410_provider_transitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784829248655,
+      "tag": "20260723175408_add_provider_transitions_lease_epoch",
+      "breakpoints": true
+    }
+  ]
 }
