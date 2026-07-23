@@ -30,6 +30,7 @@ function row(
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    secretsAllowlist: null,
     metadata: {},
     createdAt: new Date('2026-07-21T00:00:00.000Z'),
     updatedAt: new Date('2026-07-21T00:00:00.000Z'),

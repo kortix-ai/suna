@@ -29,7 +29,14 @@ import {
   resolveGovernedAgentGrant,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
+import {
+  AmbiguousSecretGrantError,
+  intersectSecretGrants,
+  listProjectSecretsSnapshotForUser,
+  listResolvedProjectSecrets,
+  parseSessionSecretsAllowlist,
+  secretKeyCollisionInAllowlist,
+} from '../secrets';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
@@ -282,12 +289,31 @@ export async function buildSessionSandboxEnvVars(input: {
     agentGrantEnv = grant?.env;
   }
 
+  // Per-session KaaB fields, read by sessionId inside the builder so all three
+  // call sites (create, restart, open/ensure) are covered — no caller can
+  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
+  // so a backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB). `originRef` (the wrapper's
+  // end-user) is surfaced to the sandbox as KORTIX_ORIGIN_REF for attribution.
+  const [sessionKaabRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      originRef: projectSessions.originRef,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+  const grantEnvForSession = intersectSecretGrants(
+    agentGrantEnv,
+    sessionKaabRow?.secretsAllowlist ?? null,
+  );
+
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
       input.userId,
-      agentGrantEnv,
+      grantEnvForSession,
     );
   } catch (err) {
     if (err instanceof AmbiguousSecretGrantError) {
@@ -369,6 +395,8 @@ export async function buildSessionSandboxEnvVars(input: {
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
+      // Backend-vouched end-user (KaaB) → KORTIX_ORIGIN_REF in the sandbox.
+      originRef: sessionKaabRow?.originRef ?? null,
       compiledAgentConfig,
     }),
   };
@@ -542,6 +570,64 @@ export async function createProjectSession(input: {
     };
   }
   const originRef = canOverride(origin, 'origin_ref') ? (requestedOriginRef ?? null) : null;
+
+  // Backend-only per-session secrets allowlist. Presence-gate on the raw body
+  // FIRST (a non-backend caller that even mentions the field is rejected, before
+  // shape is considered), then validate shape, then existence — narrowing the
+  // sandbox env to (agent grant) ∩ (this list). `[]` = inject zero secrets.
+  if (body.secrets !== undefined && !canOverride(origin, 'secrets')) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'secrets may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+          code: 'origin_override_forbidden',
+        },
+      },
+    };
+  }
+  const parsedSecrets = parseSessionSecretsAllowlist(body.secrets);
+  if (!parsedSecrets.ok) {
+    return {
+      error: { status: 400, body: { error: parsedSecrets.error, code: 'INVALID_SESSION_SECRETS' } },
+    };
+  }
+  const secretsAllowlist = parsedSecrets.value ?? null;
+  if (secretsAllowlist && secretsAllowlist.length > 0) {
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // Every allowlisted identifier must name an existing runtime secret in the
+    // project (KORTIX_*/connector rows are already excluded by the resolver), so
+    // a typo fails fast at create rather than silently injecting nothing.
+    const known = new Set(resolvedProjectSecrets.map((r) => r.identifier.toUpperCase()));
+    const missing = secretsAllowlist.filter((id) => !known.has(id.toUpperCase()));
+    if (missing.length > 0) {
+      return {
+        error: {
+          status: 404,
+          body: {
+            error: `unknown secret identifier(s): ${missing.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_NOT_FOUND',
+          },
+        },
+      };
+    }
+    // Reject a KEY collision at create — two allowlisted identifiers resolving to
+    // one env KEY throw AmbiguousSecretGrantError at boot, and the immutable
+    // allowlist would leave the session permanently unbootable.
+    const collision = secretKeyCollisionInAllowlist(resolvedProjectSecrets, secretsAllowlist);
+    if (collision) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: `secrets allowlist names multiple identifiers for env key "${collision.key}": ${collision.identifiers.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+          },
+        },
+      };
+    }
+  }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
@@ -771,6 +857,7 @@ export async function createProjectSession(input: {
         visibility,
         origin,
         originRef,
+        secretsAllowlist,
         metadata,
         updatedAt: new Date(),
       })

@@ -13,16 +13,19 @@
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { and, eq, sql, inArray } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
+import { projectSecrets, projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
+import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
 import {
   AmbiguousSecretGrantError,
+  intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   writeSharedProjectSecret,
 } from '../projects/secrets';
 
-let ctx: { projectId: string } | null = null;
+let ctx: { projectId: string; accountId: string } | null = null;
 const USER = crypto.randomUUID();
+const SESSION_ID = `e2e-clobber-${crypto.randomUUID()}`;
 const SUFFIX = crypto.randomUUID().slice(0, 8).toUpperCase().replace(/-/g, '');
 const KEY = `E2E_GMAPS_${SUFFIX}`;
 const PRIMARY = `${KEY}-primary`;
@@ -31,10 +34,10 @@ const UNSCOPED = `E2E_UNSCOPED_${SUFFIX}`;
 
 beforeAll(async () => {
   const rows = (await db.execute(
-    sql`select project_id from kortix.projects limit 1`,
-  )) as unknown as Array<{ project_id: string }>;
+    sql`select project_id, account_id from kortix.projects limit 1`,
+  )) as unknown as Array<{ project_id: string; account_id: string }>;
   if (!rows[0]) return;
-  ctx = { projectId: rows[0].project_id };
+  ctx = { projectId: rows[0].project_id, accountId: rows[0].account_id };
 
   // Two identifiers, SAME key — the headline secrets-v2 scenario.
   await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: PRIMARY, name: KEY, value: 'primary-val' });
@@ -44,6 +47,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ctx) return;
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION_ID));
   await db
     .delete(projectSecrets)
     .where(and(eq(projectSecrets.projectId, ctx.projectId), inArray(projectSecrets.identifier, [PRIMARY, BACKUP, UNSCOPED])));
@@ -85,6 +89,49 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     if (!ctx) return;
     const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [UNSCOPED]);
     expect(env).toEqual({ [UNSCOPED]: 'open-val' });
+  });
+
+  test('a KaaB per-session allowlist narrows an "all" agent grant (the boot/hot-push composition)', async () => {
+    if (!ctx) return;
+    // Both sandbox boot (buildSessionSandboxEnvVars) and hot-push
+    // (resolveOwnerRawEnv) compose intersectSecretGrants(grant, allowlist) and
+    // pass the result to this resolver. An "all" agent grant narrowed by a
+    // session allowlist of [UNSCOPED] must inject ONLY that secret — proving the
+    // narrowing against the real DB, end-to-end with the functions in the path.
+    const narrowed = intersectSecretGrants('all', [UNSCOPED]);
+    const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, narrowed);
+    expect(env).toEqual({ [UNSCOPED]: 'open-val' });
+
+    // A null allowlist is a passthrough — every secret the grant already allowed
+    // (byte-identical to pre-KaaB).
+    const passthrough = intersectSecretGrants('all', null);
+    const { names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, passthrough);
+    expect(names).toContain(UNSCOPED);
+    expect(names).toContain(KEY);
+  });
+
+  test('resolveSandboxEnvSnapshot (hot-push) reads + applies the session secretsAllowlist — the CLOBBER FIX', async () => {
+    if (!ctx) return;
+    await db.insert(projectSessions).values({
+      sessionId: SESSION_ID,
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      branchName: 'kaab-clobber-test',
+      createdBy: USER,
+      agentName: 'default',
+      secretsAllowlist: [UNSCOPED],
+    });
+    const narrowed = await resolveSandboxEnvSnapshot(ctx.projectId, SESSION_ID);
+    expect(narrowed?.env[UNSCOPED]).toBe('open-val');
+    expect(narrowed?.env[KEY]).toBeUndefined();
+
+    await db
+      .update(projectSessions)
+      .set({ secretsAllowlist: null })
+      .where(eq(projectSessions.sessionId, SESSION_ID));
+    const passthroughSnap = await resolveSandboxEnvSnapshot(ctx.projectId, SESSION_ID);
+    expect(passthroughSnap?.env[UNSCOPED]).toBe('open-val');
+    expect(passthroughSnap?.env[KEY]).toBeDefined();
   });
 });
 

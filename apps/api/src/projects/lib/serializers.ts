@@ -110,6 +110,7 @@ export function serializeSession(
     visibility: row.visibility,
     origin: row.origin,
     origin_ref: row.originRef,
+    secrets_allowlist: row.secretsAllowlist ?? null,
     sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
     is_owner: isOwner,
     can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),

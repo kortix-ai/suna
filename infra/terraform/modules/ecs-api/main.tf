@@ -23,10 +23,63 @@ locals {
   environment = merge(var.environment, { PORT = tostring(var.container_port) })
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
+data "aws_iam_policy_document" "logs_kms" {
+  #checkov:skip=CKV_AWS_109:The account-root administration statement is the standard KMS key-policy control plane; CloudWatch Logs receives only encrypt/decrypt data-plane actions with an encryption-context condition.
+  #checkov:skip=CKV_AWS_111:The account-root administration statement must manage this KMS key; the service statement has no IAM or resource-policy write actions.
+  #checkov:skip=CKV_AWS_356:KMS key policies use Resource "*" because the key ARN does not exist until after policy evaluation; principals and the CloudWatch encryption context constrain access.
+  statement {
+    sid       = "EnableAccountAdministration"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid = "AllowCloudWatchLogs"
+    actions = [
+      "kms:Decrypt",
+      "kms:DescribeKey",
+      "kms:Encrypt",
+      "kms:GenerateDataKey*",
+      "kms:ReEncrypt*",
+    ]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.aws_region}.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${local.name}"]
+    }
+  }
+}
+
+resource "aws_kms_key" "logs" {
+  description             = "CloudWatch Logs encryption for ${local.name}"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.logs_kms.json
+  tags                    = var.tags
+}
+
+resource "aws_kms_alias" "logs" {
+  name          = "alias/${local.name}-logs"
+  target_key_id = aws_kms_key.logs.key_id
+}
+
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/ecs/${local.name}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.logs.arn
   tags              = var.tags
 }
 
@@ -157,8 +210,103 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
 }
 
 # ── Load balancer ─────────────────────────────────────────────────────────────
+#trivy:ignore:AVD-AWS-0089 This is the terminal ALB access-log bucket. Enabling server access logging on the terminal bucket creates recursive log delivery.
+resource "aws_s3_bucket" "alb_logs" {
+  #checkov:skip=CKV_AWS_18:This bucket is the terminal ALB access-log destination; logging it to another bucket creates a recursive log chain.
+  #checkov:skip=CKV_AWS_144:ALB access logs are regional operational data with lifecycle retention; cross-region replication is not required.
+  #checkov:skip=CKV_AWS_145:Elastic Load Balancing access logs support SSE-S3 and do not support customer-managed KMS keys.
+  #checkov:skip=CKV2_AWS_62:ALB access logs are retained for audit and do not require an event-notification consumer.
+  bucket_prefix = "${local.name}-alb-logs-"
+  force_destroy = false
+  tags          = var.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket                  = aws_s3_bucket.alb_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+#trivy:ignore:AVD-AWS-0132 Elastic Load Balancing access-log delivery supports SSE-S3. It does not support customer-managed KMS keys.
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    id     = "retention"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 365
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.alb_logs.arn, "${aws_s3_bucket.alb_logs.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid       = "AllowELBLogDelivery"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/${local.name}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  policy = data.aws_iam_policy_document.alb_logs.json
+}
+
 #trivy:ignore:AVD-AWS-0053 This public API origin must accept Cloudflare traffic; the ALB security group restricts ingress to var.alb_ingress_cidrs.
 resource "aws_lb" "this" {
+  #checkov:skip=CKV2_AWS_28:The compliance-monitoring stack associates every account ALB with the regional kortix-alb-waf ACL.
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -168,6 +316,14 @@ resource "aws_lb" "this" {
   ]
   idle_timeout               = var.alb_idle_timeout
   drop_invalid_header_fields = true
+  enable_deletion_protection = true
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    prefix  = local.name
+    enabled = true
+  }
+
   tags = {
     ManagedBy   = "terraform"
     Name        = "${local.name}-alb"
@@ -175,6 +331,8 @@ resource "aws_lb" "this" {
     Project     = lookup(var.tags, "Project", "kortix")
     Service     = lookup(var.tags, "Service", local.name)
   }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 resource "aws_lb_target_group" "this" {
