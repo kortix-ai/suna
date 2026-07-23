@@ -19,6 +19,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
+import * as Crypto from 'expo-crypto';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -76,10 +77,7 @@ const MONO = 'Menlo';
 const API_ROOT = API_URL.replace(/\/v1\/?$/, '');
 
 function genSecret(): string {
-  const hex = '0123456789abcdef';
-  let s = '';
-  for (let i = 0; i < 48; i++) s += hex[Math.floor(Math.random() * 16)];
-  return s;
+  return Array.from(Crypto.getRandomBytes(24), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function secretEnvFor(slug: string): string {
