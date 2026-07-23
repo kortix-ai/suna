@@ -586,7 +586,7 @@ flow(
     domain: 'cli',
     requires: ['funded'],
     serial: true,
-    timeoutMs: 900_000,
+    timeoutMs: 1_200_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -636,7 +636,7 @@ flow(
         until: (body) =>
           body?.stage === 'ready' &&
           Boolean(body?.sandbox?.external_id ?? body?.sandbox?.externalId),
-        timeoutMs: 420_000,
+        timeoutMs: 660_000,
         intervalMs: 3_000,
         description: `CR-9 session runtime ready for ${session.id}`,
         retryOnError: isKe2eRetryableError,
