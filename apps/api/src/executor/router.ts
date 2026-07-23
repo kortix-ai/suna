@@ -48,6 +48,7 @@ const CatalogConnectorSchema = z
     name: z.string(),
     provider: z.string(),
     platform: z.string().nullable().optional(),
+    iconUrl: z.string().nullable().optional(),
     status: z.string(),
     actions: z.array(CatalogActionSchema),
   })
@@ -109,6 +110,7 @@ export interface CatalogConnector {
   provider: string;
   /** Channel provider only: native platform backing this profile. */
   platform?: string | null;
+  iconUrl?: string | null;
   status: string;
   actions: CatalogAction[];
 }

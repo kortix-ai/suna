@@ -106,7 +106,7 @@ import {
   getConnectStatus,
   getConnectorConfig,
   getConnectorPolicies,
-  getProject,
+  getProjectDetail,
   listConnectors,
   listPipedreamApps,
   pipedreamConnect,
@@ -248,13 +248,13 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
-    queryFn: () => getProject(projectId),
-    staleTime: 10_000,
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 60_000,
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
-  const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
-  const discoverEnabled = projectQuery.data?.experimental?.connectors_api_discover === true;
+  const emailChannelEnabled = projectQuery.data?.project?.experimental?.agentmail_email === true;
+  const discoverEnabled = projectQuery.data?.project?.experimental?.connectors_api_discover === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
   // mutating control (rename/remove/reconnect/credentials/permissions/channels/
@@ -628,7 +628,7 @@ function appIconTileClass(size: 'sm' | 'lg'): string {
 }
 
 function ConnectorAppIcon({
-  projectId,
+  projectId: _projectId,
   connector,
   size = 'lg',
 }: {
@@ -636,16 +636,9 @@ function ConnectorAppIcon({
   connector: AdminConnector;
   size?: 'sm' | 'lg';
 }) {
-  const enabled = connector.provider === 'pipedream' && !!projectId && !!connector.slug;
-  const appQuery = useQuery({
-    queryKey: ['pipedream-app-icon', projectId, connector.slug],
-    queryFn: () => listPipedreamApps(projectId, connector.slug),
-    enabled,
-    staleTime: 24 * 60 * 60 * 1000,
-  });
-  const imgSrc = appQuery.data?.apps.find((a) => a.slug === connector.slug)?.imgSrc ?? null;
+  const imgSrc = connector.iconUrl ?? null;
 
-  if (enabled && imgSrc) {
+  if (imgSrc) {
     return (
       <span
         className={cn(
