@@ -958,3 +958,54 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   const mkdirCall = calls.find((c) => c.url.includes('/file/mkdir'));
   expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
 });
+
+// ── ensureReady() polls a slow cold-start to ready instead of throwing on the
+// first non-ready check (a backend waiting to send its first turn must not
+// give up while the sandbox is still provisioning/starting) ─────────────────
+test('ensureReady() polls through provisioning/starting until the runtime reports ready', async () => {
+  const stages = ['provisioning', 'starting', 'ready'] as const;
+  let polls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      const stage = stages[Math.min(polls, stages.length - 1)];
+      polls += 1;
+      const ready = stage === 'ready';
+      return jsonResponse({
+        stage,
+        agent_name: 'default',
+        retriable: !ready,
+        sandbox: ready ? { external_id: 'sb-poll' } : null,
+        opencode_session_id: ready ? 'ocs-poll' : null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
+  expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.sandboxId).toBe('sb-poll');
+  expect(polls).toBeGreaterThanOrEqual(3);
+});
+
+test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes ready before the deadline', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      return jsonResponse({
+        stage: 'provisioning',
+        agent_name: 'default',
+        retriable: true,
+        sandbox: null,
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await expect(
+    k.session('PROJ', 'SESS-TIMEOUT').ensureReady({ readyTimeoutMs: 20 }),
+  ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+});

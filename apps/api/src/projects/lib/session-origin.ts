@@ -88,8 +88,11 @@ export function resolveSessionOrigin(input: {
  * Everything else stays as open as today — a project member can already pass
  * connectors/model/agent/runtime_context, so gating those would be a
  * regression. The two backend-only fields are genuinely new/sensitive:
- *  - `origin_ref`: vouching for a wrapper's end-user (attribution + per-user
- *    profile resolution) — only a backend may assert who its user is.
+ *  - `origin_ref`: vouching for a wrapper's end-user — ATTRIBUTION only (recorded
+ *    on the session + surfaced to the sandbox as KORTIX_ORIGIN_REF so the agent
+ *    knows who it acts for). Per-user CONNECTORS are passed separately by
+ *    reference via connector_bindings; origin_ref is not itself an auth
+ *    principal. Only a backend may assert who its user is.
  *  - `secrets`: injecting a secret bundle by reference (a later phase).
  */
 const BACKEND_ONLY_FIELDS: ReadonlySet<SessionOverrideField> = new Set(['origin_ref', 'secrets']);

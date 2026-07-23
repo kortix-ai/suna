@@ -4,8 +4,8 @@
  * cap concurrent provisions with a semaphore and retry on rate-limit with backoff.
  * Everything else in the suite stays fully parallel.
  */
-import type { Client } from "../core/client";
-import { sleep } from "../core/poll";
+import type { Client } from '../core/client';
+import { sleep } from '../core/poll';
 
 const MAX = Number(process.env.KE2E_PROVISION_CONCURRENCY ?? 2);
 let active = 0;
@@ -25,14 +25,20 @@ function release(): void {
 }
 
 const RATE_LIMIT_RE = /rate limit|secondary rate|temporarily blocked|abuse/i;
+const PROVISION_REQUEST_TIMEOUT_MS = 180_000;
 
 /** Provision a project via /v1/projects/provision, throttled + rate-limit-retried. */
-export async function provisionProject(client: Client, body: Record<string, unknown>): Promise<string> {
+export async function provisionProject(
+  client: Client,
+  body: Record<string, unknown>,
+): Promise<string> {
   await acquire();
   try {
-    let lastText = "";
+    let lastText = '';
     for (let attempt = 0; attempt < 5; attempt++) {
-      const r = await client.post("/v1/projects/provision", body);
+      const r = await client.post('/v1/projects/provision', body, {
+        timeoutMs: PROVISION_REQUEST_TIMEOUT_MS,
+      });
       const id = (r.json<any>() ?? {})?.project_id;
       if (id) return id as string;
       lastText = r.text();

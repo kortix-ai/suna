@@ -14,19 +14,28 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { useAccountState, useCreatePerSeatCheckout, useCreatePortalSession } from '@/hooks/billing';
+import {
+  invalidateAccountState,
+  useAccountState,
+  useCreatePerSeatCheckout,
+  useCreatePortalSession,
+} from '@/hooks/billing';
 import type { AccountState } from '@/lib/api/billing';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { formatCredits } from '@kortix/shared';
-import { ArrowRight, CreditCard, UserPlus } from 'lucide-react';
+import { CreditCardPlusSolid } from '@mynaui/icons-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useEffect } from 'react';
 
 export interface UpgradePlansModalProps {
   open: boolean;
@@ -38,6 +47,9 @@ export interface UpgradePlansModalProps {
   billingModel?: string;
   hasSubscription?: boolean;
   balance?: number;
+  /** True while account state is doing its first load — the credit view shows a
+   *  balance skeleton instead of a misleading $0.00 until the real value lands. */
+  accountLoading?: boolean;
 }
 
 export function UpgradePlansModal({
@@ -48,6 +60,7 @@ export function UpgradePlansModal({
   billingModel,
   hasSubscription,
   balance,
+  accountLoading,
 }: UpgradePlansModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const createPerSeat = useCreatePerSeatCheckout();
@@ -70,6 +83,7 @@ export function UpgradePlansModal({
         onOpenChange={onOpenChange}
         accountState={accountState}
         balance={balance}
+        accountLoading={accountLoading}
       />
     );
   }
@@ -231,6 +245,7 @@ interface CreditTopUpModalProps {
   onOpenChange: (open: boolean) => void;
   accountState?: AccountState;
   balance?: number;
+  accountLoading?: boolean;
 }
 
 /**
@@ -239,63 +254,87 @@ interface CreditTopUpModalProps {
  * auto-top-up config underneath so a drained Team account can both refill now
  * and never hit zero again — instead of being wrongly pitched the Free plan.
  */
-function CreditTopUpModal({ open, onOpenChange, accountState, balance }: CreditTopUpModalProps) {
+function CreditTopUpModal({
+  open,
+  onOpenChange,
+  accountState,
+  balance,
+  accountLoading,
+}: CreditTopUpModalProps) {
   const createPortal = useCreatePortalSession();
-  const walletUsd = balance ?? accountState?.credits?.total ?? 0;
+
+  // Trust the LIVE account state as the source of truth (same field the Plan
+  // page reads) — the 402's `balance` is only a pre-load hint. Using `??` on the
+  // live value would let a legitimate 0 fall through; instead branch on whether
+  // it's loaded so a real $0.00 shows as $0.00 and an unloaded value shows a
+  // skeleton — never a misleading $0.00 while the real (e.g. negative) balance
+  // is still in flight.
+  const liveBalance = accountState?.credits?.total;
+  const hasLiveBalance = typeof liveBalance === 'number';
+  const walletUsd = hasLiveBalance ? liveBalance : (balance ?? 0);
+  const showBalanceSkeleton = !hasLiveBalance && accountLoading;
   const isNegative = walletUsd < 0;
-  const walletLabel = `${walletUsd < 0 ? '-' : ''}$${Math.abs(walletUsd).toFixed(2)}`;
+  const walletLabel = `${isNegative ? '-' : ''}$${Math.abs(walletUsd).toFixed(2)}`;
   const creditsLabel = formatCredits(Math.round(Math.abs(walletUsd) * 100));
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="gap-0 space-y-0 p-0 lg:max-w-lg">
-        <ModalHeader className="space-y-2 px-6 pt-6 pb-4">
-          <div className="flex items-center gap-2">
-            <span className="bg-kortix-orange/10 text-kortix-orange flex size-9 items-center justify-center rounded-full">
-              <CreditCard className="size-4" />
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader className="gap-3">
+          <div className="flex items-center gap-3">
+            <span className="bg-kortix-orange/15 flex size-9 shrink-0 items-center justify-center rounded-sm">
+              <CreditCardPlusSolid className="text-kortix-orange size-5" />
             </span>
-            <ModalTitle className="text-xl font-medium tracking-tight">Out of credits</ModalTitle>
+            <div className="space-y-0.5">
+              <ModalTitle className="text-lg font-medium tracking-tight">Out of credits</ModalTitle>
+              <ModalDescription className="text-sm text-balance">
+                Top up to keep compute and the latest AI models running — your Team plan and seats
+                are unaffected.
+              </ModalDescription>
+            </div>
           </div>
-          <ModalDescription className="text-sm">
-            Your agents are paused because the wallet is empty. Top up to keep compute and the
-            latest AI models running — your Team plan and seats are unaffected.
-          </ModalDescription>
         </ModalHeader>
 
-        <ModalBody className="space-y-5 px-6 pb-2">
+        <ModalBody className="space-y-6 pt-4">
           {/* Wallet balance — the concrete "why" behind the block. */}
-          <div className="bg-popover flex items-center justify-between rounded-md border px-4 py-3">
+          <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
             <span className="text-muted-foreground text-sm">Wallet balance</span>
-            <span
-              className={cn(
-                'text-lg font-medium tabular-nums',
-                isNegative ? 'text-kortix-red' : 'text-foreground',
-              )}
-            >
-              {walletLabel}
-              {isNegative && (
-                <span className="text-muted-foreground ml-1.5 text-xs">
-                  ({creditsLabel} credits owed)
+            {showBalanceSkeleton ? (
+              <Skeleton className="h-6 w-24 rounded-md" />
+            ) : (
+              <span className="flex items-baseline gap-1.5">
+                <span
+                  className={cn(
+                    'text-lg font-medium tabular-nums',
+                    isNegative ? 'text-kortix-red' : 'text-foreground',
+                  )}
+                >
+                  {walletLabel}
                 </span>
-              )}
-            </span>
+                {isNegative && (
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    {creditsLabel} owed
+                  </span>
+                )}
+              </span>
+            )}
           </div>
 
-          <div className="space-y-3">
+          <section className="space-y-3">
             <Label>Buy credits</Label>
             <CreditTopupSection />
-          </div>
+          </section>
 
           {/* Auto top-up underneath — configure it here so it never happens again. */}
-          <div className="space-y-3">
+          <section className="space-y-3">
             <Label>Auto top-up</Label>
             <div className="bg-popover rounded-md border px-4 py-4">
               <AutoTopupCard fetchSettings showSaveButton />
             </div>
-          </div>
+          </section>
         </ModalBody>
 
-        <ModalFooter className="px-6 pb-6 pt-2">
+        <ModalFooter className="pt-4 pb-5 sm:justify-start">
           <Button
             type="button"
             variant="ghost"
@@ -316,7 +355,15 @@ function CreditTopUpModal({ open, onOpenChange, accountState, balance }: CreditT
 export function GlobalUpgradeModal() {
   const { isOpen, closeUpgradeDialog, accountId, reason, billingModel, hasSubscription, balance } =
     useUpgradeDialogStore();
-  const { data: accountState } = useAccountState({ accountId });
+  const { data: accountState, isLoading: accountLoading } = useAccountState({ accountId });
+  const queryClient = useQueryClient();
+
+  // Pull the freshest wallet balance every time the modal opens (skip the
+  // server cache) so it always matches the Plan page — never a stale/zero value
+  // left over from an earlier read, and it reflects a top-up the moment it lands.
+  useEffect(() => {
+    if (isOpen) invalidateAccountState(queryClient, true, true, accountId);
+  }, [isOpen, queryClient, accountId]);
 
   return (
     <BillingAccountProvider accountId={accountId ?? null}>
@@ -328,6 +375,7 @@ export function GlobalUpgradeModal() {
         billingModel={billingModel}
         hasSubscription={hasSubscription}
         balance={balance}
+        accountLoading={accountLoading}
       />
     </BillingAccountProvider>
   );

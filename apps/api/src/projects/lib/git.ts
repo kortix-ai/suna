@@ -1,4 +1,5 @@
 import { auth } from '../../openapi';
+import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
@@ -58,7 +59,12 @@ export async function getAccountGitHubInstallation(accountId: string, installati
 export async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
   if (!isGithubAppConfigured()) return null;
   const nonce = randomUUID();
-  const installUrl = buildGitHubAppInstallUrl(accountId, nonce);
+  const installUrl = buildGitHubAppInstallUrl(
+    accountId,
+    nonce,
+    'account_link',
+    config.FRONTEND_URL,
+  );
   if (!installUrl) return null;
   await db.insert(accountGithubInstallationStates).values({
     stateNonce: nonce,
@@ -436,12 +442,19 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
 
-  // Managed GitHub repos (Kortix-provisioned, under the managed org). Prefer a
-  // short-lived App installation token scoped to THIS repo whenever the App is
-  // available. A configured PAT remains the internal fallback for self-hosted
-  // installs that deliberately use the one-server-key model, but it is never
-  // exported by the API/CLI push-token boundary.
+  // Managed GitHub repos use the server PAT first. The managed GitHub App can
+  // exist without access to every repository. Repeated failed token minting
+  // adds remote latency to every Git-backed project read. The PAT is internal
+  // and is never exported by the API/CLI push-token boundary.
   if (remote.provider === 'github' && remote.managed) {
+    const pat = managedGithubToken();
+    if (pat) {
+      return {
+        auth: { token: pat, source: 'pat', owner: remote.repoOwner ?? undefined, ownerType: 'Organization' },
+        authSource: 'pat',
+      };
+    }
+
     const installId = remote.installationId ?? managedGithubInstallId();
     if (installId && isGithubAppConfigured()) {
       const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
@@ -459,18 +472,10 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         };
       } catch (err) {
         console.warn(
-          `[projects] failed to mint managed GitHub installation token for ${project.projectId}; falling back to the server PAT if configured:`,
+          `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
           err,
         );
       }
-    }
-
-    const pat = managedGithubToken();
-    if (pat) {
-      return {
-        auth: { token: pat, source: 'pat', owner: remote.repoOwner ?? undefined, ownerType: 'Organization' },
-        authSource: 'pat',
-      };
     }
     return { authSource: 'none' };
   }

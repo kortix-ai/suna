@@ -41,10 +41,12 @@ import { startTemplateSetupSession } from '@/features/projects/modal/template-se
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk/projects-client';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
+import { prepareMarketplaceInstallSessionNavigation } from './marketplace-session-navigation';
 
 /** Sentinel `Select` value for "create a new project" (real project ids are
  *  UUIDs, so this can never collide). */
@@ -71,6 +73,7 @@ export function AddToProjectModal({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const closeCustomize = useCustomizeStore((s) => s.close);
   const isProject = item.type === 'registry:project';
   const humanizedTitle = item.title.replaceAll('-', ' ');
 
@@ -158,19 +161,29 @@ export function AddToProjectModal({
           ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
           : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
               .session_id;
-        onOpenChange(false);
-        router.replace(
-          sessionId
-            ? `/projects/${project.project_id}/sessions/${sessionId}`
-            : `/projects/${project.project_id}`,
+        const sessionHref = prepareMarketplaceInstallSessionNavigation(
+          queryClient,
+          router,
+          project.project_id,
+          sessionId,
         );
+        onOpenChange(false);
+        closeCustomize();
+        router.replace(sessionHref ?? `/projects/${project.project_id}`);
         return;
       }
 
       const projectId = target;
       const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
+      const sessionHref = prepareMarketplaceInstallSessionNavigation(
+        queryClient,
+        router,
+        projectId,
+        session_id,
+      );
       onOpenChange(false);
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
+      closeCustomize();
+      router.push(sessionHref ?? `/projects/${projectId}`);
     } catch (e) {
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =
