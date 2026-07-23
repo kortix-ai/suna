@@ -144,22 +144,17 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
-  // OpenCode-first (founder decision, unchanged by the 2026-07-22 removal of
-  // multi-harness gating): a brand-new project's template stays minimal —
-  // only the opencode runtime profile ships by default. Claude Code/Codex/Pi
-  // are not gated behind any flag anymore; a project adds a runtime profile
-  // for one whenever it wants (Customize → Agents → Runtime profiles, or a
-  // v2→v3 upgrade, which declares all four — see
-  // apps/api/src/projects/lib/agent-config-v2.ts's
-  // `DEFAULT_RUNTIME_PROFILES_V3`). This template's own opencode-only default
-  // is a template-authoring choice, not an enforcement point.
-  test('base kortix.yaml declares only the opencode runtime profile by default', () => {
+  test('base kortix.yaml declares all four runtime profiles and selectable agents', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const manifest = byPath(files).get('kortix.yaml')!;
-    expect(manifest).toContain('opencode:');
-    expect(manifest).not.toMatch(/^\s{2}claude:/m);
-    expect(manifest).not.toMatch(/^\s{2}codex:/m);
-    expect(manifest).not.toMatch(/^\s{2}pi:/m);
+    for (const runtime of ['opencode', 'claude', 'codex', 'pi']) {
+      expect(manifest).toMatch(new RegExp(`^  ${runtime}:\\n    harness: ${runtime}$`, 'm'));
+    }
+    expect(manifest).toContain('default_agent: kortix');
+    expect(manifest).toContain('kortix:\n    runtime: opencode');
+    expect(manifest).toContain('claude:\n    runtime: claude');
+    expect(manifest).toContain('codex:\n    runtime: codex');
+    expect(manifest).toContain('pi:\n    runtime: pi');
   });
 
   test('base template does not seed native config dirs for the non-default harnesses', () => {

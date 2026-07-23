@@ -148,13 +148,11 @@ on. If multi-harness selection is ever re-experimented on, the shape would
 invert: a flag that turns OFF every harness except OpenCode, not one that
 turns the others on.
 
-OpenCode remains the **default**: a v2→v3 manifest upgrade
-(`migrateManifestV2ToV3`, `apps/api/src/projects/lib/agent-config-v2.ts`) and
-the shipped base starter template both still bind existing/fresh agents to
-`runtime: opencode`. The difference from before is that the migration's
-`DEFAULT_RUNTIME_PROFILES_V3` now declares a runtime profile for all four
-harnesses (not opencode-only), so claude/codex/pi are immediately selectable
-for the project's other agents too — a default, not a gate.
+OpenCode remains the **default**. A v2→v3 manifest upgrade binds existing
+agents to `runtime: opencode`. The shipped base starter binds its `kortix`
+default agent to OpenCode. It also declares `claude`, `codex`, and `pi` agents.
+Both paths declare runtime profiles for all four official harnesses. This is a
+default, not a gate.
 
 ### Config-validation severity (the one place `stability` still matters)
 

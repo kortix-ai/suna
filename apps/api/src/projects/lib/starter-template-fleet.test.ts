@@ -4,17 +4,8 @@
  *  1. Every shipped `kortix.yaml` in `packages/starter/templates/` (the base
  *     floor + every `marketplace-projects/*` clonable project) is
  *     `kortix_version: 3` and passes `validateManifest` with zero errors.
- *  2. OpenCode-first (founder decision, unchanged by the 2026-07-22
- *     multi-harness gate removal): the base template seeds a native config
- *     dir and a `runtimes` entry for `opencode` ONLY — the platform DEFAULT
- *     harness. Claude Code/Codex/Pi are NOT declared by a fresh project's
- *     template (a project adds them later via runtime profiles, no opt-in
- *     required — see `agent-config-v2.ts`'s `DEFAULT_RUNTIME_PROFILES_V3`,
- *     which DOES declare all four for a v2→v3 upgrade, a deliberate
- *     asymmetry: fresh template stays minimal, upgrade hands out everything).
- *     This section asserts both halves of the template's own posture:
- *     opencode is seeded and valid, and the other three official harnesses
- *     are absent from the shipped template.
+ *  2. The base template declares all four official runtime profiles. OpenCode
+ *     remains the default and owns the only seeded native config directory.
  *
  * Also proves the web-studio v2→v3 migration (done by hand in the template
  * file, since the migration function only operates on a live `kortix.yaml`
@@ -93,10 +84,9 @@ describe('starter template fleet — seeded native config dirs (base)', () => {
     expect(validateHarnessConfig('opencode', configDir, files)).toEqual([]);
   });
 
-  // OpenCode-first regression guard: claude/codex/pi must not ship a seeded
-  // native config dir in the base template — a fresh project only gets one
-  // after adding a runtime profile for one (Customize → Agents → Runtime
-  // profiles, or hand-editing kortix.yaml); no feature opt-in required.
+  // Claude, Codex, and Pi use their native defaults until the project adds
+  // files to the declared config directory. The starter does not seed empty
+  // harness-specific instructions.
   for (const harness of HARNESS_IDS.filter((id) => id !== 'opencode')) {
     test(`${harness}: base template does NOT seed ${HARNESSES[harness].configDir} by default (non-default harness)`, () => {
       const configDir = HARNESSES[harness].configDir;
@@ -107,13 +97,18 @@ describe('starter template fleet — seeded native config dirs (base)', () => {
     });
   }
 
-  test("base kortix.yaml's runtimes declares opencode only, with config_dir matching HARNESSES.opencode.configDir", () => {
+  test("base kortix.yaml declares all four official runtime profiles with canonical config dirs", () => {
     const content = fileContent(BASE_FILES, 'kortix.yaml');
     const result = validateManifest(content, 'yaml');
     const runtimes = result.parsed?.runtimes as Record<string, { harness: string; config_dir?: string }>;
 
-    expect(Object.keys(runtimes)).toEqual(['opencode']);
-    expect(runtimes.opencode.config_dir).toBe(HARNESSES.opencode.configDir);
+    expect(Object.keys(runtimes)).toEqual(['opencode', 'claude', 'codex', 'pi']);
+    for (const harness of HARNESS_IDS) {
+      expect(runtimes[harness]).toEqual({
+        harness,
+        config_dir: HARNESSES[harness].configDir,
+      });
+    }
   });
 });
 

@@ -62,16 +62,21 @@ env:
 # ─── ACP runtime profiles ────────────────────────────────────────────────
 # These are launch profiles, not translated configuration. The selected
 # official ACP adapter reads the harness's own native files directly.
-#
-# OpenCode is the only profile declared by default — it's the default
-# harness. Claude Code, Codex, and Pi are fully supported too: add a
-# `runtimes` entry (and a matching `agents` entry below) for any of them and
-# it becomes selectable immediately. An undeclared harness never shows up as
-# a launch option.
+# Every official ACP harness is declared so each one is selectable in a new
+# project. OpenCode remains the default through `default_agent: kortix`.
 runtimes:
   opencode:
     harness: opencode
     config_dir: .opencode
+  claude:
+    harness: claude
+    config_dir: .claude
+  codex:
+    harness: codex
+    config_dir: .codex
+  pi:
+    harness: pi
+    config_dir: .pi
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE + ROUTING ONLY. `runtime` references a
@@ -86,6 +91,27 @@ agents:
   kortix:
     runtime: opencode
     agent: kortix
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+  claude:
+    runtime: claude
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+  codex:
+    runtime: codex
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+  pi:
+    runtime: pi
     connectors: all
     secrets: all
     kortix_cli: all
