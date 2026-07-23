@@ -20,7 +20,8 @@ import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
-import { PPWARM_REAP_PROTECT_MS, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { PPWARM_REAP_PROTECT_MS, excludePinnedTargets, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { collectPinnedImageRefs } from './pinned-images';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -766,7 +767,11 @@ async function openBuildLog(args: {
         snapshotName: args.snapshotName,
         contentHash: args.contentHash,
         status: 'building',
-        metadata: { source: args.source, slug: args.slug, provider: args.provider },
+        // FIX-K-lite forward hygiene: record the FULL projectId as first-class
+        // snapshot build metadata (alongside the projectId column), so a warm
+        // image's owning project is recoverable beyond the lossy 8-hex proj8 in
+        // its name. Forward-only — legacy warm images churn out on the next commit.
+        metadata: { source: args.source, slug: args.slug, provider: args.provider, projectId: args.projectId },
       })
       .returning({ buildId: projectSnapshotBuilds.buildId });
     return row?.buildId ?? null;
@@ -1475,7 +1480,19 @@ async function reapOldPerProjectWarm(projectId: string, currentName: string, bui
   try {
     const provider = getSandboxProvider(buildProvider);
     const names = (await provider.listSnapshots()).map((snapshot) => snapshot.name);
-    const targets = ppwarmReapTargets(projectId, currentName, names);
+    const rawTargets = ppwarmReapTargets(projectId, currentName, names);
+    if (rawTargets.length === 0) return;
+    // FIX-K-lite: proj8 is only the first 8 hex of the projectId, so this prefix-
+    // scoped selection over an ORG-WIDE list could pick another project's LIVE
+    // pinned image on a proj8 collision. Cross-check against the active pins of
+    // EVERY project and never delete one — a collision then just skips a reap.
+    const pinned = await collectPinnedImageRefs();
+    const targets = excludePinnedTargets(rawTargets, pinned);
+    for (const name of rawTargets) {
+      if (pinned.has(name)) {
+        console.log(`[snapshots] per-project warm: keeping ${name} (it is another project's ACTIVE pinned image)`);
+      }
+    }
     if (targets.length === 0) return;
     // A "superseded" name built minutes ago is very likely another live code
     // version's CURRENT warm image (different runtime fingerprint → different
