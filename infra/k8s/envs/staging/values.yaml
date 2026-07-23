@@ -6,8 +6,8 @@
 # to promote to production after QA.
 
 image:
-  tag: "staging-35e3fe30"
-kortixVersion: "0.10.14-staging.35e3fe30"
+  tag: "staging-df78ad8f"
+kortixVersion: "0.10.14-staging.df78ad8f"
 env:
   internalKortixEnv: staging
 extraEnv:
