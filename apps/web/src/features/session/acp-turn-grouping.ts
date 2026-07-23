@@ -6,6 +6,7 @@
  */
 
 import type { AcpChatItem, AcpStoredEnvelope, AcpUsageCost, AcpUsageProjection } from '@kortix/sdk';
+import { formatDistanceStrict } from 'date-fns';
 import { acpToolName } from './acp-tool-call-card';
 
 export type AcpMessageItem = Extract<AcpChatItem, { kind: 'message' }>;
@@ -182,15 +183,14 @@ export function acpOrdinalTimestamps(envelopes: readonly AcpStoredEnvelope[]): M
   return map;
 }
 
-/** Best-effort turn duration: earliest → latest timestamp among the turn's
- *  message items. Tool calls carry no ordinal-addressable timing in the ACP
- *  projection today, so they don't extend the window. Returns null when
- *  there isn't enough timestamp data to say anything (never renders a
- *  fabricated duration). */
-export function acpTurnDurationMs(
+/** Earliest → latest timestamp among a turn's message items. Tool calls carry
+ *  no ordinal-addressable timing in the ACP projection today, so they don't
+ *  extend the window. Either bound is null when no message item in the turn
+ *  resolved to a timestamp at all. */
+function acpTurnSpan(
   turnItems: readonly AcpChatItem[],
   ordinalTimestamps: ReadonlyMap<number, number>,
-): number | null {
+): { start: number | null; end: number | null } {
   let start: number | null = null;
   let end: number | null = null;
   for (const item of turnItems) {
@@ -202,8 +202,31 @@ export function acpTurnDurationMs(
     if (start == null || t < start) start = t;
     if (end == null || t > end) end = t;
   }
+  return { start, end };
+}
+
+/** Best-effort turn duration. Returns null when there isn't enough timestamp
+ *  data to say anything (never renders a fabricated duration) — including the
+ *  single-timestamp case, where `end === start` says nothing about how long
+ *  the turn took. */
+export function acpTurnDurationMs(
+  turnItems: readonly AcpChatItem[],
+  ordinalTimestamps: ReadonlyMap<number, number>,
+): number | null {
+  const { start, end } = acpTurnSpan(turnItems, ordinalTimestamps);
   if (start == null || end == null || end <= start) return null;
   return end - start;
+}
+
+/** When the turn last produced a message — the "Finished … ago" anchor.
+ *  Unlike the duration this survives a single-timestamp turn (one lone
+ *  message still has a knowable "when"), so a turn can carry a timestamp
+ *  without carrying a duration. */
+export function acpTurnEndedAt(
+  turnItems: readonly AcpChatItem[],
+  ordinalTimestamps: ReadonlyMap<number, number>,
+): number | null {
+  return acpTurnSpan(turnItems, ordinalTimestamps).end;
 }
 
 export function formatAcpDuration(ms: number): string {
@@ -240,24 +263,68 @@ export function acpSessionContextTokens(
   return usage.tokens?.total ?? null;
 }
 
-/** "128k ctx" — compact context-token label for the session-total line.
- *  Null until the harness has reported any context usage at all (never
- *  fabricates a "0 ctx" row). */
-export function formatAcpContextLabel(
+/** "128k" — the bare compact context-token count. Null until the harness has
+ *  reported any context usage at all (never fabricates a "0" row).
+ *
+ *  Deliberately unsuffixed: the value is rendered against a spelled-out
+ *  "Context" label in the turn's meta popover, which supplies the noun. The
+ *  old suffixed variants ("128k ctx", "$0.42 this session") existed only to
+ *  survive as standalone chips on the dot-separated footer line that popover
+ *  replaced — a label carrying its own noun is redundant once it has a real
+ *  label, and "ctx" was jargon besides. */
+export function formatAcpContextValue(
   usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined,
 ): string | null {
   const tokens = acpSessionContextTokens(usage);
   if (tokens == null || tokens <= 0) return null;
-  const compact = tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : `${Math.round(tokens)}`;
-  return `${compact} ctx`;
+  return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : `${Math.round(tokens)}`;
 }
 
-/** "$0.42 this session" — the cumulative session cost, suffixed for the
- *  session-total line. The bare `formatAcpCost` output (no suffix) still
- *  feeds the per-turn footer, which reads as "12s · $0.42" inline. */
-export function formatAcpSessionCostLabel(cost: AcpUsageCost | null | undefined): string | null {
-  const amount = formatAcpCost(cost);
-  return amount ? `${amount} this session` : null;
+/** One labelled line in a turn's meta popover. */
+export interface AcpTurnMetaRow {
+  label: string;
+  value: string;
+}
+
+/**
+ * The turn's meta as labelled rows — what the ⋯ popover renders.
+ *
+ * Pure and `now`-injected (rather than reaching for `Date.now()`) so the
+ * relative-time wording is testable, and so a component that ticks while its
+ * popover is open re-derives the whole set from one clock read.
+ *
+ * A row is omitted rather than rendered empty whenever the harness reported
+ * nothing for it — the transcript never shows a fabricated "$0.00" or
+ * "0 tokens". Session totals (`cost`, `usage`) are passed only for the last
+ * turn; every turn carries its own `endedAt`/`durationMs`.
+ */
+export function acpTurnMetaRows({
+  endedAt,
+  now,
+  durationMs,
+  cost,
+  usage,
+}: {
+  endedAt: number | null;
+  now: number;
+  durationMs: number | null;
+  cost: AcpUsageCost | null | undefined;
+  usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined;
+}): AcpTurnMetaRow[] {
+  const rows: AcpTurnMetaRow[] = [];
+  if (endedAt != null)
+    rows.push({
+      label: 'Finished',
+      // "5 seconds ago" — `Strict` so it never rounds up to the vague
+      // "about 1 minute"; the whole point of this row is a precise "when".
+      value: formatDistanceStrict(endedAt, now, { addSuffix: true }),
+    });
+  if (durationMs != null) rows.push({ label: 'Duration', value: formatAcpDuration(durationMs) });
+  const costValue = formatAcpCost(cost);
+  if (costValue) rows.push({ label: 'Session cost', value: costValue });
+  const contextValue = formatAcpContextValue(usage);
+  if (contextValue) rows.push({ label: 'Context', value: `${contextValue} tokens` });
+  return rows;
 }
 
 /**

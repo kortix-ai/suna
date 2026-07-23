@@ -2,10 +2,8 @@
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -15,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { MessageWithParts, QuestionAnswer, Turn } from '@/ui';
-import type { AcpChatItem } from '@kortix/sdk';
+import type { AcpChatItem, AcpUsageCost, AcpUsageProjection } from '@kortix/sdk';
 import type { useSession } from '@kortix/sdk/react';
 import { AlertTriangle, ArrowDown, MessageCircle } from 'lucide-react';
 import {
@@ -27,6 +25,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { AcpBusyIndicator } from './acp-busy-indicator';
 import { AcpChatItemRow } from './acp-chat-item-row';
 import { AcpConfigOptionPill, AcpConfigOptionSegment } from './acp-config-option-pills';
 import {
@@ -49,16 +48,15 @@ import {
   type AcpStopReasonNote,
   acpOrdinalTimestamps,
   acpTurnDurationMs,
+  acpTurnEndedAt,
   describeAcpStopReason,
-  formatAcpContextLabel,
-  formatAcpDuration,
-  formatAcpSessionCostLabel,
   groupAcpTurnItems,
   groupAcpTurns,
   splitAcpTurn,
   wrapAcpReplyContext,
   type AcpMessageItem,
 } from './acp-turn-grouping';
+import { AcpTurnMeta } from './acp-turn-meta';
 import { ChatMinimap } from './chat-minimap';
 import { ComposerChatInput } from './composer-chat-input';
 import { SessionSiteHeader } from './header/session-site-header';
@@ -69,16 +67,21 @@ import { SessionContextModal } from './session-context-modal';
 
 const EMPTY_CONVERSATION_COPY = 'Start a conversation with the selected native harness.';
 
-/** Per-turn footer data (`turnFooters`, below) — the turn's duration, the
- *  assistant message the `CopyButton` copies, and (last turn only) the
- *  running session totals: cumulative cost and current context size. The
- *  session totals live HERE, on the transcript's own footer line, rather
- *  than as a detached meta row floating above the composer — one line, one
- *  place, dot-separated via `InlineMeta`. */
+/** Per-turn footer data (`turnFooters`, below) — when the turn finished and
+ *  how long it took, the assistant message the `CopyButton` copies, and (last
+ *  turn only) the running session totals: cumulative cost and current context
+ *  size. The session totals live HERE, on the transcript's own turn, rather
+ *  than as a detached meta row floating above the composer.
+ *
+ *  These are raw values, not display strings: `AcpTurnMeta` renders them as a
+ *  labelled list inside its popover, so nothing here needs a self-describing
+ *  suffix ("$0.42 this session", "128k ctx") the way the old dot-separated
+ *  footer line did. */
 interface AcpTurnFooter {
+  endedAt: number | null;
   durationMs: number | null;
-  costLabel: string | null;
-  contextLabel: string | null;
+  cost: AcpUsageCost | null;
+  usage: AcpUsageProjection | null;
   lastAssistantText: AcpMessageItem | null;
   /** Restrained `stopReason` affordance (last turn only) — see
    *  `describeAcpStopReason`'s doc comment. `null` for a clean `end_turn`/
@@ -222,9 +225,10 @@ export function AcpSessionChat({
                 item.kind === 'message' && item.role === 'assistant',
             ) ?? null;
         return {
+          endedAt: acpTurnEndedAt(turn, ordinalTimestamps),
           durationMs: acpTurnDurationMs(turn, ordinalTimestamps),
-          costLabel: isLastTurn && !busy ? formatAcpSessionCostLabel(usage?.cost) : null,
-          contextLabel: isLastTurn && !busy ? formatAcpContextLabel(usage) : null,
+          cost: isLastTurn && !busy ? (usage?.cost ?? null) : null,
+          usage: isLastTurn && !busy ? (usage ?? null) : null,
           lastAssistantText,
           // `stopReason` only ever reflects the MOST RECENT turn (see
           // `AcpReducerState.lastStopReason`'s doc comment), so it can only
@@ -591,7 +595,10 @@ export function AcpSessionChat({
                 <Skeleton className="h-16 w-2/3 rounded-md" />
                 <Skeleton className="ml-auto h-16 w-2/5 rounded-md" />
               </div>
-            ) : ready && items.length === 0 ? (
+            ) : ready && items.length === 0 && !busy ? (
+              // `&& !busy` so a turn that goes busy before its first item is
+              // projected shows the live indicator (below) rather than
+              // "Start a conversation…" while the agent is already working.
               <EmptyState
                 size="sm"
                 icon={MessageCircle}
@@ -705,39 +712,54 @@ export function AcpSessionChat({
                         flushRail();
                         return segments;
                       })()}
+                      {/* The live status line belongs to the turn it
+                          describes — the last thing inside the busy turn,
+                          in the turn's own `space-y-3` rhythm. It used to
+                          hang off the BOTTOM of the whole scroll content
+                          (below the pending-permission card, no less), where
+                          `space-y-4` + its own `mt-2` + `py-1` stacked into a
+                          ~24px gap that detached it from the work it was
+                          reporting on.
+
+                          Deliberately a fixed child slot rather than another
+                          entry in the `segments` array above: `flushRail`
+                          keys each rail wrapper off its FIRST child, so a
+                          busy indicator living inside a rail would land under
+                          a different key every time the turn's shape changed
+                          (prose arrives → a tool starts), remounting the
+                          component and restarting its elapsed timer
+                          mid-turn. A fixed slot never remounts while
+                          `turnBusy` holds. */}
+                      {turnBusy ? <AcpBusyIndicator statusText={liveStatusText} /> : null}
                       {!turnBusy && footer?.lastAssistantText ? (
-                        // One aligned footer line per completed turn: the copy
-                        // action + an `InlineMeta` (turn duration · session
-                        // cost · context size — the session totals live here,
-                        // never as a detached line floating above the
-                        // composer). Last turn: legible, rest-visible.
-                        // Historical turns keep the hover-reveal noise control.
+                        // Two icon buttons, nothing else: copy the reply, and
+                        // ⋯ for the turn's numbers. What used to sit here —
+                        // `2m 15s · $0.45 this session · 46k ctx` — put three
+                        // unlabelled values of three different kinds on one
+                        // dot-separated line, which reads as a list of
+                        // comparable things and isn't one. They're a labelled
+                        // list inside `AcpTurnMeta` now.
+                        //
+                        // `-mt-2` is optical, not a fudge: an icon button's
+                        // glyph sits ~7px inside its 28px box, so the row's
+                        // apparent top edge is 7px below its layout box.
+                        // Clawing back 8px of the turn's 12px `space-y-3`
+                        // lands the *visible* gap back on ~11px.
                         <>
                           <div
                             data-testid="acp-turn-footer"
                             className={cn(
-                              'text-muted-foreground -mt-2 flex items-center gap-1 text-xs transition-opacity duration-150',
+                              '-mt-2 flex items-center gap-0.5 transition-opacity duration-150',
                               isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
                             )}
                           >
                             <CopyButton code={footer.lastAssistantText.text} />
-                            <InlineMeta
-                              className={cn(
-                                'tabular-nums',
-                                isLastTurn ? 'text-muted-foreground' : 'text-muted-foreground/50',
-                              )}
-                            >
-                              {footer.durationMs != null
-                                ? formatAcpDuration(footer.durationMs)
-                                : null}
-                              {footer.costLabel}
-                              {footer.contextLabel}
-                              {footer.stopReasonNote ? (
-                                <span className={footer.stopReasonNote.emphasize ? 'text-foreground/80' : undefined}>
-                                  {footer.stopReasonNote.text}
-                                </span>
-                              ) : null}
-                            </InlineMeta>
+                            <AcpTurnMeta
+                              endedAt={footer.endedAt}
+                              durationMs={footer.durationMs}
+                              cost={footer.cost}
+                              usage={footer.usage}
+                            />
                           </div>
                           {footer.stopReasonNote ? (
                             // A refusal/truncation is a normal protocol outcome,
@@ -749,11 +771,26 @@ export function AcpSessionChat({
                             <div
                               data-testid="acp-stop-reason-note"
                               className={cn(
-                                'text-muted-foreground mt-1 flex flex-wrap items-center gap-2 pl-1 text-xs text-pretty transition-opacity duration-150',
+                                // No left padding: this is prose about the
+                                // turn, so it starts on the transcript's text
+                                // column like the assistant's own paragraphs —
+                                // not indented to the footer's icon glyphs.
+                                'text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-xs text-pretty transition-opacity duration-150',
                                 isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
                               )}
                             >
-                              <span>{footer.stopReasonNote.explanation}</span>
+                              {/* `emphasize` used to tint a "Refused"/"Truncated"
+                                  chip on the meta line; with that line gone it
+                                  lifts the explanation itself just above the
+                                  surrounding muted meta — still never an alarm
+                                  colour, per `describeAcpStopReason`. */}
+                              <span
+                                className={
+                                  footer.stopReasonNote.emphasize ? 'text-foreground/80' : undefined
+                                }
+                              >
+                                {footer.stopReasonNote.explanation}
+                              </span>
                               {isLastTurn && footer.stopReasonNote.canContinue ? (
                                 <Button
                                   type="button"
@@ -781,6 +818,12 @@ export function AcpSessionChat({
                     </div>
                   );
                 })}
+                {/* Only reachable before the busy turn's first item lands —
+                    every other busy render puts the indicator in the last
+                    turn's rail (above). */}
+                {busy && turns.length === 0 ? (
+                  <AcpBusyIndicator statusText={liveStatusText} />
+                ) : null}
                 {errorInfo?.terminal ? (
                   // Terminal error with a transcript already on screen: the
                   // transcript never blanks — this inline row appends the
@@ -832,7 +875,6 @@ export function AcpSessionChat({
                 onAllowAllMode={applyMostPermissiveMode}
               />
             )}
-            {busy ? <AcpBusyIndicator statusText={liveStatusText} /> : null}
             <div ref={spacerElRef} />
           </div>
         </div>
@@ -843,7 +885,6 @@ export function AcpSessionChat({
             exactly the "stuck on the page" bug this fixes). */}
         <Button
           type="button"
-          // variant="outline"
           size="icon"
           className={cn(
             'absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full transition-opacity duration-150',
@@ -1036,36 +1077,5 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
   }
   return btoa(binary);
-}
-
-/** The pulsing-dot + shimmering status line shown while the agent is actively
- *  working — main's busy treatment (`AnimatedThinkingText` + pulsing dot +
- *  `· Ns` counter), fed by the live tool status derived from the streaming ACP
- *  items. Grafted in to replace the plain "Agent is working" line. */
-function AcpBusyIndicator({ statusText }: { statusText?: string }) {
-  const [seconds, setSeconds] = useState(0);
-  const startRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (startRef.current == null) startRef.current = Date.now();
-    const update = () =>
-      setSeconds(Math.max(0, Math.round((Date.now() - startRef.current!) / 1000)));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="text-muted-foreground mt-2 flex items-center gap-2 py-1 text-xs">
-      <span className="relative flex size-3">
-        <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-        <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-      </span>
-      {/* <AnimatedThinkingText statusText={statusText ?? 'Thinking'} className="text-xs" /> */}
-      <TextShimmer className="text-xs">{statusText ?? 'Thinking'}</TextShimmer>
-      <span className="text-muted-foreground/50">·</span>
-      <span className="text-muted-foreground/70 tabular-nums">{seconds}s</span>
-    </div>
-  );
 }
 

@@ -7,11 +7,12 @@ import {
   acpSessionContextTokens,
   acpToolGroupKind,
   acpTurnDurationMs,
+  acpTurnEndedAt,
+  acpTurnMetaRows,
   describeAcpStopReason,
-  formatAcpContextLabel,
+  formatAcpContextValue,
   formatAcpCost,
   formatAcpDuration,
-  formatAcpSessionCostLabel,
   groupAcpTurnItems,
   groupAcpTurns,
   parseAcpReplyContext,
@@ -281,30 +282,95 @@ describe('acpSessionContextTokens', () => {
   });
 });
 
-describe('formatAcpContextLabel', () => {
-  test('formats thousands as a compact "k ctx" label', () => {
-    expect(formatAcpContextLabel({ used: 128_000, tokens: null })).toBe('128k ctx');
+describe('formatAcpContextValue', () => {
+  test('formats thousands as a compact "k" count — bare, because the popover row supplies the "Context" label', () => {
+    expect(formatAcpContextValue({ used: 128_000, tokens: null })).toBe('128k');
   });
 
   test('formats sub-1000 token counts as a raw number', () => {
-    expect(formatAcpContextLabel({ used: 420, tokens: null })).toBe('420 ctx');
+    expect(formatAcpContextValue({ used: 420, tokens: null })).toBe('420');
   });
 
   test('returns null when there is no context usage yet', () => {
-    expect(formatAcpContextLabel(null)).toBeNull();
-    expect(formatAcpContextLabel({ used: 0, tokens: null })).toBeNull();
-    expect(formatAcpContextLabel({ used: null, tokens: null })).toBeNull();
+    expect(formatAcpContextValue(null)).toBeNull();
+    expect(formatAcpContextValue({ used: 0, tokens: null })).toBeNull();
+    expect(formatAcpContextValue({ used: null, tokens: null })).toBeNull();
   });
 });
 
-describe('formatAcpSessionCostLabel', () => {
-  test('suffixes the formatted cost with "this session"', () => {
-    expect(formatAcpSessionCostLabel({ amount: 0.42, currency: 'USD' })).toBe('$0.42 this session');
+describe('acpTurnEndedAt', () => {
+  const stamps = new Map([
+    [1, 1_000],
+    [2, 6_000],
+  ]);
+
+  test('is the latest message timestamp in the turn', () => {
+    const turn: AcpChatItem[] = [
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'go' },
+      { kind: 'message', id: 'assistant-2', role: 'assistant', text: 'done' },
+    ];
+    expect(acpTurnEndedAt(turn, stamps)).toBe(6_000);
   });
 
-  test('returns null when there is no cost', () => {
-    expect(formatAcpSessionCostLabel(null)).toBeNull();
-    expect(formatAcpSessionCostLabel(undefined)).toBeNull();
+  test('survives a single-timestamp turn, where the DURATION is unknowable', () => {
+    const turn: AcpChatItem[] = [{ kind: 'message', id: 'prompt-1', role: 'user', text: 'go' }];
+    expect(acpTurnEndedAt(turn, stamps)).toBe(1_000);
+    expect(acpTurnDurationMs(turn, stamps)).toBeNull();
+  });
+
+  test('is null when no message item resolves to a timestamp', () => {
+    const turn: AcpChatItem[] = [{ kind: 'message', id: 'prompt-99', role: 'user', text: 'go' }];
+    expect(acpTurnEndedAt(turn, stamps)).toBeNull();
+  });
+});
+
+describe('acpTurnMetaRows', () => {
+  const NOW = 1_700_000_000_000;
+
+  test('labels every value, and de-jargons "ctx" into a spelled-out token count', () => {
+    expect(
+      acpTurnMetaRows({
+        endedAt: NOW - 5_000,
+        now: NOW,
+        durationMs: 135_000,
+        cost: { amount: 0.45, currency: 'USD' },
+        usage: { used: 46_000, tokens: null },
+      }),
+    ).toEqual([
+      { label: 'Finished', value: '5 seconds ago' },
+      { label: 'Duration', value: '2m 15s' },
+      { label: 'Session cost', value: '$0.45' },
+      { label: 'Context', value: '46k tokens' },
+    ]);
+  });
+
+  test('cost carries no "this session" suffix — the label already says it', () => {
+    const rows = acpTurnMetaRows({
+      endedAt: null,
+      now: NOW,
+      durationMs: null,
+      cost: { amount: 0.42, currency: 'USD' },
+      usage: null,
+    });
+    expect(rows).toEqual([{ label: 'Session cost', value: '$0.42' }]);
+  });
+
+  test('omits rows the harness reported nothing for — never a fabricated $0.00 or 0 tokens', () => {
+    expect(
+      acpTurnMetaRows({
+        endedAt: NOW - 90_000,
+        now: NOW,
+        durationMs: null,
+        cost: null,
+        usage: { used: 0, tokens: null },
+      }),
+    ).toEqual([{ label: 'Finished', value: '2 minutes ago' }]);
+  });
+
+  test('is empty when the turn has no meta at all, so the caller can drop the trigger', () => {
+    expect(
+      acpTurnMetaRows({ endedAt: null, now: NOW, durationMs: null, cost: null, usage: null }),
+    ).toEqual([]);
   });
 });
 

@@ -1,13 +1,13 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 
 import { projectAcpChatItems as projectAcpEnvelopes, type AcpChatItem, type AcpUsageProjection } from '@kortix/sdk';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Check, ChevronRight } from 'lucide-react';
 import type { AcpSessionChat as AcpSessionChatType } from './acp-session-chat';
+import { AcpTurnMeta } from './acp-turn-meta';
 import { AcpPlanCard } from './acp-tool-call-card';
 
 // Same harness the other interactive component tests in this package use
@@ -208,6 +208,13 @@ function toolItem(id: string, title: string, toolKind: string): AcpChatItem {
 
 function permissionItem(id: number): AcpChatItem {
   return { kind: 'permission', id, method: 'session/request_permission', params: {} } as AcpChatItem;
+}
+
+/** The props a footer handed to its `AcpTurnMeta` — the footer renders no
+ *  meta text of its own any more, so this is where the turn's numbers are
+ *  asserted. */
+function metaProps(footer: ReactTestInstance): React.ComponentProps<typeof AcpTurnMeta> {
+  return footer.findByType(AcpTurnMeta).props as React.ComponentProps<typeof AcpTurnMeta>;
 }
 
 function textOf(node: unknown): string {
@@ -1011,7 +1018,7 @@ describe('AcpPlanCard — entry status ticks', () => {
 });
 
 describe('AcpSessionChat — turn footer chips', () => {
-  test('a completed turn with ordinal timestamps renders a duration chip; a turn without a completed response renders none', async () => {
+  test('a completed turn with ordinal timestamps carries a duration into its meta popover; a turn without a completed response renders no footer at all', async () => {
     const { AcpSessionChat } = await import('./acp-session-chat');
 
     // Ordinal timestamps 5s apart on the user prompt / assistant reply —
@@ -1050,7 +1057,8 @@ describe('AcpSessionChat — turn footer chips', () => {
     try {
       const footers = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer');
       expect(footers).toHaveLength(1);
-      expect(textOf(footers[0]!)).toContain('5s');
+      expect(metaProps(footers[0]!).durationMs).toBe(5_000);
+      expect(metaProps(footers[0]!).endedAt).toBe(Date.parse('2026-01-01T00:00:05.000Z'));
     } finally {
       act(() => {
         renderer.unmount();
@@ -1101,7 +1109,7 @@ describe('AcpSessionChat — turn footer chips', () => {
     { ordinal: 4, direction: 'agent_to_client', streamEventId: 2, createdAt: '2026-01-01T00:01:12.000Z', envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Second done.' } } } } },
   ];
 
-  test('the last turn footer is rest-visible (no opacity-0 hover-gate, tabular-nums, full-contrast text); a historical turn stays hover-only', async () => {
+  test('the last turn footer is rest-visible; a historical turn stays hover-only, and only the last turn carries the session totals', async () => {
     const { AcpSessionChat } = await import('./acp-session-chat');
     const twoTurnItems = projectAcpEnvelopes(twoTurnRows);
 
@@ -1131,28 +1139,23 @@ describe('AcpSessionChat — turn footer chips', () => {
       const historicalClassName = (historicalFooter!.props as { className?: string }).className ?? '';
       const lastClassName = (lastFooter!.props as { className?: string }).className ?? '';
 
-      // Historical turn: still hover-gated (noise control), but its
-      // duration still renders when present.
+      // Historical turn: still hover-gated (noise control), and its own
+      // timing still reaches the popover.
       expect(historicalClassName).toContain('opacity-0');
-      expect(textOf(historicalFooter!)).toContain('5s');
+      expect(metaProps(historicalFooter!).durationMs).toBe(5_000);
 
-      // Last turn: rest-visible — no opacity-0 hover-gate at all — carrying
-      // duration · session cost, with tabular-nums on the numbers and
-      // full-contrast (not the dimmer hover-only tint) text.
+      // ...but the session totals are NOT hung off it: cumulative cost and
+      // current context describe the session as of its most recent turn, so
+      // repeating them on every historical footer would state four different
+      // "session costs" down one transcript.
+      expect(metaProps(historicalFooter!).cost).toBeNull();
+      expect(metaProps(historicalFooter!).usage).toBeNull();
+
+      // Last turn: rest-visible — no opacity-0 hover-gate at all — and the
+      // one footer that carries the totals.
       expect(lastClassName).not.toContain('opacity-0');
-      expect(lastClassName).toContain('text-xs');
-      expect(lastClassName).toContain('text-muted-foreground');
-      const lastText = textOf(lastFooter!);
-      expect(lastText).toContain('12s');
-      expect(lastText).toContain('$0.42');
-
-      // The meta cluster is an `InlineMeta` (dot-separated duration · session
-      // cost) with tabular numbers, at full contrast — not the historical
-      // row's dimmer `/50` tint.
-      const lastMeta = lastFooter!.findByType(InlineMeta);
-      const lastMetaClassName = (lastMeta.props as { className?: string }).className ?? '';
-      expect(lastMetaClassName).toContain('tabular-nums');
-      expect(lastMetaClassName).not.toContain('/50');
+      expect(metaProps(lastFooter!).durationMs).toBe(12_000);
+      expect(metaProps(lastFooter!).cost).toEqual({ amount: 0.42, currency: 'USD' });
     } finally {
       act(() => {
         renderer.unmount();
@@ -1196,11 +1199,14 @@ describe('AcpSessionChat — session usage in the turn footer', () => {
 
       const footers = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer');
       expect(footers).toHaveLength(1);
-      const footerText = textOf(footers[0]!);
-      expect(footerText).toContain('5s');
-      // Never a fabricated "$…" / "0 ctx" chip when the harness reported nothing.
-      expect(footerText).not.toContain('$');
-      expect(footerText).not.toContain('ctx');
+      expect(metaProps(footers[0]!).durationMs).toBe(5_000);
+      // Never a fabricated cost/context row when the harness reported nothing.
+      expect(metaProps(footers[0]!).cost).toBeNull();
+      expect(metaProps(footers[0]!).usage).toBeNull();
+
+      // And the footer itself is now just the two icon buttons — no
+      // dot-separated meta text on the transcript at all.
+      expect(textOf(footers[0]!)).toBe('');
     } finally {
       act(() => {
         renderer.unmount();
@@ -1208,7 +1214,7 @@ describe('AcpSessionChat — session usage in the turn footer', () => {
     }
   });
 
-  test('session totals project into the LAST turn footer — "$0.42 this session · 128k ctx" — with tabular-nums', async () => {
+  test('session totals project into the LAST turn\'s meta popover as raw values, not pre-suffixed chips', async () => {
     const { AcpSessionChat } = await import('./acp-session-chat');
     const items = projectAcpEnvelopes(completedTurnRows);
 
@@ -1233,13 +1239,18 @@ describe('AcpSessionChat — session usage in the turn footer', () => {
     try {
       const footers = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer');
       expect(footers).toHaveLength(1);
-      const footerText = textOf(footers[0]!);
-      expect(footerText).toContain('5s');
-      expect(footerText).toContain('$0.42 this session');
-      expect(footerText).toContain('128k ctx');
+      const meta = metaProps(footers[0]!);
+      expect(meta.durationMs).toBe(5_000);
+      expect(meta.endedAt).toBe(Date.parse('2026-01-01T00:00:05.000Z'));
+      // Raw values, not display strings: `AcpTurnMeta` owns the wording, so
+      // the suffixes ("this session", "ctx") that a bare chip needed are gone.
+      expect(meta.cost).toEqual({ amount: 0.42, currency: 'USD' });
+      expect(meta.usage?.used).toBe(128_000);
 
-      const inlineMeta = footers[0]!.findByType(InlineMeta);
-      expect((inlineMeta.props as { className?: string }).className ?? '').toContain('tabular-nums');
+      // ...and there is still exactly one ⋯ trigger to reach them through.
+      expect(
+        footers[0]!.findAll((node) => node.props?.['data-testid'] === 'acp-turn-meta-trigger'),
+      ).not.toHaveLength(0);
     } finally {
       act(() => {
         renderer.unmount();
@@ -1265,18 +1276,20 @@ describe('AcpSessionChat — session usage in the turn footer', () => {
     });
 
     try {
-      expect(textOf(renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer')[0]!)).toContain('$0.10');
+      expect(
+        metaProps(renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer')[0]!).cost,
+      ).toEqual({ amount: 0.1, currency: 'USD' });
 
       act(() => {
         renderer.update(mount(usage({ used: 130_000, cost: { amount: 0.55, currency: 'USD' } })));
       });
 
       const updatedFooters = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer');
-      // Still exactly one footer — the update replaced its text, not its shape.
+      // Still exactly one footer — the update replaced its values, not its shape.
       expect(updatedFooters).toHaveLength(1);
-      const updatedText = textOf(updatedFooters[0]!);
-      expect(updatedText).toContain('$0.55 this session');
-      expect(updatedText).toContain('130k ctx');
+      const updatedMeta = metaProps(updatedFooters[0]!);
+      expect(updatedMeta.cost).toEqual({ amount: 0.55, currency: 'USD' });
+      expect(updatedMeta.usage?.used).toBe(130_000);
     } finally {
       act(() => {
         renderer.unmount();
@@ -1448,6 +1461,105 @@ describe('AcpSessionChat — session auto-approve lives in the header', () => {
       expect(props?.autoApprovePermissions).toBe(true);
       (props?.onAutoApprovePermissionsChange as (v: boolean) => void)(false);
       expect(setAutoApprovePermissions).toHaveBeenCalledWith(false);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+});
+
+/** Matches only the HOST element carrying the testid — `AcpBusyIndicator`'s
+ *  root is a `motion.div`, so a bare props match counts the motion component
+ *  AND the `div` it renders, doubling every count. */
+function isBusyIndicator(node: { type: unknown; props?: Record<string, unknown> }): boolean {
+  return typeof node.type === 'string' && node.props?.['data-testid'] === 'acp-busy-indicator';
+}
+
+describe('AcpSessionChat — live busy indicator placement', () => {
+  test('the busy indicator renders INSIDE the last turn (as the tail of its activity rail), not as a detached banner at the bottom of the transcript', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+
+    const items: AcpChatItem[] = [
+      userMsg('prompt-1', 'Refactor the busy indicator'),
+      toolItem('tool-1', 'Read acp-session-chat.tsx', 'read'),
+    ];
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, busy: true, chatItems: items })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const turns = renderer.root.findAll((node) => Boolean(node.props?.['data-turn-id']));
+      expect(turns).toHaveLength(1);
+      // Scoped to the turn container: if the indicator were still mounted as
+      // a sibling at the bottom of the scroll content (below the permission
+      // prompt), this find would come back empty.
+      expect(turns[0]!.findAll(isBusyIndicator)).toHaveLength(1);
+      // ...and exactly once overall — never both in the turn and at the bottom.
+      expect(renderer.root.findAll(isBusyIndicator)).toHaveLength(1);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('an idle session renders no busy indicator, and the turn footer takes its place', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+
+    const items: AcpChatItem[] = [userMsg('prompt-1', 'Hi'), assistantMsg('assistant-2', 'Done.')];
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, busy: false, chatItems: items })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      expect(renderer.root.findAll(isBusyIndicator)).toHaveLength(0);
+      expect(
+        renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer'),
+      ).toHaveLength(1);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('busy before the first chat item lands still shows the indicator instead of the "start a conversation" empty state', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, busy: true, chatItems: [] })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      expect(renderer.root.findAll(isBusyIndicator)).toHaveLength(1);
+      expect(textOf(renderer.root)).not.toContain('Start a conversation');
     } finally {
       act(() => {
         renderer.unmount();
