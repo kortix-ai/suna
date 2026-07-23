@@ -300,6 +300,19 @@ const nextConfig = (): NextConfig => ({
   async headers() {
     return [
       {
+        source: '/',
+        headers: [
+          {
+            key: 'Link',
+            value:
+              '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json", ' +
+              '<https://api.kortix.com/v1/openapi.json>; rel="service-desc"; type="application/json", ' +
+              '</docs>; rel="service-doc"; type="text/html", ' +
+              '</llms.txt>; rel="describedby"; type="text/plain"',
+          },
+        ],
+      },
+      {
         source: '/:path*',
         headers: [
           {
