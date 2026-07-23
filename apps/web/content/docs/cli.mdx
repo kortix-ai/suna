@@ -233,7 +233,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions ls` | List every session on the project. |
 | `kortix sessions status [--all] [--json]` | Every session and what its agent is doing right now. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
-| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--wait] [--json]` | Start a session. `--wait` blocks until it is running (up to ~5 minutes). |
+| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes); a timeout is a hard failure (exit 1), not a silent success. Backend-origin overrides require a backend token (PAT or service account) and 403 otherwise: `--origin-ref <user-id>` (attribute to your end user), `--secret <id>` (narrow injected secrets, repeatable), `--no-secrets` (inject zero project secrets), `--connector <alias>=<profile-id>` (bind a connector to a profile, repeatable), `--context <key>=<value>` (runtime context, repeatable). |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. |
 | `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode server already running in the sandbox. Alias: `attach`. |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Aliases: `terminal`, `ssh`. |
@@ -476,7 +476,8 @@ See [Manifest reference](/docs/project/manifest).
 | `kortix self-host init` | Create or refresh the self-host config. Does not start the stack. |
 | `kortix self-host configure` | Interactive wizard for integrations and update policy. |
 | `kortix self-host doctor` | Validate local Docker tooling and the rendered config. |
-| `kortix self-host start` | Create config if needed, then start the stack. Alias: `up`. |
+| `kortix self-host plan` | Validate the rendered Compose config; change nothing. |
+| `kortix self-host start` | Create config if needed, then start the stack. Aliases: `up`, `deploy`. |
 | `kortix self-host update [--tag <v>\|--channel stable\|latest]` | Pull images for the configured channel or tag and recreate the stack. Alias: `upgrade`/`reconcile`. |
 | `kortix self-host rollback --release <v>` | Roll back to an explicit older version. |
 | `kortix self-host version` | Show the running version and channel. |
@@ -490,7 +491,7 @@ See [Manifest reference](/docs/project/manifest).
 | `kortix self-host logs [service]` | Tail stack logs. |
 | `kortix self-host uninstall` | Stop the stack and delete this instance's containers, volumes, and config. |
 
-Common flags: `--instance <name>` (default `default`), `--domain <domain>`, `--tunnel cloudflare`, `--version`/`--tag`/`--release <v>`, `--channel stable|latest` (default `stable`), `--auto-update on|off` (default `on`), `--admin-email <email>`, `--json`, `--yes`.
+Common flags: `--instance <name>` (default `default`), `--domain <domain>`, `--tunnel cloudflare`, `--version`/`--tag`/`--release <v>`, `--channel stable|latest` (default `stable`), `--auto-update on|off` (default `on`; forced off by `--local-images`), `--update-time <HH:MM>` / `--update-tz <tz>` (auto-updater schedule), `--local-images` (run locally-built images; dev mode), `--enterprise-license` (unlock SSO/SCIM/RBAC/audit), `--admin-email <email>`, `--no-restrict-account-creation` (let any signed-in user create new accounts/orgs; default is admin-only), `--restrict-account-creation` (re-enable the admin-only default), `--json`, `--yes`.
 
 ### Token scope
 

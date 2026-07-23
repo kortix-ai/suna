@@ -986,6 +986,7 @@ describe('create-repo starter scaffold contract', () => {
         ".kortix/opencode/skills/content-seo-workflow/SKILL.md",
         ".kortix/opencode/skills/serp-intelligence/SKILL.md",
         ".kortix/memory/SEO.md",
+        "install.md",
       ]),
     );
     const manifest = commitCalls.find((call) => call.path === "kortix.yaml")?.content;
