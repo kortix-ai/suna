@@ -28,9 +28,11 @@ import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInsta
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { createProjectWebhookRateLimitMiddleware } from '../../shared/rate-limit';
 
 projectsApp.use('/*', supabaseAuth);
 
+projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
 
 projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   const projectId = c.req.param('projectId');
@@ -38,6 +40,16 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   if (!UUID_V4_REGEX.test(projectId)) return c.json({ error: 'Invalid project id' }, 400);
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid trigger slug' }, 400);
+  }
+
+  const hasCredentialHeader = Boolean(
+    c.req.header('x-kortix-signature') ||
+      c.req.header('x-hub-signature-256') ||
+      c.req.header('x-kortix-token') ||
+      c.req.header('authorization'),
+  );
+  if (!hasCredentialHeader) {
+    return c.json({ error: 'Invalid webhook signature' }, 401);
   }
 
   const [project] = await db

@@ -43,3 +43,7 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # turn-group assertion whose VALUE is the literal group key 'reasoning-thought-1'
 # (a deterministic grouping id in the test, not a credential). Reviewed 2026-07-18.
 ad5076c2d7c6a488349e8283afc39e6c3caaff54:apps/web/src/features/session/acp-turn-grouping.test.ts:generic-api-key:122
+
+# Historical localhost diagnostic token. The recorded request returned 401
+# "Invalid Kortix token". The value was not a usable credential.
+7ecff87449c0154763543f46c348a5100aff4e68:docs/specs/2026-07-21-codex-billing-leak-verification.md:curl-auth-header:92

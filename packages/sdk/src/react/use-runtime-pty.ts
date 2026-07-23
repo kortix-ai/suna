@@ -10,7 +10,8 @@ import {
   type KortixPty,
 } from '../core/runtime/pty';
 import { getActiveRuntimeUrl } from '../browser/stores/server-store';
-import { useRuntimeReady } from './use-runtime-sessions/keys';
+import { isPtyQueryEnabled, resolvePtyServerUrl } from './pty-query-state';
+import { useCurrentRuntime } from './use-current-runtime';
 
 // Kortix's own PTY implementation (routes/pty.ts in kortix-sandbox-agent-
 // server) — independent of whatever agent runtime is running. Kept as `Pty`
@@ -41,6 +42,8 @@ export const ptyKeys = {
  */
 export interface PtyMutationOptions {
   onError?: (error: unknown) => void;
+  /** Keep the mutation bound to the same session runtime as the terminal. */
+  serverUrl?: string;
 }
 
 /** Pure merge helper for {@link PtyMutationOptions} — spread into `useMutation`.
@@ -56,21 +59,29 @@ export function ptyMutationOverrides(
 // ============================================================================
 
 export function useRuntimePtyList(options?: { enabled?: boolean; serverUrl?: string }) {
-  const activeUrl = getActiveRuntimeUrl();
-  const serverUrl = options?.serverUrl ?? activeUrl;
-  const runtimeReady = useRuntimeReady();
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
+  const activeUrl = runtimeUrl || getActiveRuntimeUrl();
+  const serverUrl = resolvePtyServerUrl(options?.serverUrl, activeUrl);
   return useQuery<Pty[]>({
     queryKey: ptyKeys.list(serverUrl),
     queryFn: () => listKortixPty(serverUrl),
     staleTime: Infinity, // SSE pty.* events trigger refetch
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    enabled: runtimeReady && (options?.enabled ?? true),
+    // `/kortix/pty` belongs to the sandbox daemon. It does not depend on the
+    // OpenCode health signal. Waiting for that signal can disable this query
+    // forever even when the terminal endpoint is already reachable.
+    enabled: isPtyQueryEnabled(serverUrl, options?.enabled ?? true),
   });
 }
 
 export function useCreatePty(hookOptions?: PtyMutationOptions) {
   const queryClient = useQueryClient();
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
+  const serverUrl = resolvePtyServerUrl(
+    hookOptions?.serverUrl,
+    runtimeUrl || getActiveRuntimeUrl(),
+  );
 
   return useMutation({
     mutationFn: (options?: {
@@ -79,7 +90,7 @@ export function useCreatePty(hookOptions?: PtyMutationOptions) {
       cwd?: string;
       title?: string;
       env?: Record<string, string>;
-    }) => createKortixPty(getActiveRuntimeUrl(), options),
+    }) => createKortixPty(serverUrl, options),
     onSuccess: () => {
       // SSE pty.created will also fire; this is instant feedback
       queryClient.refetchQueries({ queryKey: ptyKeys.listPrefix(), type: 'active' });
@@ -88,11 +99,16 @@ export function useCreatePty(hookOptions?: PtyMutationOptions) {
   });
 }
 
-export function useRemovePty() {
+export function useRemovePty(options?: Pick<PtyMutationOptions, 'serverUrl'>) {
   const queryClient = useQueryClient();
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
+  const serverUrl = resolvePtyServerUrl(
+    options?.serverUrl,
+    runtimeUrl || getActiveRuntimeUrl(),
+  );
 
   return useMutation({
-    mutationFn: (id: string) => removeKortixPty(getActiveRuntimeUrl(), id),
+    mutationFn: (id: string) => removeKortixPty(serverUrl, id),
     onSuccess: () => {
       // SSE pty.deleted will also fire
       queryClient.refetchQueries({ queryKey: ptyKeys.listPrefix(), type: 'active' });
@@ -101,6 +117,11 @@ export function useRemovePty() {
 }
 
 export function useUpdatePty(options?: PtyMutationOptions) {
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
+  const serverUrl = resolvePtyServerUrl(
+    options?.serverUrl,
+    runtimeUrl || getActiveRuntimeUrl(),
+  );
   return useMutation({
     mutationFn: ({
       id,
@@ -110,7 +131,7 @@ export function useUpdatePty(options?: PtyMutationOptions) {
       id: string;
       title?: string;
       size?: { rows: number; cols: number };
-    }) => updateKortixPty(getActiveRuntimeUrl(), id, { title, size }),
+    }) => updateKortixPty(serverUrl, id, { title, size }),
     ...ptyMutationOverrides(options),
   });
 }
