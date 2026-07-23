@@ -28,4 +28,21 @@ describe('new project git provider default', () => {
     expect(source).toContain('githubAppInstallations');
     expect(source).toContain('installation_id: selectedInstallationId');
   });
+
+  test('searches large GitHub owners remotely and exposes repository load failures', () => {
+    expect(source).toContain('useDebounce(repositorySearch.trim(), 300)');
+    expect(source).toContain("search: debouncedRepositorySearch || undefined");
+    expect(source).toContain('onSearchChange={setRepositorySearch}');
+    expect(source).toContain('githubReposQuery.isError');
+    expect(source).toContain('Could not load repositories');
+    expect(source).toContain('githubReposQuery.refetch()');
+  });
+
+  test('explains how to link an existing GitHub App installation', () => {
+    expect(source).toContain('Link a GitHub account');
+    expect(source).toContain(
+      'Select Configure in GitHub when the Kortix App is already installed.',
+    );
+    expect(source).toContain("isConnectingGitHub ? 'Connecting' : 'Link GitHub'");
+  });
 });
