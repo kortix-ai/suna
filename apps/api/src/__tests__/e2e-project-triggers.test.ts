@@ -374,6 +374,7 @@ const triggerDbMock: any = {
               visibility: values.visibility ?? 'private',
               origin: values.origin ?? 'user',
               originRef: values.originRef ?? null,
+              secretsAllowlist: values.secretsAllowlist ?? null,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
