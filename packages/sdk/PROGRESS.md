@@ -1825,3 +1825,17 @@ and cleaned up the session and project.
 **Shippable to production: YES** for the SDK and local end-to-end terminal path.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-23 — session `pr-4510-sdk-readiness` (claim)
+
+Claimed the additive SDK readiness slice in
+`docs/specs/2026-07-23-pr4510-sdk-readiness.md`. The work adds deadline-based
+`ensureReady()` polling with progress callbacks and restores the existing KaaB
+`origin` / `origin_ref` API fields to the published SDK types. No exported name
+or existing required field will change. Implementation will follow RED → GREEN
+→ REFACTOR and finish with SDK typecheck, full suite, and packed-install smoke
+evidence.
+
+**Status:** IN PROGRESS.
