@@ -1018,7 +1018,7 @@ test('ensureReady() rides transient null /start results (5xx / create→start ra
       n += 1;
       // startProjectSession returns null (not throws) for a 5xx / the create→
       // start 404 race — ensureReady must poll through it, not give up.
-      if (n <= 2) return jsonResponse({ error: 'gateway' }, 503);
+      if (n <= 1) return jsonResponse({ error: 'gateway' }, 503);
       return jsonResponse({
         stage: 'ready',
         agent_name: 'default',
@@ -1031,9 +1031,10 @@ test('ensureReady() rides transient null /start results (5xx / create→start ra
   }) as unknown as typeof fetch;
 
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  const ready = await k.session('PROJ', 'SESS-TRANSIENT').ensureReady({ readyTimeoutMs: 10_000 });
+  // Small budget → the inter-poll pause (min(1000, remaining)) stays small.
+  const ready = await k.session('PROJ', 'SESS-TRANSIENT').ensureReady({ readyTimeoutMs: 300 });
   expect(ready.opencodeSessionId).toBe('ocs-transient');
-  expect(n).toBeGreaterThanOrEqual(3);
+  expect(n).toBeGreaterThanOrEqual(2);
 });
 
 test('ensureReady() caps each /start long-poll to the remaining deadline budget', async () => {
@@ -1066,7 +1067,8 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
   }) as unknown as typeof fetch;
 
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  await k.session('PROJ', 'SESS-CAP').ensureReady({ readyTimeoutMs: 5_000 });
+  await k.session('PROJ', 'SESS-CAP').ensureReady({ readyTimeoutMs: 300 });
   expect(waits.length).toBeGreaterThan(0);
-  expect(Math.max(...waits)).toBeLessThanOrEqual(5_000);
+  // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
+  expect(Math.max(...waits)).toBeLessThanOrEqual(300);
 });
