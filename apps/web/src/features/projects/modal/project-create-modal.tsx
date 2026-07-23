@@ -45,8 +45,10 @@ import {
 } from '@/components/ui/modal';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
+import { githubInstallationLabel, isGitHubAppInstallationId } from '@/lib/github-installations';
 import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
   getMarketplaceItem,
@@ -84,10 +86,6 @@ import {
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
-function isGitHubAppInstallationId(value: string | null): value is string {
-  return Boolean(value && /^\d+$/.test(value));
-}
-
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255);
 // pasted prompts used to sail past the charset regex and 500 on the insert).
 const PROJECT_NAME_MAX_LENGTH = 120;
@@ -112,6 +110,13 @@ const githubLinkSchema = z.object({
 
 type ManagedProjectFormValues = z.infer<typeof managedProjectSchema>;
 type GitHubLinkFormValues = z.infer<typeof githubLinkSchema>;
+type RepositoryMode = 'github-create' | 'github-import' | 'managed';
+
+const REPOSITORY_MODE_DESCRIPTIONS: Record<RepositoryMode, string> = {
+  managed: 'Kortix creates and manages a private repository for this project.',
+  'github-create': 'Kortix creates a private repository in your GitHub account.',
+  'github-import': 'Select an existing repository from your GitHub account.',
+};
 
 interface ProjectCreateModalProps {
   open: boolean;
@@ -146,7 +151,6 @@ export const ProjectCreateModal = ({
   accountId,
   sourceItemId,
 }: ProjectCreateModalProps) => {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -239,6 +243,12 @@ export const ProjectCreateModal = ({
 
   function switchToGitHubCreateMode() {
     setMode('github-create');
+  }
+
+  function switchRepositoryMode(nextMode: string) {
+    if (nextMode === 'managed') return switchToManagedMode();
+    if (nextMode === 'github-create') return switchToGitHubCreateMode();
+    if (nextMode === 'github-import') return switchToGitHubMode();
   }
 
   function switchToTemplateMode() {
@@ -534,6 +544,7 @@ export const ProjectCreateModal = ({
       : [];
   const selectedRepository = repos.find((repo) => repo.full_name === selectedRepo);
   const repositoryLoading = githubReposQuery.isFetching || isDebouncingRepositorySearch;
+  const repositoryMode: RepositoryMode = mode === 'template' ? 'managed' : mode;
 
   return (
     <Modal open={open} onOpenChange={(o) => (!o ? resetAndClose() : onOpenChange(o))}>
@@ -557,6 +568,28 @@ export const ProjectCreateModal = ({
             disabled={submitting}
             onSelect={setPickedAccountId}
           />
+        ) : null}
+
+        {!cloningFromSource && mode !== 'template' ? (
+          <div className="space-y-1.5 px-5">
+            <Label>Repository source</Label>
+            <Tabs value={repositoryMode} onValueChange={switchRepositoryMode}>
+              <TabsList type="secondary" className="w-full" aria-label="Repository source">
+                <TabsTrigger value="managed" size="sm">
+                  Kortix managed
+                </TabsTrigger>
+                <TabsTrigger value="github-create" size="sm">
+                  Create in GitHub
+                </TabsTrigger>
+                <TabsTrigger value="github-import" size="sm">
+                  Import from GitHub
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <p className="text-muted-foreground text-xs">
+              {REPOSITORY_MODE_DESCRIPTIONS[repositoryMode]}
+            </p>
+          </div>
         ) : null}
 
         {mode === 'managed' && managedGitUnavailable ? (
@@ -759,7 +792,7 @@ export const ProjectCreateModal = ({
                     </div>
                   )}
 
-                  {!cloningFromSource ? (
+                  {!cloningFromSource && mode === 'managed' ? (
                     <div className="flex flex-wrap gap-1.5">
                       <Button
                         type="button"
@@ -772,42 +805,6 @@ export const ProjectCreateModal = ({
                         <Boxes className="size-4" />
                         Clone from a template
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1.5"
-                        disabled={submitting}
-                        onClick={switchToGitHubMode}
-                      >
-                        <Icon.Github />
-                        {tHardcodedUi.raw(
-                          'componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo',
-                        )}
-                      </Button>
-                      {mode === 'github-create' ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={submitting}
-                          onClick={switchToManagedMode}
-                        >
-                          <GitFork className="size-4" /> Use managed repository
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={submitting}
-                          onClick={switchToGitHubCreateMode}
-                        >
-                          <Icon.Github /> Create in your GitHub
-                        </Button>
-                      )}
                     </div>
                   ) : null}
                 </div>
@@ -899,23 +896,23 @@ export const ProjectCreateModal = ({
                                   'componentsProjectsProjectCreateModal.line391JsxTextGitAccount',
                                 )}
                               </FormLabel>
-                              {/* <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-muted-foreground h-7 gap-1.5 px-2 text-xs"
-                                disabled={isConnectingGitHub}
-                                onClick={handleConnectGitHub}
-                              >
-                                {isConnectingGitHub ? (
-                                  <Loading />
-                                ) : (
-                                  <Icon.Github />
-                                )}
-                                {tHardcodedUi.raw(
-                                  'componentsProjectsProjectCreateModal.line405JsxTextAddAccount',
-                                )}
-                              </Button> */}
+                              {githubInstallationsQuery.data?.configured !== false ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-muted-foreground h-8 gap-1.5 px-2 text-xs"
+                                  aria-label="Connect another GitHub account"
+                                  disabled={
+                                    isConnectingGitHub ||
+                                    (!installUrl && githubInstallationsQuery.isFetching)
+                                  }
+                                  onClick={handleConnectGitHub}
+                                >
+                                  {isConnectingGitHub ? <Loading /> : <Icon.Plus />}
+                                  Add account
+                                </Button>
+                              ) : null}
                             </div>
                             <FormControl>
                               <Select
@@ -935,14 +932,11 @@ export const ProjectCreateModal = ({
                                         !selectedRepository && 'text-muted-foreground',
                                       )}
                                     >
-                                      github.com/
                                       <span className="text-foreground">
-                                        {
-                                          githubInstallations.find(
-                                            (installation) =>
-                                              installation.installation_id === field.value,
-                                          )?.owner_login
-                                        }
+                                        {githubInstallationLabel(
+                                          selectedInstallation?.installation_id ?? null,
+                                          selectedInstallation?.owner_login ?? null,
+                                        )}
                                       </span>
                                     </span>
                                   </div>
@@ -955,7 +949,12 @@ export const ProjectCreateModal = ({
                                       className="flex flex-row items-center gap-2"
                                     >
                                       <Icon.Github />
-                                      <span>{installation.owner_login}</span>
+                                      <span>
+                                        {githubInstallationLabel(
+                                          installation.installation_id,
+                                          installation.owner_login,
+                                        )}
+                                      </span>
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -1080,17 +1079,7 @@ export const ProjectCreateModal = ({
                 </div>
               </ModalBody>
 
-              <ModalFooter className="w-full sm:justify-between">
-                <Button
-                  type="button"
-                  variant="outline-ghost"
-                  className="w-full sm:w-auto"
-                  onClick={switchToManagedMode}
-                >
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b',
-                  )}
-                </Button>
+              <ModalFooter>
                 <Button
                   type="submit"
                   disabled={

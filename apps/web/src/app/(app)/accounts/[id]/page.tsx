@@ -29,13 +29,13 @@ import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { GitHubAppSetupCard, useGitHubAppStatus } from '@/components/iam/github-app-setup-card';
+import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
+import { IdentityIntro } from '@/components/iam/identity-intro';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { RolesTab } from '@/components/iam/roles-tab';
-import { IdentityIntro } from '@/components/iam/identity-intro';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -93,6 +93,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
+import { isGitHubAppInstallationId } from '@/lib/github-installations';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -324,11 +325,6 @@ export default function AccountSettingsPage() {
     { allowed: canReadAudit },
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
-
-  // Lifted (rather than read only inside GitHubAppSetupCard) so the Git tab
-  // can also gate the cloud GitHubConnectionCard on it below — same query,
-  // same cache entry, so this doesn't add a second network round-trip.
-  const githubAppStatusQuery = useGitHubAppStatus(canWriteAccount === true);
 
   const prefersReducedMotion = useReducedMotion();
 
@@ -579,20 +575,8 @@ export default function AccountSettingsPage() {
 
             {activeSection === 'git' && canWriteAccount ? (
               <div className="space-y-8">
-                {/* One coherent managed-git card covering all three setup
-                    methods (manifest App, pasted App, PAT) — rendered for any
-                    admin regardless of source. The cloud per-account
-                    installations card below is a DIFFERENT thing (per-account
-                    App installs on the hosted deployment) and only makes
-                    sense when managed-git itself is env-configured (source
-                    'env'); on self-host (source 'db' | 'pat' | 'none') it
-                    would just confusingly show "No connections yet" next to
-                    the card above, so it's hidden until the status query
-                    resolves to 'env'. */}
+                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
                 <GitHubAppSetupCard canManage={canWriteAccount} />
-                {githubAppStatusQuery.data?.source === 'env' ? (
-                  <GitHubConnectionCard account={account} canManage={canWriteAccount} />
-                ) : null}
               </div>
             ) : null}
 
@@ -765,7 +749,9 @@ function GitHubConnectionCard({
     }
   }
 
-  const installations = installationsQuery.data?.installations ?? [];
+  const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
+    isGitHubAppInstallationId(installation.installation_id),
+  );
 
   return (
     <div className="space-y-4">
