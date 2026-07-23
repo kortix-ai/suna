@@ -304,6 +304,36 @@ export interface ExecutorRouterDeps {
 const ProjectParam = z.object({ projectId: z.string() });
 const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
 
+/**
+ * Stable error code the SDK's `makeRequest` classifies as an EXPECTED
+ * "feature not enabled on this deployment" state and drops from Sentry
+ * (the dashboard already surfaces it as a graceful "unavailable" UI state,
+ * e.g. the connector-auth-discovery InfoBanner). Without this typed code the
+ * bare `501 "not supported"` body surfaced as an opaque `ApiError` in
+ * Better Stack (pattern `1f3c4d96…`) — a known unsupported state paging like
+ * a real defect. Mirrors the `GitOperationError`/Daytona typed-envelope
+ * pattern (PRs #5167/#5175/#5188) and the no-compaction-model classification
+ * (PR #5183): a typed code lets the telemetry gate distinguish "deployment
+ * doesn't offer this capability" (501 feature_not_supported → silent) from a
+ * genuine server bug (any other 501 → report).
+ */
+export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
+
+/** 501 envelope for an optional executor capability that this deployment
+ *  doesn't wire. `feature` identifies which capability is missing so the
+ *  dashboard can name it. */
+function featureNotSupportedResponse(c: Context, feature: string) {
+  return c.json(
+    {
+      error: FEATURE_NOT_SUPPORTED_CODE,
+      code: FEATURE_NOT_SUPPORTED_CODE,
+      message: 'This capability is not enabled on this deployment.',
+      feature,
+    },
+    501,
+  );
+}
+
 export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
@@ -619,7 +649,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.discoverConnectorAuth) return c.json({ error: 'not supported' }, 501);
+      if (!deps.discoverConnectorAuth) return featureNotSupportedResponse(c, 'connector_auth_discovery');
       let body: Record<string, unknown>;
       try {
         body = await c.req.json();
@@ -653,7 +683,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.createConnector) return c.json({ error: 'not supported' }, 501);
+      if (!deps.createConnector) return featureNotSupportedResponse(c, 'connector_create');
       let body: any;
       try {
         body = await c.req.json();
@@ -691,7 +721,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.deleteConnector) return c.json({ error: 'not supported' }, 501);
+      if (!deps.deleteConnector) return featureNotSupportedResponse(c, 'connector_delete');
       const result = await deps.deleteConnector(projectId, slug);
       return result.ok
         ? c.json({ ok: true })
@@ -723,7 +753,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setConnectorCredential) return c.json({ error: 'not supported' }, 501);
+      if (!deps.setConnectorCredential) return featureNotSupportedResponse(c, 'connector_credential_set');
       let body: any;
       try {
         body = await c.req.json();
@@ -758,7 +788,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.deleteConnectorCredential) return c.json({ error: 'not supported' }, 501);
+      if (!deps.deleteConnectorCredential) return featureNotSupportedResponse(c, 'connector_credential_delete');
       const result = await deps.deleteConnectorCredential(projectId, slug, admin.userId);
       return result.ok
         ? c.json({ ok: true })
@@ -787,7 +817,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.listPipedreamApps) return c.json({ error: 'pipedream not configured' }, 501);
+      if (!deps.listPipedreamApps) return featureNotSupportedResponse(c, 'pipedream_apps');
       const result = await deps.listPipedreamApps(
         c.req.query('q') || undefined,
         c.req.query('cursor') || undefined,
@@ -870,7 +900,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setCredentialMode) return c.json({ error: 'not supported' }, 501);
+      if (!deps.setCredentialMode) return featureNotSupportedResponse(c, 'connector_credential_mode');
       let body: any;
       try {
         body = await c.req.json();
@@ -915,7 +945,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setSensitive) return c.json({ error: 'not supported' }, 501);
+      if (!deps.setSensitive) return featureNotSupportedResponse(c, 'connector_sensitive');
       let body: any;
       try {
         body = await c.req.json();
@@ -954,7 +984,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setConnectorName) return c.json({ error: 'not supported' }, 501);
+      if (!deps.setConnectorName) return featureNotSupportedResponse(c, 'connector_rename');
       let body: any;
       try {
         body = await c.req.json();
@@ -989,7 +1019,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getConnectorPolicies) return c.json({ error: 'not supported' }, 501);
+      if (!deps.getConnectorPolicies) return featureNotSupportedResponse(c, 'connector_policies_read');
       const result = await deps.getConnectorPolicies(projectId, slug);
       if (!result) return c.json({ error: 'connector not found' }, 404);
       return c.json(result);
@@ -1015,7 +1045,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getConnectorConfig) return c.json({ error: 'not supported' }, 501);
+      if (!deps.getConnectorConfig) return featureNotSupportedResponse(c, 'connector_config_read');
       const result = await deps.getConnectorConfig(projectId, slug);
       if (!result) return c.json({ error: 'connector not found' }, 404);
       return c.json(result);
@@ -1044,7 +1074,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setConnectorPolicies) return c.json({ error: 'not supported' }, 501);
+      if (!deps.setConnectorPolicies) return featureNotSupportedResponse(c, 'connector_policies_write');
       let body: any;
       try {
         body = await c.req.json();
@@ -1079,7 +1109,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.pipedreamConnect) return c.json({ error: 'pipedream not configured' }, 501);
+      if (!deps.pipedreamConnect) return featureNotSupportedResponse(c, 'pipedream_connect');
       // Native clients pass app deep-link redirect URIs so the in-app browser
       // auto-dismisses back to the app instead of landing on a web page.
       let redirects: { success?: string; error?: string } | undefined;
@@ -1115,7 +1145,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.pipedreamFinalize) return c.json({ error: 'pipedream not configured' }, 501);
+      if (!deps.pipedreamFinalize) return featureNotSupportedResponse(c, 'pipedream_finalize');
       const result = await deps.pipedreamFinalize(projectId, slug, admin.userId);
       if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
       return c.json(result);
@@ -1140,7 +1170,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getProjectPolicies) return c.json({ error: 'not supported' }, 501);
+      if (!deps.getProjectPolicies) return featureNotSupportedResponse(c, 'project_policies_read');
       const result = await deps.getProjectPolicies(projectId);
       if (!result) return c.json({ error: 'project not found' }, 404);
       return c.json(result);
@@ -1170,7 +1200,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setProjectPolicies) return c.json({ error: 'not supported' }, 501);
+      if (!deps.setProjectPolicies) return featureNotSupportedResponse(c, 'project_policies_write');
 
       let body: any;
       try {
@@ -1224,7 +1254,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     // Manual parse kept: webhook tolerates an unparseable body (defaults to {})
     // and authenticates via HMAC signature, not a user token.
     async (c: any) => {
-      if (!deps.pipedreamWebhook) return c.json({ error: 'pipedream not configured' }, 501);
+      if (!deps.pipedreamWebhook) return featureNotSupportedResponse(c, 'pipedream_webhook');
       const sig = c.req.query('sig') ?? null;
       let body: any;
       try {
