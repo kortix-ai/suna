@@ -295,6 +295,7 @@ mock.module('../projects/github', () => ({
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
+  verifyGitHubInstallationAdmin: async () => undefined,
   createRepo: async () => {
     throw new Error('not used');
   },
