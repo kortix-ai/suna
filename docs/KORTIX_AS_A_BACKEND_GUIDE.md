@@ -98,6 +98,49 @@ internal (no-override) call is byte-identical to a normal session.
 | `origin_ref` | The end-user this session acts for. Recorded on the session and surfaced to the sandbox as `KORTIX_ORIGIN_REF`. **Attribution only** — not an auth principal. | **backend only** |
 | `secrets` | Narrow which project secrets (by identifier) this session's sandbox receives. | **backend only** |
 
+### Model — reference form & validation
+
+`opencode_model` is validated at create and stored in the **opencode reference
+form**. Use:
+
+- **Managed Kortix models:** `kortix/<id>` (e.g. `kortix/claude-opus-4-8`). A
+  bare id (`claude-opus-4-8`) is accepted and normalized to `kortix/<id>` for
+  you — but always prefer the explicit `kortix/` prefix.
+- **Bring-your-own-key models:** `<provider>/<id>` (e.g.
+  `anthropic/claude-opus-4-8`, `openai/gpt-5`) — the provider segment is required.
+
+A model that isn't servable for your account (retired, not entitled on your
+plan, or a typo) is rejected at create with **`400 INVALID_SESSION_MODEL`** —
+you get the error immediately, not a dead turn at prompt time. Omit
+`opencode_model` to inherit the project/agent default.
+
+### Idempotent retries — always send an `Idempotency-Key`
+
+Session create provisions real compute, so a blind retry (timeout, dropped
+connection) could double-create and double-charge. Send an **`Idempotency-Key`
+header** (raw HTTP) so a retry with the same key returns the *original* session
+instead of a new one.
+
+```bash
+curl -X POST .../sessions -H "Idempotency-Key: 9f1c…-a re-used, stable per-attempt UUID" …
+```
+
+Rules that will bite if you ignore them:
+
+- **Use a high-entropy key** (a UUID you generate per logical create, reused
+  only across that create's retries). Keys are unique **per account**, and a
+  low-entropy key like `"1"` or a guessable channel key can be squatted — pick
+  something unguessable.
+- **A replay with a *different* body conflicts.** Same key + different
+  `connector_bindings` / `secrets` → **`409`** (`IDEMPOTENCY_BINDING_CONFLICT` /
+  `IDEMPOTENCY_SECRETS_CONFLICT`). Keep the body identical across retries.
+- **A failed create is terminal for that key.** If the original attempt failed,
+  replaying the same key returns the failure — use a fresh key to genuinely
+  retry a new create.
+
+> The SDK's `sessions.create()` does not yet forward an idempotency key — send it
+> via the raw HTTP form above when you need at-most-once create semantics.
+
 ### Connectors — bring each user's own account
 
 Store a user's credential **once** via the connection-profile broker, get a
@@ -143,6 +186,13 @@ both mintable with your API key:
 > **All-or-nothing binding:** if a session's `connector_bindings` sets *any*
 > alias, every *unbound* alias resolves to null for that session. Bind every
 > connector the agent needs in the one call.
+
+> **Revoked mid-session fails closed.** If an end-user disconnects their account
+> (the profile goes `revoked`) while a session is live, the broker returns
+> **null** for that connector — it never falls back to a shared project default.
+> The agent's call to that connector fails; your wrapper should detect it and
+> prompt the user to reconnect (re-run the profile `updateCredential` +
+> `activate` steps, which mint a fresh active profile).
 
 A complete, runnable version of this whole flow — create connector → mint the
 per-user profile → start a backend session → **stream the answer** — lives at
@@ -202,6 +252,22 @@ await s.send(prompt);
 
 ---
 
+> **Pick one prompt path.** A session created *with* `initial_prompt` runs that
+> prompt automatically. If you then also `send()` a prompt (as the streaming
+> snippet does), that's a **second turn** — and a second charge. For the
+> stream-and-drive pattern above, create the session **without** `initial_prompt`
+> and let `send()` deliver the first turn (this is what
+> [`examples/09`](../packages/sdk/examples/09-kaab-backend-wrapper.ts) does).
+
+> **Visibility & resume.** Backend-origin sessions default to
+> `visibility: private`, and the connectors/secrets a session resolves are
+> **locked to the session at creation** — resuming or viewing a session never
+> re-resolves against the *current* actor's profiles. So a teammate (or your own
+> admin) opening a backend session can't cause it to act with *their* Gmail/etc.
+> Stream to your end-user by **relaying the server-side SSE** (as example 09
+> does) — that is the supported browser path today; there is no per-session
+> browser token yet.
+
 ## 5. Errors you may hit
 
 | Status | Code | Meaning |
@@ -209,7 +275,9 @@ await s.send(prompt);
 | `403` | `origin_override_forbidden` | A non-backend caller (a human web session, the in-sandbox agent token) tried to set `origin_ref` or `secrets`. Use an API key / service-account bearer. |
 | `404` | `SECRET_IDENTIFIER_NOT_FOUND` | An allowlisted secret identifier doesn't exist in the project. |
 | `409` | `SECRET_IDENTIFIER_KEY_COLLISION` | Two allowlisted identifiers resolve to the same env var — name only one. |
-| `400` | `INVALID_SESSION_SECRETS` / `INVALID_SESSION_CONNECTOR_BINDINGS` | Malformed `secrets` / `connector_bindings`. |
+| `409` | `IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT` | An `Idempotency-Key` was replayed with a different `secrets` / `connector_bindings` body. Keep the body identical across retries. |
+| `400` | `INVALID_SESSION_MODEL` | `opencode_model` isn't servable for this account (retired, not entitled, or a typo), or isn't a valid model id. |
+| `400` | `INVALID_SESSION_SECRETS` / `INVALID_SESSION_CONNECTOR_BINDINGS` / `INVALID_SESSION_RUNTIME_CONTEXT` | Malformed `secrets` / `connector_bindings` / `runtime_context` (the last also rejects credential-like keys and enforces the 64-entry / 16 KiB caps). |
 
 ---
 
