@@ -52,6 +52,19 @@ interface GitHubInstallationRepositories {
   repositories: GitHubRepo[];
 }
 
+interface GitHubRepositorySearchResponse {
+  total_count: number;
+  incomplete_results: boolean;
+  items: GitHubRepo[];
+}
+
+interface RepositoryListOptions {
+  owner?: string;
+  ownerType?: 'User' | 'Organization';
+  search?: string;
+  limit?: number;
+}
+
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
   const m =
     repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i) ??
@@ -145,17 +158,40 @@ function signGitHubAppStatePayload(payload: string) {
 export interface GitHubAppInstallState {
   accountId: string;
   nonce?: string;
+  purpose?: 'account_link' | 'platform_setup';
+  frontendOrigin?: string;
   issuedAt: number;
+}
+
+function normalizeGitHubFrontendOrigin(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const url = new URL(value);
+    const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalhost)) {
+      return undefined;
+    }
+    if (url.username || url.password) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildGitHubAppInstallState(
   accountId: string,
-  options: { nonce?: string } = {},
+  options: {
+    nonce?: string;
+    purpose?: 'account_link' | 'platform_setup';
+    frontendOrigin?: string;
+  } = {},
   nowMs = Date.now(),
 ) {
   const payload = Buffer.from(JSON.stringify({
     account_id: accountId,
     nonce: options.nonce,
+    purpose: options.purpose,
+    frontend_origin: normalizeGitHubFrontendOrigin(options.frontendOrigin),
     iat: Math.floor(nowMs / 1000),
   })).toString('base64url');
   return `v1.${payload}.${signGitHubAppStatePayload(payload)}`;
@@ -195,26 +231,41 @@ export function verifyGitHubAppInstallStatePayload(
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
       account_id?: unknown;
       nonce?: unknown;
+      purpose?: unknown;
+      frontend_origin?: unknown;
       iat?: unknown;
     };
     const accountId = typeof decoded.account_id === 'string' ? decoded.account_id : '';
     const nonce = typeof decoded.nonce === 'string' ? decoded.nonce : undefined;
+    const purpose =
+      decoded.purpose === 'account_link' || decoded.purpose === 'platform_setup'
+        ? decoded.purpose
+        : undefined;
+    const frontendOrigin = normalizeGitHubFrontendOrigin(decoded.frontend_origin);
     const issuedAt = typeof decoded.iat === 'number' ? decoded.iat : 0;
     const now = Math.floor(nowMs / 1000);
     if (!accountId || issuedAt < now - 30 * 60 || issuedAt > now + 60) return null;
-    return { accountId, nonce, issuedAt };
+    return { accountId, nonce, purpose, frontendOrigin, issuedAt };
   } catch {
     return null;
   }
 }
 
-export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: string) {
+export function buildGitHubAppInstallUrl(
+  accountId?: string | null,
+  nonce?: string,
+  purpose: 'account_link' | 'platform_setup' = 'account_link',
+  frontendOrigin?: string,
+) {
   const slug = githubAppSlug()?.trim();
   if (!slug) return null;
   const url = new URL(`https://github.com/apps/${slug}/installations/new`);
   if (accountId) {
     try {
-      url.searchParams.set('state', buildGitHubAppInstallState(accountId, { nonce }));
+      url.searchParams.set(
+        'state',
+        buildGitHubAppInstallState(accountId, { nonce, purpose, frontendOrigin }),
+      );
     } catch {
       return null;
     }
@@ -323,6 +374,51 @@ export async function getGitHubAppInstallation(installationId: string): Promise<
   );
 }
 
+export async function verifyGitHubInstallationAdmin(
+  userToken: string,
+  installation: GitHubAppInstallation,
+): Promise<{ login: string }> {
+  const token = userToken.trim();
+  if (!token) throw new Error('GitHub authorization is required to link this installation');
+
+  const ownerLogin = installation.account?.login?.trim();
+  if (!ownerLogin) throw new Error('GitHub installation did not include an owner account');
+
+  let user: { login?: string };
+  try {
+    user = await ghFetch<{ login?: string }>('/user', { method: 'GET' }, { token });
+  } catch {
+    throw new Error('GitHub user authorization is invalid or expired');
+  }
+
+  const login = user.login?.trim();
+  if (!login) throw new Error('GitHub did not return the authorized user login');
+
+  const ownerType = installation.account?.type ?? installation.target_type;
+  if (ownerType === 'User') {
+    if (login.toLowerCase() !== ownerLogin.toLowerCase()) {
+      throw new Error('The authorized GitHub user does not own this installation');
+    }
+    return { login };
+  }
+
+  let membership: { state?: string; role?: string };
+  try {
+    membership = await ghFetch<{ state?: string; role?: string }>(
+      `/orgs/${encodeURIComponent(ownerLogin)}/memberships/${encodeURIComponent(login)}`,
+      { method: 'GET' },
+      { token },
+    );
+  } catch {
+    throw new Error('GitHub organization admin access is required to link this installation');
+  }
+
+  if (membership.state !== 'active' || membership.role !== 'admin') {
+    throw new Error('GitHub organization admin access is required to link this installation');
+  }
+  return { login };
+}
+
 export async function createInstallationToken(
   installationId: string,
   /**
@@ -348,27 +444,28 @@ export async function createInstallationToken(
 
 export async function listInstallationRepositories(
   installationId: string,
+  options: RepositoryListOptions = {},
 ): Promise<GitHubRepo[]> {
   const token = await createInstallationToken(installationId);
-  const perPage = 100;
-  const repositories: GitHubRepo[] = [];
-  let page = 1;
-  let totalCount: number | null = null;
+  const limit = normalizeRepositoryLimit(options.limit);
+  const search = options.search?.trim();
+  if (search) {
+    if (!options.owner) throw new Error('owner is required when searching repositories');
+    return searchRepositories({
+      owner: options.owner,
+      ownerType: options.ownerType ?? 'Organization',
+      search,
+      limit,
+      auth: { token: token.token },
+    });
+  }
 
-  do {
-    const body = await ghFetch<GitHubInstallationRepositories>(
-      `/installation/repositories?per_page=${perPage}&page=${page}`,
-      { method: 'GET' },
-      { token: token.token },
-    );
-    totalCount = body.total_count;
-    const pageRepositories = body.repositories ?? [];
-    if (pageRepositories.length === 0) break;
-    repositories.push(...pageRepositories);
-    page += 1;
-  } while (totalCount !== null && repositories.length < totalCount);
-
-  return repositories;
+  const body = await ghFetch<GitHubInstallationRepositories>(
+    `/installation/repositories?per_page=${limit}&page=1`,
+    { method: 'GET' },
+    { token: token.token },
+  );
+  return body.repositories ?? [];
 }
 
 /**
@@ -378,7 +475,9 @@ export async function listInstallationRepositories(
  * enumerate repos from, so this hits the same org-vs-personal-account
  * endpoint `createRepo`/`resolveDefaultOwner` already branch on: an org owner
  * lists via `/orgs/{owner}/repos` (what a fine-grained token scoped to an
- * organization resource-owner can see), a personal owner via `/user/repos`
+ * organization resource-owner can see), a personal owner via `/user/repos`.
+ * Empty queries return one recently updated page. Search queries use GitHub's
+ * repository search endpoint, scoped to the configured owner.
  * (filtered back down to that owner — a classic token can see collaborator
  * repos under other owners too, which don't belong in "repos for this
  * configured owner").
@@ -387,29 +486,70 @@ export async function listOwnerRepositories(input: {
   owner: string;
   ownerType?: 'User' | 'Organization';
   auth: Pick<GitHubAuthContext, 'token'>;
+  search?: string;
+  limit?: number;
 }): Promise<GitHubRepo[]> {
   const isOrg = input.ownerType
     ? input.ownerType !== 'User'
     : await isOrgAccount(input.owner, input.auth);
-  const path = isOrg
-    ? `/orgs/${encodeURIComponent(input.owner)}/repos?type=all`
-    : '/user/repos?affiliation=owner,collaborator';
-  const perPage = 100;
-  const repositories: GitHubRepo[] = [];
-  for (let page = 1; ; page += 1) {
-    const pageRepositories = await ghFetch<GitHubRepo[]>(
-      `${path}&per_page=${perPage}&page=${page}`,
-      { method: 'GET' },
-      input.auth,
-    );
-    repositories.push(...pageRepositories);
-    if (pageRepositories.length < perPage) break;
+  const limit = normalizeRepositoryLimit(input.limit);
+  const search = input.search?.trim();
+  if (search) {
+    return searchRepositories({
+      owner: input.owner,
+      ownerType: isOrg ? 'Organization' : 'User',
+      search,
+      limit,
+      auth: input.auth,
+    });
   }
+
+  const params = new URLSearchParams(
+    isOrg
+      ? { type: 'all' }
+      : { affiliation: 'owner,collaborator' },
+  );
+  params.set('sort', 'updated');
+  params.set('direction', 'desc');
+  params.set('per_page', String(limit));
+  params.set('page', '1');
+  const path = isOrg
+    ? `/orgs/${encodeURIComponent(input.owner)}/repos?${params.toString()}`
+    : `/user/repos?${params.toString()}`;
+  const repositories = await ghFetch<GitHubRepo[]>(path, { method: 'GET' }, input.auth);
   return isOrg
     ? repositories
     : repositories.filter(
         (repo) => repo.full_name.split('/')[0]?.toLowerCase() === input.owner.toLowerCase(),
       );
+}
+
+function normalizeRepositoryLimit(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 100;
+  return Math.min(100, Math.max(1, Math.trunc(value)));
+}
+
+async function searchRepositories(input: {
+  owner: string;
+  ownerType: 'User' | 'Organization';
+  search: string;
+  limit: number;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubRepo[]> {
+  const qualifier = input.ownerType === 'Organization' ? 'org' : 'user';
+  const params = new URLSearchParams({
+    q: `${qualifier}:${input.owner} ${input.search} in:name,description`,
+    sort: 'updated',
+    order: 'desc',
+    per_page: String(input.limit),
+    page: '1',
+  });
+  const result = await ghFetch<GitHubRepositorySearchResponse>(
+    `/search/repositories?${params.toString()}`,
+    { method: 'GET' },
+    input.auth,
+  );
+  return result.items ?? [];
 }
 
 export async function listRepositoryBranches(input: {

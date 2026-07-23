@@ -85,6 +85,9 @@ let grantedProjectRole: any | null;
 let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let githubInstallationStateConsumed: boolean;
+let ownerRepoListCalls: any[];
+let installationRepoListCalls: any[];
+let platformAdmin: boolean;
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -118,6 +121,9 @@ function resetState() {
   grantedProjectRole = null;
   gitConnectionRows = [];
   githubInstallationStateConsumed = false;
+  ownerRepoListCalls = [];
+  installationRepoListCalls = [];
+  platformAdmin = false;
   installationRows = [{
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
@@ -135,6 +141,12 @@ function resetState() {
 mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
+
+const realPlatformRoles = await import('../shared/platform-roles');
+mock.module('../shared/platform-roles', () => ({
+  ...realPlatformRoles,
+  isPlatformAdmin: async () => platformAdmin,
+}));
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
@@ -244,6 +256,10 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: { contents: 'write' },
   }),
+  verifyGitHubInstallationAdmin: async (token: string) => {
+    expect(token).toBe('github-user-token');
+    return { login: 'github-admin' };
+  },
   getRepo: async (input: any) => ({
     id: input.owner === 'acme' ? 84 : 7,
     name: input.repo,
@@ -259,8 +275,9 @@ mock.module('../projects/github', () => ({
     name: branch,
     protected: false,
   }),
-  listInstallationRepositories: async (installationId: string) => installationId === '84'
-    ? [{
+  listInstallationRepositories: async (installationId: string, options?: any) => {
+    installationRepoListCalls.push({ installationId, options });
+    return installationId === '84' ? [{
         id: 84,
         name: 'portal',
         full_name: 'acme/portal',
@@ -270,12 +287,15 @@ mock.module('../projects/github', () => ({
         ssh_url: 'git@github.com:acme/portal.git',
         default_branch: 'trunk',
         description: null,
-      }]
-    : [],
+      }] : [];
+  },
   // Not exercised by this file's scenarios (App installations only, no
   // managed-git PAT fallback here) — stubbed so the mocked module still
   // satisfies github-repositories.ts's named import.
-  listOwnerRepositories: async () => [],
+  listOwnerRepositories: async (input: any) => {
+    ownerRepoListCalls.push(input);
+    return [];
+  },
   listRepositoryBranches: async ({ owner, repo }: { owner: string; repo: string }) => [
     { name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main', protected: true },
     { name: 'dev', protected: false },
@@ -612,6 +632,7 @@ describe('create-repo starter scaffold contract', () => {
       body: JSON.stringify({
         state: 'valid-install-state',
         installation_id: '42',
+        github_user_token: 'github-user-token',
       }),
     });
     expect(upsert.status).toBe(200);
@@ -628,6 +649,7 @@ describe('create-repo starter scaffold contract', () => {
       body: JSON.stringify({
         state: 'valid-install-state',
         installation_id: '42',
+        github_user_token: 'github-user-token',
       }),
     });
     expect(replay.status).toBe(200);
@@ -683,7 +705,8 @@ describe('create-repo starter scaffold contract', () => {
     ]));
 
     const repos = await app.request(
-      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=84`,
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
+        '&installation_id=84&search=portal&limit=25',
     );
     expect(repos.status).toBe(200);
     expect(await repos.json()).toMatchObject({
@@ -691,6 +714,15 @@ describe('create-repo starter scaffold contract', () => {
       installation_id: '84',
       owner_login: 'acme',
       repositories: [{ full_name: 'acme/portal', default_branch: 'trunk' }],
+    });
+    expect(installationRepoListCalls).toContainEqual({
+      installationId: '84',
+      options: {
+        owner: 'acme',
+        ownerType: 'Organization',
+        search: 'portal',
+        limit: 25,
+      },
     });
 
     const branches = await app.request(
@@ -741,6 +773,66 @@ describe('create-repo starter scaffold contract', () => {
         managed: false,
       }),
     );
+  });
+
+  test('forwards bounded search options to the managed GitHub repository lister', async () => {
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
+    platformAdmin = true;
+
+    const app = createApp();
+    const response = await app.request(
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
+        '&installation_id=pat&search=customer%20portal&limit=25',
+    );
+
+    expect(response.status).toBe(200);
+    expect(ownerRepoListCalls).toEqual([
+      expect.objectContaining({
+        owner: 'managed-kortix',
+        search: 'customer portal',
+        limit: 25,
+      }),
+    ]);
+  });
+
+  test('does not expose the server managed PAT to a normal account user', async () => {
+    installationRows = [];
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
+
+    const app = createApp();
+    const installations = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
+    expect(installations.status).toBe(200);
+    expect(await installations.json()).toMatchObject({
+      installed: false,
+      installations: [],
+    });
+
+    const repositories = await app.request(
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
+    );
+    expect(repositories.status).toBe(403);
+    expect(await repositories.json()).toEqual({
+      error: 'Managed GitHub repository import requires platform admin access',
+    });
+    expect(ownerRepoListCalls).toEqual([]);
+
+    const linked = await app.request('/v1/projects/link-repository', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        installation_id: 'pat',
+        repo_full_name: 'managed-kortix/private-repo',
+      }),
+    });
+    expect(linked.status).toBe(403);
+    expect(await linked.json()).toEqual({
+      error: 'Managed GitHub repository import requires platform admin access',
+    });
   });
 
   test('commits the default starter scaffold with the account GitHub App token before registering the project', async () => {

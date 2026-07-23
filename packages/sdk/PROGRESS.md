@@ -194,6 +194,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
 | B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 | B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
+| B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`. | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input. | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector` |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1274,3 +1275,70 @@ and cleaned up the session and project.
 **Shippable to production: YES** for the SDK and local end-to-end terminal path.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-23 — session `github-repo-selector` (B13 completion)
+
+Completed bounded GitHub repository discovery in `0748271116`. The SDK accepts
+optional `search` and `limit` inputs. The API returns one recently updated page
+for initial discovery. Repository-name searches use GitHub Search. Both managed
+PAT and GitHub App installations use this bounded contract.
+
+The web import flow debounces repository search by 300 ms, preserves selectable
+results during background queries, and renders a retryable error state. The New
+project modal now presents three explicit repository sources: Kortix managed,
+create in GitHub, and import from GitHub. Account Git settings expose account
+GitHub App connections without requiring platform-admin access. The synthetic
+managed PAT is labelled as a server connection instead of a personal GitHub
+account.
+
+**TDD and runtime evidence:** focused SDK/API helper tests reported **9 pass / 0
+fail**. The two API route tests reported **2 pass / 0 fail**. Focused web tests
+reported **10 pass / 0 fail**. An authenticated local request returned the
+managed installation plus an App install URL with status `200`. A bounded
+repository search returned status `200` in **443 ms**. Production had returned
+`503` after **25.08 seconds** on the unbounded path.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1149 pass / 2 skip / 0 fail** across 86 files with 5083
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. API typecheck
+exited 0. Focused web ESLint reported 0 errors. The full web typecheck remains
+blocked by two unrelated `origin/main` errors in `template-url.test.ts`.
+
+**Shippable to production: YES** for the SDK surface. Repository merge, Deploy
+Dev, deployed-SHA proof, and live-dev verification remain part of the parent
+feature lifecycle.
+
+---
+
+### 2026-07-23 — session `github-repo-selector` (GitHub installation linking claim)
+
+Claimed the additive GitHub installation-save request field for secure
+cross-account linking. The SDK sends an optional GitHub user token to the API.
+The API verifies that the GitHub user owns the personal installation or
+administers the organization installation. Existing callers remain compatible
+at the type level.
+
+**Status:** IN PROGRESS. Final SDK gates and repository delivery remain pending.
+
+---
+
+### 2026-07-23 — session `github-repo-selector` (GitHub installation linking completion)
+
+Completed secure existing-installation linking. The additive SDK request field
+passes the GitHub user token to the API. The API verifies personal ownership or
+active organization-admin membership before it writes the account installation.
+The signed install state also preserves the initiating frontend origin. A shared
+GitHub App callback can therefore return to the Kortix host that started the
+flow.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1152 pass / 0 fail** across 86 files with 5090 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. API typecheck, focused API
+authorization tests, focused web tests, and focused web lint also pass.
+Repository merge, Deploy Dev, and live-dev verification remain pending.
