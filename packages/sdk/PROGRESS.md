@@ -1322,3 +1322,23 @@ administers the organization installation. Existing callers remain compatible
 at the type level.
 
 **Status:** IN PROGRESS. Final SDK gates and repository delivery remain pending.
+
+---
+
+### 2026-07-23 — session `github-repo-selector` (GitHub installation linking completion)
+
+Completed secure existing-installation linking. The additive SDK request field
+passes the GitHub user token to the API. The API verifies personal ownership or
+active organization-admin membership before it writes the account installation.
+The signed install state also preserves the initiating frontend origin. A shared
+GitHub App callback can therefore return to the Kortix host that started the
+flow.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1152 pass / 0 fail** across 86 files with 5090 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. API typecheck, focused API
+authorization tests, focused web tests, and focused web lint also pass.
+Repository merge, Deploy Dev, and live-dev verification remain pending.
