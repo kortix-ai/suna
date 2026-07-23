@@ -47,3 +47,8 @@ ad5076c2d7c6a488349e8283afc39e6c3caaff54:apps/web/src/features/session/acp-turn-
 # Historical localhost diagnostic token. The recorded request returned 401
 # "Invalid Kortix token". The value was not a usable credential.
 7ecff87449c0154763543f46c348a5100aff4e68:docs/specs/2026-07-21-codex-billing-leak-verification.md:curl-auth-header:92
+
+# False positive: this unit test generates an ephemeral Ed25519 keypair at
+# runtime and assigns its exported private key to the in-memory config. The
+# source contains no private key value. Reviewed 2026-07-23.
+18f089fa8b82d86b24822a8d06920030d7de27b7:apps/api/src/__tests__/unit-code-storage-git-backend.test.ts:generic-api-key:147
