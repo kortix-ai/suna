@@ -6,6 +6,7 @@ User-agent: *
 Content-Signal: search=yes, ai-input=yes, ai-train=no
 Allow: /
 Allow: /api/ai
+Content-Signal: ai-train=no, search=yes, ai-input=yes
 
 # Sitemap
 Sitemap: https://kortix.com/sitemap.xml
@@ -19,3 +20,6 @@ Disallow: /admin/
 Allow: /llms.txt
 Allow: /llms-full.txt
 Allow: /markdown/
+Allow: /.well-known/
+Allow: /auth.md
+Allow: /mcp

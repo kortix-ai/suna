@@ -4,6 +4,7 @@ import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemp
 import { currentFailedSnapshotBuild } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
@@ -45,7 +46,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(z.any(), 'OK'),
-        ...errors(400, 409),
+        ...errors(400, 403, 409),
     },
   }),
   async (c: any) => {
@@ -60,12 +61,21 @@ projectsApp.openapi(
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
+  const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
+  if (
+    installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID &&
+    !(await isPlatformAdmin(scope.userId))
+  ) {
+    return c.json(
+      { error: 'Managed GitHub repository import requires platform admin access' },
+      403,
+    );
+  }
+
   const quota = await enforceProjectQuota(c, scope.accountId);
   if (quota) return quota;
 
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
-
-  const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
 
   // PAT path: link an existing repo with a token, no GitHub App install
   // needed — either a caller-supplied token (the seamless `kortix ship` flow
@@ -783,10 +793,19 @@ projectsApp.openapi(
     userId,
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
+    // Platform-maintenance session — stamp the system source at the TOP-LEVEL
+    // metadata (the trusted, server-set channel resolveSessionOrigin reads), so
+    // its origin resolves to 'system' (source wins first). Under body.metadata
+    // it would persist but NOT drive the origin, since derivation never trusts
+    // the request body.
+    metadata: { source: 'system:sandbox-build-fix' },
     body: {
       initial_prompt: prompt,
       name: 'Fix sandbox build',
-      metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
+      metadata: {
+        kind: 'sandbox-build-fix',
+        failed_slug: failed.slug,
+      },
       // hostBuild.slug is a BUILD slug — for a warm bake it reads `default-warm`,
       // which names no template, so session creation rejected it with a 400.
       sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),

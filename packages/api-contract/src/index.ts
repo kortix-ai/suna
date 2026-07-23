@@ -231,6 +231,28 @@ export const SessionConnectorBindingsSchema = z
   });
 export type SessionConnectorBindings = z.infer<typeof SessionConnectorBindingsSchema>;
 
+export const SESSION_SECRETS_ALLOWLIST_MAX_KEYS = 128;
+/**
+ * A per-session secrets allowlist: project-secret IDENTIFIERS (never values)
+ * this session may receive. Backend-only. Narrows the resolved set — see
+ * intersectSecretGrants. Identifier grammar mirrors project_secrets.identifier
+ * (apps/api secrets.ts IDENTIFIER_REGEX).
+ */
+export const SessionSecretsAllowlistSchema = z
+  .array(
+    z
+      .string()
+      .regex(
+        /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/,
+        'each secrets entry must be a project-secret identifier',
+      ),
+  )
+  .max(
+    SESSION_SECRETS_ALLOWLIST_MAX_KEYS,
+    `secrets may contain at most ${SESSION_SECRETS_ALLOWLIST_MAX_KEYS} identifiers`,
+  );
+export type SessionSecretsAllowlist = z.infer<typeof SessionSecretsAllowlistSchema>;
+
 export const ConnectionProfileOwnerTypeSchema = z.enum(['agent', 'member', 'subject', 'external']);
 export const ConnectionProfileStatusSchema = z.enum(['active', 'revoked', 'error']);
 export const ConnectionProfileMetadataSchema = z
@@ -315,6 +337,16 @@ export const SessionCreateInputSchema = z
     metadata: JsonObjectSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
     connector_bindings: SessionConnectorBindingsSchema.optional(),
+    // Backend-only: the wrapper's opaque end-user handle this session acts for.
+    // Accepted only from a backend-origin caller (an account API key / PAT or a
+    // service-account bearer); any other origin supplying it is rejected 403
+    // (see resolveSessionOrigin / canOverride).
+    origin_ref: z.string().trim().min(1).max(256).optional(),
+    // Backend-only: narrow which project secrets (by identifier) this session's
+    // sandbox receives, from the default agent-grant set down to this list. `[]`
+    // means inject zero project secrets. Backend origin required — a non-backend
+    // caller supplying it is rejected 403 (canOverride 'secrets').
+    secrets: SessionSecretsAllowlistSchema.optional(),
     // Deprecated camelCase compatibility accepted by the pre-contract route.
     // New SDK/API consumers use the snake_case fields above.
     baseRef: z.string().min(1).optional(),
@@ -359,6 +391,12 @@ export const ProjectSessionSchema = z.object({
   owner_name: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
   visibility: SessionVisibilitySchema,
+  /** Policy class the session was created under (derived, never client-set). */
+  origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
+  /** Backend wrapper's end-user handle; non-null only for backend sessions. */
+  origin_ref: z.string().nullable(),
+  /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
+  secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
   can_manage_sharing: z.boolean(),

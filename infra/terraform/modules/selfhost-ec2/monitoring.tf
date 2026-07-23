@@ -20,10 +20,85 @@ resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
 }
 
 # ── SNS: notify on alarm ────────────────────────────────────────────────────
+resource "aws_kms_key" "alarm_topic" {
+  count                   = var.enable_alarms && var.alarm_sns_topic_arn == "" ? 1 : 0
+  description             = "Encrypt ${local.name} alarm notifications"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AccountAdministration"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action = [
+          "kms:CancelKeyDeletion",
+          "kms:CreateAlias",
+          "kms:CreateGrant",
+          "kms:Decrypt",
+          "kms:DeleteAlias",
+          "kms:DescribeKey",
+          "kms:DisableKey",
+          "kms:DisableKeyRotation",
+          "kms:EnableKey",
+          "kms:EnableKeyRotation",
+          "kms:Encrypt",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListAliases",
+          "kms:ListGrants",
+          "kms:ListKeyPolicies",
+          "kms:ListKeyRotations",
+          "kms:ListResourceTags",
+          "kms:ListRetirableGrants",
+          "kms:PutKeyPolicy",
+          "kms:ReEncryptFrom",
+          "kms:ReEncryptTo",
+          "kms:RetireGrant",
+          "kms:RevokeGrant",
+          "kms:RotateKeyOnDemand",
+          "kms:ScheduleKeyDeletion",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:UpdateAlias",
+          "kms:UpdateKeyDescription",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid       = "AllowSnsEncryption"
+        Effect    = "Allow"
+        Principal = { Service = "sns.amazonaws.com" }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      },
+    ]
+  })
+  tags = local.tags
+}
+
+resource "aws_kms_alias" "alarm_topic" {
+  count         = var.enable_alarms && var.alarm_sns_topic_arn == "" ? 1 : 0
+  name          = "alias/${local.name}-alarms"
+  target_key_id = aws_kms_key.alarm_topic[0].key_id
+}
+
 resource "aws_sns_topic" "alarms" {
-  #checkov:skip=CKV_AWS_26:no sensitive payloads pass through this topic (alarm text only) — SNS-managed encryption is the default and adds an unnecessary CMK dependency for a demo/self-host box
-  count = var.enable_alarms && var.alarm_sns_topic_arn == "" ? 1 : 0
-  name  = "${local.name}-alarms"
+  count             = var.enable_alarms && var.alarm_sns_topic_arn == "" ? 1 : 0
+  name              = "${local.name}-alarms"
+  kms_master_key_id = aws_kms_key.alarm_topic[0].arn
   tags = {
     ManagedBy      = "terraform"
     Name           = "${local.name}-alarms"

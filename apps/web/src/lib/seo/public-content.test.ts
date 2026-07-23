@@ -86,7 +86,7 @@ describe('public SEO/AEO content coverage', () => {
     }
   });
 
-  test('serves Markdown inline as crawlable UTF-8 plain text', async () => {
+  test('serves Markdown inline as crawlable UTF-8 Markdown', async () => {
     const record = getPublicContentRecords({ includeUseCases: true }).find(
       (item) => item.kind === 'blog' && item.markdownPath,
     );

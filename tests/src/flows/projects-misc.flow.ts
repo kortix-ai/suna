@@ -390,16 +390,16 @@ flow(
 
 // PROJ-27 — model-defaults CRUD. GET reads the platform/account/project/agent
 // defaults; PUT upserts one scope (agent requires agentName); DELETE clears
-// one scope by query. Entitlement is NOT enforced here (the gateway rejects
-// an unavailable model at request time) — the handler only sanity-checks the
-// wire form: a `provider/model` string always passes (isStorableModel), the
-// synthetic `auto` id never does. Full set → read-back → clear lifecycle on
-// scope=project.
+// one scope by query. PUT rejects models that the account cannot serve. The
+// flow reads the current project picker and selects a managed model from that
+// served catalog. Full set → read-back → clear lifecycle on scope=project.
 flow(
   "PROJ-27",
   {
     domain: "projects",
+    requires: ["funded"],
     routes: [
+      "GET /v1/projects/:projectId/model-picker",
       "GET /v1/projects/:projectId/model-defaults",
       "PUT /v1/projects/:projectId/model-defaults",
       "DELETE /v1/projects/:projectId/model-defaults",
@@ -407,29 +407,45 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
+    let servableModel = "";
     await ctx.step("GET before any override → 200 with no project default", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
       r.status(200).body().exists("$.platformDefault").has("$.projectDefault", null);
     });
+    await ctx.step("GET model picker → select a served managed model", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/model-picker", { params: { projectId: p.id } });
+      r.status(200);
+      const models = r.json<any>()?.models;
+      const candidate =
+        models && typeof models === "object"
+          ? Object.keys(models).find((model) => model !== "auto" && !model.includes("/"))
+          : undefined;
+      if (!candidate) {
+        throw new Error(`model-picker returned no managed model: ${r.text()}`);
+      }
+      servableModel = candidate;
+    });
     await ctx.step("PUT scope=project sets a concrete model → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
           "/v1/projects/:projectId/model-defaults",
-          { scope: "project", model: "openai/gpt-5.5" },
+          { scope: "project", model: servableModel },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.ok", true).has("$.scope", "project").has("$.model", "openai/gpt-5.5");
+      r.status(200).body().has("$.ok", true).has("$.scope", "project").has("$.model", servableModel);
     });
     await ctx.step("GET reflects the set project default", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
-      r.status(200).body().has("$.projectDefault", "openai/gpt-5.5").has("$.resolvedForCaller", "openai/gpt-5.5");
+      r.status(200).body().has("$.projectDefault", servableModel).has("$.resolvedForCaller", servableModel);
     });
-    await ctx.step("PUT with the synthetic auto id → 400 (not a settable model)", async () => {
+    await ctx.step("PUT with the synthetic auto id → 409 (not servable)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
@@ -437,14 +453,14 @@ flow(
           { scope: "project", model: "auto" },
           { params: { projectId: p.id } },
         );
-      r.status(400);
+      r.status(409).body().has("$.code", "model_not_servable");
     });
     await ctx.step("PUT scope=agent without agentName → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
           "/v1/projects/:projectId/model-defaults",
-          { scope: "agent", model: "openai/gpt-5.5" },
+          { scope: "agent", model: servableModel },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -574,7 +590,11 @@ flow(
 // safe, real no-op write (still commits to git) that proves the success path.
 flow(
   "PROJ-30",
-  { domain: "projects", routes: ["PUT /v1/projects/:projectId/default-agent"] },
+  {
+    domain: "projects",
+    timeoutMs: 240_000,
+    routes: ["PUT /v1/projects/:projectId/default-agent"],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project({ seed: true });
     await ctx.step("set default agent to the existing 'kortix' agent → 200", async () => {

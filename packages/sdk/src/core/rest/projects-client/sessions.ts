@@ -51,6 +51,14 @@ export interface ProjectSession {
   owner_name?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
+  /** How the session was started — a policy class derived from the caller's
+   *  token kind, not the surface. A backend (PAT/service-account) create is
+   *  'backend'; a human web session is 'user'. See Kortix-as-a-Backend. */
+  origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
+  /** The wrapper's end-user this session acts for (backend origin only). */
+  origin_ref?: string | null;
+  /** The per-session secrets allowlist that was applied (identifiers); null = none. */
+  secrets_allowlist?: string[] | null;
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
   can_manage_sharing?: boolean;
@@ -92,6 +100,21 @@ export interface CreateProjectSessionInput {
    * own member profile, a project default, or an operator-managed profile when
    * the caller holds the management capability. */
   connector_bindings?: SessionConnectorBindings;
+  /**
+   * Kortix-as-a-Backend (backend-origin callers only — a PAT / service-account
+   * bearer). The wrapper's opaque end-user this session acts for; recorded on the
+   * session and surfaced to the sandbox as KORTIX_ORIGIN_REF. A non-backend
+   * caller supplying it is rejected 403. Attribution only — pass the user's
+   * connectors via connector_bindings.
+   */
+  origin_ref?: string;
+  /**
+   * Kortix-as-a-Backend (backend-origin callers only). Narrow which project
+   * secrets (by identifier) this session's sandbox receives, from the agent's
+   * default set down to this list. `[]` = inject zero project secrets. Pure
+   * narrowing — can't widen beyond the agent's grant. Non-backend caller → 403.
+   */
+  secrets?: string[];
 }
 
 export interface ProjectOpenCodeSession {

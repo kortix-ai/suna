@@ -79,6 +79,13 @@ optionally a managed-git token. Sign up in the dashboard, then connect your
 own LLM key in the model picker. Self-hosted instances use your own key
 by default.
 
+<Callout type="info">
+By default, only the platform admin can create new organization accounts.
+Any signed-in user can still join by invite or SSO. Opt out with
+`kortix self-host init --no-restrict-account-creation`, or re-enable the
+admin-only default with `--restrict-account-creation`.
+</Callout>
+
 ## Updates
 
 Every instance updates itself automatically. Pin an exact version instead:

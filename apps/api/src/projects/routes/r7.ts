@@ -7,7 +7,7 @@ import {
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
@@ -23,7 +23,6 @@ import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, 
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
-import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import {
   createSession,
   deleteSession,
@@ -409,6 +408,15 @@ projectsApp.openapi(
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body,
+    // Origin is derived from the caller's token kind (service_account / pat /
+    // 'user' apiKey → backend), never the body — see resolveSessionOrigin. A
+    // token operating from INSIDE a session stays 'user' so an in-sandbox agent
+    // can't vouch via origin_ref. Keyed on session-binding (`sessionId`, set on
+    // the executor PAT injected into every sandbox) OR an agent grant — NOT the
+    // grant alone, which is null for v1/default agents and would fail open.
+    authType: c.get('authType') as string | undefined,
+    apiKeyType: c.get('apiKeyType') as string | undefined,
+    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
     idempotencyKey: c.req.header('idempotency-key') ?? null,
     mayManageSystemConnectorProfiles,
@@ -464,6 +472,7 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const rows = await db
     .select()
@@ -502,19 +511,6 @@ projectsApp.openapi(
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
   }
 
-  // Inventory metadata must not become a side door into a private runtime.
-  // Only title-sync rows the viewer could already open, and never revive or
-  // inspect a soft-deleted session merely because an admin opened inventory.
-  const syncableRows = selected.items
-    .filter((item) => item.canAccess && !item.deletedAt)
-    .map((item) => item.row);
-  const syncedRows = await syncOpenCodeTitlesForSessions({
-    rows: syncableRows,
-    projectId,
-    accountId: loaded.row.accountId,
-    userId: loaded.userId,
-  });
-  const syncedBySession = new Map(syncedRows.map((row) => [row.sessionId, row]));
   const ownerIds = selected.items
     .map((item) => item.row.createdBy)
     .filter((ownerId): ownerId is string => Boolean(ownerId));
@@ -522,7 +518,7 @@ projectsApp.openapi(
 
   return c.json(
     selected.items.map((item) => {
-      const row = syncedBySession.get(item.row.sessionId) ?? item.row;
+      const row = item.row;
       const owner = row.createdBy ? ownerIdentities.get(row.createdBy) : null;
       return serializeSession(row, {
         grants: grantsBySession.get(row.sessionId) ?? [],
@@ -567,17 +563,10 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
-  const [row] = await syncOpenCodeTitlesForSessions({
-    rows: [visible.row],
-    projectId,
-    accountId: loaded.row.accountId,
-    userId: loaded.userId,
-  });
-
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;
-  return c.json(serializeSession(row ?? visible.row, {
+  return c.json(serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,

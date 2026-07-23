@@ -62,6 +62,7 @@ const PUBLIC_ROUTES = [
   '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
+  '/mcp', // Public read-only MCP server and server card
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
   '/review', // Review Center clickable prototype — mock data only, public so it is shareable/clickable without login
@@ -91,6 +92,30 @@ const STATIC_PUBLIC_ROUTES = [
   '/game-of-life',
   '/rauch',
 ];
+
+const MARKDOWN_NEGOTIATION_ROUTES = new Set([
+  '/',
+  '/about',
+  '/developers',
+  '/enterprise',
+  '/pricing',
+]);
+
+const AGENT_DISCOVERY_LINK_HEADER =
+  '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json", ' +
+  '<https://api.kortix.com/v1/openapi.json>; rel="service-desc"; type="application/json", ' +
+  '</docs>; rel="service-doc"; type="text/html", ' +
+  '</llms.txt>; rel="describedby"; type="text/plain"';
+
+function supportsMarkdownNegotiation(pathname: string): boolean {
+  if (MARKDOWN_NEGOTIATION_ROUTES.has(pathname)) return true;
+  return (
+    pathname === '/docs' ||
+    pathname.startsWith('/docs/') ||
+    /^\/blog\/[^/]+$/.test(pathname) ||
+    /^\/use-cases\/[^/]+$/.test(pathname)
+  );
+}
 
 // Routes that require authentication but are related to billing/setup
 const BILLING_ROUTES: string[] = [];
@@ -135,6 +160,27 @@ export async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
+
+  // Public HTML pages have canonical Markdown representations. Rewrite only
+  // explicit Markdown requests. Browsers keep the normal HTML representation.
+  if (
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    request.headers
+      .get('accept')
+      ?.split(',')
+      .some((value) => value.trim().startsWith('text/markdown')) &&
+    supportsMarkdownNegotiation(pathname)
+  ) {
+    const markdownUrl = request.nextUrl.clone();
+    markdownUrl.pathname = '/markdown-negotiation';
+    markdownUrl.search = '';
+    markdownUrl.searchParams.set('path', pathname);
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-kortix-markdown-path', pathname);
+    return NextResponse.rewrite(markdownUrl, {
+      request: { headers: requestHeaders },
+    });
+  }
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
   if (
@@ -404,6 +450,9 @@ export async function middleware(request: NextRequest) {
   // Returning a fresh NextResponse.next() would discard refreshed auth cookies,
   // causing the session to break on the next navigation.
   if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+    if (pathname === '/') {
+      supabaseResponse.headers.set('Link', AGENT_DISCOVERY_LINK_HEADER);
+    }
     return supabaseResponse;
   }
 

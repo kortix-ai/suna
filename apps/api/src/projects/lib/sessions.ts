@@ -29,7 +29,14 @@ import {
   resolveGovernedAgentGrant,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
+import {
+  AmbiguousSecretGrantError,
+  intersectSecretGrants,
+  listProjectSecretsSnapshotForUser,
+  listResolvedProjectSecrets,
+  parseSessionSecretsAllowlist,
+  secretKeyCollisionInAllowlist,
+} from '../secrets';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
@@ -50,6 +57,7 @@ import {
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import { canOverride, resolveSessionOrigin } from './session-origin';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -281,12 +289,31 @@ export async function buildSessionSandboxEnvVars(input: {
     agentGrantEnv = grant?.env;
   }
 
+  // Per-session KaaB fields, read by sessionId inside the builder so all three
+  // call sites (create, restart, open/ensure) are covered — no caller can
+  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
+  // so a backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB). `originRef` (the wrapper's
+  // end-user) is surfaced to the sandbox as KORTIX_ORIGIN_REF for attribution.
+  const [sessionKaabRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      originRef: projectSessions.originRef,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+  const grantEnvForSession = intersectSecretGrants(
+    agentGrantEnv,
+    sessionKaabRow?.secretsAllowlist ?? null,
+  );
+
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
       input.userId,
-      agentGrantEnv,
+      grantEnvForSession,
     );
   } catch (err) {
     if (err instanceof AmbiguousSecretGrantError) {
@@ -368,6 +395,8 @@ export async function buildSessionSandboxEnvVars(input: {
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
+      // Backend-vouched end-user (KaaB) → KORTIX_ORIGIN_REF in the sandbox.
+      originRef: sessionKaabRow?.originRef ?? null,
       compiledAgentConfig,
     }),
   };
@@ -448,6 +477,18 @@ export async function createProjectSession(input: {
    * otherwise be invisible to everyone but the account's first owner.
    */
   visibility?: 'private' | 'project' | 'restricted';
+  /**
+   * Caller's token kind (auth.ts `authType`), its apiKeyType (user | sandbox,
+   * for authType==='apiKey'), and whether the token operates from inside a
+   * running session (`inSession`: session-bound or agent-scoped). Combined with
+   * the invocation source these derive the session ORIGIN — never trusted from
+   * the body. A programmatic customer credential (service_account, pat, or a
+   * 'user' apiKey) that is NOT in-session resolves to 'backend' and may set
+   * backend-only override fields (currently `origin_ref`). See session-origin.ts.
+   */
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
   /** The request-time capability verdict for operator-managed (non-member)
    * connection profiles. Personal profiles ignore this and remain owner-only. */
   mayManageSystemConnectorProfiles?: boolean;
@@ -483,6 +524,109 @@ export async function createProjectSession(input: {
         },
       },
     };
+  }
+
+  // Origin is a POLICY CLASS derived from the caller's token kind (authType)
+  // + invocation source (metadata.source), NEVER the body. It gates which
+  // override fields the caller may set. `origin_ref` (the wrapper end-user this
+  // session acts for) is backend-only: a non-backend caller that supplies it is
+  // rejected rather than silently attributing to a phantom identity.
+  const origin = resolveSessionOrigin({
+    authType: input.authType,
+    apiKeyType: input.apiKeyType,
+    inSession: input.inSession,
+    source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+  });
+  const requestedOriginRef = normalizeString(body.origin_ref);
+  // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
+  // whitespace-only one), not on its trimmed value — otherwise a non-backend
+  // caller could send origin_ref: "   " to slip past the 403, since
+  // normalizeString would null it out.
+  const originRefProvided = typeof body.origin_ref === 'string' && body.origin_ref.length > 0;
+  if (originRefProvided && !canOverride(origin, 'origin_ref')) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'origin_ref may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+          code: 'origin_override_forbidden',
+        },
+      },
+    };
+  }
+  // Mirror the OpenAPI bound (origin_ref max 256) for internal backend callers
+  // that compose the body server-side and bypass request validation, so an
+  // oversized handle can't reach the project_sessions.origin_ref column.
+  if (requestedOriginRef && requestedOriginRef.length > 256) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'origin_ref must be at most 256 characters',
+          code: 'INVALID_ORIGIN_REF',
+        },
+      },
+    };
+  }
+  const originRef = canOverride(origin, 'origin_ref') ? (requestedOriginRef ?? null) : null;
+
+  // Backend-only per-session secrets allowlist. Presence-gate on the raw body
+  // FIRST (a non-backend caller that even mentions the field is rejected, before
+  // shape is considered), then validate shape, then existence — narrowing the
+  // sandbox env to (agent grant) ∩ (this list). `[]` = inject zero secrets.
+  if (body.secrets !== undefined && !canOverride(origin, 'secrets')) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'secrets may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+          code: 'origin_override_forbidden',
+        },
+      },
+    };
+  }
+  const parsedSecrets = parseSessionSecretsAllowlist(body.secrets);
+  if (!parsedSecrets.ok) {
+    return {
+      error: { status: 400, body: { error: parsedSecrets.error, code: 'INVALID_SESSION_SECRETS' } },
+    };
+  }
+  const secretsAllowlist = parsedSecrets.value ?? null;
+  if (secretsAllowlist && secretsAllowlist.length > 0) {
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // Every allowlisted identifier must name an existing runtime secret in the
+    // project (KORTIX_*/connector rows are already excluded by the resolver), so
+    // a typo fails fast at create rather than silently injecting nothing.
+    const known = new Set(resolvedProjectSecrets.map((r) => r.identifier.toUpperCase()));
+    const missing = secretsAllowlist.filter((id) => !known.has(id.toUpperCase()));
+    if (missing.length > 0) {
+      return {
+        error: {
+          status: 404,
+          body: {
+            error: `unknown secret identifier(s): ${missing.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_NOT_FOUND',
+          },
+        },
+      };
+    }
+    // Reject a KEY collision at create — two allowlisted identifiers resolving to
+    // one env KEY throw AmbiguousSecretGrantError at boot, and the immutable
+    // allowlist would leave the session permanently unbootable.
+    const collision = secretKeyCollisionInAllowlist(resolvedProjectSecrets, secretsAllowlist);
+    if (collision) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: `secrets allowlist names multiple identifiers for env key "${collision.key}": ${collision.identifiers.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+          },
+        },
+      };
+    }
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
@@ -711,6 +855,9 @@ export async function createProjectSession(input: {
         // session-header control (visibility = project | restricted).
         createdBy: userId,
         visibility,
+        origin,
+        originRef,
+        secretsAllowlist,
         metadata,
         updatedAt: new Date(),
       })

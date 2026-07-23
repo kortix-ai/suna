@@ -1,4 +1,5 @@
 import { WebMcpTools } from '@/components/agent/web-mcp-tools';
+import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
@@ -315,6 +316,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         className="notranslate text-foreground bg-background min-h-screen w-full scroll-smooth font-sans font-medium antialiased"
         suppressHydrationWarning
       >
+        <WebMcpTools />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
