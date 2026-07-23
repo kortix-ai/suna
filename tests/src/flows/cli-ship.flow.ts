@@ -687,7 +687,7 @@ flow(
         const r = await sb.run(['cr', 'open', '--head', session.id, '--title', 'ke2e cli CR'], {
           env: crEnv,
         });
-        check('exit 0', r.exitCode === 0, 0, r.exitCode);
+        checkExit('exit 0', r, 0);
         check('reports the opened CR number', /CR #\d+/.test(r.all), true, r.stdout.slice(0, 200));
         const m = r.stdout.match(/CR #(\d+)/);
         crNumber = m ? m[1] : '';
