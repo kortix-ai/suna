@@ -5,6 +5,7 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
+import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { config } from '../config';
@@ -299,7 +300,9 @@ export function resolveGrantedSecretEnv(
   return { env, identifiers: allowed.map((r) => r.identifier) };
 }
 
-export const SESSION_SECRETS_ALLOWLIST_MAX_KEYS = 128;
+// Single source of truth in @kortix/api-contract (route-contract validation);
+// re-exported here so internal callers keep the same import site.
+export { SESSION_SECRETS_ALLOWLIST_MAX_KEYS };
 
 /**
  * Shape-validate a session-create body's `secrets` field (the per-session

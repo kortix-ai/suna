@@ -467,7 +467,10 @@ projectsApp.openapi(
         ),
       )
       .limit(1);
-    if (sessionRow?.secretsAllowlist) {
+    // Any non-null allowlist narrows the enumeration — including the empty array
+    // (`[]` = enumerate ZERO secrets). Guard on `!= null`, not truthiness alone,
+    // to make that intent explicit (an empty Set filters everything out below).
+    if (sessionRow?.secretsAllowlist != null) {
       sessionAllowUpper = new Set(sessionRow.secretsAllowlist.map((id) => id.toUpperCase()));
     }
   }
