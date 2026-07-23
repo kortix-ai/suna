@@ -22,6 +22,7 @@ import {
   resultFromExistingCommand,
 } from './store';
 import type { QueuedContinueSessionPayload } from './store';
+import { crossAccountIdempotencyResult } from './idempotency-guard';
 import type {
   ContinueSessionCommand,
   CreateSessionCommand,
@@ -78,6 +79,13 @@ export async function createSession(
     reason,
   });
   if (claimed.existing) {
+    // Cross-tenant guard: a colliding idempotency key from another account must
+    // never return the foreign command/session — see crossAccountIdempotencyResult.
+    const crossAccount = crossAccountIdempotencyResult(
+      claimed.row.accountId,
+      command.project.accountId,
+    );
+    if (crossAccount) return crossAccount;
     const existingPayload = (claimed.row.payload ?? {}) as Record<string, unknown>;
     const existingBody =
       existingPayload.body && typeof existingPayload.body === 'object'
