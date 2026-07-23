@@ -72,4 +72,53 @@ describe('platinum uploadWithRetry — large-context resilience', () => {
     await expect(uploadWithRetry(presignFn, tarPath)).rejects.toThrow();
     expect(presignCalls).toBe(1);
   }, 15_000);
+
+  test('PHASE 2: an http (non-https) presigned URL is rejected before any PUT', async () => {
+    const tarPath = await tinyTar();
+    let presignCalls = 0;
+    const presignFn = async () => {
+      presignCalls += 1;
+      return { upload_url: 'http://s3.test/put', context_s3_key: 'key' };
+    };
+    let puts = 0;
+    globalThis.fetch = (async () => {
+      puts += 1;
+      return new Response('', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      uploadWithRetry(presignFn, tarPath, { allowLocal: false, allowedHosts: [] }),
+    ).rejects.toThrow(/rejected/);
+    expect(puts).toBe(0); // never streamed the context to an unsafe URL
+    expect(presignCalls).toBe(1); // terminal, not retried
+  }, 15_000);
+
+  test('PHASE 2: an SSRF/private presigned URL is rejected before any PUT', async () => {
+    const tarPath = await tinyTar();
+    const presignFn = async () => ({ upload_url: 'https://169.254.169.254/x', context_s3_key: 'key' });
+    let puts = 0;
+    globalThis.fetch = (async () => {
+      puts += 1;
+      return new Response('', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      uploadWithRetry(presignFn, tarPath, { allowLocal: false, allowedHosts: [] }),
+    ).rejects.toThrow(/rejected/);
+    expect(puts).toBe(0);
+  }, 15_000);
+
+  test('PHASE 2: the PUT refuses redirects (redirect: error)', async () => {
+    const tarPath = await tinyTar();
+    const presignFn = async () => ({ upload_url: 'https://s3.test/put', context_s3_key: 'key' });
+    let sawRedirectError = false;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      if (init?.redirect === 'error') sawRedirectError = true;
+      return new Response('', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const key = await uploadWithRetry(presignFn, tarPath, { allowLocal: false, allowedHosts: [] });
+    expect(key).toBe('key');
+    expect(sawRedirectError).toBe(true);
+  }, 15_000);
 });

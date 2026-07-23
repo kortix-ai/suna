@@ -31,6 +31,17 @@ import type {
   SandboxProviderAdapter,
 } from './index';
 import { shortLivedObservation } from '../observation-cache';
+import {
+  assertSafePresignedUploadUrl,
+  parseUploadHostAllowlist,
+  sanitizeUrlForLog,
+} from './upload-url-guard';
+import {
+  classifyPlatinumPollError,
+  isTerminalPollError,
+  retryAfterMsFromError,
+} from './platinum-poll-classify';
+import { config } from '../../config';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -119,29 +130,87 @@ async function findTemplateById(id: string): Promise<PlatinumTemplate | null> {
   }
 }
 
+const POLL_BACKOFF_BASE_MS = 2_000;
+const POLL_BACKOFF_MAX_MS = 30_000;
+
+/** Exponential backoff with full jitter for transient poll errors. */
+function pollBackoffMs(streak: number): number {
+  const ceil = Math.min(POLL_BACKOFF_MAX_MS, POLL_BACKOFF_BASE_MS * 2 ** Math.max(0, streak - 1));
+  return Math.floor(Math.random() * ceil);
+}
+
 /**
- * Long-poll a just-registered template to `ready`. PRIMARY signal is
- * `GET /v1/templates/:id` when `from-build`/`from-patch` returned an id — the
- * name-list lookup is a FALLBACK for the (defensive) case no id is available.
- * Polling the list here would risk exactly the false-negative this function
- * exists to avoid: Platinum's idempotent-adopt path can hand back an OLD row,
- * and the list truncates at 50 (see module header), so a template that exists
- * and is `ready` can still be absent from the page this call sees. Standalone
- * (not a class method) so it's directly unit-testable without driving the
- * whole build pipeline.
+ * Long-poll a just-registered template to `ready`. PRIMARY (and, per PHASE 2,
+ * the ONLY) signal is `GET /v1/templates/:id` — a non-empty id from
+ * `from-build`/`from-patch` is REQUIRED; the truncated name-list fallback is
+ * gone (an idempotent-adopt can hand back an OLD row, and the list truncates at
+ * 50, so a `ready` template can be absent from the page — a false "missing").
+ *
+ * Poll-error handling is classified (PHASE 2): 401/403 and TLS/cert failures
+ * fail immediately (permanent); 404 is "not visible yet" (healthy, keep
+ * polling); 429/5xx/DNS/socket/timeout are transient and retried with
+ * exponential backoff + jitter (Retry-After honored on 429) WITHOUT counting
+ * against anything — a long healthy `building` is not a failed attempt. Only an
+ * explicit provider `failed` state, or the overall deadline, is terminal.
+ *
+ * When an id is polled, the resolved row's NAME is verified against `name`
+ * (defense against an idempotent-adopt returning a different template).
+ * Standalone (not a class method) so it's directly unit-testable.
  */
 export async function waitForActive(name: string, tap?: BuildLogTap, id?: string): Promise<void> {
   const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
   let last = 'unknown';
+  let transientStreak = 0;
   while (Date.now() < deadline) {
-    const tpl = id ? await findTemplateById(id).catch(() => null) : await findTemplateByName(name).catch(() => null);
+    let tpl: PlatinumTemplate | null;
+    try {
+      // findTemplateById returns null ONLY on an explicit 404 (not-visible-yet);
+      // every other transport/HTTP error propagates here to be classified.
+      tpl = id ? await findTemplateById(id) : await findTemplateByName(name);
+      transientStreak = 0;
+    } catch (err) {
+      const cls = classifyPlatinumPollError(err);
+      if (isTerminalPollError(cls)) {
+        // 401/403 (dead key) or TLS/cert failure — fail NOW, preserving the
+        // original classified message so the transition core marks it permanent.
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+      transientStreak += 1;
+      const backoff = cls === 'rate-limited'
+        ? (retryAfterMsFromError(err) ?? pollBackoffMs(transientStreak))
+        : pollBackoffMs(transientStreak);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      tap?.onLine?.(`template ${name}: transient poll error (${cls}) — retrying`);
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(backoff, remaining))));
+      continue;
+    }
+    // A resolved-by-id row whose name doesn't match is an adopt mismatch, not
+    // our build — fail closed rather than trust a wrong template.
+    if (id && tpl && tpl.name && tpl.name !== name) {
+      throw new Error(
+        `Platinum template id ${id} resolved to name "${tpl.name}", expected "${name}" — refusing to trust a mismatched template`,
+      );
+    }
     const state = (tpl?.state ?? 'missing').toLowerCase();
     if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
     if (state === 'ready') return;
     if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
+    // building / pending / missing(=not-visible-yet) → healthy waiting.
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   throw new Error(`Platinum template ${name} did not become ready (last state: ${last})`);
+}
+
+/** Assert a provider-returned external template id is present and non-empty —
+ *  PHASE 2 EXACT ID: never fall back to the truncated name list. */
+export function requireExternalTemplateId(id: unknown, context: string): string {
+  if (typeof id !== 'string' || id.trim() === '') {
+    throw new Error(
+      `Platinum ${context} did not return a template id — refusing to fall back to name-list polling`,
+    );
+  }
+  return id;
 }
 
 /**
@@ -198,18 +267,53 @@ function isRetryableUploadError(err: unknown): boolean {
  * transport as the PUT, and must go through the same isRetryableUploadError
  * decision + retry loop — not bypass it and fail the whole upload on attempt 1.
  */
+/**
+ * Guard options for the presigned upload URL, derived from deployment env:
+ *  - local-dev (`INTERNAL_KORTIX_ENV=dev`) allows http + loopback (MinIO),
+ *  - `KORTIX_PLATINUM_UPLOAD_HOST_ALLOWLIST` pins the object-storage origin(s).
+ * Exported so the uploader default and tests share one source of truth.
+ */
+export function uploadUrlGuardOptsFromEnv(): { allowLocal: boolean; allowedHosts: string[] } {
+  return {
+    allowLocal: config.INTERNAL_KORTIX_ENV === 'dev',
+    allowedHosts: parseUploadHostAllowlist(process.env.KORTIX_PLATINUM_UPLOAD_HOST_ALLOWLIST),
+  };
+}
+
 export async function uploadWithRetry(
   presignFn: () => Promise<{ upload_url: string; context_s3_key: string }>,
   tarPath: string,
+  guardOpts: { allowLocal: boolean; allowedHosts: string[] } = uploadUrlGuardOptsFromEnv(),
 ): Promise<string> {
   const sizeBytes = Bun.file(tarPath).size;
   const timeoutMs = Math.max(UPLOAD_MIN_TIMEOUT_MS, Math.ceil((sizeBytes / 1024 ** 3) * UPLOAD_TIMEOUT_MS_PER_GIB));
   for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt++) {
     try {
       const { upload_url, context_s3_key } = await presignFn();
-      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(tarPath), signal: AbortSignal.timeout(timeoutMs) });
+      // PHASE 2: validate the presigned URL BEFORE streaming the context —
+      // https-only outside local-dev, no loopback/link-local/private/multicast
+      // SSRF targets, and origin-pinned when an allowlist is configured. An
+      // invalid URL is NOT retryable (a fresh presign returns the same origin).
+      let safeUrl: URL;
+      try {
+        safeUrl = assertSafePresignedUploadUrl(upload_url, guardOpts);
+      } catch (guardErr) {
+        // Wrap as a terminal (non-retryable) error — the sanitized message
+        // never carries the presign signature.
+        throw new UploadUrlRejectedError(guardErr instanceof Error ? guardErr.message : String(guardErr));
+      }
+      const put = await fetch(safeUrl, {
+        method: 'PUT',
+        body: Bun.file(tarPath),
+        signal: AbortSignal.timeout(timeoutMs),
+        // Refuse a 30x bounce of the signed PUT to a different origin.
+        redirect: 'error',
+      });
       if (put.ok) return context_s3_key;
-      throw new Error(`build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
+      // Log only the sanitized URL (query/signature stripped).
+      throw new Error(
+        `build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)} (${sanitizeUrlForLog(upload_url)})`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!isRetryableUploadError(err) || attempt === UPLOAD_ATTEMPTS) {
@@ -221,6 +325,15 @@ export async function uploadWithRetry(
   }
   // Unreachable: the loop above always returns or throws by UPLOAD_ATTEMPTS.
   throw new Error('build-context upload failed');
+}
+
+/** A presigned upload URL that failed the security guard — terminal, never
+ *  retried (a re-presign returns the same rejected origin/scheme). */
+export class UploadUrlRejectedError extends Error {
+  constructor(message: string) {
+    super(`presigned upload URL rejected: ${message}`);
+    this.name = 'UploadUrlRejectedError';
+  }
 }
 
 class PlatinumAdapter implements SandboxProviderAdapter {
@@ -307,8 +420,10 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
         }),
       });
-      // Poll the id `from-build` handed back (primary signal) — see waitForActive.
-      await waitForActive(input.snapshotName, tap, registered?.id);
+      // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
+      // poll THAT id (never the truncated name list) — see waitForActive.
+      const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
+      await waitForActive(input.snapshotName, tap, externalId);
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       await rm(tarPath, { force: true }).catch(() => {});
@@ -347,7 +462,10 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           files: [{ s3_key: context_s3_key, guest_path: '/usr/local/bin/kortix-agent', mode: 0o100755 }],
         }),
       });
-      await waitForActive(newSnapshotName, undefined, patched?.id);
+      // PHASE 2 EXACT ID: from-patch MUST return a non-empty id — poll it, never
+      // the name list.
+      const externalId = requireExternalTemplateId(patched?.id, `from-patch for ${newSnapshotName}`);
+      await waitForActive(newSnapshotName, undefined, externalId);
     } finally {
       observeTemplates.invalidate();
       await cleanup();
@@ -385,6 +503,27 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       return template?.id ?? null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * PHASE 2 EXACT ID: verify readiness by the durable EXTERNAL template id (what
+   * a transition persisted), not the name. `GET /v1/templates/:id` reads the
+   * exact row Platinum created, so it can never miss it behind the 50-row
+   * name-list pagination. A 404 = the id is gone → 'missing'. An auth failure
+   * propagates (same rationale as getSnapshotState) so a dead key is classified
+   * permanent rather than degraded to 'unknown'. Used by the reconciler to
+   * re-verify an activated transition against its recorded id.
+   */
+  async getSnapshotStateByExternalId(externalId: string): Promise<ProviderState> {
+    if (!isPlatinumConfigured()) return 'missing';
+    if (!externalId || externalId.trim() === '') return 'missing';
+    try {
+      const template = await findTemplateById(externalId);
+      return template ? normalizeExistingProviderState(template.state) : 'missing';
+    } catch (err) {
+      if (isPlatinumAuthFailure(err)) throw err;
+      return 'unknown';
     }
   }
 

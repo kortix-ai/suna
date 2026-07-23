@@ -119,6 +119,15 @@ export interface SandboxProviderAdapter {
   getSnapshotExternalId?(snapshotName: string): Promise<string | null>;
 
   /**
+   * Optional (PHASE 2 EXACT ID): verify live provider state by the durable
+   * EXTERNAL template/build id a transition persisted — not by name. Reads the
+   * exact provider row for that id, so it can't be fooled by name-list
+   * pagination or an idempotent-adopt that reused a name. Returns 'missing' when
+   * the id is absent/gone. Absent on providers with no external id concept.
+   */
+  getSnapshotStateByExternalId?(externalId: string): Promise<ProviderState>;
+
+  /**
    * Optional agent-only fast path: produce `newSnapshotName` from a predecessor
    * `sourceSnapshotName` by swapping ONLY the kortix-agent binary (no rebuild).
    * Implemented by providers that control the host filesystem (Platinum). Absent
