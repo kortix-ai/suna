@@ -63,8 +63,75 @@ const isIdempotentMethod = (method?: string): boolean => {
 function composeRequestSignal(
   timeoutSignal: AbortSignal,
   callerSignal?: AbortSignal | null,
-): AbortSignal {
-  return callerSignal ? AbortSignal.any([timeoutSignal, callerSignal]) : timeoutSignal;
+): { signal: AbortSignal; cleanup: () => void } {
+  if (!callerSignal) {
+    return { signal: timeoutSignal, cleanup: () => {} };
+  }
+
+  const abortSignalConstructor = AbortSignal as typeof AbortSignal & {
+    any?: (signals: AbortSignal[]) => AbortSignal;
+  };
+  if (typeof abortSignalConstructor.any === 'function') {
+    return {
+      signal: abortSignalConstructor.any([timeoutSignal, callerSignal]),
+      cleanup: () => {},
+    };
+  }
+
+  const controller = new AbortController();
+  const sources = [timeoutSignal, callerSignal];
+  const forwardAbort = (event: Event) => {
+    const source = event.currentTarget as AbortSignal;
+    if (!controller.signal.aborted) controller.abort(source.reason);
+  };
+  const listening: AbortSignal[] = [];
+
+  for (const source of sources) {
+    if (source.aborted) {
+      controller.abort(source.reason);
+      break;
+    }
+    source.addEventListener('abort', forwardAbort, { once: true });
+    listening.push(source);
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      for (const source of listening) {
+        source.removeEventListener('abort', forwardAbort);
+      }
+    },
+  };
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+  const error = new Error('The request was aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort);
+      reject(abortReason(signal));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 /**
@@ -108,6 +175,7 @@ async function makeRequest<T = any>(
   // (client navigation, tab close, dropped connection). Only the former is a
   // real timeout; the latter must not be surfaced as one.
   let didTimeout = false;
+  const requestSignal = composeRequestSignal(controller.signal, fetchOptions.signal);
 
   try {
     timeoutId = setTimeout(() => {
@@ -118,7 +186,7 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await getSupabaseAccessTokenWithRetry();
+    const token = await awaitWithSignal(getSupabaseAccessTokenWithRetry(), requestSignal.signal);
 
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
@@ -154,7 +222,7 @@ async function makeRequest<T = any>(
     let response = await fetch(url, {
       ...fetchOptions,
       headers,
-      signal: composeRequestSignal(controller.signal, fetchOptions.signal),
+      signal: requestSignal.signal,
       // API auth is bearer-token based. Don't send browser cookies to the
       // same-origin /v1 proxy; large localhost cookie jars can trip HTTP 431
       // before the request reaches the API.
@@ -187,11 +255,12 @@ async function makeRequest<T = any>(
         let retryTimeoutId: NodeJS.Timeout | null = setTimeout(() => {
           retryController.abort();
         }, timeout);
+        const retrySignal = composeRequestSignal(retryController.signal, fetchOptions.signal);
         try {
           response = await fetch(url, {
             ...fetchOptions,
             headers,
-            signal: composeRequestSignal(retryController.signal, fetchOptions.signal),
+            signal: retrySignal.signal,
             credentials: fetchOptions.credentials ?? 'omit',
           });
         } catch {
@@ -203,6 +272,7 @@ async function makeRequest<T = any>(
             clearTimeout(retryTimeoutId);
             retryTimeoutId = null;
           }
+          retrySignal.cleanup();
         }
         if (response.ok || !isTransientGatewayStatus(response.status)) break;
       }
@@ -369,6 +439,9 @@ async function makeRequest<T = any>(
       error: apiError,
       success: false,
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    requestSignal.cleanup();
   }
 }
 

@@ -109,6 +109,57 @@ test('makeRequest composes a caller abort signal with its timeout signal', async
   }
 });
 
+test('makeRequest composes signals when AbortSignal.any is unavailable', async () => {
+  configureKortix({
+    backendUrl: 'http://api.test/v1',
+    getToken: async () => 'test-token',
+  });
+  const originalFetch = globalThis.fetch;
+  const originalAny = Object.getOwnPropertyDescriptor(AbortSignal, 'any');
+  const capture: { signal?: AbortSignal | null } = {};
+  let fetchCalls = 0;
+  let releaseFetch!: () => void;
+  Object.defineProperty(AbortSignal, 'any', {
+    configurable: true,
+    value: undefined,
+  });
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    fetchCalls += 1;
+    capture.signal = init?.signal ?? null;
+    await new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  try {
+    const caller = new AbortController();
+    const request = backendApi.get('/projects/abc/detail', {
+      signal: caller.signal,
+      timeout: 1_000,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    caller.abort();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(capture.signal?.aborted).toBe(true);
+    releaseFetch();
+    const response = await request;
+    expect(response.success).toBe(true);
+    expect(fetchCalls).toBe(1);
+  } finally {
+    releaseFetch?.();
+    globalThis.fetch = originalFetch;
+    if (originalAny) {
+      Object.defineProperty(AbortSignal, 'any', originalAny);
+    } else {
+      Reflect.deleteProperty(AbortSignal, 'any');
+    }
+  }
+});
+
 // Regression for prod TypeError "t.message.includes is not a function": a
 // backend 4xx body whose `message` (or `detail.message`) is a non-string
 // value used to flow straight into `new ApiError(message, …)`, and from there

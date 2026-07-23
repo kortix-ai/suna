@@ -1153,6 +1153,47 @@ test('ensureReady() aborts a stalled start request at the caller deadline', asyn
   expect(Date.now() - startedAt).toBeLessThan(250);
 });
 
+test('ensureReady() cancels pending token acquisition and retries with a new driver', async () => {
+  let tokenCalls = 0;
+  let startCalls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (!url.includes('/sessions/SESS-TOKEN-STALL/start')) {
+      return jsonResponse({ ok: true });
+    }
+    startCalls += 1;
+    return jsonResponse(sessionStartPayload('sb-token-retry', 'ocs-token-retry'));
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => {
+      tokenCalls += 1;
+      if (tokenCalls === 1) {
+        return await new Promise<string | null>(() => {});
+      }
+      return 'tok';
+    },
+  });
+  const handle = k.session('PROJ', 'SESS-TOKEN-STALL');
+
+  await expect(
+    handle.ensureReady({
+      deadlineMs: 20,
+      pollIntervalMs: 0,
+    }),
+  ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+
+  const ready = await handle.ensureReady({
+    deadlineMs: 1_000,
+    pollIntervalMs: 0,
+  });
+  expect(ready.runtimeSessionId).toBe('ocs-token-retry');
+  expect(tokenCalls).toBe(2);
+  expect(startCalls).toBe(1);
+});
+
 test('ensureReady() with deadlineMs 0 rejects before sending a request', async () => {
   const k = createKortix({
     backendUrl: 'http://test.local',

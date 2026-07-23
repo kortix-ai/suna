@@ -1905,3 +1905,33 @@ acquisition. Implementation will follow RED → GREEN → REFACTOR and finish wi
 SDK typecheck, full suite, and packed-install smoke evidence.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-23 — session `pr-4510-sdk-readiness-portability-audit` (completion)
+
+The API client now composes timeout and caller signals on engines without
+`AbortSignal.any`. The fallback forwards the first abort reason and removes
+every attached listener when the request settles. Token acquisition now races
+the composed request signal, so a pending host `getToken()` call cannot retain
+the shared readiness driver after the final caller deadline.
+
+The landing visual test now records `console.error` and `pageerror` events
+before navigation. Its `afterEach` assertions cover navigation, lazy rendering,
+full-page scrolling, and screenshot capture.
+
+**TDD evidence:** the focused RED run reported **86 pass / 2 fail**. The missing
+`AbortSignal.any` test returned `success: false`. The pending-token readiness
+retry timed out after 1000ms. The focused GREEN run reported **88 pass / 0
+fail** with 299 assertions. Independent review repeated the pending-token retry
+30 times and measured fallback cleanup at 3 listeners added and 3 removed.
+
+**Final SDK gates:** `pnpm typecheck` exited 0. The full SDK suite reported
+**1356 pass / 0 fail** across 98 files with 5645 assertions. `pnpm
+smoke:install` built, packed, installed, imported, and constructed
+`@kortix/sdk` successfully. The local landing visual suite reported **2 pass /
+0 fail** after the `afterEach` diagnostics correction. `biome format` and `git
+diff --check` reported no changes or errors.
+
+**Shippable to production: YES** for this SDK portability correction. PR-wide
+CI and human review remain separate gates.
