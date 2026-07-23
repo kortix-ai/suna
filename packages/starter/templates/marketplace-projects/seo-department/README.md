@@ -54,6 +54,11 @@ some access is not ready yet. Setup happens in that same install session; the
 specialist agents are future operating roles and trigger targets, not extra
 setup sessions to spawn.
 
+When adding this template into an existing project, the template files first
+land through a change request. The installer should ask to apply that CR and,
+after approval, start the first `seo-director` setup session from the merged
+main branch instead of leaving the user to do that handoff manually.
+
 ## Safety model
 
 The department can research, audit, draft, report, and open change requests by
