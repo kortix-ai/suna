@@ -1342,3 +1342,15 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. API typecheck, focused API
 authorization tests, focused web tests, and focused web lint also pass.
 Repository merge, Deploy Dev, and live-dev verification remain pending.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (claim)
+
+Claimed the additive existing-GitHub-App installation discovery contract. The
+SDK will request installations that the authorized GitHub user can link to one
+Kortix account. The API will verify personal ownership or active organization
+admin access before it returns or saves an installation. Existing install and
+save contracts remain backward compatible.
+
+**Status:** IN PROGRESS.
