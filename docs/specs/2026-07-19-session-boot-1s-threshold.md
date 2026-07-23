@@ -35,11 +35,11 @@ In **warm-seed mode** (the fast path), stages run in parallel branches:
 
 ## Existing boot-acceleration infrastructure (already built)
 
-- **Warm snapshots** (`apps/api/scripts/bake-warm-snapshot.ts`,
-  `apps/api/src/snapshots/`, `ppwarm-names.ts`): content-addressed snapshots
+- **Warm snapshots** (`apps/api/src/snapshots/builder.ts`,
+  `apps/api/src/snapshots/ppwarm-names.ts`): content-addressed snapshots
   pre-baked so sessions boot from a memory-state restore instead of a cold
-  build. The `VERIFY=1` flag times `create → runtime ready` against a baked
-  snapshot. `KORTIX_WARM_SNAPSHOT_ENABLED=true` + `DAYTONA_WARM_TARGET`.
+  build. `apps/api/scripts/bench-session-boot.ts` measures the live
+  `create → runtime ready` path.
 - **Per-project warm images** (`ppwarm`): per-project pre-baked snapshots
   (`perProjectWarmImageName`), reaped when stale (`ppwarmReapTargets`).
 - **Template prebuilds** (`apps/api/src/snapshots/templates.ts`,
@@ -109,9 +109,9 @@ that can plausibly hit 1s.
 - Aggregates P50/P95/P99 per stage + total.
 - Surfaces the dominant cost(s).
 - Runs on a schedule (nightly) so regressions are caught.
-The `bake-warm-snapshot.ts` `VERIFY=1` path already times `create → runtime
-ready`; extend it into a proper harness. **Output: a numbers table. No
-optimization blind.**
+The `apps/api/scripts/bench-session-boot.ts` harness records the live
+`create → runtime ready` path. Extend its coverage when a new provider or
+boot stage lands. **Output: a numbers table. No optimization blind.**
 
 **Phase 1 — Eliminate the dominant cost.** Based on Phase 0's numbers, attack
 the stage that dominates the warm-boot P95. Likely candidates:
@@ -154,7 +154,7 @@ mechanical. Block PRs that regress it.
 
 Grounded entirely in the current codebase: `apps/kortix-sandbox-agent-server/src/main.ts`
 (boot path + stages), `apps/kortix-sandbox-agent-server/src/routes/health.ts`
-(`BootMark` type), `apps/api/scripts/bake-warm-snapshot.ts` (warm snapshot
-bake + verify), `apps/api/src/snapshots/` (builder + templates + ppwarm),
+(`BootMark` type), `apps/api/scripts/bench-session-boot.ts` (live boot
+benchmark), `apps/api/src/snapshots/` (builder + templates + ppwarm),
 `apps/api/src/projects/session-lifecycle/` (engine + await-stage). No
 hallucinated infrastructure — every cited file/stage verified to exist.
