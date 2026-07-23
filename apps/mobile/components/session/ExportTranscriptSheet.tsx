@@ -5,11 +5,7 @@
 import React, { forwardRef, useMemo, useState, useCallback } from 'react';
 import { View, TouchableOpacity, Switch, Platform, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +15,8 @@ import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { getSheetBg } from '@/lib/theme-colors';
 
+import { getAuthToken } from '@/api/config';
+
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSession } from '@/lib/platform/hooks';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -26,8 +24,9 @@ import {
   formatTranscript,
   getTranscriptFilename,
   DEFAULT_TRANSCRIPT_OPTIONS,
+  loadHttpSessionHistory,
   type TranscriptOptions,
-} from '@/lib/transcript';
+} from '@kortix/sdk';
 
 interface ExportTranscriptSheetProps {
   sessionId: string | null;
@@ -46,8 +45,26 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
     // Session info
     const { data: session } = useSession(sandboxUrl, sessionId || '');
 
+    const loadTranscript = useCallback(async () => {
+      if (!session || !sessionId || !sandboxUrl) return '';
+      const history = await loadHttpSessionHistory({
+        baseUrl: sandboxUrl,
+        sessionId,
+        getToken: getAuthToken,
+      });
+      return formatTranscript(
+        {
+          id: session.id,
+          title: session.title || 'Untitled',
+          time: session.time,
+        },
+        history,
+        options
+      );
+    }, [options, sandboxUrl, session, sessionId]);
+
     // Messages from sync store
-    const messages = useSyncStore((s: any) => sessionId ? s.messages[sessionId] : undefined);
+    const messages = useSyncStore((state) => (sessionId ? state.messages[sessionId] : undefined));
 
     // Build transcript
     const transcript = useMemo(() => {
@@ -59,7 +76,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           time: session.time,
         },
         messages,
-        options,
+        options
       );
     }, [session, messages, options]);
 
@@ -74,23 +91,33 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
     }, [transcript]);
 
     const messageCount = Array.isArray(messages) ? messages.length : 0;
+    const canExport = !!session && !!sessionId && !!sandboxUrl;
 
     // Copy to clipboard
     const handleCopy = useCallback(async () => {
-      if (!transcript) return;
-      await Clipboard.setStringAsync(transcript);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }, [transcript]);
+      setSharing(true);
+      try {
+        const completeTranscript = await loadTranscript();
+        if (!completeTranscript) return;
+        await Clipboard.setStringAsync(completeTranscript);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } finally {
+        setSharing(false);
+      }
+    }, [loadTranscript]);
 
     // Share as .md file
     const handleShare = useCallback(async () => {
-      if (!transcript) return;
       setSharing(true);
       try {
+        const completeTranscript = await loadTranscript();
+        if (!completeTranscript) return;
         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-        await FileSystem.writeAsStringAsync(fileUri, transcript, { encoding: FileSystem.EncodingType.UTF8 });
+        await FileSystem.writeAsStringAsync(fileUri, completeTranscript, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
         await Sharing.shareAsync(fileUri, {
           mimeType: 'text/markdown',
           dialogTitle: 'Export transcript',
@@ -103,7 +130,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
       } finally {
         setSharing(false);
       }
-    }, [transcript, filename, ref]);
+    }, [filename, loadTranscript, ref]);
 
     const toggleOption = useCallback((key: keyof TranscriptOptions) => {
       setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -113,7 +140,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
       () => (props: BottomSheetBackdropProps) => (
         <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
       ),
-      [],
+      []
     );
 
     const bg = isDark ? '#161618' : '#FFFFFF';
@@ -121,7 +148,10 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
     const muted = isDark ? '#71717a' : '#a1a1aa';
     const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
     const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    const trackColor = { false: isDark ? '#3f3f46' : '#d4d4d8', true: isDark ? '#4ade80' : '#16a34a' };
+    const trackColor = {
+      false: isDark ? '#3f3f46' : '#d4d4d8',
+      true: isDark ? '#4ade80' : '#16a34a',
+    };
 
     return (
       <BottomSheetModal
@@ -139,9 +169,9 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        backdropComponent={renderBackdrop}
-      >
-        <BottomSheetView style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}>
+        backdropComponent={renderBackdrop}>
+        <BottomSheetView
+          style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}>
           {/* Title */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <Ionicons name="download-outline" size={18} color={fg} />
@@ -151,7 +181,14 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           </View>
 
           {/* Description */}
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18, marginBottom: 16 }}>
+          <Text
+            style={{
+              fontSize: 13,
+              fontFamily: 'Roobert',
+              color: muted,
+              lineHeight: 18,
+              marginBottom: 16,
+            }}>
             Export this session as a Markdown file. Configure what to include below.
           </Text>
 
@@ -208,12 +245,17 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               paddingHorizontal: 12,
               paddingVertical: 10,
               marginBottom: 20,
-            }}
-          >
+            }}>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>
-              {messageCount} message{messageCount !== 1 ? 's' : ''} · ~{wordCount.toLocaleString()} words
+              {messageCount} message{messageCount !== 1 ? 's' : ''} · ~{wordCount.toLocaleString()}{' '}
+              words
             </Text>
-            <Text style={{ fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: muted }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                color: muted,
+              }}>
               {filename}
             </Text>
           </View>
@@ -223,7 +265,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
             {/* Copy */}
             <TouchableOpacity
               onPress={handleCopy}
-              disabled={!transcript}
+              disabled={!canExport || sharing}
               activeOpacity={0.7}
               style={{
                 flex: 1,
@@ -236,15 +278,19 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 borderWidth: 1,
                 borderColor: border,
                 backgroundColor: cardBg,
-                opacity: transcript ? 1 : 0.4,
-              }}
-            >
+                opacity: canExport && !sharing ? 1 : 0.4,
+              }}>
               <Ionicons
                 name={copied ? 'checkmark' : 'copy-outline'}
                 size={16}
                 color={copied ? (isDark ? '#4ade80' : '#16a34a') : fg}
               />
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: copied ? (isDark ? '#4ade80' : '#16a34a') : fg }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: 'Roobert-Medium',
+                  color: copied ? (isDark ? '#4ade80' : '#16a34a') : fg,
+                }}>
                 {copied ? 'Copied' : 'Copy'}
               </Text>
             </TouchableOpacity>
@@ -252,7 +298,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
             {/* Share / Download */}
             <TouchableOpacity
               onPress={handleShare}
-              disabled={!transcript || sharing}
+              disabled={!canExport || sharing}
               activeOpacity={0.7}
               style={{
                 flex: 1,
@@ -263,9 +309,8 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 paddingVertical: 12,
                 borderRadius: 9999,
                 backgroundColor: fg,
-                opacity: transcript && !sharing ? 1 : 0.4,
-              }}
-            >
+                opacity: canExport && !sharing ? 1 : 0.4,
+              }}>
               {sharing ? (
                 <ActivityIndicator size="small" color={bg} />
               ) : (
@@ -281,7 +326,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
         </BottomSheetView>
       </BottomSheetModal>
     );
-  },
+  }
 );
 
 // ─── Option row ─────────────────────────────────────────────────────────────
@@ -322,8 +367,7 @@ function OptionRow({
         borderColor: border,
         paddingHorizontal: 12,
         paddingVertical: 10,
-      }}
-    >
+      }}>
       <Ionicons name={icon as any} size={15} color={muted} style={{ marginRight: 10 }} />
       <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert', color: fg }}>{label}</Text>
       <Switch

@@ -5,7 +5,7 @@ import { useLiveLlmProviderCatalog } from '@/features/workspace/customize/sectio
 /**
  * Renders nothing — fires the live provider-catalog fetch
  * (`GET /projects/:id/llm-catalog/providers`) once per project, as early as
- * possible (mounted at the project layout, alongside SessionStreamKeeper).
+ * possible (mounted at the project layout, alongside SessionCacheWarmer).
  *
  * Why here and not just inside the provider connect modal: `LLM_PROVIDERS`
  * (apps/web/src/lib/llm-providers.ts) is read by more than the modal —

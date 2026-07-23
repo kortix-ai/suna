@@ -62,6 +62,7 @@ import { GridFileCard } from './grid-file-card';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
@@ -3481,7 +3482,13 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const { messages: syncMessages, isLoading: syncMessagesLoading } = useSessionSync(sessionId);
+  const {
+    messages: syncMessages,
+    isLoading: syncMessagesLoading,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
+  } = useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
@@ -4100,6 +4107,15 @@ export function SessionChat({
     working: isBusy && !hasActiveQuestion,
     hasContent: messageCount > 0,
   });
+  const handleLoadOlder = useCallback(async () => {
+    const node = scrollRef.current;
+    const previousHeight = node?.scrollHeight ?? 0;
+    await loadOlder();
+    if (!node) return;
+    requestAnimationFrame(() => {
+      node.scrollTop += node.scrollHeight - previousHeight;
+    });
+  }, [loadOlder, scrollRef]);
 
   // Scroll to the bottom on initial load / session change.
   // Uses a callback ref on the scroll container to guarantee it's mounted.
@@ -5321,6 +5337,19 @@ export function SessionChat({
                 {/* Turn-based message rendering.
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
+                {hasOlder && (
+                  <div className="mb-6 flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline-ghost"
+                      size="sm"
+                      disabled={isLoadingOlder}
+                      onClick={() => void handleLoadOlder()}
+                    >
+                      {isLoadingOlder ? <Loading /> : 'Load older messages'}
+                    </Button>
+                  </div>
+                )}
                 <ToolActivateContext.Provider value={toolActivate}>
                   {turns.map((turn, turnIndex) => {
                     // Check if this turn is a compaction summary
@@ -5339,7 +5368,10 @@ export function SessionChat({
                       <div
                         key={turn.userMessage.info.id}
                         data-turn-id={turn.userMessage.info.id}
-                        className={turnIndex === 0 ? '' : 'mt-12'}
+                        className={cn(
+                          '[content-visibility:auto] [contain-intrinsic-size:auto_600px]',
+                          turnIndex === 0 ? '' : 'mt-12',
+                        )}
                       >
                         {/* Compaction divider — shown before the first turn after compaction */}
                         {hasCompaction && (

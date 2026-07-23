@@ -64,7 +64,8 @@ Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 table for the full list (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Tracked; do not depend on it yet.
+> no `response.body`. Use `createHttpSessionSyncController` for bounded history
+> synchronization. Keep the platform-specific event transport for live events.
 
 ## Quick start
 
@@ -402,9 +403,10 @@ in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
 The framework-free core modules — `turns`, `session/url`, `session` (health),
 `projects-client`, `files`, `transcript` — have no React or DOM dependency and are
 usable from any JS host; `apps/mobile` already imports `@kortix/sdk/turns` this way.
-React Native adoption of the full client/hooks is planned but not done — mobile
-currently ships its own parallel data layer (`apps/mobile/lib/opencode/`) rather
-than `@kortix/sdk/react`.
+React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
+`createHttpSessionSyncController` for message history, status recovery, and older
+pagination. Mobile keeps its platform-specific event transport because React
+Native cannot consume the SDK's fetch-based SSE stream.
 
 ## Rules of the road
 

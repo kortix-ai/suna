@@ -50,7 +50,7 @@ import {
   normalizePipedream,
   normalizePostmanCollection,
 } from './normalize';
-import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
+import { browsePipedreamApps, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
 import {
@@ -220,6 +220,7 @@ interface ResolvedCatalog {
   actions: NormalizedAction[];
   /** OpenAPI server discovered from the doc (folded into config). */
   server: string | null;
+  iconUrl?: string | null;
   error?: string;
 }
 
@@ -496,7 +497,7 @@ async function upsertConnector(
       .update(executorConnectors)
       .set(
         catalog
-          ? { ...common, config: connectorConfig(spec, catalog.server) }
+          ? { ...common, config: connectorConfig(spec, catalog.server, catalog.iconUrl) }
           : { ...common, config: sensitivePatch },
       )
       .where(eq(executorConnectors.connectorId, connectorId));
@@ -510,7 +511,7 @@ async function upsertConnector(
         projectId,
         slug: spec.slug,
         ...common,
-        config: connectorConfig(spec, catalog?.server ?? null),
+        config: connectorConfig(spec, catalog?.server ?? null, catalog?.iconUrl),
       })
       .returning({ connectorId: executorConnectors.connectorId });
     connectorId = created!.connectorId;
@@ -611,8 +612,15 @@ export async function resolveCatalog(
       }
       case 'pipedream': {
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };
-        const raw = await pipedreamCatalog(spec.app);
-        return { actions: normalizePipedream(raw, spec.app), server: null };
+        const [raw, apps] = await Promise.all([
+          pipedreamCatalog(spec.app),
+          browsePipedreamApps(spec.app).catch(() => ({ apps: [], hasMore: false })),
+        ]);
+        return {
+          actions: normalizePipedream(raw, spec.app),
+          server: null,
+          iconUrl: apps.apps.find((app) => app.slug === spec.app)?.imgSrc ?? null,
+        };
       }
       case 'channel': {
         // Fixed, local catalog — no network fetch. Server = the platform API base.

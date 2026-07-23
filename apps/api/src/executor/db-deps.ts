@@ -47,8 +47,9 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
-import { SLACK_CHANNEL_CONNECTOR_SLUG, connectorListNeedsResync } from './channels';
+import { buildAdminConnectorViews } from './connector-list';
 import {
+  connectorIdsWithSharedCredentials,
   credentialExists,
   deleteCredential,
   profileCredentialExists,
@@ -814,67 +815,73 @@ async function resolveReader(
   return resolveProjectUserWith(c, projectId, 'project.connector.read');
 }
 
-/** Admin list — sharing + credential mode + whether the shared credential is set.
- *  `viewerUserId` is vestigial (kept for interface stability): it only mattered
- *  for `per_user` connectors, removed 2026-07-05 — every connector now checks
- *  the one shared credential regardless of who's viewing. */
-async function listConnectors(
-  projectId: string,
-  viewerUserId: string,
-): Promise<AdminConnectorView[]> {
-  const fetchRows = () =>
-    db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
-  let rows = await fetchRows();
-  // Only consult the install-store when it could change the decision: an empty
-  // set reconciles regardless, and a present Slack connector needs no heal — so
-  // healthy projects never pay for loadSlackInstall here.
-  const slackInstalled =
-    rows.length > 0 && !rows.some((r) => r.slug === SLACK_CHANNEL_CONNECTOR_SLUG)
-      ? (await loadSlackInstall(projectId).catch(() => null)) != null
-      : false;
-  if (connectorListNeedsResync({ presentSlugs: rows.map((r) => r.slug), slackInstalled })) {
-    const [project] = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1);
-    if (project) {
-      await syncProjectConnectors(projectId, project.accountId);
-      rows = await fetchRows();
-    }
-  }
-  const conns = hideSupersededSlack(rows);
-  const out: AdminConnectorView[] = [];
-  for (const row of conns) {
+/** Admin list — sharing + credential mode + whether the shared credential is set. */
+async function listConnectors(projectId: string): Promise<AdminConnectorView[]> {
+  const conns = hideSupersededSlack(
+    await db
+      .select()
+      .from(executorConnectors)
+      .where(eq(executorConnectors.projectId, projectId)),
+  );
+  if (conns.length === 0) return [];
+
+  const credentialRows = conns.filter((row) => {
     const { hasAuth } = authOf(row);
-    let secretSet = !hasAuth;
-    if (hasAuth) {
-      secretSet = await connectorConnected(row, null);
-    }
-    const actions = await db
+    return hasAuth && row.providerType !== 'channel';
+  });
+  const channelRows = conns.filter((row) => {
+    const { hasAuth } = authOf(row);
+    return hasAuth && row.providerType === 'channel';
+  });
+  const [actions, credentialConnectorIds, connectedChannelSlugs] = await Promise.all([
+    db
       .select()
       .from(executorConnectorActions)
-      .where(eq(executorConnectorActions.connectorId, row.connectorId));
-    out.push({
+      .where(inArray(executorConnectorActions.connectorId, conns.map((row) => row.connectorId))),
+    connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
+    Promise.all(
+      channelRows.map(async (row) => [
+        row.slug,
+        await connectorConnected(row, null),
+      ] as const),
+    ).then(
+      (entries) =>
+        new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
+    ),
+  ]);
+  const actionsByConnector = new Map<string, typeof actions>();
+  for (const action of actions) {
+    const current = actionsByConnector.get(action.connectorId) ?? [];
+    current.push(action);
+    actionsByConnector.set(action.connectorId, current);
+  }
+
+  const connectedSlugs = new Set(connectedChannelSlugs);
+  for (const row of credentialRows) {
+    if (credentialConnectorIds.has(row.connectorId)) connectedSlugs.add(row.slug);
+  }
+  const candidates = conns.map((row) => {
+    const { hasAuth } = authOf(row);
+    const config = row.config as { icon_url?: unknown; sensitive?: unknown } | null;
+    return {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
       platform: channelPlatform(row.config),
+      iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
       status: row.status,
-      credentialMode: 'shared',
-      sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
-      actions: actions.map((a) => ({
+      sensitive: config?.sensitive === true,
+      actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
         path: a.path,
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
         inputSchema: a.inputSchema ?? null,
       })),
-      authSecret: hasAuth ? 'credential' : null,
-      secretSet,
-    });
-  }
-  return out;
+      requiresAuth: hasAuth,
+    };
+  });
+  return buildAdminConnectorViews(candidates, connectedSlugs);
 }
 
 /**
