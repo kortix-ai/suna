@@ -403,3 +403,103 @@ flow(
     });
   },
 );
+
+flow(
+  'COV-10',
+  {
+    domain: 'coverage',
+    routes: [
+      'DELETE /v1/projects/:projectId/sessions/:sessionId/acp',
+      'GET /v1/projects/:projectId/acp/permission-policy',
+      'GET /v1/projects/:projectId/composer-capabilities',
+      'GET /v1/projects/:projectId/harness-connections',
+      'GET /v1/projects/:projectId/model-catalog',
+      'GET /v1/projects/:projectId/runtime-profiles',
+      'GET /v1/projects/:projectId/sessions/:sessionId/acp',
+      'GET /v1/projects/:projectId/sessions/:sessionId/acp/transcript',
+      'POST /v1/projects/:projectId/runtime-profiles/enable',
+      'POST /v1/projects/:projectId/sessions/:sessionId/acp',
+      'PUT /v1/projects/:projectId/acp/permission-policy',
+      'PUT /v1/projects/:projectId/harness-connections/:harness/active',
+      'PUT /v1/projects/:projectId/runtime-profiles',
+    ],
+  },
+  async (ctx) => {
+    const projectParams = { projectId: ZERO_UUID };
+    const sessionParams = { ...projectParams, sessionId: ZERO_UUID };
+    const owner = ctx.client.as(ctx.P.OWNER);
+
+    await ctx.step('unknown project hides ACP and runtime read surfaces', async () => {
+      const reads = [
+        owner.get('/v1/projects/:projectId/acp/permission-policy', {
+          params: projectParams,
+        }),
+        owner.get('/v1/projects/:projectId/composer-capabilities', {
+          params: projectParams,
+          query: { agent_name: 'general' },
+        }),
+        owner.get('/v1/projects/:projectId/harness-connections', {
+          params: projectParams,
+        }),
+        owner.get('/v1/projects/:projectId/model-catalog', {
+          params: projectParams,
+          query: { agent_name: 'general' },
+        }),
+        owner.get('/v1/projects/:projectId/runtime-profiles', {
+          params: projectParams,
+        }),
+        owner.get('/v1/projects/:projectId/sessions/:sessionId/acp', {
+          params: sessionParams,
+        }),
+        owner.get('/v1/projects/:projectId/sessions/:sessionId/acp/transcript', {
+          params: sessionParams,
+        }),
+      ];
+      for (const response of await Promise.all(reads)) response.status(404);
+    });
+
+    await ctx.step('unknown project blocks ACP session mutations', async () => {
+      const post = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/acp',
+        {},
+        { params: sessionParams },
+      );
+      post.status(404);
+
+      const del = await owner.del('/v1/projects/:projectId/sessions/:sessionId/acp', {
+        params: sessionParams,
+      });
+      del.status(404);
+    });
+
+    await ctx.step('unknown project blocks ACP and runtime configuration writes', async () => {
+      const permission = await owner.put(
+        '/v1/projects/:projectId/acp/permission-policy',
+        { autoApprove: 'none', toolDecisions: {} },
+        { params: projectParams },
+      );
+      permission.status(404);
+
+      const connection = await owner.put(
+        '/v1/projects/:projectId/harness-connections/:harness/active',
+        { connection_id: null },
+        { params: { ...projectParams, harness: 'opencode' } },
+      );
+      connection.status(404);
+
+      const enable = await owner.post(
+        '/v1/projects/:projectId/runtime-profiles/enable',
+        {},
+        { params: projectParams },
+      );
+      enable.status(404);
+
+      const profiles = await owner.put(
+        '/v1/projects/:projectId/runtime-profiles',
+        { runtimes: {} },
+        { params: projectParams },
+      );
+      profiles.status(404);
+    });
+  },
+);

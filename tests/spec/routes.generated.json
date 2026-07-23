@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 498,
+  "count": 517,
   "routes": [
     {
       "method": "GET",
@@ -1056,6 +1056,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/acp/permission-policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/acp/permission-policy"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
     {
@@ -1077,6 +1085,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/approvals/needs-input"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/auth-providers"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/auth-providers/:providerId/status"
     },
     {
       "method": "GET",
@@ -1249,6 +1265,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/commits/:sha/diff"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/composer-capabilities"
     },
     {
       "method": "POST",
@@ -1428,6 +1448,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/harness-connections"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/harness-connections/:harness/active"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/llm-catalog"
     },
     {
@@ -1441,6 +1469,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-catalog"
     },
     {
       "method": "DELETE",
@@ -1461,6 +1493,22 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/oauth-credentials"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/oauth-credentials/:providerId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/oauth-credentials/:providerId/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/oauth-credentials/:providerId/start"
     },
     {
       "method": "DELETE",
@@ -1509,6 +1557,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/runtime-profiles"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/runtime-profiles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/runtime-profiles/enable"
     },
     {
       "method": "GET",
@@ -1585,6 +1645,22 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/acp/transcript"
     },
     {
       "method": "GET",
