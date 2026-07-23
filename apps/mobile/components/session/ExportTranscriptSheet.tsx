@@ -18,6 +18,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { getSheetBg } from '@/lib/theme-colors';
+import { getAuthToken } from '@/api/config';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSession } from '@/lib/platform/hooks';
@@ -26,8 +27,9 @@ import {
   formatTranscript,
   getTranscriptFilename,
   DEFAULT_TRANSCRIPT_OPTIONS,
+  loadHttpSessionHistory,
   type TranscriptOptions,
-} from '@/lib/transcript';
+} from '@kortix/sdk';
 
 interface ExportTranscriptSheetProps {
   sessionId: string | null;
@@ -45,6 +47,24 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
 
     // Session info
     const { data: session } = useSession(sandboxUrl, sessionId || '');
+
+    const loadTranscript = useCallback(async () => {
+      if (!session || !sessionId || !sandboxUrl) return '';
+      const history = await loadHttpSessionHistory({
+        baseUrl: sandboxUrl,
+        sessionId,
+        getToken: getAuthToken,
+      });
+      return formatTranscript(
+        {
+          id: session.id,
+          title: session.title || 'Untitled',
+          time: session.time,
+        },
+        history,
+        options,
+      );
+    }, [options, sandboxUrl, session, sessionId]);
 
     // Messages from sync store
     const messages = useSyncStore((s: any) => sessionId ? s.messages[sessionId] : undefined);
@@ -77,20 +97,27 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
 
     // Copy to clipboard
     const handleCopy = useCallback(async () => {
-      if (!transcript) return;
-      await Clipboard.setStringAsync(transcript);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }, [transcript]);
+      setSharing(true);
+      try {
+        const completeTranscript = await loadTranscript();
+        if (!completeTranscript) return;
+        await Clipboard.setStringAsync(completeTranscript);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } finally {
+        setSharing(false);
+      }
+    }, [loadTranscript]);
 
     // Share as .md file
     const handleShare = useCallback(async () => {
-      if (!transcript) return;
       setSharing(true);
       try {
+        const completeTranscript = await loadTranscript();
+        if (!completeTranscript) return;
         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-        await FileSystem.writeAsStringAsync(fileUri, transcript, { encoding: FileSystem.EncodingType.UTF8 });
+        await FileSystem.writeAsStringAsync(fileUri, completeTranscript, { encoding: FileSystem.EncodingType.UTF8 });
         await Sharing.shareAsync(fileUri, {
           mimeType: 'text/markdown',
           dialogTitle: 'Export transcript',
@@ -103,7 +130,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
       } finally {
         setSharing(false);
       }
-    }, [transcript, filename, ref]);
+    }, [filename, loadTranscript, ref]);
 
     const toggleOption = useCallback((key: keyof TranscriptOptions) => {
       setOptions((prev) => ({ ...prev, [key]: !prev[key] }));

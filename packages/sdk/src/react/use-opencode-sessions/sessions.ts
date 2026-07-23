@@ -10,6 +10,7 @@ import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
+import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 
 // ============================================================================
 // Session Hooks
@@ -252,7 +253,10 @@ export function useSummarizeOpenCodeSession() {
       // 2. Try to get model from the session's latest assistant message
       if (!providerID || !modelID) {
         try {
-          const msgs = await client.session.messages({ sessionID: params.sessionId });
+          const msgs = await client.session.messages({
+            sessionID: params.sessionId,
+            limit: SESSION_SYNC_PAGE_SIZE,
+          });
           const allMsgs = (msgs.data ?? []) as Array<{ info: { role: string; providerID?: string; modelID?: string } }>;
           for (let i = allMsgs.length - 1; i >= 0; i--) {
             const m = allMsgs[i].info;
