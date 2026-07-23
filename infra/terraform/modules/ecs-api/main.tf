@@ -108,6 +108,7 @@ resource "aws_security_group" "alb" {
   }
 }
 
+#trivy:ignore:AVD-AWS-0104 ECS tasks call external HTTPS APIs and external PostgreSQL endpoints through NAT; these destinations do not have a stable CIDR allowlist.
 resource "aws_security_group" "service" {
   name        = "${local.name}-svc"
   description = "Ingress to the ${local.name} tasks (from the ALB only)"
@@ -121,9 +122,17 @@ resource "aws_security_group" "service" {
     security_groups = [aws_security_group.alb.id]
   }
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS APIs and WSS providers"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "PostgreSQL data plane"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
   tags = {
@@ -148,6 +157,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
 }
 
 # ── Load balancer ─────────────────────────────────────────────────────────────
+#trivy:ignore:AVD-AWS-0053 This public API origin must accept Cloudflare traffic; the ALB security group restricts ingress to var.alb_ingress_cidrs.
 resource "aws_lb" "this" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
@@ -156,7 +166,8 @@ resource "aws_lb" "this" {
     var.public_subnet_ids[0],
     var.public_subnet_ids[1],
   ]
-  idle_timeout = var.alb_idle_timeout
+  idle_timeout               = var.alb_idle_timeout
+  drop_invalid_header_fields = true
   tags = {
     ManagedBy   = "terraform"
     Name        = "${local.name}-alb"

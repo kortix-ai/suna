@@ -6,7 +6,7 @@
  */
 
 import type { UnifiedMessage, ParsedMetadata } from '@/api/types';
-import { safeJsonParse } from '@agentpress/shared/utils';
+import { safeJsonParse } from '@kortix/shared';
 import { log } from '@/lib/logger';
 
 /**
@@ -220,4 +220,3 @@ export function extractToolCallAndResult(
     toolTimestamp: toolMessage?.created_at,
   };
 }
-
