@@ -50,7 +50,9 @@ team.
 The first session should not be a blank chat. Ask the director to set up the SEO
 department and it will request the repo and private data sources, mint setup
 links for missing connectors/secrets, and fall back to a public-data audit if
-some access is not ready yet.
+some access is not ready yet. Setup happens in that same install session; the
+specialist agents are future operating roles and trigger targets, not extra
+setup sessions to spawn.
 
 ## Safety model
 

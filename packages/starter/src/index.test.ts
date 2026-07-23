@@ -356,10 +356,13 @@ describe('marketplace projects — full project templates', () => {
 
     expect(readme).toContain('your company still needs to bring its real website context');
     expect(install).toContain('Use this form');
+    expect(install).toContain('One-Session Setup Rule');
+    expect(install).toContain('Do not start a new agent');
     expect(install).toContain('kortix triggers info repo-seo-watch');
     expect(install).toContain('WEBHOOK_SEO_SECRET');
-    expect(director).toContain('Run the company onboarding flow');
+    expect(director).toContain('company onboarding flow in the current session');
     expect(director).toContain('install.md');
+    expect(director).toContain('do not start another session');
     expect(director).toContain('website/app repository');
     expect(repoSkill).toContain('do not assume the current project repo is the site');
   });
