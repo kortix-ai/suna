@@ -2,8 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import Link from 'next/link';
-
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -25,7 +23,6 @@ import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
 import { billingApi } from '@/lib/api/billing';
 import { fireConfetti } from '@/lib/confetti';
 import { isBillingEnabled } from '@/lib/config';
@@ -72,7 +69,7 @@ function ProjectsLoadingScreen() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {PROJECT_SKELETON_KEYS.map((key) => (
-              <Skeleton key={key} className="h-[92px] rounded-2xl" />
+              <Skeleton key={key} className="h-[92px] rounded-md" />
             ))}
           </div>
         </div>
@@ -258,11 +255,6 @@ export default function ProjectsPage() {
         .filter((group) => group.projects.length > 0)
     : [];
 
-  const legacyMachinesQuery = useLegacyMachines({
-    enabled: !!user && !!activeAccountId,
-    accountId: activeAccountId,
-  });
-
   // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
   // first project. A normal empty projects list can come from deleting the last
   // project, and must stay empty instead of recreating it.
@@ -275,7 +267,6 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     const accountId = activeAccountId;
-    const legacySandboxes = legacyMachinesQuery.data?.sandboxes;
     if (
       !shouldAutoCreateFirstProject({
         bootstrapRequested: firstProjectBootstrapRequested,
@@ -287,8 +278,8 @@ export default function ProjectsPage() {
         projectsError: projectsQuery.isError,
         projectsLoaded: !!projectsQuery.data,
         projectCount: projectsQuery.data?.length ?? 0,
-        legacyMachinesLoaded: legacyMachinesQuery.isSuccess,
-        legacyMachineCount: legacySandboxes?.length ?? 0,
+        legacyMachinesLoaded: true,
+        legacyMachineCount: 0,
         billingEnabled: isBillingEnabled(),
         accountStateLoading,
         canRun: !!accountState?.credits?.can_run,
@@ -324,8 +315,6 @@ export default function ProjectsPage() {
     projectsQuery.isLoading,
     projectsQuery.isError,
     projectsQuery.data,
-    legacyMachinesQuery.isSuccess,
-    legacyMachinesQuery.data,
     firstProjectBootstrapRequested,
     accountStateLoading,
     accountState?.credits?.can_run,
@@ -357,10 +346,6 @@ export default function ProjectsPage() {
     () => filterProjects(projectsQuery.data ?? []),
     [filterProjects, projectsQuery.data],
   );
-
-  // Legacy machines are no longer shown inline on Projects; the count only drives
-  // the discreet link to the hidden /legacy-machines archive.
-  const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
 
   if (authLoading || !user) {
     return <ProjectsLoadingScreen />;
@@ -473,7 +458,7 @@ export default function ProjectsPage() {
               {showProjectsLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
+                    <Skeleton key={key} className="h-[92px] rounded-md" />
                   ))}
                 </div>
               )}
@@ -548,7 +533,7 @@ export default function ProjectsPage() {
               {showAllLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
+                    <Skeleton key={key} className="h-[92px] rounded-md" />
                   ))}
                 </div>
               )}
@@ -635,16 +620,6 @@ export default function ProjectsPage() {
                     </div>
                   </section>
                 ))}
-            </div>
-          )}
-          {hasLegacyMachines && (
-            <div className="pt-2 text-center">
-              <Link
-                href="/legacy-machines"
-                className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-4 transition-colors"
-              >
-                Looking for older machines?
-              </Link>
             </div>
           )}
         </div>
