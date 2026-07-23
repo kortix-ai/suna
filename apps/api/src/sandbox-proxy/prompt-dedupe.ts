@@ -63,6 +63,19 @@ export function claimPromptDelivery(key: string, now: number = Date.now()): bool
   return true;
 }
 
+// Release a claim taken by claimPromptDelivery. Call this ONLY when the prompt
+// turned out never to reach the sandbox — every forward attempt failed before the
+// POST left the proxy (e.g. env sync) or PROVED nothing was accepted (the upstream
+// refused the connection). Dropping the claim lets a client retry under the same
+// key re-attempt delivery instead of short-circuiting to a phantom "duplicate"
+// no-op (silent message loss). Never release on an AMBIGUOUS failure — a fetch
+// that timed out or reset mid-flight — since opencode may already have enqueued
+// the message and re-POSTing it would double-enqueue (the very bug the claim
+// prevents). No-op when the key was already evicted.
+export function releasePromptDelivery(key: string): void {
+  seen.delete(key);
+}
+
 // Test-only: drop all cached claims so cases don't leak into one another.
 export function __resetPromptDedupe(): void {
   seen.clear();

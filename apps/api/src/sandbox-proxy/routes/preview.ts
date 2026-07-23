@@ -23,7 +23,7 @@ import {
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
-import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
+import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -546,14 +546,28 @@ export async function forwardToSandbox(
   // — a client resend, or the other proxy edge (subdomain.ts also calls this) —
   // short-circuits to a 200 no-op instead of re-POSTing and enqueueing the user's
   // message twice. First claim within the TTL proceeds; a repeat is deduped.
+  //
+  // The key is hoisted (and `promptMayHaveBeenDelivered` tracked) so the retry
+  // loop's terminal failure path can RELEASE the claim when the prompt is NEVER
+  // delivered — otherwise a caller that retries on transport failure would
+  // short-circuit to the 200 "duplicate" for a message the sandbox never saw
+  // (silent message loss). See the release before the final unreachable response.
+  let promptDedupeKey: string | null = null;
+  // Flips true once a prompt POST may have reached opencode: the fetch was put on
+  // the wire and either got a response or failed AMBIGUOUSLY (timeout/reset
+  // mid-flight). In that case the claim MUST be kept even on failure, because
+  // opencode may already have enqueued the message and re-POSTing would double-
+  // enqueue. Stays false for pre-fetch failures (env sync) and connection-refused
+  // errors — both of which PROVE nothing was accepted, so the claim is released.
+  let promptMayHaveBeenDelivered = false;
   if (isPromptDelivery(method, port, remainingPath)) {
-    const dedupeKey = promptDeliveryKey({
+    promptDedupeKey = promptDeliveryKey({
       idempotencyKey: incomingHeaders.get('idempotency-key'),
       sandboxId,
       sessionId: record.sessionId,
       body,
     });
-    if (!claimPromptDelivery(dedupeKey)) {
+    if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
     }
   }
@@ -589,6 +603,11 @@ export async function forwardToSandbox(
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
+    // Flips true the instant the upstream fetch is initiated this attempt, so the
+    // catch below can tell a prompt POST that made it onto the wire (ambiguous —
+    // opencode may have enqueued it) from a pre-fetch failure like env sync
+    // (nothing was ever sent). Reset per attempt.
+    let upstreamFetchStarted = false;
     try {
       const ingress = await resolveSandboxIngress(record, ingressRequest);
       const previewUrl = ingress.url;
@@ -737,6 +756,9 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        // From here the prompt body is on the wire — a subsequent ambiguous
+        // failure (timeout/reset) may mean opencode already accepted it.
+        upstreamFetchStarted = true;
         upstream = await fetch(targetUrl, {
           method,
           headers,
@@ -881,6 +903,9 @@ export async function forwardToSandbox(
         isLongTurnCompletionRequest({ method, path: remainingPath })
       ) {
         sawLongTurnTimeout = true;
+        // The turn is still computing on the sandbox — the message WAS delivered.
+        // Keep the dedupe claim so a retry can't re-enqueue it.
+        promptMayHaveBeenDelivered = true;
         break;
       }
 
@@ -896,6 +921,10 @@ export async function forwardToSandbox(
         isPromptDelivery(method, port, remainingPath) &&
         !isConnectionRefusedError(err)
       ) {
+        // If the POST was already on the wire when it failed ambiguously, opencode
+        // may have enqueued it — keep the claim. Only a PRE-fetch failure here
+        // (e.g. env sync threw before any bytes were sent) leaves it releasable.
+        if (upstreamFetchStarted) promptMayHaveBeenDelivered = true;
         break;
       }
 
@@ -921,6 +950,16 @@ export async function forwardToSandbox(
   // health-check loop owns liveness and will retry the box.
   if (sawDeadSignal) {
     await markSandboxErrored(sandboxId);
+  }
+  // We're about to return the unreachable page having NEVER delivered the prompt:
+  // this point is reached only after every attempt failed before the POST left
+  // the proxy or with a connection-refused error (both PROVE nothing was accepted)
+  // — the ambiguous "maybe enqueued" paths set promptMayHaveBeenDelivered and are
+  // excluded. Release the up-front claim so a client that retries on this failure
+  // re-attempts delivery instead of short-circuiting to a phantom 200 "duplicate"
+  // for a message the sandbox never saw (silent message loss).
+  if (promptDedupeKey && !promptMayHaveBeenDelivered) {
+    releasePromptDelivery(promptDedupeKey);
   }
   return portUnreachableResponse({
     port,
