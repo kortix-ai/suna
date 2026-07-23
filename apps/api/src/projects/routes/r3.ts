@@ -19,7 +19,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-syn
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
+import { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
@@ -454,9 +454,35 @@ projectsApp.openapi(
   // every secret; there is no per-secret member/group sharing.
   const agentGrant = getAgentGrant(c);
 
+  // KaaB per-session narrowing: a session-bound token (the executor PAT carries
+  // sessionId) must not ENUMERATE identifiers its session allowlist hides —
+  // otherwise the narrowing that scrubs those secrets from $ENV still leaks
+  // their names/metadata here. Mirror the env-injection intersection.
+  const boundSessionId = c.get('sessionId') as string | undefined;
+  let sessionAllowUpper: Set<string> | null = null;
+  if (boundSessionId) {
+    const [sessionRow] = await db
+      .select({ secretsAllowlist: projectSessions.secretsAllowlist })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, boundSessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    // Any non-null allowlist narrows the enumeration — including the empty array
+    // (`[]` = enumerate ZERO secrets). Guard on `!= null`, not truthiness alone,
+    // to make that intent explicit (an empty Set filters everything out below).
+    if (sessionRow?.secretsAllowlist != null) {
+      sessionAllowUpper = new Set(sessionRow.secretsAllowlist.map((id) => id.toUpperCase()));
+    }
+  }
+
   const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared))
     .filter((item) => !item.system)
-    .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
+    .filter((item) => agentMayUseEnv(agentGrant, item.identifier))
+    .filter((item) => !sessionAllowUpper || sessionAllowUpper.has(item.identifier.toUpperCase()));
 
   return c.json({
     items,

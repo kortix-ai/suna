@@ -9,7 +9,7 @@ import { executorConnectionProfiles, executorConnectors, executorCredentials } f
  * `userId: null`). Values are encrypted with the project key and resolved
  * server-side only. See docs/specs/executor.md §5–6.
  */
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 
@@ -75,6 +75,27 @@ export async function credentialExists(
     )
     .limit(1);
   return !!row;
+}
+
+export async function connectorIdsWithSharedCredentials(
+  connectorIds: string[],
+): Promise<Set<string>> {
+  if (connectorIds.length === 0) return new Set();
+  const rows = await db
+    .select({ connectorId: executorCredentials.connectorId })
+    .from(executorCredentials)
+    .leftJoin(
+      executorConnectionProfiles,
+      eq(executorConnectionProfiles.profileId, executorCredentials.profileId),
+    )
+    .where(
+      and(
+        inArray(executorCredentials.connectorId, connectorIds),
+        isNull(executorCredentials.userId),
+        or(isNull(executorCredentials.profileId), eq(executorConnectionProfiles.isDefault, true)),
+      ),
+    );
+  return new Set(rows.map((row) => row.connectorId));
 }
 
 async function defaultProfileIdForConnector(connectorId: string): Promise<string | null> {

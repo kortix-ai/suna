@@ -82,6 +82,8 @@ let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
+let assertedIamActions: string[] = [];
+let deniedIamAction: string | null = null;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -156,6 +158,7 @@ function resetState() {
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    secretsAllowlist: null,
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -166,6 +169,8 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
+  assertedIamActions = [];
+  deniedIamAction = null;
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -373,6 +378,11 @@ mock.module('../projects/github', () => ({
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
+  listLinkableGitHubAppInstallations: async () => ({
+    githubLogin: 'github-admin',
+    installations: [],
+  }),
+  verifyGitHubInstallationAdmin: async () => undefined,
   createRepo: async () => {
     throw new Error('not used');
   },
@@ -468,7 +478,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
     balance: 1_000_000,
-    billingModel: 'credits',
+    billingModel: 'per_seat',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
@@ -486,7 +496,12 @@ mock.module('../shared/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 
-mockIamEngineAllowAll();
+mockIamEngineAllowAll((action) => {
+  assertedIamActions.push(action);
+  if (action === deniedIamAction) {
+    throw new HTTPException(403, { message: `Denied ${action}` });
+  }
+});
 
 mockIamMembershipSyncNoop();
 
@@ -665,6 +680,7 @@ mock.module('../shared/db', () => ({
             visibility: values.visibility ?? 'private',
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
+            secretsAllowlist: values.secretsAllowlist ?? null,
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -929,6 +945,16 @@ describe('project session API contract', () => {
 
   beforeEach(() => resetState());
 
+  test('GET project session inventory rejects callers without project.session.read', async () => {
+    deniedIamAction = 'project.session.read';
+    const app = createApp();
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
+
+    expect(response.status).toBe(403);
+    expect(assertedIamActions).toContain('project.session.read');
+  });
+
   test('in-place resume clears stale readiness timers and the prior terminal session error', async () => {
     sessionRow = {
       ...sessionRow!,
@@ -1152,6 +1178,18 @@ describe('project session API contract', () => {
     });
     expect(whitespace.status).toBe(400);
 
+    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        metadata: { source: 'system:forged' },
+      }),
+    });
+    expect(bodySpoof.status).toBe(201);
+    expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
+
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1255,6 +1293,164 @@ describe('project session API contract', () => {
     expect(await executorRes.json()).toMatchObject({
       code: 'origin_override_forbidden',
     });
+  });
+
+  test('secrets allowlist is backend-only, existence-checked, and persisted', async () => {
+    const app = createApp();
+
+    // Seed a runtime secret so the allowlist has a valid identifier to name.
+    const seed = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'GMAIL_TOKEN', value: 'g' }),
+    });
+    expect(seed.status).toBe(200);
+
+    // A non-backend (human/supabase) caller may NOT narrow secrets.
+    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    // A backend (PAT) caller naming an unknown identifier fails fast at create.
+    const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['DOES_NOT_EXIST'] }),
+    });
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_NOT_FOUND' });
+
+    // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
+    const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+    });
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
+
+    // An empty allowlist (inject ZERO project secrets) is a valid backend request.
+    const zero = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: [] }),
+    });
+    expect(zero.status).toBe(201);
+    expect((await zero.json()).secrets_allowlist).toEqual([]);
+  });
+
+  test('rejects an allowlist whose identifiers collide on one env key (409, not a bricked session)', async () => {
+    const mk = (identifier: string, value: string) => ({
+      secretId: crypto.randomUUID(),
+      projectId: PROJECT_ID,
+      identifier,
+      name: 'GOOGLE_MAPS_API_KEY',
+      valueEnc: encryptProjectSecret(PROJECT_ID, value),
+      scope: 'runtime' as const,
+      ownerUserId: null,
+      active: true,
+      createdBy: USER_ID,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    });
+    secretRows = [mk('GMAPS_PRIMARY', 'a'), mk('GMAPS_BACKUP', 'b')];
+    const app = createApp();
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAPS_PRIMARY', 'GMAPS_BACKUP'],
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
+  });
+
+  test('KaaB: backend overrides (model, origin_ref, secrets, agent) each apply at boot', async () => {
+    // THE end-to-end proof: backend (PAT) creates carrying the Kortix-as-a-
+    // Backend overrides, asserting each is (a) reflected in the 201 and (b)
+    // actually applied in the env handed to the sandbox — not accepted-and-dropped.
+    const app = createApp();
+
+    // Seed two runtime secrets; the allowlist will narrow the session to one.
+    for (const [name, value] of [
+      ['GMAIL_TOKEN', 'g-secret'],
+      ['STRIPE_SECRET', 's-secret'],
+    ] as const) {
+      const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, value }),
+      });
+      expect(w.status).toBe(200);
+    }
+
+    // (A) The default agent (unrestricted grant) + model + origin_ref + a secrets
+    // allowlist → each applied; the allowlist NARROWS from every secret to just
+    // the one named.
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        model: 'anthropic/claude-opus-4-8',
+        origin_ref: 'tenant-42',
+        secrets: ['GMAIL_TOKEN'],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      origin: string;
+      origin_ref: string | null;
+      secrets_allowlist: string[] | null;
+    };
+    expect(body.origin).toBe('backend');
+    expect(body.origin_ref).toBe('tenant-42');
+    expect(body.secrets_allowlist).toEqual(['GMAIL_TOKEN']);
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    const env = lastProvisionInput!.extraEnvVars ?? {};
+    expect(env.KORTIX_ORIGIN_REF).toBe('tenant-42'); // origin_ref → attribution
+    expect(env.KORTIX_RUNTIME_MODEL).toBe('anthropic/claude-opus-4-8'); // model
+    expect(env.GMAIL_TOKEN).toBe('g-secret'); // allowlisted secret injected
+    expect(env.STRIPE_SECRET).toBeUndefined(); // non-allowlisted secret withheld
+
+    // (B) The agent_name override reaches the sandbox as KORTIX_AGENT_NAME.
+    const res2 = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'reviewer' }),
+    });
+    expect(res2.status).toBe(201);
+    expect((await res2.json()).agent_name).toBe('reviewer');
+    await flushUntil(() => sandboxProvisionCalls === 2);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {

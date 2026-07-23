@@ -228,6 +228,11 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: {},
   }),
+  listLinkableGitHubAppInstallations: async () => ({
+    githubLogin: 'github-admin',
+    installations: [],
+  }),
+  verifyGitHubInstallationAdmin: async () => undefined,
   getRepo: async () => ({
     id: 1,
     name: 'contract-project',
@@ -285,7 +290,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
     balance: 1_000_000,
-    billingModel: 'credits',
+    billingModel: 'per_seat',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
@@ -349,6 +354,7 @@ const triggerDbMock: any = {
                   metadata: values.metadata ?? {},
                   origin: values.origin ?? 'trigger',
                   originRef: values.originRef ?? null,
+                  secretsAllowlist: values.secretsAllowlist ?? null,
                   createdAt: values.createdAt ?? now,
                   updatedAt: values.updatedAt ?? now,
                 };
@@ -449,6 +455,7 @@ const triggerDbMock: any = {
               visibility: values.visibility ?? 'private',
               origin: values.origin ?? 'user',
               originRef: values.originRef ?? null,
+              secretsAllowlist: values.secretsAllowlist ?? null,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
@@ -694,7 +701,7 @@ describe('git-backed triggers — CRUD', () => {
 
     // Manifest content reflects the new trigger as a `triggers:` entry.
     const written = repoFiles.get(MANIFEST_PATH)!;
-    expect(written).toContain('kortix_version: 1');
+    expect(written).toContain('kortix_version: 2');
     expect(written).toContain('triggers:');
     expect(written).toContain('slug: daily-digest');
     expect(written).toContain('name: Daily Digest');

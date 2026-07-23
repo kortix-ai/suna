@@ -1,6 +1,10 @@
-import { HARNESS_IDS, HARNESSES, type HarnessId } from '@kortix/shared/harnesses';
+import {
+  HARNESS_IDS,
+  HARNESSES,
+  type HarnessId,
+} from "@kortix/shared/harnesses";
 
-import type { CompiledRuntimeConfig } from './compile-runtime-config';
+import type { CompiledRuntimeConfig } from "./compile-runtime-config";
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -13,12 +17,17 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   initialPrompt?: string | null;
   runtimeModel?: string | null;
+  /** The wrapper's opaque end-user this backend session acts for. */
+  originRef?: string | null;
   /** Discriminated v2 compatibility config or v3 ACP launch plan. */
   compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }
 
 function isHarnessId(value: string | null | undefined): value is HarnessId {
-  return typeof value === 'string' && (HARNESS_IDS as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (HARNESS_IDS as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -36,24 +45,37 @@ export function runtimeModelForHarness(
 ): string | null {
   const trimmed = model?.trim();
   if (!trimmed) return null;
-  if (isHarnessId(harness) && HARNESSES[harness].modelNamespacing === 'gateway-prefixed') return trimmed;
-  return trimmed.replace(/^kortix\//, '');
+  if (
+    isHarnessId(harness) &&
+    HARNESSES[harness].modelNamespacing === "gateway-prefixed"
+  )
+    return trimmed;
+  return trimmed.replace(/^kortix\//, "");
 }
 
-export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
+export function buildSessionRuntimeEnv(
+  input: SessionRuntimeEnvInput,
+): Record<string, string> {
   const compiled = input.compiledRuntimeConfig;
   // The 'default' sentinel resolves to the compiled default agent, same as the
   // capabilities layer (legacy callers never name a concrete agent).
   const acpAgent =
-    compiled?.kind === 'acp'
+    compiled?.kind === "acp"
       ? (compiled.agents[input.agentName] ??
-        (input.agentName === 'default' ? compiled.agents[compiled.defaultAgent] : undefined) ??
+        (input.agentName === "default"
+          ? compiled.agents[compiled.defaultAgent]
+          : undefined) ??
         null)
       : null;
-  if (compiled?.kind === 'acp' && (!acpAgent || !acpAgent.enabled)) {
-    throw new Error(`ACP agent "${input.agentName}" is not declared and enabled in kortix.yaml`);
+  if (compiled?.kind === "acp" && (!acpAgent || !acpAgent.enabled)) {
+    throw new Error(
+      `ACP agent "${input.agentName}" is not declared and enabled in kortix.yaml`,
+    );
   }
-  const runtimeModel = runtimeModelForHarness(input.runtimeModel, acpAgent?.harness);
+  const runtimeModel = runtimeModelForHarness(
+    input.runtimeModel,
+    acpAgent?.harness,
+  );
 
   return {
     KORTIX_REPO_URL: input.repoUrl,
@@ -62,8 +84,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_BRANCH_NAME: input.sessionId,
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
-    KORTIX_SERVICE_PORT: '8000',
+    KORTIX_SERVICE_PORT: "8000",
     KORTIX_AGENT_NAME: input.agentName,
+    ...(input.originRef ? { KORTIX_ORIGIN_REF: input.originRef } : {}),
     KORTIX_API_URL: input.apiUrl,
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
@@ -81,11 +104,19 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // consumer never has to special-case the legacy vs. compiled launch path
     // to find the model, and never has to know the word "opencode".
     ...(!compiled
-      ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1', KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1' }
+      ? {
+          KORTIX_BOOTSTRAP_OPENCODE_SESSION: "1",
+          KORTIX_BOOTSTRAP_RUNTIME_SESSION: "1",
+        }
       : {}),
-    ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    ...(input.initialPrompt
+      ? { KORTIX_INITIAL_PROMPT: input.initialPrompt }
+      : {}),
     ...(input.runtimeModel && !compiled
-      ? { KORTIX_OPENCODE_MODEL: input.runtimeModel, KORTIX_RUNTIME_MODEL: input.runtimeModel }
+      ? {
+          KORTIX_OPENCODE_MODEL: input.runtimeModel,
+          KORTIX_RUNTIME_MODEL: input.runtimeModel,
+        }
       : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on
@@ -93,14 +124,17 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // model overrides (KORTIX_OPENCODE_MODEL above, or an explicit model on a
     // prompt request) still win over whatever default model this bakes in —
     // this only sets the manifest agent's/DEFAULT agent's fallback.
-    ...(compiled?.kind === 'acp'
+    ...(compiled?.kind === "acp"
       ? {
           KORTIX_COMPILED_RUNTIME_PLAN: JSON.stringify(compiled),
           KORTIX_RUNTIME_NAME: acpAgent!.runtime,
           KORTIX_RUNTIME_HARNESS: acpAgent!.harness,
-          KORTIX_RUNTIME_CONFIG_DIR: compiled.runtimes[acpAgent!.runtime].configDir,
+          KORTIX_RUNTIME_CONFIG_DIR:
+            compiled.runtimes[acpAgent!.runtime].configDir,
           ...(runtimeModel ? { KORTIX_RUNTIME_MODEL: runtimeModel } : {}),
-          ...(acpAgent!.nativeAgent ? { KORTIX_NATIVE_AGENT: acpAgent!.nativeAgent } : {}),
+          ...(acpAgent!.nativeAgent
+            ? { KORTIX_NATIVE_AGENT: acpAgent!.nativeAgent }
+            : {}),
         }
       : {}),
   };

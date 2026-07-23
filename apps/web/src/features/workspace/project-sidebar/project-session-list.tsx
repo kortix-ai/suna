@@ -21,6 +21,8 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -31,9 +33,9 @@ import {
   shouldPollProjectSessions,
   sortSessionsByCreatedAt,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
-import { Icon } from '@/features/icon/icon';
+import { cn } from '@/lib/utils';
+import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -41,11 +43,6 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import {
-  shouldBeginSessionSwitch,
-  useSessionSwitchStore,
-} from '@/stores/session-switch-store';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -59,7 +56,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { IconType } from 'react-icons/lib';
 
@@ -105,11 +102,13 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const activeRuntimeSessionId = searchParams.get('oc');
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
+  const cancelSessionSwitch = useSessionSwitchStore((state) => state.cancelSwitch);
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
@@ -196,7 +195,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
 
   if (viewState === 'empty') {
     return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+      <div className="text-muted-foreground/60 px-2 pb-2 pt-1 text-xs">
         {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
       </div>
     );
@@ -204,7 +203,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
 
   if (viewState === 'no-matches') {
     return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+      <div className="text-muted-foreground/60 px-2 pb-2 pt-1 text-xs">
         {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
       </div>
     );
@@ -224,18 +223,17 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 session={session}
                 href={href}
                 isActive={
-                  (!!isActive && !activeRuntimeSessionId && !switchingToSessionId) ||
-                  isSwitchTarget
+                  (!!isActive && !activeRuntimeSessionId && !switchingToSessionId) || isSwitchTarget
                 }
                 isSwitching={isSwitchTarget}
                 onNavigate={(event) => {
-                  if (
-                    shouldBeginSessionSwitch(
-                      event,
-                      session.session_id,
-                      activeSessionId,
-                    )
-                  ) {
+                  if (switchingToSessionId && session.session_id === activeSessionId) {
+                    event.preventDefault();
+                    cancelSessionSwitch();
+                    router.replace(href, { scroll: false });
+                    return;
+                  }
+                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
                     beginSessionSwitch(session.session_id);
                   }
                 }}
@@ -373,9 +371,16 @@ function ProjectSessionRow({
           href={href}
           onClick={onNavigate}
           aria-busy={isSwitching || undefined}
+          aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          {isSwitching ? (
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Loading className="size-3.5 shrink-0" />
+            </span>
+          ) : (
+            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          )}
 
           <span
             title={displayTitle}
@@ -413,7 +418,7 @@ function ProjectSessionRow({
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
                   'pr-1.5 transition-opacity duration-150',
-                  'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
+                  'group-has-data-[state=open]/session-list:opacity-0 opacity-100 group-hover/session-list:opacity-0',
                 )}
               >
                 {shortRelative(relative)}
@@ -430,7 +435,7 @@ function ProjectSessionRow({
                     'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
                   )}
                   className={cn(
-                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+                    'absolute right-0 top-1/2 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
                     relative
                       ? cn(
                           'pointer-events-none opacity-0',
@@ -467,7 +472,9 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
-                  onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+                  onSelect={() =>
+                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+                  }
                 >
                   {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
@@ -551,9 +558,7 @@ function SessionStatusDot({
       side="right"
       label={
         reviewPending ? (
-          <span className="text-xs">
-            {reviewCount} awaiting your review
-          </span>
+          <span className="text-xs">{reviewCount} awaiting your review</span>
         ) : (
           <span className="text-xs capitalize">{status}</span>
         )

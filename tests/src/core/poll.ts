@@ -9,16 +9,28 @@ export async function waitFor<T>(
     timeoutMs: number;
     intervalMs: number;
     description?: string;
+    retryOnError?: (error: unknown) => boolean;
   },
 ): Promise<T> {
   const deadline = Date.now() + opts.timeoutMs;
-  let last: T;
+  let last!: T;
+  let lastRetryableError: unknown;
 
   while (true) {
-    last = await read();
-    if (opts.until(last)) return last;
+    try {
+      last = await read();
+      lastRetryableError = undefined;
+      if (opts.until(last)) return last;
+    } catch (error) {
+      if (!opts.retryOnError?.(error)) throw error;
+      lastRetryableError = error;
+    }
     if (Date.now() >= deadline) {
-      throw new Error(`Timed out waiting for ${opts.description ?? 'condition'}`);
+      const detail =
+        lastRetryableError instanceof Error
+          ? `; last retryable error: ${lastRetryableError.message}`
+          : '';
+      throw new Error(`Timed out waiting for ${opts.description ?? 'condition'}${detail}`);
     }
     await sleep(opts.intervalMs);
   }

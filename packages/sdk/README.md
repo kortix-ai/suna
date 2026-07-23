@@ -67,7 +67,8 @@ Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 table for the full list (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Tracked; do not depend on it yet.
+> no `response.body`. Use `createHttpSessionSyncController` for bounded history
+> synchronization. Keep the platform-specific event transport for live events.
 
 ## Quick start
 
@@ -465,9 +466,8 @@ in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
 The framework-free core modules — `turns`, `session/url`, `session` (health),
 `projects-client`, `files`, `transcript` — have no React or DOM dependency and are
 usable from any JS host; `apps/mobile` already imports `@kortix/sdk/turns` this way.
-React Native adoption of live streaming is limited by RN's fetch implementation.
-REST/facade calls work anywhere `fetch` does; mobile-specific UI may still use a
-thin native data layer until streaming support is available.
+React Native uses `@kortix/sdk/react` with durable ACP transcript polling.
+React Native's fetch implementation cannot consume the SDK's incremental SSE body.
 
 ## Rules of the road
 

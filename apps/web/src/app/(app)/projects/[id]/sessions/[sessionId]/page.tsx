@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -22,7 +22,6 @@ import {
 } from '@/features/session/session-page-lifecycle';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
@@ -42,17 +41,6 @@ import {
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
 import { readStartStash, useSession } from '@kortix/sdk/react';
-
-// The fullscreen deck viewer (W14's Present action), mounted ONCE at the page
-// level, outside `SessionLayout` — the wrapper renders `null` until the
-// store's `isOpen` flips, so this costs the route nothing until someone
-// actually clicks Present. Lazy + Suspense, matching SharePageWrapper — the
-// only other place that mounts it.
-const PresentationViewerWrapper = lazy(() =>
-  import('@/stores/presentation-viewer-store').then((mod) => ({
-    default: mod.PresentationViewerWrapper,
-  })),
-);
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -507,37 +495,25 @@ export default function ProjectSessionPage() {
   })();
 
   return (
-    <ProjectShell projectId={projectId}>
-      <SessionLayout
-        sessionId={session.runtimeId ?? sessionId}
-        projectId={projectId}
-        projectSessionId={sessionId}
-        // See `shouldShowSessionBootLoader`'s doc comment: boot chrome drops
-        // once the ACP session has ever been ready OR on a terminal
-        // pre-readiness error (the `InlineSessionError` branch above
-        // replaces `inner` in that case — leaving `bootStage` set here would
-        // otherwise keep the loader mounted underneath/behind it forever).
-        bootStage={
-          shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
-            ? startStage
-            : null
-        }
-        bootReason={
-          shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
-            ? startReason
-            : null
-        }
-        acpItems={acpItems}
-        isSessionBusy={session.acp?.busy ?? false}
-      >
-        <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
-      </SessionLayout>
-      {/* Outside `SessionLayout` — exactly one instance, whichever layer (or
-          error/loader state) is showing underneath. */}
-      <Suspense fallback={null}>
-        <PresentationViewerWrapper />
-      </Suspense>
-    </ProjectShell>
+    <SessionLayout
+      sessionId={session.runtimeId ?? sessionId}
+      projectId={projectId}
+      projectSessionId={sessionId}
+      bootStage={
+        shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
+          ? startStage
+          : null
+      }
+      bootReason={
+        shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
+          ? startReason
+          : null
+      }
+      acpItems={acpItems}
+      isSessionBusy={session.acp?.busy ?? false}
+    >
+      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+    </SessionLayout>
   );
 }
 

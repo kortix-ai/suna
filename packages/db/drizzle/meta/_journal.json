@@ -57,6 +57,13 @@
       "when": 1784711662984,
       "tag": "20260722091422_add_session_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784720046773,
+      "tag": "20260722113406_add_session_secrets_allowlist",
+      "breakpoints": true
     }
   ]
 }

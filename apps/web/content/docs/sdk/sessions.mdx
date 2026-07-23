@@ -134,8 +134,13 @@ await session.send('Refactor the auth module');
 Streaming needs `fetch` with a real `ReadableStream` body and
 `TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers
 all support it. React Native and Expo do not: their `fetch` has no
-`response.body`. On React Native, use the REST methods on `session` and
-`project` instead of `stream()`.
+`response.body`. On React Native, use `createHttpSessionSyncController` for
+bounded history and status synchronization. Use a platform-specific event
+transport for live events.
+
+The controller loads the newest 10 messages first. `loadOlder()` follows the
+server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
+exports.
 
 ### Event types
 

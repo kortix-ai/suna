@@ -1,4 +1,4 @@
-import { AcpClient, createAcpClient, type AcpStreamHandle } from '../../acp';
+import { AcpClient, createAcpClient, type AcpStreamHandle } from "../../acp";
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -16,20 +16,28 @@ import { AcpClient, createAcpClient, type AcpStreamHandle } from '../../acp';
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
-import * as F from '../files/client';
-import { ApiError } from '../http/api/errors';
-import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
-import * as P from '../rest/projects-client';
-import { getSessionHealth } from '../session/health';
-import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
-import { setCurrentRuntime } from '../session/current-runtime';
+import * as F from "../files/client";
+import { ApiError } from "../http/api/errors";
+import {
+  type KortixPlatformConfig,
+  configureKortix,
+  platformConfig,
+} from "../http/config";
+import * as P from "../rest/projects-client";
+import { getSessionHealth } from "../session/health";
+import {
+  type SubdomainUrlOptions,
+  proxyLocalhostUrl,
+  rewriteLocalhostUrl,
+} from "../session/url";
+import { setCurrentRuntime } from "../session/current-runtime";
 import {
   clearSessionRuntime,
   getSessionRuntime,
   setSessionRuntime,
   type SessionRuntimeEntry,
-} from '../session/session-runtime-registry';
-import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
+} from "../session/session-runtime-registry";
+import { getSandboxUrlForExternalId } from "../session/server-store/url-helpers";
 
 /** A model override retained for API compatibility; ACP harness config owns selection. */
 export type SessionModel = { providerID: string; modelID: string };
@@ -60,7 +68,7 @@ type SessionReadyOptions = {
 type SessionReadyCaller = {
   deadlineAt: number;
   pollIntervalMs: number;
-  onProgress?: NonNullable<SessionReadyOptions['onProgress']>;
+  onProgress?: NonNullable<SessionReadyOptions["onProgress"]>;
 };
 
 type InFlightSessionStart = {
@@ -95,7 +103,11 @@ async function waitForNextSessionStartPoll(
   });
 }
 
-function normalizeSessionReadyOption(value: number | undefined, fallback: number, name: string) {
+function normalizeSessionReadyOption(
+  value: number | undefined,
+  fallback: number,
+  name: string,
+) {
   const resolved = value ?? fallback;
   if (!Number.isFinite(resolved)) {
     throw new RangeError(`${name} must be a finite number`);
@@ -108,8 +120,8 @@ function sessionReadyDeadlineError(
   progress: P.SessionStartResult | null,
 ): ApiError {
   return new ApiError(
-    `Session runtime did not become ready within ${deadlineMs}ms (stage: ${progress?.stage ?? 'unknown'})`,
-    { code: 'RUNTIME_UNAVAILABLE' },
+    `Session runtime did not become ready within ${deadlineMs}ms (stage: ${progress?.stage ?? "unknown"})`,
+    { code: "RUNTIME_UNAVAILABLE" },
   );
 }
 
@@ -131,13 +143,16 @@ function notifySessionStartProgress(
 function cancelInFlightSessionStart(
   projectId: string,
   sessionId: string,
-  action: 'delete' | 'restart' | 'stop',
+  action: "delete" | "restart" | "stop",
 ): void {
   const entry = inFlightSessionStarts.get(`${projectId}\n${sessionId}`);
   if (!entry || entry.cancelledError) return;
-  entry.cancelledError = new ApiError(`Session readiness was cancelled by ${action}()`, {
-    code: 'RUNTIME_UNAVAILABLE',
-  });
+  entry.cancelledError = new ApiError(
+    `Session readiness was cancelled by ${action}()`,
+    {
+      code: "RUNTIME_UNAVAILABLE",
+    },
+  );
   entry.requestController?.abort();
   entry.wakePoll?.();
 }
@@ -147,11 +162,14 @@ export class SessionNotReadyError extends Error {
     super(
       `Session runtime not ready — call \`await session.ensureReady()\` (it drives \`start()\` to completion and resolves this session's own sandbox runtime) before calling \`${action}\`.`,
     );
-    this.name = 'SessionNotReadyError';
+    this.name = "SessionNotReadyError";
   }
 }
 
-export function createKortix(config: KortixPlatformConfig, opts?: { global?: boolean }) {
+export function createKortix(
+  config: KortixPlatformConfig,
+  opts?: { global?: boolean },
+) {
   // Wire the platform seam once. All wrapped functions read it.
   //
   // `opts.global === false` (used by `@kortix/sdk/server`'s `createScopedKortix`)
@@ -175,7 +193,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     try {
       return new URL(apiBaseUrl);
     } catch {
-      if (typeof window !== 'undefined' && window.location?.origin) {
+      if (typeof window !== "undefined" && window.location?.origin) {
         try {
           return new URL(apiBaseUrl, window.location.origin);
         } catch {
@@ -184,7 +202,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       }
       throw new ApiError(
         `Kortix SDK: backendUrl must be an absolute URL outside the browser (got ${JSON.stringify(apiBaseUrl)}). Relative paths like "/api/kortix" only resolve against a page origin — configure an absolute backendUrl for server-side hosts.`,
-        { code: 'INVALID_BACKEND_URL' },
+        { code: "INVALID_BACKEND_URL" },
       );
     }
   }
@@ -196,7 +214,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
    * sandbox happens to be globally active (which may belong to a different
    * session handle).
    */
-  function resolvePreviewOptsForSandbox(sandboxId: string): SubdomainUrlOptions {
+  function resolvePreviewOptsForSandbox(
+    sandboxId: string,
+  ): SubdomainUrlOptions {
     // Read the LIVE platform config, not the `config` captured at
     // `createKortix()` time: a host may re-point the seam after creation
     // (calling `configureKortix()` again — e.g. the whitelabel app switching
@@ -207,7 +227,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     let backendPort = 80;
     const u = parseBackendUrlForPort(apiBaseUrl);
     if (u) {
-      backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
+      backendPort = u.port
+        ? Number(u.port)
+        : u.protocol === "https:"
+          ? 443
+          : 80;
     }
     return { sandboxId, backendPort, apiBaseUrl };
   }
@@ -274,19 +298,26 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     subscription: {
       createPortalSession: (returnUrl: string, accountId?: string) =>
         P.createPortalSession(returnUrl, accountId),
-      cancel: (feedback?: string, accountId?: string) => P.cancelSubscription(feedback, accountId),
+      cancel: (feedback?: string, accountId?: string) =>
+        P.cancelSubscription(feedback, accountId),
       reactivate: (accountId?: string) => P.reactivateSubscription(accountId),
-      scheduleDowngrade: (targetTierKey: string, commitmentType?: string, accountId?: string) =>
-        P.scheduleDowngrade(targetTierKey, commitmentType, accountId),
-      cancelScheduledChange: (accountId?: string) => P.cancelScheduledChange(accountId),
+      scheduleDowngrade: (
+        targetTierKey: string,
+        commitmentType?: string,
+        accountId?: string,
+      ) => P.scheduleDowngrade(targetTierKey, commitmentType, accountId),
+      cancelScheduledChange: (accountId?: string) =>
+        P.cancelScheduledChange(accountId),
       prorationPreview: (newPriceId: string, accountId?: string) =>
         P.getProrationPreview(newPriceId, accountId),
     },
 
     /** One-off credit purchases + recurring auto-topup configuration. */
     credits: {
-      purchase: (input: Parameters<typeof P.purchaseCredits>[0]) => P.purchaseCredits(input),
-      autoTopupSettings: (accountId?: string) => P.getAutoTopupSettings(accountId),
+      purchase: (input: Parameters<typeof P.purchaseCredits>[0]) =>
+        P.purchaseCredits(input),
+      autoTopupSettings: (accountId?: string) =>
+        P.getAutoTopupSettings(accountId),
       configureAutoTopup: (input: Parameters<typeof P.configureAutoTopup>[0]) =>
         P.configureAutoTopup(input),
     },
@@ -329,8 +360,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkRepository: P.linkRepository,
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
+    listLinkableInstallations: P.listLinkableGitHubInstallations,
     listRepositories: P.listGitHubRepositories,
     listRepositoryBranches: P.listGitHubRepositoryBranches,
+    linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
   };
@@ -355,12 +388,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     items: (options?: Parameters<typeof P.listMarketplaceCatalogItems>[0]) =>
       P.listMarketplaceCatalogItems(options),
     item: (id: string) => P.getMarketplaceCatalogItem(id),
-    itemFile: (id: string, path: string) => P.getMarketplaceCatalogItemFile(id, path),
+    itemFile: (id: string, path: string) =>
+      P.getMarketplaceCatalogItemFile(id, path),
     marketplaces: () => P.listMarketplaces(),
     featured: () => P.listFeaturedMarketplaces(),
     sources: {
       list: () => P.listMarketplaceSources(),
-      add: (input: Parameters<typeof P.addMarketplaceSource>[0]) => P.addMarketplaceSource(input),
+      add: (input: Parameters<typeof P.addMarketplaceSource>[0]) =>
+        P.addMarketplaceSource(input),
       remove: (id: string) => P.removeMarketplaceSource(id),
     },
   };
@@ -368,9 +403,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
     return {
-      get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
+      get: (opts?: Parameters<typeof P.getProject>[1]) =>
+        P.getProject(projectId, opts),
       detail: () => P.getProjectDetail(projectId),
-      update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
+      update: (input: Parameters<typeof P.updateProject>[1]) =>
+        P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
       modelPicker: () => P.getProjectModelPicker(projectId),
@@ -387,33 +424,38 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       modelCatalog: (input: Parameters<typeof P.getComposerModelCatalog>[1]) =>
         P.getComposerModelCatalog(projectId, input),
       /** Select or clear the explicit auth route for a harness. */
-      setHarnessConnection: (...a: DropFirst<Parameters<typeof P.setActiveHarnessConnection>>) =>
-        P.setActiveHarnessConnection(projectId, ...a),
+      setHarnessConnection: (
+        ...a: DropFirst<Parameters<typeof P.setActiveHarnessConnection>>
+      ) => P.setActiveHarnessConnection(projectId, ...a),
       /** Canonical session create entrypoint (alias of sessions.create). */
       createSession: (input?: Parameters<typeof P.createProjectSession>[1]) =>
         P.createProjectSession(projectId, input),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
-      onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
-        P.setProjectOnboardingComplete(projectId, ...a),
+      onboardingComplete: (
+        ...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>
+      ) => P.setProjectOnboardingComplete(projectId, ...a),
 
       /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
       tokens: {
         list: () => P.listProjectCliTokens(projectId),
         create: (input?: Parameters<typeof P.createProjectCliToken>[1]) =>
           P.createProjectCliToken(projectId, input),
-        revoke: (tokenId: string) => P.revokeProjectCliToken(projectId, tokenId),
+        revoke: (tokenId: string) =>
+          P.revokeProjectCliToken(projectId, tokenId),
       },
 
       /** Agent-minted setup links — hand a human a link to enter a secret value or 1-click connect an app. */
       setupLinks: {
         requestSecret: (input: Parameters<typeof P.requestProjectSecret>[1]) =>
           P.requestProjectSecret(projectId, input),
-        requestConnector: (input: Parameters<typeof P.requestProjectConnector>[1]) =>
-          P.requestProjectConnector(projectId, input),
+        requestConnector: (
+          input: Parameters<typeof P.requestProjectConnector>[1],
+        ) => P.requestProjectConnector(projectId, input),
       },
 
       /** Validate a `kortix.yaml` (or legacy `kortix.toml`) manifest's raw text server-side — format is auto-resolved from the project's manifest path (same schema `kortix ship`/CR-merge use). */
-      validateManifest: (raw: string) => P.validateProjectManifest(projectId, raw),
+      validateManifest: (raw: string) =>
+        P.validateProjectManifest(projectId, raw),
 
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
@@ -423,16 +465,21 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
           P.upsertProjectSecret(projectId, input),
         remove: (name: string) => P.deleteProjectSecret(projectId, name),
-        setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) =>
-          P.setPersonalProjectSecret(projectId, ...a),
-        removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
-        setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
-          P.upsertProjectGitCredential(projectId, input),
+        setPersonal: (
+          ...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>
+        ) => P.setPersonalProjectSecret(projectId, ...a),
+        removePersonal: (name: string) =>
+          P.deletePersonalProjectSecret(projectId, name),
+        setGitCredential: (
+          input: Parameters<typeof P.upsertProjectGitCredential>[1],
+        ) => P.upsertProjectGitCredential(projectId, input),
         /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */
-        startProviderOAuth: (...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>) =>
-          P.startProjectProviderOAuth(projectId, ...a),
-        pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
-          P.pollProjectProviderOAuth(projectId, ...a),
+        startProviderOAuth: (
+          ...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>
+        ) => P.startProjectProviderOAuth(projectId, ...a),
+        pollProviderOAuth: (
+          ...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>
+        ) => P.pollProjectProviderOAuth(projectId, ...a),
       },
 
       access: {
@@ -443,27 +490,35 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.updateProjectAccess(projectId, ...a),
         revoke: (userId: string) => P.revokeProjectAccess(projectId, userId),
         pendingInvites: () => P.listPendingProjectInvites(projectId),
-        resendInvite: (...a: DropFirst<Parameters<typeof P.resendPendingProjectInvite>>) =>
-          P.resendPendingProjectInvite(projectId, ...a),
-        revokeInvite: (...a: DropFirst<Parameters<typeof P.revokePendingProjectInvite>>) =>
-          P.revokePendingProjectInvite(projectId, ...a),
+        resendInvite: (
+          ...a: DropFirst<Parameters<typeof P.resendPendingProjectInvite>>
+        ) => P.resendPendingProjectInvite(projectId, ...a),
+        revokeInvite: (
+          ...a: DropFirst<Parameters<typeof P.revokePendingProjectInvite>>
+        ) => P.revokePendingProjectInvite(projectId, ...a),
         requests: () => P.listProjectAccessRequests(projectId),
-        approveRequest: (...a: DropFirst<Parameters<typeof P.approveProjectAccessRequest>>) =>
-          P.approveProjectAccessRequest(projectId, ...a),
-        rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>) =>
-          P.rejectProjectAccessRequest(projectId, ...a),
+        approveRequest: (
+          ...a: DropFirst<Parameters<typeof P.approveProjectAccessRequest>>
+        ) => P.approveProjectAccessRequest(projectId, ...a),
+        rejectRequest: (
+          ...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>
+        ) => P.rejectProjectAccessRequest(projectId, ...a),
         groupGrants: () => P.listProjectGroupGrants(projectId),
-        attachGroupGrant: (...a: DropFirst<Parameters<typeof P.attachGroupToProject>>) =>
-          P.attachGroupToProject(projectId, ...a),
-        updateGroupGrant: (...a: DropFirst<Parameters<typeof P.updateProjectGroupGrant>>) =>
-          P.updateProjectGroupGrant(projectId, ...a),
-        detachGroupGrant: (groupId: string) => P.detachGroupFromProject(projectId, groupId),
+        attachGroupGrant: (
+          ...a: DropFirst<Parameters<typeof P.attachGroupToProject>>
+        ) => P.attachGroupToProject(projectId, ...a),
+        updateGroupGrant: (
+          ...a: DropFirst<Parameters<typeof P.updateProjectGroupGrant>>
+        ) => P.updateProjectGroupGrant(projectId, ...a),
+        detachGroupGrant: (groupId: string) =>
+          P.detachGroupFromProject(projectId, groupId),
         /** Per-resource (agent/skill/secret) grants to a member or a group. */
         resourceGrants: {
           list: () => P.listProjectResourceGrants(projectId),
           create: (input: Parameters<typeof P.createProjectResourceGrant>[1]) =>
             P.createProjectResourceGrant(projectId, input),
-          remove: (grantId: string) => P.deleteProjectResourceGrant(projectId, grantId),
+          remove: (grantId: string) =>
+            P.deleteProjectResourceGrant(projectId, grantId),
         },
       },
 
@@ -477,36 +532,51 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
         auth: {
-          discover: (...a: DropFirst<Parameters<typeof P.discoverConnectorAuth>>) =>
-            P.discoverConnectorAuth(projectId, ...a),
+          discover: (
+            ...a: DropFirst<Parameters<typeof P.discoverConnectorAuth>>
+          ) => P.discoverConnectorAuth(projectId, ...a),
         },
         setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
           P.setConnectorName(projectId, ...a),
-        setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>
-          P.setConnectorCredentialMode(projectId, ...a),
-        setCredential: (...a: DropFirst<Parameters<typeof P.setConnectorCredential>>) =>
-          P.setConnectorCredential(projectId, ...a),
-        setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
-          P.setConnectorSensitive(projectId, ...a),
+        setCredentialMode: (
+          ...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>
+        ) => P.setConnectorCredentialMode(projectId, ...a),
+        setCredential: (
+          ...a: DropFirst<Parameters<typeof P.setConnectorCredential>>
+        ) => P.setConnectorCredential(projectId, ...a),
+        setSensitive: (
+          ...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>
+        ) => P.setConnectorSensitive(projectId, ...a),
         profiles: {
           list: () => P.listConnectionProfiles(projectId),
-          reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
-            P.reconcileConnectionProfile(projectId, ...a),
+          reconcile: (
+            ...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>
+          ) => P.reconcileConnectionProfile(projectId, ...a),
           reconcileMember: (
-            ...a: DropFirst<Parameters<typeof P.reconcileMemberConnectionProfile>>
+            ...a: DropFirst<
+              Parameters<typeof P.reconcileMemberConnectionProfile>
+            >
           ) => P.reconcileMemberConnectionProfile(projectId, ...a),
           updateCredential: (
-            ...a: DropFirst<Parameters<typeof P.updateConnectionProfileCredential>>
+            ...a: DropFirst<
+              Parameters<typeof P.updateConnectionProfileCredential>
+            >
           ) => P.updateConnectionProfileCredential(projectId, ...a),
-          revoke: (...a: DropFirst<Parameters<typeof P.revokeConnectionProfile>>) =>
-            P.revokeConnectionProfile(projectId, ...a),
-          activate: (...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>) =>
-            P.activateConnectionProfile(projectId, ...a),
+          revoke: (
+            ...a: DropFirst<Parameters<typeof P.revokeConnectionProfile>>
+          ) => P.revokeConnectionProfile(projectId, ...a),
+          activate: (
+            ...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>
+          ) => P.activateConnectionProfile(projectId, ...a),
           pipedreamConnect: (
-            ...a: DropFirst<Parameters<typeof P.pipedreamConnectConnectionProfile>>
+            ...a: DropFirst<
+              Parameters<typeof P.pipedreamConnectConnectionProfile>
+            >
           ) => P.pipedreamConnectConnectionProfile(projectId, ...a),
           pipedreamFinalize: (
-            ...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnectionProfile>>
+            ...a: DropFirst<
+              Parameters<typeof P.pipedreamFinalizeConnectionProfile>
+            >
           ) => P.pipedreamFinalizeConnectionProfile(projectId, ...a),
         },
         policies: {
@@ -526,10 +596,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
         /** Direct integrations.sh catalogue and normalized domain surfaces. */
         discover: {
-          list: (...a: DropFirst<Parameters<typeof P.listDiscoverIntegrations>>) =>
-            P.listDiscoverIntegrations(projectId, ...a),
-          detail: (...a: DropFirst<Parameters<typeof P.getDiscoverIntegration>>) =>
-            P.getDiscoverIntegration(projectId, ...a),
+          list: (
+            ...a: DropFirst<Parameters<typeof P.listDiscoverIntegrations>>
+          ) => P.listDiscoverIntegrations(projectId, ...a),
+          detail: (
+            ...a: DropFirst<Parameters<typeof P.getDiscoverIntegration>>
+          ) => P.getDiscoverIntegration(projectId, ...a),
         },
       },
 
@@ -549,20 +621,23 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.deleteProjectTrigger(projectId, ...a),
         fire: (...a: DropFirst<Parameters<typeof P.fireProjectTrigger>>) =>
           P.fireProjectTrigger(projectId, ...a),
-        setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
-          P.setProjectTriggersActivation(projectId, ...a),
+        setActivation: (
+          ...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>
+        ) => P.setProjectTriggersActivation(projectId, ...a),
       },
 
       files: {
         list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
           P.listProjectFiles(projectId, options),
-        read: (path: string, ref?: string) => P.readProjectFile(projectId, path, ref),
+        read: (path: string, ref?: string) =>
+          P.readProjectFile(projectId, path, ref),
         search: (...a: DropFirst<Parameters<typeof P.searchProjectFiles>>) =>
           P.searchProjectFiles(projectId, ...a),
         archive: (...a: DropFirst<Parameters<typeof P.fetchProjectArchive>>) =>
           P.fetchProjectArchive(projectId, ...a),
-        history: (...a: DropFirst<Parameters<typeof P.getProjectFileHistory>>) =>
-          P.getProjectFileHistory(projectId, ...a),
+        history: (
+          ...a: DropFirst<Parameters<typeof P.getProjectFileHistory>>
+        ) => P.getProjectFileHistory(projectId, ...a),
       },
 
       git: {
@@ -573,15 +648,17 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         versionDiff: (...a: DropFirst<Parameters<typeof P.getVersionDiff>>) =>
           P.getVersionDiff(projectId, ...a),
         /** Invite a GitHub user as a collaborator on a Kortix-managed repo. */
-        inviteCollaborator: (...a: DropFirst<Parameters<typeof P.inviteRepoCollaborator>>) =>
-          P.inviteRepoCollaborator(projectId, ...a),
+        inviteCollaborator: (
+          ...a: DropFirst<Parameters<typeof P.inviteRepoCollaborator>>
+        ) => P.inviteRepoCollaborator(projectId, ...a),
       },
 
       changeRequests: {
         list: () => P.listChangeRequests(projectId),
         get: (crId: string) => P.getChangeRequest(projectId, crId),
         diff: (crId: string) => P.getChangeRequestDiff(projectId, crId),
-        mergePreview: (crId: string) => P.getChangeRequestMergePreview(projectId, crId),
+        mergePreview: (crId: string) =>
+          P.getChangeRequestMergePreview(projectId, crId),
         open: (...a: DropFirst<Parameters<typeof P.openChangeRequest>>) =>
           P.openChangeRequest(projectId, ...a),
         merge: (...a: DropFirst<Parameters<typeof P.mergeChangeRequest>>) =>
@@ -591,8 +668,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         reopen: (...a: DropFirst<Parameters<typeof P.reopenChangeRequest>>) =>
           P.reopenChangeRequest(projectId, ...a),
         /** Request changes on a CR (Review Center) — records feedback + optionally delivers it back to the originating session. */
-        requestChanges: (...a: DropFirst<Parameters<typeof P.requestChangesOnChangeRequest>>) =>
-          P.requestChangesOnChangeRequest(projectId, ...a),
+        requestChanges: (
+          ...a: DropFirst<Parameters<typeof P.requestChangesOnChangeRequest>>
+        ) => P.requestChangesOnChangeRequest(projectId, ...a),
       },
 
       sessions: {
@@ -621,8 +699,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.listPendingApprovals(projectId, options),
         resolve: (...a: DropFirst<Parameters<typeof P.resolveApproval>>) =>
           P.resolveApproval(projectId, ...a),
-        sessionsNeedingInput: (options?: Parameters<typeof P.listSessionsNeedingInput>[1]) =>
-          P.listSessionsNeedingInput(projectId, options),
+        sessionsNeedingInput: (
+          options?: Parameters<typeof P.listSessionsNeedingInput>[1],
+        ) => P.listSessionsNeedingInput(projectId, options),
       },
 
       /** Gateway observability — LLM request logs, cost/latency rollups, budgets, gateway API keys. */
@@ -638,7 +717,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         budgets: () => P.getGatewayBudgets(projectId),
         setBudget: (input: Parameters<typeof P.setGatewayBudget>[1]) =>
           P.setGatewayBudget(projectId, input),
-        deleteBudget: (budgetId: string) => P.deleteGatewayBudget(projectId, budgetId),
+        deleteBudget: (budgetId: string) =>
+          P.deleteGatewayBudget(projectId, budgetId),
         keys: () => P.getGatewayKeys(projectId),
         createKey: (name: string) => P.createGatewayKey(projectId, name),
         revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
@@ -678,14 +758,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.connectEmail(projectId, input),
           disconnect: (connectorSlug?: string | null) =>
             P.disconnectEmail(projectId, connectorSlug),
-          updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
-            P.updateEmailPolicy(projectId, ...a),
+          updatePolicy: (
+            ...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>
+          ) => P.updateEmailPolicy(projectId, ...a),
         },
         meet: {
           voices: () => P.getMeetVoices(projectId),
           setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
           setBotName: (name: string) => P.setMeetBotName(projectId, name),
-          previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
+          previewVoice: (voiceId: string) =>
+            P.previewMeetVoice(projectId, voiceId),
           /** Make the meeting bot speak text (text → ElevenLabs → Recall `output_audio`). */
           speak: (botId: string, text: string, voice?: string) =>
             P.speakInMeeting(projectId, botId, text, voice),
@@ -707,23 +789,30 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /** Set the agent used when a new project session does not name one explicitly. */
-      setDefaultAgent: (agentName: string) => P.updateProjectDefaultAgent(projectId, agentName),
+      setDefaultAgent: (agentName: string) =>
+        P.updateProjectDefaultAgent(projectId, agentName),
 
       /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
       sandbox: {
         list: () => P.listProjectSandboxes(projectId),
         snapshots: () => P.listProjectSnapshots(projectId),
-        rebuildSnapshot: (slug?: string) => P.rebuildProjectSnapshot(projectId, slug),
+        rebuildSnapshot: (slug?: string) =>
+          P.rebuildProjectSnapshot(projectId, slug),
         fixWithAgent: () => P.fixSandboxWithAgent(projectId),
-        createTemplate: (input: Parameters<typeof P.createSandboxTemplate>[1]) =>
-          P.createSandboxTemplate(projectId, input),
-        updateTemplate: (...a: DropFirst<Parameters<typeof P.updateSandboxTemplate>>) =>
-          P.updateSandboxTemplate(projectId, ...a),
-        removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
-        buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
+        createTemplate: (
+          input: Parameters<typeof P.createSandboxTemplate>[1],
+        ) => P.createSandboxTemplate(projectId, input),
+        updateTemplate: (
+          ...a: DropFirst<Parameters<typeof P.updateSandboxTemplate>>
+        ) => P.updateSandboxTemplate(projectId, ...a),
+        removeTemplate: (templateId: string) =>
+          P.deleteSandboxTemplate(projectId, templateId),
+        buildTemplate: (templateId: string) =>
+          P.buildSandboxTemplate(projectId, templateId),
         /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
-        setProvider: (provider: Parameters<typeof P.updateProjectSandboxProvider>[1]) =>
-          P.updateProjectSandboxProvider(projectId, provider),
+        setProvider: (
+          provider: Parameters<typeof P.updateProjectSandboxProvider>[1],
+        ) => P.updateProjectSandboxProvider(projectId, provider),
       },
 
       /** Bind specific secrets + connectors to an agent (the inheritance pyramid's declaration step). */
@@ -772,7 +861,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * cache the resolved runtime for THIS handle. Also points the app's shared
      * "current runtime" store there, for React hosts that still read it.
      */
-    async function ensureReady(options: SessionReadyOptions = {}): Promise<SessionRuntimeEntry> {
+    async function ensureReady(
+      options: SessionReadyOptions = {},
+    ): Promise<SessionRuntimeEntry> {
       const cached = tryResolveReady();
       if (cached) return cached;
 
@@ -783,15 +874,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const deadlineMs = normalizeSessionReadyOption(
         options.deadlineMs,
         DEFAULT_SESSION_READY_DEADLINE_MS,
-        'deadlineMs',
+        "deadlineMs",
       );
       const pollIntervalMs = normalizeSessionReadyOption(
         options.pollIntervalMs,
         DEFAULT_SESSION_READY_POLL_INTERVAL_MS,
-        'pollIntervalMs',
+        "pollIntervalMs",
       );
       const key = `${projectId}\n${sessionId}`;
-      const callerId = Symbol('ensureReady caller');
+      const callerId = Symbol("ensureReady caller");
       const caller = {
         deadlineAt: Date.now() + deadlineMs,
         pollIntervalMs,
@@ -822,7 +913,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             if (activeCallers.length === 0 || remainingMs <= 0) {
               throw sessionReadyDeadlineError(0, sharedEntry.lastProgress);
             }
-            const requestBudgetMs = Math.max(1, Math.min(30_000, Math.ceil(remainingMs)));
+            const requestBudgetMs = Math.max(
+              1,
+              Math.min(30_000, Math.ceil(remainingMs)),
+            );
             const requestController = new AbortController();
             sharedEntry.requestController = requestController;
             let started: P.SessionStartResult | null;
@@ -849,17 +943,19 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             const runtimeSessionId = started?.runtime_session_id ?? null;
             const runtimeId = started?.runtime_id ?? runtimeSessionId;
             if (
-              started?.stage === 'ready' &&
+              started?.stage === "ready" &&
               started.sandbox &&
-              runtimeProtocol === 'acp' &&
+              runtimeProtocol === "acp" &&
               runtimeId
             ) {
-              const externalId = (started.sandbox as { external_id?: string | null }).external_id;
+              const externalId = (
+                started.sandbox as { external_id?: string | null }
+              ).external_id;
               if (!externalId) {
                 throw new ApiError(
-                  'Session sandbox has no external_id — cannot resolve its runtime URL',
+                  "Session sandbox has no external_id — cannot resolve its runtime URL",
                   {
-                    code: 'RUNTIME_UNAVAILABLE',
+                    code: "RUNTIME_UNAVAILABLE",
                   },
                 );
               }
@@ -878,28 +974,32 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             }
 
             const terminal =
-              started?.stage === 'failed' ||
-              started?.stage === 'stopped' ||
+              started?.stage === "failed" ||
+              started?.stage === "stopped" ||
               started?.retriable === false;
             if (terminal) {
               throw new ApiError(
-                `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`,
+                `Session runtime not ready (stage: ${started?.stage ?? "unknown"})`,
                 {
-                  code: 'RUNTIME_UNAVAILABLE',
+                  code: "RUNTIME_UNAVAILABLE",
                 },
               );
             }
 
             const remainingCallers = [...sharedEntry.callers.values()];
             const latestDeadlineAt = Math.max(
-              ...remainingCallers.map((activeCaller) => activeCaller.deadlineAt),
+              ...remainingCallers.map(
+                (activeCaller) => activeCaller.deadlineAt,
+              ),
             );
             const remainingAfterResponse = latestDeadlineAt - Date.now();
             if (remainingCallers.length === 0 || remainingAfterResponse <= 0) {
               throw sessionReadyDeadlineError(0, sharedEntry.lastProgress);
             }
             const fastestPollIntervalMs = Math.min(
-              ...remainingCallers.map((activeCaller) => activeCaller.pollIntervalMs),
+              ...remainingCallers.map(
+                (activeCaller) => activeCaller.pollIntervalMs,
+              ),
             );
             await waitForNextSessionStartPoll(
               sharedEntry,
@@ -922,7 +1022,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
       const callerDeadline = new Promise<never>((_resolve, reject) => {
         deadlineTimer = setTimeout(
-          () => reject(sessionReadyDeadlineError(deadlineMs, entry!.lastProgress)),
+          () =>
+            reject(sessionReadyDeadlineError(deadlineMs, entry!.lastProgress)),
           deadlineMs + 1,
         );
       });
@@ -949,7 +1050,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     }
 
     /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
-    function forgetReady(action: 'delete' | 'restart' | 'stop'): void {
+    function forgetReady(action: "delete" | "restart" | "stop"): void {
       cancelInFlightSessionStart(projectId, sessionId, action);
       _ready = null;
       _acpClient = null;
@@ -963,15 +1064,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       ready: SessionRuntimeEntry;
     }> {
       const ready = await ensureReady();
-      if (ready.runtimeProtocol !== 'acp') {
-        throw new ApiError('Session did not start an ACP runtime', {
-          code: 'RUNTIME_PROTOCOL_MISMATCH',
+      if (ready.runtimeProtocol !== "acp") {
+        throw new ApiError("Session did not start an ACP runtime", {
+          code: "RUNTIME_PROTOCOL_MISMATCH",
         });
       }
       const client =
         _acpClient ??
         createAcpClient({
-          endpoint: `${config.backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
+          endpoint: `${config.backendUrl.replace(/\/$/, "")}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
         });
       _acpClient = client;
       if (!_acpSessionId) {
@@ -979,21 +1080,21 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           protocolVersion: 1,
           clientCapabilities: {},
           clientInfo: {
-            name: '@kortix/sdk',
-            title: 'Kortix SDK',
-            version: '0.2.0',
+            name: "@kortix/sdk",
+            title: "Kortix SDK",
+            version: "0.2.0",
           },
         });
         if (ready.runtimeSessionId) {
           await client.loadSession({
             sessionId: ready.runtimeSessionId,
-            cwd: '/workspace',
+            cwd: "/workspace",
             mcpServers: [],
           });
           _acpSessionId = ready.runtimeSessionId;
         } else {
           const created = await client.newSession({
-            cwd: '/workspace',
+            cwd: "/workspace",
             mcpServers: [],
           });
           _acpSessionId = created.sessionId;
@@ -1005,13 +1106,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
     return {
       // ── lifecycle (Kortix REST) ──────────────────────────────────────────
-      get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
+      get: (opts?: { showErrors?: boolean }) =>
+        P.getProjectSession(projectId, sessionId, opts),
       update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
         P.updateProjectSession(projectId, sessionId, input),
       delete: () => {
         // A deleted session's sandbox is gone — never let a later handle for
         // this (projectId, sessionId) resolve a runtime that no longer exists.
-        forgetReady('delete');
+        forgetReady("delete");
         return P.deleteProjectSession(projectId, sessionId);
       },
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
@@ -1019,11 +1121,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       restart: () => {
         // Restart preserves the established sandbox identity, but readiness
         // and the proxy connection must still be resolved again after reboot.
-        forgetReady('restart');
+        forgetReady("restart");
         return P.restartProjectSession(projectId, sessionId);
       },
       stop: () => {
-        forgetReady('stop');
+        forgetReady("stop");
         return P.stopProjectSession(projectId, sessionId);
       },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
@@ -1033,10 +1135,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.commitSessionChanges(projectId, sessionId, input),
       publicShares: {
         list: () => P.listSessionPublicShares(projectId, sessionId),
-        create: (...a: DropFirst2<Parameters<typeof P.createSessionPublicShare>>) =>
-          P.createSessionPublicShare(projectId, sessionId, ...a),
-        revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
-          P.revokeSessionPublicShare(projectId, sessionId, ...a),
+        create: (
+          ...a: DropFirst2<Parameters<typeof P.createSessionPublicShare>>
+        ) => P.createSessionPublicShare(projectId, sessionId, ...a),
+        revoke: (
+          ...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>
+        ) => P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
       /** Per-session audit trail of executor-gated agent actions. */
       audit: (limit?: number, options?: { showErrors?: boolean }) =>
@@ -1066,17 +1170,21 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * `{ status: 0, ok: false }` shape `getSessionHealth` already returns for
        * "no URL yet", instead of forcing every caller to guard with `ensureReady()`.
        */
-      health: (init?: RequestInit) => getSessionHealth(tryResolveReady()?.runtimeUrl ?? null, init),
+      health: (init?: RequestInit) =>
+        getSessionHealth(tryResolveReady()?.runtimeUrl ?? null, init),
       /** Proxy/preview URL for a port THIS session's runtime exposes. */
-      previewUrl: (port: number, path = '/') =>
+      previewUrl: (port: number, path = "/") =>
         rewriteLocalhostUrl(
           port,
           path,
-          resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId),
+          resolvePreviewOptsForSandbox(requireReady("previewUrl").sandboxId),
         ),
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
       proxyUrl: (url?: string) =>
-        proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
+        proxyLocalhostUrl(
+          url,
+          resolvePreviewOptsForSandbox(requireReady("proxyUrl").sandboxId),
+        ),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
@@ -1085,7 +1193,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       // agent selection live in the selected runtime's own config directory.
       send: async (text: string) => {
         const { client, acpSessionId } = await ensureAcpSession();
-        return client.prompt(acpSessionId, [{ type: 'text', text }]);
+        return client.prompt(acpSessionId, [{ type: "text", text }]);
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
@@ -1112,8 +1220,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *   handle.close();
        */
       stream: async (opts: {
-        onEvent: Parameters<AcpClient['connect']>[0]['onEvent'];
-        onError?: Parameters<AcpClient['connect']>[0]['onError'];
+        onEvent: Parameters<AcpClient["connect"]>[0]["onEvent"];
+        onError?: Parameters<AcpClient["connect"]>[0]["onError"];
         signal?: AbortSignal;
         lastEventId?: number;
       }): Promise<AcpStreamHandle> => {
@@ -1124,8 +1232,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** ACP-native runtime transport for v3 sessions. */
       acp: {
         connect: async (opts: {
-          onEvent: Parameters<AcpClient['connect']>[0]['onEvent'];
-          onError?: Parameters<AcpClient['connect']>[0]['onError'];
+          onEvent: Parameters<AcpClient["connect"]>[0]["onEvent"];
+          onError?: Parameters<AcpClient["connect"]>[0]["onError"];
           signal?: AbortSignal;
           lastEventId?: number;
         }): Promise<AcpStreamHandle> => {
@@ -1134,7 +1242,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
         client: async () => (await ensureAcpSession()).client,
         sessionId: async () => (await ensureAcpSession()).acpSessionId,
-        respond: async (...args: Parameters<AcpClient['respond']>) =>
+        respond: async (...args: Parameters<AcpClient["respond"]>) =>
           (await ensureAcpSession()).client.respond(...args),
       },
 
@@ -1153,25 +1261,38 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * `baseUrl` — this just always supplies THIS session's).
        */
       files: {
-        list: async (dirPath: string) => F.listFiles(dirPath, (await ensureReady()).runtimeUrl),
-        read: async (filePath: string) => F.readFile(filePath, (await ensureReady()).runtimeUrl),
+        list: async (dirPath: string) =>
+          F.listFiles(dirPath, (await ensureReady()).runtimeUrl),
+        read: async (filePath: string) =>
+          F.readFile(filePath, (await ensureReady()).runtimeUrl),
         readBlob: async (filePath: string) =>
           F.readBlob(filePath, (await ensureReady()).runtimeUrl),
         status: async () => F.getFileStatus((await ensureReady()).runtimeUrl),
         findFiles: async (
           query: string,
-          options?: { type?: 'file' | 'directory'; limit?: number },
+          options?: { type?: "file" | "directory"; limit?: number },
         ) => F.findFiles(query, options, (await ensureReady()).runtimeUrl),
-        findText: async (pattern: string) => F.findText(pattern, (await ensureReady()).runtimeUrl),
-        upload: async (file: File | Blob, targetPath?: string, filename?: string) =>
-          F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl),
+        findText: async (pattern: string) =>
+          F.findText(pattern, (await ensureReady()).runtimeUrl),
+        upload: async (
+          file: File | Blob,
+          targetPath?: string,
+          filename?: string,
+        ) =>
+          F.uploadFile(
+            file,
+            targetPath,
+            filename,
+            (await ensureReady()).runtimeUrl,
+          ),
         create: async (filePath: string) =>
           F.createFile(filePath, (await ensureReady()).runtimeUrl),
         copy: async (sourcePath: string, destPath: string) =>
           F.copyFile(sourcePath, destPath, (await ensureReady()).runtimeUrl),
         remove: async (filePath: string) =>
           F.deleteFile(filePath, (await ensureReady()).runtimeUrl),
-        mkdir: async (dirPath: string) => F.mkdir(dirPath, (await ensureReady()).runtimeUrl),
+        mkdir: async (dirPath: string) =>
+          F.mkdir(dirPath, (await ensureReady()).runtimeUrl),
         rename: async (from: string, to: string) =>
           F.renameFile(from, to, (await ensureReady()).runtimeUrl),
       },
@@ -1206,10 +1327,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
 export type Kortix = ReturnType<typeof createKortix>;
 /** The id-bound project handle returned by `kortix.project(id)`. */
-export type ProjectHandle = ReturnType<Kortix['project']>;
+export type ProjectHandle = ReturnType<Kortix["project"]>;
 /** The id-bound session handle returned by `kortix.session(pid, sid)`. */
-export type SessionHandle = ReturnType<Kortix['session']>;
+export type SessionHandle = ReturnType<Kortix["session"]>;
 
 // ── tiny tuple helpers: bind the leading id arg(s) without re-typing the rest ──
 type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
-type DropFirst2<T extends unknown[]> = T extends [unknown, unknown, ...infer R] ? R : [];
+type DropFirst2<T extends unknown[]> = T extends [unknown, unknown, ...infer R]
+  ? R
+  : [];

@@ -15,6 +15,7 @@ import { extractFallbackTitleFromPrompt, extractHarnessSessionTitle, isAcpPrompt
 import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
 import { persistFallbackSessionTitle, persistHarnessSessionTitle } from '../lib/acp-session-title';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
+import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
 import { consumeHeadlessAcpSse, selectHeadlessPermissionOption } from './headless-acp';
@@ -108,6 +109,25 @@ export async function createSession(
           body: {
             error: 'Idempotency key was already used with different connector bindings',
             code: 'IDEMPOTENCY_BINDING_CONFLICT',
+          },
+        },
+      };
+    }
+    if (
+      secretsAllowlistPayloadConflicts(
+        existingBody.secrets as string[] | null | undefined,
+        command.body.secrets as string[] | null | undefined,
+      )
+    ) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different secrets allowlist',
+            code: 'IDEMPOTENCY_SECRETS_CONFLICT',
           },
         },
       };

@@ -31,6 +31,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     visibility: 'project',
     origin: 'user',
     originRef: null,
+    secretsAllowlist: null,
     metadata: {},
     createdAt: now,
     updatedAt: now,

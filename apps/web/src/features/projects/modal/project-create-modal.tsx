@@ -505,39 +505,19 @@ export const ProjectCreateModal = ({
     });
   }
 
-  async function handleConnectGitHub() {
+  function handleConnectGitHub() {
     if (!effectiveAccountId) {
       errorToast('Select an account first');
       return;
     }
 
     setIsConnectingGitHub(true);
-    try {
-      const result = await githubInstallationsQuery.refetch();
-      if (result.error) throw result.error;
-
-      const freshInstallUrl = result.data?.install_url;
-      if (!freshInstallUrl) {
-        errorToast(
-          result.data?.configured === false
-            ? 'GitHub App is not configured'
-            : 'GitHub install URL unavailable',
-        );
-        return;
-      }
-
-      rememberGitHubSetupReturn('/projects?new=1');
-      window.location.assign(freshInstallUrl);
-    } catch (error) {
-      errorToast((error as Error).message || 'Failed to start GitHub setup');
-    } finally {
-      setIsConnectingGitHub(false);
-    }
+    rememberGitHubSetupReturn('/projects?new=1');
+    router.push(`/github/setup?account_id=${encodeURIComponent(effectiveAccountId)}`);
   }
 
   const submitting =
     createMutation.isPending || githubCreateMutation.isPending || linkMutation.isPending;
-  const installUrl = githubInstallationsQuery.data?.install_url;
   const repos =
     githubReposQuery.data?.installation_id === selectedInstallationId
       ? githubReposQuery.data.repositories
@@ -660,7 +640,7 @@ export const ProjectCreateModal = ({
                         <Loading /> Loading GitHub connections
                       </div>
                     ) : githubAppInstallations.length === 0 ? (
-                      !installUrl ? (
+                      githubInstallationsQuery.data?.configured === false ? (
                         <GitHubSetupRequiredPanel
                           accountId={effectiveAccountId}
                           isAdmin={isGitAdmin}
@@ -865,10 +845,7 @@ export const ProjectCreateModal = ({
                             type="button"
                             size="sm"
                             className="gap-1.5"
-                            disabled={
-                              isConnectingGitHub ||
-                              (!installUrl && githubInstallationsQuery.isFetching)
-                            }
+                            disabled={isConnectingGitHub}
                             onClick={handleConnectGitHub}
                           >
                             {isConnectingGitHub ? <Loading /> : <Icon.Github />}
@@ -897,10 +874,7 @@ export const ProjectCreateModal = ({
                                   size="sm"
                                   className="text-muted-foreground h-8 gap-1.5 px-2 text-xs"
                                   aria-label="Connect another GitHub account"
-                                  disabled={
-                                    isConnectingGitHub ||
-                                    (!installUrl && githubInstallationsQuery.isFetching)
-                                  }
+                                  disabled={isConnectingGitHub}
                                   onClick={handleConnectGitHub}
                                 >
                                   {isConnectingGitHub ? <Loading /> : <Icon.Plus />}

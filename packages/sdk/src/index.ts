@@ -382,6 +382,11 @@ export * from './core/runtime/triggers';
 export * from './core/runtime/kortix-master';
 export type * from './core/runtime/wire-types';
 export * from './core/session';
+export {
+  createHttpSessionSyncController,
+  loadHttpSessionHistory,
+  type SessionSyncMessage,
+} from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
 export * from './core/turns';
 export * from './transcript';

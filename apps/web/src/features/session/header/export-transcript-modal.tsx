@@ -32,8 +32,8 @@ import {
   type SessionTranscript,
   type SessionTranscriptMessage,
 } from '@kortix/sdk/projects-client';
-import { Check, Copy, Download } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { Check, Copy, Download } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 // ============================================================================
@@ -117,9 +117,10 @@ export function ExportTranscriptModal({
   }, [transcript]);
 
   const messageCount = transcriptDigest?.message_count ?? 0;
-  const unavailableReason = transcriptDigest && !transcriptDigest.available
-    ? transcriptDigest.reason || 'Transcript export is unavailable for this session.'
-    : null;
+  const unavailableReason =
+    transcriptDigest && !transcriptDigest.available
+      ? transcriptDigest.reason || 'Transcript export is unavailable for this session.'
+      : null;
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -287,12 +288,9 @@ function formatAcpTranscriptMarkdown({
   digest: SessionTranscript;
   options: TranscriptOptions;
 }): string {
-  const lines = [
-    `# ${title || 'Agent transcript'}`,
-    '',
-    `**Session ID:** \`${sessionId}\``,
-  ];
-  if (digest.runtime_session_id) lines.push(`**Runtime session ID:** \`${digest.runtime_session_id}\``);
+  const lines = [`# ${title || 'Agent transcript'}`, '', `**Session ID:** \`${sessionId}\``];
+  if (digest.runtime_session_id)
+    lines.push(`**Runtime session ID:** \`${digest.runtime_session_id}\``);
   lines.push('', '---', '');
 
   for (const message of digest.messages) {
@@ -312,7 +310,10 @@ function formatAcpMessage(message: SessionTranscriptMessage, options: Transcript
   const lines = [header, '', message.text || '_No text content._', ''];
 
   if (message.reasoning_omitted && options.thinking) {
-    lines.push('> Reasoning/thinking was present but omitted from the sanitized ACP transcript.', '');
+    lines.push(
+      '> Reasoning/thinking was present but omitted from the sanitized ACP transcript.',
+      '',
+    );
   }
 
   if (message.tools.length > 0 && options.toolDetails) {

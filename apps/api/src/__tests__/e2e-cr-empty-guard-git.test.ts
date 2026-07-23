@@ -39,6 +39,10 @@ function mergeModuleUrl(): string {
   return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git', 'merge.ts')).href;
 }
 
+function commitsModuleUrl(): string {
+  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git', 'commits.ts')).href;
+}
+
 function makeFixture() {
   projectCounter += 1;
   const source = join(root, `source-${projectCounter}`);
@@ -135,6 +139,32 @@ describe('resolveBranchAheadState — the empty-CR guard', () => {
     );
     expect(result.before).toBe(false);
     expect(result.after).toBe(true);
+  });
+
+  test('a branch created AFTER the mirror warmed is resolved after one forced re-fetch', () => {
+    const { source, project } = makeFixture();
+    git(['push', '--quiet', 'origin', '--delete', 'session-branch'], source);
+
+    const result = JSON.parse(
+      bunEval(`
+        const { execFileSync } = await import('node:child_process');
+        const { resolveCommitSha } = await import(${JSON.stringify(commitsModuleUrl())});
+        const { resolveBranchAheadState } = await import(${JSON.stringify(mergeModuleUrl())});
+        const project = ${JSON.stringify(project)};
+        await resolveCommitSha(project, 'main');
+        const run = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+        run(['checkout', '-B', 'session-branch', 'main'], ${JSON.stringify(source)});
+        await (await import('node:fs/promises')).writeFile(${JSON.stringify(join(source, 'new-branch.txt'))}, 'new branch\\n');
+        run(['add', 'new-branch.txt'], ${JSON.stringify(source)});
+        run(['commit', '-m', 'create session branch'], ${JSON.stringify(source)});
+        run(['push', '--quiet', 'origin', 'session-branch'], ${JSON.stringify(source)});
+        const state = await resolveBranchAheadState(project, 'main', 'session-branch');
+        process.stdout.write(JSON.stringify(state));
+      `),
+    );
+
+    expect(result.ahead).toBe(true);
+    expect(result.headSha).not.toBe(result.baseSha);
   });
 
   test('a stale branch strictly behind an advanced base (merge-base == head) is not ahead', () => {

@@ -1,9 +1,10 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
-import { backendApi } from '../../http/api-client';
-import { isSessionFresh } from '../../http/fresh-sessions';
-import { setSessionRuntime } from '../../session/session-runtime-registry';
-import { getSandboxUrlForExternalId } from '../../session/server-store/url-helpers';
+import { backendApi } from "../../http/api-client";
+import { isSessionFresh } from "../../http/fresh-sessions";
+import { setSessionRuntime } from "../../session/session-runtime-registry";
+import { getSandboxUrlForExternalId } from "../../session/server-store/url-helpers";
+import type { ProjectSession } from "./sessions";
 
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
@@ -12,14 +13,14 @@ import { getSandboxUrlForExternalId } from '../../session/server-store/url-helpe
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionSandboxStatus =
-  'provisioning' | 'active' | 'stopped' | 'error' | 'archived';
+  "provisioning" | "active" | "stopped" | "error" | "archived";
 
 export interface ProjectSessionSandbox {
   sandbox_id: string;
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'platinum' | 'e2b';
+  provider: "daytona" | "platinum" | "e2b";
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -30,7 +31,8 @@ export interface ProjectSessionSandbox {
   updated_at: string;
 }
 
-export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+export type SessionStartStage =
+  "provisioning" | "starting" | "ready" | "stopped" | "failed";
 
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
@@ -40,7 +42,7 @@ export interface SessionStartResult {
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
-  runtime_protocol?: 'acp' | null;
+  runtime_protocol?: "acp" | null;
   runtime_id?: string | null;
   runtime_session_id?: string | null;
   /**
@@ -54,22 +56,72 @@ export interface SessionStartResult {
   reason?: string;
 }
 
+/**
+ * Convert a server-reported running inventory row into an optimistic readiness
+ * seed. The session route renders it immediately, then its normal `/start`
+ * query revalidates the server state.
+ */
+export function projectSessionStartSeed(
+  session: ProjectSession,
+): SessionStartResult | null {
+  if (
+    session.status !== "running" ||
+    !session.sandbox_provider ||
+    !session.sandbox_url ||
+    session.runtime_protocol !== "acp" ||
+    !session.runtime_id
+  ) {
+    return null;
+  }
+  const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
+  if (!externalId) return null;
+  return {
+    stage: "ready",
+    agent_name: session.agent_name ?? "default",
+    retriable: true,
+    sandbox: {
+      sandbox_id: session.sandbox_id,
+      session_id: session.session_id,
+      project_id: session.project_id,
+      account_id: session.account_id,
+      provider: session.sandbox_provider,
+      external_id: externalId,
+      base_url: session.sandbox_url,
+      status: "active",
+      config: {},
+      metadata: session.metadata,
+      last_used_at: session.updated_at,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
+    },
+    runtime_protocol: "acp",
+    runtime_id: session.runtime_id,
+    runtime_session_id: session.runtime_session_id,
+    runtime_url: session.sandbox_url,
+  };
+}
+
 export class SessionStartError extends Error {
   status?: number;
   code?: string;
   terminal: boolean;
 
-  constructor(message: string, options: { status?: number; code?: string; terminal: boolean }) {
+  constructor(
+    message: string,
+    options: { status?: number; code?: string; terminal: boolean },
+  ) {
     super(message);
-    this.name = 'SessionStartError';
+    this.name = "SessionStartError";
     this.status = options.status;
     this.code = options.code;
     this.terminal = options.terminal;
   }
 }
 
-export function isSessionStartError(error: unknown): error is SessionStartError {
-  return error instanceof Error && error.name === 'SessionStartError';
+export function isSessionStartError(
+  error: unknown,
+): error is SessionStartError {
+  return error instanceof Error && error.name === "SessionStartError";
 }
 
 function classifySessionStartFailure(error?: Error): SessionStartError | null {
@@ -81,10 +133,17 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
       })
     | undefined;
   const status = apiError?.status;
-  const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
-  const message = apiError?.message || 'Unable to start this session';
+  const code =
+    apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
+  const message = apiError?.message || "Unable to start this session";
 
-  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+  if (
+    status &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 429
+  ) {
     return new SessionStartError(message, { status, code, terminal: true });
   }
 
@@ -113,7 +172,7 @@ export async function startProjectSession(
     registerRuntime?: boolean;
   },
 ): Promise<SessionStartResult | null> {
-  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : '';
+  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : "";
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
@@ -133,7 +192,8 @@ export async function startProjectSession(
     // race: `useNewProjectSession` fires this /start before its background
     // create POST has landed, so the row doesn't exist yet. Yield null so the
     // poll keeps going; a 404 for any other session stays terminal.
-    if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId))) throw terminal;
+    if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId)))
+      throw terminal;
     return null;
   }
   const result = response.data;
@@ -149,10 +209,10 @@ export async function startProjectSession(
   const runtimeProtocol = result.runtime_protocol;
   if (
     options?.registerRuntime !== false &&
-    result.stage === 'ready' &&
+    result.stage === "ready" &&
     externalId &&
     runtimeId &&
-    runtimeProtocol === 'acp'
+    runtimeProtocol === "acp"
   ) {
     setSessionRuntime(projectId, sessionId, {
       runtimeProtocol,
@@ -172,5 +232,5 @@ export async function startProjectSession(
  * instead of adopting the in-flight one.
  */
 export function sessionStartKey(projectId: string, sessionId: string) {
-  return ['session-start', projectId, sessionId] as const;
+  return ["session-start", projectId, sessionId] as const;
 }

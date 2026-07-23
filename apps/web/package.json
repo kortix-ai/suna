@@ -163,7 +163,7 @@
     "papaparse": "^5.5.2",
     "pdf-lib": "^1.17.1",
     "playwright": "^1.57.0",
-    "postcss": "8.5.10",
+    "postcss": "8.5.16",
     "posthog-js": "^1.258.6",
     "pptx-react-viewer": "^1.15.0",
     "pptx-viewer-core": "^1.2.8",
