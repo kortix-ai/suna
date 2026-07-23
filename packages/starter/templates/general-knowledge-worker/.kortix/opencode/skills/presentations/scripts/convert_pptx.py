@@ -1,6 +1,6 @@
 """Convert HTML presentation slides to PPTX with editable text.
 
-Usage: uv run convert_pptx.py <presentation_dir> <output_path>
+Usage: uv run --with playwright --with python-pptx convert_pptx.py <presentation_dir> <output_path>
 
 Three-layer PPTX per slide (matching Suna's approach):
   1. Clean background screenshot (text + visual elements hidden)
@@ -26,12 +26,15 @@ from pptx.dml.color import RGBColor
 
 def find_chromium() -> str | None:
     """Auto-detect Chromium executable path for the current platform."""
-    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or os.environ.get(
+        "AGENT_BROWSER_EXECUTABLE_PATH"
+    )
     if env_path and os.path.isfile(env_path):
         return env_path
     for p in (
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
+        "/home/kortix/.local/bin/chromium",
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",

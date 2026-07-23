@@ -3,7 +3,7 @@
 **Complete these steps in order. Do not skip ahead to writing code.**
 
 First, check whether the PDF has native fillable fields:
-`python skills/pdf/formfill.py detect <file.pdf>`
+`uv run --with pypdf skills/pdf/formfill.py detect <file.pdf>`
 
 Based on the result, follow the **Fillable Fields** or **Non-Fillable Fields** path below.
 
@@ -26,7 +26,7 @@ When the PDF has native form fields:
 ### 1. Extract field metadata
 
 ```
-python skills/pdf/formfill.py extract <input.pdf> <fields.json>
+uv run --with pypdf skills/pdf/formfill.py extract <input.pdf> <fields.json>
 ```
 
 Output is a JSON array. All coordinates use **top-origin** (y=0 at top of page, y increases downward) — the same convention as pdfplumber, HTML, and image coordinates:
@@ -70,7 +70,7 @@ Output is a JSON array. All coordinates use **top-origin** (y=0 at top of page, 
 ### 2. Render pages for visual analysis
 
 ```
-python skills/pdf/render.py <file.pdf> <output_dir/>
+uv run --with pdf2image skills/pdf/render.py <file.pdf> <output_dir/>
 ```
 
 Examine the images to understand the purpose of each field. Map bounding box PDF coordinates to image coordinates as needed.
@@ -103,7 +103,7 @@ Create `values.json` with the data to fill:
 ### 4. Fill the form
 
 ```
-python skills/pdf/formfill.py fill <input.pdf> <values.json> <output.pdf>
+uv run --with pypdf skills/pdf/formfill.py fill <input.pdf> <values.json> <output.pdf>
 ```
 
 The script validates field names and values before writing. Fix any errors it reports and retry.
@@ -119,7 +119,7 @@ When the PDF has no native form fields, you place text as annotations. The proce
 Start by extracting the page layout:
 
 ```
-python skills/pdf/layout.py extract <input.pdf> <layout.json>
+uv run --with pdfplumber --with pillow --with pypdf skills/pdf/layout.py extract <input.pdf> <layout.json>
 ```
 
 This produces a **page-grouped** JSON array. Each page contains its own text elements, horizontal rules, tick boxes, and row ranges:
@@ -155,7 +155,7 @@ This produces a **page-grouped** JSON array. Each page contains its own text ele
 Also render the pages for visual reference:
 
 ```
-python skills/pdf/render.py <input.pdf> <images_dir/>
+uv run --with pdf2image skills/pdf/render.py <input.pdf> <images_dir/>
 ```
 
 Now use whichever source gives better coordinates for each field:
@@ -215,7 +215,7 @@ Combine all field coordinates into a single file. Use `coord_system: "pdf"` if a
 The fill command validates layout and places annotations in one step. It checks for overlapping boxes and font-vs-box sizing before writing:
 
 ```
-python skills/pdf/layout.py fill <input.pdf> <fields.json> <output.pdf>
+uv run --with pdfplumber --with pillow --with pypdf skills/pdf/layout.py fill <input.pdf> <fields.json> <output.pdf>
 ```
 
 If validation errors are found, they're printed and no output is written. Fix the errors in `fields.json` and retry.
@@ -223,7 +223,7 @@ If validation errors are found, they're printed and no output is written. Fix th
 Render the filled PDF and check text placement:
 
 ```
-python skills/pdf/render.py <output.pdf> <verify_images/>
+uv run --with pdf2image skills/pdf/render.py <output.pdf> <verify_images/>
 ```
 
 If text is mispositioned, check that coordinates and `coord_system` are consistent.
@@ -233,5 +233,5 @@ If text is mispositioned, check that coordinates and `coord_system` are consiste
 Overlay bounding boxes on a page image to visually inspect field placement:
 
 ```
-python skills/pdf/layout.py preview <page_number> <fields.json> <page_image> <output_image>
+uv run --with pdfplumber --with pillow --with pypdf skills/pdf/layout.py preview <page_number> <fields.json> <page_image> <output_image>
 ```
