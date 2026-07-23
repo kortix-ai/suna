@@ -7,6 +7,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  takeFlagValues,
 } from '../command-helpers.ts';
 import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
@@ -31,9 +32,22 @@ Subcommands:
                                     initial prompt. --agent <name> pins the
                                     session to that agent (default: the
                                     project's declared default agent).
+                                    --model <id> overrides the model.
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
+                                    Backend overrides (require a backend token —
+                                    see docs/KORTIX_AS_A_BACKEND_GUIDE.md):
+                                    --origin-ref <user-id>  attribute to your
+                                      end-user (surfaced as KORTIX_ORIGIN_REF).
+                                    --secret <id>           narrow injected
+                                      secrets to these identifiers (repeatable).
+                                    --no-secrets            inject zero project
+                                      secrets into the session.
+                                    --connector <alias>=<profile-id>  bind a
+                                      connector to a profile (repeatable).
+                                    --context <key>=<value>  runtime context
+                                      (repeatable).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
   connect [<session-id>]            Attach local OpenCode to the running
@@ -136,12 +150,16 @@ export async function runSessions(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   let portFlag: string | undefined;
   let agentFlag: string | undefined;
+  let overrides: SessionOverrides = {};
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
     portFlag = takeFlagValue(rest, ['--port']);
     agentFlag = takeFlagValue(rest, ['--agent']);
+    // Backend/override flags for `sessions new` — parsed for every subcommand so
+    // an unknown flag still errors, but only sessionsNew consumes them.
+    overrides = parseSessionOverrides(rest);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -154,7 +172,7 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsLs(ctxOpts, json);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag);
+      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides);
     case 'info':
     case 'show':
       return sessionsInfo(rest[0], ctxOpts, json);
@@ -177,6 +195,48 @@ export async function runSessions(argv: string[]): Promise<number> {
 }
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
+
+/** Start-time override flags for `sessions new`. Model/agent apply to any
+ *  caller; origin_ref + secrets are Kortix-as-a-Backend fields the API accepts
+ *  only from a backend-origin token (a PAT / service-account bearer) and 403s
+ *  otherwise — see docs/KORTIX_AS_A_BACKEND_GUIDE.md. */
+export type SessionOverrides = {
+  model?: string;
+  originRef?: string;
+  secrets?: string[];
+  connectors?: Record<string, { profile_id: string }>;
+  runtimeContext?: Record<string, string>;
+};
+
+/** Parse (and consume) the `sessions new` override flags from argv. Repeatable
+ *  flags take `key=value` pairs: --connector gmail=<profile-id>, --context k=v. */
+export function parseSessionOverrides(argv: string[]): SessionOverrides {
+  const out: SessionOverrides = {};
+  const model = takeFlagValue(argv, ['--model']);
+  if (model) out.model = model;
+  const originRef = takeFlagValue(argv, ['--origin-ref']);
+  if (originRef) out.originRef = originRef;
+  const secrets = takeFlagValues(argv, ['--secret']);
+  const noSecrets = takeFlagBool(argv, ['--no-secrets']);
+  if (secrets.length && noSecrets) {
+    throw new Error('pass either --secret <id> or --no-secrets, not both');
+  }
+  // `secrets: []` (inject zero project secrets) is a distinct, documented state
+  // from omitting the field (agent's normal set); --no-secrets expresses it.
+  if (secrets.length) out.secrets = secrets;
+  else if (noSecrets) out.secrets = [];
+  for (const pair of takeFlagValues(argv, ['--connector'])) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) throw new Error(`--connector expects alias=profile_id, got "${pair}"`);
+    (out.connectors ??= {})[pair.slice(0, eq)] = { profile_id: pair.slice(eq + 1) };
+  }
+  for (const pair of takeFlagValues(argv, ['--context'])) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) throw new Error(`--context expects key=value, got "${pair}"`);
+    (out.runtimeContext ??= {})[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  return out;
+}
 
 async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
@@ -224,6 +284,7 @@ async function sessionsNew(
   json = false,
   wait = false,
   agent?: string,
+  overrides: SessionOverrides = {},
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -235,6 +296,11 @@ async function sessionsNew(
   // non-binding 'default' sentinel when none is configured. See
   // apps/api/src/projects/lib/sessions.ts createProjectSession.
   if (agent) body.agent_name = agent;
+  if (overrides.model) body.opencode_model = overrides.model;
+  if (overrides.originRef) body.origin_ref = overrides.originRef;
+  if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
+  if (overrides.connectors) body.connector_bindings = overrides.connectors;
+  if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
 
   const prepared = await prepareClientCreatedBranch(ctx, body);
   if (prepared === 'error') return 1;
@@ -255,6 +321,7 @@ async function sessionsNew(
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
     }
+    let ready = false;
     for (let i = 0; i < 75; i += 1) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
       try {
@@ -268,7 +335,10 @@ async function sessionsNew(
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
-        if (start.stage === 'ready') break;
+        if (start.stage === 'ready') {
+          ready = true;
+          break;
+        }
         if (start.stage === 'failed' || start.stage === 'stopped') {
           if (json) {
             emitJson(created);
@@ -288,6 +358,18 @@ async function sessionsNew(
         }
         return 1;
       }
+    }
+    // Loop exhausted without reaching 'ready' — --wait is a hard readiness
+    // gate, so a timeout is a failure (exit 1), not a silent success.
+    if (!ready) {
+      if (json) {
+        emitJson(created);
+      } else {
+        process.stderr.write(
+          `${status.err(`Timed out waiting for session readiness after ~5 min (status: ${created.status}).`)}\n`,
+        );
+      }
+      return 1;
     }
   }
 
