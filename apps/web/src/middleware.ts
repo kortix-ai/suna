@@ -97,6 +97,12 @@ const MARKDOWN_NEGOTIATION_ROUTES = new Set([
   '/pricing',
 ]);
 
+const AGENT_DISCOVERY_LINK_HEADER =
+  '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json", ' +
+  '<https://api.kortix.com/v1/openapi.json>; rel="service-desc"; type="application/json", ' +
+  '</docs>; rel="service-doc"; type="text/html", ' +
+  '</llms.txt>; rel="describedby"; type="text/plain"';
+
 function supportsMarkdownNegotiation(pathname: string): boolean {
   if (MARKDOWN_NEGOTIATION_ROUTES.has(pathname)) return true;
   return (
@@ -431,6 +437,9 @@ export async function middleware(request: NextRequest) {
   // Returning a fresh NextResponse.next() would discard refreshed auth cookies,
   // causing the session to break on the next navigation.
   if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+    if (pathname === '/') {
+      supabaseResponse.headers.set('Link', AGENT_DISCOVERY_LINK_HEADER);
+    }
     return supabaseResponse;
   }
 
