@@ -701,7 +701,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         // on a slow boot, which is exactly what a backend waiting to send the
         // first turn must not do.
         const deadline = Date.now() + readyTimeoutMs;
-        let started = await P.startProjectSession(projectId, sessionId, 30_000);
+        // Cap each server long-poll (and the inter-poll pause) to the time left
+        // so the total honors readyTimeoutMs — a fixed 30s wait would overshoot
+        // the deadline by up to ~30s on the final iteration.
+        const remainingMs = () => Math.max(0, deadline - Date.now());
+        let started = await P.startProjectSession(
+          projectId,
+          sessionId,
+          Math.min(30_000, remainingMs()),
+        );
         // Keep polling only while the runtime is still coming up
         // (provisioning/starting) and the server says it's retriable; a
         // terminal stage (ready/failed/stopped) or the deadline ends the loop.
@@ -711,8 +719,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           started.retriable &&
           Date.now() < deadline
         ) {
-          await new Promise((r) => setTimeout(r, 1_000));
-          started = await P.startProjectSession(projectId, sessionId, 30_000);
+          await new Promise((r) => setTimeout(r, Math.min(1_000, remainingMs())));
+          started = await P.startProjectSession(
+            projectId,
+            sessionId,
+            Math.min(30_000, remainingMs()),
+          );
         }
         if (
           !started ||
