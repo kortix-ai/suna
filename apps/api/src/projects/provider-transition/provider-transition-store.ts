@@ -365,6 +365,37 @@ export async function releaseForRetry(
     .where(eq(providerTransitions.transitionId, transitionId));
 }
 
+/**
+ * Release the lease while a build is HEALTHILY in progress (provider reports
+ * `building`). Persists `building` + a poll gate and clears the heartbeat so a
+ * worker re-drives after the gate. A confirmed-healthy `building` observation is
+ * genuine forward progress, so it also RESETS `attempts` to 0 (reset-on-healthy):
+ * scattered `indeterminate` blips that each burned one attempt via
+ * {@link releaseForRetry} are cleared by the very next healthy `building` poll,
+ * so only a SUSTAINED run of consecutive transient/indeterminate drives can
+ * dead-letter — a long healthy build never does. errorClass 'waiting' + a human
+ * note make the state legible without implying an error. The overall wall-clock
+ * deadline (build_timeout) is what bounds total time, NOT the attempt counter.
+ */
+export async function releaseForWaiting(
+  db: Database,
+  transitionId: string,
+  patch: { nextRetryAt: Date; note?: string },
+): Promise<void> {
+  await db
+    .update(providerTransitions)
+    .set({
+      status: 'building',
+      attempts: 0,
+      lastError: (patch.note ?? 'build in progress on target provider').slice(0, 2000),
+      errorClass: 'waiting',
+      nextRetryAt: patch.nextRetryAt,
+      heartbeatAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(providerTransitions.transitionId, transitionId));
+}
+
 export async function failTransition(
   db: Database,
   transitionId: string,

@@ -4,7 +4,9 @@ import {
   classifyProviderSwitch,
   classifyTransitionFailure,
   decideActivation,
+  DEFAULT_MAX_BUILDING_MS,
   interpretImageReadiness,
+  isBuildDeadlineExceeded,
   isLiveTransition,
   isPermanentTransitionError,
   isSupersededByGeneration,
@@ -84,6 +86,23 @@ describe('image readiness never mistakes an outage for "missing"', () => {
     expect(interpretImageReadiness('build_failed')).toBe('failed');
     expect(interpretImageReadiness('unknown')).toBe('indeterminate');
     expect(interpretImageReadiness('removing')).toBe('indeterminate');
+  });
+});
+
+describe('build wall-clock deadline (BUILDING ≠ FOREVER)', () => {
+  const started = new Date('2026-01-01T00:00:00Z');
+  test('a null startedAt is never timed out (never observed building)', () => {
+    expect(isBuildDeadlineExceeded({ startedAt: null, now: new Date(), maxBuildingMs: 1 })).toBe(false);
+    expect(isBuildDeadlineExceeded({ startedAt: undefined, now: new Date(), maxBuildingMs: 1 })).toBe(false);
+  });
+  test('within the deadline waits; at/after the deadline is exceeded', () => {
+    const max = DEFAULT_MAX_BUILDING_MS;
+    expect(isBuildDeadlineExceeded({ startedAt: started, now: new Date(started.getTime() + max - 1), maxBuildingMs: max })).toBe(false);
+    expect(isBuildDeadlineExceeded({ startedAt: started, now: new Date(started.getTime() + max), maxBuildingMs: max })).toBe(true);
+    expect(isBuildDeadlineExceeded({ startedAt: started, now: new Date(started.getTime() + max + 60_000), maxBuildingMs: max })).toBe(true);
+  });
+  test('default deadline is one hour', () => {
+    expect(DEFAULT_MAX_BUILDING_MS).toBe(60 * 60_000);
   });
 });
 

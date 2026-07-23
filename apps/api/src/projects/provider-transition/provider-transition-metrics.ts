@@ -47,6 +47,11 @@ export type ProviderTransitionEvent =
   | 'build_started'
   | 'existing_image_reused'
   | 'build_succeeded'
+  // Healthy async build still in progress (provider `building`) — a heartbeat,
+  // NOT a failed attempt (BUILDING ≠ FAILURE).
+  | 'build_waiting'
+  // Blocked on provider/account capacity (429 / quota) rather than a build fault.
+  | 'waiting_for_capacity'
   | 'preparation_failed'
   | 'stale_build_superseded'
   | 'rebuild_new_identity'

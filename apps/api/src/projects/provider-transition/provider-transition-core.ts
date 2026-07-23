@@ -143,6 +143,45 @@ export function interpretImageReadiness(state: string): ImageReadiness {
   }
 }
 
+/**
+ * BUILDING ≠ FAILURE (Phase 3). A provider `building` state is a HEALTHY async
+ * build in progress, NOT a failed attempt: the transition must persist
+ * `building`, poll the exact image later, and NOT increment its failure
+ * attempts (a Platinum build can run ~45 min — far longer than one drive — and
+ * a long healthy build must never dead-letter by exhausting MAX attempts). Only
+ * `failed`, `absent`, or `indeterminate` are operation problems that consume an
+ * attempt. Used both before a build (image already building elsewhere → don't
+ * re-trigger ensureWarmImage) and after (build call returned but the provider
+ * is still building).
+ */
+export function isHealthyBuildingReadiness(readiness: ImageReadiness): boolean {
+  return readiness === 'building';
+}
+
+/** Default overall wall-clock deadline for a `building` transition (1h). A
+ *  Platinum build runs minutes to ~45 min, so 1h bounds even a slow healthy
+ *  build while still catching a provider that reports `building` forever. */
+export const DEFAULT_MAX_BUILDING_MS = 60 * 60_000;
+
+/**
+ * BUILDING ≠ FAILURE, but BUILDING ≠ FOREVER either. `isHealthyBuildingReadiness`
+ * deliberately never consumes a failure attempt, so on its own a build the
+ * provider forever reports `building` would poll forever and starve the
+ * resumable batch. This pure predicate is the overall wall-clock bound: once
+ * `now - startedAt >= maxBuildingMs` the transition must FAIL terminally
+ * (errorClass 'build_timeout'), not wait again. A null `startedAt` (never
+ * observed building) is never timed out — the caller stamps it on the first
+ * building observation. Pure + injected so it's unit-testable without a clock.
+ */
+export function isBuildDeadlineExceeded(opts: {
+  startedAt: Date | null | undefined;
+  now: Date;
+  maxBuildingMs: number;
+}): boolean {
+  if (!opts.startedAt) return false;
+  return opts.now.getTime() - opts.startedAt.getTime() >= opts.maxBuildingMs;
+}
+
 /** The action the verify+activate step should take after re-reading the world. */
 export type ActivationDecision = 'activate' | 'rebuild' | 'supersede' | 'wait' | 'cancelled';
 

@@ -22,14 +22,18 @@ import type { GitBackedProject } from '../git';
 import type { SandboxProviderAdapter } from '../../snapshots/providers';
 import type { Database } from '@kortix/db';
 import {
+  DEFAULT_MAX_BUILDING_MS,
   MAX_TRANSITION_ATTEMPTS,
   classifyTransitionFailure,
   decideActivation,
   interpretImageReadiness,
+  isBuildDeadlineExceeded,
+  isHealthyBuildingReadiness,
   isPermanentTransitionError,
   isSupersededByGeneration,
   prepIdentityUnchanged,
   transitionBackoffMs,
+  type ImageReadiness,
   type PrepIdentity,
 } from './provider-transition-core';
 import {
@@ -41,6 +45,7 @@ import {
   insertPrebuildTransition,
   maxLiveSwitchGeneration,
   releaseForRetry,
+  releaseForWaiting,
   reserveSwitchTransition,
   updateTransition,
   writeTransitionMarker,
@@ -52,6 +57,22 @@ export const LEASE_TTL_MS = 10 * 60 * 1000;
 /** How long a prebuild `ready` row rests before the worker re-verifies its tip
  *  + image (cheap idempotent re-check; also catches a moved tip → rebuild). */
 export const PREBUILD_RECHECK_MS = 10 * 60 * 1000;
+/** Poll interval while a HEALTHY build is in progress on the target provider.
+ *  Long: a Platinum build runs minutes to ~45 min; re-driving too eagerly just
+ *  hammers the provider's template GET. This is a WAIT, never a failed attempt. */
+export const BUILDING_POLL_MS = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_TRANSITION_BUILDING_POLL_MS || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+})();
+/** Overall wall-clock deadline for a `building` transition. A healthy build
+ *  never consumes a failure attempt (BUILDING ≠ FAILURE), so this bound is what
+ *  stops a provider that reports `building` forever from polling forever and
+ *  starving the resumable batch: once elapsed since `startedAt` crosses this, the
+ *  transition fails terminally with errorClass 'build_timeout'. */
+export const MAX_BUILDING_MS = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_TRANSITION_MAX_BUILDING_MS || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_BUILDING_MS;
+})();
 
 export type ResolvedPrepIdentity = Pick<PrepIdentity, 'commitSha' | 'baseRuntimeIdentity' | 'snapshotName'>;
 
@@ -60,7 +81,7 @@ export interface TransitionDeps {
   now: () => Date;
   getProvider: (id: string) => Pick<
     SandboxProviderAdapter,
-    'getSnapshotState' | 'getSnapshotExternalId' | 'deleteSnapshot'
+    'getSnapshotState' | 'getSnapshotExternalId' | 'getSnapshotStateByExternalId' | 'deleteSnapshot'
   >;
   /** Reuse the existing ppwarm builder — build (or reuse) the target's image. */
   ensureWarmImage: (
@@ -127,6 +148,74 @@ async function recordFailure(
     status: row.status === 'pending' ? 'pending' : 'building',
   });
   return 'building';
+}
+
+/**
+ * Persist a HEALTHY build-in-progress wait: the target provider reports
+ * `building`, so we mark the row `building`, mirror the marker, and schedule a
+ * poll of the EXACT image — WITHOUT incrementing attempts (BUILDING ≠ FAILURE).
+ * A long, healthy Platinum build therefore never dead-letters by exhausting the
+ * failure budget; only real operation/build faults consume attempts (via
+ * {@link recordFailure}). Emits a `build_waiting` heartbeat, not a failure.
+ */
+async function recordWaiting(
+  deps: TransitionDeps,
+  row: ProviderTransitionRow,
+  snapshotName: string,
+  note: string,
+): Promise<DriveOutcome> {
+  await writeMarker(deps, row, 'building', snapshotName);
+  const nextRetryAt = new Date(deps.now().getTime() + BUILDING_POLL_MS);
+  await releaseForWaiting(deps.db, row.transitionId, { nextRetryAt, note });
+  emitProviderTransitionEvent('build_waiting', {
+    target: row.targetProvider,
+    source: row.sourceProvider,
+    projectId: row.projectId,
+    transitionId: row.transitionId,
+    snapshotName,
+    attempts: row.attempts ?? 0,
+  });
+  return 'waiting';
+}
+
+/**
+ * Wall-clock-bounded {@link recordWaiting}. BUILDING ≠ FAILURE (never consumes an
+ * attempt) but BUILDING ≠ FOREVER: stamp `startedAt` on the first building
+ * observation, and once elapsed since it crosses {@link MAX_BUILDING_MS}, FAIL
+ * terminally with errorClass 'build_timeout' (not retried — a build the provider
+ * reports `building` past the deadline is stuck, and polling it forever starves
+ * the 5-row resumable batch). Otherwise persist `building` + `startedAt` and wait
+ * WITHOUT consuming an attempt. The caller passes a row whose `startedAt` is the
+ * effective start (`leased.startedAt ?? now`).
+ */
+async function recordBuildingOrTimeout(
+  deps: TransitionDeps,
+  row: ProviderTransitionRow,
+  snapshotName: string,
+  note: string,
+): Promise<DriveOutcome> {
+  const startedAt = row.startedAt ?? deps.now();
+  if (isBuildDeadlineExceeded({ startedAt, now: deps.now(), maxBuildingMs: MAX_BUILDING_MS })) {
+    await failTransition(deps.db, row.transitionId, {
+      attempts: row.attempts ?? 0,
+      lastError: `image ${snapshotName} still building past the ${MAX_BUILDING_MS}ms wall-clock deadline`,
+      errorClass: 'build_timeout',
+    });
+    emitProviderTransitionEvent('preparation_failed', {
+      target: row.targetProvider,
+      source: row.sourceProvider,
+      projectId: row.projectId,
+      transitionId: row.transitionId,
+      attempts: row.attempts ?? 0,
+      error: 'build_timeout',
+    });
+    return 'failed';
+  }
+  // Persist `startedAt` so the wall-clock is anchored from the FIRST building
+  // observation even on the verify path (which didn't set it) — idempotent once
+  // set, since later drives lease the persisted non-null value.
+  await updateTransition(deps.db, row.transitionId, { status: 'building', startedAt });
+  return await recordWaiting(deps, { ...row, startedAt }, snapshotName, note);
 }
 
 /** Create a fresh transition for the CURRENT identity + supersede the stale one. */
@@ -233,12 +322,27 @@ export async function driveProviderTransition(
       return await recordFailure(deps, leased, new Error('provider state indeterminate (unknown)'));
     }
 
+    // BUILDING ≠ FAILURE: the image is ALREADY building on the target (a prior
+    // drive, another replica, or an on-push ppwarm bake kicked the same
+    // content-addressed name). Do NOT call ensureWarmImage again (that would
+    // duplicate the build) and do NOT increment attempts — persist `building`
+    // and poll THIS exact image later.
+    if (isHealthyBuildingReadiness(readiness)) {
+      return await recordBuildingOrTimeout(
+        deps,
+        { ...leased, startedAt: leased.startedAt ?? deps.now() },
+        snapshotName,
+        'image already building on target',
+      );
+    }
+
+    const buildStartedAt = leased.startedAt ?? deps.now();
     if (readiness !== 'ready') {
       // Persist intent BEFORE the external build call; the content-addressed
       // snapshot_name is the idempotency key the builder re-checks internally.
       await updateTransition(deps.db, transitionId, {
         status: 'building',
-        startedAt: leased.startedAt ?? deps.now(),
+        startedAt: buildStartedAt,
       });
       await writeMarker(deps, leased, 'building', snapshotName);
       const queueSeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
@@ -259,6 +363,19 @@ export async function driveProviderTransition(
       // Confirm the provider actually has it now (never trust the builder's word
       // alone — GET the truth).
       readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
+      // A provider still reporting `building` after ensureWarmImage returned is a
+      // HEALTHY async build in flight (Platinum registers a build then completes
+      // it out of band, well past this drive's deadline). Persist `building` and
+      // poll the exact image WITHOUT consuming an attempt — the whole point of
+      // BUILDING ≠ FAILURE. Only absent/failed/indeterminate count as failures.
+      if (isHealthyBuildingReadiness(readiness)) {
+        return await recordBuildingOrTimeout(
+          deps,
+          { ...leased, startedAt: buildStartedAt },
+          snapshotName,
+          `build in progress (state=${readiness})`,
+        );
+      }
       if (readiness !== 'ready') {
         return await recordFailure(
           deps,
@@ -291,6 +408,10 @@ export async function driveProviderTransition(
       status: 'ready',
       readyAt: leased.readyAt ?? deps.now(),
       externalTemplateId,
+      // Reset-on-healthy: reaching `ready` is confirmed forward progress, so any
+      // transient attempts burned on the way here are cleared (a later verify
+      // hiccup then gets the full bounded-retry budget, never a stale count).
+      attempts: 0,
     });
     const timeToReadySeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
     emitProviderTransitionEvent('build_succeeded', {
@@ -319,15 +440,25 @@ export async function driveProviderTransition(
     if (!fresh || fresh.status !== 'ready' && fresh.status !== 'activating') return 'superseded';
     const current2 = await deps.resolvePrepIdentity(project, leased.targetProvider);
     const maxLive2 = await maxLiveSwitchGeneration(deps.db, leased.projectId);
-    // GET the exact id immediately before activation (a GC'd image ⇒ absent).
-    const stateBefore = await provider.getSnapshotState(snapshotName);
+    // Red-team #5: verify the EXACT external template id we captured, immediately
+    // before activation. Reading the exact provider row BY ID can't be fooled by
+    // the truncated name-list pagination getSnapshotState relies on, so a GC'd
+    // image or a wrong/idempotently-reused name surfaces as 'absent' ⇒ rebuild,
+    // never a stale-name activation. Fall back to the name-based state only for
+    // providers (or fakes) without the by-id method, or when we hold no id yet.
+    const verifyReadiness: ImageReadiness =
+      externalTemplateId && provider.getSnapshotStateByExternalId
+        ? interpretImageReadiness(
+            await provider.getSnapshotStateByExternalId(externalTemplateId).catch(() => 'unknown'),
+          )
+        : interpretImageReadiness(await provider.getSnapshotState(snapshotName));
     const decision = decideActivation({
       cancelled: false,
       supersededByNewer:
         leased.generation != null && isSupersededByGeneration(leased.generation, maxLive2),
       tipMatches: current2.commitSha === leased.commitSha,
       runtimeMatches: current2.baseRuntimeIdentity === leased.baseRuntimeIdentity,
-      imageReadiness: interpretImageReadiness(stateBefore),
+      imageReadiness: verifyReadiness,
     });
 
     if (decision === 'rebuild') return await forkNewIdentity(deps, leased, current2);
@@ -341,21 +472,30 @@ export async function driveProviderTransition(
       return 'superseded';
     }
     if (decision === 'wait' || decision === 'cancelled') {
+      // A `building` image at verify is a HEALTHY async build still completing —
+      // re-poll it (bounded by the wall-clock), NEVER consume an attempt. Only an
+      // indeterminate / cancelled verify falls back to a bounded retry.
+      if (verifyReadiness === 'building') {
+        return await recordBuildingOrTimeout(
+          deps,
+          { ...leased, startedAt: leased.startedAt ?? deps.now() },
+          snapshotName,
+          'image still building at verify',
+        );
+      }
       return await recordFailure(deps, leased, new Error('image not confirmed ready at verify'));
     }
 
-    // decision === 'activate'
+    // decision === 'activate' — pin the EXACT id we just verified, NOT a
+    // name-re-resolved one (which could resolve to a different/newer row).
     await updateTransition(deps.db, transitionId, { status: 'activating' });
-    const freshExternalId = provider.getSnapshotExternalId
-      ? await provider.getSnapshotExternalId(snapshotName).catch(() => externalTemplateId)
-      : externalTemplateId;
     const result = await activateWithCas(deps.db, {
       projectId: leased.projectId,
       transitionId,
       targetProvider: leased.targetProvider,
       generation: leased.generation!,
       snapshotName,
-      externalTemplateId: freshExternalId,
+      externalTemplateId,
       now: deps.now(),
     });
     if (result.activated) {
@@ -366,7 +506,7 @@ export async function driveProviderTransition(
         transitionId,
         generation: leased.generation!,
         snapshotName,
-        externalTemplateId: freshExternalId,
+        externalTemplateId,
         timeToReadySeconds,
       });
       return 'activated';

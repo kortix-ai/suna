@@ -40,12 +40,23 @@ interface FakeWorld {
   currentIdentity: ResolvedPrepIdentity;
   identityByCall: ResolvedPrepIdentity[];
   callIndex: number;
-  ensureBehavior: 'activate' | 'leave_building' | 'throw_permanent' | 'throw_transient';
+  ensureBehavior:
+    | 'activate'
+    | 'leave_building'
+    | 'leave_provider_building'
+    | 'throw_permanent'
+    | 'throw_transient';
   kicked: string[];
   /** When set, getSnapshotState THROWS this instead of returning a state — models
    *  a real provider adapter propagating an auth failure (see
    *  platinum-snapshot-state-auth.test.ts) rather than a build-call failure. */
   stateThrows: Error | null;
+  /** When non-null, the fake provider exposes getSnapshotStateByExternalId backed
+   *  by this map (externalId → provider state). Left null so most tests keep the
+   *  method ABSENT and exercise the name-based fallback unchanged. */
+  byIdState: Map<string, string> | null;
+  /** External ids the by-id verifier was actually asked about (proves wiring). */
+  byIdCalls: string[];
 }
 
 function makeWorld(identity: ResolvedPrepIdentity): FakeWorld {
@@ -59,6 +70,8 @@ function makeWorld(identity: ResolvedPrepIdentity): FakeWorld {
     ensureBehavior: 'activate',
     kicked: [],
     stateThrows: null,
+    byIdState: null,
+    byIdCalls: [],
   };
 }
 
@@ -67,14 +80,28 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
     db,
     now,
     leaseTtlMs: 10 * 60 * 1000,
-    getProvider: () => ({
-      getSnapshotState: async (name: string) => {
-        if (world.stateThrows) throw world.stateThrows;
-        return (world.state.get(name) ?? 'missing') as never;
-      },
-      getSnapshotExternalId: async (name: string) => world.externalIds.get(name) ?? null,
-      deleteSnapshot: async () => {},
-    }),
+    getProvider: () => {
+      const base = {
+        getSnapshotState: async (name: string) => {
+          if (world.stateThrows) throw world.stateThrows;
+          return (world.state.get(name) ?? 'missing') as never;
+        },
+        getSnapshotExternalId: async (name: string) => world.externalIds.get(name) ?? null,
+        deleteSnapshot: async () => {},
+      };
+      // Only expose the by-id verifier when a test opts in — otherwise the method
+      // is ABSENT and the runner uses the name-based fallback (unchanged path).
+      if (world.byIdState) {
+        return {
+          ...base,
+          getSnapshotStateByExternalId: async (externalId: string) => {
+            world.byIdCalls.push(externalId);
+            return (world.byIdState!.get(externalId) ?? 'missing') as never;
+          },
+        };
+      }
+      return base;
+    },
     ensureWarmImage: async (_project, opts) => {
       world.buildCount += 1;
       if (world.ensureBehavior === 'throw_permanent') throw new Error('HTTP 401 Unauthorized: bad platinum key');
@@ -83,6 +110,11 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
       if (world.ensureBehavior === 'activate') {
         world.state.set(name, 'active');
         world.externalIds.set(name, `tpl_${name.slice(-8)}`);
+      }
+      // Models Platinum's async build: from-build registers a build and returns,
+      // but the provider still reports `building` well past this drive.
+      if (world.ensureBehavior === 'leave_provider_building') {
+        world.state.set(name, 'building');
       }
       return { snapshotName: name, built: true, provider: opts.provider } as never;
     },
@@ -209,6 +241,77 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(row?.status).not.toBe('failed');
     expect(row?.errorClass).toBe('transient');
     expect(row?.nextRetryAt).not.toBeNull();
+  });
+
+  test('BUILDING ≠ FAILURE: an image already building on the target is NOT rebuilt and does NOT consume an attempt', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    // The content-addressed image is already building (another drive/replica or
+    // an on-push ppwarm bake kicked it). ensureWarmImage MUST NOT be called.
+    world.state.set(id.snapshotName, 'building');
+    world.ensureBehavior = 'throw_permanent'; // would blow up if ensureWarmImage ran
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('waiting');
+    expect(world.buildCount).toBe(0); // never re-triggered the build
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('building');
+    expect(row?.attempts ?? 0).toBe(0); // a healthy build is not a failed attempt
+    expect(row?.errorClass).toBe('waiting');
+    expect(row?.nextRetryAt).not.toBeNull();
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+  });
+
+  test('BUILDING ≠ FAILURE: a build still in progress after ensureWarmImage waits without consuming an attempt', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    // Pre-build the image is absent → ensureWarmImage runs (registers the build)
+    // but the provider still reports `building` afterward (async completion).
+    world.ensureBehavior = 'leave_provider_building';
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('waiting');
+    expect(world.buildCount).toBe(1); // it DID register the build once
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('building');
+    expect(row?.attempts ?? 0).toBe(0); // still-building is not a failure
+    expect(row?.errorClass).toBe('waiting');
+  });
+
+  test('BUILDING ≠ FAILURE: a long healthy build re-drives many times WITHOUT ever dead-lettering', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'building'); // stuck healthily building
+    world.ensureBehavior = 'throw_permanent';
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    // Drive far more times than MAX_TRANSITION_ATTEMPTS. Each drive clears the
+    // heartbeat + a next_retry gate; a fresh `now` past the gate re-leases it.
+    let outcome = '';
+    for (let i = 0; i < 10; i++) {
+      const now = () => new Date(Date.now() + i * 60_000);
+      outcome = await driveProviderTransition(makeDeps(world, now), res.row.transitionId);
+    }
+    expect(outcome).toBe('waiting');
+    expect(world.buildCount).toBe(0);
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('building'); // never 'failed'
+    expect(row?.attempts ?? 0).toBe(0); // 10 waits, zero attempts consumed
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
   });
 
   test('a 401/403 surfaced by the readiness check (not the build call) fails FAST as auth_terminal — never retried, never "missing"', async () => {
@@ -413,5 +516,177 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(outcome2).toBe('activated');
     expect(world.buildCount).toBe(1);
     expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
+  });
+
+  // ── FIX 2: BUILDING≠FAILURE completed — reset-on-healthy + wall-clock ────────
+
+  test('scattered indeterminate blips interspersed with `building` NEVER dead-letter (attempts reset)', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.ensureBehavior = 'throw_permanent'; // would blow up if a build ever ran
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    // Alternate a ~3-min provider blip (unknown ⇒ indeterminate) with a healthy
+    // `building` poll, many times. Each indeterminate burns one attempt; the very
+    // next `building` resets it to 0 — so attempts oscillate 0/1 and never hit 6.
+    let outcome = '';
+    for (let i = 0; i < 12; i++) {
+      world.state.set(id.snapshotName, i % 2 === 0 ? 'unknown' : 'building');
+      const now = () => new Date(Date.now() + i * 40_000); // clears poll + backoff gates, well under 1h
+      outcome = await driveProviderTransition(makeDeps(world, now), res.row.transitionId);
+    }
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).not.toBe('failed'); // never dead-lettered
+    expect(row?.status).toBe('building');
+    expect(row?.attempts ?? 0).toBeLessThanOrEqual(1); // bounded — reset by every healthy building poll
+    expect(world.buildCount).toBe(0);
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+    expect(outcome).toBe('waiting'); // last drive (i=11) is `building`
+  });
+
+  test('6 CONSECUTIVE indeterminate/transient drives DO dead-letter (sustained outage)', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'unknown'); // provider can't confirm, every drive
+    world.ensureBehavior = 'throw_permanent';
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    let outcome = '';
+    for (let i = 0; i < 6; i++) {
+      const now = () => new Date(Date.now() + i * 6 * 60_000); // 6-min steps clear the exp backoff (max 5m)
+      outcome = await driveProviderTransition(makeDeps(world, now), res.row.transitionId);
+    }
+    expect(outcome).toBe('failed');
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('failed');
+    expect(row?.attempts).toBe(6);
+    expect(row?.errorClass).toBe('exhausted');
+    expect(world.buildCount).toBe(0);
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+  });
+
+  test('a forever-`building` build FAILS with build_timeout once past the wall-clock deadline', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'building'); // stuck building forever
+    world.ensureBehavior = 'throw_permanent';
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const base = Date.now();
+    // Drive 1 anchors startedAt (elapsed 0 → waits, attempts stay 0).
+    const first = await driveProviderTransition(makeDeps(world, () => new Date(base)), res.row.transitionId);
+    expect(first).toBe('waiting');
+    expect((await getTransition(db, res.row.transitionId))?.attempts ?? 0).toBe(0);
+    // Drive 2 is > MAX_BUILDING_MS (default 1h) past startedAt → terminal timeout.
+    const second = await driveProviderTransition(
+      makeDeps(world, () => new Date(base + 61 * 60_000)),
+      res.row.transitionId,
+    );
+    expect(second).toBe('failed');
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('failed');
+    expect(row?.errorClass).toBe('build_timeout');
+    expect(row?.nextRetryAt).toBeNull(); // terminal, not retried
+    expect(world.buildCount).toBe(0);
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+  });
+
+  test('verify-stage `building` re-polls WITHOUT an attempt, then activates when it turns ready', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    // The name lists as active (so the build phase is a no-op reuse), but the EXACT
+    // id the transition pinned is still `building` — the by-id verifier catches it.
+    world.state.set(id.snapshotName, 'active');
+    world.externalIds.set(id.snapshotName, 'tpl_verify');
+    world.byIdState = new Map([['tpl_verify', 'building']]);
+    world.ensureBehavior = 'throw_permanent'; // no build should run
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const base = Date.now();
+    const first = await driveProviderTransition(makeDeps(world, () => new Date(base)), res.row.transitionId);
+    expect(first).toBe('waiting'); // building at verify → re-poll, not a failed attempt
+    const mid = await getTransition(db, res.row.transitionId);
+    expect(mid?.status).toBe('building');
+    expect(mid?.attempts ?? 0).toBe(0);
+    expect(world.byIdCalls).toContain('tpl_verify'); // by-id verifier was exercised
+    // The exact id finishes building → next drive activates, pinning THAT id.
+    world.byIdState.set('tpl_verify', 'active');
+    const second = await driveProviderTransition(
+      makeDeps(world, () => new Date(base + 60_000)),
+      res.row.transitionId,
+    );
+    expect(second).toBe('activated');
+    expect(world.buildCount).toBe(0);
+    const routing = await readActiveRouting(db, projectId);
+    expect(routing?.activeProvider).toBe('platinum');
+    expect(routing?.activeExternalTemplateId).toBe('tpl_verify');
+  });
+
+  test('an `absent` image still FAILS promptly (consumes an attempt — not treated as building)', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'missing'); // absent
+    world.ensureBehavior = 'leave_building'; // build runs but image stays absent
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('building'); // recordFailure → retryable, NOT a wait
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.attempts).toBe(1); // an absent image consumes an attempt (unlike building)
+    expect(row?.errorClass).toBe('transient');
+    expect(world.buildCount).toBe(1);
+  });
+
+  // ── FIX 3: activation verifies + pins the EXACT external template id ─────────
+
+  test('activation verifies by EXACT external id and pins that id', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.state.set(id.snapshotName, 'active');
+    world.externalIds.set(id.snapshotName, 'tpl_exact');
+    world.byIdState = new Map([['tpl_exact', 'active']]);
+    world.ensureBehavior = 'throw_permanent';
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('activated');
+    expect(world.byIdCalls).toContain('tpl_exact'); // verified BY ID, not just by name
+    const routing = await readActiveRouting(db, projectId);
+    expect(routing?.activeProvider).toBe('platinum');
+    expect(routing?.activeExternalTemplateId).toBe('tpl_exact'); // pinned the exact verified id
+  });
+
+  test('a by-id-ABSENT result forces a rebuild rather than a stale-name activation', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    // The NAME still lists active (truncated-listing lie), but the EXACT pinned id
+    // was GC'd → by-id 'missing'. Activation must refuse + rebuild, never flip.
+    world.state.set(id.snapshotName, 'active');
+    world.externalIds.set(id.snapshotName, 'tpl_stale');
+    world.byIdState = new Map([['tpl_stale', 'missing']]);
+    world.ensureBehavior = 'throw_permanent';
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('rebuilt'); // by-id absent ⇒ rebuild, NOT activate
+    expect(world.byIdCalls).toContain('tpl_stale'); // the decisive check ran by exact id
+    // The KEY invariant: the stale/GC'd image was NEVER activated despite the name
+    // still listing active. The row is routed to rebuild, not flipped live.
+    expect((await getTransition(db, res.row.transitionId))?.status).not.toBe('activated');
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
   });
 });
