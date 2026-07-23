@@ -1891,3 +1891,17 @@ The focused GREEN run reported **86 pass / 0 fail** with 292 assertions.
 
 **Shippable to production: YES** for the SDK readiness audit correction.
 PR-wide CI and human review remain separate gates.
+
+---
+
+### 2026-07-23 — session `pr-4510-sdk-readiness-portability-audit` (claim)
+
+Reopened the readiness audit after final review found two transport defects.
+The HTTP client requires `AbortSignal.any`, which excludes older supported
+engines. Token acquisition does not observe request cancellation, so a pending
+`getToken()` call can wedge the shared readiness driver. This correction will
+add a listener-cleaning signal-composition fallback and abort-aware token
+acquisition. Implementation will follow RED → GREEN → REFACTOR and finish with
+SDK typecheck, full suite, and packed-install smoke evidence.
+
+**Status:** IN PROGRESS.
