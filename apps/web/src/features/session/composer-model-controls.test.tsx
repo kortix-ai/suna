@@ -153,8 +153,8 @@ describe('ComposerModelControls — catalog mode (OpenCode, Pi — live or pre-s
 // selector-render coverage below.
 describe('ComposerModelControls — the static label no longer exists', () => {
   test('no prop shape can produce #harness-managed-model-label — it is not in the module at all', async () => {
-    const module = await import('./composer-model-controls');
-    expect((module as Record<string, unknown>).HarnessManagedModelLabel).toBeUndefined();
+    const exports = await import('./composer-model-controls');
+    expect((exports as Record<string, unknown>).HarnessManagedModelLabel).toBeUndefined();
   });
 });
 
