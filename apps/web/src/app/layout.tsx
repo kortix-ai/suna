@@ -1,4 +1,3 @@
-import { WebMcpTools } from '@/components/agent/web-mcp-tools';
 import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
@@ -7,8 +6,8 @@ import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
+import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
@@ -377,7 +376,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </AuthProvider>
           </TooltipProvider>
         </ThemeProvider>
-        <div id="portal" className="fixed left-0 top-0 z-40" />
+        <div id="portal" className="fixed top-0 left-0 z-40" />
       </body>
     </html>
   );
