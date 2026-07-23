@@ -65,6 +65,10 @@ data "aws_ami" "selected" {
 # at plan time.
 data "aws_region" "current" {}
 
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
 # ── AMI (Ubuntu 24.04 LTS via Canonical's public SSM parameter) ────────────
 data "aws_ssm_parameter" "ubuntu" {
   count = var.ami_id == "" ? 1 : 0
