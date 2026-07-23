@@ -18,6 +18,7 @@ import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
+import { metadataMerge } from '../projects/lib/metadata-merge';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
 import { SANDBOX_VERSION, config } from '../config';
@@ -818,12 +819,17 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
     const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
     const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
     if (current !== validDefault) {
-      const nextMeta = { ...meta };
-      if (validDefault) nextMeta.default_sandbox_slug = validDefault;
-      else delete nextMeta.default_sandbox_slug;
+      // FIX-J: SQL-side atomic merge of ONLY `default_sandbox_slug` (set / delete)
+      // so this manifest-sync write can't revert a routing pin written between the
+      // read above and this write.
       await db
         .update(projects)
-        .set({ metadata: nextMeta, updatedAt: new Date() })
+        .set({
+          metadata: validDefault
+            ? metadataMerge({ default_sandbox_slug: validDefault })
+            : metadataMerge({}, ['default_sandbox_slug']),
+          updatedAt: new Date(),
+        })
         .where(eq(projects.projectId, project.projectId));
     }
   } catch (err) {

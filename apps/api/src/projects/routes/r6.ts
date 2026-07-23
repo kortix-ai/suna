@@ -16,7 +16,8 @@ import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
-import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
+import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
+import { isExperimentalFeatureKey } from '../../experimental/features';
 import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -62,17 +63,15 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const completed = body.completed === true;
-  const previousMetadata = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const nextMetadata: Record<string, unknown> = { ...previousMetadata };
-  if (completed) {
-    nextMetadata.onboarding_completed_at = new Date().toISOString();
-  } else {
-    delete nextMetadata.onboarding_completed_at;
-  }
+  // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set / delete)
+  // so this write can't revert a routing pin written concurrently.
+  const metadataExpr = completed
+    ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
+    : metadataMerge({}, ['onboarding_completed_at']);
 
   const [row] = await db
     .update(projects)
-    .set({ metadata: nextMetadata, updatedAt: new Date() })
+    .set({ metadata: metadataExpr, updatedAt: new Date() })
     .where(eq(projects.projectId, projectId))
     .returning();
 
@@ -1161,10 +1160,19 @@ projectsApp.openapi(
     if (enabled !== null && typeof enabled !== 'boolean') {
       return c.json({ error: 'enabled must be a boolean or null' }, 400);
     }
-    const nextMeta = applyExperimentalOverride(loaded.row.metadata, feature, enabled);
+    // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
+    // would lose an update one level down when two features are toggled
+    // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
+    // set writes only `experimental.<feature>`; clear removes it (dropping the
+    // whole `experimental` key once the last override is gone, matching the old
+    // applyExperimentalOverride behavior). Every write preserves the routing pin.
+    const metadataExpr =
+      enabled === null
+        ? metadataClearSubtreeKey('experimental', feature)
+        : metadataMergeSubtree('experimental', { [feature]: enabled });
     const [row] = await db
       .update(projects)
-      .set({ metadata: nextMeta, updatedAt: new Date() })
+      .set({ metadata: metadataExpr, updatedAt: new Date() })
       .where(eq(projects.projectId, projectId))
       .returning();
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);

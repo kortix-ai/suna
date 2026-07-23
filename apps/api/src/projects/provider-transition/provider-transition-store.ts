@@ -16,6 +16,7 @@
  */
 import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { providerTransitions, projects, type Database } from '@kortix/db';
+import { metadataMerge } from '../lib/metadata-merge';
 import {
   LIVE_TRANSITION_STATUSES,
   canActivateGeneration,
@@ -33,6 +34,14 @@ const LIVE = [...LIVE_TRANSITION_STATUSES];
 
 export const PIN_META_KEY = 'default_sandbox_provider';
 export const ACTIVE_EXTERNAL_ID_META_KEY = 'active_sandbox_external_template_id';
+/** FIX-K-lite: the exact ppwarm image NAME activation pinned. Written together
+ *  with the external id (activation only), so the snapshot-GC pinned-image guard
+ *  can cross-check reap targets by NAME — the id activation records is the
+ *  provider's external template id, not the `kortix-ppwarm-…` name the reaper
+ *  deletes by. A stale build MARKER can overwrite the transition marker's
+ *  snapshot_name, but this key is touched ONLY on activation, so it stays a
+ *  reliable record of the live pinned image. */
+export const ACTIVE_SNAPSHOT_NAME_META_KEY = 'active_sandbox_snapshot_name';
 /** Compact marker mirrored into project metadata so the existing project
  *  response (which passes `metadata` through) is pollable without a schema
  *  change to @kortix/api-contract. */
@@ -585,18 +594,28 @@ export async function activateWithCas(
       return { activated: false, reason: 'lost_cas' as const };
     }
 
-    const meta = asMeta(project.metadata);
-    meta[PIN_META_KEY] = args.targetProvider;
-    meta[ACTIVE_EXTERNAL_ID_META_KEY] = args.externalTemplateId;
-    meta[TRANSITION_META_KEY] = {
-      status: 'activated',
-      target_provider: args.targetProvider,
-      generation: args.generation,
-      snapshot_name: args.snapshotName,
-      external_template_id: args.externalTemplateId,
-      activated_at: args.now.toISOString(),
+    // FIX-J: write ONLY the pin's own keys via a SQL-side atomic merge, never the
+    // whole object — so a concurrent metadata writer can neither revert this pin
+    // nor be reverted by it. The generation CAS (above) + the lease-epoch fence
+    // are UNTOUCHED; this converts the whole-object SET to a targeted merge only.
+    const activationPatch: Record<string, unknown> = {
+      [PIN_META_KEY]: args.targetProvider,
+      [ACTIVE_EXTERNAL_ID_META_KEY]: args.externalTemplateId,
+      // FIX-K-lite: record the active ppwarm image NAME so the GC guard can match.
+      [ACTIVE_SNAPSHOT_NAME_META_KEY]: args.snapshotName,
+      [TRANSITION_META_KEY]: {
+        status: 'activated',
+        target_provider: args.targetProvider,
+        generation: args.generation,
+        snapshot_name: args.snapshotName,
+        external_template_id: args.externalTemplateId,
+        activated_at: args.now.toISOString(),
+      },
     };
-    await tx.update(projects).set({ metadata: meta, updatedAt: args.now }).where(eq(projects.projectId, args.projectId));
+    await tx
+      .update(projects)
+      .set({ metadata: metadataMerge(activationPatch), updatedAt: args.now })
+      .where(eq(projects.projectId, args.projectId));
 
     await tx
       .update(providerTransitions)
@@ -641,20 +660,25 @@ export async function setPinWithGenerationBump(
       .limit(1);
     if (!project) return { generation: 0 };
     const newGen = (project.generation ?? 0) + 1;
-    const meta = asMeta(project.metadata);
-    if (args.pin === null) delete meta[PIN_META_KEY];
-    else meta[PIN_META_KEY] = args.pin;
-    // The default/source provider does not carry a Platinum-style external id.
-    delete meta[ACTIVE_EXTERNAL_ID_META_KEY];
-    meta[TRANSITION_META_KEY] = {
-      status: args.pin === null ? 'cleared' : 'activated',
-      target_provider: args.pin,
-      generation: newGen,
-      activated_at: args.now.toISOString(),
+    // FIX-J: set/clear ONLY the pin's own keys via a SQL-side atomic merge, under
+    // the FOR UPDATE lock + generation bump (both UNCHANGED) — never the whole
+    // object, so a concurrent metadata writer can't be reverted.
+    const patch: Record<string, unknown> = {
+      [TRANSITION_META_KEY]: {
+        status: args.pin === null ? 'cleared' : 'activated',
+        target_provider: args.pin,
+        generation: newGen,
+        activated_at: args.now.toISOString(),
+      },
     };
+    // The default/source provider carries no Platinum-style external id or ppwarm
+    // image, so clear both the external id and the active-snapshot-name record.
+    const deleteKeys = [ACTIVE_EXTERNAL_ID_META_KEY, ACTIVE_SNAPSHOT_NAME_META_KEY];
+    if (args.pin === null) deleteKeys.push(PIN_META_KEY);
+    else patch[PIN_META_KEY] = args.pin;
     await tx
       .update(projects)
-      .set({ metadata: meta, sandboxProviderGeneration: newGen, updatedAt: args.now })
+      .set({ metadata: metadataMerge(patch, deleteKeys), sandboxProviderGeneration: newGen, updatedAt: args.now })
       .where(eq(projects.projectId, args.projectId));
     await tx
       .update(providerTransitions)
@@ -670,18 +694,12 @@ export async function writeTransitionMarker(
   projectId: string,
   marker: Record<string, unknown>,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [project] = await tx
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .for('update')
-      .limit(1);
-    if (!project) return;
-    const meta = asMeta(project.metadata);
-    meta[TRANSITION_META_KEY] = marker;
-    await tx.update(projects).set({ metadata: meta, updatedAt: new Date() }).where(eq(projects.projectId, projectId));
-  });
+  // FIX-J: one atomic SQL merge of ONLY the marker key — no read-modify-write, so
+  // no FOR UPDATE round-trip and no chance of reverting a concurrent pin write.
+  await db
+    .update(projects)
+    .set({ metadata: metadataMerge({ [TRANSITION_META_KEY]: marker }), updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId));
 }
 
 /** Re-export the CAS predicate for tests + callers that need the raw decision. */

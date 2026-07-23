@@ -30,6 +30,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
+import { metadataMerge } from '../lib/metadata-merge';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
@@ -641,9 +642,13 @@ projectsApp.openapi(
       const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
       if (seededDefaultAgent) {
         row.metadata = { ...((row.metadata as Record<string, unknown> | null) ?? {}), default_agent: seededDefaultAgent };
+        // FIX-J: persist ONLY `default_agent` via a SQL-side atomic merge (never
+        // the whole object) so this creation-seed write can't revert a pin the
+        // prebuild kick may have activated concurrently. `row.metadata` above is
+        // the in-memory copy the creation response serializes.
         await db
           .update(projects)
-          .set({ metadata: row.metadata, updatedAt: new Date() })
+          .set({ metadata: metadataMerge({ default_agent: seededDefaultAgent }), updatedAt: new Date() })
           .where(eq(projects.projectId, row.projectId))
           .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
       }
