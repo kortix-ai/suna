@@ -415,7 +415,9 @@ flow(
   { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    const owner = ctx.client.as(ctx.P.OWNER);
+    // Every payload below is invalid and cannot create a trigger. Retry only
+    // gateway-generated outage responses, not API responses with x-request-id.
+    const owner = ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries();
     const params = { projectId: p.id };
 
     await ctx.step('missing name → 400', async () => {
