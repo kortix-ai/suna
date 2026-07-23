@@ -51,7 +51,7 @@ function errorStatus(error: unknown): number | undefined {
 export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoundaryProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const query = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: ['project-access-boundary', projectId],
     queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: !!projectId,
     retry: false,
@@ -140,7 +140,9 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
     onMutate: () => setInlineError(null),
     onSuccess: (result) => {
       if (result.status === 'already_has_access') {
-        void queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+        void queryClient.invalidateQueries({
+          queryKey: ['project-access-boundary', projectId],
+        });
         return;
       }
       setSent(true);
@@ -151,7 +153,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   });
 
   // Platform-admin escape hatch: flips the client-wide admin-bypass header
-  // on, then re-fetches this same ['project-access', projectId] query so the
+  // on, then re-fetches this same ['project-access-boundary', projectId] query so the
   // boundary above (which shares this query cache) picks up the result and
   // renders the actual project. Read-only server-side (see
   // apps/api/src/projects/lib/access.ts) and audit-logged against the
@@ -160,7 +162,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
     mutationFn: async () => {
       setAdminBypass(true);
       return queryClient.fetchQuery({
-        queryKey: ['project-access', projectId],
+        queryKey: ['project-access-boundary', projectId],
         queryFn: () => getProject(projectId, { showErrors: false }),
       });
     },
