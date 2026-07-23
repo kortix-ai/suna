@@ -162,6 +162,13 @@ export async function waitForActive(name: string, tap?: BuildLogTap, id?: string
   let last = 'unknown';
   let transientStreak = 0;
   while (Date.now() < deadline) {
+    // Renew the caller's lease (if any) BEFORE polling. Placed OUTSIDE the poll
+    // try/catch so a heartbeat that reports lost ownership (throws) STOPS the
+    // wait rather than being swallowed as a transient poll error. The callback
+    // itself swallows transient DB blips (see the drive's heartbeat wrapper), so
+    // a throw here is an authoritative "you no longer own this" — the build we're
+    // waiting on is now another owner's to finish.
+    await tap?.heartbeat?.();
     let tpl: PlatinumTemplate | null;
     try {
       // findTemplateById returns null ONLY on an explicit 404 (not-visible-yet);

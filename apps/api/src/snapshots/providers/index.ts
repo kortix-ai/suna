@@ -74,6 +74,15 @@ export { normalizeExistingProviderState } from './state';
 export interface BuildLogTap {
   /** Streamed per line from the provider build. */
   onLine?: (line: string) => void;
+  /**
+   * Optional lease-renewal hook, called on every poll iteration of the
+   * provider's `waitForActive` loop. Lets a caller (the provider-transition
+   * drive) keep its lease alive during a long build so the TTL never lapses
+   * mid-build. Resolves while still owned; THROWS to stop the wait when the
+   * caller has lost ownership (a newer owner re-acquired). A transient error is
+   * the callback's own to swallow — it must not throw on a mere DB blip.
+   */
+  heartbeat?: () => void | Promise<void>;
 }
 
 export interface SandboxProviderAdapter {

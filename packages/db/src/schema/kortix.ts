@@ -1406,6 +1406,12 @@ export const providerTransitions = kortixSchema.table(
     // Lease heartbeat for the resume worker (stale ⇒ re-drivable). Mirrors
     // suna_account_migrations.heartbeat_at.
     heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    // Monotonic lease-fencing token. acquireLease bumps COALESCE(lease_epoch,0)+1
+    // on every ownership take; every drive-time state write + the activation CAS
+    // is predicated on the caller's acquired epoch, so a zombie drive whose lease
+    // TTL expired (a 30-40 min build outruns the 10-min TTL) is fenced out — its
+    // writes match 0 rows and it ceases instead of clobbering the fresh owner.
+    leaseEpoch: bigint('lease_epoch', { mode: 'number' }).default(0).notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
     requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp('started_at', { withTimezone: true }),

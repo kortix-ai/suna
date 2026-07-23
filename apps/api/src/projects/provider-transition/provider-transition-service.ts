@@ -77,6 +77,9 @@ export function defaultTransitionDeps(database: Database = appDb): TransitionDep
         provider: opts.provider,
         accountId: opts.accountId,
         source: 'background',
+        // Renew the lease during the (up to ~12-min) provider build wait so a long
+        // build never lets the 10-min TTL lapse into a double-drive.
+        heartbeat: opts.heartbeat,
       });
       return { snapshotName: r.snapshotName, built: r.built };
     },

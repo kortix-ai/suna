@@ -42,6 +42,7 @@ import {
   failTransition,
   findLiveTransitionByIdentity,
   getTransition,
+  heartbeat,
   insertPrebuildTransition,
   maxLiveSwitchGeneration,
   releaseForRetry,
@@ -52,6 +53,25 @@ import {
   type ProviderTransitionRow,
 } from './provider-transition-store';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
+
+/**
+ * Thrown when a drive-time fenced write matches 0 rows — this drive no longer
+ * owns the lease (a newer owner re-acquired and bumped the epoch). The drive
+ * ceases SILENTLY (no error log, no failTransition): the current owner is
+ * driving the row. Named so lower layers (the build wait loop) can duck-type it
+ * without importing across the provider boundary.
+ */
+export class LeaseLostError extends Error {
+  constructor() {
+    super('provider-transition drive lost its lease (fenced out by a newer owner)');
+    this.name = 'LeaseLostError';
+  }
+}
+
+/** Throw {@link LeaseLostError} when a fenced store write reports 0 rows. */
+async function mustOwn(written: Promise<boolean>): Promise<void> {
+  if (!(await written)) throw new LeaseLostError();
+}
 
 export const LEASE_TTL_MS = 10 * 60 * 1000;
 /** How long a prebuild `ready` row rests before the worker re-verifies its tip
@@ -83,10 +103,14 @@ export interface TransitionDeps {
     SandboxProviderAdapter,
     'getSnapshotState' | 'getSnapshotExternalId' | 'getSnapshotStateByExternalId' | 'deleteSnapshot'
   >;
-  /** Reuse the existing ppwarm builder — build (or reuse) the target's image. */
+  /** Reuse the existing ppwarm builder — build (or reuse) the target's image.
+   *  `opts.heartbeat` renews the lease during the (up to ~12-min) provider build
+   *  wait; it RESOLVES while still owned and THROWS {@link LeaseLostError} once a
+   *  newer owner re-acquired, so a lease outrun by a long build never lapses into
+   *  a double-drive. Threaded down into the provider's waitForActive poll loop. */
   ensureWarmImage: (
     project: GitBackedProject,
-    opts: { provider: string; accountId?: string },
+    opts: { provider: string; accountId?: string; heartbeat?: () => Promise<void> },
   ) => Promise<{ snapshotName: string; built: boolean }>;
   /** Resolve the CURRENT prep identity (tip + base runtime + ppwarm name). */
   resolvePrepIdentity: (project: GitBackedProject, targetProvider: string) => Promise<ResolvedPrepIdentity>;
@@ -122,13 +146,17 @@ async function recordFailure(
   deps: TransitionDeps,
   row: ProviderTransitionRow,
   err: unknown,
+  epoch: number,
 ): Promise<DriveOutcome> {
   const attempts = (row.attempts ?? 0) + 1;
   const permanent = isPermanentTransitionError(err);
   const { action } = classifyTransitionFailure({ err, attempts });
   const errorClass = permanent ? 'auth_terminal' : attempts >= MAX_TRANSITION_ATTEMPTS ? 'exhausted' : 'transient';
   if (action === 'fail') {
-    await failTransition(deps.db, row.transitionId, { attempts, lastError: errMsg(err), errorClass });
+    // Fenced: if we lost the lease, do NOT dead-letter a succeeded switch — cease.
+    if (!(await failTransition(deps.db, row.transitionId, { attempts, lastError: errMsg(err), errorClass }, epoch))) {
+      return 'not_leased';
+    }
     emitProviderTransitionEvent('preparation_failed', {
       target: row.targetProvider,
       source: row.sourceProvider,
@@ -140,13 +168,22 @@ async function recordFailure(
     return 'failed';
   }
   const nextRetryAt = new Date(deps.now().getTime() + transitionBackoffMs(attempts));
-  await releaseForRetry(deps.db, row.transitionId, {
-    attempts,
-    lastError: errMsg(err),
-    errorClass,
-    nextRetryAt,
-    status: row.status === 'pending' ? 'pending' : 'building',
-  });
+  if (
+    !(await releaseForRetry(
+      deps.db,
+      row.transitionId,
+      {
+        attempts,
+        lastError: errMsg(err),
+        errorClass,
+        nextRetryAt,
+        status: row.status === 'pending' ? 'pending' : 'building',
+      },
+      epoch,
+    ))
+  ) {
+    return 'not_leased';
+  }
   return 'building';
 }
 
@@ -163,10 +200,13 @@ async function recordWaiting(
   row: ProviderTransitionRow,
   snapshotName: string,
   note: string,
+  epoch: number,
 ): Promise<DriveOutcome> {
   await writeMarker(deps, row, 'building', snapshotName);
   const nextRetryAt = new Date(deps.now().getTime() + BUILDING_POLL_MS);
-  await releaseForWaiting(deps.db, row.transitionId, { nextRetryAt, note });
+  if (!(await releaseForWaiting(deps.db, row.transitionId, { nextRetryAt, note }, epoch))) {
+    return 'not_leased';
+  }
   emitProviderTransitionEvent('build_waiting', {
     target: row.targetProvider,
     source: row.sourceProvider,
@@ -193,14 +233,19 @@ async function recordBuildingOrTimeout(
   row: ProviderTransitionRow,
   snapshotName: string,
   note: string,
+  epoch: number,
 ): Promise<DriveOutcome> {
   const startedAt = row.startedAt ?? deps.now();
   if (isBuildDeadlineExceeded({ startedAt, now: deps.now(), maxBuildingMs: MAX_BUILDING_MS })) {
-    await failTransition(deps.db, row.transitionId, {
-      attempts: row.attempts ?? 0,
-      lastError: `image ${snapshotName} still building past the ${MAX_BUILDING_MS}ms wall-clock deadline`,
-      errorClass: 'build_timeout',
-    });
+    if (
+      !(await failTransition(deps.db, row.transitionId, {
+        attempts: row.attempts ?? 0,
+        lastError: `image ${snapshotName} still building past the ${MAX_BUILDING_MS}ms wall-clock deadline`,
+        errorClass: 'build_timeout',
+      }, epoch))
+    ) {
+      return 'not_leased';
+    }
     emitProviderTransitionEvent('preparation_failed', {
       target: row.targetProvider,
       source: row.sourceProvider,
@@ -214,8 +259,10 @@ async function recordBuildingOrTimeout(
   // Persist `startedAt` so the wall-clock is anchored from the FIRST building
   // observation even on the verify path (which didn't set it) — idempotent once
   // set, since later drives lease the persisted non-null value.
-  await updateTransition(deps.db, row.transitionId, { status: 'building', startedAt });
-  return await recordWaiting(deps, { ...row, startedAt }, snapshotName, note);
+  if (!(await updateTransition(deps.db, row.transitionId, { status: 'building', startedAt }, epoch))) {
+    return 'not_leased';
+  }
+  return await recordWaiting(deps, { ...row, startedAt }, snapshotName, note, epoch);
 }
 
 /** Create a fresh transition for the CURRENT identity + supersede the stale one. */
@@ -223,6 +270,7 @@ async function forkNewIdentity(
   deps: TransitionDeps,
   row: ProviderTransitionRow,
   current: ResolvedPrepIdentity,
+  epoch: number,
 ): Promise<DriveOutcome> {
   const identity: PrepIdentity = {
     projectId: row.projectId,
@@ -248,7 +296,9 @@ async function forkNewIdentity(
       identity,
     });
     newId = res.row.transitionId;
-    await updateTransition(deps.db, row.transitionId, { status: 'superseded', heartbeatAt: null });
+    if (!(await updateTransition(deps.db, row.transitionId, { status: 'superseded', heartbeatAt: null }, epoch))) {
+      return 'not_leased';
+    }
   }
   emitProviderTransitionEvent('rebuild_new_identity', {
     target: row.targetProvider,
@@ -268,15 +318,34 @@ export async function driveProviderTransition(
   const ttl = deps.leaseTtlMs ?? LEASE_TTL_MS;
   const leased = await acquireLease(deps.db, transitionId, ttl, deps.now());
   if (!leased) return 'not_leased';
+  // The fencing token this drive OWNS. Every drive-time state write + the
+  // activation CAS is predicated on it; a newer owner re-acquiring bumps it, so
+  // this drive's writes then match 0 rows and it ceases silently (LeaseLostError).
+  const myEpoch = leased.leaseEpoch ?? 0;
+  // Renew the lease during the long provider build wait so the 10-min TTL never
+  // lapses mid-build (a 30-40 min build otherwise expires the lease and the resume
+  // worker double-drives). Resolves while owned; throws LeaseLostError on a clean
+  // revocation; swallows a transient DB error (do NOT abort a 30-min build).
+  const heartbeatCb = async (): Promise<void> => {
+    let owned: boolean;
+    try {
+      owned = await heartbeat(deps.db, transitionId, myEpoch);
+    } catch {
+      return;
+    }
+    if (!owned) throw new LeaseLostError();
+  };
 
   try {
     const project = await deps.loadProject(leased.projectId);
     if (!project) {
-      await failTransition(deps.db, transitionId, {
-        attempts: leased.attempts ?? 0,
-        lastError: 'project no longer exists',
-        errorClass: 'gone',
-      });
+      await mustOwn(
+        failTransition(deps.db, transitionId, {
+          attempts: leased.attempts ?? 0,
+          lastError: 'project no longer exists',
+          errorClass: 'gone',
+        }, myEpoch),
+      );
       return 'gone';
     }
 
@@ -293,14 +362,14 @@ export async function driveProviderTransition(
         current,
       )
     ) {
-      return await forkNewIdentity(deps, leased, current);
+      return await forkNewIdentity(deps, leased, current, myEpoch);
     }
 
     // Supersession: a newer switch reserved a higher generation.
     if (leased.mode === 'switch' && leased.generation != null) {
       const maxLive = await maxLiveSwitchGeneration(deps.db, leased.projectId);
       if (isSupersededByGeneration(leased.generation, maxLive)) {
-        await updateTransition(deps.db, transitionId, { status: 'superseded', heartbeatAt: null });
+        await mustOwn(updateTransition(deps.db, transitionId, { status: 'superseded', heartbeatAt: null }, myEpoch));
         emitProviderTransitionEvent('stale_build_superseded', {
           target: leased.targetProvider,
           projectId: leased.projectId,
@@ -319,7 +388,7 @@ export async function driveProviderTransition(
 
     if (readiness === 'indeterminate') {
       // Provider couldn't confirm — NEVER read as "missing". Bounded retry.
-      return await recordFailure(deps, leased, new Error('provider state indeterminate (unknown)'));
+      return await recordFailure(deps, leased, new Error('provider state indeterminate (unknown)'), myEpoch);
     }
 
     // BUILDING ≠ FAILURE: the image is ALREADY building on the target (a prior
@@ -333,6 +402,7 @@ export async function driveProviderTransition(
         { ...leased, startedAt: leased.startedAt ?? deps.now() },
         snapshotName,
         'image already building on target',
+        myEpoch,
       );
     }
 
@@ -340,10 +410,10 @@ export async function driveProviderTransition(
     if (readiness !== 'ready') {
       // Persist intent BEFORE the external build call; the content-addressed
       // snapshot_name is the idempotency key the builder re-checks internally.
-      await updateTransition(deps.db, transitionId, {
+      await mustOwn(updateTransition(deps.db, transitionId, {
         status: 'building',
         startedAt: buildStartedAt,
-      });
+      }, myEpoch));
       await writeMarker(deps, leased, 'building', snapshotName);
       const queueSeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
       emitProviderTransitionEvent('build_started', {
@@ -355,9 +425,15 @@ export async function driveProviderTransition(
       });
       const buildStart = deps.now().getTime();
       try {
-        await deps.ensureWarmImage(project, { provider: leased.targetProvider, accountId: leased.accountId });
+        await deps.ensureWarmImage(project, {
+          provider: leased.targetProvider,
+          accountId: leased.accountId,
+          heartbeat: heartbeatCb,
+        });
       } catch (err) {
-        return await recordFailure(deps, leased, err);
+        // A heartbeat inside the build wait detected a lost lease → cease silently.
+        if (err instanceof LeaseLostError) throw err;
+        return await recordFailure(deps, leased, err, myEpoch);
       }
       const buildSeconds = (deps.now().getTime() - buildStart) / 1000;
       // Confirm the provider actually has it now (never trust the builder's word
@@ -374,6 +450,7 @@ export async function driveProviderTransition(
           { ...leased, startedAt: buildStartedAt },
           snapshotName,
           `build in progress (state=${readiness})`,
+          myEpoch,
         );
       }
       if (readiness !== 'ready') {
@@ -381,6 +458,7 @@ export async function driveProviderTransition(
           deps,
           leased,
           new Error(`image ${snapshotName} not ready after build (state=${readiness})`),
+          myEpoch,
         );
       }
       emitProviderTransitionEvent('build_succeeded', {
@@ -404,7 +482,7 @@ export async function driveProviderTransition(
     const externalTemplateId = provider.getSnapshotExternalId
       ? await provider.getSnapshotExternalId(snapshotName).catch(() => null)
       : null;
-    await updateTransition(deps.db, transitionId, {
+    await mustOwn(updateTransition(deps.db, transitionId, {
       status: 'ready',
       readyAt: leased.readyAt ?? deps.now(),
       externalTemplateId,
@@ -412,7 +490,7 @@ export async function driveProviderTransition(
       // transient attempts burned on the way here are cleared (a later verify
       // hiccup then gets the full bounded-retry budget, never a stale count).
       attempts: 0,
-    });
+    }, myEpoch));
     const timeToReadySeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
     emitProviderTransitionEvent('build_succeeded', {
       target: leased.targetProvider,
@@ -425,13 +503,13 @@ export async function driveProviderTransition(
 
     // ── Prebuild rests at ready (invisible to routing until adopted) ─────────
     if (leased.mode === 'prebuild') {
-      await releaseForRetry(deps.db, transitionId, {
+      await mustOwn(releaseForRetry(deps.db, transitionId, {
         attempts: 0,
         lastError: 'prebuilt; awaiting adoption',
         errorClass: 'none',
         nextRetryAt: new Date(deps.now().getTime() + PREBUILD_RECHECK_MS),
         status: 'ready',
-      });
+      }, myEpoch));
       return 'prebuilt';
     }
 
@@ -461,9 +539,9 @@ export async function driveProviderTransition(
       imageReadiness: verifyReadiness,
     });
 
-    if (decision === 'rebuild') return await forkNewIdentity(deps, leased, current2);
+    if (decision === 'rebuild') return await forkNewIdentity(deps, leased, current2, myEpoch);
     if (decision === 'supersede') {
-      await updateTransition(deps.db, transitionId, { status: 'superseded', heartbeatAt: null });
+      await mustOwn(updateTransition(deps.db, transitionId, { status: 'superseded', heartbeatAt: null }, myEpoch));
       emitProviderTransitionEvent('stale_build_superseded', {
         target: leased.targetProvider,
         projectId: leased.projectId,
@@ -481,14 +559,15 @@ export async function driveProviderTransition(
           { ...leased, startedAt: leased.startedAt ?? deps.now() },
           snapshotName,
           'image still building at verify',
+          myEpoch,
         );
       }
-      return await recordFailure(deps, leased, new Error('image not confirmed ready at verify'));
+      return await recordFailure(deps, leased, new Error('image not confirmed ready at verify'), myEpoch);
     }
 
     // decision === 'activate' — pin the EXACT id we just verified, NOT a
     // name-re-resolved one (which could resolve to a different/newer row).
-    await updateTransition(deps.db, transitionId, { status: 'activating' });
+    await mustOwn(updateTransition(deps.db, transitionId, { status: 'activating' }, myEpoch));
     const result = await activateWithCas(deps.db, {
       projectId: leased.projectId,
       transitionId,
@@ -497,6 +576,7 @@ export async function driveProviderTransition(
       snapshotName,
       externalTemplateId,
       now: deps.now(),
+      leaseEpoch: myEpoch,
     });
     if (result.activated) {
       emitProviderTransitionEvent('activation_completed', {
@@ -520,17 +600,24 @@ export async function driveProviderTransition(
       });
       return 'lost_cas';
     }
-    await failTransition(deps.db, transitionId, {
+    // Fenced out at activation (a newer owner re-acquired at the SAME generation) —
+    // the pin was NOT touched. Cease silently; the current owner activates.
+    if (result.reason === 'lost_lease') return 'not_leased';
+    await mustOwn(failTransition(deps.db, transitionId, {
       attempts: (leased.attempts ?? 0) + 1,
       lastError: 'project missing at activation',
       errorClass: 'gone',
-    });
+    }, myEpoch));
     return 'gone';
   } catch (err) {
-    // Any unexpected throw during the drive → bounded retry (fenced by the lease
-    // we still hold; the row stays live so the worker re-drives it).
+    // Lost the lease mid-drive (a fenced write matched 0 rows, or a build-wait
+    // heartbeat detected revocation) → cease SILENTLY: no error, no failTransition.
+    if (err instanceof LeaseLostError) return 'not_leased';
+    // Any other unexpected throw → bounded retry, itself fenced by our epoch so a
+    // drive that lost the lease can't dead-letter the row (recordFailure returns
+    // 'not_leased' when its write matches nothing).
     const fresh = (await getTransition(deps.db, transitionId).catch(() => null)) ?? leased;
-    return await recordFailure(deps, fresh, err);
+    return await recordFailure(deps, fresh, err, myEpoch);
   }
 }
 

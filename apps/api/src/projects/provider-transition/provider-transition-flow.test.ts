@@ -8,9 +8,11 @@ import {
   type TransitionDeps,
 } from './provider-transition-runner';
 import {
+  acquireLease,
   activateWithCas,
   findResumableTransitions,
   getTransition,
+  heartbeat,
   insertPrebuildTransition,
   readActiveRouting,
   reserveSwitchTransition,
@@ -688,5 +690,139 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     // still listing active. The row is routed to rebuild, not flipped live.
     expect((await getTransition(db, res.row.transitionId))?.status).not.toBe('activated');
     expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+  });
+
+  // ── FIX-I: lease heartbeat + epoch fencing ───────────────────────────────────
+
+  test('acquireLease bumps the fencing epoch 0→1 on a fresh (pre-migration default) row and the drive activates', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    // A freshly-inserted row carries the DEFAULT 0 (what a pre-migration row reads).
+    expect((await getTransition(db, res.row.transitionId))?.leaseEpoch ?? 0).toBe(0);
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+    expect(outcome).toBe('activated');
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('activated');
+    expect(row?.leaseEpoch).toBe(1); // COALESCE(0)+1 — the drive owned + used epoch 1
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
+  });
+
+  test('a zombie drive with a STALE epoch is fenced out: it ceases silently and clobbers no state', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.ensureBehavior = 'activate'; // absent this fence, the zombie would build + activate
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const deps = makeDeps(world);
+    // Mid-drive, a NEWER owner steals the lease (heartbeat forced stale by a
+    // far-future `now`), bumping the epoch to 2 — the zombie still holds epoch 1.
+    const origResolve = deps.resolvePrepIdentity;
+    let stole = false;
+    deps.resolvePrepIdentity = async (project, target) => {
+      if (!stole) {
+        stole = true;
+        const stolen = await acquireLease(db, res.row.transitionId, 0, new Date(Date.now() + 3_600_000));
+        expect(stolen?.leaseEpoch).toBe(2);
+      }
+      return origResolve(project, target);
+    };
+    const outcome = await driveProviderTransition(deps, res.row.transitionId);
+    expect(outcome).toBe('not_leased'); // ceased silently — no error, no failTransition
+    expect(world.buildCount).toBe(0); // fenced out BEFORE the build
+    const row = await getTransition(db, res.row.transitionId);
+    expect(row?.status).toBe('pending'); // untouched by the zombie (not 'building'/'failed'/'activated')
+    expect(row?.leaseEpoch).toBe(2); // the fresh owner's epoch stands
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull(); // pin never flipped
+  });
+
+  test('activation is REJECTED for a stale lease epoch even at a MATCHING generation', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const gen = res.row.generation!;
+    // Owner A takes the lease (epoch 1); owner B then steals it (epoch 2).
+    expect((await acquireLease(db, res.row.transitionId, 0, new Date()))?.leaseEpoch).toBe(1);
+    expect((await acquireLease(db, res.row.transitionId, 0, new Date(Date.now() + 3_600_000)))?.leaseEpoch).toBe(2);
+
+    // Zombie A (epoch 1) activates at the SAME generation → fenced out, pin untouched.
+    const zombie = await activateWithCas(db, {
+      projectId, transitionId: res.row.transitionId, targetProvider: 'platinum',
+      generation: gen, snapshotName: id.snapshotName, externalTemplateId: 'tpl_z', now: new Date(),
+      leaseEpoch: 1,
+    });
+    expect(zombie.activated).toBe(false);
+    expect(zombie.reason).toBe('lost_lease');
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+    expect((await getTransition(db, res.row.transitionId))?.status).not.toBe('activated');
+
+    // The current owner (epoch 2) activates at the same generation → wins.
+    const owner = await activateWithCas(db, {
+      projectId, transitionId: res.row.transitionId, targetProvider: 'platinum',
+      generation: gen, snapshotName: id.snapshotName, externalTemplateId: 'tpl_ok', now: new Date(),
+      leaseEpoch: 2,
+    });
+    expect(owner.activated).toBe(true);
+    const routing = await readActiveRouting(db, projectId);
+    expect(routing?.activeProvider).toBe('platinum');
+    expect(routing?.activeExternalTemplateId).toBe('tpl_ok');
+  });
+
+  test('heartbeat renews the lease while owned (fenced) and refuses a stale epoch', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const leased = await acquireLease(db, res.row.transitionId, 10 * 60_000, new Date());
+    expect(leased?.leaseEpoch).toBe(1);
+    const firstBeat = (await getTransition(db, res.row.transitionId))?.heartbeatAt!;
+
+    // Owned renewal advances the heartbeat and keeps the lease unstealable within TTL.
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await heartbeat(db, res.row.transitionId, 1)).toBe(true);
+    const renewed = (await getTransition(db, res.row.transitionId))?.heartbeatAt!;
+    expect(new Date(renewed).getTime()).toBeGreaterThanOrEqual(new Date(firstBeat).getTime());
+    // A fresh heartbeat means the resume worker cannot re-lease it within the TTL.
+    expect(await acquireLease(db, res.row.transitionId, 10 * 60_000, new Date())).toBeNull();
+
+    // A STALE epoch renewal is refused (0 rows) and does NOT advance the heartbeat.
+    const beforeStale = (await getTransition(db, res.row.transitionId))?.heartbeatAt!;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await heartbeat(db, res.row.transitionId, 999)).toBe(false);
+    const afterStale = (await getTransition(db, res.row.transitionId))?.heartbeatAt!;
+    expect(new Date(afterStale).getTime()).toBe(new Date(beforeStale).getTime());
+  });
+
+  test('heartbeat threaded through ensureWarmImage renews the lease during a long build', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    const res = await reserveSwitchTransition(db, {
+      accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+    const deps = makeDeps(world);
+    // Model the provider's waitForActive poll loop calling the heartbeat hook a few
+    // times during the build, then completing — the lease is renewed each poll.
+    let beats = 0;
+    const origEnsure = deps.ensureWarmImage;
+    deps.ensureWarmImage = async (project, opts) => {
+      for (let i = 0; i < 3; i++) {
+        await opts.heartbeat?.(); // resolves while owned
+        beats += 1;
+      }
+      return origEnsure(project, opts);
+    };
+    const outcome = await driveProviderTransition(deps, res.row.transitionId);
+    expect(outcome).toBe('activated');
+    expect(beats).toBe(3); // the drive DID thread a heartbeat callback into the build
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
   });
 });

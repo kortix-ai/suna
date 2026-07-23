@@ -17,7 +17,7 @@ import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
+import { getSandboxProvider, type BuildLogTap, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
 import { PPWARM_REAP_PROTECT_MS, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
@@ -1266,7 +1266,14 @@ export interface PerProjectWarmResult {
  */
 export async function ensurePerProjectWarmImage(
   project: GitBackedProject,
-  opts: { accountId?: string; provider?: string; source?: SnapshotBuildSource } = {},
+  opts: {
+    accountId?: string;
+    provider?: string;
+    source?: SnapshotBuildSource;
+    /** Lease-renewal hook, forwarded into the provider's build-wait poll loop so
+     *  a long build never lets the caller's lease TTL lapse. */
+    heartbeat?: () => void | Promise<void>;
+  } = {},
 ): Promise<PerProjectWarmResult> {
   if (!project.repoUrl) throw new SnapshotBuildError('project has no repo url — cannot bake per-project warm image');
   const buildProvider = opts.provider ?? config.getDefaultProvider();
@@ -1308,6 +1315,7 @@ export async function ensurePerProjectWarmImage(
   }
 
   const warmRepo = await resolveWarmRepoContext(project);
+  const buildTap: BuildLogTap | undefined = opts.heartbeat ? { heartbeat: opts.heartbeat } : undefined;
 
   // FAST PATH: FROM the already-built shared default image instead of
   // recomposing + rebuilding the full ~15-layer toolchain (apt/pip/opencode/
@@ -1355,7 +1363,7 @@ export async function ensurePerProjectWarmImage(
     };
     if (baseImageRef) {
       try {
-        await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef });
+        await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef }, buildTap);
       } catch (fastPathErr) {
         // Never let a fast-path failure (a stale/unpullable base ref, a
         // provider-side hiccup building FROM it, …) take down session boot —
@@ -1366,10 +1374,10 @@ export async function ensurePerProjectWarmImage(
           `[snapshots] per-project warm: FROM-base fast path failed for ${snapshotName} ` +
           `(base=${baseImageRef}) — falling back to full rebuild: ${msg.slice(0, 200)}`,
         );
-        await provider.buildSnapshot(fullRebuildInput);
+        await provider.buildSnapshot(fullRebuildInput, buildTap);
       }
     } else {
-      await provider.buildSnapshot(fullRebuildInput);
+      await provider.buildSnapshot(fullRebuildInput, buildTap);
     }
     if (buildId) await closeBuildLogReady(buildId);
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);

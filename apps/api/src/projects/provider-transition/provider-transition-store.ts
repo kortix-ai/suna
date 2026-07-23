@@ -279,7 +279,21 @@ export async function insertPrebuildTransition(
   }
 }
 
-// ─── Drive-time writes (fenced by the lease) ─────────────────────────────────
+// ─── Drive-time writes (fenced by the lease epoch) ───────────────────────────
+
+/**
+ * WHERE predicate for a drive-time write. When `expectedEpoch` is supplied the
+ * write is FENCED: it targets the row only while its `lease_epoch` still equals
+ * the epoch this drive acquired (COALESCE-guarded so a pre-migration/backfilled
+ * 0 is handled), so a zombie whose lease was re-taken (epoch bumped) matches 0
+ * rows and writes nothing. Omitting the epoch (test setup, reconciler-adjacent
+ * supersession) keeps the unfenced by-id behavior.
+ */
+function fencedWhere(transitionId: string, expectedEpoch?: number) {
+  const byId = eq(providerTransitions.transitionId, transitionId);
+  if (expectedEpoch === undefined) return byId;
+  return and(byId, eq(sql`COALESCE(${providerTransitions.leaseEpoch}, 0)`, expectedEpoch));
+}
 
 export interface TransitionPatch {
   status?: ProviderTransitionStatus;
@@ -294,15 +308,23 @@ export interface TransitionPatch {
   activatedAt?: Date | null;
 }
 
+/**
+ * Patch a transition row. Returns `true` if a row was written, `false` if the
+ * fence rejected it (this drive no longer owns the lease). Callers that pass
+ * `expectedEpoch` MUST check the result and cease on `false`.
+ */
 export async function updateTransition(
   db: Database,
   transitionId: string,
   patch: TransitionPatch,
-): Promise<void> {
-  await db
+  expectedEpoch?: number,
+): Promise<boolean> {
+  const rows = await db
     .update(providerTransitions)
     .set({ ...(patch as Record<string, unknown>), updatedAt: new Date() })
-    .where(eq(providerTransitions.transitionId, transitionId));
+    .where(fencedWhere(transitionId, expectedEpoch))
+    .returning({ transitionId: providerTransitions.transitionId });
+  return rows.length > 0;
 }
 
 /**
@@ -311,6 +333,12 @@ export async function updateTransition(
  * heartbeat is null or older than the lease TTL, stamping a fresh heartbeat so a
  * second worker's identical UPDATE matches nothing. Returns the leased row or
  * null (someone else owns it / it's gated / it's terminal).
+ *
+ * On a successful take it BUMPS the fencing token (`lease_epoch` = COALESCE(...,0)+1)
+ * and returns the row carrying the new epoch. The drive threads that epoch through
+ * every state write + the activation CAS: a zombie drive holding a STALE epoch
+ * (its lease expired mid-build and a new owner re-acquired, bumping the token) then
+ * matches 0 rows on every fenced write and ceases instead of clobbering state.
  */
 export async function acquireLease(
   db: Database,
@@ -321,7 +349,11 @@ export async function acquireLease(
   const staleBefore = new Date(now.getTime() - leaseTtlMs);
   const rows = await db
     .update(providerTransitions)
-    .set({ heartbeatAt: now, updatedAt: now })
+    .set({
+      heartbeatAt: now,
+      updatedAt: now,
+      leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+    })
     .where(
       and(
         eq(providerTransitions.transitionId, transitionId),
@@ -334,11 +366,26 @@ export async function acquireLease(
   return rows[0] ?? null;
 }
 
-export async function heartbeat(db: Database, transitionId: string): Promise<void> {
-  await db
+/**
+ * Renew the lease heartbeat DURING a long build wait so the 10-min TTL never
+ * lapses mid-build (a 30-40 min Platinum build otherwise outlives the TTL and the
+ * resume worker double-drives). Fenced on `expectedEpoch`: returns `true` while
+ * this drive still owns the lease, `false` once a newer owner re-acquired (bumped
+ * the epoch) — the caller stops renewing/waiting. A transient DB error is the
+ * caller's to swallow (keep building); a clean 0-row result is a real revocation.
+ */
+export async function heartbeat(
+  db: Database,
+  transitionId: string,
+  expectedEpoch?: number,
+): Promise<boolean> {
+  const now = new Date();
+  const rows = await db
     .update(providerTransitions)
-    .set({ heartbeatAt: new Date(), updatedAt: new Date() })
-    .where(eq(providerTransitions.transitionId, transitionId));
+    .set({ heartbeatAt: now, updatedAt: now })
+    .where(fencedWhere(transitionId, expectedEpoch))
+    .returning({ transitionId: providerTransitions.transitionId });
+  return rows.length > 0;
 }
 
 /**
@@ -350,8 +397,9 @@ export async function releaseForRetry(
   db: Database,
   transitionId: string,
   patch: { attempts: number; lastError: string; errorClass: string; nextRetryAt: Date; status?: ProviderTransitionStatus },
-): Promise<void> {
-  await db
+  expectedEpoch?: number,
+): Promise<boolean> {
+  const rows = await db
     .update(providerTransitions)
     .set({
       status: patch.status ?? 'building',
@@ -362,7 +410,9 @@ export async function releaseForRetry(
       heartbeatAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(providerTransitions.transitionId, transitionId));
+    .where(fencedWhere(transitionId, expectedEpoch))
+    .returning({ transitionId: providerTransitions.transitionId });
+  return rows.length > 0;
 }
 
 /**
@@ -381,8 +431,9 @@ export async function releaseForWaiting(
   db: Database,
   transitionId: string,
   patch: { nextRetryAt: Date; note?: string },
-): Promise<void> {
-  await db
+  expectedEpoch?: number,
+): Promise<boolean> {
+  const rows = await db
     .update(providerTransitions)
     .set({
       status: 'building',
@@ -393,15 +444,18 @@ export async function releaseForWaiting(
       heartbeatAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(providerTransitions.transitionId, transitionId));
+    .where(fencedWhere(transitionId, expectedEpoch))
+    .returning({ transitionId: providerTransitions.transitionId });
+  return rows.length > 0;
 }
 
 export async function failTransition(
   db: Database,
   transitionId: string,
   patch: { attempts: number; lastError: string; errorClass: string },
-): Promise<void> {
-  await db
+  expectedEpoch?: number,
+): Promise<boolean> {
+  const rows = await db
     .update(providerTransitions)
     .set({
       status: 'failed',
@@ -412,7 +466,9 @@ export async function failTransition(
       nextRetryAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(providerTransitions.transitionId, transitionId));
+    .where(fencedWhere(transitionId, expectedEpoch))
+    .returning({ transitionId: providerTransitions.transitionId });
+  return rows.length > 0;
 }
 
 /** Highest live SWITCH generation for a project (0 if none) — supersession check. */
@@ -468,6 +524,14 @@ export async function countLiveTransitions(db: Database): Promise<number> {
  * atomically. On loss (a newer request bumped the generation) the transition is
  * marked superseded. Two workers activating different transitions serialize on
  * the row lock; the older loses.
+ *
+ * ALSO fenced on the LEASE EPOCH (when `leaseEpoch` is supplied): a zombie drive
+ * that lost its lease to a newer owner would still carry the SAME generation for
+ * the SAME transition row, so the generation CAS alone cannot tell them apart —
+ * the epoch does. Under the project lock we re-read the row's `lease_epoch`; if it
+ * no longer equals the caller's, the drive was fenced out and activation is
+ * refused WITHOUT touching the pin (the current owner will activate). The
+ * generation CAS is kept intact underneath.
  */
 export async function activateWithCas(
   db: Database,
@@ -479,8 +543,11 @@ export async function activateWithCas(
     snapshotName: string;
     externalTemplateId: string | null;
     now: Date;
+    /** Lease epoch this drive acquired. When set, activation additionally
+     *  requires the row's lease_epoch to still match (zombie fencing). */
+    leaseEpoch?: number;
   },
-): Promise<{ activated: boolean; reason: 'won' | 'lost_cas' | 'project_missing' }> {
+): Promise<{ activated: boolean; reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' }> {
   return db.transaction(async (tx) => {
     const [project] = await tx
       .select({ metadata: projects.metadata, generation: projects.sandboxProviderGeneration })
@@ -489,6 +556,21 @@ export async function activateWithCas(
       .for('update')
       .limit(1);
     if (!project) return { activated: false, reason: 'project_missing' as const };
+
+    // Lease fence: a fenced-out zombie must not win activation even at a matching
+    // generation. Read the row's epoch under the project lock; a mismatch means a
+    // newer owner re-acquired — refuse WITHOUT flipping the pin (do not mark the
+    // row superseded either; the current owner is driving it).
+    if (args.leaseEpoch !== undefined) {
+      const [t] = await tx
+        .select({ leaseEpoch: providerTransitions.leaseEpoch })
+        .from(providerTransitions)
+        .where(eq(providerTransitions.transitionId, args.transitionId))
+        .limit(1);
+      if (!t || (t.leaseEpoch ?? 0) !== args.leaseEpoch) {
+        return { activated: false, reason: 'lost_lease' as const };
+      }
+    }
 
     const recorded = project.generation ?? 0;
     // Reserved-at-request semantics: the winning transition's generation EQUALS
