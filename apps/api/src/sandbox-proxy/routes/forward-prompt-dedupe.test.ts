@@ -121,6 +121,58 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     expect(second.status).toBe(200);
     expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
   });
+
+  test('an AMBIGUOUS 502 keeps the claim — a retry still short-circuits (no double-send)', async () => {
+    // A 502 may mean the box already accepted the prompt (the gateway just lost
+    // the response). Re-POSTing could double-enqueue, so the claim MUST hold: the
+    // retry is deduped, and the message is delivered at most once.
+    queueFetch(new Response('bad gateway', { status: 502 }));
+    const args = [
+      'sb-1', 8000, { kind: 'principal', userId: 'u1' } as const,
+      'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': 'ambig-1' }),
+      PROMPT_BODY, 'http://app.local',
+    ] as const;
+    const first = await forwardToSandbox(...args);
+    const second = await forwardToSandbox(...args);
+    expect(first.status).toBe(502);
+    // The retry never re-hit the upstream — the claim survived the ambiguous fail.
+    expect(fetchCalls).toBe(1);
+    expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test(
+    'a prompt that PROVABLY never reached the box releases the claim so a retry re-delivers',
+    async () => {
+      // Every attempt is a refused connection: the message can NOT have been
+      // accepted, so the up-front dedupe claim would otherwise turn the client's
+      // retry into a bogus 200 "duplicate" and silently drop the prompt. The claim
+      // is released on this path so the retry actually delivers.
+      const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8000'), {
+        code: 'ECONNREFUSED',
+      });
+      let refusedCalls = 0;
+      (globalThis as { fetch: unknown }).fetch = async () => {
+        refusedCalls += 1;
+        throw refused;
+      };
+      const args = [
+        'sb-1', 8000, { kind: 'principal', userId: 'u1' } as const,
+        'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': 'lost-1' }),
+        PROMPT_BODY, 'http://app.local',
+      ] as const;
+      const first = await forwardToSandbox(...args);
+      expect(first.status).toBe(502); // sandbox upstream unreachable
+      expect(refusedCalls).toBeGreaterThanOrEqual(1);
+
+      // Claim released → the retry reaches the (now-recovered) upstream instead of
+      // short-circuiting. This is the message-loss fix.
+      queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
+      const second = await forwardToSandbox(...args);
+      expect(fetchCalls).toBe(1);
+      expect(second.status).toBe(200);
+    },
+    20_000,
+  );
 });
 
 describe('forwardToSandbox — idempotent GET retry is unchanged', () => {
