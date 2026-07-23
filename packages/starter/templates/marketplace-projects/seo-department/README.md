@@ -28,6 +28,7 @@ team.
 
 1. Start the setup session. The installed files are the SEO department's
    operating system; your company still needs to bring its real website context.
+   The setup agent reads `install.md` for the template-specific install guide.
 2. Give the director the core inputs: primary domain, target market, website
    repository, default branch, CMS/content source, analytics/Search Console,
    priority pages, competitors, brand terms, and approval channel.

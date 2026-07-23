@@ -315,6 +315,7 @@ describe('marketplace projects — full project templates', () => {
     expect(paths.has('seo-department/project.json')).toBe(true);
     expect(paths.has('seo-department/kortix.yaml')).toBe(true);
     expect(paths.has('seo-department/README.md')).toBe(true);
+    expect(paths.has('seo-department/install.md')).toBe(true);
     expect(paths.has('seo-department/.kortix/memory/SEO.md')).toBe(true);
     expect(paths.has('seo-department/.kortix/opencode/agents/seo-director.md')).toBe(true);
     expect(paths.has('seo-department/.kortix/opencode/agents/technical-seo.md')).toBe(true);
@@ -345,6 +346,7 @@ describe('marketplace projects — full project templates', () => {
 
   test('SEO Department guides company setup around real website repo access', () => {
     const readme = files.find((f) => f.path === 'seo-department/README.md')?.content ?? '';
+    const install = files.find((f) => f.path === 'seo-department/install.md')?.content ?? '';
     const director = files.find((f) =>
       f.path === 'seo-department/.kortix/opencode/agents/seo-director.md'
     )?.content ?? '';
@@ -353,7 +355,11 @@ describe('marketplace projects — full project templates', () => {
     )?.content ?? '';
 
     expect(readme).toContain('your company still needs to bring its real website context');
+    expect(install).toContain('Use this form');
+    expect(install).toContain('kortix triggers info repo-seo-watch');
+    expect(install).toContain('WEBHOOK_SEO_SECRET');
     expect(director).toContain('Run the company onboarding flow');
+    expect(director).toContain('install.md');
     expect(director).toContain('website/app repository');
     expect(repoSkill).toContain('do not assume the current project repo is the site');
   });

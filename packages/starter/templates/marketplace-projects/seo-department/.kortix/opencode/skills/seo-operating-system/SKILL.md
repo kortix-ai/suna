@@ -30,7 +30,8 @@ blank, run setup before doing strategy work. A company needs to bring its real
 assets; this starter only provides the department's agents, skills, triggers,
 and operating memory.
 
-Collect these inputs in one concise intake:
+Read `install.md` first and follow its setup checklist. Collect these inputs in
+one concise intake:
 
 - primary public domain and canonical host,
 - target market, language, and main conversion goals,
