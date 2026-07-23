@@ -54,6 +54,28 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ['queued', 'running', 'succeeded', 'failed', 'dead_lettered'],
 );
 
+// Lifecycle of a durable sandbox-provider migration (prepare → verify →
+// activate). The active provider is NOT flipped until the target's per-project
+// ppwarm image is built + verified; see apps/api/src/projects/provider-transition/*.
+//   pending     — recorded; source provider still active for new sessions
+//   building    — the target ppwarm image is being (re)built
+//   ready       — image built + present on the target provider
+//   activating  — passed re-verification; flipping the active pin (CAS)
+//   activated   — pin flipped; new sessions use the prepared image
+//   failed      — prep failed; source provider remains active (retryable)
+//   superseded  — a newer transition/intent replaced this one
+//   cancelled   — the user switched back / cancelled before activation
+export const providerTransitionStatusEnum = kortixSchema.enum('provider_transition_status', [
+  'pending',
+  'building',
+  'ready',
+  'activating',
+  'activated',
+  'failed',
+  'superseded',
+  'cancelled',
+]);
+
 // `member` is the floor project role (renamed from `user`, see the
 // project_role_member_rename migration). `user` and the older `viewer` are
 // DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
@@ -266,6 +288,13 @@ export const projects = kortixSchema.table(
     manifestPath: text('manifest_path').default('kortix.yaml').notNull(),
     status: projectStatusEnum('status').default('active').notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    // Monotonic CAS token for sandbox-provider switching. Reserved (bumped) on
+    // THIS row at switch-REQUEST time and stamped onto the new provider_transitions
+    // row; a later switch/cancel bumps it again. Activation is a conditional
+    // UPDATE predicated on this value still equalling the transition's stamped
+    // generation — so an older transition settling late can never overwrite newer
+    // intent. See apps/api/src/projects/provider-transition/*.
+    sandboxProviderGeneration: integer('sandbox_provider_generation').default(0).notNull(),
     lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1314,6 +1343,86 @@ export const projectSnapshotBuilds = kortixSchema.table(
       table.status,
       table.startedAt.desc(),
     ),
+  ],
+);
+
+// Durable prepare → verify → activate record for switching a project's active
+// sandbox provider (primary use: Daytona → Platinum). One row per switch
+// request; survives API restarts (a worker resumes non-terminal rows). The
+// active provider (projects.metadata.default_sandbox_provider) is only flipped
+// once `snapshot_name` is built + verified on `target_provider`. `generation`
+// is the monotonically-increasing CAS token: activation only wins if this
+// transition's generation is the latest recorded for the project, so an older
+// transition settling late can never overwrite newer intent.
+export const providerTransitions = kortixSchema.table(
+  'provider_transitions',
+  {
+    transitionId: uuid('transition_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // Provider the project was on when the switch was requested (audit; the
+    // rollback target on a failed prep).
+    sourceProvider: sandboxProviderEnum('source_provider').notNull(),
+    targetProvider: sandboxProviderEnum('target_provider').notNull(),
+    // Monotonic per-project CAS token, reserved on the project row at
+    // switch-REQUEST time. NULL for a PREBUILD row: a prebuild builds the image
+    // but carries no switch-INTENT, so it never bumps projects.sandbox_provider_generation
+    // and can never activate — it cannot starve a real user switch. An on-demand
+    // switch that adopts a ready prebuild stamps it with a freshly-reserved
+    // generation (+ mode=switch). Multiple NULLs coexist under the unique index.
+    generation: integer('generation'),
+    // 'switch' (user intent → auto-activates when ready) | 'prebuild' (image
+    // only, invisible to routing until adopted). Kept in a column (not metadata)
+    // so the reconciler filters on it cheaply.
+    mode: varchar('mode', { length: 16 }).default('switch').notNull(),
+    status: providerTransitionStatusEnum('status').default('pending').notNull(),
+    // Resolved prep identity — the exact thing we build + verify before flipping.
+    commitSha: text('commit_sha'),
+    baseRuntimeIdentity: text('base_runtime_identity'),
+    snapshotName: text('snapshot_name'),
+    // Exact provider-side template/build id (Platinum returns one) — tracked so
+    // readiness is checked by id, not a truncated name listing.
+    externalTemplateId: text('external_template_id'),
+    attempts: integer('attempts').default(0).notNull(),
+    lastError: text('last_error'),
+    // Explicit persisted failure class (auth_terminal | vanished | transient |
+    // none) so a resumed drive on another instance retries/dead-letters exactly
+    // like the one that failed — never re-derived from an in-memory guess.
+    errorClass: varchar('error_class', { length: 32 }),
+    // Persisted backoff gate (DB now()). A retryable failure sets this to
+    // now()+backoff; the resume worker skips a row until it passes. Survives
+    // restarts so backoff is not lost with process memory.
+    nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+    // Lease heartbeat for the resume worker (stale ⇒ re-drivable). Mirrors
+    // suna_account_migrations.heartbeat_at.
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_provider_transitions_project_recent').on(table.projectId, table.requestedAt.desc()),
+    index('idx_provider_transitions_status').on(table.status),
+    index('idx_provider_transitions_resume').on(table.status, table.nextRetryAt, table.heartbeatAt),
+    // Atomic generation allocation guard: one transition per (project,
+    // generation). The request path reserves the generation on the project row
+    // under a row lock; this unique index is the backstop that makes a
+    // double-allocation a hard error rather than silent CAS corruption.
+    unique('uq_provider_transitions_project_generation').on(table.projectId, table.generation),
+    // Dedup key: at most one LIVE transition per exact prep identity, so repeated
+    // switch calls collapse onto one build. Covers live statuses ONLY —
+    // failed/superseded/cancelled rows must never block a fresh switch.
+    uniqueIndex('uq_provider_transitions_live_identity')
+      .on(table.projectId, table.targetProvider, table.commitSha, table.baseRuntimeIdentity)
+      .where(sql`status in ('pending','building','ready','activating')`),
   ],
 );
 

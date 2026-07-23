@@ -108,6 +108,17 @@ export interface SandboxProviderAdapter {
   getSnapshotImageRef?(snapshotName: string): Promise<string | null>;
 
   /**
+   * Optional: resolve the provider-side EXTERNAL template/build id for an
+   * already-registered snapshot name — persisted on a durable provider-migration
+   * transition so it is tracked by the exact id the provider returned, not a
+   * truncated name listing (see provider-transitions). Returns null when the
+   * provider exposes no such id, the snapshot isn't registered yet, or on any
+   * lookup error; callers treat null as "no id yet", never a hard failure.
+   * Absent on providers with no external template id concept.
+   */
+  getSnapshotExternalId?(snapshotName: string): Promise<string | null>;
+
+  /**
    * Optional agent-only fast path: produce `newSnapshotName` from a predecessor
    * `sourceSnapshotName` by swapping ONLY the kortix-agent binary (no rebuild).
    * Implemented by providers that control the host filesystem (Platinum). Absent

@@ -50,6 +50,13 @@
       "when": 1784711662984,
       "tag": "20260722091422_add_session_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784764450225,
+      "tag": "20260722235410_provider_transitions",
+      "breakpoints": true
     }
   ]
 }

@@ -20,8 +20,8 @@ import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../exper
 import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { config, type SandboxProviderName } from '../../config';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
+import { requestProviderTransition, ProviderTransitionError } from '../provider-transition/provider-transition-service';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -1207,25 +1207,35 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const body = await readBody(c);
     const raw = body.provider ?? body.sandbox_provider;
-    const provider = raw === null || raw === undefined || raw === '' ? null : String(raw);
     // Floor 'read'; project.customize.write is the human gate below (was
     // 'manage' → project.write, so unchecking customize.write did nothing here).
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    if (provider !== null && !config.isProviderEnabled(provider as SandboxProviderName)) {
-      return c.json({ error: `Unknown or disabled sandbox provider: ${provider}` }, 400);
+
+    // Route the change through the durable prepare→verify→activate workflow.
+    // Switching to a safe target (null clear, the platform-default provider, or
+    // the already-active provider) is applied immediately and returns the
+    // updated project (back-compat). Switching to a DIFFERENT enabled provider
+    // (the Daytona→Platinum case) does NOT flip the active provider now — it
+    // records a durable transition, keeps the source active for new sessions,
+    // and returns a PREPARATION object the UI polls until the target image is
+    // built + verified, then activated.
+    try {
+      const result = await requestProviderTransition({ projectId, targetRaw: raw });
+      if (result.kind === 'immediate') {
+        if (result.projectRow.status === 'archived') return c.json({ error: 'Not found' }, 404);
+        return c.json(
+          serializeProject(result.projectRow, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }),
+        );
+      }
+      return c.json(result.view);
+    } catch (err) {
+      if (err instanceof ProviderTransitionError) {
+        return c.json({ error: err.message }, err.code === 'bad_provider' ? 400 : 404);
+      }
+      throw err;
     }
-    const meta: Record<string, unknown> = { ...((loaded.row.metadata as Record<string, unknown> | null) ?? {}) };
-    if (provider === null) delete meta.default_sandbox_provider;
-    else meta.default_sandbox_provider = provider;
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: meta, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   },
 );
