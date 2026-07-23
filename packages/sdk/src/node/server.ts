@@ -27,8 +27,10 @@
  * isolated from any other concurrent call in the same process.
  */
 import { createKortix, type Kortix } from '../core/client/kortix';
+import { OPENCODE_RUNTIME_CLIENT_BRAND } from '../core/runtime/client';
 import { runScoped, runWithKortix, getScopedConfig } from '../platform/config-node';
 import type { KortixPlatformConfig } from '../core/http/config';
+import { scopeRuntimeClient } from './scope-runtime-client';
 
 export { runWithKortix, getScopedConfig };
 
@@ -60,6 +62,21 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function wrapScoped<T>(value: T, config: KortixPlatformConfig, seen: WeakSet<object>, depth = 0): T {
   if (depth > MAX_WRAP_DEPTH) return value;
 
+  // The `.runtime` / `runtime()` escape hatch returns a raw opencode client — a
+  // class instance the plain-object/function recursion below would (correctly,
+  // for a vendor object) pass through untouched. But its methods authenticate
+  // with the AMBIENT config at call time, and the caller invokes them outside
+  // any scope. Scope the branded client's method calls to THIS config so the
+  // escape hatch is as tenant-isolated as the first-class facade methods. See
+  // `scope-runtime-client.ts`.
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    (value as Record<PropertyKey, unknown>)[OPENCODE_RUNTIME_CLIENT_BRAND]
+  ) {
+    return scopeRuntimeClient(value as object, config) as unknown as T;
+  }
+
   if (typeof value === 'function') {
     const fn = value as (...args: unknown[]) => unknown;
     const wrapped = (...args: unknown[]): unknown => {
@@ -87,7 +104,14 @@ function wrapScoped<T>(value: T, config: KortixPlatformConfig, seen: WeakSet<obj
       if (desc.get) {
         Object.defineProperty(out, key, {
           enumerable: true,
-          get: () => wrapScoped(desc.get!.call(value), config, new WeakSet(), 0),
+          // Run the getter itself inside the scope, not just its result: a getter
+          // like `session.runtime` builds its client via `getClientForUrl`, whose
+          // `isConfigured()` guard must see THIS request's config — a scoped-only
+          // server never writes the process-global one, so an out-of-scope build
+          // would throw "no auth token provider configured". The built (branded)
+          // client is then scoped by `wrapScoped`'s branded-client branch above.
+          get: () =>
+            runScoped(config, () => wrapScoped(desc.get!.call(value), config, new WeakSet(), 0)),
         });
       } else {
         out[key] = wrapScoped(desc.value, config, seen, depth + 1);

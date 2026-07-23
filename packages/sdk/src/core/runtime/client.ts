@@ -54,6 +54,20 @@ export * from "./kortix-master";
 
 
 /**
+ * Brand marking a value as an authenticated opencode runtime client built by
+ * `getClientForUrl`/`getClient` (the `.runtime` / `runtime()` escape hatch).
+ * `@kortix/sdk/server` reads this to recognise the raw `OpencodeClient` its
+ * generic config-scoping wrapper would otherwise pass through untouched, and to
+ * bind each of its method calls to the current request's config. A global
+ * (`Symbol.for`) symbol so a host that ends up with two copies of this module on
+ * disk still agrees on the brand. Not part of the public API. See
+ * `scope-runtime-client.ts`.
+ */
+export const OPENCODE_RUNTIME_CLIENT_BRAND: unique symbol = Symbol.for(
+	'kortix.sdk.opencodeRuntimeClient',
+);
+
+/**
  * Per-URL client cache. Unlike `getClient()` (which tracks only the single
  * active server), this keeps one client alive PER sandbox URL so we can talk to
  * several session sandboxes in parallel — every open session stays connected to
@@ -122,6 +136,10 @@ export function getClientForUrl(url: string): OpencodeClient {
 	}
 
 	const client = createOpencodeClient({ baseUrl: url, fetch: authenticatedFetch as typeof fetch });
+	// Brand it (once, at creation — cached clients return early above and are
+	// never re-branded) so `@kortix/sdk/server` can scope its calls per request.
+	// Non-enumerable so it never shows up in host enumeration of the client.
+	Object.defineProperty(client, OPENCODE_RUNTIME_CLIENT_BRAND, { value: true });
 	clientsByUrl.set(url, client);
 	return client;
 }
