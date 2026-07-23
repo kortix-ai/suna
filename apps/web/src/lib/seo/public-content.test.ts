@@ -86,7 +86,7 @@ describe('public SEO/AEO content coverage', () => {
     }
   });
 
-  test('serves Markdown inline as crawlable UTF-8 plain text', async () => {
+  test('serves Markdown inline as crawlable UTF-8 Markdown', async () => {
     const record = getPublicContentRecords({ includeUseCases: true }).find(
       (item) => item.kind === 'blog' && item.markdownPath,
     );
@@ -114,7 +114,7 @@ describe('public SEO/AEO content coverage', () => {
       },
     );
     expect(routeResponse.status).toBe(200);
-    expect(routeResponse.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(routeResponse.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
     expect(await routeResponse.text()).toContain(`# ${record!.title}`);
   });
 

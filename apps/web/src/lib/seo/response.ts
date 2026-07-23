@@ -9,8 +9,9 @@ export function markdownResponse(markdown: string, record: PublicContentRecord):
     headers: {
       'Cache-Control': MACHINE_CONTENT_CACHE_CONTROL,
       'Content-Disposition': 'inline',
-      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Type': 'text/markdown; charset=utf-8',
       Link: `<${absoluteUrl(record.htmlPath)}>; rel="canonical"; type="text/html"`,
+      Vary: 'Accept',
       'X-Content-Type-Options': 'nosniff',
       'X-Robots-Tag': 'index, follow',
     },
