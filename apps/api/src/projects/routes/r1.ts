@@ -9,7 +9,6 @@ import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import {
-  createRepo,
   getGitHubAppInstallation,
   verifyGitHubAppInstallStatePayload,
   verifyGitHubInstallationAdmin,
