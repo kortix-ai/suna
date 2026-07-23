@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { getStarterFiles, type StarterFile, type StarterTemplateId } from '@kortix/starter';
+
+import { reconcileLegacyOpencodeSymlink } from './agents.ts';
 
 export interface ScaffoldInput {
   /** Absolute path of the destination directory. Must already exist. */
@@ -41,6 +43,19 @@ export function applyScaffold(input: ScaffoldInput): ScaffoldResult {
   const written: string[] = [];
   const skipped: string[] = [];
 
+  // A legacy `.opencode` symlink (pre-1.x scaffold, pointing at
+  // `.kortix/opencode`) must never be written *through* here — this loop is
+  // about to create the canonical real `.opencode` directory, which
+  // supersedes that compat link outright, whether or not its old target
+  // still exists. `keepIfTargetExists: false` is what makes this seam
+  // different from `wireCodingAgents`'s steady-state reconciliation, which
+  // keeps the link alive for an un-migrated repo. A user's own custom
+  // symlink to anywhere else is left completely alone.
+  const legacySkip = reconcileLegacyOpencodeSymlink(input.repoRoot, {
+    keepIfTargetExists: false,
+  });
+  if (legacySkip) skipped.push(legacySkip);
+
   for (const file of files) {
     const abs = resolve(input.repoRoot, file.path);
     if (input.preserveExisting && existsSync(abs)) {
@@ -48,7 +63,11 @@ export function applyScaffold(input: ScaffoldInput): ScaffoldResult {
       continue;
     }
     mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, file.content, 'utf8');
+    if (file.mode === '120000') {
+      symlinkSync(file.content, abs);
+    } else {
+      writeFileSync(abs, file.content, 'utf8');
+    }
     written.push(file.path);
   }
 

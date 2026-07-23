@@ -23,6 +23,14 @@ WORKDIR /agent
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+# Drop the two workspace-only devDeps (@kortix/sdk, @kortix/shared) before the
+# frozen install: they are `workspace:*` links resolvable only inside the pnpm
+# monorepo, and this build context is a single isolated app, so bun would fail
+# with "Workspace dependency not found". They are consumed solely by the
+# integration tests, which never enter the compiled binary (src/main.ts graph
+# only) and are excluded from the build typecheck (tsconfig.build.json). The
+# committed bun.lock already reflects the stripped dependency set.
+RUN bun -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const k of ['@kortix/sdk','@kortix/shared'])delete (p.devDependencies||{})[k];fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 RUN bun install --frozen-lockfile
 
 COPY apps/kortix-sandbox-agent-server/ ./
@@ -47,6 +55,7 @@ COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
@@ -75,6 +84,7 @@ COPY packages/starter ./packages/starter
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
+COPY packages/sdk ./packages/sdk
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -125,9 +135,13 @@ COPY --from=deps /app/node_modules ./node_modules
 # which may contain stale symlinks to the .pnpm store.
 # Full dirs (not src-only): the API and @kortix/llm-gateway resolve @kortix/llm-catalog
 # (and @kortix/shared's subpaths) at runtime, which needs package-resolution intact.
+# @kortix/manifest-schema is full-dir too: it imports @kortix/shared, and only its
+# nested node_modules carries the workspace symlink that resolves it — pnpm does
+# not shamefully-hoist workspace links into the root node_modules.
 COPY --from=deps /app/packages/shared ./packages/shared
 COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
+COPY --from=deps /app/packages/sdk ./packages/sdk
 COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
@@ -151,9 +165,7 @@ COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig
 # Without this the "Create project" seed path throws
 # ENOENT scandir packages/starter/templates/base → 502.
 COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
-COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
-COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
-COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+COPY --from=deps /app/packages/manifest-schema ./packages/manifest-schema
 COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
 COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
 COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json

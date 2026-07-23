@@ -408,7 +408,7 @@ function TemplateRow({
       ? 'platform'
       : template.source === 'ui'
         ? 'UI'
-        : manifestVersion === 2
+        : manifestVersion && manifestVersion >= 2
           ? 'kortix.yaml'
           : 'kortix.toml';
   const stateInfo = describeState(template.provider_state || template.daytona_state);
@@ -625,7 +625,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
               {tI18nHardcoded.raw(
                 'autoComponentsProjectsSandboxSnapshotCardJsxTextAtBootAdd8305ffcd',
               )}{' '}
-              {manifestVersion === 2 ? (
+              {manifestVersion && manifestVersion >= 2 ? (
                 <>
                   <code className="font-mono">sandbox.templates</code> in{' '}
                   <code className="font-mono">kortix.yaml</code>

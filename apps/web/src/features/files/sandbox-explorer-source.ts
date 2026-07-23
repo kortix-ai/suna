@@ -1,7 +1,7 @@
 'use client';
 
 import type { FileExplorerSource } from '@/features/project-files/explorer-source';
-import { downloadFile } from './api/opencode-files';
+import { downloadFile } from './api/runtime-files';
 import { workspaceFileSource } from './file-source';
 import {
   useFileEventInvalidation,

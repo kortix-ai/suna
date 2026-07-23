@@ -26,13 +26,14 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/track';
+import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
   useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
@@ -46,6 +47,8 @@ import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
+import { familyForTool, toolPartStatus } from '../shared/narration';
+import { mergePortApps } from '../shared/port-apps';
 import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
 import { AppsCard } from './apps-card';
@@ -71,6 +74,9 @@ import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
+import { useChatAppOpenRequest } from './use-chat-app-open-request';
+import { useChatFileOpenRequest } from './use-chat-file-open-request';
+import { useRunningApps } from './use-running-apps';
 
 /** The path's last segment — used only to decide whether the path hint in
  *  "Ask for changes" would just repeat the display name (W12). */
@@ -116,10 +122,6 @@ export const EasyPanel = memo(function EasyPanel({
     [latestSteps],
   );
 
-  // A running app is not "one of" the outputs — it's the thing the user asked
-  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
-  // never wanted. It gets its own card; Outputs keeps the files.
-  const apps = useMemo(() => outputs.filter((o) => o.kind === 'app'), [outputs]);
   // Sorted, not filtered: everything the agent produced is still here, but the
   // report leads and the twelve files it took to build the report follow. See
   // `sortOutputs` — chronological order buries the answer under its scaffolding.
@@ -144,11 +146,35 @@ export const EasyPanel = memo(function EasyPanel({
     isSessionBusy,
   );
 
+  // A running app is not "one of" the outputs — it's the thing the user asked
+  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
+  // never wanted. It gets its own card; Outputs keeps the files. Merged with
+  // live listening ports (`useRunningApps`) so a server the agent never
+  // explicitly `show`ed is still openable the moment it starts listening —
+  // event-derived rows win on a shared port (see `mergePortApps`), since they
+  // carry the human title the agent gave the deliverable.
+  // A rising count of completed 'run'-family calls (bash/pty — the family
+  // that starts servers) — passed to `useRunningApps` so it can refetch the
+  // instant a launch command finishes instead of waiting out the poll
+  // interval (W1). Monotonic across the whole session on purpose: it only
+  // needs to ever go UP for the hook's rising-edge check to fire.
+  const executeCompletions = useMemo(
+    () =>
+      parts.filter((p) => familyForTool(p.tool) === 'run' && toolPartStatus(p) === 'completed')
+        .length,
+    [parts],
+  );
+  const portApps = useRunningApps(isRunning, executeCompletions);
+  const apps = useMemo(
+    () => mergePortApps(outputs.filter((o) => o.kind === 'app'), portApps),
+    [outputs, portApps],
+  );
+
   // W9 — the agent is blocked on a pending question/permission for THIS
   // session. Progress redirects attention to it instead of claiming to be
   // working or done. Same filter the header's needs-input chip uses (see
   // `use-deliverable-readiness.ts`), extracted once into `pendingInputCount`.
-  const waitingOnUser = useOpenCodePendingStore(
+  const waitingOnUser = useRuntimePendingStore(
     (s) => pendingInputCount(s.permissions, s.questions, sessionId) > 0,
   );
 
@@ -304,14 +330,15 @@ export const EasyPanel = memo(function EasyPanel({
    * `source` is telemetry-only (W5): where the open was triggered from — a
    * row click ('row', the default), the payoff effect ('auto'), the ready
    * chip's consume effect ('chip'), a prev/next nav closure ('nav'), or the
-   * header/palette "Open Browser" quick-view ('quick'). Never read for
-   * behavior, only reported alongside `deliverable_opened`.
+   * header/palette "Open Browser" quick-view ('quick'), a chat file-path/link
+   * click ('chat'). Never read for behavior, only reported alongside
+   * `deliverable_opened`.
    */
   const handleOpenOutput = useCallback(
     (
       output: OutputItem,
       siblings?: OutputItem[],
-      source: 'row' | 'auto' | 'chip' | 'nav' | 'quick' = 'row',
+      source: 'row' | 'auto' | 'chip' | 'nav' | 'quick' | 'chat' = 'row',
     ) => {
       // The human title, when the output carries one (W3) — never the raw
       // filename in a spot the user reads as the thing's name.
@@ -416,6 +443,52 @@ export const EasyPanel = memo(function EasyPanel({
     },
     [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit],
   );
+
+  // Chat file clicks (backtick paths, markdown /workspace links) land here in
+  // Easy mode — open the same FilePreview detail an Outputs row opens.
+  // Advanced mode's consumer is SessionFilesExplorer; Easy never mounts it.
+  const openChatFile = useCallback(
+    (path: string) => {
+      handleOpenOutput(
+        { callID: 'chat-link', kind: 'file', name: basenameOf(path), path },
+        [],
+        'chat',
+      );
+    },
+    [handleOpenOutput],
+  );
+  useChatFileOpenRequest(sessionId, openChatFile);
+
+  // Localhost URLs clicked in the CHAT (the chips and preview cards
+  // `SandboxUrlDetector` appends) land here — the running port opens as the
+  // very same `AppPreview` detail a Preview-card row opens, rather than
+  // navigating the app away to `/p/PORT`.
+  //
+  // The clicked url wins over the known app's url even when they share a port:
+  // clicking `localhost:3000/docs` must land on `/docs`. The known row is
+  // consulted only for its NAME — the human title the agent gave the
+  // deliverable beats a synthesized `localhost:3000` in the detail header and
+  // in `AppPreview`'s "Couldn't load X" copy. Siblings stay empty for the same
+  // reason `openChatFile`'s do: this synthetic item isn't a member of the Apps
+  // list, so prev/next through that list would be paging from nowhere.
+  const openChatApp = useCallback(
+    (url: string, name?: string) => {
+      const port = parseLocalhostUrl(url)?.port ?? 0;
+      const known = apps.find((a) => parseLocalhostUrl(a.url ?? '')?.port === port);
+      handleOpenOutput(
+        {
+          callID: 'chat-link',
+          kind: 'app',
+          name: known?.title ?? known?.name ?? name ?? `localhost:${port}`,
+          url,
+        },
+        [],
+        'chat',
+      );
+    },
+    [apps, handleOpenOutput],
+  );
+  useChatAppOpenRequest(sessionId, openChatApp);
 
   const outcome = useMemo(
     () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),

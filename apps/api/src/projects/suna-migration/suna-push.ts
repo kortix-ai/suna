@@ -1,13 +1,13 @@
 /**
  * Create ONE managed repo and push the assembled Suna bundle to it:
  *   <bundle>/legacy/<slug>/…   (his content)         + one synthesized root
- *   kortix.yaml / Dockerfile / .kortix/opencode       config (buildStarterFiles).
+ *   kortix.yaml / Dockerfile / .opencode              config (buildStarterFiles).
  *
  * The opencode.db is NOT a repo file — it's chat storage, shipped into the
  * sandbox separately (rehydrate). We move it out of the tree before pushing.
  */
 import { dirname, join } from 'node:path';
-import { mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readdirSync, statSync, symlinkSync } from 'node:fs';
 import { getDefaultManagedBackend } from '../git-backends/registry';
 import type { GitConnectionRef } from '../git-backends/types';
 import { buildStarterFiles } from '../starter';
@@ -15,7 +15,11 @@ import { buildStarterFiles } from '../starter';
 const STARTER_TEMPLATE = 'general-knowledge-worker';
 
 function git(args: string[], cwd: string, secret = false): void {
-  const r = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+  const r = Bun.spawnSync(['git', ...args], {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
   if (r.exitCode !== 0) {
     const err = new TextDecoder().decode(r.stderr);
     throw new Error(`git ${secret ? args[0] : args.join(' ')} failed: ${err.slice(0, 400)}`);
@@ -36,17 +40,31 @@ export interface PushedRepo {
 
 export async function pushBundleAsRepo(accountId: string, bundleDir: string): Promise<PushedRepo> {
   const backend = getDefaultManagedBackend();
-  if (!(await backend.isConfigured())) throw new Error(`managed git backend "${backend.id}" not configured (GitHub App creds)`);
+  if (!(await backend.isConfigured()))
+    throw new Error(`managed git backend "${backend.id}" not configured (GitHub App creds)`);
   if (!backend.authedPushUrl) throw new Error(`backend "${backend.id}" cannot mint a push URL`);
 
   const projectId = crypto.randomUUID();
   const slug = `suna-legacy-${projectId.slice(0, 8)}`;
-  const repo = await backend.createRepo({ accountId, projectId, slug, defaultBranch: 'main', isPrivate: true });
+  const repo = await backend.createRepo({
+    accountId,
+    projectId,
+    slug,
+    defaultBranch: 'main',
+    isPrivate: true,
+  });
 
   const ref: GitConnectionRef = {
-    provider: repo.provider, upstreamUrl: repo.upstreamUrl, externalRepoId: repo.externalRepoId,
-    repoOwner: repo.repoOwner, repoName: repo.repoName, installationId: repo.installationId,
-    credentialRef: repo.credentialRef, defaultBranch: repo.defaultBranch, managed: true, metadata: {},
+    provider: repo.provider,
+    upstreamUrl: repo.upstreamUrl,
+    externalRepoId: repo.externalRepoId,
+    repoOwner: repo.repoOwner,
+    repoName: repo.repoName,
+    installationId: repo.installationId,
+    credentialRef: repo.credentialRef,
+    defaultBranch: repo.defaultBranch,
+    managed: true,
+    metadata: {},
   };
   const pushUrl = await backend.authedPushUrl(ref);
 
@@ -58,8 +76,13 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   }
 
   // One synthesized root config for the whole project.
-  const repoFullName = repo.repoOwner && repo.repoName ? `${repo.repoOwner}/${repo.repoName}` : undefined;
-  for (const f of buildStarterFiles({ projectName: 'Legacy (Suna) projects', repoFullName, template: STARTER_TEMPLATE })) {
+  const repoFullName =
+    repo.repoOwner && repo.repoName ? `${repo.repoOwner}/${repo.repoName}` : undefined;
+  for (const f of buildStarterFiles({
+    projectName: 'Legacy (Suna) projects',
+    repoFullName,
+    template: STARTER_TEMPLATE,
+  })) {
     const full = join(bundleDir, f.path);
     mkdirSync(dirname(full), { recursive: true });
     // Exclusive create (O_EXCL via 'wx', mode 0600): the bundle dir is a
@@ -68,7 +91,8 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
     // "never clobber his content" rule (EEXIST → skip) and closes the
     // existsSync-then-write race in one step.
     try {
-      writeFileSync(full, f.content, { flag: 'wx', mode: 0o600 });
+      if (f.mode === '120000') symlinkSync(f.content, full);
+      else writeFileSync(full, f.content, { flag: 'wx', mode: 0o600 });
     } catch (e: any) {
       if (e?.code !== 'EEXIST') throw e; // his file already present — leave it
     }
@@ -83,7 +107,10 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       if (e.name === '.git') continue;
       const p = join(dir, e.name);
-      if (e.isDirectory()) { strip(p); continue; }
+      if (e.isDirectory()) {
+        strip(p);
+        continue;
+      }
       if (e.isFile()) {
         const size = statSync(p).size;
         if (size > MAX_BLOB_BYTES) {
@@ -99,9 +126,11 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
     // Exclusive create (O_EXCL, 0600) into the predictable /tmp bundle dir; a
     // retry that re-enters this step just re-uses the existing report (EEXIST).
     try {
-      writeFileSync(reportPath,
+      writeFileSync(
+        reportPath,
         `Omitted from this repo — exceeded GitHub's ${MAX_BLOB_BYTES / 1048576}MB file limit:\n\n${dropped.join('\n')}\n`,
-        { flag: 'wx', mode: 0o600 });
+        { flag: 'wx', mode: 0o600 },
+      );
     } catch (e: any) {
       if (e?.code !== 'EEXIST') throw e;
     }
@@ -112,12 +141,25 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   git(['config', 'user.email', 'migration@kortix.com'], bundleDir);
   git(['config', 'user.name', 'Kortix Migration'], bundleDir);
   git(['add', '-A'], bundleDir);
-  git(['commit', '-m', 'Import Suna legacy projects (chats restored as sessions; files under legacy/)'], bundleDir);
+  git(
+    [
+      'commit',
+      '-m',
+      'Import Suna legacy projects (chats restored as sessions; files under legacy/)',
+    ],
+    bundleDir,
+  );
   git(['push', pushUrl, `HEAD:${repo.defaultBranch}`], bundleDir, true);
 
   return {
-    projectId, provider: repo.provider, upstreamUrl: repo.upstreamUrl,
-    repoOwner: repo.repoOwner, repoName: repo.repoName, defaultBranch: repo.defaultBranch,
-    externalRepoId: repo.externalRepoId, installationId: repo.installationId, credentialRef: repo.credentialRef,
+    projectId,
+    provider: repo.provider,
+    upstreamUrl: repo.upstreamUrl,
+    repoOwner: repo.repoOwner,
+    repoName: repo.repoName,
+    defaultBranch: repo.defaultBranch,
+    externalRepoId: repo.externalRepoId,
+    installationId: repo.installationId,
+    credentialRef: repo.credentialRef,
   };
 }

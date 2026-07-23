@@ -12,7 +12,16 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
-import { copyFile, cp, mkdir, mkdtemp, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
+import {
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  rm,
+  stat,
+  symlink,
+  writeFile as writeFileFs,
+} from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,21 +43,31 @@ const REPO_ROOT = resolve(__dirname, '../../../..');
 // tests override KORTIX_SNAPSHOT_* per suite, so module-load consts let the
 // first-imported suite's fixtures win and break sibling suites in a combined run.
 // In production the env is set once, so reading per-call is behaviour-neutral.
-const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
-const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
-const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/executor-sdk');
-// Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
+const agentBinPath = () =>
+  process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH ||
+  resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
+const cliBinPath = () =>
+  process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
+const entrypointSrcPath = () =>
+  process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
+const slackCliSrcPath = () =>
+  process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
+const executorSdkSrcPath = () =>
+  process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH || resolve(REPO_ROOT, 'packages/executor-sdk');
+// Canonical starter `.opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
-const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
-  || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+const opencodeConfigSrcPath = () =>
+  process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH ||
+  resolve(REPO_ROOT, 'packages/starter/templates/base/.opencode');
+const agentSrcDir = () => resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
+const agentPackageDir = () => resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server');
+
+// Snapshot requests can race after a daemon source edit while the local API is
+// running under `bun --hot`. Collapse every stale/missing-artifact repair onto
+// one compile so simultaneous default + per-project-warm builds cannot run two
+// `bun build --compile` processes against the same output file.
+const inflightAgentBuilds = new Map<string, Promise<void>>();
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -74,9 +93,9 @@ export interface StagedContext {
 
 /**
  * Per-project COLD warm: bake the project's repo checkout into /workspace at
- * build time. Passed straight through to the Dockerfile layer, which clones the
- * repo (build-time creds, one RUN) and skips the /workspace wipe. Omit for the
- * shared, project-independent default image.
+ * build time. The API fetches and archives the exact commit before provider
+ * upload; the Dockerfile only extracts that credential-free archive. Omit for
+ * the shared, project-independent default image.
  */
 export interface WarmRepoContext {
   /** Upstream URL to clone from at BUILD time (real git host or proxy). */
@@ -85,6 +104,8 @@ export interface WarmRepoContext {
   cloneHeaders: Record<string, string>;
   /** Branch to check out (default-branch tip). */
   branch: string;
+  /** Exact resolved tip baked into the content-addressed warm image. */
+  commitSha: string;
   /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
   originUrl: string;
 }
@@ -96,7 +117,8 @@ export interface WarmRepoContext {
  *
  * `isSharedDefault` is the caller's `BuildableTemplate.isShared` — it tells the
  * layer whether /workspace is the platform's to wipe after the opencode warm-up
- * or the user's to leave alone (see `KortixToolchainLayerOpts.isSharedDefault`).
+ * or the user's to leave alone (see `KortixToolchainLayerOpts.isSharedDefault`
+ * in dockerfile-layer.ts).
  */
 export async function stageBuildContext(
   snapshotName: string,
@@ -110,36 +132,25 @@ export async function stageBuildContext(
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
   const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await ensureCanonicalAgentBinaryFresh(AGENT_BIN_PATH);
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
-  // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
-  // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
-  // dist binary — an edited src/ with a stale dist/ ships old code under a
-  // NEW content hash, which is worse than failing (caught live 2026-06-10: a
-  // daemon fix "rebuilt" into a fresh template whose forks still ran the old
-  // binary). Refuse to stage a context whose binary predates the source.
-  // Env-overridden binary paths skip this — the caller is pinning on purpose.
-  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
-    const binMtime = (await stat(AGENT_BIN_PATH)).mtimeMs;
-    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
-    const newestSrc = await newestMtimeMs(srcDir);
-    if (newestSrc > binMtime) {
-      throw new Error(
-        `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
-        `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
-        `or the image will bake stale code under a fresh content hash`,
-      );
-    }
-  }
-
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
+  let layeredWarmRepo: Awaited<ReturnType<typeof stageWarmRepoArchive>> | undefined;
+  try {
+    layeredWarmRepo = warmRepo ? await stageWarmRepoArchive(contextDir, warmRepo) : undefined;
+  } catch (error) {
+    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-  await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
+  await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), {
+    recursive: true,
+  });
   // This package is copied as source and imported directly by the in-sandbox
   // channel CLIs. Its local node_modules is neither used nor portable: pnpm
   // represents entries as links into the checkout-wide store, and E2B hashes
@@ -194,7 +205,7 @@ export async function stageBuildContext(
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
     isSharedDefault,
-    warmRepo,
+    warmRepo: layeredWarmRepo,
   });
 
   await guardBuildahPortable(composed);
@@ -204,7 +215,7 @@ export async function stageBuildContext(
   // "Path does not exist", and the auto-build can't tell it's a staging miss to
   // recover from. Assert at the source so a miss is caught here AND is retryable
   // (the daytona adapter re-stages on "staging incomplete").
-  await assertContextComplete(contextDir, dockerfileName);
+  await assertContextComplete(contextDir, dockerfileName, layeredWarmRepo?.archivePath);
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
 }
@@ -257,7 +268,9 @@ export async function stageWarmFromBaseContext(
   } catch {
     throw new Error(`build context staging incomplete: ${dockerfileName} missing in ${contextDir}`);
   }
-  console.info(`[snapshots] ${snapshotName}: FROM-base warm context staged at ${contextDir} (base=${baseImageRef})`);
+  console.info(
+    `[snapshots] ${snapshotName}: FROM-base warm context staged at ${contextDir} (base=${baseImageRef})`,
+  );
   return { contextDir, composedPath, dockerfileName };
 }
 
@@ -299,8 +312,17 @@ async function writeComposedDockerfile(composedPath: string, composed: string): 
  * Dockerfile COPYs, so a staging miss fails HERE (clear + retryable) instead of
  * as an opaque provider "Path does not exist" mid-build. Cheap stat checks.
  */
-async function assertContextComplete(contextDir: string, dockerfileName: string): Promise<void> {
-  for (const rel of ['scaffold.git', 'kortix-agent.gz', dockerfileName]) {
+async function assertContextComplete(
+  contextDir: string,
+  dockerfileName: string,
+  warmRepoArchive?: string,
+): Promise<void> {
+  for (const rel of [
+    'scaffold.git',
+    'kortix-agent.gz',
+    dockerfileName,
+    ...(warmRepoArchive ? [warmRepoArchive] : []),
+  ]) {
     try {
       await stat(join(contextDir, rel));
     } catch {
@@ -309,15 +331,151 @@ async function assertContextComplete(contextDir: string, dockerfileName: string)
   }
 }
 
+/** Materialize the exact project commit on the API host and archive it into
+ * the provider context. Auth headers exist only in the short-lived git process
+ * environment; they never enter Dockerfile text, provider logs, image history,
+ * or the archived checkout's git config. */
+async function stageWarmRepoArchive(
+  contextDir: string,
+  warmRepo: WarmRepoContext,
+): Promise<{ archivePath: string; branch: string; commitSha: string }> {
+  const checkout = join(contextDir, '.kortix-warm-repo-checkout');
+  const archiveName = 'kortix-warm-repo.tar.gz';
+  const archivePath = join(contextDir, archiveName);
+  await mkdir(checkout, { recursive: true });
+
+  const headers = Object.entries(warmRepo.cloneHeaders);
+  const gitEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: String(headers.length),
+  };
+  headers.forEach(([name, value], index) => {
+    gitEnv[`GIT_CONFIG_KEY_${index}`] = 'http.extraHeader';
+    gitEnv[`GIT_CONFIG_VALUE_${index}`] = `${name}: ${value}`;
+  });
+  const git = (args: string[]) =>
+    execFileAsyncBC('git', args, {
+      cwd: checkout,
+      env: gitEnv,
+      timeout: 120_000,
+    });
+
+  try {
+    await git(['init', '-b', warmRepo.branch]);
+    await git(['remote', 'add', 'origin', warmRepo.cloneUrl]);
+    await git(['fetch', '--depth', '1', 'origin', warmRepo.commitSha]);
+    await git(['checkout', '-B', warmRepo.branch, 'FETCH_HEAD']);
+    await git(['remote', 'set-url', 'origin', warmRepo.originUrl]);
+    const { stdout } = await git(['rev-parse', 'HEAD']);
+    if (stdout.trim() !== warmRepo.commitSha) {
+      throw new Error(`warm repo resolved ${stdout.trim()} but expected ${warmRepo.commitSha}`);
+    }
+    await execFileAsyncBC('tar', ['-czf', archivePath, '--no-xattrs', '-C', checkout, '.'], {
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
+      timeout: 120_000,
+      maxBuffer: 1024 * 1024,
+    });
+  } finally {
+    await rm(checkout, { recursive: true, force: true }).catch(() => {});
+  }
+
+  return {
+    archivePath: archiveName,
+    branch: warmRepo.branch,
+    commitSha: warmRepo.commitSha,
+  };
+}
+
 async function newestMtimeMs(dir: string): Promise<number> {
   const { readdir } = await import('node:fs/promises');
   let newest = 0;
-  for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
+  for (const entry of await readdir(dir, {
+    withFileTypes: true,
+    recursive: true,
+  })) {
     if (!entry.isFile()) continue;
-    const s = await stat(join(entry.parentPath ?? (entry as any).path ?? dir, entry.name)).catch(() => null);
+    const s = await stat(join(entry.parentPath ?? (entry as any).path ?? dir, entry.name)).catch(
+      () => null,
+    );
     if (s && s.mtimeMs > newest) newest = s.mtimeMs;
   }
   return newest;
+}
+
+async function artifactNeedsBuild(binaryPath: string, sourceDir: string): Promise<boolean> {
+  const binary = await stat(binaryPath).catch(() => null);
+  if (!binary?.isFile()) return true;
+  return (await newestMtimeMs(sourceDir)) > binary.mtimeMs;
+}
+
+/**
+ * Keep the checkout-owned daemon artifact synchronized with its source.
+ *
+ * The worktree/dev launchers build once at startup, but the API itself hot
+ * reloads. A later source edit therefore used to make every default and warm
+ * snapshot retry fail until a human manually rebuilt or restarted the stack.
+ * Repair at the staging boundary instead: this is the last point before bytes
+ * are hashed/gzipped and sent to either provider.
+ *
+ * An explicit KORTIX_SNAPSHOT_AGENT_BIN_PATH is an immutable deployment pin;
+ * it is validated but never rebuilt or compared to checkout source.
+ */
+export async function ensureAgentArtifactFresh(opts: {
+  binaryPath: string;
+  sourceDir: string;
+  build: () => Promise<void>;
+}): Promise<void> {
+  if (!(await artifactNeedsBuild(opts.binaryPath, opts.sourceDir))) return;
+
+  let buildPromise = inflightAgentBuilds.get(opts.binaryPath);
+  if (!buildPromise) {
+    buildPromise = (async () => {
+      await opts.build();
+    })().finally(() => {
+      inflightAgentBuilds.delete(opts.binaryPath);
+    });
+    inflightAgentBuilds.set(opts.binaryPath, buildPromise);
+  }
+  await buildPromise;
+
+  await assertExists(opts.binaryPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  if (await artifactNeedsBuild(opts.binaryPath, opts.sourceDir)) {
+    throw new Error(
+      `kortix-agent automatic rebuild completed but ${opts.binaryPath} is still older than ${opts.sourceDir}; ` +
+        `refusing to bake stale code`,
+    );
+  }
+}
+
+async function ensureCanonicalAgentBinaryFresh(binaryPath: string): Promise<void> {
+  if (process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
+    await assertExists(binaryPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+    return;
+  }
+
+  const packageDir = agentPackageDir();
+  await ensureAgentArtifactFresh({
+    binaryPath,
+    sourceDir: agentSrcDir(),
+    build: async () => {
+      console.warn(
+        `[snapshots] kortix-agent artifact is missing or stale; rebuilding it before staging`,
+      );
+      try {
+        await execFileAsyncBC('bun', ['run', 'build'], {
+          cwd: packageDir,
+          timeout: 10 * 60_000,
+          maxBuffer: 16 * 1024 * 1024,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(`kortix-agent automatic rebuild failed in ${packageDir}: ${detail}`, {
+          cause: err,
+        });
+      }
+    },
+  });
 }
 
 async function assertExists(path: string, envVarHint: string): Promise<void> {
@@ -371,9 +529,12 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
  * fast path, which ships just the agent (not a whole build context) and has the
  * host debugfs-swap it into the predecessor's rootfs. Caller cleans up.
  */
-export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
+export async function stageAgentBinaryGz(): Promise<{
+  gzPath: string;
+  cleanup: () => Promise<void>;
+}> {
   const AGENT_BIN_PATH = agentBinPath();
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await ensureCanonicalAgentBinaryFresh(AGENT_BIN_PATH);
   // Refuse an empty/truncated dist (e.g. an interrupted `bun build`) at the source.
   // The host re-validates (ELF/size + post-swap size match), but failing here keeps
   // a dead agent from ever being uploaded + swapped into a template.
@@ -383,25 +544,40 @@ export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: (
   const dir = await mkdtemp(join(tmpdir(), 'kortix-agent-swap-'));
   const gzPath = join(dir, 'kortix-agent.gz');
   await gzipFile(AGENT_BIN_PATH, gzPath);
-  return { gzPath, cleanup: async () => { await rm(dir, { recursive: true, force: true }).catch(() => {}); } };
+  return {
+    gzPath,
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    },
+  };
 }
 
 async function stageScaffoldRepo(contextDir: string): Promise<void> {
   const work = join(contextDir, '.scaffold-work');
   await mkdir(work, { recursive: true });
-  const files = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: DEFAULT_STARTER_TEMPLATE_ID });
+  const files = buildStarterFiles({
+    projectName: 'kortix-project',
+    repoFullName: 'kortix/kortix-project',
+    template: DEFAULT_STARTER_TEMPLATE_ID,
+  });
   for (const f of files) {
     const full = join(work, f.path);
     await mkdir(dirname(full), { recursive: true });
-    await writeFileFs(full, f.content, 'utf8');
+    if (f.mode === '120000') await symlink(f.content, full);
+    else await writeFileFs(full, f.content, 'utf8');
   }
   const env = {
-    ...process.env, GIT_TERMINAL_PROMPT: '0',
-    GIT_AUTHOR_NAME: 'Kortix', GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
-    GIT_COMMITTER_NAME: 'Kortix', GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
-    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_AUTHOR_NAME: 'Kortix',
+    GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
+    GIT_COMMITTER_NAME: 'Kortix',
+    GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
+    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+    GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
   };
-  const g = (args: string[], cwd: string) => execFileAsyncBC('git', args, { cwd, env, timeout: 60_000 });
+  const g = (args: string[], cwd: string) =>
+    execFileAsyncBC('git', args, { cwd, env, timeout: 60_000 });
   await g(['init', '-b', 'main'], work);
   await g(['config', 'user.name', 'Kortix'], work);
   await g(['config', 'user.email', 'noreply@kortix.ai'], work);

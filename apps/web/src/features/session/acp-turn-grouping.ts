@@ -1,0 +1,397 @@
+/**
+ * Pure grouping/formatting helpers for rendering the ACP transcript — turn
+ * segmentation, same-tool/reasoning grouping, reply-context parsing, and
+ * duration/cost formatting. Framework-free (no React) so the rules stay
+ * testable without mounting a component, mirroring `acp-composer-adapters.ts`.
+ */
+
+import type { AcpChatItem, AcpStoredEnvelope, AcpUsageCost, AcpUsageProjection } from '@kortix/sdk';
+import { formatDistanceStrict } from 'date-fns';
+import { acpToolName } from './acp-tool-call-card';
+
+export type AcpMessageItem = Extract<AcpChatItem, { kind: 'message' }>;
+export type AcpToolItem = Extract<AcpChatItem, { kind: 'tool' }>;
+export type AcpPlanItem = Extract<AcpChatItem, { kind: 'plan' }>;
+export type AcpRawItem = Extract<AcpChatItem, { kind: 'raw' }>;
+export type AcpQuestionItem = Extract<AcpChatItem, { kind: 'question' }>;
+
+/** Groups a flat ACP item stream into turns — one turn per user message,
+ *  with every following item (assistant text, thoughts, tools, plans, raw)
+ *  attached until the next user message starts a new turn. */
+export function groupAcpTurns(items: readonly AcpChatItem[]): AcpChatItem[][] {
+  const turns: AcpChatItem[][] = [];
+  for (const item of items) {
+    if (item.kind === 'message' && item.role === 'user') turns.push([item]);
+    else if (turns.length) turns.at(-1)!.push(item);
+    else turns.push([item]);
+  }
+  return turns;
+}
+
+/** Splits a turn into its leading user bubble (if any) and the rest. A turn
+ *  that starts with something other than a user message (e.g. orphaned
+ *  assistant activity before any prompt) has no bubble at all. */
+export function splitAcpTurn(turn: readonly AcpChatItem[]): {
+  userItem: AcpMessageItem | null;
+  restItems: AcpChatItem[];
+} {
+  const [first, ...rest] = turn;
+  if (first && first.kind === 'message' && first.role === 'user') {
+    return { userItem: first, restItems: rest };
+  }
+  return { userItem: null, restItems: [...turn] };
+}
+
+const CONTEXT_TOOLS = new Set(['read', 'glob', 'grep', 'list']);
+
+/** Normalizes a tool name into its grouping bucket — read/glob/grep/list
+ *  collapse into one "gathered context" pile, bash into one "ran commands"
+ *  pile, everything else groups by its own exact name (e.g. 3x edit). */
+export function acpToolGroupKind(toolName: string): string {
+  if (CONTEXT_TOOLS.has(toolName)) return '__context__';
+  if (toolName === 'bash') return '__shell__';
+  return toolName;
+}
+
+export type AcpTurnRenderItem =
+  | { type: 'reasoning-group'; items: AcpMessageItem[]; key: string }
+  | { type: 'tool-group'; groupKind: string; items: AcpToolItem[]; key: string }
+  | { type: 'tool-single'; item: AcpToolItem }
+  | { type: 'plan'; item: AcpPlanItem }
+  | { type: 'raw'; item: AcpRawItem }
+  | { type: 'question'; item: AcpQuestionItem }
+  | { type: 'message'; item: AcpMessageItem };
+
+/** Folds a turn's non-user items into render groups: consecutive `thought`
+ *  messages collapse into one reasoning card, 2+ consecutive same-bucket
+ *  tool calls collapse into one same-tool pile ("Gathered context" / "Ran N
+ *  commands" / "Edit · 3x"), singles stay individual — matching main's
+ *  `SameToolGroup`/`GroupedReasoningCard` folding rules. Permission items are
+ *  intentionally dropped: they render pinned above the composer (the
+ *  `AcpSessionPermissionPrompt`). Question items DO stay inline as their own
+ *  render item — the owner decision is that a question surfaces as BOTH a
+ *  composer chip (`QuestionPrompt`) and an inline transcript card
+ *  (`AcpQuestionCard`, via `AcpChatItemRow`). */
+export function groupAcpTurnItems(items: readonly AcpChatItem[]): AcpTurnRenderItem[] {
+  const out: AcpTurnRenderItem[] = [];
+  let pendingReasoning: AcpMessageItem[] = [];
+  let pendingTools: AcpToolItem[] = [];
+  let pendingToolKind: string | null = null;
+
+  const flushReasoning = () => {
+    if (pendingReasoning.length > 0) {
+      out.push({
+        type: 'reasoning-group',
+        items: pendingReasoning,
+        key: `reasoning-${pendingReasoning[0].id}`,
+      });
+      pendingReasoning = [];
+    }
+  };
+  const flushTools = () => {
+    if (pendingTools.length >= 2 && pendingToolKind) {
+      out.push({
+        type: 'tool-group',
+        groupKind: pendingToolKind,
+        items: pendingTools,
+        key: `tg-${pendingTools[0].id}`,
+      });
+    } else if (pendingTools.length === 1) {
+      out.push({ type: 'tool-single', item: pendingTools[0] });
+    }
+    pendingTools = [];
+    pendingToolKind = null;
+  };
+
+  for (const item of items) {
+    if (item.kind === 'message' && item.role === 'thought') {
+      if (item.text.trim()) {
+        flushTools();
+        pendingReasoning.push(item);
+      }
+      continue;
+    }
+    flushReasoning();
+
+    if (item.kind === 'tool') {
+      const groupKind = acpToolGroupKind(acpToolName(item));
+      if (pendingToolKind === groupKind) {
+        pendingTools.push(item);
+      } else {
+        flushTools();
+        pendingToolKind = groupKind;
+        pendingTools = [item];
+      }
+      continue;
+    }
+    flushTools();
+
+    if (item.kind === 'plan') out.push({ type: 'plan', item });
+    else if (item.kind === 'raw') out.push({ type: 'raw', item });
+    else if (item.kind === 'message') out.push({ type: 'message', item });
+    else if (item.kind === 'question') out.push({ type: 'question', item });
+    // permission items render pinned above the composer, not here.
+  }
+  flushReasoning();
+  flushTools();
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Reply context — <reply_context> wrapper (mirrors main's select-and-reply)
+// ---------------------------------------------------------------------------
+
+const REPLY_CONTEXT_RE = /<reply_context>([\s\S]*?)<\/reply_context>\s*/;
+
+/** Wraps an outgoing prompt with the reply-context XML tag main's transcript
+ *  parser expects, so a reply reads back out via `parseAcpReplyContext`. */
+export function wrapAcpReplyContext(text: string, replyText: string): string {
+  return `<reply_context>${replyText}</reply_context>\n\n${text}`;
+}
+
+export function parseAcpReplyContext(text: string): {
+  cleanText: string;
+  replyContext: string | null;
+} {
+  const match = text.match(REPLY_CONTEXT_RE);
+  if (!match) return { cleanText: text, replyContext: null };
+  return { cleanText: text.replace(REPLY_CONTEXT_RE, '').trim(), replyContext: match[1].trim() };
+}
+
+// ---------------------------------------------------------------------------
+// Turn duration — best-effort from envelope timestamps
+// ---------------------------------------------------------------------------
+
+/** ACP item ids for message-kind items embed their originating envelope
+ *  ordinal (`prompt-12`, `assistant-15`, `thought-9` — see
+ *  `projectAcpChatItems`) — extract it so a turn's wall-clock span can be
+ *  read back from the envelope rows without the projection carrying timing
+ *  data of its own. */
+export function acpItemOrdinal(id: string): number | null {
+  const match = id.match(/-(\d+)$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function acpOrdinalTimestamps(envelopes: readonly AcpStoredEnvelope[]): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const row of envelopes) {
+    const t = row.createdAt ? Date.parse(row.createdAt) : NaN;
+    if (Number.isFinite(t)) map.set(row.ordinal, t);
+  }
+  return map;
+}
+
+/** Earliest → latest timestamp among a turn's message items. Tool calls carry
+ *  no ordinal-addressable timing in the ACP projection today, so they don't
+ *  extend the window. Either bound is null when no message item in the turn
+ *  resolved to a timestamp at all. */
+function acpTurnSpan(
+  turnItems: readonly AcpChatItem[],
+  ordinalTimestamps: ReadonlyMap<number, number>,
+): { start: number | null; end: number | null } {
+  let start: number | null = null;
+  let end: number | null = null;
+  for (const item of turnItems) {
+    if (item.kind !== 'message') continue;
+    const ordinal = acpItemOrdinal(item.id);
+    if (ordinal == null) continue;
+    const t = ordinalTimestamps.get(ordinal);
+    if (t == null) continue;
+    if (start == null || t < start) start = t;
+    if (end == null || t > end) end = t;
+  }
+  return { start, end };
+}
+
+/** Best-effort turn duration. Returns null when there isn't enough timestamp
+ *  data to say anything (never renders a fabricated duration) — including the
+ *  single-timestamp case, where `end === start` says nothing about how long
+ *  the turn took. */
+export function acpTurnDurationMs(
+  turnItems: readonly AcpChatItem[],
+  ordinalTimestamps: ReadonlyMap<number, number>,
+): number | null {
+  const { start, end } = acpTurnSpan(turnItems, ordinalTimestamps);
+  if (start == null || end == null || end <= start) return null;
+  return end - start;
+}
+
+/** When the turn last produced a message — the "Finished … ago" anchor.
+ *  Unlike the duration this survives a single-timestamp turn (one lone
+ *  message still has a knowable "when"), so a turn can carry a timestamp
+ *  without carrying a duration. */
+export function acpTurnEndedAt(
+  turnItems: readonly AcpChatItem[],
+  ordinalTimestamps: ReadonlyMap<number, number>,
+): number | null {
+  return acpTurnSpan(turnItems, ordinalTimestamps).end;
+}
+
+export function formatAcpDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+export function formatAcpCost(cost: AcpUsageCost | null | undefined): string | null {
+  if (!cost || !Number.isFinite(cost.amount)) return null;
+  const symbol = cost.currency === 'USD' ? '$' : `${cost.currency} `;
+  return `${symbol}${cost.amount < 0.01 ? cost.amount.toFixed(4) : cost.amount.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Session-total usage line (continuous cost/usage, Task WS5-P3-b) — pure
+// projections off the SAME `AcpUsageProjection` snapshot the store already
+// maintains incrementally (`AcpSession`/`projectAcpUsage`, `@kortix/sdk`).
+// No fetch, no envelope re-fold: these read the object the caller already
+// has in hand.
+// ---------------------------------------------------------------------------
+
+/** Current session context-token count: prefers the stable `usage_update`
+ *  total (`used`) and falls back to the optional prompt-response token
+ *  total, mirroring the same fallback the composer's `TokenProgress` ring
+ *  uses (`session-chat-input.tsx`) so the two stay in agreement. */
+export function acpSessionContextTokens(
+  usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined,
+): number | null {
+  if (!usage) return null;
+  if (usage.used != null && Number.isFinite(usage.used)) return usage.used;
+  return usage.tokens?.total ?? null;
+}
+
+/** "128k" — the bare compact context-token count. Null until the harness has
+ *  reported any context usage at all (never fabricates a "0" row).
+ *
+ *  Deliberately unsuffixed: the value is rendered against a spelled-out
+ *  "Context" label in the turn's meta popover, which supplies the noun. The
+ *  old suffixed variants ("128k ctx", "$0.42 this session") existed only to
+ *  survive as standalone chips on the dot-separated footer line that popover
+ *  replaced — a label carrying its own noun is redundant once it has a real
+ *  label, and "ctx" was jargon besides. */
+export function formatAcpContextValue(
+  usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined,
+): string | null {
+  const tokens = acpSessionContextTokens(usage);
+  if (tokens == null || tokens <= 0) return null;
+  return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : `${Math.round(tokens)}`;
+}
+
+/** One labelled line in a turn's meta popover. */
+export interface AcpTurnMetaRow {
+  label: string;
+  value: string;
+}
+
+/**
+ * The turn's meta as labelled rows — what the ⋯ popover renders.
+ *
+ * Pure and `now`-injected (rather than reaching for `Date.now()`) so the
+ * relative-time wording is testable, and so a component that ticks while its
+ * popover is open re-derives the whole set from one clock read.
+ *
+ * A row is omitted rather than rendered empty whenever the harness reported
+ * nothing for it — the transcript never shows a fabricated "$0.00" or
+ * "0 tokens". Session totals (`cost`, `usage`) are passed only for the last
+ * turn; every turn carries its own `endedAt`/`durationMs`.
+ */
+export function acpTurnMetaRows({
+  endedAt,
+  now,
+  durationMs,
+  cost,
+  usage,
+}: {
+  endedAt: number | null;
+  now: number;
+  durationMs: number | null;
+  cost: AcpUsageCost | null | undefined;
+  usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined;
+}): AcpTurnMetaRow[] {
+  const rows: AcpTurnMetaRow[] = [];
+  if (endedAt != null)
+    rows.push({
+      label: 'Finished',
+      // "5 seconds ago" — `Strict` so it never rounds up to the vague
+      // "about 1 minute"; the whole point of this row is a precise "when".
+      value: formatDistanceStrict(endedAt, now, { addSuffix: true }),
+    });
+  if (durationMs != null) rows.push({ label: 'Duration', value: formatAcpDuration(durationMs) });
+  const costValue = formatAcpCost(cost);
+  if (costValue) rows.push({ label: 'Session cost', value: costValue });
+  const contextValue = formatAcpContextValue(usage);
+  if (contextValue) rows.push({ label: 'Context', value: `${contextValue} tokens` });
+  return rows;
+}
+
+/**
+ * Restrained transcript affordance for a turn's `stopReason`
+ * (`protocol/v1/prompt-turn.md`) — a short label for the LAST turn's footer,
+ * next to its duration/cost/context meta. `null` for the two "nothing to
+ * say" outcomes: `end_turn` (the ordinary clean finish) and `cancelled`
+ * (already fully communicated by the turn simply stopping — the busy
+ * indicator clears, no extra copy needed). `refusal`/`max_tokens`/
+ * `max_turn_requests` get a distinguishing label — `emphasize: true` nudges
+ * it to a slightly stronger text color than the surrounding muted meta, but
+ * deliberately NOT an alarm color: a truncation or refusal is a normal
+ * protocol outcome, not an error state.
+ */
+export interface AcpStopReasonNote {
+  /** Short footer label, next to the duration/cost meta. */
+  text: string;
+  /** Nudge to a slightly stronger text color — never an alarm color. */
+  emphasize: boolean;
+  /** One plain-English line under the label: what happened, no jargon. */
+  explanation: string;
+  /** Truncation has an obvious one-click recovery (ask it to continue);
+   *  refusal does not. Drives whether a `Continue` action is offered. */
+  canContinue: boolean;
+}
+
+export function describeAcpStopReason(
+  stopReason: string | null | undefined,
+): AcpStopReasonNote | null {
+  switch (stopReason) {
+    case 'refusal':
+      return {
+        text: 'Refused',
+        emphasize: true,
+        explanation: 'The model declined this request.',
+        canContinue: false,
+      };
+    case 'max_tokens':
+    case 'max_turn_requests':
+      return {
+        text: 'Truncated',
+        emphasize: true,
+        explanation: 'The response hit its length limit.',
+        canContinue: true,
+      };
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Gathered context" pile summary — "3 reads, 2 searches"
+// ---------------------------------------------------------------------------
+
+export function acpContextGroupSummary(items: readonly AcpToolItem[]): string {
+  let read = 0;
+  let search = 0;
+  let list = 0;
+  for (const item of items) {
+    const name = acpToolName(item);
+    if (name === 'read') read++;
+    else if (name === 'grep') search++;
+    else if (name === 'glob' || name === 'list') list++;
+  }
+  const parts: string[] = [];
+  if (read > 0) parts.push(`${read} read${read > 1 ? 's' : ''}`);
+  if (search > 0) parts.push(`${search} search${search > 1 ? 'es' : ''}`);
+  if (list > 0) parts.push(`${list} list${list > 1 ? 's' : ''}`);
+  return parts.join(', ');
+}

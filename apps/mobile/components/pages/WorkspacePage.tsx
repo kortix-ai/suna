@@ -57,18 +57,18 @@ import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import {
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeSkills,
-  useOpenCodeProjects,
-  useOpenCodeToolIds,
-  useOpenCodeMcpStatus,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeSkills,
+  useRuntimeProjects,
+  useRuntimeToolIds,
+  useRuntimeMcpStatus,
   type Agent,
   type Skill,
   type Command,
   type Project,
   type McpStatus,
-} from '@/lib/opencode/hooks/use-opencode-data';
+} from '@/lib/runtime/hooks/use-runtime-data';
 import { useKortixConnectors, type KortixConnector } from '@/lib/kortix';
 import { WorkspaceSettingsSheet, type WorkspaceSettingsSheetRef } from './WorkspaceSettingsSheet';
 
@@ -201,12 +201,12 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
   const settingsSheetRef = useRef<WorkspaceSettingsSheetRef>(null);
 
   // Data
-  const { data: agents, isLoading: lAgents, refetch: rAgents } = useOpenCodeAgents(sandboxUrl);
-  const { data: skills, isLoading: lSkills, refetch: rSkills } = useOpenCodeSkills(sandboxUrl);
-  const { data: commands, isLoading: lCommands, refetch: rCommands } = useOpenCodeCommands(sandboxUrl);
-  const { data: projects, isLoading: lProjects, refetch: rProjects } = useOpenCodeProjects(sandboxUrl);
-  const { data: toolIds, isLoading: lTools, refetch: rTools } = useOpenCodeToolIds(sandboxUrl);
-  const { data: mcpStatus, isLoading: lMcp, refetch: rMcp } = useOpenCodeMcpStatus(sandboxUrl);
+  const { data: agents, isLoading: lAgents, refetch: rAgents } = useRuntimeAgents(sandboxUrl);
+  const { data: skills, isLoading: lSkills, refetch: rSkills } = useRuntimeSkills(sandboxUrl);
+  const { data: commands, isLoading: lCommands, refetch: rCommands } = useRuntimeCommands(sandboxUrl);
+  const { data: projects, isLoading: lProjects, refetch: rProjects } = useRuntimeProjects(sandboxUrl);
+  const { data: toolIds, isLoading: lTools, refetch: rTools } = useRuntimeToolIds(sandboxUrl);
+  const { data: mcpStatus, isLoading: lMcp, refetch: rMcp } = useRuntimeMcpStatus(sandboxUrl);
   const { data: connectors, isLoading: lConnectors, refetch: rConnectors } = useKortixConnectors(sandboxUrl);
 
   const isLoading = lAgents || lSkills || lCommands || lProjects || lTools || lMcp || lConnectors;
@@ -429,7 +429,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
     }
     if (item.kind === 'project' && item.raw) {
       const p = item.raw as Project;
-      rows.push({ label: 'ID', value: p.id, mono: true });
+      if (p.id) rows.push({ label: 'ID', value: p.id, mono: true });
       if (p.worktree) rows.push({ label: 'Worktree', value: p.worktree, mono: true });
       if (p.vcs) rows.push({ label: 'VCS', value: p.vcs });
     }

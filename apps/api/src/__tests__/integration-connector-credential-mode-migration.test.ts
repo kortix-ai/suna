@@ -30,6 +30,11 @@ let accountId = '';
 let memberUserId = '';
 let seeded = false;
 
+async function cleanupFixtureRows(): Promise<void> {
+  await db.delete(executorCredentials).where(inArray(executorCredentials.connectorId, CONNECTOR_IDS));
+  await db.delete(executorConnectors).where(inArray(executorConnectors.connectorId, CONNECTOR_IDS));
+}
+
 /** Replays the migration's exact up-statements (idempotent — safe to re-run). */
 async function runMigrationLogic(): Promise<void> {
   await db.execute(sql`
@@ -76,6 +81,11 @@ beforeAll(async () => {
   // (the pre-migration state) — restored by the last test / afterAll below.
   await db.execute(sql.raw(`ALTER TABLE kortix.executor_connectors DROP CONSTRAINT IF EXISTS ${CONSTRAINT_NAME}`));
 
+  // A killed or previously failed test process cannot run afterAll. Clear its
+  // deterministic fixture IDs before reseeding so this real-DB integration test
+  // remains safe to rerun locally and in retrying CI jobs.
+  await cleanupFixtureRows();
+
   await db.insert(executorConnectors).values([
     {
       connectorId: CONN_SHARED_ALREADY,
@@ -108,16 +118,14 @@ beforeAll(async () => {
 
   await db.insert(executorCredentials).values([
     { connectorId: CONN_PER_USER_WITH_SHARED, userId: null, kind: 'connection', valueEnc: 'enc-shared' },
-    { connectorId: CONN_PER_USER_WITH_SHARED, userId: memberUserId, kind: 'connection', valueEnc: 'enc-member-1' },
     { connectorId: CONN_PER_USER_NO_SHARED, userId: memberUserId, kind: 'connection', valueEnc: 'enc-member-2' },
   ]);
   seeded = true;
 });
 
 afterAll(async () => {
-  if (!seeded) return;
-  await db.delete(executorCredentials).where(inArray(executorCredentials.connectorId, CONNECTOR_IDS));
-  await db.delete(executorConnectors).where(inArray(executorConnectors.connectorId, CONNECTOR_IDS));
+  if (!projectId) return;
+  await cleanupFixtureRows();
   // Defensive: guarantee the constraint is back even if an assertion above threw
   // before the dedicated test restored it.
   await restoreCheckConstraint();

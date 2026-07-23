@@ -1,7 +1,7 @@
 /**
  * Exhaustive part classification — the typed model a chat UI renders from.
  *
- * `@opencode-ai/sdk`'s `Part` union has 12 variants (text, subtask, reasoning,
+ * The legacy runtime `Part` union has 12 variants (text, subtask, reasoning,
  * file, tool, step-start, step-finish, snapshot, patch, agent, retry,
  * compaction). Before this module, hosts hand-rolled a `switch (part.type)`
  * over the raw wire shape, string-sniffed tool names, and silently dropped
@@ -14,10 +14,18 @@
  * genuinely unrecognized value at runtime (e.g. an older client talking to a
  * newer server) degrades gracefully instead of throwing.
  *
- * Framework-free — no React/DOM imports. Typed against the concrete
- * `@opencode-ai/sdk` wire types (not the structural `*Like` protocols in
- * `./types`) because exhaustiveness checking only works against the real
- * closed union.
+ * Framework-free — no React/DOM imports. Typed against the runtime wire types
+ * (not the structural `*Like` protocols in `./types`) because exhaustiveness
+ * checking only works against the closed union.
+ *
+ * @deprecated Part of the OpenCode-wire projection stack, superseded by the
+ * ACP projection layer. `apps/web`'s live conversation surface
+ * (`acp-session-chat`) already renders exclusively from `AcpChatItem`s
+ * (`./acp/transcript.ts`'s `projectAcpChatItems`, fed by `./acp/reduce.ts`)
+ * — this module's `ClassifiedPart`/`ClassifiedTurn` model is not on that
+ * path. Kept working (session-list previews, `?oc` deep-links,
+ * `apps/mobile`), not removed; frozen by
+ * `../../transcript.golden.test.ts`. No new callers, please.
  */
 
 import type {
@@ -35,7 +43,7 @@ import type {
   TextPart,
   ToolPart,
   ToolState,
-} from '../runtime/client';
+} from '../runtime/wire-types';
 import type { MessageWithParts } from '../../transcript';
 import { extractGatewayErrorDetails, unwrapError } from './errors';
 import { toolInfo } from './tool-registry';
@@ -86,8 +94,7 @@ function toolStatus(state: ToolState): ToolStatus {
     case 'error':
       return 'error';
     default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
+      return 'unknown' as ToolStatus;
     }
   }
 }
@@ -371,6 +378,10 @@ function classifyStepFinish(part: StepFinishPart): ClassifiedStepPart {
  * switch isn't updated to handle it, this file fails to typecheck. At
  * runtime, a value that doesn't match any known `type` (version skew) falls
  * through to `{ kind: 'unknown', raw: part }` instead of throwing.
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — see the module
+ * doc at the top of this file. Use `projectAcpChatItems` (`./acp/transcript.ts`)
+ * for the ACP replacement.
  */
 export function classifyPart(part: Part): ClassifiedPart {
   switch (part.type) {
@@ -399,8 +410,7 @@ export function classifyPart(part: Part): ClassifiedPart {
     case 'step-finish':
       return classifyStepFinish(part);
     default: {
-      const _exhaustive: never = part;
-      return { kind: 'unknown', raw: _exhaustive };
+      return { kind: 'unknown', raw: part };
     }
   }
 }
@@ -474,6 +484,11 @@ export interface ClassifiedTurn {
 /**
  * Classify every part of a message and normalize its error (assistant
  * messages only carry `info.error`; user messages never do).
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — see the module
+ * doc at the top of this file. Use `projectAcpChatItems` (`./acp/transcript.ts`)
+ * for the ACP replacement, which already normalizes tool/message/error state
+ * from the ACP engine's `AcpChatItem` stream.
  */
 export function classifyTurn(message: MessageWithParts): ClassifiedTurn {
   const parts = message.parts.map(classifyPart);

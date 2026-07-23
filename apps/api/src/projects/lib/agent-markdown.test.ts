@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseAgentMarkdown, serializeAgentMarkdown } from './agent-markdown';
+import { frontmatterParseError, parseAgentMarkdown, serializeAgentMarkdown } from './agent-markdown';
 
 describe('parseAgentMarkdown', () => {
   test('body-only file with no fence parses to empty frontmatter', () => {
@@ -60,6 +60,24 @@ describe('serializeAgentMarkdown', () => {
   test('fields are written as a fenced block', () => {
     const out = serializeAgentMarkdown({ mode: 'primary' }, 'body');
     expect(out).toBe('---\nmode: primary\n---\n\nbody');
+  });
+});
+
+describe('frontmatterParseError', () => {
+  test('body-only file with no fence has no error', () => {
+    expect(frontmatterParseError('You are the Kortix agent.')).toBeNull();
+  });
+
+  test('valid fenced frontmatter has no error', () => {
+    expect(frontmatterParseError('---\nmode: primary\n---\n\nbody')).toBeNull();
+  });
+
+  test('malformed frontmatter that parseAgentMarkdown silently swallows is surfaced here', () => {
+    const content = '---\n: : : not yaml\n---\nbody';
+    // parseAgentMarkdown degrades this to an empty frontmatter object...
+    expect(parseAgentMarkdown(content).frontmatter).toEqual({});
+    // ...but frontmatterParseError surfaces the underlying YAML error instead.
+    expect(frontmatterParseError(content)).not.toBeNull();
   });
 });
 

@@ -16,14 +16,14 @@ describe('resolveOpencodeDir — dual-format', () => {
   });
 
   test('defaults when null or absent', () => {
-    expect(resolveOpencodeDir(null)).toBe(DEFAULT_OPENCODE_CONFIG_DIR);
-    expect(resolveOpencodeDir('project:\n  name: x\n')).toBe(DEFAULT_OPENCODE_CONFIG_DIR);
+    expect(resolveOpencodeDir(null)).toBe('.opencode');
+    expect(resolveOpencodeDir('project:\n  name: x\n')).toBe('.opencode');
   });
 
   test('rejects absolute paths and traversal (both formats)', () => {
-    expect(resolveOpencodeDir('opencode:\n  config_dir: /abs\n')).toBe(DEFAULT_OPENCODE_CONFIG_DIR);
+    expect(resolveOpencodeDir('opencode:\n  config_dir: /abs\n')).toBe('.opencode');
     expect(resolveOpencodeDir('[opencode]\nconfig_dir = "../up"\n')).toBe(
-      DEFAULT_OPENCODE_CONFIG_DIR,
+      '.opencode',
     );
   });
 

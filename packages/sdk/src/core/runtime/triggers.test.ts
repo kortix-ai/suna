@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
-import * as realAuth from '../http/auth';
+import { configureKortix } from '../http/config';
 
 let calls: { url: string; method: string; body?: string }[] = [];
 let nextResponse: () => Response = () =>
@@ -8,19 +8,16 @@ let nextResponse: () => Response = () =>
     headers: { 'content-type': 'application/json' },
   });
 
-mock.module('../http/auth', () => ({
-  ...realAuth,
-  authenticatedFetch: async (url: string, init: { method?: string; body?: unknown } = {}) => {
-    calls.push({ url: String(url), method: init.method ?? 'GET', body: typeof init.body === 'string' ? init.body : undefined });
-    return nextResponse();
-  },
-}));
-
 const { triggersRequest } = await import('./triggers');
 const last = () => calls[calls.length - 1];
 
 beforeEach(() => {
   calls = [];
+  configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+  globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
+    calls.push({ url: String(url), method: init.method ?? 'GET', body: typeof init.body === 'string' ? init.body : undefined });
+    return nextResponse();
+  }) as unknown as typeof fetch;
   nextResponse = () =>
     new Response(JSON.stringify({ success: true, data: [] }), {
       status: 200,

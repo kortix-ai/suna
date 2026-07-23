@@ -15,7 +15,7 @@
 
 import { track } from '@/lib/track';
 import { useKortixComputerStore, useIsSidePanelOpen } from '@/stores/kortix-computer-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
 import type { MessageWithParts } from '@/ui';
 import { useEffect, useMemo, useRef } from 'react';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
@@ -60,7 +60,7 @@ export function useDeliverableReadiness(
   // Pending questions/permissions for THIS session — read above the W1 effect
   // because completion has to consult it: a run can settle to idle while a
   // question is still outstanding (idle IS how the agent waits for the answer).
-  const pendingForSession = useOpenCodePendingStore((s) =>
+  const pendingForSession = useRuntimePendingStore((s) =>
     pendingInputCount(s.permissions, s.questions, sessionId),
   );
 

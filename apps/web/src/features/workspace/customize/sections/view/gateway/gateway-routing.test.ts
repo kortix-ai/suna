@@ -12,8 +12,12 @@ import {
 
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
+const manageConnectionModalSource = readFileSync(
+  join(import.meta.dir, '../../llm-provider/manage-connection-modal.tsx'),
+  'utf8',
+);
 const modelDefaultsSource = readFileSync(
-  join(import.meta.dir, '../../../../../../hooks/opencode/use-model-defaults.ts'),
+  join(import.meta.dir, '../../../../../../hooks/runtime/use-model-defaults.ts'),
   'utf8',
 );
 
@@ -142,14 +146,17 @@ describe('gateway routing editor helpers', () => {
     ).toEqual(['glm-5.2']);
   });
 
-  test('the header selector reads and writes the project default scope', () => {
-    expect(gatewayViewSource).toContain('modelDefaults.projectDefault');
-    expect(gatewayViewSource).toContain('.setProjectDefault(m)');
-    expect(gatewayViewSource).toContain('useProjectModels(projectId)');
-    expect(gatewayViewSource).not.toContain('useOpenCodeProviders');
-    expect(gatewayViewSource).not.toContain('modelDefaults.setAccountDefault');
-    expect(gatewayViewSource).toContain('modelDefaults.isUpdating');
-    expect(gatewayViewSource).toContain("errorToast('Could not update the project default')");
+  test('the "Default model" section reads and writes the project default scope', () => {
+    expect(manageConnectionModalSource).toContain('modelDefaults.projectDefault');
+    expect(manageConnectionModalSource).toContain('.setProjectDefault(m)');
+    expect(manageConnectionModalSource).toContain('useProjectModels(projectId)');
+    expect(manageConnectionModalSource).not.toContain('useOpenCodeProviders');
+    expect(manageConnectionModalSource).not.toContain('modelDefaults.setAccountDefault');
+    expect(manageConnectionModalSource).toContain('modelDefaults.isUpdating');
+    expect(manageConnectionModalSource).toContain(
+      "errorToast('Could not update the project default')",
+    );
+    expect(gatewayViewSource).not.toContain('.setProjectDefault(m)');
   });
 
   test('default changes refresh routing and the shared compact picker cache', () => {
@@ -176,11 +183,26 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('routing cannot race a pending project-default write', () => {
-    expect(gatewayViewSource).toContain('projectDefaultPending={modelDefaults.isUpdating}');
+    // `gateway-view.tsx` no longer mounts its own `useModelDefaults` instance
+    // (Task 17 fix-wave finding: `useMutation().isPending` is per-instance, so
+    // a second hook instance here would never see the Models tab's mutation).
+    // It instead reads the shared `modelDefaultsKey` mutation key via
+    // `useIsMutating`, which observes any in-flight write regardless of which
+    // component's hook instance issued it.
+    expect(gatewayViewSource).not.toMatch(/import\s*\{[^}]*\buseModelDefaults\b/);
+    expect(gatewayViewSource).toContain('modelDefaultsKey');
+    expect(gatewayViewSource).toContain(
+      'useIsMutating({ mutationKey: modelDefaultsKey(projectId) })',
+    );
+    expect(gatewayViewSource).toContain('projectDefaultPending={projectDefaultPending}');
     expect(routingSource).toContain('projectDefaultPending: boolean');
     expect(routingSource).toContain('projectDefaultPending ||');
-    expect(gatewayViewSource).toContain('useIsMutating');
-    expect(gatewayViewSource).toContain('gatewayRoutingPolicyKey(projectId)');
+    expect(manageConnectionModalSource).toContain('useIsMutating');
+    expect(manageConnectionModalSource).toContain('gatewayRoutingPolicyKey(projectId)');
+    // The set/clear mutations carry an explicit shared mutationKey so a
+    // non-owning consumer (gateway-view) can observe them via useIsMutating.
+    expect(modelDefaultsSource).toContain('modelDefaultsKey');
+    expect(modelDefaultsSource).toContain('mutationKey: queryKey');
   });
 
   test('routing freezes edits in flight and refreshes the shared project default after save', () => {
@@ -192,9 +214,7 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('renders a capability-gated generation-controls panel for the resolved primary model', () => {
-    expect(routingSource).toContain(
-      "from './generation-controls'",
-    );
+    expect(routingSource).toContain("from './generation-controls'");
     expect(routingSource).toContain('<GenerationControlsPanel');
     expect(routingSource).toContain('draft.modelGenerationConfig?.[primaryModel]');
   });

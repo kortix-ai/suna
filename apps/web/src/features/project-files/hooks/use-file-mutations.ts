@@ -2,7 +2,7 @@
 
 import { errorToast } from '@/components/ui/toast';
 import { useMutation } from '@tanstack/react-query';
-import type { UploadResult } from '../api/opencode-files';
+import type { UploadResult } from '../api/runtime-files';
 
 /**
  * File mutations — read-only stubs for project-files.

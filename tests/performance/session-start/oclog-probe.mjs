@@ -1,10 +1,12 @@
 // Deep boot probe: create a session, then read opencode's OWN log + the baked vs
 // runtime dep versions through the daemon /file proxy (which allows /opt, /home,
 // /tmp, /workspace). Use this to attribute the spawn->session-created window:
-// the gap between opencode "loading <workspace>/.kortix/opencode/opencode.jsonc"
-// and "init" is the plugin load/install phase. Comparing the baked vs workspace
-// @opencode-ai/plugin version reveals whether opencode re-installed it over the
-// network (version mismatch => baked deps must pin the OPENCODE binary version).
+// the gap between opencode "loading <workspace>/.opencode/opencode.jsonc" (or the
+// legacy "<workspace>/.kortix/opencode/opencode.jsonc" line on an old, un-migrated
+// sandbox) and "init" is the plugin load/install phase. Comparing the baked vs
+// workspace @opencode-ai/plugin version reveals whether opencode re-installed it
+// over the network (version mismatch => baked deps must pin the OPENCODE binary
+// version).
 // Run via ./run.sh oclog-probe.
 import { randomUUID } from 'node:crypto';
 const API = process.env.API_BASE || 'http://localhost:8008/v1';
@@ -38,9 +40,15 @@ const praw = async (t, ext, path) => {
   if (ext) {
     const log = await praw(t, ext, '/opt/kortix/home/.local/share/opencode/log/opencode.log');
     console.log(`\n=== opencode.log (status ${log.status}) ===\n` + log.text.slice(-7000));
+    // Accept both the canonical `.opencode` config dir and the legacy
+    // `.kortix/opencode` dir (old, un-migrated sandboxes) when locating the
+    // workspace-side config dir from the log's "loading <workspace>/<dir>/opencode.jsonc" line.
+    const OC_CONFIG_RE = /(\.opencode|\.kortix\/opencode)\/opencode\.jsonc/;
+    const ocMatch = log.text.match(OC_CONFIG_RE);
+    const workspaceOcDir = ocMatch ? ocMatch[1] : '.opencode';
     for (const p of [
       '/opt/kortix/opencode-config-deps/node_modules/@opencode-ai/plugin/package.json',
-      '/workspace/.kortix/opencode/node_modules/@opencode-ai/plugin/package.json',
+      `/workspace/${workspaceOcDir}/node_modules/@opencode-ai/plugin/package.json`,
     ]) {
       const r = await praw(t, ext, p);
       const v = (() => { try { return JSON.parse(r.text).version; } catch { return r.text.slice(0, 120); } })();

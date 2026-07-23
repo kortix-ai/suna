@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 // Regression test for the Better Stack chunk-22256 cluster:
 //   5af76e2b… / c80ef19c… / bb2da889… —
@@ -23,6 +23,13 @@ const configEntityView = readFileSync(
   join(import.meta.dir, '..', 'sections', 'component', 'config-entity-view.tsx'),
   'utf8',
 );
+// The `config.agents` consumer moved out of agents-view when the default-agent
+// picker was folded into the coding-agents panel. Same guard, new home — the
+// assertion follows the call site rather than being dropped.
+const codingAgentsPanel = readFileSync(
+  join(import.meta.dir, '..', 'sections', 'view', 'coding-agents-panel.tsx'),
+  'utf8',
+);
 
 describe('chunk-22256 .filter/.map guard regression', () => {
   test('agents-view no longer calls config.skills.map unguarded', () => {
@@ -30,9 +37,17 @@ describe('chunk-22256 .filter/.map guard regression', () => {
     expect(agentsView).toContain('toArray(config.skills).map(');
   });
 
-  test('agents-view no longer calls config.agents.filter unguarded', () => {
+  test('agents-view never reintroduces an unguarded config.agents.filter', () => {
     expect(agentsView).not.toContain('config.agents.filter(');
-    expect(agentsView).toContain('toArray(config.agents).filter(');
+  });
+
+  test('coding-agents-panel guards every config.agents read', () => {
+    // Two consumers: the default-agent dropdown's option list, and the harness
+    // rows' in-use computation. Both must coerce.
+    expect(codingAgentsPanel).not.toContain('config.agents.filter(');
+    expect(codingAgentsPanel).not.toContain('agents: config.agents');
+    expect(codingAgentsPanel).toContain('toArray(config.agents).filter(');
+    expect(codingAgentsPanel).toContain('toArray(config.agents)');
   });
 
   test('config-entity-view guards select(config) before any .filter consumer', () => {

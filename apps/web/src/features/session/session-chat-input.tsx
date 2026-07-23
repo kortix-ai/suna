@@ -3,36 +3,31 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import type {
   Agent,
   Command,
   MessageWithParts,
   ProviderListResponse,
   Session,
-} from '@/hooks/opencode/use-opencode-sessions';
-import {
-  useOpenCodeSessionTodo,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { toast } from '@/lib/toast';
+} from '@/hooks/runtime/use-runtime-sessions';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
+import type { AcpUsageProjection } from '@kortix/sdk';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
   ArrowUp,
   ArrowUpLeft,
-  Check,
   ChevronDown,
   Clock,
   Folder,
   ListTodo,
-  Loader2,
   MessageSquare,
   Paperclip,
   Reply,
@@ -42,35 +37,33 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AgentSelector } from './agent-selector';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
+import { ComposerModelControls, type HarnessManagedModelState } from './composer-model-controls';
+import { COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS } from './composer-pill';
 import { resolveComposerResetOnSend } from './composer-reset';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-  NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import { type ModelDefaultControls, ModelSelector } from './model-selector';
-import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
-import {
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandPopover,
-  CommandPopoverContent,
-  CommandPopoverTrigger,
-} from '@/components/ui/command';
+const SELECT_MODEL_ACTION_MESSAGE = 'Select a model before starting this agent.';
+const LOADING_MODELS_ACTION_MESSAGE = 'Loading models…';
 
 export type { ProviderListResponse };
+
+// Re-exported for existing external consumers (schedule-view.tsx,
+// channels-view.tsx) that still import it from here — the component itself
+// now lives in ./agent-selector.tsx.
+export { AgentSelector };
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -92,233 +85,13 @@ function formatRelativeTime(timestamp: number): string {
 // far past the size where new logic belongs in it. Re-exported here so the
 // many existing `from '@/features/session/session-chat-input'` importers keep
 // working.
+import { errorToast } from '@/components/ui/toast';
 import type { FlatModel } from './model-flatten';
 
-export { type FlatModel, flattenModels } from './model-flatten';
+export { flattenModels, type FlatModel } from './model-flatten';
 
-// ============================================================================
-// Agent Selector
-// ============================================================================
-
-export function AgentSelector({
-  agents,
-  selectedAgent,
-  onSelect,
-  disabled = false,
-}: {
-  agents: Agent[];
-  selectedAgent: string | null;
-  onSelect: (agentName: string | null) => void;
-  disabled?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [flash, setFlash] = useState(false);
-  const prevAgentRef = useRef(selectedAgent);
-
-  const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
-  );
-
-  // Flash highlight when agent changes (e.g. via Tab cycling)
-  useEffect(() => {
-    if (prevAgentRef.current !== selectedAgent && prevAgentRef.current !== null) {
-      setFlash(true);
-      const timer = setTimeout(() => setFlash(false), 400);
-      return () => clearTimeout(timer);
-    }
-    prevAgentRef.current = selectedAgent;
-  }, [selectedAgent]);
-
-  useEffect(() => {
-    prevAgentRef.current = selectedAgent;
-  }, [selectedAgent]);
-
-  // Reset search when closing
-  useEffect(() => {
-    if (!open) setSearch('');
-  }, [open]);
-
-  // Fuzzy filter
-  const filteredPrimary = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return primaryAgents;
-    return primaryAgents.filter(
-      (a) => a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
-    );
-  }, [primaryAgents, search]);
-
-  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name || 'Agent';
-
-  return (
-    // When locked we keep the trigger hoverable (no native `disabled`, which
-    // would suppress hover) but gate the popover shut, so the tooltip can still
-    // explain WHY the agent can't be switched mid-session.
-    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-disabled={disabled || undefined}
-              aria-label={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
-              )}
-              className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
-                flash && 'bg-primary/10 text-foreground',
-                open && 'bg-muted text-foreground',
-                disabled &&
-                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
-              )}
-            >
-              <span className="max-w-[100px] truncate">{displayName}</span>
-              <ChevronDown
-                className={cn(
-                  'size-3 opacity-50 transition-transform duration-200',
-                  open && 'rotate-180',
-                )}
-              />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px]">
-          {disabled ? (
-            <p>
-              {
-                "This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."
-              }
-            </p>
-          ) : (
-            <p>
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
-                Tab
-              </kbd>
-            </p>
-          )}
-        </TooltipContent>
-      </Tooltip>
-
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-        <CommandInput
-          compact
-          placeholder={tHardcodedUi.raw(
-            'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
-          )}
-          value={search}
-          onValueChange={setSearch}
-        />
-
-        <CommandList className="max-h-[320px]">
-          {/* Primary agents */}
-          {filteredPrimary.length > 0 && (
-            <CommandGroup heading="Agents" forceMount>
-              {filteredPrimary.map((agent) => {
-                const isSelected =
-                  selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
-                return (
-                  <CommandItem
-                    key={agent.name}
-                    value={`agent-${agent.name}`}
-                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
-                    onSelect={() => {
-                      if (disabled) return;
-                      onSelect(agent.name);
-                      setOpen(false);
-                    }}
-                  >
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div
-                        className={cn(
-                          'truncate text-sm leading-tight capitalize',
-                          isSelected
-                            ? 'text-foreground font-semibold'
-                            : 'text-foreground/90 font-medium',
-                        )}
-                      >
-                        {agent.name}
-                      </div>
-                      {agent.description && (
-                        <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                          {agent.description}
-                        </p>
-                      )}
-                    </div>
-                    {isSelected && <Check className="text-foreground shrink-0" />}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          )}
-
-          {/* No results */}
-          {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
-              {tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
-              )}
-              {search.trim()}
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
-            </div>
-          )}
-        </CommandList>
-      </CommandPopoverContent>
-    </CommandPopover>
-  );
-}
-
+// AgentSelector is now a standalone component: ./agent-selector.tsx
 // ModelSelector is now a standalone component: ./model-selector.tsx
-
-// ============================================================================
-// Variant / Thinking Mode Selector
-// ============================================================================
-
-function VariantSelector({
-  variants,
-  selectedVariant,
-  onSelect,
-}: {
-  variants: string[];
-  selectedVariant: string | null;
-  onSelect: (variant: string | null) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const currentIndex = selectedVariant ? variants.indexOf(selectedVariant) : -1;
-
-  function cycle() {
-    if (variants.length === 0) return;
-    const nextIndex = (currentIndex + 1) % (variants.length + 1);
-    onSelect(nextIndex === variants.length ? null : variants[nextIndex]);
-  }
-
-  const displayName = selectedVariant || 'Default';
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={cycle}
-          className={cn(
-            'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium capitalize transition-colors',
-            selectedVariant && 'text-foreground',
-          )}
-        >
-          {displayName}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        <p className="text-xs">
-          {tHardcodedUi.raw('componentsSessionSessionChatInput.line322JsxTextCycleThinkingEffort')}
-        </p>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 // ============================================================================
 // Token Progress Circle
@@ -326,6 +99,7 @@ function VariantSelector({
 
 interface TokenProgressProps {
   messages: MessageWithParts[] | undefined;
+  acpUsage?: AcpUsageProjection | null;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onContextClick?: () => void;
@@ -362,13 +136,21 @@ function getContextLimit(
   return 200000;
 }
 
-function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
+function TokenProgress({
+  messages,
+  acpUsage,
+  models,
+  selectedModel,
+  onContextClick,
+}: TokenProgressProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
-  const contextLimit = useMemo(
+  const inferredTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
+  const inferredLimit = useMemo(
     () => getContextLimit(models, selectedModel),
     [models, selectedModel],
   );
+  const contextTokens = acpUsage?.used ?? acpUsage?.tokens?.total ?? inferredTokens;
+  const contextLimit = acpUsage?.size ?? inferredLimit;
   const ratio = contextTokens > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
 
   if (contextTokens === 0 && !onContextClick) return null;
@@ -387,6 +169,8 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
           <span className="relative inline-flex">
             <button
               type="button"
+              aria-label="Open session context"
+              data-testid="session-context-indicator"
               className="flex size-6 cursor-pointer items-center justify-center"
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -586,7 +370,7 @@ function AttachmentPreview({
           <div key={i} className="group relative">
             <div
               className={cn(
-                'border-border/50 flex flex-col overflow-hidden rounded-2xl border',
+                'border-border/50 flex flex-col overflow-hidden rounded-md border',
                 'w-[120px] cursor-default select-none',
                 'bg-card hover:bg-muted/30 hover:border-border transition-colors duration-150',
               )}
@@ -635,12 +419,16 @@ function SlashCommandPopover({
   selectedIndex,
   onSelect,
   anchorRef,
+  sourceLabel,
 }: {
   commands: Command[];
   filter: string;
   selectedIndex: number;
   onSelect: (command: Command) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  /** The harness these commands come from (e.g. "Claude Code") — shown as a
+   *  heading so the source is obvious, per the owner's ask. */
+  sourceLabel?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const filtered = useMemo(() => {
@@ -671,13 +459,18 @@ function SlashCommandPopover({
 
   return (
     <div
-      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
+      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-md border"
       style={{
         bottom: window.innerHeight - r.top + 4,
         left: r.left,
         width: Math.min(r.width, 480),
       }}
     >
+      {sourceLabel ? (
+        <div className="text-muted-foreground/60 border-border/60 border-b px-3 py-1.5 text-xs font-medium">
+          Commands from {sourceLabel}
+        </div>
+      ) : null}
       <div ref={scrollRef} className="max-h-64 overflow-y-auto py-1">
         {filtered.map((cmd, i) => (
           <button
@@ -687,7 +480,7 @@ function SlashCommandPopover({
               onSelect(cmd);
             }}
             className={cn(
-              '-mx-1 flex w-full cursor-pointer flex-col gap-0.5 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors',
+              '-mx-1 flex w-full cursor-pointer flex-col gap-0.5 rounded-md border border-transparent px-3 py-2 text-left transition-colors',
               i === selectedIndex ? 'bg-muted border-border/50' : 'hover:bg-muted/50',
             )}
           >
@@ -760,7 +553,7 @@ function MentionPopover({
 
   return (
     <div
-      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
+      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-md border"
       style={{
         bottom: window.innerHeight - r.top + 4,
         left: r.left,
@@ -877,7 +670,7 @@ function MentionPopover({
         {/* Loading indicator while searching for files */}
         {loading && files.length === 0 && (
           <div className="text-muted-foreground/50 flex items-center gap-2 px-3 py-2">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loading className="size-3.5 shrink-0" />
             <span className="text-xs">
               {tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}
             </span>
@@ -894,9 +687,8 @@ function MentionPopover({
 
 // --- Todo Chip (inline inside the chat input card, same style as sub-session context) ---
 
-function TodoChip({ sessionId }: { sessionId: string }) {
+function TodoChip({ todos }: { todos?: Array<any> }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: todos } = useOpenCodeSessionTodo(sessionId);
   const [expanded, setExpanded] = useState(false);
 
   if (!Array.isArray(todos) || todos.length === 0) return null;
@@ -917,7 +709,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
   });
 
   return (
-    <div className="bg-muted/50 overflow-hidden rounded-2xl">
+    <div className="bg-muted/50 overflow-hidden rounded-md">
       {/* Header row */}
       <button
         type="button"
@@ -1031,16 +823,19 @@ export interface SessionChatInputProps {
   /** Show the selected agent but prevent switching inside an immutable session. */
   agentSelectorLocked?: boolean;
   commands?: Command[];
+  /** The harness the `commands` come from (e.g. "Claude Code") — labels the
+   *  "/" palette so the source is obvious. */
+  commandsSourceLabel?: string | null;
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
-  /** Optional "set as default" controls for the model picker (account/per-agent). */
-  modelDefaultControls?: ModelDefaultControls;
-  variants?: string[];
-  selectedVariant?: string | null;
-  onVariantChange?: (variant: string | null | undefined) => void;
+  /** Static state for a harness that manages its own model (Claude Code and
+   *  Codex) — see {@link HarnessManagedModelState}. */
+  harnessManagedModel?: HarnessManagedModelState;
   messages?: MessageWithParts[];
+  /** Protocol-native context and token usage projected by @kortix/sdk. */
+  acpUsage?: AcpUsageProjection | null;
   /** Session ID — used for message queue, todo chip, and mention filtering */
   sessionId?: string;
   /** Project ID — lets the reasoning-effort control read/write this
@@ -1064,6 +859,20 @@ export interface SessionChatInputProps {
    *  the full-block "connect a model" gate so it doesn't flash for accounts
    *  that do have models but are mid-load (e.g. sandbox still warming up). */
   modelsLoading?: boolean;
+  /** Server-authoritative auth/model preflight blocker for the selected agent. */
+  composerBlockingReason?: string | null;
+  /** ONE direct action derived from `composerBlockingReason` (see
+   *  `deriveComposerBlockingAction`) — e.g. "Connect Claude Code" or "Choose a
+   *  model for Local vLLM". Replaces the generic "No models available"
+   *  copy for agents governed by composer-capabilities. */
+  composerBlockingActionLabel?: string | null;
+  /** Deep-link kind for the blocking action (e.g. claude_subscription so
+   *  "Connect Claude Code" opens straight into that form). */
+  composerConnectKind?: import('@kortix/sdk/projects-client').HarnessAuthKind | null;
+  /** True when this composer's connection gate is governed by
+   *  composer-capabilities. Explicit model selection remains a separate send
+   *  gate for catalog-based agents. */
+  composerCapabilityGoverned?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
@@ -1098,7 +907,7 @@ export interface SessionChatInputProps {
   toolbarSlot?: React.ReactNode;
 
   /** Extra classes for the input card — e.g. a radius override for the
-   *  project-home hero composer (`rounded-xl`). The drag overlay follows. */
+   *  project-home hero composer. The drag overlay follows. */
   cardClassName?: string;
 
   /** Reply context — shows a banner in the input indicating what's being replied to */
@@ -1120,6 +929,10 @@ export interface SessionChatInputProps {
   onQuestionAction?: () => void;
   /** Number of ESC presses so far (0 = none, 1 = first, 2 = second). Triple-ESC to stop. */
   escCount?: number;
+  /** Harness-neutral todo projection supplied by the session owner. */
+  todos?: Array<any>;
+  /** Harness-neutral sessions available for @ mentions. */
+  mentionSessions?: Session[];
 }
 
 function SessionChatInputImpl({
@@ -1136,21 +949,24 @@ function SessionChatInputImpl({
   onAgentChange,
   agentSelectorLocked = false,
   commands = [],
+  commandsSourceLabel,
   onCommand,
   models = [],
   selectedModel = null,
   onModelChange,
-  modelDefaultControls,
-  variants = [],
-  selectedVariant = null,
-  onVariantChange,
+  harnessManagedModel,
   messages,
+  acpUsage,
   sessionId,
   projectId,
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
   modelsLoading = false,
+  composerBlockingReason = null,
+  composerBlockingActionLabel = null,
+  composerConnectKind = null,
+  composerCapabilityGoverned = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1171,6 +987,8 @@ function SessionChatInputImpl({
   questionCanAct = true,
   onQuestionAction,
   escCount = 0,
+  todos,
+  mentionSessions = [],
 }: SessionChatInputProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const placeholderVariants = useMemo(
@@ -1320,7 +1138,7 @@ function SessionChatInputImpl({
   }, [disabled]);
 
   // Sessions for @ mention search
-  const { data: allSessions } = useOpenCodeSessions();
+  const allSessions = mentionSessions;
 
   useEffect(() => {
     if (text.trim().length > 0) return;
@@ -1597,6 +1415,8 @@ function SessionChatInputImpl({
     }
   }, [mentionItems.length]);
 
+  // Composer capabilities gate connection readiness. Catalog-based agents
+  // also require an explicit model selection before the first send.
   const modelUnavailable = isModelRequiredButUnavailable({
     modelRequired,
     selectedModel,
@@ -1616,26 +1436,40 @@ function SessionChatInputImpl({
   // the bar renders exactly once with the final answer instead of flashing in
   // on half-loaded data and vanishing when the account state arrives.
   const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const modelUnavailableMessage =
+    modelsLoading || entitlementsPending
+      ? LOADING_MODELS_ACTION_MESSAGE
+      : hasSelectableModels
+        ? SELECT_MODEL_ACTION_MESSAGE
+        : NO_MODEL_AVAILABLE_ACTION_MESSAGE;
   const noModelsConnected =
     modelRequired &&
     !lockForQuestion &&
     !modelsLoading &&
     !entitlementsPending &&
-    (!selectedModel || !hasSelectableModels);
+    !hasSelectableModels;
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
-  const submitDisabled = disabled || modelUnavailable || lockForApproval;
+  const capabilityBlocked =
+    composerCapabilityGoverned && !modelsLoading && Boolean(composerBlockingReason);
+  const submitDisabled = disabled || modelUnavailable || capabilityBlocked || lockForApproval;
 
   const handleSubmit = useCallback(async () => {
+    if (capabilityBlocked) {
+      errorToast(
+        composerBlockingActionLabel ||
+          composerBlockingReason ||
+          'This agent is not ready to start.',
+      );
+      return;
+    }
     if (modelUnavailable) {
-      toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
-        description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-      });
+      errorToast(modelUnavailableMessage);
       return;
     }
 
     // The run is paused on a connector approval — resolve it above first.
     if (lockForApproval) {
-      toast.error('Approve or deny the pending action to continue.');
+      errorToast('Approve or deny the pending action to continue.');
       return;
     }
 
@@ -1710,9 +1544,9 @@ function SessionChatInputImpl({
       return;
     }
 
-    // Send directly. The OpenCode server serializes concurrent prompt_async
-    // calls per-session, so sending while the agent is busy is safe even
-    // without queuing — this path is only reached when no queue is wired up.
+    // Send directly. The Runtime server serializes concurrent prompt calls
+    // per session, so sending while the agent is busy is safe even without
+    // queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
       for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
@@ -1731,6 +1565,10 @@ function SessionChatInputImpl({
     text,
     submitDisabled,
     modelUnavailable,
+    modelUnavailableMessage,
+    capabilityBlocked,
+    composerBlockingReason,
+    composerBlockingActionLabel,
     clearOnSend,
     onSend,
     isBusy,
@@ -1752,6 +1590,18 @@ function SessionChatInputImpl({
     setSlashFilter(null);
     setSlashIndex(0);
     // Focus textarea for args input
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  // The composer-toolbar commands affordance: makes "/" discoverable for users
+  // who don't already know the convention. Replicates exactly the state a
+  // typed "/" produces (text "/", empty filter) so the same popover, selection,
+  // and staging flow take over — nothing special-cased.
+  const handleOpenCommands = () => {
+    if (stagedCommand) return;
+    setText('/');
+    setSlashFilter('');
+    setSlashIndex(0);
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
@@ -1953,7 +1803,7 @@ function SessionChatInputImpl({
   }, [text, mentions]);
 
   return (
-    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 sm:px-4">
+    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 md:px-0">
       {/* Todo panel removed — now inline inside the card as TodoChip */}
       <div
         ref={cardRef}
@@ -1962,7 +1812,7 @@ function SessionChatInputImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-card border-border relative z-10 w-full overflow-visible rounded-xl border shadow transition-colors',
+          'bg-accent border-border relative z-10 w-full overflow-visible rounded-lg border shadow-sm transition-colors',
           cardClassName,
           isDragOver && 'border-primary',
         )}
@@ -1990,6 +1840,7 @@ function SessionChatInputImpl({
               selectedIndex={slashIndex}
               onSelect={handleSelectCommand}
               anchorRef={cardRef}
+              sourceLabel={commandsSourceLabel}
             />
           )}
 
@@ -2016,7 +1867,7 @@ function SessionChatInputImpl({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 2 }}
                     transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-2xl border px-3 py-1.5"
+                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-1.5"
                   >
                     <Clock className="text-muted-foreground/70 size-3 flex-shrink-0" />
                     <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
@@ -2036,7 +1887,7 @@ function SessionChatInputImpl({
                 ))}
               </AnimatePresence>
               {replyTo && (
-                <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-md border px-3 py-1.5">
                   <Reply className="text-primary/60 size-3 flex-shrink-0" />
                   <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                     {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
@@ -2071,7 +1922,7 @@ function SessionChatInputImpl({
                   </span>
                 </button>
               )}
-              {sessionId && <TodoChip sessionId={sessionId} />}
+              {sessionId && <TodoChip todos={todos} />}
               {inputSlot}
             </div>
           )}
@@ -2082,7 +1933,7 @@ function SessionChatInputImpl({
           {/* Staged command badge */}
           {stagedCommand && (
             <div className="flex min-w-0 items-center gap-2 px-4 pt-3 pb-0">
-              <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1">
+              <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1">
                 <Terminal className="text-muted-foreground size-3" />
                 <span className="text-foreground max-w-[220px] truncate font-mono text-xs font-medium whitespace-nowrap sm:max-w-[320px]">
                   /{stagedCommand.name}
@@ -2120,7 +1971,7 @@ function SessionChatInputImpl({
                   className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
                   {lockForApproval ? (
-                    <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
+                    <div className="text-kortix-yellow absolute inset-0">
                       Approve or deny the action above to continue…
                     </div>
                   ) : lockForQuestion ? (
@@ -2196,7 +2047,7 @@ function SessionChatInputImpl({
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
-                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2206,8 +2057,11 @@ function SessionChatInputImpl({
 
           {/* Bottom toolbar */}
           <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
-            {/* LEFT: Attach + Agent + Model + Variant */}
-            <div className="flex min-w-0 items-center gap-0 overflow-visible">
+            {/* LEFT: Attach + Agent + Model. On phones the pill row
+                scrolls horizontally instead of squishing — every pill is
+                shrink-0 (COMPOSER_PILL_TRIGGER_CLASS); see
+                COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS for why scrolling is safe. */}
+            <div className={cn(COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS, 'flex-1')}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2222,9 +2076,10 @@ function SessionChatInputImpl({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
                     aria-label="Attach files"
+                    data-testid="session-attach-files"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
@@ -2244,43 +2099,38 @@ function SessionChatInputImpl({
                   selectedAgent={selectedAgent}
                   onSelect={onAgentChange ?? (() => {})}
                   disabled={agentSelectorLocked}
+                  projectId={projectId}
                 />
               )}
-              {(models.length > 0 || modelRequired) && onModelChange && (
-                <ModelSelector
-                  models={models}
-                  selectedModel={selectedModel}
-                  onSelect={onModelChange}
-                  providers={providers}
-                  defaultControls={modelDefaultControls}
-                />
-              )}
-              {variants.length > 0 && onVariantChange && (
-                <VariantSelector
-                  variants={variants}
-                  selectedVariant={selectedVariant}
-                  onSelect={onVariantChange}
-                />
-              )}
-              {/* Reasoning-effort control — independent of the legacy opencode
-                  variant list above. Renders nothing unless the selected
-                  model actually exposes a reasoning_options effort knob (see
-                  reasoning-effort-selector.tsx for why this is capability-
-                  gated off the live catalog rather than the empty variant
-                  list models.dev models never populate). */}
-              <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
-            </div>
-
-            {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
-            <div className="flex shrink-0 items-center gap-0">
-              <TokenProgress
-                messages={messages}
+              <ComposerModelControls
                 models={models}
                 selectedModel={selectedModel}
-                onContextClick={onContextClick}
+                onModelChange={onModelChange}
+                providers={providers}
+                harnessManagedModel={harnessManagedModel}
+                modelRequired={modelRequired}
+                projectId={projectId}
               />
+            </div>
 
-              {toolbarSlot}
+            {/* RIGHT: TokenProgress + Voice + Submit/Stop. Only the PRIMARY
+                actions (voice, submit/stop) are rigid — the secondary zone
+                (context ring + toolbarSlot, which can carry several wide
+                pills: ACP config options on live sessions, Branch/Sandbox
+                pickers on project home) shrinks and scrolls on phones so it
+                can never push the send button out of the card. */}
+            <div className="flex min-w-0 items-center gap-0">
+              <div className={COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS}>
+                <TokenProgress
+                  messages={messages}
+                  acpUsage={acpUsage}
+                  models={models}
+                  selectedModel={selectedModel}
+                  onContextClick={onContextClick}
+                />
+
+                {toolbarSlot}
+              </div>
 
               <VoiceRecorder
                 onTranscription={handleTranscription}
@@ -2289,15 +2139,15 @@ function SessionChatInputImpl({
 
               {isSending && !lockForQuestion && (
                 <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loading className="size-4 shrink-0" />
                 </Button>
               )}
               {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
-                  {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
+                  {/* ESC hint — matches the real Tooltip component's styling (bg-primary rounded-sm) */}
                   {escCount > 0 && (
                     <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
+                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs whitespace-nowrap">
                         <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
                           ESC
                         </kbd>
@@ -2356,21 +2206,29 @@ function SessionChatInputImpl({
                             }
                             onClick={handleSubmit}
                             aria-label={
-                              modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
+                              capabilityBlocked
+                                ? composerBlockingActionLabel || composerBlockingReason || 'Blocked'
+                                : modelUnavailable
+                                  ? modelUnavailableMessage
+                                  : 'Send message'
                             }
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                           >
                             {disabled ? (
-                              <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                              <Loading className="size-3.5 shrink-0" />
                             ) : (
                               <ArrowUp className="size-4" />
                             )}
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      {modelUnavailable && (
+                      {(capabilityBlocked || modelUnavailable) && (
                         <TooltipContent side="top" className="max-w-[260px] text-xs">
-                          <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
+                          <p>
+                            {capabilityBlocked
+                              ? composerBlockingActionLabel || composerBlockingReason
+                              : modelUnavailableMessage}
+                          </p>
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -2381,7 +2239,12 @@ function SessionChatInputImpl({
           </div>
         </div>
       </div>
-      <ModelConnectionBar show={noModelsConnected} />
+      <ModelConnectionBar
+        show={noModelsConnected || capabilityBlocked}
+        reason={capabilityBlocked ? composerBlockingReason : null}
+        action={capabilityBlocked ? composerBlockingActionLabel : null}
+        connectKind={capabilityBlocked ? composerConnectKind : null}
+      />
     </div>
   );
 }

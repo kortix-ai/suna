@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import type { Config } from '../config'
 import {
   __clearCloneTokenCacheForTests,
+  buildGitAuthArgs,
   configureGitCredentialHelper,
   configureRepoCredentialHelper,
   resolveGitCredentialOutput,
@@ -208,6 +209,19 @@ describe('git credential helper', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it('uses the provider-selected username for direct-upstream auth', () => {
+    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
+
+    expect(buildGitAuthArgs(
+      'https://kortix.code.storage/project-123.git',
+      'code-storage-jwt',
+      't',
+    )).toEqual([
+      '-c',
+      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
   })
 
   it('skips configuration for a non-managed (no repo) sandbox', async () => {

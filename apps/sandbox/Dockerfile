@@ -37,6 +37,14 @@ ARG TARGETARCH
 
 WORKDIR /agent
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+# Drop the two workspace-only devDeps (@kortix/sdk, @kortix/shared) before the
+# frozen install: they are `workspace:*` links resolvable only inside the pnpm
+# monorepo, and this build context is a single isolated app, so bun would fail
+# with "Workspace dependency not found". They are consumed solely by the
+# integration tests, which never enter the compiled binary (src/main.ts graph
+# only) and are excluded from the build typecheck (tsconfig.build.json). The
+# committed bun.lock already reflects the stripped dependency set.
+RUN bun -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const k of ['@kortix/sdk','@kortix/shared'])delete (p.devDependencies||{})[k];fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 RUN bun install --frozen-lockfile
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
@@ -171,11 +179,11 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && opencode --version
 
 # Pre-warm Bun's package cache with the OpenCode tool dependencies. The tools in
-# .kortix/opencode/tools/ (web_search, image_search, scrape_webpage) import these,
+# .opencode/tools/ (web_search, image_search, scrape_webpage) import these,
 # and OpenCode runs `bun install` in the cloned config dir at boot. Warming the
 # cache at the runtime HOME path (HOME=/opt/kortix/home) makes that boot-time
 # install offline + fast — no per-boot download.
-# Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
+# Keep in sync with packages/starter/templates/base/.opencode/package.json.
 RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \
     && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > /tmp/oc-deps/package.json \
     && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install --cwd /tmp/oc-deps \

@@ -32,10 +32,10 @@ import { BottomSheetModal } from '@gorhom/bottom-sheet';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useSessions, useCreateSession, useDeleteSession, useArchiveSession, useUnarchiveSession } from '@/lib/platform/hooks';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSessions, useDeleteSession, useArchiveSession, useUnarchiveSession } from '@/lib/platform/hooks';
+import { useSyncStore } from '@/lib/runtime/sync-store';
 import { getAuthToken } from '@/api/config';
-import type { Session } from '@/lib/opencode/types';
+import type { Session } from '@/lib/runtime/types';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionChatInput, type PromptOptions, type TrackedMention } from '@/components/session/SessionChatInput';
 import { BottomBar } from '@/components/session/BottomBar';
@@ -43,12 +43,11 @@ import type { BottomBarRef } from '@/components/session/BottomBar';
 import { TabsOverview } from '@/components/session/TabsOverview';
 import { CommandPalette } from '@/components/session/CommandPalette';
 import {
-  useOpenCodeAgents,
-  useOpenCodeModels,
-  useOpenCodeConfig,
-} from '@/lib/opencode/hooks/use-opencode-data';
-import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+  useRuntimeAgents,
+  useRuntimeModels,
+  useRuntimeConfig,
+} from '@/lib/runtime/hooks/use-runtime-data';
+import { useResolvedConfig } from '@/lib/runtime/hooks/use-local-config';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
@@ -793,9 +792,6 @@ export default function HomeScreen() {
   // Validate persisted tab screenshots (remove stale entries on startup)
   useEffect(() => { validatePersistedScreenshots(); }, []);
 
-  // Compact session mutation
-  const compactSession = useCompactSession();
-
   // Persisted tab state (survives app restarts)
   const activeSessionId = useTabStore((s) => s.activeSessionId);
   const activePageId = useTabStore((s) => s.activePageId);
@@ -831,7 +827,6 @@ export default function HomeScreen() {
       (a: KortixProject, b: KortixProject) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
   }, [kortixProjects]);
-  const createSession = useCreateSession(sandboxUrl);
   const deleteSession = useDeleteSession(sandboxUrl);
   const archiveSession = useArchiveSession(sandboxUrl);
   const unarchiveSession = useUnarchiveSession(sandboxUrl);
@@ -892,9 +887,9 @@ export default function HomeScreen() {
   }, [activeSessions]);
 
   // Agent/model/variant for dashboard input
-  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
-  const { data: dashVisibleModels = [], allModels: dashAllModels = [], defaults: dashDefaults } = useOpenCodeModels(sandboxUrl);
-  const { data: dashConfig } = useOpenCodeConfig(sandboxUrl);
+  const { data: agents = [] } = useRuntimeAgents(sandboxUrl);
+  const { data: dashVisibleModels = [], allModels: dashAllModels = [], defaults: dashDefaults } = useRuntimeModels(sandboxUrl);
+  const { data: dashConfig } = useRuntimeConfig(sandboxUrl);
   const resolved = useResolvedConfig(agents, dashAllModels, dashConfig, dashDefaults);
 
   // Stable error message (prevents re-render loops from error object identity)
@@ -924,37 +919,17 @@ export default function HomeScreen() {
   const handleRightDrawerClose = useCallback(() => { haptics.selection(); setRightDrawerOpen(false); }, []);
 
   const handleNewSession = useCallback(async () => {
-    if (!sandboxUrl) return;
-    try {
-      log.log('➕ [Home] Creating new session...');
-      const session = await createSession.mutateAsync({});
-      log.log('✅ [Home] Session created:', session.id);
-      navigateToSession(session.id);
-      setDrawerOpen(false);
-    } catch (err: any) {
-      log.error('❌ [Home] Failed to create session:', err?.message || err);
-    }
-  }, [sandboxUrl, createSession, navigateToSession]);
+    useTabStore.getState().navigateToPage('page:projects');
+    setDrawerOpen(false);
+  }, []);
 
-  const handleCreateSessionWithPrompt = useCallback(async (title: string, prompt: string) => {
-    if (!sandboxUrl) return;
-    try {
-      const session = await createSession.mutateAsync({ title });
-      navigateToSession(session.id);
-      // Send the preset prompt into the new session
-      const token = await getAuthToken();
-      await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
-      });
-    } catch (err: any) {
-      log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
-    }
-  }, [sandboxUrl, createSession, navigateToSession]);
+  const handleCreateSessionWithPrompt = useCallback(async (_title: string, _prompt: string) => {
+    useTabStore.getState().navigateToPage('page:projects');
+    Alert.alert(
+      'Start from a project',
+      'New agent conversations now run as ACP project sessions. Pick a project, then use its composer to send this prompt.'
+    );
+  }, []);
 
   const handleSessionPress = useCallback((session: Session) => {
     navigateToSession(session.id);
@@ -1010,68 +985,25 @@ export default function HomeScreen() {
   const [isDashboardSending, setIsDashboardSending] = useState(false);
 
   const handleDashboardSend = useCallback(
-    async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl || isDashboardSending) return;
+    async (text: string, _options: PromptOptions, _mentions?: TrackedMention[]) => {
+      if (isDashboardSending) return;
       if (!text.trim()) return;
-
-      // Process session mentions — append XML refs
-      let finalText = text;
-      const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
-      if (sessionMentions && sessionMentions.length > 0) {
-        const refs = sessionMentions
-          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
-          .join('\n');
-        finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
-      }
 
       setIsDashboardSending(true);
 
       try {
-        // Create session — navigate immediately on success
-        const session = await createSession.mutateAsync({});
-        navigateToSession(session.id);
-
-        // Optimistic user message
-        const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        useSyncStore.getState().addOptimisticMessage(session.id, {
-          info: {
-            id: messageId,
-            role: 'user',
-            sessionID: session.id,
-            time: { created: Date.now() },
-          },
-          parts: [{ type: 'text', id: partId, text: finalText }],
-        });
-        useSyncStore.getState().setStatus(session.id, { type: 'busy' });
-
-        // Fire prompt async (fire-and-forget)
-        const payload: Record<string, any> = {
-          parts: [{ type: 'text', text: finalText }],
-        };
-        if (options.model) payload.model = options.model;
-        if (options.agent) payload.agent = options.agent;
-        if (options.variant) payload.variant = options.variant;
-
-        const token = await getAuthToken();
-        fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payload),
-        }).catch((err) => {
-          log.error('❌ [Home] Dashboard prompt failed:', err);
-          useSyncStore.getState().setStatus(session.id, { type: 'idle' });
-        });
+        useTabStore.getState().navigateToPage('page:projects');
+        Alert.alert(
+          'Start from a project',
+          'New agent conversations now run as ACP project sessions. Pick a project, then send your prompt from that project.'
+        );
       } catch (err: any) {
         log.error('❌ [Home] Dashboard send failed:', err?.message || err);
       } finally {
         setIsDashboardSending(false);
       }
     },
-    [sandboxUrl, isDashboardSending, createSession, navigateToSession],
+    [isDashboardSending],
   );
 
   // Capture a screenshot of the current tab before showing tabs overview.
@@ -1952,28 +1884,10 @@ export default function HomeScreen() {
                 onNewSession={handleNewSession}
                 onOpenTabs={handleOpenTabsOverview}
                 onCompactSession={() => {
-                  if (activeSessionId && sandboxUrl) {
-                    Alert.alert(
-                      'Compact Session',
-                      'This will summarize older messages using AI to free up context space. Key information is preserved, but original messages will be condensed into a compact summary.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Compact',
-                          onPress: () => {
-                            compactSession.mutate(
-                              { sandboxUrl, sessionId: activeSessionId },
-                              {
-                                onError: (err) => {
-                                  Alert.alert('Compact Failed', err.message || 'Failed to compact session.');
-                                },
-                              },
-                            );
-                          },
-                        },
-                      ],
-                    );
-                  }
+                  Alert.alert(
+                    'Compaction unavailable',
+                    'ACP sessions do not use the legacy runtime summarize endpoint. Session compaction will return after summaries are exposed through the project-session API.',
+                  );
                 }}
                 onExportTranscript={() => {
                   if (activeSessionId) {

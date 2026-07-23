@@ -99,7 +99,7 @@ async function main() {
     await execFileAsync('git', [...gitEnvArgs(tk.json.push_token), 'clone', '-q', repoUrl, dir]);
     const tracked = (await execFileAsync('git', ['-C', dir, 'ls-files'])).stdout;
     assert(tracked.includes('kortix.yaml'), 'seeded repo contains kortix.yaml');
-    assert(tracked.includes('.kortix/opencode/opencode.jsonc'), 'seeded repo contains .kortix/opencode/opencode.jsonc');
+    assert(tracked.includes('.opencode/opencode.jsonc'), 'seeded repo contains .opencode/opencode.jsonc');
 
     // ── 4. CLI "ship": commit + push current branch to the managed origin ─
     await writeFile(join(dir, 'E2E.md'), `e2e ${new Date().toISOString()}\n`);

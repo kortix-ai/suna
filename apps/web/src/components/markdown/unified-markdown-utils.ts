@@ -128,3 +128,29 @@ export function looksLikeFilePath(text: string): boolean {
   if (FILE_EXTENSION_RE.test(text)) return true;
   return sharedLooksLikeFilePath(text);
 }
+
+// The absolute roots the daemon file API serves (see use-runtime-file-open.ts).
+// Restricting interception to these means no app route can be hijacked.
+const SANDBOX_FILE_ROOTS = ['/workspace', '/home', '/tmp', '/opt'];
+
+/**
+ * The decoded sandbox path when `href` is a markdown link into the sandbox
+ * filesystem (`[report.xlsx](/workspace/out/report.xlsx)`), else null. Such
+ * hrefs are same-origin, so next/link would navigate to a nonexistent route —
+ * the anchor renderer routes them to the session panel's file viewer instead.
+ */
+export function sandboxFileHref(href: string | undefined): string | null {
+  if (!href) return null;
+  const [rawPath] = href.split('#')[0]!.split('?');
+  if (!rawPath.startsWith('/')) return null;
+  let path = rawPath;
+  try {
+    path = decodeURIComponent(rawPath);
+  } catch {
+    // Malformed escape sequence — treat the raw text as the path.
+  }
+  const inSandbox = SANDBOX_FILE_ROOTS.some(
+    (root) => path === root || path.startsWith(`${root}/`),
+  );
+  return inSandbox ? path : null;
+}

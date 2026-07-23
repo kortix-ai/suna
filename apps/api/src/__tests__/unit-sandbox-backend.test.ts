@@ -43,11 +43,16 @@ beforeEach(() => {
 
 describe('buildSandboxUpstreamHeaders', () => {
   test('preserves provider-owned ingress headers without knowing their names', async () => {
-    const h = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: '', serviceKey: null, providerHeaders: {
-      'X-Daytona-Skip-Preview-Warning': 'true',
-      'X-Daytona-Disable-CORS': 'true',
-      'e2b-traffic-access-token': 'e2b-token',
-    } });
+    const h = await buildSandboxUpstreamHeaders({
+      sandboxId: 'sbx',
+      userId: '',
+      serviceKey: null,
+      providerHeaders: {
+        'X-Daytona-Skip-Preview-Warning': 'true',
+        'X-Daytona-Disable-CORS': 'true',
+        'e2b-traffic-access-token': 'e2b-token',
+      },
+    });
     expect(h['X-Daytona-Skip-Preview-Warning']).toBe('true');
     expect(h['X-Daytona-Disable-CORS']).toBe('true');
     expect(h['e2b-traffic-access-token']).toBe('e2b-token');
@@ -64,7 +69,12 @@ describe('buildSandboxUpstreamHeaders', () => {
   });
 
   test('includes provider traffic credentials only when supplied by the adapter', async () => {
-    const withTok = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: 'u1', serviceKey: 'k', providerHeaders: { 'X-Daytona-Preview-Token': 'ptok' } });
+    const withTok = await buildSandboxUpstreamHeaders({
+      sandboxId: 'sbx',
+      userId: 'u1',
+      serviceKey: 'k',
+      providerHeaders: { 'X-Daytona-Preview-Token': 'ptok' },
+    });
     expect(withTok['X-Daytona-Preview-Token']).toBe('ptok');
     const without = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: 'u1', serviceKey: 'k' });
     expect(without['X-Daytona-Preview-Token']).toBeUndefined();

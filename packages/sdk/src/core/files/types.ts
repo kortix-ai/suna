@@ -1,5 +1,5 @@
 /**
- * Workspace file types — the OpenCode daemon REST shapes.
+ * Workspace file types — the Runtime daemon REST shapes.
  * Owned by the SDK so every host shares one definition.
  */
 
@@ -55,8 +55,8 @@ export interface FindMatch {
   submatches: Array<{ start: number; end: number }>;
 }
 
-/** `GET /project/current` response. */
-export interface OpenCodeProjectInfo {
+/** Harness-neutral projection of the active Kortix session workspace. */
+export interface RuntimeProjectInfo {
   id: string;
   worktree: string;
   vcs?: 'git';
@@ -66,7 +66,7 @@ export interface OpenCodeProjectInfo {
   sandboxes: string[];
 }
 
-/** `GET /global/health` response. */
+/** Projection of the Kortix daemon's `GET /kortix/health` response. */
 export interface ServerHealth {
   healthy: boolean;
   version: string;
@@ -76,4 +76,9 @@ export interface ServerHealth {
 export interface UploadResult {
   path: string;
   size: number;
+}
+
+/** `GET /ports` response item — a listening TCP port inside the sandbox. */
+export interface ListeningPort {
+  port: number;
 }

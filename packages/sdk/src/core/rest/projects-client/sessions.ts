@@ -1,8 +1,8 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
-import { backendApi } from '../../http/api-client';
-import { markSessionFresh } from '../../http/fresh-sessions';
-import { type ConnectorSharing, unwrap } from './shared';
+import { backendApi } from "../../http/api-client";
+import { markSessionFresh } from "../../http/fresh-sessions";
+import { type ConnectorSharing, unwrap } from "./shared";
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -11,13 +11,13 @@ import { type ConnectorSharing, unwrap } from './shared';
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionStatus =
-  | 'queued'
-  | 'branching'
-  | 'provisioning'
-  | 'running'
-  | 'stopped'
-  | 'failed'
-  | 'completed';
+  | "queued"
+  | "branching"
+  | "provisioning"
+  | "running"
+  | "stopped"
+  | "failed"
+  | "completed";
 
 export interface ProjectSession {
   session_id: string;
@@ -25,18 +25,21 @@ export interface ProjectSession {
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  sandbox_provider: "daytona" | "platinum" | "e2b" | null;
   sandbox_id: string;
   sandbox_url: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
+  runtime_protocol?: "acp" | null;
+  runtime_id?: string | null;
+  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
-   * auto title mirrored from OpenCode server-side during project session reads.
+   * auto title mirrored from Runtime server-side during project session reads.
    */
   name: string | null;
   /**
    * The user-set name override (metadata.custom_name). Authoritative — when
-   * present it always wins over the server-mirrored OpenCode title. null = no
+   * present it always wins over the server-mirrored Runtime title. null = no
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
@@ -44,18 +47,16 @@ export interface ProjectSession {
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
-  opencode_sessions: ProjectOpenCodeSession[];
+  runtime_sessions: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;
   owner_name?: string | null;
-  owner_type?: 'user' | 'service_account' | 'unknown' | null;
-  visibility?: 'private' | 'project' | 'restricted';
-  /** How the session was started — a policy class derived from the caller's
-   *  token kind, not the surface. A backend (PAT/service-account) create is
-   *  'backend'; a human web session is 'user'. See Kortix-as-a-Backend. */
-  origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
-  /** The wrapper's end-user this session acts for (backend origin only). */
+  owner_type?: "user" | "service_account" | "unknown" | null;
+  visibility?: "private" | "project" | "restricted";
+  /** Server-derived policy class. Older compatible servers may omit it. */
+  origin?: "user" | "trigger" | "schedule" | "backend" | "system";
+  /** Opaque wrapper user reference. Non-null only for backend-origin sessions. */
   origin_ref?: string | null;
   /** The per-session secrets allowlist that was applied (identifiers); null = none. */
   secrets_allowlist?: string[] | null;
@@ -65,7 +66,8 @@ export interface ProjectSession {
   /** Whether the current viewer may open/read this session. */
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
-  runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
+  runtime_status?:
+    "provisioning" | "active" | "stopped" | "error" | "archived" | null;
   /** Server-managed soft-deletion audit fields, present in project inventory mode. */
   deleted_at?: string | null;
   deleted_by?: string | null;
@@ -87,11 +89,22 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
-  opencode_model?: string;
+  model?: string;
+  /** Optional harness-native model id, applied when this ACP runtime launches. */
+  runtime_model?: string;
+  /** Explicit harness authentication route selected for this session. */
+  connection_id?: import("./composer-capabilities").HarnessAuthKind;
+  /** Canonical harness-qualified model selection. Legacy model/runtime_model
+   * fields remain accepted during migration. */
+  model_selection?: {
+    kind: "default" | "preset" | "custom";
+    model_id?: string | null;
+    connection_id?: import("./composer-capabilities").HarnessAuthKind | null;
+  };
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'platinum' | 'e2b';
+  provider?: "daytona" | "platinum" | "e2b";
   branch_already_created?: boolean;
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
@@ -117,7 +130,7 @@ export interface CreateProjectSessionInput {
   secrets?: string[];
 }
 
-export interface ProjectOpenCodeSession {
+export interface ProjectRuntimeSession {
   id: string;
   title: string | null;
   parent_id: string | null;
@@ -129,10 +142,17 @@ export interface ProjectOpenCodeSession {
 
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: { scope?: "visible" | "project" },
 ) {
-  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
+  const query =
+    options?.scope && options.scope !== "visible"
+      ? `?scope=${options.scope}`
+      : "";
+  return unwrap(
+    await backendApi.get<ProjectSession[]>(
+      `/projects/${projectId}/sessions${query}`,
+    ),
+  );
 }
 
 /**
@@ -157,7 +177,7 @@ export interface SessionPreviewCandidate {
   label: string;
   port: number;
   path: string;
-  status: 'online' | 'offline' | 'unknown';
+  status: "online" | "offline" | "unknown";
   source: string;
 }
 
@@ -165,12 +185,12 @@ export interface SessionPublicShare {
   share_id: string;
   session_id: string;
   project_id: string;
-  resource_type: 'preview' | 'file' | string;
+  resource_type: "preview" | "file" | string;
   label: string;
   port: number | null;
   path: string;
   file_path: string | null;
-  mode: 'view' | 'interactive' | string;
+  mode: "view" | "interactive" | string;
   allow_websocket: boolean;
   expires_at: string | null;
   revoked_at: string | null;
@@ -193,12 +213,15 @@ export interface CreateSessionPublicShareInput {
     label?: string;
     path: string;
   };
-  mode?: 'view' | 'interactive';
+  mode?: "view" | "interactive";
   label?: string;
   expires_at?: string | null;
 }
 
-export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
+export async function getSessionPreviewCandidates(
+  projectId: string,
+  sessionId: string,
+) {
   return unwrap(
     await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(
       `/projects/${projectId}/sessions/${sessionId}/previews`,
@@ -206,7 +229,10 @@ export async function getSessionPreviewCandidates(projectId: string, sessionId: 
   );
 }
 
-export async function listSessionPublicShares(projectId: string, sessionId: string) {
+export async function listSessionPublicShares(
+  projectId: string,
+  sessionId: string,
+) {
   return unwrap(
     await backendApi.get<{ shares: SessionPublicShare[] }>(
       `/projects/${projectId}/sessions/${sessionId}/public-shares`,
@@ -240,9 +266,15 @@ export async function revokeSessionPublicShare(
   );
 }
 
-export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
+export async function createProjectSession(
+  projectId: string,
+  input?: CreateProjectSessionInput,
+) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions`,
+      input ?? {},
+    ),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -262,9 +294,12 @@ export async function getProjectSession(
   options?: { showErrors?: boolean },
 ) {
   return unwrap(
-    await backendApi.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, {
-      showErrors: options?.showErrors,
-    }),
+    await backendApi.get<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+      {
+        showErrors: options?.showErrors,
+      },
+    ),
   );
 }
 
@@ -312,11 +347,14 @@ export async function getSessionAudit(
   limit?: number,
   options?: { showErrors?: boolean },
 ) {
-  const qs = limit ? `?limit=${limit}` : '';
+  const qs = limit ? `?limit=${limit}` : "";
   return unwrap(
-    await backendApi.get<SessionAudit>(`/projects/${projectId}/sessions/${sessionId}/audit${qs}`, {
-      showErrors: options?.showErrors,
-    }),
+    await backendApi.get<SessionAudit>(
+      `/projects/${projectId}/sessions/${sessionId}/audit${qs}`,
+      {
+        showErrors: options?.showErrors,
+      },
+    ),
   );
 }
 
@@ -342,7 +380,7 @@ export interface SessionTranscriptMessage {
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
 }
@@ -353,12 +391,12 @@ export async function getSessionTranscript(
   options?: { limit?: number; chars?: number },
 ) {
   const search = new URLSearchParams();
-  if (options?.limit != null) search.set('limit', String(options.limit));
-  if (options?.chars != null) search.set('chars', String(options.chars));
+  if (options?.limit != null) search.set("limit", String(options.limit));
+  if (options?.chars != null) search.set("chars", String(options.chars));
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionTranscript>(
-      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ""}`,
     ),
   );
 }
@@ -372,17 +410,28 @@ export async function updateProjectSession(
   },
 ) {
   return unwrap(
-    await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
+    await backendApi.patch<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+      input,
+    ),
   );
 }
 
-export async function deleteProjectSession(projectId: string, sessionId: string) {
+export async function deleteProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
   );
 }
 
-export async function restartProjectSession(projectId: string, sessionId: string) {
+export async function restartProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,

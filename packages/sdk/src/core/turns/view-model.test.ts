@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Part } from '../runtime/client';
+import type { Part } from '../runtime/wire-types';
 import { classifyPart, type ClassifiedPart } from './classify';
 import type { ToolView } from './classify';
 import { toolViewModel } from './view-model';

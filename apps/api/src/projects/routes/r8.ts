@@ -32,9 +32,9 @@ import {
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
-// missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
-// once reachable — returning a single readiness payload { stage, sandbox,
-// opencode_session_id, retriable } the client polls until stage='ready'.
+// missing sandbox, resumes a hibernated/idle one, and verifies the sandbox's
+// ACP runtime — returning one readiness payload with runtime protocol/id/session
+// metadata that the client polls until stage='ready'.
 
 projectsApp.openapi(
   createRoute({

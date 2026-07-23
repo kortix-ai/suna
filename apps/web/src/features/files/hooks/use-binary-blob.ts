@@ -3,15 +3,15 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
-import { readFileAsBlob } from '../api/opencode-files';
+import { readFileAsBlob } from '../api/runtime-files';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
 export const binaryBlobKeys = {
-  all: ['opencode-files', 'binary-blob'] as const,
+  all: ['runtime-files', 'binary-blob'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['opencode-files', 'binary-blob', serverUrl, filePath] as const,
+    ['runtime-files', 'binary-blob', serverUrl, filePath] as const,
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ export function useBinaryBlob(filePath: string | null): {
   const query = useQuery<Blob>({
     queryKey: filePath
       ? binaryBlobKeys.file(serverUrl, filePath)
-      : ['opencode-files', 'binary-blob', '__disabled__'],
+      : ['runtime-files', 'binary-blob', '__disabled__'],
     queryFn: async () => {
       const blob = await readFileAsBlob(filePath!);
       if (blob.size === 0) {

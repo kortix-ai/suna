@@ -1,5 +1,5 @@
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { normalizeProviderList } from '@/hooks/runtime/provider-selection';
+import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { GatewayCatalogModel } from '@kortix/sdk';
 

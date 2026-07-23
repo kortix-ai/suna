@@ -1,8 +1,9 @@
-import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part, SessionStatus } from "../runtime/wire-types";
 
 export const SESSION_SYNC_PAGE_SIZE = 10;
 
-export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
+export type SessionSyncFreshness =
+  "idle" | "loading" | "fresh" | "stale" | "error";
 
 export interface SessionSyncMessage {
   info: Message;
@@ -27,16 +28,16 @@ export interface SessionSyncScheduler {
 }
 
 export type SessionSyncReason =
-  | 'initial'
-  | 'poll'
-  | 'sse-gap'
-  | 'compaction'
-  | 'session-error'
-  | 'send-recovery'
-  | 'manual';
+  | "initial"
+  | "poll"
+  | "sse-gap"
+  | "compaction"
+  | "session-error"
+  | "send-recovery"
+  | "manual";
 
 export interface SessionSyncTelemetryEvent {
-  operation: 'tail' | 'older';
+  operation: "tail" | "older";
   reason: SessionSyncReason;
   durationMs: number;
   messageCount: number;
@@ -58,37 +59,39 @@ export interface SessionSyncControllerOptions {
   livenessIntervalMs?: number;
 }
 
-export interface HttpSessionSyncControllerOptions
-  extends Pick<
-    SessionSyncControllerOptions,
-    | 'sessionId'
-    | 'hydrate'
-    | 'markLoaded'
-    | 'setStatus'
-    | 'onTelemetry'
-    | 'scheduler'
-    | 'livenessIntervalMs'
-  > {
+export interface HttpSessionSyncControllerOptions extends Pick<
+  SessionSyncControllerOptions,
+  | "sessionId"
+  | "hydrate"
+  | "markLoaded"
+  | "setStatus"
+  | "onTelemetry"
+  | "scheduler"
+  | "livenessIntervalMs"
+> {
   baseUrl: string;
   getToken?: () => string | null | Promise<string | null>;
   fetch?: SessionSyncFetch;
 }
 
-export type SessionSyncFetch = (input: string, init?: RequestInit) => Promise<Response>;
+export type SessionSyncFetch = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
 
 type HttpSessionSyncSourceOptions = Pick<
   HttpSessionSyncControllerOptions,
-  'baseUrl' | 'sessionId' | 'getToken' | 'fetch'
+  "baseUrl" | "sessionId" | "getToken" | "fetch"
 >;
 
 export function createHttpSessionSyncPageLoader(
   options: HttpSessionSyncSourceOptions,
-): SessionSyncControllerOptions['loadPage'] {
+): SessionSyncControllerOptions["loadPage"] {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
-  const baseUrl = options.baseUrl.replace(/\/$/, '');
+  const baseUrl = options.baseUrl.replace(/\/$/, "");
   return async ({ limit, before }) => {
     const query = new URLSearchParams({ limit: String(limit) });
-    if (before) query.set('before', before);
+    if (before) query.set("before", before);
     const token = await options.getToken?.();
     const response = await fetchImpl(
       `${baseUrl}/session/${encodeURIComponent(options.sessionId)}/message?${query}`,
@@ -99,7 +102,7 @@ export function createHttpSessionSyncPageLoader(
     }
     return {
       messages: (await response.json()) as SessionSyncMessage[],
-      nextCursor: response.headers.get('x-next-cursor') || undefined,
+      nextCursor: response.headers.get("x-next-cursor") || undefined,
     };
   };
 }
@@ -114,7 +117,7 @@ export function createHttpSessionSyncController(
   options: HttpSessionSyncControllerOptions,
 ): SessionSyncController {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
-  const baseUrl = options.baseUrl.replace(/\/$/, '');
+  const baseUrl = options.baseUrl.replace(/\/$/, "");
   const loadPage = createHttpSessionSyncPageLoader(options);
   const request = async (path: string): Promise<Response> => {
     const token = await options.getToken?.();
@@ -131,15 +134,15 @@ export function createHttpSessionSyncController(
     ...options,
     loadPage,
     loadStatus: async () => {
-      const response = await request('/session/status');
+      const response = await request("/session/status");
       const statuses = (await response.json()) as Record<string, SessionStatus>;
-      return statuses[options.sessionId] ?? ({ type: 'idle' } as SessionStatus);
+      return statuses[options.sessionId] ?? ({ type: "idle" } as SessionStatus);
     },
   });
 }
 
 export async function loadCompleteSessionHistory(
-  loadPage: SessionSyncControllerOptions['loadPage'],
+  loadPage: SessionSyncControllerOptions["loadPage"],
 ): Promise<SessionSyncMessage[]> {
   const messages = new Map<string, SessionSyncMessage>();
   const cursors = new Set<string>();
@@ -158,13 +161,16 @@ export async function loadCompleteSessionHistory(
     }
     if (before) cursors.add(before);
   } while (before);
-  return [...messages.values()].sort((a, b) => a.info.id.localeCompare(b.info.id));
+  return [...messages.values()].sort((a, b) =>
+    a.info.id.localeCompare(b.info.id),
+  );
 }
 
 const defaultScheduler: SessionSyncScheduler = {
   now: Date.now,
   setInterval: (handler, intervalMs) => setInterval(handler, intervalMs),
-  clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+  clearInterval: (handle) =>
+    clearInterval(handle as ReturnType<typeof setInterval>),
 };
 
 /**
@@ -176,7 +182,7 @@ export class SessionSyncController {
   private readonly scheduler: SessionSyncScheduler;
   private readonly livenessIntervalMs: number;
   private snapshot: SessionSyncSnapshot = {
-    freshness: 'idle',
+    freshness: "idle",
     hasOlder: false,
     isLoadingOlder: false,
   };
@@ -203,15 +209,15 @@ export class SessionSyncController {
   };
 
   start(): Promise<void> {
-    if (this.snapshot.freshness === 'fresh') return Promise.resolve();
-    return this.reconcile('initial');
+    if (this.snapshot.freshness === "fresh") return Promise.resolve();
+    return this.reconcile("initial");
   }
 
-  reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
+  reconcile(reason: SessionSyncReason = "manual"): Promise<void> {
     if (this.destroyed) return Promise.resolve();
     if (this.tailRequest) return this.tailRequest;
     this.update({
-      freshness: this.snapshot.freshness === 'idle' ? 'loading' : 'stale',
+      freshness: this.snapshot.freshness === "idle" ? "loading" : "stale",
     });
     this.tailRequest = this.loadTail(reason).finally(() => {
       this.tailRequest = undefined;
@@ -224,7 +230,7 @@ export class SessionSyncController {
     if (this.olderRequest) return this.olderRequest;
     const before = this.nextCursor;
     this.update({ isLoadingOlder: true });
-    this.olderRequest = this.loadPage('older', 'manual', before)
+    this.olderRequest = this.loadPage("older", "manual", before)
       .then((page) => {
         if (this.destroyed) return;
         this.options.hydrate(page.messages);
@@ -239,8 +245,8 @@ export class SessionSyncController {
 
   noteActivity(): void {
     this.lastActivityAt = this.scheduler.now();
-    if (this.snapshot.freshness !== 'fresh') {
-      this.update({ freshness: 'fresh' });
+    if (this.snapshot.freshness !== "fresh") {
+      this.update({ freshness: "fresh" });
     }
   }
 
@@ -265,14 +271,14 @@ export class SessionSyncController {
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
     try {
-      const page = await this.loadPage('tail', reason);
+      const page = await this.loadPage("tail", reason);
       if (this.destroyed) return;
       this.options.hydrate(page.messages);
       this.setCursor(page.nextCursor);
-      this.update({ freshness: 'fresh' });
+      this.update({ freshness: "fresh" });
     } catch {
       if (!this.destroyed) {
-        this.update({ freshness: 'error' });
+        this.update({ freshness: "error" });
       }
     } finally {
       if (!this.destroyed) this.options.markLoaded();
@@ -280,7 +286,7 @@ export class SessionSyncController {
   }
 
   private async loadPage(
-    operation: 'tail' | 'older',
+    operation: "tail" | "older",
     reason: SessionSyncReason,
     before?: string,
   ): Promise<SessionSyncPage> {
@@ -311,10 +317,13 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
+    if (
+      this.destroyed ||
+      this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs
+    ) {
       return;
     }
-    await Promise.all([this.reconcile('poll'), this.reconcileStatus()]);
+    await Promise.all([this.reconcile("poll"), this.reconcileStatus()]);
     this.lastActivityAt = this.scheduler.now();
   }
 

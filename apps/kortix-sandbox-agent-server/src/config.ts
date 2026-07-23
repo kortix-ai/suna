@@ -217,8 +217,8 @@ export async function resolveSandboxOnBoot(cfg: Config): Promise<string | null> 
 /**
  * Pick the opencode config dir for this sandbox. Honors `opencode.config_dir` in
  * the project's manifest (kortix.yaml, or legacy kortix.toml) when present,
- * defaulting to `.kortix/opencode` relative to the cloned repo, and falls back
- * to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR if the project doesn't have an
+ * defaulting to `.opencode` (the canonical config dir) relative to the cloned
+ * repo, and falls back to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR if the project doesn't have an
  * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
  * before a project has been cloned.
  */
@@ -253,7 +253,7 @@ async function readOpencodeConfigDirFromManifest(
   fs: typeof import('node:fs/promises'),
   projectTarget: string,
 ): Promise<string> {
-  const fallback = '.kortix/opencode'
+  const fallback = '.opencode'
   const manifest = await readProjectManifest(fs, projectTarget)
   if (!manifest) return fallback
   const rawValue = extractNestedString(manifest.body, manifest.format, 'opencode', 'config_dir')

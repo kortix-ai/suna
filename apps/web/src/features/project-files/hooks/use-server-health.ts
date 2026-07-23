@@ -1,11 +1,11 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';
+import type { ServerHealth, RuntimeProjectInfo } from '@/features/file-browser/types';
 
 /**
  * In the project-files view, "the server" is always the backend API — there
- * is no per-sandbox OpenCode instance to health-check. Treat as healthy.
+ * is no per-sandbox Runtime instance to health-check. Treat as healthy.
  */
 export function useServerHealth(_options?: { enabled?: boolean }) {
   return useMemo(
@@ -25,7 +25,7 @@ export function useServerHealth(_options?: { enabled?: boolean }) {
  * git-status gate (`project?.vcs === 'git'`) continues to behave correctly.
  */
 export function useCurrentProject(_options?: { enabled?: boolean }) {
-  const data: OpenCodeProjectInfo = {
+  const data: RuntimeProjectInfo = {
     id: 'project-files',
     worktree: '/workspace',
     vcs: 'git',

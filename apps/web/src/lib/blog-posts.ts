@@ -1088,7 +1088,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
       type: 'code',
       code: `acme-ai-workspace/
 ├─ kortix.yaml              # project, sandboxes, triggers, connectors, policy
-├─ .kortix/opencode/
+├─ .opencode/
 │  ├─ agents/               # role-specific agents: finance, support, sales, legal
 │  ├─ skills/               # repeatable client playbooks and workflows
 │  └─ commands/             # approved operating motions

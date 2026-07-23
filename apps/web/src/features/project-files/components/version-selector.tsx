@@ -6,8 +6,8 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { ProjectBranch } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import type { ProjectBranch } from '@kortix/sdk/projects-client';
 import { ChevronsUpDown } from '@mynaui/icons-react';
 import { ArrowDownLeft, ArrowUpRight, Check, Layers, Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -70,14 +70,14 @@ export function VersionSelector() {
           variant="outline-ghost"
           type="button"
           size="sm"
-          className={cn('w-30 max-w-[300px] min-w-0 shrink-0 justify-between')}
+          className={cn('shrink-0 justify-between gap-3')}
           title={tHardcodedUi.raw(
             'featuresProjectFilesComponentsVersionSelector.line88JsxAttrTitleSwitchVersion',
           )}
         >
           <div className="flex items-center gap-2">
             <Layers className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="truncate">{activeRef || 'Version'}</span>
+            <span className="truncate">{activeRef.slice(0, 8) || 'Version'}</span>
           </div>
           <ChevronsUpDown className="text-muted-foreground size-3 shrink-0" />
         </Button>

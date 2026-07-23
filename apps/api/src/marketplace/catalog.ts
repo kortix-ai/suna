@@ -147,7 +147,11 @@ function projectAgentsAndTriggers(
 
   const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
   const agents: ProjectAgent[] = agentNames.map((name) => {
-    const md = files.find((f) => pathOf(f) === `.kortix/opencode/agents/${name}.md`);
+    // `.opencode` is the canonical config dir; `.kortix/opencode` is kept as a
+    // fallback for registry:project bundles built off an un-migrated layout.
+    const md = files.find(
+      (f) => pathOf(f) === `.opencode/agents/${name}.md` || pathOf(f) === `.kortix/opencode/agents/${name}.md`,
+    );
     // Parse the agent's own `.md` frontmatter with the YAML parser (not a
     // line-based one) so folded block scalars (`description: >-`) resolve to the
     // real text, and collapse it to a single line for the card.

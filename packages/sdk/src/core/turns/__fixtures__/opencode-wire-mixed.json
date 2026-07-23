@@ -1,0 +1,211 @@
+{
+  "session": {
+    "id": "ses_abc123",
+    "title": "Fix the flaky login test",
+    "time": { "created": 1700000000000, "updated": 1700000120000 }
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_1",
+        "role": "user",
+        "sessionID": "ses_abc123",
+        "time": { "created": 1700000000000 }
+      },
+      "parts": [
+        {
+          "id": "prt_1",
+          "type": "text",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_1",
+          "text": "Can you check why the login test is flaky and fix it?"
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_2",
+        "role": "assistant",
+        "sessionID": "ses_abc123",
+        "agent": "build",
+        "modelID": "glm-5.2",
+        "time": { "created": 1700000001000, "completed": 1700000010000 }
+      },
+      "parts": [
+        {
+          "id": "prt_2",
+          "type": "reasoning",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "text": "Let me look at the test file first."
+        },
+        {
+          "id": "prt_3",
+          "type": "text",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "text": "I'll start by reading the test."
+        },
+        {
+          "id": "prt_4",
+          "type": "tool",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "callID": "call_read_1",
+          "tool": "read",
+          "state": {
+            "status": "completed",
+            "input": { "filePath": "tests/login.test.ts" },
+            "output": "test('login', async () => { await sleep(10); expect(loggedIn).toBe(true); })",
+            "title": "Read File",
+            "time": { "start": 0, "end": 1 }
+          }
+        },
+        {
+          "id": "prt_5",
+          "type": "tool",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "callID": "call_bash_1",
+          "tool": "bash",
+          "state": {
+            "status": "completed",
+            "input": { "command": "bun test tests/login.test.ts" },
+            "output": "FAIL login.test.ts\n<bash_metadata>cwd=/repo</bash_metadata>\n<exit_code>1</exit_code>",
+            "title": "Shell",
+            "time": { "start": 1, "end": 2 }
+          }
+        },
+        {
+          "id": "prt_6",
+          "type": "tool",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "callID": "call_search_1",
+          "tool": "web_search",
+          "state": {
+            "status": "completed",
+            "input": { "query": "flaky test race condition sleep" },
+            "output": "{\"query\":\"flaky test race condition sleep\",\"success\":false,\"error\":\"Insufficient credits\"}",
+            "title": "Web Search",
+            "time": { "start": 2, "end": 3 }
+          }
+        },
+        {
+          "id": "prt_7",
+          "type": "file",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "mime": "image/png",
+          "url": "https://example.com/screenshot.png",
+          "filename": "screenshot.png"
+        },
+        {
+          "id": "prt_8",
+          "type": "subtask",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "description": "Investigate flaky timing",
+          "agent": "debug",
+          "prompt": "Find the race condition in the login test",
+          "model": { "providerID": "anthropic", "modelID": "claude-sonnet" }
+        },
+        {
+          "id": "prt_9",
+          "type": "patch",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "hash": "abc123def",
+          "files": ["tests/login.test.ts", "src/login.ts"]
+        },
+        {
+          "id": "prt_10",
+          "type": "snapshot",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "snapshot": "snap_1"
+        },
+        {
+          "id": "prt_11",
+          "type": "agent",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "name": "debug"
+        },
+        {
+          "id": "prt_12",
+          "type": "retry",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "attempt": 1,
+          "error": "ECONNRESET",
+          "time": { "created": 1700000005000 }
+        },
+        {
+          "id": "prt_13",
+          "type": "compaction",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "auto": true,
+          "overflow": false,
+          "tail_start_id": "prt_2"
+        },
+        {
+          "id": "prt_14",
+          "type": "step-start",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "snapshot": "snap_0"
+        },
+        {
+          "id": "prt_15",
+          "type": "step-finish",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_2",
+          "snapshot": "snap_1",
+          "reason": "end_turn",
+          "cost": 0.02,
+          "tokens": { "input": 120, "output": 80, "reasoning": 10, "cache": { "read": 5, "write": 2 } }
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_3",
+        "role": "assistant",
+        "sessionID": "ses_abc123",
+        "agent": "build",
+        "modelID": "glm-5.2",
+        "time": { "created": 1700000011000, "completed": 1700000015000 },
+        "error": { "name": "ToolExecutionError", "message": "Command timed out after 30s" }
+      },
+      "parts": [
+        {
+          "id": "prt_16",
+          "type": "text",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_3",
+          "text": "Trying to rerun the test..."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_4",
+        "role": "assistant",
+        "sessionID": "ses_abc123",
+        "agent": "build",
+        "time": { "created": 1700000016000, "completed": 1700000016500 }
+      },
+      "parts": [
+        {
+          "id": "prt_17",
+          "type": "step-start",
+          "sessionID": "ses_abc123",
+          "messageID": "msg_4",
+          "snapshot": "snap_2"
+        }
+      ]
+    }
+  ]
+}

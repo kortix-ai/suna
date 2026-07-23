@@ -14,7 +14,10 @@
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
+import {
+  AGENT_BROWSER_VERSION,
+  OPENCODE_VERSION,
+} from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
@@ -35,6 +38,7 @@ import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { harnessVersionKey as _harnessVersionKey, sandboxVersionStr as _sandboxVersionStrBuilder } from './version-keys';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -182,7 +186,12 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // layer. Chromium's content hash is now stable across agent-source churn — it is
 // fetched at most once per pinned Playwright/agent-browser version and
 // cache-reused for every base rebuild after.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v29';
+// v30: opencode 1.17.11→1.18.4 (Claude Sonnet 5/Opus 4.7+ adaptive-thinking
+// fix), pi-coding-agent 0.80.6→0.81.1, bake official `claude`/`codex` CLIs
+// (@anthropic-ai/claude-code, @openai/codex) alongside the ACP adapters, and
+// apt-install fd-find+ripgrep so pi's tools-manager finds them on PATH
+// instead of downloading its own copies on first use.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v30';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -885,8 +894,11 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
-const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
-const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
+// Re-export version key builders (imported from version-keys.ts)
+export const harnessVersionKey = _harnessVersionKey;
+export const sandboxVersionStr = () => _sandboxVersionStrBuilder(SANDBOX_VERSION, RUNTIME_LAYER_VERSION);
+
+const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${harnessVersionKey()}:${AGENT_BROWSER_VERSION}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

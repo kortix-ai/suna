@@ -897,13 +897,11 @@ projectsApp.openapi(
     const kortixIds = Object.keys(byKortix);
     if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
 
-    // Look these sessions up to (a) gate non-managers to their own and (b) map to
-    // the OpenCode session id the sidebar list keys on. The response carries BOTH
-    // id forms → the caller matches whichever it holds.
+    // Look these sessions up to gate non-managers to their own. ACP and the
+    // sidebar are both keyed by the canonical Kortix project-session id.
     const sess = await db
       .select({
         sessionId: projectSessions.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
         createdBy: projectSessions.createdBy,
       })
       .from(projectSessions)
@@ -916,7 +914,6 @@ projectsApp.openapi(
       const n = byKortix[s.sessionId] ?? 0;
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
-      if (s.opencodeSessionId) sessions[s.opencodeSessionId] = n;
       total += n;
     }
     return c.json({ total, sessions });
@@ -1264,14 +1261,6 @@ projectsApp.openapi(
   const attemptedServerField = serverManagedFields.find((field) => hasOwn(body, field));
   if (attemptedServerField) {
     return c.json({ error: `field is server-managed: ${attemptedServerField}` }, 400);
-  }
-
-  // opencode_session_id is SERVER-MANAGED: the backend is the sole authority
-  // for the OpenCode↔Kortix mapping (see ensure-opencode + opencode-mapping.ts).
-  // Clients must never set it, so a stale/forged client value can't drift it.
-  const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) => hasOwn(body, f));
-  if (opencodeManagedField) {
-    return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
   const allowedFields = ['name', 'metadata'];

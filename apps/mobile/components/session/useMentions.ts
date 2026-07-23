@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent } from '@/lib/runtime/hooks/use-runtime-data';
 import type { Session } from '@/lib/platform/types';
 import { searchFiles, rankFile } from '@/lib/utils/file-search';
 
@@ -62,7 +62,7 @@ export function useMentions({
   const [mentions, setMentions] = useState<TrackedMention[]>([]);
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
-  const fileSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileSearchSeq = useRef(0);
   const fileResultsCache = useRef<Set<string>>(new Set());
 
@@ -72,7 +72,7 @@ export function useMentions({
   // ── Debounced file search (matches frontend useEffect) ──────────────────
 
   useEffect(() => {
-    clearTimeout(fileSearchTimer.current);
+    if (fileSearchTimer.current) clearTimeout(fileSearchTimer.current);
 
     if (!mentionQuery || !sandboxUrl) {
       setFileResults([]);
@@ -123,7 +123,9 @@ export function useMentions({
       }
     }, 150);
 
-    return () => clearTimeout(fileSearchTimer.current);
+    return () => {
+      if (fileSearchTimer.current) clearTimeout(fileSearchTimer.current);
+    };
   }, [mentionQuery?.query, sandboxUrl]);
 
   // ── Build mention items (matches frontend mentionItems useMemo) ─────────

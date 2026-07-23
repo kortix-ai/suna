@@ -51,7 +51,7 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { TrashSolid } from '@mynaui/icons-react';

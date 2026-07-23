@@ -93,3 +93,108 @@ describe('runProviders set — validation before any network call', () => {
     expect(chunks.join('')).toContain('--region');
   });
 });
+
+describe('runProviders login — github-copilot is removed dead CLI surface', () => {
+  // The server has never implemented OAuth for github-copilot (it 400s the
+  // request) — `login github-copilot` used to reach the network and print a
+  // raw HTTP 400. It must now fail client-side, with no network call, before
+  // ever resolving a project/auth context (docs/specs/2026-07-21-cli-
+  // credential-model-ux.md §1.1.2).
+  test('errors with exit 2 and does not require login/project context', async () => {
+    const chunks: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    (process.stderr.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    let code: number;
+    try {
+      code = await runProviders(['login', 'github-copilot']);
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(code).toBe(2);
+    const out = chunks.join('');
+    expect(out).toContain('github-copilot');
+    expect(out).not.toContain('HTTP 400');
+  });
+
+  test('openai remains the only OAuth login provider in --help output', async () => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    (process.stdout.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    try {
+      await runProviders(['--help']);
+    } finally {
+      process.stdout.write = orig;
+    }
+    const out = chunks.join('');
+    expect(out).not.toContain('github-copilot');
+  });
+});
+
+describe('runProviders login — registry-driven account resolution (no hardcoded set)', () => {
+  const captureErr = async (args: string[]): Promise<{ code: number; out: string }> => {
+    const chunks: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    (process.stderr.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    let code: number;
+    try {
+      code = await runProviders(args);
+    } finally {
+      process.stderr.write = orig;
+    }
+    return { code, out: chunks.join('') };
+  };
+
+  test('no provider → exit 2 with a usage hint, before any context', async () => {
+    const { code, out } = await captureErr(['login']);
+    expect(code).toBe(2);
+    expect(out).toContain('Pass a provider');
+  });
+
+  test('an unknown provider → exit 2, points at account sign-in, no HTTP', async () => {
+    const { code, out } = await captureErr(['login', 'not-a-real-provider']);
+    expect(code).toBe(2);
+    expect(out).toContain("isn't an account provider");
+    // aliases are surfaced so the user can discover codex/claude
+    expect(out).toContain('claude');
+    expect(out).toContain('codex');
+    expect(out).not.toContain('HTTP');
+  });
+
+  test('an api-key-only provider (openrouter) → exit 2, redirected to `set`', async () => {
+    const { code, out } = await captureErr(['login', 'openrouter']);
+    expect(code).toBe(2);
+    expect(out).toContain('API key');
+    expect(out).toContain('providers set openrouter');
+    expect(out).not.toContain('HTTP');
+  });
+});
+
+describe('providers --help — two-door registry surface', () => {
+  test('names both doors and the codex/claude account entry points', async () => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    (process.stdout.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    try {
+      await runProviders(['--help']);
+    } finally {
+      process.stdout.write = orig;
+    }
+    const out = chunks.join('');
+    expect(out).toContain('Account');
+    expect(out).toContain('API key');
+    expect(out).toContain('codex');
+    expect(out).toContain('claude');
+  });
+});

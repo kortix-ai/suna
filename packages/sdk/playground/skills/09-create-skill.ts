@@ -2,7 +2,7 @@
  * 09 — create a skill (dir + SKILL.md round-trip through the session workspace).
  *
  * A skill is a directory holding a SKILL.md with name/description frontmatter
- * (`.kortix/opencode/skills/<name>/SKILL.md` in this repo layout). Same
+ * (`.opencode/skills/<name>/SKILL.md` in this repo layout). Same
  * deterministic write→read→delete cycle as 06-create-agent; the web UI's
  * "New skill" drives an LLM configure-thread instead. Set KEEP_TEST_FILES=1
  * to keep the file (commit it to register the skill).
@@ -18,7 +18,7 @@ import {
 } from "../_shared";
 
 const SKILL_NAME = "sdk-test-skill";
-const SKILL_DIR = `/workspace/.kortix/opencode/skills/${SKILL_NAME}`;
+const SKILL_DIR = `/workspace/.opencode/skills/${SKILL_NAME}`;
 const SKILL_PATH = `${SKILL_DIR}/SKILL.md`;
 const SKILL_MD = `---
 name: ${SKILL_NAME}

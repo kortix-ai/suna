@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Fuse from 'fuse.js';
 
-import type { Session } from '@/lib/opencode/types';
+import type { Session } from '@/lib/runtime/types';
 import { searchFiles } from '@/lib/utils/file-search';
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ export function CommandPalette({
   const [fileSearchMode, setFileSearchMode] = useState(false);
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
-  const fileSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileSearchSeq = useRef(0);
 
   // Auto-focus and reset on open
@@ -101,7 +101,7 @@ export function CommandPalette({
 
   // File search — only runs when in file search mode
   useEffect(() => {
-    clearTimeout(fileSearchTimer.current);
+    if (fileSearchTimer.current) clearTimeout(fileSearchTimer.current);
 
     if (!fileSearchMode || !query.trim() || !sandboxUrl || !visible) {
       if (fileSearchMode && !query.trim()) {
@@ -129,7 +129,9 @@ export function CommandPalette({
       }
     }, 250);
 
-    return () => clearTimeout(fileSearchTimer.current);
+    return () => {
+      if (fileSearchTimer.current) clearTimeout(fileSearchTimer.current);
+    };
   }, [query, sandboxUrl, visible, fileSearchMode]);
 
   const enterFileSearchMode = useCallback(() => {

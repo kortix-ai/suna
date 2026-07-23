@@ -384,7 +384,7 @@ export function useSlides(): SlideDef[] {
             <div className="space-y-5">
               <Eyebrow>
                 {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextOpenCodeNativeb4d960fb',
+                  'autoAppPresentationSlidesPlatformJsxTextRuntimeNativeb4d960fb',
                 )}
               </Eyebrow>
               <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
@@ -410,7 +410,7 @@ export function useSlides(): SlideDef[] {
                     )}
                   </>,
                   <>
-                    <Mono>.kortix/opencode/</Mono>{' '}
+                    <Mono>.opencode/</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheRuntimeAgentsSkillscceeb26a',
                     )}
@@ -463,7 +463,7 @@ export function useSlides(): SlideDef[] {
             {[
               ['project', 'git repo', 'kortix.yaml + config'],
               ['session', 'isolated sandbox', 'its own branch'],
-              ['agent', 'OpenCode', 'works · commits · pushes'],
+              ['agent', 'Runtime', 'works · commits · pushes'],
               ['change request', 'you review', 'approve to merge'],
               ['main', 'always up', 'self-improves'],
             ].map(([k, t, s], i, arr) => (
@@ -531,7 +531,7 @@ export function useSlides(): SlideDef[] {
               [
                 '02',
                 'Materialize',
-                'The daemon clones the repo, cuts a fresh branch, and reads kortix.yaml + OpenCode config into a live runtime.',
+                'The daemon clones the repo, cuts a fresh branch, and reads kortix.yaml + Runtime config into a live runtime.',
               ],
               [
                 '03',
@@ -1440,7 +1440,7 @@ export function useSlides(): SlideDef[] {
                 [
                   Code2,
                   'Developers',
-                  'A managed cloud for OpenCode, Claude, and Codex agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.',
+                  'A managed cloud for Runtime, Claude, and Codex agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.',
                 ],
                 [
                   Users,

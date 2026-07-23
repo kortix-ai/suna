@@ -23,10 +23,10 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
-import type { Session } from '@/lib/opencode/types';
+import type { Session } from '@/lib/runtime/types';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSyncStore } from '@/lib/runtime/sync-store';
 import { getSheetBg } from '@/lib/theme-colors';
 
 interface TabsOverviewProps {

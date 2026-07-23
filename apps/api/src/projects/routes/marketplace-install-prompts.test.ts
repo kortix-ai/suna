@@ -46,7 +46,7 @@ describe('buildTemplateInstallPrompt', () => {
     // namespaced from the template id, not a bare "support-agent"
     expect(p).toContain('kortix-starter:support-agent');
     expect(p).toContain('$KORTIX_API_URL/marketplace/items/<part-id>/file?path=<target>');
-    expect(p).toContain('.kortix/opencode/agents/');
+    expect(p).toContain('.opencode/agents/');
   });
 
   test('wires the trigger from the show output and ships it DISABLED', () => {

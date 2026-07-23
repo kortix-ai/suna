@@ -59,6 +59,10 @@ mock.module('../billing/services/entitlements', () => ({
   },
 }));
 
+mock.module('../repositories/project-routing-policies', () => ({
+  getProjectRoutingPolicy: async () => null,
+}));
+
 mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
@@ -114,6 +118,10 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   // mock.
   bedrockByokBaseUrl: (region: string | null | undefined) =>
     `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
+  // Same static-import-binding requirement as bedrockByokBaseUrl above: only
+  // CALLED for kind:'bedrock' pricing lookups (this file never exercises
+  // that), but resolve-candidates.ts imports it unconditionally.
+  stripBedrockInferenceProfilePrefix: (modelId: string) => modelId,
 }));
 
 // resolveCandidates resolves raw "auto"/"kortix/auto" via resolveGatewayRoute

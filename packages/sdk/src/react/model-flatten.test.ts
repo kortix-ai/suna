@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { flattenModels } from './model-flatten';
-import type { ProviderListResponse } from './use-opencode-sessions';
+import type { ProviderListResponse } from './use-runtime-sessions';
 
 // Regression coverage for the "every provider shows as Kortix" picker bug:
 // the gateway exposes its ENTIRE catalog under one synthetic `kortix`

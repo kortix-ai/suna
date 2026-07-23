@@ -40,12 +40,40 @@ export interface SessionFileOpenRequest {
   path: string;
   line?: number;
   nonce: number;
+  /** Epoch ms the request was made. Lets a consumer that mounts as a RESULT
+   *  of the request (mobile drawer, Easy detail) distinguish a just-fired
+   *  request from a stale leftover. */
+  requestedAt: number;
+}
+
+/**
+ * A pending "open this running port in the panel" request for a session. Set
+ * when the user clicks a localhost URL in the transcript (the chips and cards
+ * `SandboxUrlDetector` appends); consumed by the mounted Easy panel, which
+ * opens it as the same `AppPreview` detail a Preview-card row opens.
+ *
+ * Nonce'd for the same reason {@link SessionFileOpenRequest} is: clicking the
+ * same port twice must re-open it, and an identical payload wouldn't re-render
+ * the consumer on its own.
+ */
+export interface SessionAppOpenRequest {
+  /**
+   * The INTERNAL sandbox url — `http://localhost:PORT/path`. `AppPreview`
+   * proxies whatever it is given, so handing it an already-proxied url would
+   * proxy it twice and 404.
+   */
+  url: string;
+  /** Label for the detail header. Falls back to the port when absent. */
+  name?: string;
+  nonce: number;
+  /** Epoch ms — same staleness contract as {@link SessionFileOpenRequest}. */
+  requestedAt: number;
 }
 
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
   viewBySession: Record<string, SessionPanelView>;
-  /** Dedicated side-panel terminal PTY per OpenCode chat session. */
+  /** Dedicated side-panel terminal PTY per Runtime chat session. */
   terminalPtyBySession: Record<string, string>;
 
   setView: (sessionId: string, view: SessionPanelView) => void;
@@ -71,8 +99,30 @@ interface SessionBrowserState {
   requestFileOpenSilently: (sessionId: string, path: string, line?: number) => void;
 
   /**
+   * Remove a delivered (or discarded) file-open request. Nonce-guarded so a
+   * newer request that raced in is never destroyed by a late consumer.
+   */
+  consumeFileOpen: (sessionId: string, nonce: number) => void;
+
+  /** Pending port-open request per session (transient — not persisted). */
+  appOpenBySession: Record<string, SessionAppOpenRequest>;
+
+  /**
+   * Ask the session's panel to open `url` (an internal `http://localhost:PORT`
+   * address) as a running app. Deliberately silent about `viewBySession` — the
+   * same reasoning as {@link requestFileOpenSilently}: Easy mode has no tab
+   * strip for that view to point at, and Advanced mode's promise is that it
+   * resumes wherever the user left it. Callers that need Advanced's own
+   * `BrowserPanel` flip the view themselves (see `openPortInSessionPanel`).
+   */
+  requestAppOpen: (sessionId: string, url: string, name?: string) => void;
+
+  /** Remove a delivered (or discarded) port-open request. Nonce-guarded. */
+  consumeAppOpen: (sessionId: string, nonce: number) => void;
+
+  /**
    * The panel-store key of the session whose layout is currently visible —
-   * i.e. the OpenCode `chatSessionId` the {@link SessionLayout} keys its panel
+   * i.e. the Runtime `chatSessionId` the {@link SessionLayout} keys its panel
    * by. NOT the Kortix session id in the URL (those differ). Registered by the
    * active SessionLayout; read by chat click handlers so a localhost-link or
    * file-path click routes into the right session's panel. Transient.
@@ -81,12 +131,23 @@ interface SessionBrowserState {
   setActiveSessionId: (id: string | null) => void;
 }
 
+// Monotonic across ALL sessions and independent of `fileOpenBySession`'s
+// current contents — nonces must keep increasing even after `consumeFileOpen`
+// deletes an entry, otherwise the next request for that session would
+// restart from 1 and could collide with a nonce a consumer already observed
+// (and deleted) via `consumeFileOpen`, silently swallowing the new request.
+let nextFileOpenNonce = 1;
+
+/** Same monotonic-across-sessions contract as `nextFileOpenNonce` above. */
+let nextAppOpenNonce = 1;
+
 export const useSessionBrowserStore = create<SessionBrowserState>()(
   persist(
     (set, get) => ({
       viewBySession: {},
       terminalPtyBySession: {},
       fileOpenBySession: {},
+      appOpenBySession: {},
       activeSessionId: null,
 
       setActiveSessionId: (id) => set({ activeSessionId: id }),
@@ -114,7 +175,8 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
             [sessionId]: {
               path,
               line,
-              nonce: (state.fileOpenBySession[sessionId]?.nonce ?? 0) + 1,
+              nonce: nextFileOpenNonce++,
+              requestedAt: Date.now(),
             },
           },
         })),
@@ -126,10 +188,40 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
             [sessionId]: {
               path,
               line,
-              nonce: (state.fileOpenBySession[sessionId]?.nonce ?? 0) + 1,
+              nonce: nextFileOpenNonce++,
+              requestedAt: Date.now(),
             },
           },
         })),
+
+      consumeFileOpen: (sessionId, nonce) =>
+        set((state) => {
+          if (state.fileOpenBySession[sessionId]?.nonce !== nonce) return {};
+          const next = { ...state.fileOpenBySession };
+          delete next[sessionId];
+          return { fileOpenBySession: next };
+        }),
+
+      requestAppOpen: (sessionId, url, name) =>
+        set((state) => ({
+          appOpenBySession: {
+            ...state.appOpenBySession,
+            [sessionId]: {
+              url,
+              name,
+              nonce: nextAppOpenNonce++,
+              requestedAt: Date.now(),
+            },
+          },
+        })),
+
+      consumeAppOpen: (sessionId, nonce) =>
+        set((state) => {
+          if (state.appOpenBySession[sessionId]?.nonce !== nonce) return {};
+          const next = { ...state.appOpenBySession };
+          delete next[sessionId];
+          return { appOpenBySession: next };
+        }),
     }),
     {
       name: 'kortix-session-browser',
@@ -149,7 +241,7 @@ export function sessionPreviewTabId(sessionId: string): string {
 }
 
 /**
- * The panel-store key (OpenCode `chatSessionId`) of the active session layout,
+ * The panel-store key (Runtime `chatSessionId`) of the active session layout,
  * or null when no session is visible. Use THIS — not the URL's Kortix session
  * id — as the key for `setView` / `requestFileOpen` / `sessionPreviewTabId`,
  * since {@link SessionLayout} keys its panel by `chatSessionId`, which differs

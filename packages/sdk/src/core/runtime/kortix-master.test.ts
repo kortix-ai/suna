@@ -1,23 +1,11 @@
 import { test, expect, beforeEach, mock, describe } from 'bun:test';
+import { configureKortix } from '../http/config';
 import type { Ticket, SandboxService, SandboxServiceTemplate } from './kortix-master';
-
-// This file must be hermetic against process-wide `mock.module('../http/auth', ...)`
-// registrations made by OTHER test files (files/client.test.ts, opencode/env.test.ts,
-// opencode/triggers.test.ts, opencode/client.test.ts, session/session.test.ts all mock
-// the same shared module path). Bun's `mock.module` is process-wide and permanent for
-// the whole `bun test` sweep — whichever file's registration is resident when THIS
-// file's own dynamic `import('./kortix-master')` below runs wins for every call made
-// through that import. So this file registers its OWN mock for '../platform/auth' —
-// with a controllable token + authenticatedFetch implementation this file fully owns —
-// instead of depending on the real module's behavior, and imports the module under
-// test via `await import(...)` so it resolves against ITS OWN mock regardless of load
-// order (matching opencode/client.test.ts's pattern post-#4124).
 
 interface Call {
   url: string;
   method: string;
   body?: string;
-  retryOnAuthError?: boolean;
   hasSignal: boolean;
 }
 
@@ -25,34 +13,21 @@ let calls: Call[] = [];
 let nextResponse: () => Response = () =>
   new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } });
 
-let authToken: string | null = 'test-token';
-mock.module('../http/auth', () => ({
-  getAuthToken: async () => authToken,
-  getAuthTokenWithRetry: async () => authToken,
-  authenticatedFetch: async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-    options?: { retryOnAuthError?: boolean },
-  ): Promise<Response> => {
-    calls.push({
-      url: String(input),
-      method: init?.method ?? 'GET',
-      body: typeof init?.body === 'string' ? init.body : undefined,
-      retryOnAuthError: options?.retryOnAuthError,
-      hasSignal: init?.signal instanceof AbortSignal,
-    });
-    return nextResponse();
-  },
-  invalidateTokenCache: () => {},
-  setCachedAuthToken: () => {},
-  setBootstrapAuthToken: () => {},
-  getSupabaseAccessToken: async () => authToken,
-  getSupabaseAccessTokenWithRetry: async () => authToken,
-}));
-
 const KM = await import('./kortix-master');
 const last = () => calls[calls.length - 1];
 const BASE = 'http://sbx.test';
+
+function installFetch() {
+  globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+    calls.push({
+      url: String(input),
+      method: init.method ?? 'GET',
+      body: typeof init.body === 'string' ? init.body : undefined,
+      hasSignal: init.signal instanceof AbortSignal,
+    });
+    return nextResponse();
+  }) as unknown as typeof fetch;
+}
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
@@ -60,7 +35,8 @@ function jsonResponse(data: unknown, status = 200) {
 
 beforeEach(() => {
   calls = [];
-  authToken = 'test-token';
+  configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'test-token' });
+  installFetch();
   nextResponse = () => jsonResponse({});
 });
 
@@ -516,14 +492,28 @@ describe('services', () => {
   });
 
   test('every services call disables the shared 401-retry and sets a client-side timeout signal', async () => {
-    await KM.listServices(BASE);
-    expect(last().retryOnAuthError).toBe(false);
+    let attempts = 0;
+    let tokenCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => (tokenCalls++ === 0 ? 'stale-token' : 'fresh-token'),
+    });
+    nextResponse = () => jsonResponse(attempts++ === 0 ? { error: 'expired' } : [], attempts === 1 ? 401 : 200);
+    await expect(KM.listServices(BASE)).rejects.toThrow('expired');
+    expect(calls).toHaveLength(1);
     expect(last().hasSignal).toBe(true);
   });
 
-  test('non-services calls use the default (retrying) auth behavior and no timeout signal', async () => {
+  test('non-services calls use the default retry and timeout behavior', async () => {
+    let attempts = 0;
+    let tokenCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => (tokenCalls++ === 0 ? 'stale-token' : 'fresh-token'),
+    });
+    nextResponse = () => jsonResponse(attempts++ === 0 ? { error: 'expired' } : [], attempts === 1 ? 401 : 200);
     await KM.listTickets(BASE);
-    expect(last().retryOnAuthError).toBeUndefined();
-    expect(last().hasSignal).toBe(false);
+    expect(calls).toHaveLength(2);
+    expect(last().hasSignal).toBe(true);
   });
 });

@@ -9,7 +9,7 @@
  * http.extraHeader so the token never lands in a config file.
  */
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -42,20 +42,32 @@ export async function seedRepoViaGitPush(input: {
 
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
   const run = (args: string[], extra: string[] = []) =>
-    execFileAsync('git', [...extra, ...args], { cwd: dir, env, timeout: 60_000 });
+    execFileAsync('git', [...extra, ...args], {
+      cwd: dir,
+      env,
+      timeout: 60_000,
+    });
 
   const writeFiles = async (files: SeedFile[]) => {
     for (const file of files) {
       const full = join(dir, file.path);
       await mkdir(dirname(full), { recursive: true });
-      await writeFile(full, file.content, 'utf8');
+      if (file.mode === '120000') {
+        await rm(full, { force: true, recursive: false });
+        await symlink(file.content, full);
+      } else {
+        await writeFile(full, file.content, 'utf8');
+      }
     }
   };
   // Pinned identity + dates → deterministic commit SHA across projects.
   const PINNED = {
-    GIT_AUTHOR_NAME: 'Kortix', GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
-    GIT_COMMITTER_NAME: 'Kortix', GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
-    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+    GIT_AUTHOR_NAME: 'Kortix',
+    GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
+    GIT_COMMITTER_NAME: 'Kortix',
+    GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
+    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+    GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
   };
 
   try {
@@ -65,8 +77,11 @@ export async function seedRepoViaGitPush(input: {
     if (input.baseFiles?.length) {
       await writeFiles(input.baseFiles);
       await run(['add', '-A']);
-      await execFileAsync('git', ['commit', '-m', 'chore: scaffold Kortix project'],
-        { cwd: dir, timeout: 60_000, env: { ...env, ...PINNED } });
+      await execFileAsync('git', ['commit', '-m', 'chore: scaffold Kortix project'], {
+        cwd: dir,
+        timeout: 60_000,
+        env: { ...env, ...PINNED },
+      });
     }
     await writeFiles(input.files);
     await run(['add', '-A']);
@@ -74,7 +89,13 @@ export async function seedRepoViaGitPush(input: {
     // empty second commit when baseFiles === files).
     const status = await run(['status', '--porcelain']);
     if (status.stdout.toString().trim().length > 0) {
-      await run(['commit', '-m', input.baseFiles?.length ? 'chore: project setup' : (input.commitMessage || 'chore: scaffold Kortix project')]);
+      await run([
+        'commit',
+        '-m',
+        input.baseFiles?.length
+          ? 'chore: project setup'
+          : input.commitMessage || 'chore: scaffold Kortix project',
+      ]);
     } else if (!input.baseFiles?.length) {
       await run(['commit', '-m', input.commitMessage || 'chore: scaffold Kortix project']);
     }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { pickerGroupId, pickerGroupLabel } from './model-selector';
+import { pickerGroupId, pickerGroupLabel, resolveModelSelectorLabel } from './model-selector';
 import type { FlatModel } from './session-chat-input';
 
 // Regression coverage for the "every provider shows as Kortix" picker bug.
@@ -91,6 +91,41 @@ describe('pickerGroupLabel — THE actual display-name bug fix', () => {
     // No PROVIDER_LABELS entry for "some-new-provider" -> falls back to
     // model.providerName rather than showing an ugly raw id.
     expect(pickerGroupLabel(pickerGroupId(m), m)).toBe('Kortix');
+  });
+});
+
+// The trigger pill's label — the fix for the merge regression where a
+// catalog composer whose server allows the managed default rendered "No model"
+// (a blank, yet sendable, state) instead of "Auto".
+describe('resolveModelSelectorLabel', () => {
+  test('AUTO sentinel reads "Auto" even though it is never a feed row (current unresolved)', () => {
+    expect(
+      resolveModelSelectorLabel({
+        currentModelName: undefined,
+        selectedModel: { providerID: 'kortix', modelID: 'auto' },
+        unsetLabel: 'No model',
+      }),
+    ).toBe('Auto');
+  });
+
+  test('a resolved model uses its own name, never the AUTO/unset fallback', () => {
+    expect(
+      resolveModelSelectorLabel({
+        currentModelName: 'GPT-5.4',
+        selectedModel: { providerID: 'openai', modelID: 'gpt-5.4' },
+        unsetLabel: 'No model',
+      }),
+    ).toBe('GPT-5.4');
+  });
+
+  test('genuinely nothing selected falls through to unsetLabel ("No model")', () => {
+    expect(
+      resolveModelSelectorLabel({
+        currentModelName: undefined,
+        selectedModel: null,
+        unsetLabel: 'No model',
+      }),
+    ).toBe('No model');
   });
 });
 

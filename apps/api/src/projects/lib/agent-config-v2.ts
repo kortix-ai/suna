@@ -21,11 +21,13 @@
  * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
  */
 import {
+  type AgentBlockV3,
   type AgentBlockV2,
   SLUG_RE,
   validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
+import { HARNESSES } from '@kortix/shared/harnesses';
 import type { ParsedManifest } from '../triggers';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
@@ -75,6 +77,156 @@ export type ApplyAgentBlockResult =
   | { ok: true; raw: Record<string, unknown> }
   | { ok: false; error: string; issues?: ManifestIssue[] };
 
+export type RuntimeProfileV3 = {
+  harness: 'claude' | 'codex' | 'opencode' | 'pi';
+  config_dir?: string;
+};
+
+// Config-dir values derive from the canonical `@kortix/shared` harness
+// descriptor (do not re-hardcode them here); key/insertion order is pinned —
+// WS1-P1-b tests assert this exact shape.
+//
+// 2026-07-22 reversal (owner decision, reverses part of `876742672`): a v2→v3
+// upgrade hands a project ALL FOUR harnesses, not just opencode. Multi-harness
+// is no longer gated behind `experimental_harnesses` (that flag is deleted
+// outright), so there is no longer a reason to withhold claude/codex/pi from
+// the migration. Key order here is hand-pinned opencode-first (not
+// `@kortix/shared`'s own `HARNESS_IDS` order, which is
+// `['claude', 'codex', 'opencode', 'pi']`) since OpenCode is still the
+// platform DEFAULT even though it's no longer gate-exclusive.
+export const DEFAULT_RUNTIME_PROFILES_V3: Record<string, RuntimeProfileV3> = {
+  opencode: { harness: 'opencode', config_dir: HARNESSES.opencode.configDir },
+  claude: { harness: 'claude', config_dir: HARNESSES.claude.configDir },
+  codex: { harness: 'codex', config_dir: HARNESSES.codex.configDir },
+  pi: { harness: 'pi', config_dir: HARNESSES.pi.configDir },
+};
+
+/** Losslessly promote v2 governance to ACP-native v3 routing. Native OpenCode
+ * behavior files remain untouched; every existing logical agent initially
+ * keeps OpenCode. All four official harnesses get a runtime profile
+ * (`DEFAULT_RUNTIME_PROFILES_V3`) so the upgraded project can pick any of
+ * them — OpenCode stays the default AGENT binding (no existing agent's
+ * `runtime` changes), it's just no longer the only SELECTABLE harness. */
+export function migrateManifestV2ToV3(manifest: ParsedManifest): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 2) {
+    return { ok: false, error: 'Only a kortix_version 2 manifest can be upgraded to v3.' };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const agents = Object.fromEntries(
+    Object.entries(rawAgents as Record<string, unknown>).map(([name, value]) => [
+      name,
+      { ...(value as Record<string, unknown>), runtime: 'opencode', agent: name },
+    ]),
+  );
+  const { opencode: _legacyRuntime, ...rest } = manifest.raw;
+  const nextRaw = {
+    ...rest,
+    kortix_version: 3,
+    runtimes: DEFAULT_RUNTIME_PROFILES_V3,
+    agents,
+  };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  return errorIssues.length
+    ? { ok: false, error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), issues: errorIssues }
+    : { ok: true, raw: nextRaw };
+}
+
+/** Replace the complete v3 runtime-profile map and validate every agent
+ * reference against it before the caller commits the manifest. */
+export function applyRuntimeProfilesV3(
+  manifest: ParsedManifest,
+  runtimes: Record<string, RuntimeProfileV3>,
+): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 3) {
+    return { ok: false, error: 'Runtime profiles require a kortix_version 3 manifest.' };
+  }
+  const nextRaw = { ...manifest.raw, runtimes };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  return errorIssues.length
+    ? {
+        ok: false,
+        error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+        issues: errorIssues,
+      }
+    : { ok: true, raw: nextRaw };
+}
+
+export type ReadAgentBlockV3Result =
+  | {
+      ok: true;
+      schemaVersion: 3;
+      block: AgentBlockV3 | null;
+      defaultAgent: string | null;
+      runtimes: Record<string, { harness: string; config_dir?: string }>;
+    }
+  | { ok: false; error: string };
+
+export function readAgentBlockV3(
+  manifest: ParsedManifest,
+  agentName: string,
+): ReadAgentBlockV3Result {
+  if (manifest.schemaVersion !== 3) {
+    return { ok: false, error: 'This project does not use a kortix_version 3 manifest.' };
+  }
+  const rawAgents = manifest.raw.agents;
+  const rawRuntimes = manifest.raw.runtimes;
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  if (!rawRuntimes || typeof rawRuntimes !== 'object' || Array.isArray(rawRuntimes)) {
+    return { ok: false, error: '`runtimes` is malformed in this manifest (expected a map).' };
+  }
+  const entry = (rawAgents as Record<string, unknown>)[agentName];
+  if (entry !== undefined && (!entry || typeof entry !== 'object' || Array.isArray(entry))) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  const defaultAgent = typeof manifest.raw.default_agent === 'string'
+    ? manifest.raw.default_agent.trim() || null
+    : null;
+  return {
+    ok: true,
+    schemaVersion: 3,
+    block: (entry as AgentBlockV3 | undefined) ?? null,
+    defaultAgent,
+    runtimes: rawRuntimes as Record<string, { harness: string; config_dir?: string }>,
+  };
+}
+
+export function applyAgentBlockV3(
+  manifest: ParsedManifest,
+  agentName: string,
+  block: AgentBlockV3,
+): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 3) {
+    return { ok: false, error: 'This project does not use a kortix_version 3 manifest.' };
+  }
+  if (!isValidAgentName(agentName)) {
+    return { ok: false, error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).` };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const nextRaw = {
+    ...manifest.raw,
+    agents: { ...(rawAgents as Record<string, unknown>), [agentName]: block },
+  };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  return errorIssues.length
+    ? {
+        ok: false,
+        error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+        issues: errorIssues,
+      }
+    : { ok: true, raw: nextRaw };
+}
+
 /**
  * Change the project-wide default agent without touching any agent block.
  * The manifest validator is the authority: the target must be a declared,
@@ -84,11 +236,11 @@ export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to set a project default agent.',
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix.yaml to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {

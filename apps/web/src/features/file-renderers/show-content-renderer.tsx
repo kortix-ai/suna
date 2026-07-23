@@ -30,7 +30,7 @@ import { TextWithPaths } from '@/components/common/clickable-path';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
+import { toSandboxAbsolutePath } from '@/features/files/api/runtime-files';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';

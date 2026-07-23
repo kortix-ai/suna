@@ -7,6 +7,7 @@ export const clearUserLocalStorage = () => {
     localStorage.removeItem('agent-selection-storage');
     localStorage.removeItem('auth-tracking-storage');
     localStorage.removeItem('pendingAgentPrompt');
+    localStorage.removeItem('kortix-runtime-model-store-v1');
     // Clean up legacy keys
     localStorage.removeItem('opencode-model-store-v1');
     // Clear tab state so it doesn't leak across accounts

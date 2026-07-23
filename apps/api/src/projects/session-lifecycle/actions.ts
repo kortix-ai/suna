@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionMetadataModel } from '../lib/session-metadata';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -18,6 +19,7 @@ import {
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
+import { inspectSandboxRuntime } from '../runtime-inspection';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -121,7 +123,6 @@ export async function restartSession(input: {
     sandboxProvider: string;
     baseRef: string | null;
     agentName: string | null;
-    opencodeSessionId: string | null;
     metadata?: Record<string, unknown> | null;
   };
   projectId: string;
@@ -151,14 +152,17 @@ export async function restartSession(input: {
     .limit(1);
 
   const provisionReplacementRuntime = async () => {
-    const initialPrompt = session.opencodeSessionId
+    const hasRuntimeConversation = typeof session.metadata?.acp_session_id === 'string';
+    const initialPrompt = hasRuntimeConversation
       ? null
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
         : null;
-    const opencodeModel =
-      typeof session.metadata?.opencode_model === 'string'
-        ? (session.metadata.opencode_model as string)
+    // Dual-read: pre-rename rows only carry opencode_model — see session-metadata.ts.
+    const runtimeModel = resolveSessionMetadataModel(session.metadata);
+    const runtimeAuthKind =
+      typeof session.metadata?.auth_connection === 'string'
+        ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind
         : null;
 
     await db
@@ -193,7 +197,8 @@ export async function restartSession(input: {
           baseRef: session.baseRef ?? loaded.row.defaultBranch,
           agentName: session.agentName ?? 'default',
           initialPrompt,
-          opencodeModel,
+          runtimeModel,
+          runtimeAuthKind,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
@@ -259,6 +264,26 @@ export async function restartSession(input: {
           session_id: sessionId,
           external_id: externalId,
           reason: RUNTIME_IDENTITY_UNAVAILABLE,
+        },
+      };
+    }
+
+    // A daemon boot error is commonly caused by immutable sandbox process env
+    // (for example a missing/old compiled ACP plan). Preserve the established
+    // runtime identity instead of silently replacing a sandbox that may contain
+    // uncommitted user data; provider recovery or explicit deletion remains the
+    // safe path out of this state.
+    const runtimeHealth = await inspectSandboxRuntime(externalId, loaded.userId);
+    if (runtimeHealth?.bootError) {
+      await preserveEstablishedRuntime(existingSandbox, 'restart_boot_error');
+      return {
+        status: 409,
+        body: {
+          error: RUNTIME_IDENTITY_ERROR,
+          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          session_id: sessionId,
+          external_id: externalId,
+          reason: 'restart_boot_error',
         },
       };
     }

@@ -134,9 +134,41 @@ test('rename POSTs to /file/rename with from/to', async () => {
 });
 
 test('files namespace exposes the full surface', () => {
-  for (const k of ['list','read','readBlob','status','findFiles','findText','upload','create','copy','remove','mkdir','rename','currentProject','health','isReachable']) {
+  for (const k of ['list','read','readBlob','status','findFiles','findText','upload','create','copy','remove','mkdir','rename','currentProject','health','isReachable','listeningPorts']) {
     expect(typeof (F.files as Record<string, unknown>)[k]).toBe('function');
   }
+});
+
+// ── listening ports (daemon GET /ports) ─────────────────────────────────────
+
+test('listListeningPorts hits GET /ports and unwraps { ports }', async () => {
+  globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+    calls.push({ url: String(input), method: init.method ?? 'GET', body: undefined });
+    return new Response(JSON.stringify({ ports: [{ port: 3000 }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  const result = await F.listListeningPorts();
+  expect(last().url).toBe('http://sbx.test/ports');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual([{ port: 3000 }]);
+});
+
+test('listListeningPorts throws ApiError (with the server error string) on a daemon failure', async () => {
+  mockFailStatus = 502;
+  await expect(F.listListeningPorts()).rejects.toBeInstanceOf(ApiError);
+  await expect(F.listListeningPorts()).rejects.toMatchObject({ status: 502, message: 'daemon unavailable' });
+});
+
+test('listListeningPorts returns [] when the response has no `ports` key', async () => {
+  globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+    calls.push({ url: String(input), method: init.method ?? 'GET', body: undefined });
+    return new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+
+  expect(await F.listListeningPorts()).toEqual([]);
 });
 
 // ── typed errors (P0 fix: every op used to throw a bare `Error`; now every

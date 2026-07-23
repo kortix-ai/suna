@@ -14,7 +14,7 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/opencode-files';
+import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/project-files';
 import { track } from '@/lib/track';
 import {

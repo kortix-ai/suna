@@ -50,7 +50,7 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
           if (!cancelled) setSrc(xlsxPath);
           return;
         }
-        const { readFileAsBlob } = await import('@/features/files/api/opencode-files');
+        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
         const blob = await readFileAsBlob(xlsxPath);
         if (cancelled) return;
         if (!blob || blob.size === 0) throw new Error('Empty file received');

@@ -37,26 +37,27 @@
  *
  * As an npm consumer:
  *   import { createScopedKortix } from '@kortix/sdk/server';
- *   import { narrowChatEvent } from '@kortix/sdk';
  */
-import { narrowChatEvent } from '../src/index';
-import { createScopedKortix } from '../src/node/server';
+import { createScopedKortix } from "../src/node/server";
 
 // ─── config (env) ────────────────────────────────────────────────────────────
-const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
+const backendUrl = process.env.KORTIX_API_URL ?? "http://localhost:8008/v1";
 const upstreamApiKey = process.env.KORTIX_API_KEY; // the wrapper's own kortix_pat_ → origin 'backend'
 const projectId = process.env.KORTIX_PROJECT_ID;
-const includeOverrides = process.env.KAAB_OVERRIDES !== 'off';
+const includeOverrides = process.env.KAAB_OVERRIDES !== "off";
 
 // Which connector/agent/model/secret this wrapper drives — all overridable.
-const CONNECTOR_SLUG = process.env.KAAB_CONNECTOR_SLUG ?? 'user-mcp';
-const CONNECTOR_ENDPOINT = process.env.KAAB_CONNECTOR_ENDPOINT ?? 'https://mcp.example.com/mcp';
+const CONNECTOR_SLUG = process.env.KAAB_CONNECTOR_SLUG ?? "user-mcp";
+const CONNECTOR_ENDPOINT =
+  process.env.KAAB_CONNECTOR_ENDPOINT ?? "https://mcp.example.com/mcp";
 const AGENT_NAME = process.env.KAAB_AGENT; // undefined → project default agent
 const MODEL = process.env.KAAB_MODEL; // undefined → project/agent default model
 const SECRET_ID = process.env.KAAB_SECRET; // one project-secret identifier to narrow to
 
 if (!upstreamApiKey || !projectId) {
-  console.error('Set KORTIX_API_KEY (a kortix_pat_ from Settings → Tokens) and KORTIX_PROJECT_ID.');
+  console.error(
+    "Set KORTIX_API_KEY (a kortix_pat_ from Settings → Tokens) and KORTIX_PROJECT_ID.",
+  );
   process.exit(1);
 }
 
@@ -74,13 +75,20 @@ function upstreamTokenFor(_endUserId: string): string {
 
 /** Build a request-scoped SDK client bound to one end-user's upstream token. */
 function clientFor(endUserId: string) {
-  return createScopedKortix({ backendUrl, getToken: async () => upstreamTokenFor(endUserId) });
+  return createScopedKortix({
+    backendUrl,
+    getToken: async () => upstreamTokenFor(endUserId),
+  });
 }
 
 // ─── step 1: mint the connector definition (once per connector) ──────────────
-async function ensureConnector(kortix: ReturnType<typeof clientFor>): Promise<void> {
+async function ensureConnector(
+  kortix: ReturnType<typeof clientFor>,
+): Promise<void> {
   const project = kortix.project(projectId!);
-  const existing = await project.connectors.list().catch(() => ({ connectors: [] as { slug: string }[] }));
+  const existing = await project.connectors
+    .list()
+    .catch(() => ({ connectors: [] as { slug: string }[] }));
   if (existing.connectors?.some((c) => c.slug === CONNECTOR_SLUG)) return;
 
   // A headless connector: an MCP server reached over HTTP with a per-user
@@ -91,11 +99,16 @@ async function ensureConnector(kortix: ReturnType<typeof clientFor>): Promise<vo
   // per-user PROFILES to reconcile against it.
   await project.connectors.create({
     slug: CONNECTOR_SLUG,
-    provider: 'mcp',
-    transport: 'http',
+    provider: "mcp",
+    transport: "http",
     url: CONNECTOR_ENDPOINT,
-    credential: 'shared',
-    auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer ' },
+    credential: "shared",
+    auth: {
+      type: "bearer",
+      in: "header",
+      name: "Authorization",
+      prefix: "Bearer ",
+    },
   });
 }
 
@@ -113,7 +126,7 @@ async function ensureUserProfile(
   try {
     const profile = await project.connectors.profiles.reconcile({
       connector_alias: CONNECTOR_SLUG,
-      owner_type: 'external',
+      owner_type: "external",
       owner_id: endUserId,
       label: `${CONNECTOR_SLUG} for ${endUserId}`,
     });
@@ -121,7 +134,7 @@ async function ensureUserProfile(
     // at connector-call time — it never enters the sandbox env).
     await project.connectors.profiles.updateCredential(profile.profile_id, {
       value: usersOwnCredential,
-      kind: 'secret',
+      kind: "secret",
     });
     await project.connectors.profiles.activate(profile.profile_id);
     return profile.profile_id;
@@ -152,9 +165,11 @@ async function startSession(
   const body: Record<string, unknown> = {
     // Bind the connector alias → this user's profile (credential by reference).
     // NB: connector_bindings is all-or-nothing — bind every alias the agent needs.
-    ...(profileId ? { connector_bindings: { [CONNECTOR_SLUG]: { profile_id: profileId } } } : {}),
+    ...(profileId
+      ? { connector_bindings: { [CONNECTOR_SLUG]: { profile_id: profileId } } }
+      : {}),
     ...(AGENT_NAME ? { agent_name: AGENT_NAME } : {}),
-    ...(MODEL ? { opencode_model: MODEL } : {}),
+    ...(MODEL ? { model: MODEL } : {}),
     // Backend-only fields (require the KaaB release; KAAB_OVERRIDES=off drops them):
     ...(includeOverrides
       ? {
@@ -165,8 +180,8 @@ async function startSession(
   };
   const session = await kortix.project(projectId!).sessions.create(body);
   console.error(
-    `[session ${session.session_id}] origin=${session.origin ?? '(n/a)'}` +
-      ` origin_ref=${session.origin_ref ?? '(n/a)'} secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
+    `[session ${session.session_id}] origin=${session.origin ?? "(n/a)"}` +
+      ` origin_ref=${session.origin_ref ?? "(n/a)"} secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
   );
   return session.session_id;
 }
@@ -181,8 +196,8 @@ async function runTurn(
   onText: (delta: string) => void,
 ): Promise<void> {
   const session = kortix.session(projectId!, sessionId);
-  // ensureReady() blocks — polling the sandbox cold start (up to ~3 min by
-  // default; pass { readyTimeoutMs } to wait longer) — until the runtime is up,
+  // ensureReady() blocks while polling the sandbox cold start. Pass
+  // `{ deadlineMs }` to change the default five-minute deadline.
   // THEN we stream, so the stream is connected before the prompt goes out and no
   // early events are missed (see example 02).
   //
@@ -194,54 +209,68 @@ async function runTurn(
   // KORTIX_URL set to that tunnel URL.
   await session.ensureReady();
 
-  await new Promise<void>((resolve, reject) => {
-    session
-      .stream({
-        onEvent: (event) => {
-          const ev = narrowChatEvent(event);
-          if (!ev) return;
-          if (ev.type === 'message.part.updated' && ev.part.type === 'text') {
-            onText((ev.part as { text?: string }).text ?? '');
-          } else if (ev.type === 'session.idle') {
-            resolve();
-          } else if (ev.type === 'session.error') {
-            reject(new Error(String(ev.error ?? 'session error')));
-          }
-        },
-      })
-      .then((handle) => {
-        // Fire the prompt now that we're listening; close the stream on idle.
-        session
-          .send(prompt)
-          .catch(reject)
-          .finally(() => {
-            const done = () => handle.close();
-            // resolve() above already fired on idle in most cases; ensure close.
-            void Promise.resolve().then(done);
-          });
-      })
-      .catch(reject);
+  const handle = await session.stream({
+    onEvent: (event) => {
+      const envelope = event.envelope as {
+        method?: string;
+        params?: {
+          update?: {
+            sessionUpdate?: string;
+            type?: string;
+            content?: unknown;
+          };
+        };
+      };
+      if (envelope.method !== "session/update") return;
+      const update = envelope.params?.update;
+      if ((update?.sessionUpdate ?? update?.type) !== "agent_message_chunk")
+        return;
+      const content = Array.isArray(update?.content)
+        ? update.content
+        : [update?.content];
+      for (const block of content) {
+        if (
+          block &&
+          typeof block === "object" &&
+          (block as { type?: unknown }).type === "text" &&
+          typeof (block as { text?: unknown }).text === "string"
+        ) {
+          onText((block as { text: string }).text);
+        }
+      }
+    },
   });
+  try {
+    await session.send(prompt);
+  } finally {
+    handle.close();
+  }
 }
 
 /** Full flow for one end-user + prompt, streaming text to `onText`. */
-async function serveOneUser(endUserId: string, prompt: string, onText: (t: string) => void) {
+async function serveOneUser(
+  endUserId: string,
+  prompt: string,
+  onText: (t: string) => void,
+) {
   const kortix = clientFor(endUserId);
   // The connector layer is optional: on a bare project (no kortix.yaml / no
   // connector) it degrades to "no binding" and the session + streaming path
   // still runs. Set KAAB_NO_CONNECTOR=1 to skip it entirely.
   let profileId: string | null = null;
-  if (process.env.KAAB_NO_CONNECTOR !== '1') {
+  if (process.env.KAAB_NO_CONNECTOR !== "1") {
     try {
       await ensureConnector(kortix);
       // In a real wrapper this credential is the user's own connected account.
       profileId = await ensureUserProfile(
         kortix,
         endUserId,
-        process.env.KAAB_USER_CREDENTIAL ?? 'placeholder-token',
+        process.env.KAAB_USER_CREDENTIAL ?? "placeholder-token",
       );
     } catch (err) {
-      console.error(`[connector] unavailable, continuing without a binding: ${String(err)}`);
+      console.error(
+        `[connector] unavailable, continuing without a binding: ${String(err)}`,
+      );
     }
   }
   const sessionId = await startSession(kortix, endUserId, profileId);
@@ -250,11 +279,11 @@ async function serveOneUser(endUserId: string, prompt: string, onText: (t: strin
 
 // ─── run modes ───────────────────────────────────────────────────────────────
 async function oneShot() {
-  const prompt = process.argv[2] ?? 'Say hello in one sentence.';
-  const endUserId = process.env.KAAB_END_USER ?? 'demo-user';
+  const prompt = process.argv[2] ?? "Say hello in one sentence.";
+  const endUserId = process.env.KAAB_END_USER ?? "demo-user";
   console.error(`> [${endUserId}] ${prompt}\n`);
   await serveOneUser(endUserId, prompt, (t) => process.stdout.write(t));
-  process.stdout.write('\n\n[turn complete]\n');
+  process.stdout.write("\n\n[turn complete]\n");
 }
 
 function serve() {
@@ -263,10 +292,12 @@ function serve() {
     port,
     async fetch(req: Request) {
       const url = new URL(req.url);
-      if (req.method !== 'POST' || url.pathname !== '/run') {
-        return new Response('POST /run {endUserId, prompt}', { status: 404 });
+      if (req.method !== "POST" || url.pathname !== "/run") {
+        return new Response("POST /run {endUserId, prompt}", { status: 404 });
       }
-      const { endUserId = 'anonymous', prompt = '' } = (await req.json().catch(() => ({}))) as {
+      const { endUserId = "anonymous", prompt = "" } = (await req
+        .json()
+        .catch(() => ({}))) as {
         endUserId?: string;
         prompt?: string;
       };
@@ -278,23 +309,32 @@ function serve() {
             await serveOneUser(endUserId, prompt, (t) =>
               controller.enqueue(enc.encode(`data: ${JSON.stringify(t)}\n\n`)),
             );
-            controller.enqueue(enc.encode('event: done\ndata: {}\n\n'));
+            controller.enqueue(enc.encode("event: done\ndata: {}\n\n"));
           } catch (err) {
-            controller.enqueue(enc.encode(`event: error\ndata: ${JSON.stringify(String(err))}\n\n`));
+            controller.enqueue(
+              enc.encode(
+                `event: error\ndata: ${JSON.stringify(String(err))}\n\n`,
+              ),
+            );
           } finally {
             controller.close();
           }
         },
       });
       return new Response(stream, {
-        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+        },
       });
     },
   });
-  console.error(`KaaB wrapper listening on :${port} — POST /run {endUserId, prompt}`);
+  console.error(
+    `KaaB wrapper listening on :${port} — POST /run {endUserId, prompt}`,
+  );
 }
 
-if (process.env.MODE === 'serve') {
+if (process.env.MODE === "serve") {
   serve();
 } else {
   oneShot().catch((err) => {

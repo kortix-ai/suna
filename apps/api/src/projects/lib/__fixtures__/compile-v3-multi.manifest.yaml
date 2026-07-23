@@ -1,0 +1,50 @@
+# Golden fixture input — WS1-P3-a backwards-compat guard.
+# See compile-v3-multi.expected.json (frozen output) and
+# compile-runtime-config.test.ts's "golden compile-output fixtures" describe
+# block. Do NOT hand-edit the paired .expected.json after regenerating it —
+# regenerate from the compiler and re-certify by hand instead.
+kortix_version: 3
+default_agent: kortix
+runtimes:
+  claude:
+    harness: claude
+  codex:
+    harness: codex
+    # Explicit non-default config_dir (default would be .codex).
+    config_dir: tools/codex
+  opencode:
+    harness: opencode
+  pi:
+    harness: pi
+agents:
+  # Routes to claude; no native `agent:` id; grants mix all/list/none.
+  kortix:
+    runtime: claude
+    connectors: all
+    secrets: [ANTHROPIC_API_KEY]
+    skills: all
+    kortix_cli: none
+    workspace: runtime
+  # Routes to codex; carries a harness-native `agent:` id; skills allowlist,
+  # every other grant omitted (defaults to "none"); workspace: read.
+  reviewer:
+    runtime: codex
+    agent: reviewer-native
+    skills: [code-review]
+    workspace: read
+  # Routes to opencode; enabled: false; grants mix all/list/none; workspace: branch.
+  archivist:
+    runtime: opencode
+    enabled: false
+    connectors: [github]
+    secrets: all
+    skills: none
+    kortix_cli: [project.session.read]
+    workspace: branch
+  # Routes to pi; grants mix list/none/all; workspace: runtime (default).
+  scout:
+    runtime: pi
+    connectors: [slack]
+    skills: [research]
+    kortix_cli: all
+    workspace: runtime

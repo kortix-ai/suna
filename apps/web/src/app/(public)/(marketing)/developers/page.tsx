@@ -239,9 +239,9 @@ const KORTIX_YAML_EXAMPLE = `kortix_version: 2
 project:
   name: acme
 
-# the OpenCode runtime config dir
+# the Runtime runtime config dir
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: .opencode
 
 # a trigger runs itself, on a schedule
 triggers:
@@ -356,14 +356,14 @@ triggers:
 const REPO_TREE: [string, number, 'dir' | 'file' | 'accent'][] = [
   ['acme-ops', 0, 'dir'],
   ['kortix.yaml', 1, 'accent'],
+  ['.opencode', 1, 'dir'],
+  ['agents', 2, 'dir'],
+  ['support-triage.md', 3, 'file'],
+  ['skills', 2, 'dir'],
+  ['ticket-triage', 3, 'dir'],
+  ['tools', 2, 'dir'],
+  ['web_search.ts', 3, 'file'],
   ['.kortix', 1, 'dir'],
-  ['opencode', 2, 'dir'],
-  ['agents', 3, 'dir'],
-  ['support-triage.md', 4, 'file'],
-  ['skills', 3, 'dir'],
-  ['ticket-triage', 4, 'dir'],
-  ['tools', 3, 'dir'],
-  ['web_search.ts', 4, 'file'],
   ['Dockerfile', 2, 'file'],
 ];
 
@@ -696,7 +696,7 @@ export default function DevelopersPage() {
                 )}
               </Cmd>
               <Done>kortix.yaml</Done>
-              <Done>.kortix/opencode/</Done>
+              <Done>.opencode/</Done>
             </Terminal>
           </Step>
 
@@ -711,7 +711,7 @@ export default function DevelopersPage() {
             flip
           >
             <CodeFile
-              name=".kortix/opencode/agents/support.md"
+              name=".opencode/agents/support.md"
               code={AGENT_MD}
               language="markdown"
             />

@@ -28,12 +28,16 @@ import './routes/r6';
 import './routes/r7';
 import './routes/public-shares';
 import './routes/r8';
+import './routes/acp';
+import './routes/acp-permission-policy';
 import './routes/r9';
 import './routes/r10';
 import './routes/r11';
 import './routes/model-defaults';
 import './routes/agent-scope';
 import './routes/agent-config';
+import './routes/composer-capabilities';
+import './routes/auth-providers';
 import './routes/gateway';
 import './routes/channel-bindings';
 

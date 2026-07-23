@@ -7,6 +7,7 @@ import {
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
+  sandboxFileHref,
   shikiWasmAvailable,
 } from './unified-markdown-utils';
 
@@ -154,5 +155,45 @@ describe('shikiWasmAvailable', () => {
       // Restore — other tests (and the live Shiki init) need WebAssembly.
       (globalThis as { WebAssembly?: unknown }).WebAssembly = original;
     }
+  });
+});
+
+describe('sandboxFileHref', () => {
+  test('workspace file href returns the decoded path', () => {
+    expect(sandboxFileHref('/workspace/out/Report%20Final.xlsx')).toBe(
+      '/workspace/out/Report Final.xlsx',
+    );
+  });
+
+  test('all daemon-allowed roots match', () => {
+    expect(sandboxFileHref('/home/user/b.py')).toBe('/home/user/b.py');
+    expect(sandboxFileHref('/tmp/a.txt')).toBe('/tmp/a.txt');
+    expect(sandboxFileHref('/opt/tool/c.json')).toBe('/opt/tool/c.json');
+  });
+
+  test('fragment is stripped before decoding', () => {
+    expect(sandboxFileHref('/workspace/a.ts#L12')).toBe('/workspace/a.ts');
+  });
+
+  test('query string is stripped before decoding', () => {
+    expect(sandboxFileHref('/workspace/a.txt?v=1')).toBe('/workspace/a.txt');
+  });
+
+  test('app routes, external URLs, hashes, and empties pass through', () => {
+    expect(sandboxFileHref('/docs/getting-started')).toBeNull();
+    expect(sandboxFileHref('/dashboard')).toBeNull();
+    expect(sandboxFileHref('https://example.com/workspace/a.txt')).toBeNull();
+    expect(sandboxFileHref('#section')).toBeNull();
+    expect(sandboxFileHref('')).toBeNull();
+    expect(sandboxFileHref(undefined)).toBeNull();
+  });
+
+  test('prefix look-alikes are rejected, bare roots accepted', () => {
+    expect(sandboxFileHref('/workspaces/a.txt')).toBeNull();
+    expect(sandboxFileHref('/workspace')).toBe('/workspace');
+  });
+
+  test('a malformed percent-escape keeps the raw path', () => {
+    expect(sandboxFileHref('/workspace/100%.txt')).toBe('/workspace/100%.txt');
   });
 });

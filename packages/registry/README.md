@@ -33,7 +33,7 @@ A registry is a `registry.json` at a repo root:
       "title": "PDF",
       "description": "Create, edit, OCR, fill, convert PDFs.",
       "files": [
-        { "path": ".kortix/opencode/skills/pdf/SKILL.md", "type": "registry:file", "target": "@skills/pdf/SKILL.md" }
+        { "path": ".opencode/skills/pdf/SKILL.md", "type": "registry:file", "target": "@skills/pdf/SKILL.md" }
       ]
     }
   ]
@@ -65,7 +65,7 @@ drives categorization, icons, and validation.
 
 A file's `target` says where it lands. Aliases expand against the consuming
 project's layout (the OpenCode config dir comes from `opencode.config_dir` in
-`kortix.yaml`, default `.kortix/opencode`):
+`kortix.yaml`, default `.opencode`):
 
 | alias | expands to |
 | --- | --- |

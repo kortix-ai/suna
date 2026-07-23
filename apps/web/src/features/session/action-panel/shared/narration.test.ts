@@ -6,6 +6,7 @@ import {
   humanizeToolName,
   narrateFailedStep,
   narrateStep,
+  toolPartStatus,
 } from './narration';
 import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
@@ -716,6 +717,17 @@ describe('narrateFailedStep (W7)', () => {
     const s = narrateFailedStep('other', [part('mcp__slack__send_message'), errored]);
     expect(s).toBe("Couldn't finish using Create Issue");
     expect(s).not.toContain('Send Message');
+  });
+});
+
+describe('toolPartStatus', () => {
+  it("reads a part's raw state.status", () => {
+    expect(toolPartStatus(part('bash', {}, 'ok'))).toBe('completed');
+  });
+
+  it('returns undefined for a part with no state', () => {
+    const bare = { type: 'tool', tool: 'bash', callID: 'c-bare' } as unknown as ToolPart;
+    expect(toolPartStatus(bare)).toBeUndefined();
   });
 });
 

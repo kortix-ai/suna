@@ -176,12 +176,22 @@ jobs:
         with:
           bun-version: latest
 
+      # Mirror the isolated Docker build (apps/sandbox/Dockerfile): strip the two
+      # workspace-only devDeps (@kortix/sdk, @kortix/shared) before the frozen
+      # install — they are `workspace:*` links resolvable only inside the pnpm
+      # monorepo, and this job installs the app standalone. They are consumed
+      # solely by integration tests, which run (monorepo-installed) in
+      # package-tests.yml and are excluded from tsconfig.build.json here.
+      - name: Strip workspace-only devDeps
+        run: bun -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const k of ['@kortix/sdk','@kortix/shared'])delete (p.devDependencies||{})[k];fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+        working-directory: apps/kortix-sandbox-agent-server
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Typecheck (build surface; workspace-importing tests run in package-tests.yml)
+        run: bun tsc --noEmit -p tsconfig.build.json
         working-directory: apps/kortix-sandbox-agent-server
 
       - name: Build Linux sandbox agent daemon

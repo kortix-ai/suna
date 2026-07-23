@@ -16,7 +16,7 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import {
   getChildSessionId,
   getChildSessionToolParts,
@@ -40,7 +40,7 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const childMessages = useSyncStore((s) => s.getMessages(childSessionId ?? ''));
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
     return getChildSessionToolParts(childMessages as MessageWithParts[]);

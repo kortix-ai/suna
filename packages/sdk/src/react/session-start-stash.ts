@@ -1,82 +1,65 @@
 /**
- * Hand-off between a host's "new session" screen and the session workbench. The
- * new-session UI collects {prompt, model, agent, variant} but the session
- * runtime doesn't exist yet, so we stash them under the new session id;
- * `useSession` replays them as the first message once the runtime is ready —
- * that's how the chosen model/agent/variant apply to the opening turn. Owned by
- * the SDK so the producer (new-session screen) and consumer (`useSession`)
- * share one contract.
+ * Hand-off between a host's "new session" screen and the session workbench.
+ * The new-session UI collects the draft prompt before the session runtime
+ * exists, so it's stashed under the new session id; `useSession` replays it
+ * as the first message once the runtime is ready. Owned by the SDK so the
+ * producer (new-session screen) and consumer (`useSession`) share one
+ * contract.
+ *
+ * `model`/`agent`/`variant` used to ride along here too, but nothing ever
+ * reads them back — the execution route (agent, harness, connection, model
+ * policy) is resolved once at session CREATE time and is immutable
+ * thereafter (docs/specs/2026-07-14-provider-auth-model-management.md §3.6,
+ * §8), and ACP `session/prompt` never carries a model/provider override
+ * (§7.3). Only `prompt` is real; writers that still pass the old fields are
+ * harmless (this module simply ignores them).
  */
 
 export interface StartStash {
   prompt: string;
-  model: { providerID: string; modelID: string } | null;
-  agent: string | null;
-  variant?: string | null;
 }
 
 export function startStashKey(sessionId: string): string {
   return `kortix:start:${sessionId}`;
 }
 
-export function writeStartStash(sessionId: string, stash: StartStash): void {
+/**
+ * `stash` accepts (and ignores) arbitrary extra properties alongside
+ * `prompt` — generic rather than a plain `StartStash` parameter so both a
+ * bare `{ prompt }` object AND one with legacy extra fields typecheck. A few
+ * producers outside this package's ownership still pass the retired
+ * `agent`/`model`/`variant` fields — harmless at runtime (nothing reads them
+ * back, see the module doc above) and intentionally not a type error here,
+ * so those call sites don't need a synchronized edit.
+ */
+export function writeStartStash<T extends StartStash>(sessionId: string, stash: T): void {
   try {
     sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(stash));
   } catch {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Legacy hand-off shape (pre-dates this module). apps/web had several
-// independent "new session" producers (dashboard, project workspace, legacy
-// composer) that stash a bare prompt string under `opencode_pending_prompt:<id>`
-// plus an optional `{ agent, model, variant }` JSON blob under
-// `opencode_pending_options:<id>` — instead of one JSON stash. Those call sites
-// are unchanged (out of scope for this migration); `readStartStash` /
-// `clearStartStash` understand both shapes so every existing producer keeps
-// working through the one shared contract.
+// Legacy hand-off shape (pre-dates this module). Older apps/web producers
+// stashed a bare prompt string under a runtime-specific raw key instead of one
+// JSON stash (and, further back, alongside a `{ agent, model, variant }`
+// options blob — now ignored, see the module doc above). `readStartStash` /
+// `clearStartStash` keep reading those keys so any in-flight browser hand-off
+// survives the ACP/runtime-neutral cutover.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function legacyPromptKey(sessionId: string): string {
+function legacyRuntimePromptKey(sessionId: string): string {
   return `opencode_pending_prompt:${sessionId}`;
 }
 
-function legacyOptionsKey(sessionId: string): string {
+function legacyRuntimeOptionsKey(sessionId: string): string {
   return `opencode_pending_options:${sessionId}`;
-}
-
-function parseLegacyModel(value: unknown): StartStash['model'] {
-  if (!value) return null;
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    if (typeof obj.providerID === 'string' && typeof obj.modelID === 'string') {
-      return { providerID: obj.providerID, modelID: obj.modelID };
-    }
-    return null;
-  }
-  if (typeof value === 'string') {
-    const idx = value.indexOf('/');
-    if (idx > 0 && idx < value.length - 1) {
-      return { providerID: value.slice(0, idx), modelID: value.slice(idx + 1) };
-    }
-  }
-  return null;
 }
 
 function readLegacyStash(sessionId: string): StartStash | null {
   try {
-    const prompt = sessionStorage.getItem(legacyPromptKey(sessionId));
+    const prompt = sessionStorage.getItem(legacyRuntimePromptKey(sessionId));
     if (!prompt) return null;
-    let agent: string | null = null;
-    let model: StartStash['model'] = null;
-    let variant: string | null = null;
-    const raw = sessionStorage.getItem(legacyOptionsKey(sessionId));
-    if (raw) {
-      const parsed = JSON.parse(raw) as { agent?: string; model?: unknown; variant?: string };
-      if (parsed?.agent) agent = parsed.agent;
-      if (parsed?.model) model = parseLegacyModel(parsed.model);
-      if (parsed?.variant) variant = parsed.variant;
-    }
-    return { prompt, model, agent, variant };
+    return { prompt };
   } catch {
     return null;
   }
@@ -84,8 +67,8 @@ function readLegacyStash(sessionId: string): StartStash | null {
 
 function clearLegacyStash(sessionId: string): void {
   try {
-    sessionStorage.removeItem(legacyPromptKey(sessionId));
-    sessionStorage.removeItem(legacyOptionsKey(sessionId));
+    sessionStorage.removeItem(legacyRuntimePromptKey(sessionId));
+    sessionStorage.removeItem(legacyRuntimeOptionsKey(sessionId));
   } catch {}
 }
 
@@ -109,10 +92,10 @@ export function clearStartStash(sessionId: string): void {
 /**
  * Migrate a stash — canonical or legacy shape — from one session-id namespace
  * to another. Producers sometimes stash under an id that isn't the eventual
- * OpenCode session id (e.g. a project's route id, before the canonical
+ * Runtime session id (e.g. a project's route id, before the canonical
  * session exists); once a later render resolves the real id, this hands the
  * stash off. Reads the source via {@link readStartStash} (so it understands
- * both the canonical JSON shape and the bare-prompt legacy shape at
+ * both the canonical JSON shape and the legacy bare-prompt shape at
  * `fromSessionId`), writes the canonical shape at `toSessionId` — skipping the
  * write if `toSessionId` already has a stash — and always clears the source
  * (both its canonical and legacy keys), whether or not there was anything to
@@ -131,14 +114,15 @@ export function migrateStash(fromSessionId: string, toSessionId: string): void {
 }
 
 /**
- * Migrate a differently-keyed legacy hand-off (bare prompt string + optional
- * `{agent,model,variant}` JSON options, each under their own arbitrary key)
- * onto the canonical stash for `toSessionId`. Used by producers that predate
- * this module and stash under arbitrary raw keys rather than a session-id
- * namespace `readStartStash` can resolve on its own — prefer {@link
- * migrateStash} for any producer that already writes under a session id via
- * `writeStartStash`. The source keys are always cleared, whether or not there
- * was anything to migrate.
+ * Migrate a differently-keyed legacy hand-off (bare prompt string, formerly
+ * paired with an `{agent,model,variant}` JSON options blob under its own
+ * arbitrary key — now ignored, see the module doc above) onto the canonical
+ * stash for `toSessionId`. Used by producers that predate this module and
+ * stash under arbitrary raw keys rather than a session-id namespace
+ * `readStartStash` can resolve on its own — prefer {@link migrateStash} for
+ * any producer that already writes under a session id via `writeStartStash`.
+ * `fromOptionsKey` is only cleared, never read. The source keys are always
+ * cleared, whether or not there was anything to migrate.
  */
 export function migrateLegacyStash(
   fromPromptKey: string,
@@ -148,17 +132,7 @@ export function migrateLegacyStash(
   try {
     const prompt = sessionStorage.getItem(fromPromptKey);
     if (prompt && !readStartStash(toSessionId)) {
-      let agent: string | null = null;
-      let model: StartStash['model'] = null;
-      let variant: string | null = null;
-      const raw = sessionStorage.getItem(fromOptionsKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { agent?: string; model?: unknown; variant?: string };
-        if (parsed?.agent) agent = parsed.agent;
-        if (parsed?.model) model = parseLegacyModel(parsed.model);
-        if (parsed?.variant) variant = parsed.variant;
-      }
-      writeStartStash(toSessionId, { prompt, model, agent, variant });
+      writeStartStash(toSessionId, { prompt });
     }
   } catch {
     // ignore — worst case the hand-off is dropped, never a crash

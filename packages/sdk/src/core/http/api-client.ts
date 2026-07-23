@@ -70,6 +70,80 @@ const isIdempotentMethod = (method?: string): boolean => {
   return m === 'GET' || m === 'HEAD';
 };
 
+function composeRequestSignal(
+  timeoutSignal: AbortSignal,
+  callerSignal?: AbortSignal | null,
+): { signal: AbortSignal; cleanup: () => void } {
+  if (!callerSignal) {
+    return { signal: timeoutSignal, cleanup: () => {} };
+  }
+
+  const abortSignalConstructor = AbortSignal as typeof AbortSignal & {
+    any?: (signals: AbortSignal[]) => AbortSignal;
+  };
+  if (typeof abortSignalConstructor.any === 'function') {
+    return {
+      signal: abortSignalConstructor.any([timeoutSignal, callerSignal]),
+      cleanup: () => {},
+    };
+  }
+
+  const controller = new AbortController();
+  const sources = [timeoutSignal, callerSignal];
+  const forwardAbort = (event: Event) => {
+    const source = event.currentTarget as AbortSignal;
+    if (!controller.signal.aborted) controller.abort(source.reason);
+  };
+  const listening: AbortSignal[] = [];
+
+  for (const source of sources) {
+    if (source.aborted) {
+      controller.abort(source.reason);
+      break;
+    }
+    source.addEventListener('abort', forwardAbort, { once: true });
+    listening.push(source);
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      for (const source of listening) {
+        source.removeEventListener('abort', forwardAbort);
+      }
+    },
+  };
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+  const error = new Error('The request was aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort);
+      reject(abortReason(signal));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * Bounded retry count for transient gateway (502/503/504) responses on
  * idempotent reads. Two retries (3 total attempts) with 250ms→500ms backoff
@@ -100,14 +174,9 @@ export function isAdminBypassEnabled(): boolean {
 
 async function makeRequest<T = any>(
   url: string,
-  options: RequestInit & ApiClientOptions = {}
+  options: RequestInit & ApiClientOptions = {},
 ): Promise<ApiResponse<T>> {
-  const {
-    showErrors = true,
-    errorContext,
-    timeout = 30000,
-    ...fetchOptions
-  } = options;
+  const { showErrors = true, errorContext, timeout = 30000, ...fetchOptions } = options;
 
   const controller = new AbortController();
   let timeoutId: NodeJS.Timeout | null = null;
@@ -116,6 +185,7 @@ async function makeRequest<T = any>(
   // (client navigation, tab close, dropped connection). Only the former is a
   // real timeout; the latter must not be surfaced as one.
   let didTimeout = false;
+  const requestSignal = composeRequestSignal(controller.signal, fetchOptions.signal);
 
   try {
     timeoutId = setTimeout(() => {
@@ -126,7 +196,7 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await getSupabaseAccessTokenWithRetry();
+    const token = await awaitWithSignal(getSupabaseAccessTokenWithRetry(), requestSignal.signal);
 
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
@@ -162,7 +232,7 @@ async function makeRequest<T = any>(
     let response = await fetch(url, {
       ...fetchOptions,
       headers,
-      signal: controller.signal,
+      signal: requestSignal.signal,
       // API auth is bearer-token based. Don't send browser cookies to the
       // same-origin /v1 proxy; large localhost cookie jars can trip HTTP 431
       // before the request reaches the API.
@@ -189,18 +259,18 @@ async function makeRequest<T = any>(
         // Drain + discard the transient error body before re-fetching.
         try {
           await response.arrayBuffer();
-        } catch {
-        }
+        } catch {}
         await sleep(250 * 2 ** attempt);
         const retryController = new AbortController();
         let retryTimeoutId: NodeJS.Timeout | null = setTimeout(() => {
           retryController.abort();
         }, timeout);
+        const retrySignal = composeRequestSignal(retryController.signal, fetchOptions.signal);
         try {
           response = await fetch(url, {
             ...fetchOptions,
             headers,
-            signal: retryController.signal,
+            signal: retrySignal.signal,
             credentials: fetchOptions.credentials ?? 'omit',
           });
         } catch {
@@ -212,6 +282,7 @@ async function makeRequest<T = any>(
             clearTimeout(retryTimeoutId);
             retryTimeoutId = null;
           }
+          retrySignal.cleanup();
         }
         if (response.ok || !isTransientGatewayStatus(response.status)) break;
       }
@@ -233,8 +304,7 @@ async function makeRequest<T = any>(
         } else if (typeof errorData.detail?.message === 'string') {
           errorMessage = errorData.detail.message;
         }
-      } catch {
-      }
+      } catch {}
 
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
@@ -242,7 +312,11 @@ async function makeRequest<T = any>(
         details: errorData || undefined,
         data: errorData,
         detail: errorData?.detail,
-        code: errorData?.code || errorData?.error_code || errorData?.detail?.error_code || response.status.toString()
+        code:
+          errorData?.code ||
+          errorData?.error_code ||
+          errorData?.detail?.error_code ||
+          response.status.toString(),
       });
 
       if (response.status === 402) {
@@ -271,7 +345,8 @@ async function makeRequest<T = any>(
       if (response.status === 431) {
         error = new RequestTooLargeError(431, {
           message: 'Request is too large to process',
-          suggestion: 'Try uploading files one at a time, or reduce the number of files attached to your message.',
+          suggestion:
+            'Try uploading files one at a time, or reduce the number of files attached to your message.',
         });
       }
 
@@ -310,16 +385,15 @@ async function makeRequest<T = any>(
     if (contentType?.includes('application/json')) {
       data = await response.json();
     } else if (contentType?.includes('text/')) {
-      data = await response.text() as T;
+      data = (await response.text()) as T;
     } else {
-      data = await response.blob() as T;
+      data = (await response.blob()) as T;
     }
 
     return {
       data,
       success: true,
     };
-
   } catch (error: any) {
     // Always clear timeout on error
     if (timeoutId) {
@@ -328,9 +402,10 @@ async function makeRequest<T = any>(
     }
 
     // Check if this is an abort error (timeout or manual abort)
-    const isAbortError = error?.name === 'AbortError' ||
-                         error?.name === 'AbortSignal' ||
-                         (error instanceof Error && error.message.includes('aborted'));
+    const isAbortError =
+      error?.name === 'AbortError' ||
+      error?.name === 'AbortSignal' ||
+      (error instanceof Error && error.message.includes('aborted'));
 
     // If it was aborted, mark it so we don't try to abort again
     if (isAbortError) {
@@ -346,7 +421,10 @@ async function makeRequest<T = any>(
       // "Request timeout" toasts/Sentry events. Swallow it silently.
       if (!didTimeout) {
         return {
-          error: new ApiError('Request aborted', { name: 'AbortError', code: 'ABORTED' }),
+          error: new ApiError('Request aborted', {
+            name: 'AbortError',
+            code: 'ABORTED',
+          }),
           success: false,
         };
       }
@@ -354,12 +432,15 @@ async function makeRequest<T = any>(
       // Genuine timeout — our timer fired. Attach the endpoint so it's clear
       // *what* timed out (the previous error carried no URL).
       const endpoint = url.replace(getApiUrl(), '') || url;
-      apiError = new ApiError(`Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`, {
-        code: 'TIMEOUT',
-        url,
-        endpoint,
-        timeout,
-      });
+      apiError = new ApiError(
+        `Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`,
+        {
+          code: 'TIMEOUT',
+          url,
+          endpoint,
+          timeout,
+        },
+      );
 
       // Only show timeout errors if showErrors is true
       // This prevents spam from multiple concurrent timeouts or React Query cancellations
@@ -387,13 +468,16 @@ async function makeRequest<T = any>(
       error: apiError,
       success: false,
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    requestSignal.cleanup();
   }
 }
 
 export const supabaseClient = {
   async execute<T = any>(
     queryFn: () => Promise<{ data: T | null; error: any }>,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<ApiResponse<T>> {
     try {
       const { data, error } = await queryFn();
@@ -417,9 +501,13 @@ export const supabaseClient = {
         success: true,
       };
     } catch (error: any) {
-      const apiError: ApiError = error instanceof Error
-        ? new ApiError(error.message, { name: error.name || 'ApiError', stack: error.stack })
-        : new ApiError(String(error));
+      const apiError: ApiError =
+        error instanceof Error
+          ? new ApiError(error.message, {
+              name: error.name || 'ApiError',
+              stack: error.stack,
+            })
+          : new ApiError(String(error));
 
       platformConfig().onError?.(apiError, errorContext);
 
@@ -432,36 +520,60 @@ export const supabaseClient = {
 };
 
 export const backendApi = {
-  get: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),
+  get: <T = any>(
+    endpoint: string,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),
 
-  post: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
+  post: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, {
       ...options,
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  put: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
+  put: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, {
       ...options,
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  patch: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
+  patch: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, {
       ...options,
       method: 'PATCH',
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  delete: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'DELETE' }),
+  delete: <T = any>(
+    endpoint: string,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) =>
+    makeRequest<T>(`${getApiUrl()}${endpoint}`, {
+      ...options,
+      method: 'DELETE',
+    }),
 
-  upload: <T = any>(endpoint: string, formData: FormData, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) => {
+  upload: <T = any>(
+    endpoint: string,
+    formData: FormData,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => {
     const { headers, ...restOptions } = options || {};
-    const uploadHeaders = { ...headers as Record<string, string> };
+    const uploadHeaders = { ...(headers as Record<string, string>) };
     delete uploadHeaders['Content-Type'];
 
     return makeRequest<T>(`${getApiUrl()}${endpoint}`, {
@@ -472,9 +584,13 @@ export const backendApi = {
     });
   },
 
-  uploadPut: <T = any>(endpoint: string, formData: FormData, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) => {
+  uploadPut: <T = any>(
+    endpoint: string,
+    formData: FormData,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => {
     const { headers, ...restOptions } = options || {};
-    const uploadHeaders = { ...headers as Record<string, string> };
+    const uploadHeaders = { ...(headers as Record<string, string>) };
     delete uploadHeaders['Content-Type'];
 
     return makeRequest<T>(`${getApiUrl()}${endpoint}`, {

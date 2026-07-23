@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { configureKortix } from "../../http/config";
 import { clearSessionFresh, markSessionFresh } from "../../http/fresh-sessions";
-import { clearSessionRuntime, getSessionRuntime,
+import {
+  clearSessionRuntime,
+  getSessionRuntime,
 } from "../../session/session-runtime-registry";
-import { isSessionStartError,
+import {
+  isSessionStartError,
   projectSessionStartSeed,
-  sessionStartKey, startProjectSession,
+  sessionStartKey,
+  startProjectSession,
 } from "./session-sandbox";
 import type { ProjectSession } from "./sessions";
 
@@ -18,17 +22,18 @@ let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
 beforeEach(() => {
   calls = [];
   nextResponse = { status: 200, body: {} };
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
-    calls.push({
-      url: String(url),
-      method: opts.method ?? "GET",
-      body: opts.body ? JSON.parse(opts.body) : undefined,
-    });
-    return new Response(JSON.stringify(nextResponse.body), {
-      status: nextResponse.status,
-      headers: { "content-type": "application/json" },
-    });
-  },
+  globalThis.fetch = mock(
+    async (url: unknown, opts: { method?: string; body?: string } = {}) => {
+      calls.push({
+        url: String(url),
+        method: opts.method ?? "GET",
+        body: opts.body ? JSON.parse(opts.body) : undefined,
+      });
+      return new Response(JSON.stringify(nextResponse.body), {
+        status: nextResponse.status,
+        headers: { "content-type": "application/json" },
+      });
+    },
   ) as unknown as typeof fetch;
 });
 
@@ -37,7 +42,9 @@ afterEach(() => {
   clearSessionFresh(SESSION);
 });
 
-configureKortix({ backendUrl: "http://test.local/v1", getToken: async () => "tok",
+configureKortix({
+  backendUrl: "http://test.local/v1",
+  getToken: async () => "tok",
 });
 const last = () => calls[calls.length - 1];
 
@@ -70,14 +77,17 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
     sandbox_id: "sbx-db-1",
     sandbox_provider: "daytona",
     sandbox_url: "http://test.local/v1/p/ext-1/8000",
-    opencode_session_id: "oc-1",
+    runtime_session_id: "acp-session-1",
+    runtime_protocol: "acp",
+    runtime_id: "runtime-1",
+    acp_session_id: "acp-session-1",
     name: null,
     custom_name: null,
     agent_name: "default",
     status: "running",
     error: null,
     metadata: { source: "ui" },
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-02T00:00:00Z",
   } satisfies ProjectSession;
@@ -101,7 +111,9 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-02T00:00:00Z",
     },
-    opencode_session_id: "oc-1",
+    runtime_protocol: "acp",
+    runtime_id: "runtime-1",
+    runtime_session_id: "acp-session-1",
     runtime_url: "http://test.local/v1/p/ext-1/8000",
   });
 });
@@ -116,33 +128,40 @@ test("projectSessionStartSeed rejects stale or incomplete inventory rows", () =>
     sandbox_id: "sbx-db-1",
     sandbox_provider: "daytona",
     sandbox_url: "http://test.local/v1/p/ext-1/8000",
-    opencode_session_id: "oc-1",
+    runtime_session_id: "acp-session-1",
+    runtime_protocol: "acp",
+    runtime_id: "runtime-1",
+    acp_session_id: "acp-session-1",
     name: null,
     custom_name: null,
     agent_name: null,
     status: "running",
     error: null,
     metadata: {},
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-02T00:00:00Z",
   } satisfies ProjectSession;
 
   expect(projectSessionStartSeed({ ...base, status: "stopped" })).toBeNull();
-  expect(
-    projectSessionStartSeed({ ...base, opencode_session_id: null }),
-  ).toBeNull();
+  expect(projectSessionStartSeed({ ...base, runtime_id: null })).toBeNull();
   expect(projectSessionStartSeed({ ...base, sandbox_url: null })).toBeNull();
 });
 
 test("startProjectSession POSTs to /start with no query string when waitMs is omitted", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null,
+    body: {
+      stage: "provisioning",
+      agent_name: "default",
+      retriable: true,
+      sandbox: null,
+      runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION);
-  expect(last().url).toBe(`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start`,
+  expect(last().url).toBe(
+    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start`,
   );
   expect(last().method).toBe("POST");
   expect(last().body).toEqual({});
@@ -151,7 +170,12 @@ test("startProjectSession POSTs to /start with no query string when waitMs is om
 test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null,
+    body: {
+      stage: "provisioning",
+      agent_name: "default",
+      retriable: true,
+      sandbox: null,
+      runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION, 5_500.9);
@@ -161,7 +185,12 @@ test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", a
 test("startProjectSession omits the query string for a zero or negative waitMs", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null,
+    body: {
+      stage: "provisioning",
+      agent_name: "default",
+      retriable: true,
+      sandbox: null,
+      runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION, 0);
@@ -182,9 +211,11 @@ test("startProjectSession throws a terminal SessionStartError for non-retryable 
   }
 
   expect(isSessionStartError(caught)).toBe(true);
-  expect((caught as Error & { status?: number; terminal?: boolean }).status,
+  expect(
+    (caught as Error & { status?: number; terminal?: boolean }).status,
   ).toBe(404);
-  expect((caught as Error & { status?: number; terminal?: boolean }).terminal,
+  expect(
+    (caught as Error & { status?: number; terminal?: boolean }).terminal,
   ).toBe(true);
 });
 
@@ -226,7 +257,12 @@ test("startProjectSession returns null when the response has no data", async () 
 test("startProjectSession returns the parsed result even when stage is not ready (no registry write)", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: readySandbox(), opencode_session_id: null,
+    body: {
+      stage: "starting",
+      agent_name: "default",
+      retriable: true,
+      sandbox: readySandbox(),
+      runtime_session_id: null,
     },
   };
   const result = await startProjectSession(PROJECT, SESSION);
@@ -234,7 +270,7 @@ test("startProjectSession returns the parsed result even when stage is not ready
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
-test("startProjectSession populates the shared session-runtime registry once stage is ready with a sandbox external_id + opencode_session_id", async () => {
+test("startProjectSession populates the shared session-runtime registry for an ACP runtime", async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -242,7 +278,9 @@ test("startProjectSession populates the shared session-runtime registry once sta
       agent_name: "default",
       retriable: false,
       sandbox: readySandbox({ external_id: "ext-ready-1" }),
-      opencode_session_id: "ocs-ready-1",
+      runtime_protocol: "acp",
+      runtime_id: "runtime-ready-1",
+      runtime_session_id: "acp-ready-1",
     },
   };
   const result = await startProjectSession(PROJECT, SESSION);
@@ -250,7 +288,7 @@ test("startProjectSession populates the shared session-runtime registry once sta
 
   const entry = getSessionRuntime(PROJECT, SESSION);
   expect(entry).toBeDefined();
-  expect(entry?.opencodeSessionId).toBe("ocs-ready-1");
+  expect(entry?.runtimeSessionId).toBe("acp-ready-1");
   expect(entry?.sandboxId).toBe("ext-ready-1");
   expect(entry?.runtimeUrl).toBe("http://test.local/v1/p/ext-ready-1/8000");
 });
@@ -263,14 +301,16 @@ test("startProjectSession does NOT populate the registry when ready but sandbox 
       agent_name: "default",
       retriable: false,
       sandbox: readySandbox({ external_id: null }),
-      opencode_session_id: "ocs-2",
+      runtime_protocol: "acp",
+      runtime_id: "runtime-2",
+      runtime_session_id: "acp-session-2",
     },
   };
   await startProjectSession(PROJECT, SESSION);
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
-test("startProjectSession does NOT populate the registry when ready but opencode_session_id is missing", async () => {
+test("startProjectSession does NOT populate the registry when ready but runtime_id is missing", async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -278,7 +318,9 @@ test("startProjectSession does NOT populate the registry when ready but opencode
       agent_name: "default",
       retriable: false,
       sandbox: readySandbox({ external_id: "ext-3" }),
-      opencode_session_id: null,
+      runtime_protocol: "acp",
+      runtime_id: null,
+      runtime_session_id: null,
     },
   };
   await startProjectSession(PROJECT, SESSION);
@@ -288,7 +330,14 @@ test("startProjectSession does NOT populate the registry when ready but opencode
 test("startProjectSession does NOT populate the registry when ready but sandbox itself is null", async () => {
   nextResponse = {
     status: 200,
-    body: { stage: "ready", agent_name: "default", retriable: false, sandbox: null, opencode_session_id: "ocs-4",
+    body: {
+      stage: "ready",
+      agent_name: "default",
+      retriable: false,
+      sandbox: null,
+      runtime_protocol: "acp",
+      runtime_id: "runtime-4",
+      runtime_session_id: "acp-session-4",
     },
   };
   await startProjectSession(PROJECT, SESSION);

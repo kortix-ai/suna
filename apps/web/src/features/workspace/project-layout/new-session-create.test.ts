@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { buildNewSessionCreateInput } from './new-session-create';
+import { buildNewSessionCreateInput, resolveNewSessionAgent } from './new-session-create';
 
 describe('buildNewSessionCreateInput', () => {
   it('binds the picked agent as agent_name so it matches the first prompt', () => {
@@ -13,9 +13,36 @@ describe('buildNewSessionCreateInput', () => {
   });
 
   it('carries the sandbox slug through alongside the agent', () => {
+    expect(buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'builder',
+      sandbox_slug: 'node22',
+    });
+  });
+
+  it('applies a harness-native model at session launch', () => {
+    expect(
+      buildNewSessionCreateInput({ agent: 'codex', runtimeModel: ' openai/gpt-5.4 ' }),
+    ).toEqual({
+      agent_name: 'codex',
+      model_selection: {
+        kind: 'custom',
+        model_id: 'openai/gpt-5.4',
+        connection_id: null,
+      },
+    });
+  });
+
+  it('carries every create-time override together', () => {
     expect(
       buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' }),
     ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
+  });
+
+  it('forwards the picked branch as base_ref', () => {
+    expect(buildNewSessionCreateInput({ agent: 'builder', base_ref: 'feat/api-v2' })).toEqual({
+      agent_name: 'builder',
+      base_ref: 'feat/api-v2',
+    });
   });
 
   it('binds only the sandbox slug when no agent is picked', () => {
@@ -34,5 +61,37 @@ describe('buildNewSessionCreateInput', () => {
     // An empty agent must NOT become agent_name:"" — that would mismatch the
     // proxy's `?? "default"` and 409 the first prompt.
     expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
+  });
+});
+
+describe('resolveNewSessionAgent', () => {
+  const config = {
+    runtime_default_agent: 'kortix',
+    agents: [{ name: 'reviewer' }, { name: 'disabled', enabled: false }],
+  };
+
+  it('preserves an explicit picker choice', () => {
+    expect(resolveNewSessionAgent(config, 'reviewer')).toBe('reviewer');
+  });
+
+  it('uses the configured project default', () => {
+    expect(resolveNewSessionAgent(config)).toBe('kortix');
+  });
+
+  it('does not override the project default just because it is absent from a stale agent list', () => {
+    expect(resolveNewSessionAgent({ ...config, agents: [{ name: 'reviewer' }] })).toBe('kortix');
+  });
+
+  it('keeps legacy declared-agent projects runnable when their default is missing', () => {
+    expect(resolveNewSessionAgent({ ...config, runtime_default_agent: null })).toBe('reviewer');
+  });
+
+  it('does not select disabled or absent agents', () => {
+    expect(
+      resolveNewSessionAgent({
+        runtime_default_agent: null,
+        agents: [{ name: 'x', enabled: false }],
+      }),
+    ).toBeUndefined();
   });
 });

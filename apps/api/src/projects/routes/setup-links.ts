@@ -8,7 +8,7 @@
  * The link itself is resolved/submitted by the PUBLIC app at /v1/setup-links/*.
  *
  * See ../../setup-links/token.ts for the stateless token model and
- * .kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md
+ * .opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md
  * for the agent-facing flow.
  */
 import { auth, errors, json } from '../../openapi';

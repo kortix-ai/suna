@@ -278,7 +278,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 	// -----------------------------------------------------------------------
 
 	return (
-		<div className="rounded-2xl border border-border/40 bg-muted/40 overflow-hidden">
+		<div className="rounded-md border border-border/40 bg-muted/40 overflow-hidden">
 			{/* Header row */}
 			<div className="flex items-center gap-2 w-full px-3 py-1.5">
 				<MessageCircle className="size-3.5 text-muted-foreground flex-shrink-0" />
@@ -317,7 +317,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 											setTab(i);
 										}}
 										className={cn(
-											"flex items-center gap-1 px-2 py-0.5 text-sm font-medium rounded-2xl border transition-colors duration-150 cursor-pointer whitespace-nowrap",
+											"flex items-center gap-1 px-2 py-0.5 text-sm font-medium rounded-full border transition-colors duration-150 cursor-pointer whitespace-nowrap",
 											tab === i
 												? "bg-background/80 text-foreground border-border/70"
 												: "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/70",
@@ -351,7 +351,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 									setTab(questions.length);
 								}}
 							className={cn(
-								"px-2 py-0.5 text-sm font-medium rounded-2xl border transition-colors duration-150 cursor-pointer",
+								"px-2 py-0.5 text-sm font-medium rounded-full border transition-colors duration-150 cursor-pointer",
 								isConfirm
 									? "bg-background/80 text-foreground border-border/70"
 									: "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/70",
@@ -422,7 +422,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 												key={i}
 												onClick={() => selectOption(i)}
 												className={cn(
-													"w-full flex items-center gap-2 px-2 py-1.5 rounded-2xl text-left cursor-pointer group border transition-colors duration-150 ease-out active:scale-[0.998]",
+													"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left cursor-pointer group border transition-colors duration-150 ease-out active:scale-[0.998]",
 													isPicked
 														? "bg-primary/10 border-primary/30"
 														: "border-transparent hover:bg-muted/40",

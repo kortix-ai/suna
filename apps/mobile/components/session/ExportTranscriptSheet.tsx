@@ -17,7 +17,7 @@ import { getSheetBg } from '@/lib/theme-colors';
 
 import { getAuthToken } from '@/api/config';
 
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSyncStore } from '@/lib/runtime/sync-store';
 import { useSession } from '@/lib/platform/hooks';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {

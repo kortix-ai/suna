@@ -103,6 +103,7 @@ const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   provider: 'Sandbox provider error',
   timeout: 'Build timed out',
   runtime: 'Runtime artifact missing',
+  quota: 'Sandbox provider quota exceeded',
   unknown: 'Build failed',
 };
 

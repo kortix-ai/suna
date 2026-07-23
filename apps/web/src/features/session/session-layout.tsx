@@ -6,6 +6,7 @@ import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { acpItemsToPanelMessages } from '@/features/session/acp-panel-messages';
 import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
@@ -15,11 +16,9 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
   SessionPanelView,
   sessionPreviewTabId,
@@ -27,11 +26,12 @@ import {
 } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import type { AcpChatItem } from '@kortix/sdk';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as ResizablePrimitive from 'react-resizable-panels';
 
 interface SessionLayoutProps {
@@ -40,7 +40,23 @@ interface SessionLayoutProps {
   projectSessionId?: string;
   children: React.ReactNode;
   bootStage?: SessionStartStage | null;
+  bootReason?: string | null;
   transient?: boolean;
+  /**
+   * The ACP session's `chatItems` (from `projectAcpChatItems`). This is the
+   * top-level session's own transcript — the runtime sync store only holds
+   * CHILD-session messages — so the action panel derives its `MessageWithParts`
+   * from here via `acpItemsToPanelMessages`.
+   */
+  acpItems?: AcpChatItem[];
+  /**
+   * The ACP session's live busy flag (`acp.busy`). The ACP equivalent of the
+   * sync-store `sessionStatus` main's layout read: `EasyPanel` ORs it with its
+   * part-derived running flag so an inter-tool-call gap (assistant text
+   * streaming, no tool part active) doesn't read as "finished", and
+   * `useDeliverableReadiness` uses the busy→idle edge to announce a finish.
+   */
+  isSessionBusy?: boolean;
 }
 
 export const SessionLayout = memo(function SessionLayout({
@@ -49,12 +65,21 @@ export const SessionLayout = memo(function SessionLayout({
   projectSessionId,
   children,
   bootStage = null,
+  bootReason = null,
   transient = false,
+  acpItems,
+  isSessionBusy = false,
 }: SessionLayoutProps) {
   const isMobile = useIsMobile();
   const booting = !!bootStage;
 
-  const { data: messages } = useOpenCodeMessages(sessionId);
+  // The top-level ACP session's transcript lives in `acpItems`, not the runtime
+  // sync store — project it into the `MessageWithParts` shape the action-panel
+  // subsystem (`ActionPanel`/`EasyPanel`, `useDeliverableReadiness`) reads.
+  const messages = useMemo(
+    () => acpItemsToPanelMessages(acpItems, sessionId),
+    [acpItems, sessionId],
+  );
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole
@@ -98,14 +123,10 @@ export const SessionLayout = memo(function SessionLayout({
   const togglePanelMode = useUserPreferencesStore((s) => s.togglePanelMode);
   const isEasy = panelMode === 'easy';
 
-  // The session's own busy/retry status — the exact same signal
-  // `session-chat.tsx` reads (as `isServerBusy`) to drive its own working
-  // indicator, and the same store `tab-bar.tsx`/`session-list.tsx` read for
-  // their busy dots. EasyPanel ORs this with its part-derived running flag so
-  // an inter-tool-call gap (assistant text streaming, no tool part active)
-  // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
-  const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  // `isSessionBusy` arrives as a prop (`acp.busy`) — see the prop doc. EasyPanel
+  // ORs it with its part-derived running flag so an inter-tool-call gap
+  // (assistant text streaming, no tool part active) doesn't read as "finished"
+  // — see EasyPanel's `deriveIsRunning`.
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the
   // panel is closed. Headless: writes the ready chip; the header renders it.
@@ -358,6 +379,7 @@ export const SessionLayout = memo(function SessionLayout({
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
       stage={bootStage ?? 'provisioning'}
+      reason={bootReason}
       delayMs={0}
       projectId={projectId}
       sessionId={projectSessionId}

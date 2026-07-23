@@ -29,8 +29,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
+import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
 import type {
   GatewayFallbackChain,
   GatewayProjectRoutingPolicy,

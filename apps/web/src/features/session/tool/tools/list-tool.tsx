@@ -15,7 +15,7 @@ import {
   InlineFileList,
   parseFilePaths,
 } from '@/features/session/tool/shared/file-list';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
+import { useRuntimeFileOpen } from '@/features/session/use-runtime-file-open';
 import {
   ListTree,
 } from 'lucide-react';
@@ -34,7 +34,7 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
+  const { openFile, openFileWithList, toDisplayPath } = useRuntimeFileOpen();
   const directory = getDirectory(input.path as string) || (input.path as string) || undefined;
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);

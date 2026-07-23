@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Message, Part } from '../runtime/client';
+import type { Message, Part } from '../runtime/wire-types';
 import type { MessageWithParts } from '../../transcript';
 import {
   type ClassifiedPart,

@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import type { FileExplorerSource } from './explorer-source';
-import { downloadFile } from './api/opencode-files';
+import { downloadFile } from './api/runtime-files';
 import { useProjectContext } from './context';
 import { useProjectFileSource } from './file-source';
 import {

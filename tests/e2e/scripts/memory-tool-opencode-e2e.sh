@@ -2,7 +2,7 @@
 #
 # memory-tool-opencode-e2e.sh
 #
-# Full end-to-end test of the `memory` tool (.kortix/opencode/tools/memory.ts)
+# Full end-to-end test of the `memory` tool (.opencode/tools/memory.ts)
 # running inside ACTUAL opencode — loaded the real way via a project-local
 # `.opencode/` config, driven by a real model, asserting on the tool-call log
 # AND the real files the tool wrote under `.kortix/memory/`.
@@ -22,7 +22,7 @@ set -uo pipefail
 MODEL="${1:-${MEMORY_E2E_MODEL:-anthropic/claude-haiku-4-5}}"
 TIMEOUT="${MEMORY_E2E_TIMEOUT:-120}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-TOOL_SRC="$REPO_ROOT/.kortix/opencode/tools/memory.ts"
+TOOL_SRC="$REPO_ROOT/.opencode/tools/memory.ts"
 
 command -v opencode >/dev/null || { echo "FAIL: opencode not on PATH"; exit 1; }
 [ -f "$TOOL_SRC" ] || { echo "FAIL: tool not found at $TOOL_SRC"; exit 1; }

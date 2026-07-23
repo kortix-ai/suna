@@ -28,9 +28,9 @@ interface SandboxConnectionStore {
 	disconnectedAt: number | null;
 	/** Current sandbox version from /kortix/health (e.g. "0.5.1") */
 	sandboxVersion: string | null;
-	/** OpenCode server version from /global/health (e.g. "1.2.10") */
-	openCodeVersion: string | null;
-	/** Whether the OpenCode server reports healthy */
+	/** ACP daemon version from /kortix/health (e.g. "1.2.10") */
+	runtimeVersion: string | null;
+	/** Whether the Runtime server reports healthy */
 	healthy: boolean | null;
 	/** Last runtime boot/readiness error reported by /kortix/health */
 	runtimeError: string | null;
@@ -113,7 +113,7 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	reconnectAttempts: 0,
 	disconnectedAt: null,
 	sandboxVersion: null,
-	openCodeVersion: null,
+	runtimeVersion: null,
 	healthy: null,
 	runtimeError: null,
 	recoveryPhase: "idle",
@@ -213,9 +213,9 @@ export function resetForServerSwitch() {
 	if (runtimeReady) {
 		// /start already resolved stage==='ready' (markRuntimeReadyVerified is set
 		// ONLY then — page.tsx), which the backend returns only after it reached the
-		// daemon and OpenCode answered: the runtime is PROVEN healthy server-side.
+		// daemon and Runtime answered: the runtime is PROVEN healthy server-side.
 		// So seed healthy=true (optimistic) — NOT healthy=null. The SSE event stream
-		// (use-opencode-events) AND message sync (use-session-sync) both gate on this
+		// (use-runtime-events) AND message sync (use-session-sync) both gate on this
 		// same `healthy` flag, so seeding null left the FE UNSUBSCRIBED until the
 		// ~350ms client health poll flipped it green — by which point the server-side
 		// first turn (KORTIX_INITIAL_PROMPT, delivered during boot) had accumulated
@@ -232,7 +232,7 @@ export function resetForServerSwitch() {
 			reconnectAttempts: 0,
 			disconnectedAt: null,
 			sandboxVersion: null,
-			openCodeVersion: null,
+			runtimeVersion: null,
 			healthy: true,
 			runtimeError: null,
 			recoveryPhase: "idle",
@@ -254,7 +254,7 @@ export function resetForServerSwitch() {
 			reconnectAttempts: 0,
 			disconnectedAt: null,
 			sandboxVersion: null,
-			openCodeVersion: null,
+			runtimeVersion: null,
 			healthy: null,
 			runtimeError: null,
 			recoveryPhase: "idle",
@@ -273,7 +273,7 @@ export function resetForServerSwitch() {
 		reconnectAttempts: 0,
 		disconnectedAt: null,
 		sandboxVersion: null,
-		openCodeVersion: null,
+		runtimeVersion: null,
 		healthy: null,
 		runtimeError: null,
 		recoveryPhase: "idle",
@@ -330,11 +330,11 @@ export function setSandboxVersion(version: string | null) {
 	useSandboxConnectionStore.setState({ sandboxVersion: version });
 }
 
-export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeError?: string | null) {
+export function setRuntimeHealth(healthy: boolean, version?: string, runtimeError?: string | null) {
 	const state = useSandboxConnectionStore.getState();
 	const updates: Partial<SandboxConnectionStore> = {};
 	if (state.healthy !== healthy) updates.healthy = healthy;
-	if (version !== undefined && state.openCodeVersion !== version) updates.openCodeVersion = version;
+	if (version !== undefined && state.runtimeVersion !== version) updates.runtimeVersion = version;
 	const nextRuntimeError = healthy ? null : runtimeError;
 	if (runtimeError !== undefined && state.runtimeError !== nextRuntimeError) {
 		updates.runtimeError = nextRuntimeError;

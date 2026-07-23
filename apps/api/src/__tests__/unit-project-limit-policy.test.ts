@@ -44,9 +44,9 @@ describe('maxProjectsForAccount — plan → project cap', () => {
     currentTier = 'free';
   });
 
-  test('free tier → FREE_TIER_PROJECT_LIMIT (1)', async () => {
+  test('free tier → FREE_TIER_PROJECT_LIMIT (3)', async () => {
     currentTier = 'free';
-    expect(FREE_TIER_PROJECT_LIMIT).toBe(1);
+    expect(FREE_TIER_PROJECT_LIMIT).toBe(3);
     expect(await maxProjectsForAccount(nextAccount())).toBe(FREE_TIER_PROJECT_LIMIT);
   });
 

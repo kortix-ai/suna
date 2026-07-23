@@ -89,19 +89,14 @@ export default function ProjectIndexPage() {
         // page, so just unlock the composer with the text still in it.
         onError: () => setSending(false),
         onNavigate: (sessionId) => {
-          // `sessionId` here is the route/Kortix session id, not the OpenCode
-          // pin the session page resolves later (`useCanonicalOpenCodeSession`
+          // `sessionId` here is the route/Kortix session id, not the Runtime
+          // pin the session page resolves later (`useCanonicalRuntimeSession`
           // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
           // route id via the SDK's canonical `writeStartStash` — the session
           // page's `migrateStash` hands this off onto the resolved pin once it
           // exists, and `readStartStash` (instant shell, `useSession`) reads it
           // uniformly either side of that migration.
-          writeStartStash(sessionId, {
-            prompt: text,
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
-          });
+          writeStartStash(sessionId, { prompt: text });
           if (files?.length) {
             usePendingFilesStore.getState().setPendingFiles(files);
           }

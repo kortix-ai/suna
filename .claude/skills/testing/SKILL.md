@@ -66,6 +66,10 @@ the merge.
 2. **Isolated.** No shared mutable module state, no order dependency. Restore any env/global a test
    touches in `afterEach`. Env-sensitive code: provide config via a `bunfig.toml` preload, never the
    ambient (often `encrypted:`) `.env`.
+   - **`apps/web` uses `bun test --isolate`** (each test file in a fresh process) to enforce this: Bun's
+     `mock.module` registry is process-global, so a stubbed module in one file leaks into all following
+     files if they share a process, causing order-dependent failures. Isolation is the guard. See
+     `apps/web/AGENTS.md` and `apps/api/scripts/test.sh` (the sibling precedent).
 3. **Arrange → Act → Assert**, one behaviour per test, descriptive `describe`/`test` names.
 4. **Targeted assertions** — behaviour, not implementation. No `expect(true).toBe(false)` guards
    (use `rejects.toThrow`), no over-broad snapshots, no exact file-list pins that bitrot.

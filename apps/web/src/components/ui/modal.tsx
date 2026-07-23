@@ -52,9 +52,13 @@ import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
 import Loading from './loading';
 
-const Modal = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
+interface ModalProps extends DialogPrimitive.DialogProps {
+  depth?: number;
+}
+
+const Modal = ({ onOpenChange, depth: explicitDepth, ...props }: ModalProps) => {
   const parentDepth = useDialogDepth();
-  const depth = parentDepth + 1;
+  const depth = explicitDepth ?? parentDepth + 1;
 
   return (
     <DialogDepthProvider depth={depth}>

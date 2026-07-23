@@ -1,34 +1,22 @@
-export type ActiveTab = 'connected' | 'catalog' | 'models';
-
-export type CatalogSubview =
-  | { kind: 'list' }
-  | { kind: 'detail'; providerId: string }
-  | { kind: 'connect'; providerId: string }
-  | { kind: 'custom' };
-
 export interface ProjectProviderModalProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultTab?: ActiveTab;
-  initialProviderId?: string;
   asPanel?: boolean;
-  allowedTabs?: ActiveTab[];
   /**
-   * Read-only members see connected providers + catalog but not the
-   * add/connect/remove controls (which POST and would 403). Fails safe: a
-   * missing value is treated as read-only.
+   * Read-only members see the page but not the connect/change/disconnect
+   * controls (which mutate and would 403). Fails safe: a missing value is
+   * treated as read-only.
    */
   canWrite?: boolean;
 }
 
 export interface CustomFormState {
-  providerId: string;
+  protocol: 'openai' | 'anthropic';
   name: string;
   baseURL: string;
   apiKey: string;
   modelId: string;
-  modelName: string;
 }
 
 export type ChatGptPhase = 'idle' | 'waiting' | 'done';

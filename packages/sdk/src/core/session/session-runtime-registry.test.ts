@@ -18,13 +18,13 @@ test('getSessionRuntime returns undefined for a session no handle has resolved y
 
 test('setSessionRuntime records an entry retrievable by the same (projectId, sessionId)', () => {
   setSessionRuntime(PROJECT, SESSION, {
-    opencodeSessionId: 'ocs-1',
+    runtimeProtocol: 'acp', runtimeId: 'rt-1', runtimeSessionId: 'acp-1',
     runtimeUrl: 'http://backend.test/p/sb-1/8000',
     sandboxId: 'sb-1',
   });
 
   expect(getSessionRuntime(PROJECT, SESSION)).toEqual({
-    opencodeSessionId: 'ocs-1',
+    runtimeProtocol: 'acp', runtimeId: 'rt-1', runtimeSessionId: 'acp-1',
     runtimeUrl: 'http://backend.test/p/sb-1/8000',
     sandboxId: 'sb-1',
   });
@@ -32,12 +32,12 @@ test('setSessionRuntime records an entry retrievable by the same (projectId, ses
 
 test('entries for different session ids never collide', () => {
   setSessionRuntime(PROJECT, SESSION, {
-    opencodeSessionId: 'ocs-1',
+    runtimeProtocol: 'acp', runtimeId: 'rt-1', runtimeSessionId: 'acp-1',
     runtimeUrl: 'http://backend.test/p/sb-1/8000',
     sandboxId: 'sb-1',
   });
   setSessionRuntime(PROJECT, 'sess-other', {
-    opencodeSessionId: 'ocs-2',
+    runtimeProtocol: 'acp', runtimeId: 'rt-2', runtimeSessionId: 'acp-2',
     runtimeUrl: 'http://backend.test/p/sb-2/8000',
     sandboxId: 'sb-2',
   });
@@ -50,12 +50,12 @@ test('entries for different session ids never collide', () => {
 
 test('entries for the same session id under different projects never collide', () => {
   setSessionRuntime('proj-a', SESSION, {
-    opencodeSessionId: 'ocs-a',
+    runtimeProtocol: 'acp', runtimeId: 'rt-a', runtimeSessionId: 'acp-a',
     runtimeUrl: 'http://backend.test/p/sb-a/8000',
     sandboxId: 'sb-a',
   });
   setSessionRuntime('proj-b', SESSION, {
-    opencodeSessionId: 'ocs-b',
+    runtimeProtocol: 'acp', runtimeId: 'rt-b', runtimeSessionId: 'acp-b',
     runtimeUrl: 'http://backend.test/p/sb-b/8000',
     sandboxId: 'sb-b',
   });
@@ -69,7 +69,7 @@ test('entries for the same session id under different projects never collide', (
 
 test('clearSessionRuntime removes the entry (restart/delete invalidation)', () => {
   setSessionRuntime(PROJECT, SESSION, {
-    opencodeSessionId: 'ocs-1',
+    runtimeProtocol: 'acp', runtimeId: 'rt-1', runtimeSessionId: 'acp-1',
     runtimeUrl: 'http://backend.test/p/sb-1/8000',
     sandboxId: 'sb-1',
   });
@@ -90,7 +90,9 @@ const MAX_ENTRIES = 512;
 
 function fillEntry(i: number) {
   return {
-    opencodeSessionId: `ocs-${i}`,
+    runtimeProtocol: 'acp' as const,
+    runtimeId: `rt-${i}`,
+    runtimeSessionId: `acp-${i}`,
     runtimeUrl: `http://backend.test/p/sb-${i}/8000`,
     sandboxId: `sb-${i}`,
   };

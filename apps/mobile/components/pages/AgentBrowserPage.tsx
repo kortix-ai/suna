@@ -9,7 +9,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Text as RNText } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, type WebViewProps } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import * as Linking from 'expo-linking';
@@ -45,7 +45,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<WebView<Record<string, unknown>>>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -238,7 +238,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           </Pressable>
         </View>
       ) : (
-        <WebView
+        <WebView<Record<string, unknown>>
           key={refreshKey}
           ref={webViewRef}
           source={{
@@ -248,7 +248,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           onLoadStart={() => setIsLoading(true)}
           onLoadEnd={() => setIsLoading(false)}
           onError={() => { setIsLoading(false); setHasError(true); }}
-          onHttpError={(e) => {
+          onHttpError={(e: Parameters<NonNullable<WebViewProps['onHttpError']>>[0]) => {
             if (e.nativeEvent.statusCode >= 400) {
               setIsLoading(false);
               setHasError(true);

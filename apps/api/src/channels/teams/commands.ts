@@ -158,7 +158,7 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      { label: 'Model', value: selection?.model ? labelForModelRef(selection.model) : 'project default' },
     ],
     url: `${dashboardBase()}/projects/${projectId}`,
   });
@@ -193,7 +193,7 @@ async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
   const gate = await channelModelContext(ctx);
   if (!gate) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
+  const current = selection?.model ?? null;
   const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
 
   const { models, projectDefault } = await listPickerModels({

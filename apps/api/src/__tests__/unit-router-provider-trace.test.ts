@@ -21,6 +21,7 @@ type FetchCall = {
   url: string;
   method: string;
   headers: Record<string, string>;
+  body?: Record<string, unknown>;
 };
 
 const originalFetch = globalThis.fetch;
@@ -41,6 +42,7 @@ beforeEach(() => {
       url,
       method: init?.method ?? 'GET',
       headers: Object.fromEntries(new Headers(init?.headers).entries()),
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
     });
 
     if (url === 'https://api.tavily.test/search') {
@@ -81,4 +83,5 @@ describe('router provider trace propagation', () => {
       expect(call.headers['x-request-id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
     }
   });
+
 });

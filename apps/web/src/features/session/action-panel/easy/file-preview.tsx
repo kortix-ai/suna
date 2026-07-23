@@ -22,7 +22,7 @@ import {
   FileSourceProvider,
   getFileCategory,
 } from '@/features/file-viewer';
-import { isBrowserViewable } from '@/features/files/api/opencode-files';
+import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
+import { DownloadButton, FileViewer, isSvg, OpenInNewTabButton } from './file-viewer';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -248,6 +248,22 @@ const RICH_CATEGORIES = new Set<FileCategory>([
   'image',
 ]);
 
+/**
+ * `.svg` classifies as an `image`, which is true of how it looks and wrong
+ * about what it is. Left on the rich path it reaches `FileContentRenderer`,
+ * which only ever knows a URL — so the markup the user wants to read never
+ * arrives anywhere that could show it. Sending SVG down the text path instead
+ * hands `FileViewer` the real source, and it renders the picture itself (see
+ * its `isSvg` branch). Nothing is lost: the preview there is the same
+ * `ImageRenderer` the rich path would have reached.
+ *
+ * Exported for tests: which path a file takes decides whether its source is
+ * ever fetched, and that is worth pinning without mounting the whole preview.
+ */
+export function isRich(fileName: string): boolean {
+  return RICH_CATEGORIES.has(getFileCategory(fileName)) && !isSvg(fileName);
+}
+
 export function FilePreview({
   path,
   name,
@@ -276,7 +292,7 @@ export function FilePreview({
    *  entirely (not disabled) for anything that isn't a presentation_gen deck. */
   onPresent?: () => void;
 }) {
-  const rich = RICH_CATEGORIES.has(getFileCategory(fileName));
+  const rich = isRich(fileName);
 
   const sandboxAlive = useSyncExternalStore(
     useSandboxConnectionStore.subscribe,

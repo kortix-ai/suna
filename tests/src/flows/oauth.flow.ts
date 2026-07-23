@@ -171,3 +171,204 @@ flow(
     });
   },
 );
+
+// ── Unified auth-provider surface (apps/api/src/projects/routes/auth-providers.ts)
+// The two-door connect registry the web modal and the CLI both read
+// (docs/specs/2026-07-22-unified-auth-gateway.md §8.3). Distinct from the
+// OAU-* OAuth2 SERVER above: these routes STORE/POLL credentials for upstream
+// providers (Anthropic, OpenAI/Codex), they don't issue Kortix tokens.
+//
+// Deterministic-only: no external provider round-trip. The paste-token start
+// (Anthropic) 400s before any network; poll with a garbage handle decrypts to
+// nothing → "expired"; the OWNER 200s exercise pure reads. A live Codex
+// device-code start/poll happy-path needs OpenAI's endpoint + a human
+// approval, so it stays out of the deterministic suite.
+//
+// NOTE: these are AUTHP-* (auth-providers), NOT the AUTH-* namespace — AUTH-1
+// is already taken by POST /v1/auth/logout (auth.flow.ts).
+
+// ── AUTHP-1: GET /auth-providers — both doors + live status ──────────────────
+flow(
+  "AUTHP-1",
+  { domain: "auth-providers", routes: ["GET /v1/projects/:projectId/auth-providers"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/auth-providers", { params: { projectId: p.id } });
+      r.status(401);
+    });
+    await ctx.step("OWNER → 200 with both doors + a byok tail", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/auth-providers", { params: { projectId: p.id } });
+      r.status(200);
+      const body = r.json<{
+        providers: Array<{ id: string; door: string; compatibleHarnesses: string[] }>;
+        byok: Array<{ id: string }>;
+      }>();
+      const doors = new Set((body.providers ?? []).map((x) => x.door));
+      if (!doors.has("account") || !doors.has("api-key")) {
+        throw new Error(`expected both doors, got ${JSON.stringify([...doors])}`);
+      }
+      // Anthropic's account door (Claude Code) is always present.
+      if (!body.providers.some((x) => x.id === "anthropic" && x.door === "account")) {
+        throw new Error("expected an anthropic account-door provider");
+      }
+      if (!Array.isArray(body.byok) || body.byok.length === 0) {
+        throw new Error("expected a non-empty byok catalog tail");
+      }
+    });
+  },
+);
+
+// ── AUTHP-2: GET /auth-providers/:providerId/status ──────────────────────────
+flow(
+  "AUTHP-2",
+  {
+    domain: "auth-providers",
+    routes: ["GET /v1/projects/:projectId/auth-providers/:providerId/status"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/auth-providers/:providerId/status", {
+          params: { projectId: p.id, providerId: "openai" },
+        });
+      r.status(401);
+    });
+    await ctx.step("OWNER, a known provider → 200 with a typed status", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/auth-providers/:providerId/status", {
+          params: { projectId: p.id, providerId: "anthropic" },
+        });
+      r.status(200).body().exists("$.status.status");
+    });
+    await ctx.step("OWNER, an unknown provider → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/auth-providers/:providerId/status", {
+          params: { projectId: p.id, providerId: "not-a-real-provider" },
+        });
+      r.status(404);
+    });
+  },
+);
+
+// ── AUTHP-3: POST /oauth-credentials/:providerId/start ───────────────────────
+flow(
+  "AUTHP-3",
+  {
+    domain: "auth-providers",
+    routes: ["POST /v1/projects/:projectId/oauth-credentials/:providerId/start"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/projects/:projectId/oauth-credentials/:providerId/start",
+          {},
+          { params: { projectId: p.id, providerId: "openai" } },
+        );
+      r.status(401);
+    });
+    await ctx.step("a paste-token provider (Anthropic) has no device flow → 400", async () => {
+      // Anthropic's account door is paste-token (`claude setup-token`), not
+      // device-code — start refuses it (spec §6.3) rather than round-tripping.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/oauth-credentials/:providerId/start",
+          {},
+          { params: { projectId: p.id, providerId: "anthropic" } },
+        );
+      r.status(400);
+    });
+    await ctx.step("an unknown account provider → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/oauth-credentials/:providerId/start",
+          {},
+          { params: { projectId: p.id, providerId: "not-a-real-provider" } },
+        );
+      r.status(404);
+    });
+  },
+);
+
+// ── AUTHP-4: POST /oauth-credentials/:providerId/poll ────────────────────────
+flow(
+  "AUTHP-4",
+  {
+    domain: "auth-providers",
+    routes: ["POST /v1/projects/:projectId/oauth-credentials/:providerId/poll"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/projects/:projectId/oauth-credentials/:providerId/poll",
+          { flow_id: "x" },
+          { params: { projectId: p.id, providerId: "openai" } },
+        );
+      r.status(401);
+    });
+    await ctx.step("a garbage flow handle decrypts to nothing → expired", async () => {
+      // The flow handle is an opaque, project-key-encrypted envelope; anything
+      // that isn't one (or is from another project) opens to null → expired,
+      // never a 500 (spec §6.3, mirrors r3's any-replica poll).
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/oauth-credentials/:providerId/poll",
+          { flow_id: "garbage-not-a-handle" },
+          { params: { projectId: p.id, providerId: "openai" } },
+        );
+      r.status(200).body().has("$.status", "expired");
+    });
+  },
+);
+
+// ── AUTHP-5: GET /oauth-credentials (list) + DELETE (disconnect) ─────────────
+flow(
+  "AUTHP-5",
+  {
+    domain: "auth-providers",
+    routes: [
+      "GET /v1/projects/:projectId/oauth-credentials",
+      "DELETE /v1/projects/:projectId/oauth-credentials/:providerId",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("list: ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/oauth-credentials", { params: { projectId: p.id } });
+      r.status(401);
+    });
+    await ctx.step("list: OWNER → 200 with an items array", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/oauth-credentials", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.items");
+    });
+    await ctx.step("delete: ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .del("/v1/projects/:projectId/oauth-credentials/:providerId", {
+          params: { projectId: p.id, providerId: "openai" },
+        });
+      r.status(401);
+    });
+  },
+);

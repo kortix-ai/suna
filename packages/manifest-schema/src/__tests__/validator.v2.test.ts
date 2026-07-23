@@ -8,7 +8,7 @@ import {
 
 // v2's `agents:` map is GOVERNANCE ONLY (decision 2026-07-05, "one home per
 // concern") — behavior (mode/model/temperature/permission/…) lives entirely
-// in the agent's own `.kortix/opencode/agents/<name>.md` frontmatter, which
+// in the agent's own `.opencode/agents/<name>.md` frontmatter, which
 // this validator never reads. See the `validateAgentMdFrontmatter` describe
 // block below for the behavioral-field rules, now exercised against that
 // function directly instead of through `validateManifest`.
@@ -72,7 +72,7 @@ required = ["ANTHROPIC_API_KEY"]
 optional = ["STRIPE_KEY"]
 
 [opencode]
-config_dir = ".kortix/opencode"
+config_dir = ".opencode"
 
 [[sandbox.templates]]
 slug = "py"
@@ -141,7 +141,7 @@ env:
   required: [ANTHROPIC_API_KEY]
   optional: [STRIPE_KEY]
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: .opencode
 sandbox:
   default: py
   templates:
@@ -199,9 +199,9 @@ describe('validateManifest — kortix_version 2 format gate', () => {
     );
     expect(valid).toBe(false);
     expect(errorPaths).toContain('kortix_version');
-    expect(
-      issues.some((i) => i.path === 'kortix_version' && i.message.includes('kortix.yaml')),
-    ).toBe(true);
+    expect(issues[0].message).toBe(
+      `kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml and migrate it to YAML (see the v2→v3 migration guide in packages/manifest-schema/README.md).`,
+    );
   });
 
   test('kortix_version 1 continues to work in TOML', () => {
@@ -810,9 +810,9 @@ agents:
 });
 
 describe('validateManifest — version above known max still rejected', () => {
-  test('kortix_version 3 is rejected as unsupported', () => {
+  test('kortix_version 4 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
-kortix_version: 3
+kortix_version: 4
 default_agent: w
 agents:
   w: {}

@@ -104,7 +104,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeOpenCodeSessionId = searchParams.get('oc');
+  const activeRuntimeSessionId = searchParams.get('oc');
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
@@ -195,7 +195,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
 
   if (viewState === 'empty') {
     return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+      <div className="text-muted-foreground/60 px-2 pb-2 pt-1 text-xs">
         {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
       </div>
     );
@@ -203,7 +203,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
 
   if (viewState === 'no-matches') {
     return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+      <div className="text-muted-foreground/60 px-2 pb-2 pt-1 text-xs">
         {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
       </div>
     );
@@ -222,7 +222,9 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
               <ProjectSessionRow
                 session={session}
                 href={href}
-                isActive={!!isActive && !activeOpenCodeSessionId}
+                isActive={
+                  (!!isActive && !activeRuntimeSessionId && !switchingToSessionId) || isSwitchTarget
+                }
                 isSwitching={isSwitchTarget}
                 onNavigate={(event) => {
                   if (switchingToSessionId && session.session_id === activeSessionId) {
@@ -231,11 +233,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                     router.replace(href, { scroll: false });
                     return;
                   }
-                  if (shouldBeginSessionSwitch(
-                      event,
-                      session.session_id,
-                      activeSessionId)
-                  ) {
+                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
                     beginSessionSwitch(session.session_id);
                   }
                 }}
@@ -259,7 +257,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 <div className="border-border ml-3.5 border-l-2 pl-2">
                   {children.map((child) => {
                     const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-                    const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+                    const activeChild = !!isActive && activeRuntimeSessionId === child.id;
                     return (
                       <ProjectSubsessionRow
                         key={child.id}
@@ -420,7 +418,7 @@ function ProjectSessionRow({
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
                   'pr-1.5 transition-opacity duration-150',
-                  'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
+                  'group-has-data-[state=open]/session-list:opacity-0 opacity-100 group-hover/session-list:opacity-0',
                 )}
               >
                 {shortRelative(relative)}
@@ -437,7 +435,7 @@ function ProjectSessionRow({
                     'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
                   )}
                   className={cn(
-                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+                    'absolute right-0 top-1/2 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
                     relative
                       ? cn(
                           'pointer-events-none opacity-0',
@@ -474,7 +472,9 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
-                  onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+                  onSelect={() =>
+                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+                  }
                 >
                   {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
@@ -558,9 +558,7 @@ function SessionStatusDot({
       side="right"
       label={
         reviewPending ? (
-          <span className="text-xs">
-            {reviewCount} awaiting your review
-          </span>
+          <span className="text-xs">{reviewCount} awaiting your review</span>
         ) : (
           <span className="text-xs capitalize">{status}</span>
         )

@@ -207,7 +207,7 @@ describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account
     });
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'kortix',
-      opencodeModel: null,
+      model: null,
       projectDefaultAgent: null,
     }));
     resolveCandidatesImpl = async () => [{ provider: 'x' }];
@@ -308,7 +308,7 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
-      opencodeModel: null,
+      model: null,
       projectDefaultAgent: 'kortix',
     }));
     resolveCandidatesImpl = async () => [{ provider: 'anthropic' }];
@@ -330,7 +330,7 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'release-bot',
-      opencodeModel: null,
+      model: null,
       projectDefaultAgent: 'kortix',
     }));
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
@@ -352,7 +352,7 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
-      opencodeModel: null,
+      model: null,
       projectDefaultAgent: null,
     }));
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
@@ -376,7 +376,7 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
-      opencodeModel: null,
+      model: null,
       projectDefaultAgent: 'kortix',
     }));
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];

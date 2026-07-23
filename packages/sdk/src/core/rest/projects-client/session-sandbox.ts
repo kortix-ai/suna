@@ -42,9 +42,11 @@ export interface SessionStartResult {
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
-  opencode_session_id: string | null;
+  runtime_protocol?: "acp" | null;
+  runtime_id?: string | null;
+  runtime_session_id?: string | null;
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
+   * Relative proxy path for this session's runtime (port 8000), composed
    * against the configured backendUrl. The server owns the proxy scheme; the SDK
    * consumes this opaquely (never builds `/p/<id>/<port>` itself). Absent until the
    * box has an external_id — `useSession` falls back to deriving it from
@@ -66,7 +68,8 @@ export function projectSessionStartSeed(
     session.status !== "running" ||
     !session.sandbox_provider ||
     !session.sandbox_url ||
-    !session.opencode_session_id
+    session.runtime_protocol !== "acp" ||
+    !session.runtime_id
   ) {
     return null;
   }
@@ -91,7 +94,9 @@ export function projectSessionStartSeed(
       created_at: session.created_at,
       updated_at: session.updated_at,
     },
-    opencode_session_id: session.opencode_session_id,
+    runtime_protocol: "acp",
+    runtime_id: session.runtime_id,
+    runtime_session_id: session.runtime_session_id,
     runtime_url: session.sandbox_url,
   };
 }
@@ -101,7 +106,9 @@ export class SessionStartError extends Error {
   code?: string;
   terminal: boolean;
 
-  constructor(message: string, options: { status?: number; code?: string; terminal: boolean },
+  constructor(
+    message: string,
+    options: { status?: number; code?: string; terminal: boolean },
   ) {
     super(message);
     this.name = "SessionStartError";
@@ -111,21 +118,32 @@ export class SessionStartError extends Error {
   }
 }
 
-export function isSessionStartError(error: unknown,
+export function isSessionStartError(
+  error: unknown,
 ): error is SessionStartError {
   return error instanceof Error && error.name === "SessionStartError";
 }
 
 function classifySessionStartFailure(error?: Error): SessionStartError | null {
   const apiError = error as
-    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string };
+    | (Error & {
+        status?: number;
+        code?: string;
+        details?: { code?: string; error?: string };
       })
     | undefined;
   const status = apiError?.status;
-  const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
+  const code =
+    apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
   const message = apiError?.message || "Unable to start this session";
 
-  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+  if (
+    status &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 429
+  ) {
     return new SessionStartError(message, { status, code, terminal: true });
   }
 
@@ -134,7 +152,7 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
 
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
- * the OpenCode pin server-side, returning ONE readiness payload to poll until
+ * the Runtime pin server-side, returning ONE readiness payload to poll until
  * stage='ready'.
  */
 export async function startProjectSession(
@@ -144,6 +162,15 @@ export async function startProjectSession(
   // until readiness flips (or its bounded deadline), so we learn `ready` the
   // instant it happens instead of on a fixed poll tick. Omit = one-shot.
   waitMs?: number,
+  // Optional client-side HTTP deadline. The facade uses this to stop a stalled
+  // request at the active ensureReady callers' latest deadline.
+  requestTimeoutMs?: number,
+  options?: {
+    /** Cancels this HTTP request without cancelling other session callers. */
+    signal?: AbortSignal;
+    /** Disable registry writes when the caller must validate lifecycle state first. */
+    registerRuntime?: boolean;
+  },
 ): Promise<SessionStartResult | null> {
   const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : "";
   const response = await backendApi.post<SessionStartResult>(
@@ -151,7 +178,13 @@ export async function startProjectSession(
     {},
     // Keep toasts quiet here. Terminal client errors are rendered by the host;
     // transient transport/server failures still yield null so polling can recover.
-    { showErrors: false },
+    {
+      showErrors: false,
+      ...(requestTimeoutMs !== undefined
+        ? { timeout: Math.max(1, Math.floor(requestTimeoutMs)) }
+        : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    },
   );
   if (!response.success || !response.data) {
     const terminal = classifySessionStartFailure(response.error);
@@ -159,7 +192,8 @@ export async function startProjectSession(
     // race: `useNewProjectSession` fires this /start before its background
     // create POST has landed, so the row doesn't exist yet. Yield null so the
     // poll keeps going; a 404 for any other session stays terminal.
-    if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId))) throw terminal;
+    if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId)))
+      throw terminal;
     return null;
   }
   const result = response.data;
@@ -170,9 +204,20 @@ export async function startProjectSession(
   // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
-  if (result.stage === "ready" && externalId && result.opencode_session_id) {
+  const runtimeSessionId = result.runtime_session_id;
+  const runtimeId = result.runtime_id ?? runtimeSessionId;
+  const runtimeProtocol = result.runtime_protocol;
+  if (
+    options?.registerRuntime !== false &&
+    result.stage === "ready" &&
+    externalId &&
+    runtimeId &&
+    runtimeProtocol === "acp"
+  ) {
     setSessionRuntime(projectId, sessionId, {
-      opencodeSessionId: result.opencode_session_id,
+      runtimeProtocol,
+      runtimeId,
+      runtimeSessionId,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
     });

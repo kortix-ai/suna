@@ -11,7 +11,7 @@ a prompt, and turn classification. Each numbered step links to a deep dive.
 ## The complete script
 
 ```ts
-import { ApiError, classifyTurn, createKortix, narrowChatEvent } from '@kortix/sdk';
+import { classifyTurn, createKortix, narrowChatEvent } from '@kortix/sdk';
 import type { MessageWithParts } from '@kortix/sdk';
 
 async function main() {
@@ -33,13 +33,13 @@ async function main() {
   });
   const session = kortix.session(project.project_id, created.session_id);
 
-  // 4. Ready the session. This provisions (or resumes) the real cloud
-  //    sandbox. ensureReady() polls /start (each call long-polls up to 30s)
-  //    until the runtime is ready or its deadline (~3 min) elapses, so a
-  //    cold boot just takes longer rather than throwing. The
-  //    retryUntilReady wrapper below is optional — keep it only if you want
-  //    a longer total budget than the default.
-  const { opencodeSessionId } = await retryUntilReady(() => session.ensureReady());
+  // 4. Ready the session. This provisions or resumes the real cloud runtime.
+  //    ensureReady() polls retriable stages until ready. The callback receives
+  //    the server's stage and reason values for accurate boot progress.
+  const { runtimeSessionId } = await session.ensureReady({
+    deadlineMs: 300_000,
+    onProgress: ({ stage, reason }) => console.log('boot:', stage, reason),
+  });
 
   // 5. Connect the event stream before you send, so no early events are
   //    missed. narrowChatEvent() collapses the wire events into a small
@@ -53,7 +53,7 @@ async function main() {
       if (!e) return;
       if (e.type === 'message.part.updated') process.stdout.write('.');
       if (e.type === 'session.error') console.error('\nerror:', e.error);
-      if (e.type === 'session.idle' && e.sessionID === opencodeSessionId) {
+      if (e.type === 'session.idle' && e.sessionID === runtimeSessionId) {
         resolveIdle(); // the turn is finished
       }
     },
@@ -74,25 +74,11 @@ async function main() {
   //    into one union, so a renderer can switch on part.kind and
   //    TypeScript proves no case is missed.
   const result = await session.runtime.session.messages({
-    sessionID: opencodeSessionId,
+    sessionID: runtimeSessionId!,
   });
   for (const message of (result.data ?? []) as MessageWithParts[]) {
     for (const part of classifyTurn(message).parts) {
       if (part.kind === 'text') console.log(`\n[${message.info.role}] ${part.text}`);
-    }
-  }
-}
-
-/** Optional outer-budget wrapper — ensureReady() already polls internally. */
-async function retryUntilReady<T>(ensure: () => Promise<T>): Promise<T> {
-  const deadline = Date.now() + 300_000;
-  for (;;) {
-    try {
-      return await ensure();
-    } catch (error) {
-      const provisioning = error instanceof ApiError && error.code === 'RUNTIME_UNAVAILABLE';
-      if (!provisioning || Date.now() > deadline) throw error;
-      await new Promise((r) => setTimeout(r, 3_000));
     }
   }
 }
@@ -109,19 +95,20 @@ Run it with Node 18 or later, Bun, or `tsx`:
 KORTIX_API_KEY=kortix_pat_... npx tsx full-example.ts
 ```
 
-The first `ensureReady()` call on a fresh session provisions a real cloud sandbox, so the ready
-step takes a while on the first run. Later runs resume the same sandbox and finish fast.
+The first `ensureReady()` call on a fresh session provisions a real cloud
+runtime. The default deadline is five minutes. Later calls resume the same
+runtime and finish faster.
 
 ## What each step teaches
 
-| Step | Concept                                             | Deep dive                          |
-| ---- | ---------------------------------------------------- | ----------------------------------- |
-| 1    | One client, one token, one auth seam                | [Authentication](/docs/sdk/auth)   |
-| 2–3  | The platform REST surface: projects and sessions    | [Reference](/docs/sdk/reference)   |
-| 4    | Session readiness, the bridge from platform to runtime | [Sessions](/docs/sdk/sessions)     |
-| 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`  | [Sessions](/docs/sdk/sessions)     |
-| 6    | Per-send `{ model, agent }` overrides               | [Sessions](/docs/sdk/sessions)     |
-| 8    | `classifyTurn` and the exhaustive part union         | [Reference](/docs/sdk/reference)   |
+| Step | Concept                                                | Deep dive                        |
+| ---- | ------------------------------------------------------ | -------------------------------- |
+| 1    | One client, one token, one auth seam                   | [Authentication](/docs/sdk/auth) |
+| 2–3  | The platform REST surface: projects and sessions       | [Reference](/docs/sdk/reference) |
+| 4    | Session readiness, the bridge from platform to runtime | [Sessions](/docs/sdk/sessions)   |
+| 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`     | [Sessions](/docs/sdk/sessions)   |
+| 6    | Per-send `{ model, agent }` overrides                  | [Sessions](/docs/sdk/sessions)   |
+| 8    | `classifyTurn` and the exhaustive part union           | [Reference](/docs/sdk/reference) |
 
 ## Going further from here
 

@@ -303,27 +303,22 @@ app.use('*', async (c, next) => {
   );
 
   // Expected sandbox proxy noise we intentionally suppress:
-  // - long-poll/SSE event stream timing out after ~30s (504)
+  // - canonical ACP SSE streams timing out after ~30s (504)
   // - sandbox startup probes returning 502/503 before services are ready
   const isSandboxProxyPath = path.includes('/v1/p/');
-  const isProxyLongPoll =
-    isSandboxProxyPath &&
-    (path.includes('/global/event') ||
-      path.includes('/session/status') ||
-      /\/session\/[^/]+\/message(?:$|\?)/.test(path));
-  const isProxyStartupProbe =
-    isSandboxProxyPath &&
-    (path.includes('/global/health') ||
-      path.includes('/kortix/health') ||
-      /\/sessions(?:\/|$)/.test(path));
-  const isExpectedProxyNoise =
-    method === 'GET' &&
-    ((isProxyLongPoll &&
-      ((status === 200 && duration > 5000) ||
-        status === 504 ||
-        status === 502 ||
-        status === 503)) ||
-      (isProxyStartupProbe && (status === 502 || status === 503 || status === 504)));
+  const isAcpLongPoll = /\/v1\/projects\/[^/]+\/sessions\/[^/]+\/acp(?:$|\?)/.test(path);
+  const isProxyStartupProbe = isSandboxProxyPath && (
+    path.includes('/kortix/health')
+  );
+  const isExpectedProxyNoise = method === 'GET' && (
+    (isAcpLongPoll && (
+      (status === 200 && duration > 5000) ||
+      status === 504 ||
+      status === 502 ||
+      status === 503
+    )) ||
+    (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
+  );
 
   // Health/liveness probes fire every few seconds from the ALB + kubelet across
   // every pod — by far the highest-volume request. A healthy probe carries no
@@ -853,11 +848,11 @@ app.onError((err, c) => {
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
 
-  // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
+  // Suppress SSE/long-poll abort noise — these are expected ACP reconnects,
   // not real errors. The client reconnects automatically.
   const isAbort = errName === 'DOMException' || err.message?.includes('The operation was aborted');
-  const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
-  if (isAbort && isSandboxProxy) {
+  const isAcpStream = /\/projects\/[^/]+\/sessions\/[^/]+\/acp(?:$|\?)/.test(path);
+  if (isAbort && isAcpStream) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
   }
 
@@ -1321,6 +1316,13 @@ export default {
     // the gateway's own keep-alive / upstream timeout govern it instead of Bun
     // closing the client socket at idleTimeout with an empty reply.
     if (url.pathname.startsWith('/v1/llm-gateway')) {
+      server.timeout(req, 0);
+    }
+
+    // ACP JSON-RPC prompt requests intentionally remain open until the harness
+    // finishes the turn. Codex regularly takes longer than the global 30s idle
+    // socket budget before producing the RPC response.
+    if (url.pathname.includes('/sessions/') && url.pathname.endsWith('/acp')) {
       server.timeout(req, 0);
     }
 

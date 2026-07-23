@@ -1,6 +1,12 @@
 {
-  "opencode": "1.17.11",
-  "opencodeSdk": "1.17.11",
+  "opencode": "1.18.4",
+  "opencodeSdk": "1.18.4",
+  "claudeAgentAcp": "0.58.1",
+  "codexAcp": "1.1.2",
+  "piAcp": "0.0.31",
+  "piCodingAgent": "0.81.1",
+  "claudeCode": "2.1.217",
+  "codexCli": "0.145.0",
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0"
 }

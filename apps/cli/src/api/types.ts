@@ -68,6 +68,54 @@ export interface ProjectSecretsResponse {
   manifest_error?: string;
 }
 
+// ── Auth providers (unified registry — GET /projects/:id/auth-providers) ────
+// The two-door connect surface both web and CLI read (docs/specs/2026-07-22-
+// unified-auth-gateway.md §8.3). `apps/api/src/projects/routes/auth-providers.ts`
+// is the source of truth for these shapes; keep them in sync.
+
+/** Mirrors the server's `CredentialStatus` enum (resolve-credential-status.ts). */
+export type CredentialStatusWord = 'healthy' | 'expired' | 'invalid' | 'unverified' | 'absent';
+
+/** Typed, read-side credential health for one provider door. */
+export interface CredentialRecord {
+  providerId: string;
+  authKind: string;
+  door: 'account' | 'api-key';
+  scope: 'shared' | 'personal';
+  status: CredentialStatusWord;
+  refreshable: boolean;
+  expiresAt: number | null;
+  lastCheckedAt: number | null;
+  reason: string | null;
+}
+
+/** One registry provider door, with live status layered on by the route. */
+export interface AuthProviderView {
+  id: string;
+  label: string;
+  door: 'account' | 'api-key';
+  producesAuthKind: string;
+  /** Harness ids a successful connection unlocks (compatibleHarnessesFor). */
+  compatibleHarnesses: string[];
+  flows: { web: string[] };
+  /** true when a flow is present but flag-gated OFF (Anthropic one-click). */
+  gated: boolean;
+  refresh: 'refresh-token' | 'none';
+  status: CredentialRecord | null;
+}
+
+/** The long BYOK catalog tail — connect-only metadata, no `HarnessAuthKind`. */
+export interface CatalogByokProvider {
+  id: string;
+  label: string;
+  apiKeyEnvVars: string[];
+}
+
+export interface AuthProvidersResponse {
+  providers: AuthProviderView[];
+  byok: CatalogByokProvider[];
+}
+
 // ── Provider OAuth ───────────────────────────────────────────────────────
 
 export interface OauthCredentialSummary {
@@ -107,6 +155,16 @@ export type OauthPollResponse =
 
 // ── Sessions ──────────────────────────────────────────────────────────────
 
+export interface ProjectRuntimeSession {
+  id: string;
+  title: string | null;
+  parent_id: string | null;
+  project_id: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+  archived_at: number | null;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -116,8 +174,13 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
-  opencode_session_id: string | null;
-  /** Resolved display name: user-set custom_name, else the auto opencode title. */
+  /** @deprecated Internal compatibility pin for explicit legacy OpenCode attach/shell commands. */
+  opencode_session_id?: string | null;
+  runtime_session_id: string | null;
+  runtime_protocol?: 'acp' | 'opencode' | null;
+  runtime_id?: string | null;
+  acp_session_id?: string | null;
+  /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
@@ -125,6 +188,7 @@ export interface ProjectSession {
   status: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
   error: string | null;
   metadata: Record<string, unknown>;
+  runtime_sessions?: ProjectRuntimeSession[];
   created_at: string;
   updated_at: string;
 }

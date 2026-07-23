@@ -19,21 +19,17 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { writeStartStash } from '@kortix/sdk/react';
 import { useCustomizeStore } from '@/stores/customize-store';
 
-export type ConfigureKind = 'agent' | 'skill' | 'command';
+export type ConfigureKind = 'agent' | 'skill';
 
 const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:
     'I want to configure a new agent for this project. Ask me what it should ' +
     'specialize in and how it should behave, then create its config at ' +
-    '`.kortix/opencode/agents/<name>.md` and open a change request so I can review and merge it.',
+    '`.opencode/agents/<name>.md` and open a change request so I can review and merge it.',
   skill:
     'I want to add a new skill to this project. Ask me what capability it ' +
     'should provide and when it should trigger, then scaffold ' +
-    '`.kortix/opencode/skills/<name>/SKILL.md` and open a change request so I can review and merge it.',
-  command:
-    'I want to create a new slash command for this project. Ask me what it ' +
-    'should do, then add it at `.kortix/opencode/commands/<name>.md` and open a ' +
-    'change request so I can review and merge it.',
+    '`.opencode/skills/<name>/SKILL.md` and open a change request so I can review and merge it.',
 };
 
 export function newConfigPrompt(kind: ConfigureKind): string {
@@ -77,7 +73,7 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // so flipping it back would only flash the idle button.
       newSession({
         onNavigate: (sessionId) => {
-          // `sessionId` is the route/Kortix session id here, not the OpenCode
+          // `sessionId` is the route/Kortix session id here, not the Runtime
           // pin the session page resolves later. Stash under the route id via
           // the SDK's canonical `writeStartStash` — the session page's
           // `migrateStash` hands this off onto the resolved pin once it

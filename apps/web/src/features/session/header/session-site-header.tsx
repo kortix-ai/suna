@@ -3,12 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
@@ -20,6 +20,7 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -41,6 +42,7 @@ import {
   MoreHorizontal,
   PanelRight,
   RotateCcw,
+  ShieldCheck,
   Square,
   SquareTerminal,
 } from 'lucide-react';
@@ -55,6 +57,18 @@ interface SessionSiteHeaderProps {
   isSidePanelOpen?: boolean;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
+  supportsCompact?: boolean;
+  /** ACP agent identity (e.g. `agentInfo.name` from `useSession().acp`) — shown as a quiet outline badge next to the title. */
+  agentName?: string;
+  /** Session-scoped "allow every permission request" backstop, owned by
+   *  `useAcpSession`. It lives up here rather than in the permission prompt
+   *  because it is a SESSION MODE, not a pending request: once it is on there
+   *  are no requests left for that surface to render, so the strip that used
+   *  to carry it kept an otherwise-empty card pinned above the composer with
+   *  nothing in it. A mode belongs with the other session-wide actions.
+   *  Omitted by non-ACP call sites, which have no such backstop. */
+  autoApprovePermissions?: boolean;
+  onAutoApprovePermissionsChange?: (value: boolean) => void;
 }
 
 export function SessionSiteHeader({
@@ -64,6 +78,10 @@ export function SessionSiteHeader({
   isSidePanelOpen = false,
   isMobileView,
   leadingAction,
+  supportsCompact = true,
+  agentName,
+  autoApprovePermissions = false,
+  onAutoApprovePermissionsChange,
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -165,6 +183,7 @@ export function SessionSiteHeader({
                 </Link>
               </Button>
             )}
+
             {leadingAction}
           </div>
 
@@ -189,12 +208,47 @@ export function SessionSiteHeader({
                       'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
                     )}
                   >
-                    <MoreHorizontal />
+                    <span className="relative inline-flex">
+                      <MoreHorizontal />
+                      {/* Auto-approve is a mode the user cannot otherwise SEE
+                          once its strip is gone — an invisible mode that
+                          silently approves everything is exactly the wrong
+                          thing to hide. Same dot vocabulary the panel toggle
+                          already uses for its ready chip, in the attention
+                          token rather than the success one: this is a state
+                          to notice, not a job well done. */}
+                      {autoApprovePermissions && onAutoApprovePermissionsChange ? (
+                        <span
+                          data-testid="session-auto-approve-dot"
+                          className="bg-kortix-yellow ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
+                          aria-hidden
+                        />
+                      ) : null}
+                    </span>
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
 
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-56">
+                {autoApprovePermissions && onAutoApprovePermissionsChange ? (
+                  <>
+                    <DropdownMenuItem
+                      className="cursor-pointer items-start"
+                      data-testid="session-auto-approve-off"
+                      onClick={() => onAutoApprovePermissionsChange(false)}
+                    >
+                      <ShieldCheck className="text-kortix-yellow mt-1" />
+                      <span className="flex min-w-0 flex-col">
+                        Stop allowing everything
+                        <span className="text-muted-foreground text-xs">
+                          Kortix is approving every request
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem
@@ -245,12 +299,14 @@ export function SessionSiteHeader({
                   )}
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
-                  <Layers />
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
-                  )}
-                </DropdownMenuItem>
+                {supportsCompact ? (
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
+                    <Layers />
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
+                    )}
+                  </DropdownMenuItem>
+                ) : null}
 
                 {isProjectSession && (
                   <DropdownMenuItem
@@ -264,7 +320,6 @@ export function SessionSiteHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
 
             <SessionChangesIndicator sessionId={sessionId} />
 
@@ -319,11 +374,18 @@ export function SessionSiteHeader({
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={isSidePanelOpen ? 'Close panel' : 'Open panel'}
+                data-testid="session-side-panel-toggle"
                 onClick={() => {
                   if (!isSidePanelOpen) track('panel_opened', { source: 'toggle' });
                   onToggleSidePanel();
                 }}
-                className={cn('text-foreground cursor-pointer transition-colors')}
+                className={cn(
+                  'h-8 w-8 cursor-pointer transition-colors',
+                  isSidePanelOpen
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
               >
                 <span className="relative inline-flex">
                   <PanelRight className="h-4 w-4" />
@@ -340,8 +402,16 @@ export function SessionSiteHeader({
         </div>
       </div>
 
-      <ExportTranscriptModal sessionId={sessionId} open={exportOpen} onOpenChange={setExportOpen} />
-      <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
+      <ExportTranscriptModal
+        projectId={projectId ?? null}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+      />
+      {supportsCompact ? (
+        <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
+      ) : null}
 
       {isProjectSession && (
         <>

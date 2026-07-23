@@ -127,8 +127,11 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
  * mixed/legacy message arrays (including reasoning parts) that can be accepted
  * by chat/completions but rejected by /responses with 400 invalid_prompt.
  *
- * For /openai/responses requests we normalize input into a conservative shape:
- *   [{ role: 'user'|'system'|'developer', content: '<text>' }, ...]
+ * For /openai/responses requests we normalize only legacy, untyped message
+ * shapes. Native typed Responses items (`function_call_output`, `reasoning`,
+ * `computer_call_output`, etc.) are protocol state and must remain lossless.
+ * Rewriting a function result as user text makes coding agents repeat the same
+ * tool call forever because the model never receives its call output.
  *
  * This keeps conversations working instead of hard failing on schema mismatch.
  */
@@ -149,7 +152,7 @@ export function maybeNormalizeOpenAIResponsesInput(
     const parsed = JSON.parse(text) as Record<string, any>;
     if (!Array.isArray(parsed.input)) return body;
 
-    const normalized: Array<{ role: 'user' | 'system' | 'developer'; content: string }> = [];
+    const normalized: unknown[] = [];
 
     for (const item of parsed.input) {
       if (typeof item === 'string') {
@@ -165,6 +168,12 @@ export function maybeNormalizeOpenAIResponsesInput(
       }
 
       if (item && typeof item === 'object') {
+        // Typed items are already Responses-native. Preserve the complete item
+        // rather than trying to enumerate a protocol that continues to grow.
+        if (typeof item.type === 'string' && item.type.length > 0) {
+          normalized.push(item);
+          continue;
+        }
         const roleRaw = typeof item.role === 'string' ? item.role : 'user';
         const role: 'user' | 'system' | 'developer' =
           roleRaw === 'system' || roleRaw === 'developer' ? roleRaw : 'user';

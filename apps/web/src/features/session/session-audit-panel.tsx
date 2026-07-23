@@ -102,7 +102,7 @@ export function SessionAuditPanel({
           <>
             {pending.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 bg-amber-400/[0.06] px-6 pt-4 pb-2">
+                <div className="flex items-center gap-2 bg-kortix-yellow/[0.06] px-6 pt-4 pb-2">
                   <span className="text-foreground text-xs font-semibold uppercase tracking-wide">
                     Needs your approval
                   </span>

@@ -1,10 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
-import type { ProviderName } from '../../platform/providers';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -53,22 +49,6 @@ function jsonProxyError(body: Record<string, unknown>, status: number, origin?: 
     status,
     headers,
   });
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : String(error || fallback);
-}
-
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
-
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
 }
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
@@ -406,23 +386,11 @@ function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
 }
 
-// opencode's HTTP/SSE + PTY server binds 127.0.0.1:4096 (loopback-only). Daytona
-// (a container) reaches it directly; Platinum (a microVM) has its edge dial the
-// guest's eth0 IP, so :4096 is unreachable → 502 ("upstream-unreachable"). This
-// is what breaks `kortix sessions connect` / `opencode attach` on Platinum.
-//
-// The sandbox agent on :8000 (binds 0.0.0.0, reachable) already reverse-proxies
-// every path to opencode's localhost:4096 in-box. So for Platinum we route
-// opencode(4096) traffic through :8000 — the same bridge the /pty/ WebSocket
-// already uses. The 8000-keyed guards below (session-visibility gate, /kortix/env
-// block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
-// subject to the SAME protection as a direct :8000 request — the reroute changes
-// reachability, never the auth/control surface.
 const SANDBOX_AGENT_PORT = 8000;
 
 /**
  * Should the data-path proxy WAKE a stopped box instead of 503ing it? Only when a
- * real user (principal) is actively hitting the OpenCode daemon (port 8000) — never
+ * real user (principal) is actively hitting the session daemon (port 8000) — never
  * on passive asset/preview traffic or non-user (service) access. That gate is what
  * lets the runtime path auto-resume like `/start` WITHOUT fighting the reaper's
  * idle-quiesce "don't resurrect on passive traffic" policy. Pure + exported so the
@@ -472,18 +440,13 @@ export async function forwardToSandbox(
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
   }
-  // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
-  // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
-  // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
-  // request (sandbox ownership is already enforced unconditionally above). NOTE:
-  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
-  // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
-  // client actually used (/4096), and env-sync-before-prompt must behave identically
-  // to Daytona, which likewise skips it on the direct 4096 opencode path.
+  // Providers may route an addressed port through a provider-specific ingress.
+  // Authorization keys off the effective port, while redirects retain the
+  // client-addressed port so browser-visible URLs remain stable.
   const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
   const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
-  // The daemon port serves the session's OpenCode conversation + owner-synced
+  // The daemon port serves the session's ACP conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
   // REST side), not just account membership — closes the window where a member
   // whose access was revoked/downgraded replays captured ids on the data path.
@@ -507,7 +470,7 @@ export async function forwardToSandbox(
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
-    // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
+    // A stopped-but-resumable box hit by a REAL USER on the ACP data path
     // (port 8000, principal) should wake in place — the same resume `/start` does —
     // rather than dead-end with a manual-Restart card. This closes the stale-ready
     // gap: /start settles 'ready', the reaper idle-stops the box, and the client's
@@ -564,7 +527,7 @@ export async function forwardToSandbox(
   // the first RX interrupt → daemon briefly unreachable ~1s) clears on the next
   // attempt instead of stretching to seconds. The old [2000,5000,8000] turned a
   // ~1s stall into the multi-second session-list lag observed in-browser
-  // (opencode-listed +5578ms, 2026-06-14). Later delays stay progressive for a
+  // (runtime-listed +5578ms, 2026-06-14). Later delays stay progressive for a
   // genuinely cold-booting port.
   const RETRY_DELAYS_MS = [250, 1000, 3000];
   let wakeTriggered = false;
@@ -593,60 +556,6 @@ export async function forwardToSandbox(
       const ingress = await resolveSandboxIngress(record, ingressRequest);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
-
-      if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
-        const requestedAgent = requestedPromptAgent(body, incomingHeaders);
-        const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-        // Agent-lock enforcement is OFF by default — in-session agent switching is
-        // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
-        // explicitly enabled (a future per-agent executor-token auth model; see the
-        // config flag's TODO). Until then a prompt may freely run a different agent.
-        if (
-          config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
-          isProhibitedAgentSwitch(requestedAgent, sessionAgent)
-        ) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent!, origin);
-        }
-        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
-        // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent is forwarded untouched so the user can switch agents
-        // within a session.
-        if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
-          body = bodyWithoutPromptAgent(body, incomingHeaders);
-        }
-        // A prompt is the one moment this sandbox is guaranteed awake, and
-        // OpenCode's summarizer titles the session seconds after the first
-        // reply — capture it on a deferred timer instead of hoping a session
-        // list gets requested while the box is still up (the frozen
-        // "New session - <date>" rows). Fire-and-forget; never blocks the prompt.
-        scheduleTitleCaptureAfterPrompt({
-          sessionId: record.sessionId,
-          projectId: record.projectId,
-          externalId: record.externalId,
-        });
-        try {
-          await syncSandboxEnvForPrompt({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            serviceKey,
-            previewUrl,
-            providerHeaders: ingress.headers,
-            providerName: record.provider as ProviderName,
-          });
-        } catch (err) {
-          const message = errorMessage(err, 'project env sync failed');
-          if (isRetryableEnvSyncFailure(message)) {
-            // Treat daemon/preview-transient env-sync failures like any other
-            // sandbox-port reachability miss: retry/wake in the outer loop, then
-            // return the friendly port-unreachable response if the sandbox never
-            // recovers. Throwing HTTPException here bypassed that retry path and
-            // turned expected 502/timeouts from Daytona into Better Stack errors.
-            throw new Error(message);
-          }
-          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
-          return jsonProxyError({ error: message }, 502, origin);
-        }
-      }
 
       // Build forwarding headers: copy the client's (minus stripped), force
       // identity encoding, regenerate trace headers, then apply the sandbox
@@ -722,7 +631,7 @@ export async function forwardToSandbox(
       // headers until the body is written, so they receive the remaining outer
       // proxy budget instead of the generic 15s cutoff. The previous
       // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
-      // severed every streaming response body at ~15s: the `/global/event` SSE
+      // severed every streaming response body at ~15s: the legacy runtime SSE
       // stream (each open session tab then reconnected ~250ms later, forever —
       // a fleet-wide reconnect storm, ~240 reconnects/hour/tab), long-polls,
       // and any proxied download slower than 15s. The retry loop only ever
@@ -778,19 +687,6 @@ export async function forwardToSandbox(
       //   502 — container started but the port isn't listening yet
       //   503 — sandbox service temporarily unavailable
       // Retry with auto-wake so users don't see errors during the boot window.
-      if (upstream.status === 503) {
-        const bodyText = await upstream.clone().text().catch(() => '');
-        if (bodyText.includes('opencode not ready')) {
-          void markSandboxUsed(sandboxId);
-          const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
-          return new Response(bodyText, {
-            status: upstream.status,
-            statusText: upstream.statusText,
-            headers: notReadyHeaders,
-          });
-        }
-      }
-
       if (upstream.status === 502 || upstream.status === 503) {
         // A prompt-delivery POST is NEVER retried on a 5xx: an upstream 502 can
         // mean the sandbox already accepted the message (the gateway just dropped

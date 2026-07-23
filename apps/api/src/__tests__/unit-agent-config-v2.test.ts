@@ -18,8 +18,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   applyAgentBlockV2,
+  applyAgentBlockV3,
   applyDefaultAgentV2,
+  migrateManifestV2ToV3,
   readAgentBlockV2,
+  readAgentBlockV3,
 } from '../projects/lib/agent-config-v2';
 import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
 
@@ -42,6 +45,23 @@ name = "acme"
 [[agents]]
 name = "kortix"
 connectors = "all"
+`;
+
+const V3 = `
+kortix_version: 3
+default_agent: reviewer
+runtimes:
+  claude:
+    harness: claude
+    config_dir: .claude
+  codex:
+    harness: codex
+agents:
+  reviewer:
+    runtime: codex
+    connectors: [github]
+  helper:
+    runtime: claude
 `;
 
 function v2Manifest(body = V2) {
@@ -200,7 +220,79 @@ agents:
     const applied = applyDefaultAgentV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix');
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.error).toContain('kortix_version 2');
+    expect(applied.error).toContain('kortix.yaml');
+  });
+});
+
+describe('v3 ACP logical agent routing', () => {
+  test('upgrades v2 governance without changing its initial OpenCode behavior binding', () => {
+    const applied = migrateManifestV2ToV3(v2Manifest());
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.raw.kortix_version).toBe(3);
+    expect(applied.raw).not.toHaveProperty('opencode');
+    // 2026-07-22: the migration injects a runtime profile for all four
+    // official harnesses — multi-harness selection is no longer gated behind
+    // `experimental_harnesses` (that flag is deleted), so an upgraded
+    // project gets every harness immediately, opencode included.
+    expect(applied.raw.runtimes).toEqual({
+      opencode: { harness: 'opencode', config_dir: '.opencode' },
+      claude: { harness: 'claude', config_dir: '.claude' },
+      codex: { harness: 'codex', config_dir: '.codex' },
+      pi: { harness: 'pi', config_dir: '.pi' },
+    });
+    expect((applied.raw.agents as any).support).toMatchObject({
+      runtime: 'opencode',
+      agent: 'support',
+      connectors: ['github'],
+      secrets: ['STRIPE_KEY'],
+    });
+  });
+
+  test('reads runtime profiles and the native agent id without behavior translation', () => {
+    const read = readAgentBlockV3(parseManifestString(V3, 'yaml', 'kortix.yaml'), 'reviewer');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.block).toEqual({ runtime: 'codex', connectors: ['github'] });
+    expect(read.runtimes).toMatchObject({
+      claude: { harness: 'claude', config_dir: '.claude' },
+      codex: { harness: 'codex' },
+    });
+  });
+
+  test('switches a logical agent between native runtimes and preserves governance', () => {
+    const manifest = parseManifestString(V3, 'yaml', 'kortix.yaml');
+    const applied = applyAgentBlockV3(manifest, 'reviewer', {
+      runtime: 'claude',
+      connectors: ['github'],
+      secrets: 'none',
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect((applied.raw.agents as any).reviewer).toEqual({
+      runtime: 'claude',
+      connectors: ['github'],
+      secrets: 'none',
+    });
+  });
+
+  test('rejects an undeclared runtime profile', () => {
+    const applied = applyAgentBlockV3(
+      parseManifestString(V3, 'yaml', 'kortix.yaml'),
+      'reviewer',
+      { runtime: 'missing' },
+    );
+    expect(applied.ok).toBe(false);
+    if (applied.ok) return;
+    expect(applied.error).toContain('does not match a declared runtime profile');
+  });
+
+  test('allows v3 to update the declared default agent', () => {
+    const manifest = parseManifestString(V3, 'yaml', 'kortix.yaml');
+    const applied = applyDefaultAgentV2(manifest, 'helper');
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) expect.unreachable();
+    else expect(applied.raw.default_agent).toBe('helper');
   });
 });
 

@@ -71,7 +71,8 @@ function InsufficientCreditsCard({
       <Icon
         as={CreditCard}
         size={14}
-        style={{ marginTop: 2, color: isDark ? '#f59e0b' : '#d97706' }}
+        color={isDark ? '#f59e0b' : '#d97706'}
+        style={{ marginTop: 2 }}
       />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text

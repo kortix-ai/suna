@@ -3,7 +3,7 @@
 A complete, production-shaped agent client built **100% on `@kortix/sdk`**. It
 is the golden reference for using Kortix as your backend: projects, sessions,
 and **real, token-by-token streaming agent chat** — with zero raw `fetch`, zero
-`@opencode-ai/sdk` imports, and no transport code in the app itself (see
+native harness SDK imports, and no transport code in the app itself (see
 "Two modes" below for the one deliberate, documented exception).
 
 Rebrand `src/config/brand.ts`, point `NEXT_PUBLIC_KORTIX_API_URL` at your Kortix

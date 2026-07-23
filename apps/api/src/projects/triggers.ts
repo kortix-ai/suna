@@ -35,10 +35,13 @@
 import {
   MANIFEST_FILENAME_YAML,
   type ManifestFormat,
+  type ManifestIssue,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
   serializeManifestObject,
+  validateAgentsV3,
+  validateTriggerAgentRefsV2,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
 
@@ -64,9 +67,8 @@ export const KNOWN_SCHEMA_VERSION = 1;
 /**
  * Highest schema version this reader (the one the session/trigger/grant
  * pipeline actually reads through — `readManifest`/`parseManifestString`)
- * accepts without throwing. `kortix_version: 2` (the `agents:` map + full
- * OpenCode `AgentConfig` parity + deny-by-default grants — see
- * `@kortix/manifest-schema`'s `ManifestV2`) is validated at write time by
+ * accepts without throwing. `kortix_version: 2` and the ACP-first v3
+ * `runtimes` + logical-agent map are validated at write time by
  * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
@@ -74,7 +76,7 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and still refused.
  */
-export const MAX_SCHEMA_VERSION = 2;
+export const MAX_SCHEMA_VERSION = 3;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -369,6 +371,33 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
     };
   }
 
+  // kortix_version 3 native support: a trigger's explicit `agent` must name a
+  // declared v3 logical agent — the SAME rule + call the write-time CR-merge
+  // gate already enforces (manifest-schema's `validateManifestBodyV3` calls
+  // this exact function). v3's `agents:` map is shaped identically to v2's:
+  // name → block, extracted here with manifest-schema's own `validateAgentsV3`
+  // (never reimplemented).
+  //
+  // v1/v2 NEVER ran this check at read time (only the CR-merge gate did, at
+  // write time) — this stays v3-only and additive so v1/v2 behavior is
+  // untouched (see triggers.v3.test.ts's regression sentinels). A trigger
+  // naming an unknown agent is excluded from `specs` and reported in `errors`,
+  // same treatment as any other bad entry, so the scheduler never fires it.
+  // Referencing a DISABLED (but declared) agent is intentionally NOT flagged
+  // here — `validateTriggerAgentRefsV2` only checks declaration, not enabled
+  // state, for trigger refs (only `default_agent` itself is checked for
+  // disabled status), and v3 stays consistent with that.
+  const badAgentRefByIndex = new Map<number, string>();
+  if (manifest.schemaVersion === 3) {
+    const { names: agentNames } = validateAgentsV3(manifest.raw.agents, 'agents', []);
+    const agentRefIssues: ManifestIssue[] = [];
+    validateTriggerAgentRefsV2(rawTriggers, 'triggers', agentNames, agentRefIssues);
+    for (const issue of agentRefIssues) {
+      const index = triggerIssueIndex(issue.path);
+      if (index !== null) badAgentRefByIndex.set(index, issue.message);
+    }
+  }
+
   const specs: GitTriggerSpec[] = [];
   const errors: GitTriggerParseError[] = [];
   const seenSlugs = new Set<string>();
@@ -387,6 +416,11 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
       });
       return;
     }
+    const badAgentRef = badAgentRefByIndex.get(index);
+    if (badAgentRef) {
+      errors.push({ slug: result.spec.slug, path: result.spec.path, error: badAgentRef });
+      return;
+    }
     seenSlugs.add(result.spec.slug);
     specs.push(result.spec);
   });
@@ -394,6 +428,19 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
   errors.sort((a, b) => a.slug.localeCompare(b.slug));
   return { specs, errors };
+}
+
+/**
+ * `validateTriggerAgentRefsV2` reports findings as `ManifestIssue[]` with a
+ * `<path>[<index>].agent` path (e.g. `triggers[2].agent`) rather than an
+ * index directly — extract the array index so the caller can key its
+ * per-entry `errors`/`specs` decision the same way every other trigger
+ * parse error already does. Returns null for a path shape this function
+ * never emits (defensive; keeps the caller a straight lookup either way).
+ */
+function triggerIssueIndex(path: string): number | null {
+  const match = /^triggers\[(\d+)\]\.agent$/.exec(path);
+  return match ? Number(match[1]) : null;
 }
 
 /**

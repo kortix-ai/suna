@@ -36,19 +36,21 @@ Learn this once and most questions answer themselves.
    billing, triggers, marketplace, audit. Lives in `platform/projects-client/` and
    `platform/platform-client/`, over `platform/api-client.ts` (`backendApi`).
 
-2. **The OpenCode v2 runtime** — an agent server running *inside a per-session
-   cloud sandbox*. Owns everything *happening in* your work: messages, parts,
-   tools, permissions, files, PTY, git. It is a third-party client
-   (`@opencode-ai/sdk/v2/client`), reached **through the Kortix API as a proxy**:
+2. **The session runtime** — an ACP harness process plus daemon helpers running
+   *inside a per-session cloud sandbox*. Owns everything *happening in* your
+   work: messages, parts, tools, permissions, files, PTY, git. It is reached
+   through Kortix runtime/ACP clients and the Kortix API proxy — never through a
+   native harness SDK in host code:
 
    ```
-   ${backendUrl}/p/{externalId}/{port}      →  the sandbox's opencode server
+   ${backendUrl}/projects/{projectId}/sessions/{sessionId}/acp  → ACP JSON-RPC bridge
+   ${backendUrl}/p/{externalId}/{port}                          → daemon/runtime helpers
    ```
 
 **The bridge between them is session readiness.** A session's runtime does not
 exist until its sandbox is provisioned or resumed. That is what `ensureReady()`
 (and `start()`, and implicitly `send()`) does: boots/resumes the sandbox, resolves
-*this* session's runtime and its canonical opencode session id.
+*this* session's runtime and ACP conversation id.
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken })   // ← one client, one auth seam
@@ -77,18 +79,20 @@ one.
 ```
 platform/auth + platform/api-client   ← transport: token, fetch, ApiError
 platform/*-client                     ← typed REST surfaces (one file per domain)
-opencode/client                       ← the runtime client, base-url'd at the proxy
+runtime/client                        ← the runtime helper client, base-url'd at the proxy
+acp/client                            ← ACP JSON-RPC client for conversations
 state/event-stream                    ← SSE reconnect/backoff/heartbeat/coalesce
 kortix.ts (createKortix)              ← the facade: binds ids, hides the seam
 turns/                                ← normalizes ~50 wire part types → ClassifiedPart
 react/                                ← optional glue. Nothing below this line knows React.
 ```
 
-`turns/` deserves a note: the opencode wire format has ~50 part variants. `turns/`
-collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
-renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
-It is framework-free on purpose — `examples/04` renders a transcript to plain
-text with the exact same code `whitelabel-demo` renders to React.
+`turns/` deserves a note: runtime/harness wire formats are normalized before they
+reach renderers. `turns/` collapses them into a compile-time-**exhaustive**
+`ClassifiedPart` union so a renderer can `switch (part.kind)` and have
+TypeScript prove no case is missed. It is framework-free on purpose —
+`examples/04` renders a transcript to plain text with the exact same code
+`whitelabel-demo` renders to React.
 
 ### Recipe: adding a new capability, end to end
 
@@ -110,8 +114,9 @@ Follow the grain. Almost every feature is this shape:
   ambient state.
 - **Provider-agnostic.** "Sandbox" and "daytona" are server-side concerns. Client
   code must never branch on the provider.
-- **Hosts never import `@opencode-ai/sdk`.** Not `apps/web`, not the demo. If a
-  host needs runtime access, it goes through `session.runtime`.
+- **Hosts never import native harness SDKs.** Not `@opencode-ai/sdk`, not a
+  Claude/Codex adapter package. If a host needs runtime access, it goes through
+  `session.runtime` or the SDK ACP session surface.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
   to the SDK.
 - **The core never imports a framework.** Enforced statically. See the tripwire.
@@ -379,62 +384,43 @@ promote them to `dependencies`.
 
 ## Streaming is the fragile part. Treat it as a first-class target.
 
-Live SSE streaming (`session.stream()` → `openEventStream` → `client.global.event()`)
-is the single most breakable surface in this package, because it is the only one
-that depends on **streaming-body support in the host's `fetch`** — a thing that
-differs across every runtime we claim to support.
+Live ACP streaming (`useSession()` / `useAcpSession()` → `AcpClient.connect()` →
+the session-scoped `/acp` SSE bridge) is the single most breakable surface in
+this package, because streaming-body support differs across every runtime we
+claim to support.
 
-The transport is **not** `EventSource`. It is, inside
-`@opencode-ai/sdk/dist/v2/gen/core/serverSentEvents.gen.js`:
-
-```js
-const response = await _fetch(request);
-const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-```
-
-So streaming requires `fetch` with a real `ReadableStream` body, plus
-`TextDecoderStream`. Reconnect, backoff, heartbeat, and event coalescing are
-ours (`state/event-stream.ts`); the wire is theirs.
+The browser/Node transport is **not** `EventSource`. It uses authenticated
+`fetch`, a real `ReadableStream` body, and `TextDecoder`; ACP event ids drive
+replay. React Native is selected automatically onto durable transcript polling
+because its fetch implementation does not expose incremental response bodies.
+Harness-specific SDKs must not own host streaming behavior.
 
 | Target | Streams? | Notes |
 |---|---|---|
-| Modern browsers | ✅ | `TextDecoderStream` needs **Safari 16.4+** |
-| Node ≥ 18 | ✅ | `fetch` + `TextDecoderStream` are global |
+| Modern browsers | ✅ | authenticated fetch + readable response body |
+| Node ≥ 18 | ✅ | `fetch`, `ReadableStream`, and `TextDecoder` are global |
 | Bun | ✅ | |
 | Cloudflare Workers | ✅ | |
-| **React Native / Expo** | ❌ **not supported** | RN's `fetch` has no `response.body`; Hermes has no `TextDecoderStream`. The SDK's streaming **cannot run on RN today.** |
+| React Native / Expo | ✅ via transcript polling | RN's fetch has no incremental `response.body`; `AcpClient` polls persisted ACP envelopes instead |
 
 **This SDK ships to three hosts: `apps/web`, `apps/mobile` (RN/Expo), and
 `apps/whitelabel-demo`.** A change that works on web and breaks the others is a
 broken change, not a partial one.
 
-> **Do not claim React Native streaming support** — in the README, the docs, or a
-> PR description. It does not work. `apps/mobile` streams today only because it
-> **bypasses the SDK entirely**: `apps/mobile/lib/opencode/event-stream.ts` is
-> **655 lines** reimplementing reconnect/backoff/heartbeat/coalescing on
-> `react-native-sse`'s `EventSource`, beside the SDK's own 571-line version. Two
-> divergent copies of the most failure-prone logic in the product.
->
-> It happened because the SDK left **no transport seam**. The fix — extracting an
-> injectable `EventStreamTransport`, so the platform-specific part is only *how
-> bytes arrive* and never the reconnect logic — is designed in
-> `docs/superpowers/specs/2026-07-10-sdk-v2-structure-and-distribution-design.md`
-> and deliberately deferred.
->
-> **Do not add a third copy.** If a host needs a different wire, build the seam.
+> **Do not reintroduce a mobile-local event implementation.** Web and mobile
+> consume the same `AcpClient` envelope contract; only byte delivery differs
+> (SSE versus transcript polling). Keep reconnect, deduplication, and transcript
+> projection in the SDK.
 
-**`@opencode-ai/sdk/v2/client` is browser-safe** — its import graph is only
-`error-interceptor`, `client.gen`, `sdk.gen`, `types.gen`. The `node:child_process`
-in that package lives in `dist/process.js`, reachable **only** from `v2/server.js`.
-
-> **Bundler trap.** Never let a build resolve `@opencode-ai/sdk` (root) or
-> `/server` or `/v2/server` into a browser bundle — that drags in
-> `node:child_process` and the build breaks or silently ships a broken global.
-> Import `@opencode-ai/sdk/v2/client` and nothing else.
+> **Bundler trap.** Native harness SDKs and adapter packages commonly pull
+> Node-only modules. Never let a host build resolve them into a browser bundle.
+> Harness packages belong in the sandbox image/daemon layer, not `@kortix/sdk`
+> host code.
 
 Streaming is not "done" because a unit test passes. It is done when it has been
-observed delivering events in **each distribution target you claim** — the ESM
-`dist/`, the CDN ESM bundle, and the `window.Kortix` IIFE global.
+observed delivering events in **each distribution target you claim** — web SSE,
+mobile transcript polling, the ESM `dist/`, the CDN ESM bundle, and the
+`window.Kortix` IIFE global.
 
 ## Field notes: what actually keeps an SDK maintainable
 

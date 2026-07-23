@@ -206,9 +206,9 @@ mock.module('../projects/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
-  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));

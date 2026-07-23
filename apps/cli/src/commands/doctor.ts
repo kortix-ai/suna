@@ -1,7 +1,7 @@
 import { ApiError } from '../api/client.ts';
+import { createKortix, projectAcpTranscript } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { DEFAULT_SANDBOX_RUNTIME_PORT, opencodeClient } from '../api/sandbox-proxy.ts';
 import { loadLink } from '../project-link.ts';
 import {
   resolveProjectContext,
@@ -172,40 +172,28 @@ export async function runDoctor(argv: string[]): Promise<number> {
       `${status.ok(`sandbox running (${(provisionMs / 1000).toFixed(1)}s)`)}\n`,
     );
 
-    // ── 6. Open an opencode session + send a prompt ──────────────────────
-    const sandboxTarget = opencodeTargetFromSession(running);
-    if (!sandboxTarget) {
-      process.stdout.write(`${status.err('running session has no reachable sandbox target')}\n`);
-      return 1;
-    }
-    const oc = opencodeClient({
-      auth,
-      sandboxId: sandboxTarget.sandboxId,
-      port: sandboxTarget.port,
-    });
-    let ocSid: string;
+    // ── 6. Open the session's ACP conversation + send a prompt ──────────
+    const sdkSession = createKortix({
+      backendUrl: auth.api_base,
+      getToken: async () => auth.token,
+    }).session(ctx.projectId, running.session_id);
+    let acp: Awaited<ReturnType<typeof sdkSession.acp.client>>;
+    let acpSid: string;
     try {
-      const created = await oc.createSession({ title: 'kortix doctor' });
-      ocSid = created.id;
+      acp = await sdkSession.acp.client();
+      acpSid = await sdkSession.acp.sessionId();
     } catch (err) {
-      process.stdout.write(`${status.err(`opencode session create failed: ${describe(err)}`)}\n`);
+      process.stdout.write(`${status.err(`ACP session create failed: ${describe(err)}`)}\n`);
       return 1;
     }
-    process.stdout.write(`${status.ok(`opencode session ${C.faded}${ocSid}${C.reset}`)}\n`);
+    process.stdout.write(`${status.ok(`ACP session ${C.faded}${acpSid}${C.reset}`)}\n`);
 
     process.stdout.write(`  ${C.dim}prompt: "${flags.prompt}"${C.reset}\n`);
     const sendStart = Date.now();
     try {
-      const reply = await oc.sendPrompt(
-        ocSid,
-        [{ type: 'text', text: flags.prompt }],
-        undefined,
-        flags.timeoutSec * 1000,
-      );
-      const text = reply.parts
-        .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
-        .join(' ')
-        .trim();
+      await acp.prompt(acpSid, [{ type: 'text', text: flags.prompt }]);
+      const transcript = await acp.transcript();
+      const text = projectAcpTranscript(transcript.envelopes).filter((message) => message.role === 'assistant').at(-1)?.text.trim() ?? '';
       if (!text) {
         process.stdout.write(`${status.err('reply had no text content')}\n`);
         failures += 1;
@@ -231,25 +219,6 @@ export async function runDoctor(argv: string[]): Promise<number> {
   }
   process.stdout.write(`${status.ok('all checks passed')}\n\n`);
   return 0;
-}
-
-function opencodeTargetFromSession(session: { sandbox_id?: string | null; sandbox_url?: string | null }): {
-  sandboxId: string;
-  port: number;
-} | null {
-  if (session.sandbox_url) {
-    const match = session.sandbox_url.match(/\/p\/([^/]+)\/(\d+)(?:\/|$)/);
-    if (match?.[1]) {
-      const port = Number(match[2]);
-      return {
-        sandboxId: match[1],
-        port: Number.isInteger(port) && port > 0 ? port : DEFAULT_SANDBOX_RUNTIME_PORT,
-      };
-    }
-  }
-  return session.sandbox_id
-    ? { sandboxId: session.sandbox_id, port: DEFAULT_SANDBOX_RUNTIME_PORT }
-    : null;
 }
 
 function parseFlags(argv: string[]): DoctorFlags {

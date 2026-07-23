@@ -135,6 +135,7 @@ mock.module('../projects/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
 }));

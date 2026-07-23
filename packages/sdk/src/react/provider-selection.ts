@@ -4,7 +4,7 @@ import {
   isProviderAuthSatisfied,
   providerAuthRequirement,
 } from '@kortix/llm-catalog';
-import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { ProviderListResponse as SdkProviderListResponse } from '../runtime/wire-types';
 
 import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 
@@ -28,8 +28,8 @@ export const LLM_PROVIDER_CREDENTIALS: Array<{
   authRequirement: providerAuthRequirement(provider),
 }));
 
-// In gateway mode OpenCode must see Kortix as the single LLM provider. Native
-// providers, including OpenCode Zen, belong only to native mode.
+// In gateway mode Runtime must see Kortix as the single LLM provider. Native
+// providers, including Runtime Zen, belong only to native mode.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
@@ -76,8 +76,8 @@ export function normalizeProviderList(providers: ProviderListResponse): Provider
 export function providerListHasModels(providers: ProviderListResponse | undefined): boolean {
   if (!providers) return false;
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
+  const all: any[] = Array.isArray(normalized.all) ? normalized.all : [];
+  const connected: any[] = Array.isArray(normalized.connected) ? normalized.connected : [];
   if (connected.length === 0) return false;
   return all.some((p) => connected.includes(p.id) && p.models && Object.keys(p.models).length > 0);
 }
@@ -85,15 +85,15 @@ export function providerListHasModels(providers: ProviderListResponse | undefine
 export function providerListHasGateway(providers: ProviderListResponse | undefined): boolean {
   if (!providers) return false;
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
+  const all: any[] = Array.isArray(normalized.all) ? normalized.all : [];
+  const connected: any[] = Array.isArray(normalized.connected) ? normalized.connected : [];
   return connected.includes('kortix') || all.some((p) => p.id === 'kortix');
 }
 
 export function filterToGatewayProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
+  const all: any[] = Array.isArray(normalized.all) ? normalized.all : [];
+  const connected: any[] = Array.isArray(normalized.connected) ? normalized.connected : [];
   return {
     ...normalized,
     all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
@@ -103,8 +103,8 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
 
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
+  const all: any[] = Array.isArray(normalized.all) ? normalized.all : [];
+  const connected: any[] = Array.isArray(normalized.connected) ? normalized.connected : [];
   return {
     ...normalized,
     all: all.filter((p) => !NATIVE_EXCLUDED_PROVIDER_IDS.has(p.id)),
@@ -118,7 +118,7 @@ export function mergeProjectSecretConnectedProviders(
   providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
 ): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
+  const all: any[] = Array.isArray(normalized.all) ? normalized.all : [];
   const allIds = new Set(all.map((provider) => provider.id));
   const connected = new Set(Array.isArray(normalized.connected) ? normalized.connected : []);
 

@@ -1,6 +1,6 @@
 /**
  * AgentsPage — the project's OpenCode agents (web parity: customize/sections
- * agents-view). Lists the agents declared under .kortix/opencode/agents/ and,
+ * agents-view). Lists the agents declared under .opencode/agents/ and,
  * on tap, shows the agent's markdown source. Read-only; agent authoring flows
  * through a session (to be wired next).
  *
@@ -282,7 +282,7 @@ export function AgentsPage({
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
 
   const agents = data?.config?.agents ?? [];
-  const defaultAgent = data?.config?.open_code_default_agent ?? null;
+  const defaultAgent = data?.config?.runtime_default_agent ?? null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

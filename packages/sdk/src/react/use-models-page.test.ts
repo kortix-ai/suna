@@ -1,0 +1,546 @@
+import { describe, expect, test } from 'bun:test';
+import { CATALOG } from '@kortix/llm-catalog';
+
+import type {
+  ConfiguredModelProvider,
+  HarnessConnection,
+  ProjectSecretsResponse,
+} from '../core/rest/projects-client';
+import type { Agent } from '../core/runtime/wire-types';
+import {
+  CONNECTIONS_OPTIONAL_DESCRIPTION,
+  KORTIX_INCLUDED_TITLE,
+  connectionDisplayName,
+  connectionExplainer,
+  harnessLabel,
+  projectModelsPageState,
+} from './use-models-page';
+
+function agent(name: string, harness: string, hidden = false): Agent {
+  return { name, harness, hidden } as Agent;
+}
+
+function connection(
+  overrides: Partial<HarnessConnection> & Pick<HarnessConnection, 'id' | 'kind'>,
+): HarnessConnection {
+  return {
+    label: overrides.kind,
+    compatible_harnesses: ['claude', 'codex', 'opencode', 'pi'],
+    configured: true,
+    ready: true,
+    active_for: [],
+    reason: null,
+    source: 'project_secret',
+    ...overrides,
+  };
+}
+
+const NO_PROVIDERS: ConfiguredModelProvider[] = [];
+
+describe('projectModelsPageState', () => {
+  test('no connections: every referenced runtime is missing, connections list is empty', () => {
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude'), agent('helper', 'opencode')],
+      agentsLoading: false,
+      connectionsData: { connections: [], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+
+    expect(state.runtimes.map((r) => r.harness)).toEqual(['claude', 'opencode']);
+    expect(state.runtimes.every((r) => r.status === 'missing')).toBe(true);
+    expect(state.runtimes[0]!.modelSummary).toBe('Choose how Claude Code accesses models');
+    expect(state.runtimes[0]!.blocker).toEqual({
+      code: 'no_connection',
+      message: 'Choose how Claude Code accesses models',
+      action: 'connect',
+    });
+    expect(state.connections).toEqual([]);
+    expect(state.canWrite).toBe(true);
+    expect(state.isLoading).toBe(false);
+  });
+
+  test('runtimes render in canonical claude/codex/opencode/pi order regardless of agent order', () => {
+    const state = projectModelsPageState({
+      agents: [agent('a', 'pi'), agent('b', 'codex'), agent('c', 'claude')],
+      agentsLoading: false,
+      connectionsData: { connections: [], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: false,
+    });
+    expect(state.runtimes.map((r) => r.harness)).toEqual(['claude', 'codex', 'pi']);
+  });
+
+  test('hidden agents never contribute a harness row', () => {
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude'), agent('disabled', 'codex', true)],
+      agentsLoading: false,
+      connectionsData: { connections: [], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: false,
+    });
+    expect(state.runtimes.map((r) => r.harness)).toEqual(['claude']);
+  });
+
+  test('subscription-only: Claude subscription is ready for Claude Code and never shows a model count', () => {
+    const claudeSub = connection({
+      id: 'claude_subscription',
+      kind: 'claude_subscription',
+      compatible_harnesses: ['claude'],
+      active_for: ['claude'],
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude')],
+      agentsLoading: false,
+      connectionsData: { connections: [claudeSub], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+
+    expect(state.runtimes).toHaveLength(1);
+    expect(state.runtimes[0]).toMatchObject({
+      harness: 'claude',
+      status: 'ready',
+      selectedConnectionId: 'claude_subscription',
+      modelSummary: 'Claude subscription · Harness default',
+      blocker: null,
+    });
+    expect(state.connections).toHaveLength(1);
+    expect(state.connections[0]).toMatchObject({
+      id: 'claude_subscription',
+      name: 'Claude subscription',
+      usedBy: ['claude'],
+      catalogState: 'not-exposed',
+      modelCount: null,
+      status: 'ready',
+    });
+  });
+
+  test('managed-only: Kortix auto-resolves without an explicit route and counts only managed models', () => {
+    const managed = connection({
+      id: 'managed_gateway',
+      kind: 'managed_gateway',
+      compatible_harnesses: ['claude', 'codex', 'opencode', 'pi'],
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'opencode')],
+      agentsLoading: false,
+      connectionsData: { connections: [managed], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: {
+        'claude-opus-4.8': { name: 'Opus' },
+        'glm-5.2': { name: 'GLM' },
+        'not-a-managed-id': { name: 'Excluded' },
+      },
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+
+    expect(state.runtimes[0]).toMatchObject({
+      harness: 'opencode',
+      status: 'ready',
+      selectedConnectionId: 'managed_gateway',
+      modelSummary: 'Kortix · Automatic',
+    });
+    expect(state.connections[0]).toMatchObject({
+      id: 'managed_gateway',
+      name: 'Kortix',
+      catalogState: 'available',
+      modelCount: 2,
+      usedBy: ['opencode'],
+    });
+  });
+
+  test('mixed: explicit + auto-resolved + missing + ambiguous coexist correctly', () => {
+    const managed = connection({
+      id: 'managed_gateway',
+      kind: 'managed_gateway',
+      compatible_harnesses: ['claude', 'codex', 'opencode', 'pi'],
+      ready: false,
+      configured: false,
+    });
+    const claudeSub = connection({
+      id: 'claude_subscription',
+      kind: 'claude_subscription',
+      compatible_harnesses: ['claude'],
+      active_for: ['claude'],
+    });
+    const anthropicKey = connection({
+      id: 'anthropic_api_key',
+      kind: 'anthropic_api_key',
+      compatible_harnesses: ['claude', 'opencode', 'pi'],
+    });
+    const openaiCompatible = connection({
+      id: 'openai_compatible',
+      kind: 'openai_compatible',
+      compatible_harnesses: ['codex', 'opencode', 'pi'],
+    });
+    const connections = [managed, claudeSub, anthropicKey, openaiCompatible];
+
+    const state = projectModelsPageState({
+      agents: [agent('a', 'claude'), agent('b', 'codex'), agent('c', 'opencode'), agent('d', 'pi')],
+      agentsLoading: false,
+      connectionsData: { connections, providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+
+    const byHarness = Object.fromEntries(state.runtimes.map((r) => [r.harness, r]));
+
+    // claude: explicit route to the subscription wins outright.
+    expect(byHarness.claude).toMatchObject({
+      status: 'ready',
+      selectedConnectionId: 'claude_subscription',
+    });
+    // codex: only one ready compatible connection (the custom endpoint) — auto-adopted.
+    expect(byHarness.codex).toMatchObject({
+      status: 'ready',
+      selectedConnectionId: 'openai_compatible',
+    });
+    // opencode: two ready compatible connections and no explicit pick — ambiguous.
+    expect(byHarness.opencode).toMatchObject({ status: 'ambiguous', selectedConnectionId: null });
+    expect(byHarness.opencode.blocker).toEqual({
+      code: 'ambiguous',
+      message: 'Select one of 2 connected options',
+      action: 'choose',
+    });
+    // pi: same ambiguity as opencode (anthropic key + custom endpoint both ready).
+    expect(byHarness.pi).toMatchObject({ status: 'ambiguous' });
+
+    const anthropicRow = state.connections.find((c) => c.id === 'anthropic_api_key')!;
+    const expectedAnthropicCount =
+      CATALOG.providers.find((p) => p.id === 'anthropic')?.models.length ?? 0;
+    expect(anthropicRow.catalogState).toBe('available');
+    expect(anthropicRow.modelCount).toBe(expectedAnthropicCount);
+
+    const customRow = state.connections.find((c) => c.id === 'openai_compatible')!;
+    expect(customRow.modelCount).toBe(1);
+    expect(customRow.usedBy).toEqual(['codex']);
+
+    // The unready managed gateway is neither configured nor ready — excluded
+    // from the connections list entirely.
+    expect(state.connections.find((c) => c.id === 'managed_gateway')).toBeUndefined();
+  });
+
+  test('an explicit route to a connection that is no longer ready surfaces needs-attention', () => {
+    const claudeSub = connection({
+      id: 'claude_subscription',
+      kind: 'claude_subscription',
+      compatible_harnesses: ['claude'],
+      active_for: ['claude'],
+      ready: false,
+      configured: false,
+      reason: 'Token expired',
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude')],
+      agentsLoading: false,
+      connectionsData: { connections: [claudeSub], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+
+    expect(state.runtimes[0]).toMatchObject({
+      status: 'needs-attention',
+      selectedConnectionId: 'claude_subscription',
+      modelSummary: 'Claude subscription needs to be reconnected',
+    });
+    // active_for on the connection itself is unaffected by readiness, so the
+    // row still shows the runtime it's wired to for the disconnect preview.
+    expect(state.connections[0]!.usedBy).toEqual(['claude']);
+  });
+
+  describe('connectionRank — Kortix pinned first (Task 17)', () => {
+    // Pin test: written BEFORE `connectionRank` changes, over a scenario the
+    // change does NOT touch (no managed gateway involved) — needs-attention
+    // still sorts first, and an in-use ready connection still sorts above an
+    // unused ready one. Must stay green across the change below.
+    test('pin: needs-attention first, then in-use ready, then unused ready (no managed gateway)', () => {
+      const claudeSub = connection({
+        id: 'claude_subscription',
+        kind: 'claude_subscription',
+        compatible_harnesses: ['claude'],
+        active_for: ['claude'],
+        ready: false,
+        configured: false,
+        reason: 'Token expired',
+      });
+      const openaiCompatible = connection({
+        id: 'openai_compatible',
+        kind: 'openai_compatible',
+        compatible_harnesses: ['pi'],
+      });
+      const anthropicKey = connection({
+        id: 'anthropic_api_key',
+        kind: 'anthropic_api_key',
+        compatible_harnesses: ['opencode'],
+      });
+      const state = projectModelsPageState({
+        agents: [agent('a', 'claude'), agent('b', 'opencode')],
+        agentsLoading: false,
+        connectionsData: {
+          connections: [claudeSub, openaiCompatible, anthropicKey],
+          providers: NO_PROVIDERS,
+        },
+        connectionsLoading: false,
+        connectionsError: false,
+        managedModels: undefined,
+        managedModelsLoading: false,
+        projectSecrets: undefined,
+        canWrite: true,
+      });
+
+      expect(state.connections.map((c) => c.id)).toEqual([
+        'claude_subscription',
+        'anthropic_api_key',
+        'openai_compatible',
+      ]);
+    });
+
+    test('a ready managed-gateway connection sorts above a ready, unused BYOK connection', () => {
+      const openaiCompatible = connection({
+        id: 'openai_compatible',
+        kind: 'openai_compatible',
+      });
+      const managed = connection({
+        id: 'managed_gateway',
+        kind: 'managed_gateway',
+      });
+      const state = projectModelsPageState({
+        // Deliberately unsorted input (BYOK first) — a passing test proves
+        // the rank function reorders rather than happening to preserve
+        // input order.
+        agents: [],
+        agentsLoading: false,
+        connectionsData: { connections: [openaiCompatible, managed], providers: NO_PROVIDERS },
+        connectionsLoading: false,
+        connectionsError: false,
+        managedModels: undefined,
+        managedModelsLoading: false,
+        projectSecrets: undefined,
+        canWrite: true,
+      });
+
+      expect(state.connections.map((c) => c.id)).toEqual(['managed_gateway', 'openai_compatible']);
+    });
+
+    test('a needs-attention BYOK connection still sorts above a ready managed-gateway row', () => {
+      const claudeSub = connection({
+        id: 'claude_subscription',
+        kind: 'claude_subscription',
+        compatible_harnesses: ['claude'],
+        active_for: ['claude'],
+        ready: false,
+        configured: false,
+        reason: 'Token expired',
+      });
+      const managed = connection({
+        id: 'managed_gateway',
+        kind: 'managed_gateway',
+        compatible_harnesses: ['claude'],
+      });
+      const state = projectModelsPageState({
+        agents: [agent('main', 'claude')],
+        agentsLoading: false,
+        connectionsData: { connections: [managed, claudeSub], providers: NO_PROVIDERS },
+        connectionsLoading: false,
+        connectionsError: false,
+        managedModels: undefined,
+        managedModelsLoading: false,
+        projectSecrets: undefined,
+        canWrite: true,
+      });
+
+      expect(state.connections.map((c) => c.id)).toEqual(['claude_subscription', 'managed_gateway']);
+    });
+  });
+
+  test('loading: every referenced runtime is checking, independent of connection state', () => {
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude')],
+      agentsLoading: true,
+      connectionsData: undefined,
+      connectionsLoading: true,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: true,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+
+    expect(state.isLoading).toBe(true);
+    expect(state.runtimes[0]).toMatchObject({
+      status: 'checking',
+      selectedConnectionId: null,
+      modelSummary: 'Checking Claude Code…',
+    });
+    expect(state.connections).toEqual([]);
+  });
+
+  test('connectionsError surfaces on the projected state', () => {
+    const state = projectModelsPageState({
+      agents: [],
+      agentsLoading: false,
+      connectionsData: undefined,
+      connectionsLoading: false,
+      connectionsError: true,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: false,
+    });
+    expect(state.isError).toBe(true);
+  });
+
+  test('connectedProviderIds derives from project secrets via the shared auth-requirement path', () => {
+    const state = projectModelsPageState({
+      agents: [],
+      agentsLoading: false,
+      connectionsData: { connections: [], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      canWrite: false,
+      projectSecrets: {
+        items: [
+          { name: 'ANTHROPIC_API_KEY' },
+          { name: 'CODEX_AUTH_JSON' },
+        ] as ProjectSecretsResponse['items'],
+        required: [],
+        optional: [],
+      },
+    });
+    expect(state.connectedProviderIds).toEqual(['anthropic', 'codex']);
+  });
+
+  test('connectedProviderIds is empty when no project secrets are loaded yet', () => {
+    const state = projectModelsPageState({
+      agents: [],
+      agentsLoading: false,
+      connectionsData: undefined,
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      canWrite: false,
+      projectSecrets: undefined,
+    });
+    expect(state.connectedProviderIds).toEqual([]);
+  });
+});
+
+describe('presentation helpers', () => {
+  test('harnessLabel and connectionDisplayName follow the locked product language table', () => {
+    expect(harnessLabel('claude')).toBe('Claude Code');
+    expect(harnessLabel('codex')).toBe('Codex');
+    expect(harnessLabel('opencode')).toBe('OpenCode');
+    expect(harnessLabel('pi')).toBe('Pi');
+    expect(connectionDisplayName('managed_gateway')).toBe('Kortix');
+    expect(connectionDisplayName('claude_subscription')).toBe('Claude subscription');
+    expect(connectionDisplayName('codex_subscription')).toBe('ChatGPT subscription');
+    expect(connectionDisplayName('anthropic_api_key')).toBe('Anthropic');
+    expect(connectionDisplayName('openai_api_key')).toBe('OpenAI');
+    // 2026-07-15 simplification: "Project config", never "Harness-native
+    // configuration" or "Managed by the harness".
+    expect(connectionDisplayName('native_config')).toBe('Project config');
+  });
+
+  test('connectionExplainer: the managed gateway ("Kortix") and "Project config" carry subtitles, nothing else does', () => {
+    expect(connectionExplainer('managed_gateway')).toBe('Included — no setup needed');
+    expect(connectionExplainer('native_config')).toBe("Uses the repo's committed setup");
+    expect(connectionExplainer('claude_subscription')).toBeNull();
+    expect(connectionExplainer('codex_subscription')).toBeNull();
+    expect(connectionExplainer('anthropic_api_key')).toBeNull();
+    expect(connectionExplainer('openai_api_key')).toBeNull();
+    expect(connectionExplainer('openai_compatible')).toBeNull();
+    expect(connectionExplainer('anthropic_compatible')).toBeNull();
+  });
+
+  test('the Models landing page copy constants carry the locked exact strings', () => {
+    expect(KORTIX_INCLUDED_TITLE).toBe('Kortix models are included');
+    expect(CONNECTIONS_OPTIONAL_DESCRIPTION).toBe(
+      'Optionally connect a Claude or ChatGPT subscription, or your own API key, to use those instead.',
+    );
+  });
+});
+
+// Typed live health (apps/api enrichConnectionsWithStatus, 845d0ec54) refines
+// the presence-derived word: an expired/invalid probed credential surfaces as
+// needs-attention with an actionable reason even when presence-"ready";
+// healthy/unverified/absent leave the presence-derived status untouched.
+describe('typed credential health on connections', () => {
+  test('expired probe overrides presence-ready with an actionable reason', () => {
+    const expired = connection({
+      id: 'claude_subscription',
+      kind: 'claude_subscription',
+      compatible_harnesses: ['claude'],
+      active_for: ['claude'],
+      status: 'expired',
+      status_reason: null,
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'claude')],
+      agentsLoading: false,
+      connectionsData: { connections: [expired], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+    expect(state.connections[0]).toMatchObject({
+      status: 'needs-attention',
+      statusReason: 'Sign-in expired — reconnect',
+    });
+  });
+
+  test('healthy probe leaves the presence-derived status untouched', () => {
+    const healthy = connection({
+      id: 'anthropic_api_key',
+      kind: 'anthropic_api_key',
+      compatible_harnesses: ['claude', 'opencode', 'pi'],
+      active_for: ['opencode'],
+      status: 'healthy',
+    });
+    const state = projectModelsPageState({
+      agents: [agent('main', 'opencode')],
+      agentsLoading: false,
+      connectionsData: { connections: [healthy], providers: NO_PROVIDERS },
+      connectionsLoading: false,
+      connectionsError: false,
+      managedModels: undefined,
+      managedModelsLoading: false,
+      projectSecrets: undefined,
+      canWrite: true,
+    });
+    expect(state.connections[0]).toMatchObject({ status: 'ready', statusReason: null });
+  });
+});

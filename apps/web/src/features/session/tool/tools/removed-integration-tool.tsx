@@ -10,7 +10,7 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import {
   Plug,
 } from 'lucide-react';

@@ -1,8 +1,8 @@
 /**
  * SecretsPage — Environment variables / secrets manager for the mobile app.
  *
- * Uses the OpenCode env API (GET/PUT/DELETE {sandboxUrl}/env) to list,
- * create, update, and delete secrets — matching the web frontend.
+ * Uses the SDK's Kortix daemon env helpers to list, create, update, and delete
+ * runtime environment values without a host-local transport implementation.
  * All mutations happen through bottom sheets following the FilesPage pattern.
  */
 
@@ -45,7 +45,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { getAuthToken } from '@/api/config';
+import { deleteEnv, listEnv, setEnv } from '@kortix/sdk';
 import { log } from '@/lib/logger';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
@@ -64,16 +64,7 @@ function useSecrets(sandboxUrl: string | undefined) {
     setIsLoading(true);
     setError(null);
     try {
-      const token = await getAuthToken();
-      const res = await fetch(`${sandboxUrl}/env`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.ok) throw new Error(`Failed to fetch secrets: ${res.status}`);
-      const data = await res.json();
-      setSecrets(data.secrets ?? data ?? {});
+      setSecrets(await listEnv(sandboxUrl));
     } catch (err: any) {
       log.error('Failed to fetch secrets:', err);
       setError(err.message);
@@ -88,22 +79,11 @@ function useSecrets(sandboxUrl: string | undefined) {
 }
 
 async function putSecret(sandboxUrl: string, key: string, value: string): Promise<void> {
-  const token = await getAuthToken();
-  const res = await fetch(`${sandboxUrl}/env/${encodeURIComponent(key)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ value }),
-  });
-  if (!res.ok) throw new Error(`Failed to set secret: ${res.status}`);
+  await setEnv(sandboxUrl, key, value);
 }
 
 async function removeSecret(sandboxUrl: string, key: string): Promise<void> {
-  const token = await getAuthToken();
-  const res = await fetch(`${sandboxUrl}/env/${encodeURIComponent(key)}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-  if (!res.ok) throw new Error(`Failed to delete secret: ${res.status}`);
+  await deleteEnv(sandboxUrl, key);
 }
 
 // ─── Secret Row ──────────────────────────────────────────────────────────────

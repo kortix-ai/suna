@@ -22,8 +22,15 @@ function TextShimmerComponent({
   spread = 2,
   repeat = Infinity,
 }: TextShimmerProps) {
-  const MotionComponent = motion.create(
-    Component as keyof JSX.IntrinsicElements,
+  // Memoized on `as`: `motion.create` returns a NEW component type on every
+  // call, and a new type is not reconcilable — React would unmount and
+  // remount this subtree on each re-render, restarting the shimmer sweep
+  // from frame zero. Callers that re-render on live data (the ACP transcript's
+  // busy indicator swaps `children` every time a tool starts) saw exactly
+  // that flicker.
+  const MotionComponent = useMemo(
+    () => motion.create(Component as keyof JSX.IntrinsicElements),
+    [Component],
   );
 
   const dynamicSpread = useMemo(() => {

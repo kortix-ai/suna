@@ -10,13 +10,20 @@
  * changes (React Query / the sync store already give a stable reference
  * between renders when nothing changed, so this is cheap in the steady
  * state).
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — a React binding
+ * over `classifyTurn` (`./core/turns/classify.ts`), superseded by the ACP
+ * projection layer (`projectAcpChatItems` / `useAcpSession`'s `chatItems`).
+ * No host currently imports `useChatTurns` (`apps/web`/`apps/mobile` both
+ * grep-clean) — kept working, not removed.
  */
 
 import { useMemo } from 'react';
 import type { ClassifiedPart, TurnError } from '../../core/turns';
 import { classifyTurn } from '../../core/turns';
-import type { MessageWithParts } from '../use-opencode-sessions';
+import type { MessageWithParts } from '../use-runtime-sessions';
 
+/** @deprecated See {@link useChatTurns}. */
 export interface TurnView {
   /** The original message this view was classified from — kept around so a
    *  host can still read `message.info.role`, `.id`, etc. without a second
@@ -32,6 +39,9 @@ export interface TurnView {
  * One `TurnView` per message (NOT per user/assistant turn-group — pair with
  * `groupMessagesIntoTurns` from `@kortix/sdk/turns` first if a host wants
  * grouped turns instead of a flat per-message list).
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — see the module
+ * doc above.
  */
 export function useChatTurns(messages: MessageWithParts[]): TurnView[] {
   return useMemo(

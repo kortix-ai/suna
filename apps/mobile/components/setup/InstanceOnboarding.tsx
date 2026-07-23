@@ -233,7 +233,10 @@ export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
     if (!sandboxUrl || onboardingSessionId) return;
 
     try {
-      const session = await createSession.mutateAsync({ title: 'Kortix Onboarding' });
+      const session = await createSession.mutateAsync({
+        title: 'Kortix Onboarding',
+        initialPrompt: '/onboarding',
+      });
       setOnboardingSessionId(session.id);
       await writeEnv(sandboxUrl, 'ONBOARDING_SESSION_ID', session.id);
 
@@ -242,20 +245,7 @@ export function InstanceOnboarding({ onComplete }: InstanceOnboardingProps) {
         commandFiredRef.current = true;
         await writeEnv(sandboxUrl, 'ONBOARDING_COMMAND_FIRED', 'true');
 
-        const token = await getAuthToken();
-
-        log.log('[Onboarding] Firing /onboarding command for session:', session.id);
-        fetch(`${sandboxUrl}/session/${session.id}/command`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ command: 'onboarding', arguments: '' }),
-        }).catch((err) => {
-          log.error('[Onboarding] Command fire failed:', err?.message);
-          commandFiredRef.current = false;
-        });
+        log.log('[Onboarding] Queued /onboarding as the session ACP initial prompt:', session.id);
       }
     } catch (err: any) {
       log.error('[Onboarding] Session creation failed:', err?.message);

@@ -19,7 +19,12 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { splitFrontmatter, toArray } from '@/features/workspace/customize/shared/utils';
+import {
+  extractYamlFragment,
+  splitFragmentPath,
+  splitFrontmatter,
+  toArray,
+} from '@/features/workspace/customize/shared/utils';
 import {
   editConfigPrompt,
   newConfigPrompt,
@@ -33,15 +38,19 @@ import {
 } from '@kortix/sdk/projects-client';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, type LucideIcon, Plus } from 'lucide-react';
+import { ChevronRight, Copy, type LucideIcon, Plus } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 export type ConfigEntity = { name: string; path: string; description: string | null };
 
 const SKELETON_ROWS = ['a', 'b', 'c', 'd', 'e'];
 
+/** Selection sentinel for `railEntry`. Every real entity path is a repo path or
+ *  a `kortix.yaml#…` fragment, so a bare `__rail-entry__` can never collide. */
+const RAIL_ENTRY_PATH = '__rail-entry__';
+
 /** The kind of artifact this view edits — drives the configure-thread prompts. */
-type ConfigKind = 'agent' | 'skill' | 'command';
+type ConfigKind = 'agent' | 'skill';
 
 export interface ConfigEntityViewProps<T extends ConfigEntity> {
   projectId: string;
@@ -91,8 +100,31 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
   /**
+   * A pinned, non-entity row at the TOP of the split layout's rail — project-level
+   * setup that belongs beside the entities without being one of them (Agents uses
+   * it for Coding agents).
+   *
+   * Why the rail and not a section-level strip or a tab: a strip above the split
+   * (the old `renderContext` treatment) stole the top half of the viewport from
+   * the list the section is named after, and tabs would add a SECOND navigation
+   * model on top of the master-detail the section already has. A pinned rail row
+   * reuses the one model that's already there — pick a thing on the left, see it
+   * on the right.
+   *
+   * Selecting it takes over the content pane and suppresses the extras aside
+   * (which belongs to an entity, and no entity is selected). Split layout only.
+   */
+  railEntry?: {
+    label: string;
+    icon: LucideIcon;
+    /** Sub-label under the label — keep it to a few words. */
+    hint?: string;
+    render: (config: ProjectConfigSummary) => ReactNode;
+  };
+
+  /**
    * 'accordion' — a vertical list where each row expands its detail inline.
-   * 'split' (the standard for agents, skills & commands) — a master-detail
+   * 'split' (the standard for agents & skills) — a master-detail
    * layout: a separate, self-scrolling sidebar that lists every entity on the
    * LEFT, the selected entity's source in the MIDDLE, and (when provided)
    * `renderDetailExtra` as a right aside — e.g. agents surface their
@@ -125,6 +157,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     renderDetailExtra,
     emptyBodyLabel,
     renderContext,
+    railEntry,
     layout = 'accordion',
     canWrite = true,
     className,
@@ -161,7 +194,19 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
 
   // Master-detail selection (split layout). The right pane follows this; falls
   // back to the first visible entity so there's always something previewed.
-  const selected = filtered.find((e) => e.path === selectedPath) ?? filtered[0] ?? null;
+  // The rail entry is selected by a sentinel path that no real entity can hold,
+  // which also has to defeat that first-entity fallback — otherwise picking it
+  // would silently bounce back to the first agent.
+  //
+  // A section WITH a rail entry opens on it: project setup is the thing you came
+  // for when you open Agents, and landing on whichever agent happens to sort
+  // first is an arbitrary choice the user didn't make. Sections without one
+  // (Skills) keep the first-entity default exactly as before.
+  const effectivePath = selectedPath ?? (railEntry ? RAIL_ENTRY_PATH : null);
+  const railSelected = Boolean(railEntry) && effectivePath === RAIL_ENTRY_PATH;
+  const selected = railSelected
+    ? null
+    : (filtered.find((e) => e.path === effectivePath) ?? filtered[0] ?? null);
 
   const searchInput = (
     <InputGroupSearch>
@@ -275,7 +320,8 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   );
 
   // The agent's extras (scope / model / assignment cards) become their own fixed
-  // pane, so the middle content is the sole scroller.
+  // pane, so the middle content is the sole scroller. The extras belong to an
+  // ENTITY — with the rail entry selected there isn't one, so the aside goes.
   const extra = selected && config ? renderDetailExtra?.(selected, config) : null;
 
   // Fixed-shell master-detail: the section header, the left list, and the right
@@ -292,61 +338,105 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
         {/* Left — the entity list. Fixed beside the content; only its own list
             scrolls, and only when it overflows. */}
         <aside className="border-border/60 flex shrink-0 flex-col border-b lg:h-full lg:min-h-0 lg:w-[264px] lg:border-r lg:border-b-0">
-          <div className="shrink-0 px-4 pt-4 pb-3">{searchInput}</div>
-          {filtered.length === 0 ? (
-            <div className="px-4">{noMatches}</div>
-          ) : (
-            <nav
-              aria-label={`${title} list`}
-              className="scrollbar-minimal px-2 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
-            >
-              <ul className="space-y-0.5">
-                {filtered.map((entity) => {
-                  const trailing = renderRowTrailing?.(entity, config);
-                  const isActive = selected?.path === entity.path;
-                  return (
-                    <li key={entity.path}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPath(entity.path)}
-                        aria-current={isActive}
-                        className={cn(
-                          'group flex w-full flex-col gap-0.5 rounded-md py-2 pr-2.5 pl-3 text-left transition-colors',
-                          'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
-                          isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
-                        )}
-                      >
-                        <span className="flex w-full items-center gap-2">
-                          <span
-                            className={cn(
-                              'min-w-0 flex-1 truncate text-sm font-medium',
-                              isActive
-                                ? 'text-foreground'
-                                : 'text-foreground/70 group-hover:text-foreground',
-                            )}
-                          >
-                            {renderTriggerLabel(entity)}
+          {railEntry ? (
+            <div className="border-border/60 shrink-0 border-b px-2 pt-3 pb-2">
+              <button
+                type="button"
+                data-testid="rail-entry"
+                aria-current={railSelected}
+                onClick={() => setSelectedPath(RAIL_ENTRY_PATH)}
+                className={cn(
+                  'group flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors',
+                  'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                  railSelected ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+                )}
+              >
+                <railEntry.icon
+                  className={cn(
+                    'size-4 shrink-0',
+                    railSelected ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'block truncate text-sm font-medium',
+                      railSelected
+                        ? 'text-foreground'
+                        : 'text-foreground/70 group-hover:text-foreground',
+                    )}
+                  >
+                    {railEntry.label}
+                  </span>
+                  {railEntry.hint ? (
+                    <span className="text-muted-foreground/60 block truncate text-xs">
+                      {railEntry.hint}
+                    </span>
+                  ) : null}
+                </span>
+                <ChevronRight className="text-muted-foreground/40 size-3.5 shrink-0" />
+              </button>
+            </div>
+          ) : null}
+          <div className="shrink-0 space-y-4 p-3">
+            {searchInput}
+            {filtered.length === 0 ? (
+              noMatches
+            ) : (
+              <nav
+                aria-label={`${title} list`}
+                className="scrollbar-minimal -mx-1.5 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+              >
+                <ul className="space-y-0.5">
+                  {filtered.map((entity) => {
+                    const trailing = renderRowTrailing?.(entity, config);
+                    const isActive = selected?.path === entity.path;
+                    return (
+                      <li key={entity.path}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPath(entity.path)}
+                          aria-current={isActive}
+                          className={cn(
+                            'group flex w-full flex-col gap-0.5 rounded-md py-2 pr-2.5 pl-3 text-left transition-colors',
+                            'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                            isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+                          )}
+                        >
+                          <span className="flex w-full items-center gap-2">
+                            <span
+                              className={cn(
+                                'min-w-0 flex-1 truncate text-sm font-medium',
+                                isActive
+                                  ? 'text-foreground'
+                                  : 'text-foreground/70 group-hover:text-foreground',
+                              )}
+                            >
+                              {renderTriggerLabel(entity)}
+                            </span>
+                            {trailing ? (
+                              <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
+                            ) : null}
                           </span>
-                          {trailing ? (
-                            <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
+                          {entity.description ? (
+                            <span className="text-muted-foreground/60 w-full truncate text-xs">
+                              {entity.description}
+                            </span>
                           ) : null}
-                        </span>
-                        {entity.description ? (
-                          <span className="text-muted-foreground/60 w-full truncate text-xs">
-                            {entity.description}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </nav>
-          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </nav>
+            )}
+          </div>
         </aside>
         {/* Middle — the ONLY scroll region: the selected entity's content. */}
         <div className="min-w-0 lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          {selected ? (
+          {railSelected && railEntry ? (
+            <div className="mx-auto max-w-3xl px-6 py-8 lg:py-10">{railEntry.render(config)}</div>
+          ) : selected ? (
             <div className="mx-auto max-w-3xl px-6 py-8 lg:py-10">
               <EntityDetail
                 key={selected.path}
@@ -515,16 +605,31 @@ function EntityDetail<T extends ConfigEntity>({
   split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
+  // Manifest entities (v2/v3 agents) carry fragment paths like
+  // `kortix.yaml#agents.claude` — a pointer INTO the manifest, not a file.
+  // Fetching that literal path 404s the files/content endpoint (the "file
+  // not found on opening the Agents view" bug), so fetch the real manifest
+  // file and slice the named block out client-side.
+  const fragmentPath = splitFragmentPath(entity.path);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, entity.path],
-    queryFn: () => readProjectFile(projectId, entity.path),
+    queryFn: () => readProjectFile(projectId, fragmentPath ? fragmentPath.file : entity.path),
     staleTime: 30_000,
   });
 
+  const fragmentSource = useMemo(
+    () =>
+      fragmentPath && fileQuery.data?.content
+        ? extractYamlFragment(fileQuery.data.content, fragmentPath.fragment)
+        : null,
+    [fragmentPath, fileQuery.data?.content],
+  );
+  const copyText = fragmentPath ? fragmentSource : (fileQuery.data?.content ?? null);
+
   const onCopy = async () => {
-    if (!fileQuery.data?.content) return;
+    if (!copyText) return;
     try {
-      await navigator.clipboard.writeText(fileQuery.data.content);
+      await navigator.clipboard.writeText(copyText);
       successToast('Source copied');
     } catch {
       errorToast('Copy failed');
@@ -560,6 +665,14 @@ function EntityDetail<T extends ConfigEntity>({
     >
       {(fileQuery.error as Error)?.message ?? 'Failed to read source'}
     </InfoBanner>
+  ) : fragmentPath ? (
+    fragmentSource ? (
+      <UnifiedMarkdown content={`\`\`\`yaml\n${fragmentSource}\n\`\`\``} />
+    ) : (
+      <p className="text-muted-foreground/60 text-sm italic">
+        Declared in <span className="font-mono">{fragmentPath.file}</span>.
+      </p>
+    )
   ) : body.trim() ? (
     <UnifiedMarkdown content={body} />
   ) : (
@@ -584,7 +697,7 @@ function EntityDetail<T extends ConfigEntity>({
         onCopy={onCopy}
         onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
         editing={configure.pending}
-        copyDisabled={!fileQuery.data?.content}
+        copyDisabled={!copyText}
         canWrite={canWrite}
       />
     </div>

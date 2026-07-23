@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * React port of the SolidJS `context/models.tsx` from the OpenCode reference app.
+ * React port of the SolidJS `context/models.tsx` from the Runtime reference app.
  *
  * Provides:
  * - Model visibility (show/hide per model, persisted in localStorage)
@@ -43,7 +43,7 @@ export type ModelKey = {
 };
 
 // ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
-// The LLM gateway identifies a model by its "wire model" — what opencode sends
+// The LLM gateway identifies a model by its "wire model" — what a harness sends
 // as `body.model`. Under the kortix gateway provider that is just the modelID
 // (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). A direct
 // provider model uses 'provider/model'. The synthetic `auto` has no concrete
@@ -83,6 +83,14 @@ interface ModelStore {
   /** Per-session model selection — keyed by sessionId so each session remembers its own model across reloads */
   sessionModel?: Record<string, ModelKey | undefined>;
   /**
+   * Per-agent harness-native launch model override (Claude/Codex/Pi/Pi-style
+   * runtimes — a bare model id string, not a gateway `ModelKey`). Keyed by
+   * AGENT NAME, not harness: two different logical agents on the same harness
+   * must never share a remembered model, and switching agents must never leak
+   * a stale pick into a new context (composer-chat-input.tsx).
+   */
+  runtimeModel?: Record<string, string | undefined>;
+  /**
    * User-chosen global default model (set during onboarding setup wizard).
    * Takes priority over agent.model but yields to per-session and per-agent selections.
    * This ensures the user's explicit choice during setup is respected everywhere.
@@ -94,7 +102,8 @@ interface ModelStore {
 // LocalStorage persistence
 // ============================================================================
 
-const STORE_KEY = 'opencode-model-store-v1';
+const STORE_KEY = 'kortix-runtime-model-store-v1';
+const LEGACY_STORE_KEYS = ['opencode-model-store-v1'];
 
 /**
  * Cap the per-session maps (`sessionModel`, `sessionAgentName`). They're keyed
@@ -117,7 +126,9 @@ function loadStore(): ModelStore {
     return { user: [], recent: [], variant: {} };
   }
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(STORE_KEY) ?? LEGACY_STORE_KEYS
+      .map((key) => localStorage.getItem(key))
+      .find((value): value is string => !!value);
     if (raw) return JSON.parse(raw);
   } catch {
     // ignore
@@ -184,6 +195,29 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
   });
 }
 
+/**
+ * Non-hook API for the composer's harness-native launch model (Claude/Codex/
+ * Pi — a bare model id, not a gateway `ModelKey`) — round-trips without a
+ * React render, like {@link setGlobalDefaultModel}. Keyed by AGENT NAME, not
+ * harness: two different logical agents on the same harness must never share
+ * a remembered model, and switching agents must never leak a stale pick into
+ * a new context (composer-chat-input.tsx).
+ */
+export function getRuntimeModel(agentName: string): string | undefined {
+  return getStore().runtimeModel?.[agentName];
+}
+
+export function setRuntimeModel(agentName: string, model: string | undefined): void {
+  const s = getStore();
+  const next = { ...s.runtimeModel };
+  if (model) {
+    next[agentName] = model;
+  } else {
+    delete next[agentName];
+  }
+  setStore({ ...s, runtimeModel: next });
+}
+
 // ============================================================================
 // Latest logic — direct port from SolidJS reference
 // ============================================================================
@@ -196,8 +230,7 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
 const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>([MANAGED_FLAGSHIP_MODEL_ID]);
 
 /**
- * Provider id of the managed Kortix LLM gateway (see the sandbox's
- * `opencode.ts` provider config). It's a small, hand-picked catalog we control,
+ * Provider id of the managed Kortix LLM gateway. It's a small, hand-picked catalog we control,
  * so every model in it is shown by default — `isVisible` short-circuits the
  * date-based "latest" heuristic for this provider. The newest-per-family
  * behaviour is kept for BYO providers, which is what it's for.
@@ -207,7 +240,7 @@ const MANAGED_GATEWAY_PROVIDER_ID = 'kortix';
 const SUBSCRIPTION_PROVIDER_ID = 'codex';
 
 // The gateway bakes its ENTIRE routable catalog (every BYOK provider's models)
-// into opencode so any model is callable the instant its key is connected — no
+// into the runtime so any model is callable the instant its key is connected — no
 // session restart. The picker must therefore NOT show all of it by default: a
 // `kortix` model is on out-of-the-box only when it's a platform-managed default
 // or its underlying provider is connected (live, from project secrets). The
@@ -330,7 +363,7 @@ export function useModelStore(
   allModels: FlatModel[],
   opts?: {
     connectedProviderIds?: Set<string>;
-    // Free tier (no active paid sub): hides every Kortix managed model.
+    // Free tier (no active paid sub): hides every Kortix (managed) model.
     freeTier?: boolean;
     /**
      * Canonical universe used to resolve default/heuristic visibility (the
@@ -545,6 +578,15 @@ export function useModelStore(
     setStore({ ...s, sessionModel: next });
   }, []);
 
+  // Per-agent harness-native model override (see `ModelStore.runtimeModel` and
+  // the standalone `getRuntimeModel`/`setRuntimeModel`). Read off the
+  // subscribed `store` snapshot so it reacts like every other field here;
+  // `setRuntimeModel` is the stable standalone function.
+  const getRuntimeModelForAgent = useCallback(
+    (agentName: string): string | undefined => store.runtimeModel?.[agentName],
+    [store.runtimeModel],
+  );
+
   // Global default model (set during onboarding setup wizard)
   const globalDefault = useMemo(() => store.globalDefault, [store.globalDefault]);
 
@@ -579,6 +621,8 @@ export function useModelStore(
     setLastAgentName,
     getSessionModel,
     setSessionModel,
+    getRuntimeModel: getRuntimeModelForAgent,
+    setRuntimeModel,
     globalDefault,
     setGlobalDefault,
     /** All user visibility preferences (for manage models dialog) */

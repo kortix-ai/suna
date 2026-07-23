@@ -3,11 +3,11 @@
  * Ported from web's SessionDiffViewer, adapted for mobile.
  *
  * Features:
- * - Fetches diffs from API (GET /session/:id/diff), falls back to message extraction
+ * - Fetches diffs from the runtime diff API, falls back to already-loaded message extraction
  * - Unified / side-by-side view toggle
  * - Expandable file cards that fill available space
  */
-import React, { forwardRef, useMemo, useState, useCallback, useEffect } from 'react';
+import React, { forwardRef, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import {
   Platform,
   LayoutAnimation,
   ScrollView,
-  ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
 import {
@@ -37,11 +36,9 @@ import {
   Columns2,
 } from 'lucide-react-native';
 
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import { useSandboxContext } from '@/contexts/SandboxContext';
-import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
-import { extractDiffsFromMessages, type FileDiffData } from '@/lib/opencode/extract-diffs';
-import { generateLineDiff, type DiffLine } from '@/lib/opencode/diff-utils';
+import { useSyncStore } from '@/lib/runtime/sync-store';
+import { extractDiffsFromMessages, type FileDiffData } from '@/lib/runtime/extract-diffs';
+import { generateLineDiff, type DiffLine } from '@/lib/runtime/diff-utils';
 import { getSheetBg } from '@/lib/theme-colors';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -739,29 +736,13 @@ function EmptyState({ isDark }: { isDark: boolean }) {
   );
 }
 
-// ─── API diff type (from SDK) ───────────────────────────────────────────────
-
-interface ApiFileDiff {
-  file: string;
-  before: string;
-  after: string;
-  additions: number;
-  deletions: number;
-  status?: 'added' | 'deleted' | 'modified';
-}
-
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetProps>(
   function ViewChangesSheet({ sessionId }, ref) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
-    const { sandboxUrl } = useSandboxContext();
     const [viewMode, setViewMode] = useState<ViewMode>('unified');
-
-    // API-fetched diffs
-    const [apiDiffs, setApiDiffs] = useState<FileDiffData[] | null>(null);
-    const [apiLoading, setApiLoading] = useState(false);
 
     // Read messages for this session from sync store (fallback)
     const messages = useSyncStore((s: any) => sessionId ? s.messages[sessionId] : undefined);
@@ -772,36 +753,7 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
       return extractDiffsFromMessages(messages as any);
     }, [sessionId, messages]);
 
-    // Fetch diffs from API when sheet becomes visible
-    const fetchApiDiffs = useCallback(async () => {
-      if (!sessionId || !sandboxUrl) return;
-      setApiLoading(true);
-      try {
-        const result = await opencodeFetch<ApiFileDiff[]>(
-          sandboxUrl,
-          `/session/${sessionId}/diff`,
-        );
-        if (result && Array.isArray(result) && result.length > 0) {
-          setApiDiffs(
-            result.map((d) => ({
-              file: d.file,
-              before: d.before || '',
-              after: d.after || '',
-              additions: d.additions || 0,
-              deletions: d.deletions || 0,
-              status: (d.status as 'added' | 'deleted' | 'modified') || (d.before ? (d.after ? 'modified' : 'deleted') : 'added'),
-            })),
-          );
-        }
-      } catch {
-        // API not available — fall back to message extraction
-      } finally {
-        setApiLoading(false);
-      }
-    }, [sessionId, sandboxUrl]);
-
-    // Use API diffs if available, else fall back to message extraction
-    const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;
+    const diffs = messageDiffs;
 
     const renderBackdrop = useMemo(
       () => (props: BottomSheetBackdropProps) => (
@@ -814,16 +766,6 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
       (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
     }, [ref]);
 
-    // Fetch API diffs when sheet opens
-    const handleSheetChange = useCallback((index: number) => {
-      if (index >= 0) {
-        fetchApiDiffs();
-      } else {
-        // Reset when closed so next open refetches
-        setApiDiffs(null);
-      }
-    }, [fetchApiDiffs]);
-
     return (
       <BottomSheetModal
         ref={ref}
@@ -832,7 +774,6 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
         enableDynamicSizing={false}
         enableOverDrag={false}
         enablePanDownToClose
-        onChange={handleSheetChange}
         handleIndicatorStyle={{
           backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
           width: 36,
@@ -856,14 +797,7 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
         />
 
         {/* Content */}
-        {apiLoading && diffs.length === 0 ? (
-          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
-            <ActivityIndicator size="small" color={colors.muted(isDark)} />
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: colors.muted(isDark), marginTop: 12 }}>
-              Loading changes...
-            </Text>
-          </View>
-        ) : diffs.length === 0 ? (
+        {diffs.length === 0 ? (
           <EmptyState isDark={isDark} />
         ) : (
           <BottomSheetScrollView

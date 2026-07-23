@@ -16,7 +16,7 @@ import {
   InlineGrepResults,
   parseGrepOutput,
 } from '@/features/session/tool/shared/file-list';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
+import { useRuntimeFileOpen } from '@/features/session/use-runtime-file-open';
 import {
   Search,
 } from 'lucide-react';
@@ -36,7 +36,7 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFile, toDisplayPath } = useOcFileOpen();
+  const { openFile, toDisplayPath } = useRuntimeFileOpen();
   const directory =
     getDirectory((input.path as string) || (streamingInput.path as string)) || undefined;
   const args: string[] = [];

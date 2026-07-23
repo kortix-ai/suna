@@ -527,7 +527,7 @@ async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
       accountId: gate.accountId,
       projectId: gate.projectId,
       agentName: selection?.agentName ?? null,
-      explicit: selection?.opencodeModel ?? null,
+      explicit: selection?.model ?? null,
       freeModelsOnly: gate.freeManagedOnly,
     });
     const label = eff.model ? labelForModelRef(eff.model) : 'Auto';
@@ -977,7 +977,7 @@ async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
     };
   }
   const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
+  const current = selection?.model ?? null;
   const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
 
   // The REAL served catalog — managed models + the project's connected BYOK

@@ -1,72 +1,64 @@
-// deriveActivity turns a session's recent messages + Kortix status into a "what's
-// it doing" label. The regression these tests guard: a RUNNING session that is
-// actively mid-turn (an in-flight assistant turn, or a running tool from a just-
-// dispatched subagent batch) must NOT be labelled "queued — agent picking up…".
 import { describe, expect, test } from 'bun:test';
 
-import type { OpencodeMessageWithParts } from '../api/sandbox-proxy.ts';
-import { deriveActivity } from '../commands/sessions-chat.ts';
+import type { AcpTranscriptMessage } from '@kortix/sdk/acp/transcript';
+import { deriveAcpActivity } from '../commands/sessions-chat.ts';
 
-function userMsg(created: number, text = 'do the thing'): OpencodeMessageWithParts {
+function message(
+  role: AcpTranscriptMessage['role'],
+  created: string,
+  options: { text?: string; tool?: { name: string; status: string } } = {},
+): AcpTranscriptMessage {
   return {
-    info: { id: `u-${created}`, role: 'user', sessionID: 's', time: { created } },
-    parts: [{ type: 'text', text }],
-  };
-}
-function assistantMsg(
-  created: number,
-  opts: { completed?: number; tool?: { name: string; status: string }; text?: string } = {},
-): OpencodeMessageWithParts {
-  const parts: OpencodeMessageWithParts['parts'] = [];
-  if (opts.tool) parts.push({ type: 'tool', tool: opts.tool.name, state: { status: opts.tool.status } });
-  if (opts.text) parts.push({ type: 'text', text: opts.text });
-  return {
-    info: {
-      id: `a-${created}`,
-      role: 'assistant',
-      sessionID: 's',
-      time: { created, ...(opts.completed ? { completed: opts.completed } : {}) },
-    },
-    parts,
+    role,
+    created,
+    completed: null,
+    text: options.text ?? '',
+    tools: options.tool
+      ? [{ tool: options.tool.name, status: options.tool.status }]
+      : [],
+    files: [],
+    reasoning_omitted: false,
+    error: null,
   };
 }
 
-describe('deriveActivity', () => {
-  test('running + a running tool anywhere in the window → not "queued"', () => {
-    // Assistant dispatched a subagent (running `task` tool), and a subagent
-    // user-role prompt is newest — the pre-fix code read this as "queued".
-    const msgs = [
-      assistantMsg(1, { tool: { name: 'task', status: 'running' } }),
-      userMsg(2, 'subagent prompt'),
+describe('deriveAcpActivity', () => {
+  test('reports a running tool from the recent ACP transcript window', () => {
+    const messages = [
+      message('assistant', '2026-07-23T00:00:01.000Z', {
+        tool: { name: 'task', status: 'running' },
+      }),
+      message('user', '2026-07-23T00:00:02.000Z', { text: 'subagent prompt' }),
     ];
-    const a = deriveActivity(msgs, 'running');
-    expect(a.working).toBe(true);
-    expect(a.summary).toBe('running task…');
-    expect(a.summary).not.toContain('queued');
+
+    const activity = deriveAcpActivity(messages, 'running');
+
+    expect(activity.working).toBe(true);
+    expect(activity.summary).toBe('running task…');
   });
 
-  test('running + an in-flight (uncompleted) assistant turn → "working…", not "queued"', () => {
-    const msgs = [assistantMsg(1, {}), userMsg(2)];
-    const a = deriveActivity(msgs, 'running');
-    expect(a.working).toBe(true);
-    expect(a.summary).toBe('working…');
+  test('reports a fresh user prompt as queued when no tool is running', () => {
+    const activity = deriveAcpActivity([
+      message('user', '2026-07-23T00:00:01.000Z', { text: 'do the thing' }),
+    ], 'running');
+
+    expect(activity.working).toBe(true);
+    expect(activity.summary).toBe('queued — agent picking up…');
   });
 
-  test('running + only a fresh user prompt, no assistant activity → stays "queued"', () => {
-    const a = deriveActivity([userMsg(1)], 'running');
-    expect(a.working).toBe(true);
-    expect(a.summary).toBe('queued — agent picking up…');
+  test('reports the latest assistant text when the recent window is idle', () => {
+    const activity = deriveAcpActivity([
+      message('user', '2026-07-23T00:00:01.000Z', { text: 'do the thing' }),
+      message('assistant', '2026-07-23T00:00:02.000Z', { text: 'all done' }),
+    ], 'running');
+
+    expect(activity.working).toBe(false);
+    expect(activity.summary).toBe('all done');
   });
 
-  test('running + a completed assistant reply → idle summary of the reply text', () => {
-    const a = deriveActivity([userMsg(1), assistantMsg(2, { completed: 3, text: 'all done' })], 'running');
-    expect(a.working).toBe(false);
-    expect(a.summary).toBe('all done');
-  });
-
-  test('non-running lifecycle states describe the box, not a turn', () => {
-    expect(deriveActivity([], 'provisioning').summary).toBe('provisioning…');
-    expect(deriveActivity([], 'branching').summary).toBe('provisioning…');
-    expect(deriveActivity([], 'queued').summary).toBe('booting…');
+  test('reports lifecycle states before transcript activity', () => {
+    expect(deriveAcpActivity([], 'provisioning').summary).toBe('provisioning…');
+    expect(deriveAcpActivity([], 'branching').summary).toBe('provisioning…');
+    expect(deriveAcpActivity([], 'queued').summary).toBe('booting…');
   });
 });

@@ -1,0 +1,180 @@
+[
+  {
+    "parts": [
+      {
+        "kind": "text",
+        "id": "prt_1",
+        "text": "Can you check why the login test is flaky and fix it?",
+        "synthetic": false
+      }
+    ],
+    "isEmpty": false
+  },
+  {
+    "parts": [
+      {
+        "kind": "reasoning",
+        "id": "prt_2",
+        "text": "Let me look at the test file first."
+      },
+      {
+        "kind": "text",
+        "id": "prt_3",
+        "text": "I'll start by reading the test.",
+        "synthetic": false
+      },
+      {
+        "kind": "tool",
+        "id": "prt_4",
+        "tool": {
+          "name": "read",
+          "title": "Read File",
+          "status": "done",
+          "input": {
+            "filePath": "tests/login.test.ts"
+          },
+          "output": "test('login', async () => { await sleep(10); expect(loggedIn).toBe(true); })",
+          "outputText": "test('login', async () => { await sleep(10); expect(loggedIn).toBe(true); })"
+        }
+      },
+      {
+        "kind": "tool",
+        "id": "prt_5",
+        "tool": {
+          "name": "bash",
+          "title": "Shell",
+          "status": "done",
+          "input": {
+            "command": "bun test tests/login.test.ts"
+          },
+          "output": "FAIL login.test.ts\n<bash_metadata>cwd=/repo</bash_metadata>\n<exit_code>1</exit_code>",
+          "outputText": "FAIL login.test.ts\n<bash_metadata>cwd=/repo</bash_metadata>\n<exit_code>1</exit_code>"
+        }
+      },
+      {
+        "kind": "tool",
+        "id": "prt_6",
+        "tool": {
+          "name": "web_search",
+          "title": "Web Search",
+          "status": "error",
+          "input": {
+            "query": "flaky test race condition sleep"
+          },
+          "output": "{\"query\":\"flaky test race condition sleep\",\"success\":false,\"error\":\"Insufficient credits\"}",
+          "outputParsed": {
+            "query": "flaky test race condition sleep",
+            "success": false,
+            "error": "Insufficient credits"
+          },
+          "outputText": "{\"query\":\"flaky test race condition sleep\",\"success\":false,\"error\":\"Insufficient credits\"}",
+          "error": "Insufficient credits"
+        }
+      },
+      {
+        "kind": "file",
+        "id": "prt_7",
+        "filename": "screenshot.png",
+        "mime": "image/png",
+        "url": "https://example.com/screenshot.png",
+        "isImage": true,
+        "isPdf": false
+      },
+      {
+        "kind": "subtask",
+        "id": "prt_8",
+        "description": "Investigate flaky timing",
+        "agent": "debug",
+        "prompt": "Find the race condition in the login test",
+        "model": {
+          "providerID": "anthropic",
+          "modelID": "claude-sonnet"
+        }
+      },
+      {
+        "kind": "patch",
+        "id": "prt_9",
+        "hash": "abc123def",
+        "files": [
+          "tests/login.test.ts",
+          "src/login.ts"
+        ],
+        "fileCount": 2
+      },
+      {
+        "kind": "snapshot",
+        "id": "prt_10",
+        "snapshot": "snap_1"
+      },
+      {
+        "kind": "agent",
+        "id": "prt_11",
+        "name": "debug"
+      },
+      {
+        "kind": "retry",
+        "id": "prt_12",
+        "attempt": 1,
+        "message": "ECONNRESET",
+        "createdAt": 1700000005000
+      },
+      {
+        "kind": "compaction",
+        "id": "prt_13",
+        "auto": true,
+        "overflow": false,
+        "tailStartId": "prt_2"
+      },
+      {
+        "kind": "step",
+        "id": "prt_14",
+        "phase": "start",
+        "snapshot": "snap_0"
+      },
+      {
+        "kind": "step",
+        "id": "prt_15",
+        "phase": "finish",
+        "snapshot": "snap_1",
+        "reason": "end_turn",
+        "cost": 0.02,
+        "tokens": {
+          "input": 120,
+          "output": 80,
+          "reasoning": 10,
+          "cache": {
+            "read": 5,
+            "write": 2
+          }
+        }
+      }
+    ],
+    "isEmpty": false
+  },
+  {
+    "parts": [
+      {
+        "kind": "text",
+        "id": "prt_16",
+        "text": "Trying to rerun the test...",
+        "synthetic": false
+      }
+    ],
+    "error": {
+      "name": "ToolExecutionError",
+      "message": "Command timed out after 30s"
+    },
+    "isEmpty": false
+  },
+  {
+    "parts": [
+      {
+        "kind": "step",
+        "id": "prt_17",
+        "phase": "start",
+        "snapshot": "snap_2"
+      }
+    ],
+    "isEmpty": true
+  }
+]

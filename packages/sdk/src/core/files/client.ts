@@ -4,11 +4,12 @@
  *
  * Read (list/content/status/find) and write (upload/delete/mkdir/rename) all hit
  * the in-sandbox daemon for the active server; project/health go through the
- * opencode client. DOM-bound helpers (download / zip) stay in the host UI and
+ * Kortix daemon. DOM-bound helpers (download / zip) stay in the host UI and
  * consume `readBlob`/`list` from here.
  */
-import { getClient } from '../runtime/client';
-import { getActiveOpenCodeUrl } from '../session/server-store/active';
+import { getActiveRuntimeUrl } from '../session/server-store/active';
+import { getCurrentRuntimeProjectId } from '../session/current-runtime';
+import { getSessionHealth } from '../session/health';
 import { getAuthToken, authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
 import type {
@@ -16,7 +17,8 @@ import type {
   FileNode,
   FindMatch,
   GitFileStatus,
-  OpenCodeProjectInfo,
+  ListeningPort,
+  RuntimeProjectInfo,
   ServerHealth,
   UploadResult,
 } from './types';
@@ -24,29 +26,6 @@ import type {
 // Re-export the file types from the `@kortix/sdk/files` subpath too, so hosts can
 // import both the ops and the types from one place.
 export type * from './types';
-
-function unwrap<T>(result: { data?: T; error?: unknown }): T {
-  if (result.error) {
-    const err = result.error as {
-      data?: { message?: string };
-      message?: string;
-      error?: unknown;
-      response?: Response;
-      status?: number;
-    };
-    const message =
-      err?.data?.message ||
-      err?.message ||
-      (typeof err?.error === 'string' ? err.error : null) ||
-      'SDK request failed';
-    throw new ApiError(message, {
-      status: err?.response?.status ?? err?.status,
-      response: err?.response,
-      details: err,
-    });
-  }
-  return result.data as T;
-}
 
 async function errorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
@@ -61,7 +40,7 @@ async function errorMessage(res: Response): Promise<string> {
  * pass an explicit one (e.g. from `kortix.session(pid, sid).files`) to hit a
  * SPECIFIC session's own runtime instead.
  */
-async function fetchDaemonJson<T>(relUrl: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<T> {
+async function fetchDaemonJson<T>(relUrl: string, baseUrl: string = getActiveRuntimeUrl()): Promise<T> {
   const response = await authenticatedFetch(`${baseUrl}${relUrl}`);
   if (!response.ok) {
     throw new ApiError(await errorMessage(response), { status: response.status, response });
@@ -116,14 +95,14 @@ export const toWorkspaceRelative = toDaemonPath;
  * the module-global "active" sandbox; pass one explicitly to target a
  * specific session's runtime (see `kortix.session(pid, sid).files`).
  */
-export async function listFiles(dirPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FileNode[]> {
+export async function listFiles(dirPath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<FileNode[]> {
   const daemonPath = toDaemonPath(dirPath) || '.';
   const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(daemonPath)}`, baseUrl);
   return nodes.map((node) => ({ ...node, path: node.absolute || `/workspace/${node.path}` }));
 }
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
-export async function readFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FileContent> {
+export async function readFile(filePath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<FileContent> {
   const daemonPath = toDaemonPath(filePath);
   const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(daemonPath)}`);
   if (!response.ok) {
@@ -133,7 +112,7 @@ export async function readFile(filePath: string, baseUrl: string = getActiveOpen
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
-async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<Blob> {
+async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl: string = getActiveRuntimeUrl()): Promise<Blob> {
   const daemonPath = toDaemonPath(filePath);
   const response = await authenticatedFetch(`${baseUrl}/file/raw?path=${encodeURIComponent(daemonPath)}`);
   if (!response.ok) {
@@ -155,7 +134,7 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl: str
 }
 
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
-export async function readBlob(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<Blob> {
+export async function readBlob(filePath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<Blob> {
   try {
     return await readFileRaw(filePath, undefined, baseUrl);
   } catch { /* fall back to JSON content endpoint */ }
@@ -168,8 +147,14 @@ export async function readBlob(filePath: string, baseUrl: string = getActiveOpen
 }
 
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */
-export function getFileStatus(baseUrl: string = getActiveOpenCodeUrl()): Promise<GitFileStatus[]> {
+export function getFileStatus(baseUrl: string = getActiveRuntimeUrl()): Promise<GitFileStatus[]> {
   return fetchDaemonJson<GitFileStatus[]>(`/file/status`, baseUrl);
+}
+
+/** Listening TCP ports inside the sandbox. Daemon `GET /ports`. */
+export async function listListeningPorts(baseUrl: string = getActiveRuntimeUrl()): Promise<ListeningPort[]> {
+  const result = await fetchDaemonJson<{ ports?: ListeningPort[] }>(`/ports`, baseUrl);
+  return result.ports ?? [];
 }
 
 /**
@@ -187,7 +172,7 @@ export function getFileStatus(baseUrl: string = getActiveOpenCodeUrl()): Promise
 export async function findFiles(
   query: string,
   options?: { type?: 'file' | 'directory'; limit?: number },
-  baseUrl: string = getActiveOpenCodeUrl(),
+  baseUrl: string = getActiveRuntimeUrl(),
 ): Promise<string[]> {
   const params = new URLSearchParams({ query });
   if (options?.type) params.set('type', options.type);
@@ -196,7 +181,7 @@ export async function findFiles(
 }
 
 /** Ripgrep text search. Daemon `GET /find`. Tolerates flat + nested rg-JSON. */
-export async function findText(pattern: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FindMatch[]> {
+export async function findText(pattern: string, baseUrl: string = getActiveRuntimeUrl()): Promise<FindMatch[]> {
   const raw = await fetchDaemonJson<Array<Record<string, any>>>(`/find?pattern=${encodeURIComponent(pattern)}`, baseUrl);
   return raw.map((item) => ({
     path: typeof item.path === 'string' ? item.path : (item.path?.text ?? ''),
@@ -261,7 +246,7 @@ export function uploadFile(
   file: File | Blob,
   targetPath?: string,
   filename?: string,
-  baseUrl: string = getActiveOpenCodeUrl(),
+  baseUrl: string = getActiveRuntimeUrl(),
 ): Promise<UploadResult[]> {
   return uploadWithRetry(
     () => {
@@ -277,7 +262,7 @@ export function uploadFile(
 }
 
 /** Upload content to a specific path via the field-name-as-path convention. */
-function uploadToPath(filePath: string, content: Blob, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
+function uploadToPath(filePath: string, content: Blob, baseUrl: string = getActiveRuntimeUrl()): Promise<UploadResult[]> {
   return uploadWithRetry(
     () => {
       const form = new FormData();
@@ -294,7 +279,7 @@ function uploadToPath(filePath: string, content: Blob, baseUrl: string = getActi
 }
 
 /** Create an empty file at a path. */
-export function createFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
+export function createFile(filePath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<UploadResult[]> {
   const rawPath = filePath.trim();
   const absolutePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
   const parts = absolutePath.split('/');
@@ -304,12 +289,12 @@ export function createFile(filePath: string, baseUrl: string = getActiveOpenCode
 }
 
 /** Copy a file (read source bytes → upload to dest). */
-export async function copyFile(sourcePath: string, destPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
+export async function copyFile(sourcePath: string, destPath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<UploadResult[]> {
   return uploadToPath(destPath, await readBlob(sourcePath, baseUrl), baseUrl);
 }
 
 /** Delete a file/dir (recursive). Daemon `DELETE /file`. */
-export async function deleteFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
+export async function deleteFile(filePath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<boolean> {
   const res = await authenticatedFetch(`${baseUrl}/file`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -322,7 +307,7 @@ export async function deleteFile(filePath: string, baseUrl: string = getActiveOp
 }
 
 /** Create a directory (recursive, idempotent). Daemon `POST /file/mkdir`. */
-export async function mkdir(dirPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
+export async function mkdir(dirPath: string, baseUrl: string = getActiveRuntimeUrl()): Promise<boolean> {
   const res = await authenticatedFetch(`${baseUrl}/file/mkdir`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -335,7 +320,7 @@ export async function mkdir(dirPath: string, baseUrl: string = getActiveOpenCode
 }
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
-export async function renameFile(from: string, to: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
+export async function renameFile(from: string, to: string, baseUrl: string = getActiveRuntimeUrl()): Promise<boolean> {
   const res = await authenticatedFetch(`${baseUrl}/file/rename`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -347,13 +332,28 @@ export async function renameFile(from: string, to: string, baseUrl: string = get
   return res.json();
 }
 
-// ── project / health (via opencode client) ────────────────────────────────────
-export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
-  return unwrap(await getClient().project.current()) as OpenCodeProjectInfo;
+// ── workspace / health (Kortix daemon-owned, harness-neutral) ────────────────
+export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
+  const now = Date.now();
+  return {
+    id: getCurrentRuntimeProjectId() ?? 'workspace',
+    worktree: '/workspace',
+    vcs: 'git',
+    name: 'workspace',
+    time: { created: now, updated: now },
+    sandboxes: [],
+  };
 }
 
 export async function getServerHealth(): Promise<ServerHealth> {
-  return unwrap(await getClient().global.health()) as ServerHealth;
+  const result = await getSessionHealth();
+  if (!result.ok || !result.health) {
+    throw new ApiError(result.body || 'Session runtime is unreachable', { status: result.status || undefined });
+  }
+  return {
+    healthy: result.health.runtimeReady === true,
+    version: result.health.version ?? 'acp',
+  };
 }
 
 export async function isServerReachable(): Promise<boolean> {
@@ -370,6 +370,7 @@ export const files = {
   read: readFile,
   readBlob,
   status: getFileStatus,
+  listeningPorts: listListeningPorts,
   findFiles,
   findText,
   upload: uploadFile,

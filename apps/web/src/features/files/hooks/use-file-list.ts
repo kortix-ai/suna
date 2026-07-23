@@ -3,18 +3,18 @@
 import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
-import { listFiles } from '../api/opencode-files';
+import { listFiles } from '../api/runtime-files';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 
 export const fileListKeys = {
-  all: ['opencode-files', 'list'] as const,
+  all: ['runtime-files', 'list'] as const,
   dir: (serverUrl: string, dirPath: string) =>
-    ['opencode-files', 'list', serverUrl, dirPath] as const,
+    ['runtime-files', 'list', serverUrl, dirPath] as const,
 };
 
 /**
- * Fetch the directory listing for a path on the active OpenCode server.
+ * Fetch the directory listing for a path on the active Runtime server.
  *
  * Uses GET /file?path=<path> which returns FileNode[].
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.

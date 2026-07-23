@@ -15,10 +15,10 @@
  * `@kortix/sdk`'s `use-opencode-sessions/keys.ts`, consumed by
  * `promptOpenCodeMessage`) only ever carries `model` / `agent` / `variant` /
  * `directory` — there is no per-message reasoning-effort field to set on a
- * chat send today. Separately, models.dev-sourced models don't populate
- * OpenCode's legacy per-model `variant` map, which is why the composer's
- * `VariantSelector` renders nothing for a model like `openai/gpt-5.6-sol`
- * even though it's very much a reasoning model.
+ * chat send today. (models.dev-sourced models also never populate OpenCode's
+ * legacy per-model `variant` map, which is why the composer's old
+ * variant-cycling control was removed — it rendered nothing for a model like
+ * `openai/gpt-5.6-sol` even though it's very much a reasoning model.)
  *
  * The one path that reliably reaches the wire today is the per-project
  * **model_generation_config** the gateway injects at resolution time —
@@ -52,9 +52,15 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Hint from '@/components/ui/hint';
+import {
+  COMPOSER_PILL_ACTIVE_CLASS,
+  COMPOSER_PILL_DISABLED_CLASS,
+  COMPOSER_PILL_TRIGGER_CLASS,
+} from '@/features/session/composer-pill';
+import { displayModel } from '@/features/workspace/customize/sections/view/gateway/_shared';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
-import { modelKeyToWire } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire } from '@/hooks/runtime/use-model-store';
 import { cn } from '@/lib/utils';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayProjectRoutingPolicy } from '@kortix/sdk/projects-client';
@@ -170,51 +176,55 @@ export function ReasoningEffortSelector({
   if (!visible) return null;
 
   const locked = !canWrite;
-  const displayValue = current ?? 'auto';
+  const displayValue = current ?? 'Auto';
+  const modelName = wireModel ? displayModel(wireModel) : '';
 
   return (
     <CommandPopover open={open} onOpenChange={(next) => setOpen(locked || pending ? false : next)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-disabled={locked || pending || undefined}
-              aria-label="Reasoning effort"
+      <Hint
+        side="top"
+        className="max-w-[240px]"
+        label={
+          locked
+            ? 'Only editors can change this.'
+            : `Applies to ${modelName} everywhere in this project.`
+        }
+      >
+        <CommandPopoverTrigger>
+          <button
+            type="button"
+            aria-disabled={locked || pending || undefined}
+            aria-label="Thinking"
+            className={cn(
+              COMPOSER_PILL_TRIGGER_CLASS,
+              open && COMPOSER_PILL_ACTIVE_CLASS,
+              current && 'text-foreground',
+              (locked || pending) && COMPOSER_PILL_DISABLED_CLASS,
+            )}
+          >
+            <Brain className="size-3.5 shrink-0" />
+            {/* Icon-only on phones — the Brain glyph + aria-label carry it;
+                the value label returns from `sm:` up. */}
+            <span className="hidden max-w-[80px] truncate capitalize sm:inline">
+              {displayValue}
+            </span>
+            <ChevronDown
               className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
-                open && 'bg-muted text-foreground',
-                current && 'text-foreground',
-                (locked || pending) &&
-                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
+                'size-3 opacity-50 transition-transform duration-200',
+                open && 'rotate-180',
               )}
-            >
-              <Brain className="size-3.5 shrink-0" />
-              <span className="max-w-[80px] truncate">{displayValue}</span>
-              <ChevronDown
-                className={cn(
-                  'size-3 opacity-50 transition-transform duration-200',
-                  open && 'rotate-180',
-                )}
-              />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px]">
-          {locked ? (
-            <p>Only project editors can change reasoning effort for this model.</p>
-          ) : (
-            <p>
-              Reasoning effort for <span className="font-mono">{wireModel}</span> — applies to every
-              session in this project using this model.
-            </p>
-          )}
-        </TooltipContent>
-      </Tooltip>
+            />
+          </button>
+        </CommandPopoverTrigger>
+      </Hint>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[180px]">
         <CommandList>
-          <CommandGroup heading="Reasoning effort">
+          {/* Scope stated up-front: this control writes a project-wide setting
+              (see the file header for why per-session isn't reachable today), so
+              the heading names the scope the moment the popover opens — not only
+              in the hover tooltip / footer. */}
+          <CommandGroup heading="Thinking level · this project">
             <CommandItem
               value="reasoning-effort-default"
               onSelect={() => {
@@ -222,7 +232,7 @@ export function ReasoningEffortSelector({
                 setOpen(false);
               }}
             >
-              <span className="flex-1 truncate">Model default</span>
+              <span className="flex-1 truncate">Auto — model default</span>
               {current === null && <Check className="text-foreground size-3.5 shrink-0" />}
             </CommandItem>
             {values.map((value) => (
@@ -240,6 +250,11 @@ export function ReasoningEffortSelector({
             ))}
           </CommandGroup>
         </CommandList>
+        {wireModel && (
+          <div className="border-t px-2 py-1.5 text-xs text-muted-foreground">
+            Applies to {modelName} everywhere in this project.
+          </div>
+        )}
       </CommandPopoverContent>
     </CommandPopover>
   );

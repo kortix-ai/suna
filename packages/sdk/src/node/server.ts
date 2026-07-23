@@ -53,7 +53,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * (`Error`/`Date`/`Map`/`Set`/`Blob`/`Response`/async iterables/…) pass
  * through untouched, so this never mis-clones a vendor object whose
  * correctness depends on its prototype/internal slots (e.g. the escape-hatch
- * `OpencodeClient` from `.runtime`, or a `Response`/Blob returned by a file
+ * `RuntimeClient` from `.runtime`, or a `Response`/Blob returned by a file
  * read). A depth cap + a per-branch `WeakSet` guards against accidental
  * cycles or pathologically deep payloads.
  */

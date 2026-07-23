@@ -699,7 +699,7 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
 }
 
 /** Gateway model catalog for a trigger's "Model" override picker (web parity:
- *  useOpenCodeProviders() + flattenModels() in gateway mode). Sandbox-free —
+ *  useRuntimeProviders() + flattenModels() in gateway mode). Sandbox-free —
  *  reads the project's server-side catalog directly. `gatewayDisabled` is
  *  true when the project hasn't turned the LLM gateway on; treat that as "no
  *  override available" rather than an error. */

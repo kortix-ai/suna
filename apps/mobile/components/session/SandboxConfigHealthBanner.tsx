@@ -73,8 +73,8 @@ export function SandboxConfigHealthBanner() {
   const handleFix = useCallback(async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const result = await startFixTask();
-      toast.success(`Fix task started in ${result.project.name || result.project.path}`);
+      await startFixTask();
+      toast.success('Fix task started');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to start fix task');
     }

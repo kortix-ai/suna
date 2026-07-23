@@ -148,7 +148,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(selection?.model ? { model: selection.model } : {}),
       initial_prompt: renderAgentPrompt(activity),
     },
     enforceAccountCap: false,

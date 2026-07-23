@@ -5,6 +5,7 @@ import {
   locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
+  surfaceSessionCreateError,
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
@@ -50,8 +51,8 @@ Subcommands:
                                       (repeatable).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
-  connect [<session-id>]            Attach local OpenCode to the running
-                                    session sandbox. Pass args after --.
+  connect [<session-id>]            Open the harness-neutral ACP chat for a
+                                    running Claude/Codex/OpenCode/Pi session.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new
@@ -100,8 +101,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
   }
-  // `connect` owns its own flag parsing and forwards remaining args to
-  // `opencode attach`, so route it before we consume flags below.
+  // `connect` is the harness-neutral ACP interactive-chat alias.
   if (sub === 'connect' || sub === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }
@@ -312,11 +312,11 @@ async function sessionsNew(
       body,
     );
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceSessionCreateError(err);
   }
 
   // --wait: drive the same canonical /start lifecycle endpoint the dashboard
-  // polls. Row status alone can say "running" before OpenCode is actually ready.
+  // polls. Row status alone can say "running" before the runtime is ready.
   if (wait) {
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
@@ -717,15 +717,19 @@ function formatRelative(iso: string): string {
 
 function openInBrowser(url: string): void {
   // Only hand a real web URL to the OS opener — a value starting with '-' would
-  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
-  // so an unvalidated URL is a command-injection vector.
+  // be read as a flag by open/xdg-open, so an unvalidated URL is a
+  // command-injection vector. On Windows, avoid `cmd /c start`: cmd.exe
+  // re-parses its argument line, so metacharacters (&, |, ^) inside an
+  // otherwise-valid URL would be interpreted as commands. rundll32's
+  // FileProtocolHandler receives the URL as a plain argument with no shell
+  // parsing in between.
   if (!/^https?:\/\//i.test(url)) return;
   const cmd =
     process.platform === 'darwin'
       ? 'open'
       : process.platform === 'win32'
-        ? 'cmd'
+        ? 'rundll32'
         : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
   spawnSync(cmd, args, { stdio: 'ignore' });
 }

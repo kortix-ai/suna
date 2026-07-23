@@ -40,6 +40,7 @@ mock.module('../channels/slack/turn', () => ({
 // ─── dispatch.ts (consumed by interactivity.ts) ───────────────────────────────
 let spawnArgs: unknown[] | null = null;
 mock.module('../channels/slack/dispatch', () => ({
+  backfillChannelName: async () => null,
   spawnAgentTurn: async (...a: unknown[]) => {
     spawnArgs = a;
   },

@@ -84,6 +84,21 @@ describe('toggle-panel-mode command palette item', () => {
   });
 });
 
+describe('llm-providers command palette item', () => {
+  const llmProvidersItem = paletteItems.find((item) => item.id === 'llm-providers');
+
+  test('is project-gated (requiresProject: true)', () => {
+    expect(llmProvidersItem).toBeDefined();
+    expect(llmProvidersItem!.requiresProject).toBe(true);
+  });
+
+  test('is registered with the right action wiring', () => {
+    expect(llmProvidersItem).toBeDefined();
+    expect(llmProvidersItem!.kind).toBe('action');
+    expect(llmProvidersItem!.actionId).toBe('connectModel');
+  });
+});
+
 describe('project sessions command palette item', () => {
   test('falls back to the canonical project sessions page', () => {
     const sessionsItem = paletteItems.find((item) => item.id === 'proj-sessions');

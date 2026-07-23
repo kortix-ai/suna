@@ -7,7 +7,6 @@ process.env.KORTIX_URL = 'https://api.example.com';
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.DATABASE_URL ??= 'postgres://x';
 process.env.SUPABASE_URL = 'http://supabase.test';
-process.env.FREESTYLE_API_URL = 'https://freestyle.test';
 process.env.RECALL_BASE_URL = 'https://recall.test';
 process.env.FRONTEND_URL = 'https://app.example.com';
 

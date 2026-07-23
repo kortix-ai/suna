@@ -65,8 +65,8 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
-import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
+import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
+import { useRuntimeProviders, useVisibleAgents } from '@/hooks/runtime/use-runtime-sessions';
 import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -82,6 +82,7 @@ import {
   updateProjectTrigger,
   upsertProjectSecret,
 } from '@kortix/sdk/projects-client';
+import { useProjectConfig } from '@kortix/sdk/react';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,
@@ -989,7 +990,8 @@ function AgentModelSection({
   onMutated: () => void;
 }) {
   const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useOpenCodeProviders();
+  const defaultAgentName = useProjectConfig(projectId)?.runtime_default_agent;
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
 
@@ -1070,9 +1072,11 @@ function AgentModelSection({
         <div className="bg-card rounded-2xl border px-2 py-1">
           <AgentSelector
             agents={agents}
+            defaultAgentName={defaultAgentName}
             selectedAgent={trigger.agent}
             onSelect={(next) => next && saveAgent.mutate(next)}
             disabled={saveAgent.isPending}
+            projectId={projectId}
           />
         </div>
       </div>
@@ -1785,7 +1789,8 @@ function CreateTriggerModal({
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useOpenCodeProviders();
+  const defaultAgentName = useProjectConfig(projectId)?.runtime_default_agent;
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
   useEffect(() => {
@@ -2153,8 +2158,10 @@ function CreateTriggerModal({
                 <div className="bg-card rounded-2xl border px-2 py-1">
                   <AgentSelector
                     agents={agents}
+                    defaultAgentName={defaultAgentName}
                     selectedAgent={agentName}
                     onSelect={setAgentName}
+                    projectId={projectId}
                   />
                 </div>
               </TriggerModalSection>

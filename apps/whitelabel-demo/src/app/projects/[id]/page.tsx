@@ -134,7 +134,7 @@ function ProjectHome() {
               agents={agents}
               value={agent}
               onChange={setAgent}
-              defaultName={config?.open_code_default_agent}
+              defaultName={config?.runtime_default_agent}
             />
             {templateList.length > 1 && (
               <Select value={template} onValueChange={setTemplate}>

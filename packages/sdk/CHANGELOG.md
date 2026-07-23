@@ -6,14 +6,46 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+
+- `useModelPicker` (`@kortix/sdk/react`) — the unified model-first picker
+  view-model. Folds the catalog-vs-harness fork (`agentModelPolicy`) into one
+  shape (`ModelPickerViewModel`/`ModelPickerGroup`/`ModelPickerItem`) so a
+  consuming component never branches on harness; pure derivation over the
+  existing `useComposerCapabilities`/`useComposerModelCatalog`/
+  `useHarnessConnections` hooks, plus a live ACP session's own advertised
+  config options when present. `buildModelPickerViewModel` is exported
+  alongside it as the pure, fixture-testable projection.
+- `clearOpenPrompts` (`@kortix/sdk/acp`) — supersedes every open ACP prompt in
+  reducer state the same way a `session/cancel` would, without touching
+  `envelopes`/`chatItems`/`dedupeKeys`. Backs `AcpSession`'s persisted-busy
+  reload-recovery wedge guard; additive export.
+- `packages/sdk/src/acp/README.md` — the ACP protocol/transport reference:
+  the 3-identity model, the session-scoped transport and daemon bridge
+  contract, the shared `sse-core.ts` SSE parser and its three consumers, the
+  durable envelope-log laws (including the honest DISC-05 open exception),
+  the `AcpSession` store, and the OpenCode-wire deprecation pointer.
+- Project branch responses now expose the current caller's effective session
+  base ref (project or group default), and group-grant mutations can set or
+  clear an optional `default_base_ref`. Existing fields and call signatures
+  remain compatible.
 - `getProjectModelPicker()` plus `kortix.projects.modelPicker` and
-  `kortix.project(id).modelPicker()` for the compact, connection-aware selector
-  catalog; the existing `llmCatalog` remains the complete runtime catalog.
+  `kortix.project(id).modelPicker()` expose the compact, connection-aware
+  selector catalog; the existing `llmCatalog` remains the complete runtime
+  catalog.
 - Typed GitHub repository branch discovery through
   `kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`,
-  including GitHub's default branch and branch protection metadata.
+  including GitHub's default branch and branch-protection metadata.
 - The root entry `@kortix/sdk` is now canonical: it exports the whole
-  framework-free surface (client, session, turns, files, event stream, errors).
+  framework-free surface (platform client, ACP client/projections, session,
+  turns, files, and errors).
+- `AcpClient`, `useAcpSession`, and the canonical ACP-only `useSession()`
+  lifecycle: initialize, new/load, prompt/cancel, config options, permission and
+  question responses, session-scoped SSE, replay, and raw durable transcripts.
+- Harness-neutral ACP chat/tool/plan/context/usage/pending-prompt projections
+  shared by web, mobile, and headless consumers.
+- React Native automatically consumes live ACP state by polling the durable
+  transcript because its fetch implementation does not expose incremental SSE
+  response bodies.
 - CDN builds: a minified ESM bundle (`dist/kortix.esm.min.js`) and an IIFE
   exposing `window.Kortix` (`dist/kortix.global.js`), wired via
   `publishConfig`'s `browser`/`unpkg`/`jsdelivr` fields. Usable from a
@@ -22,21 +54,96 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
 
 ### Deprecated
-- The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
-  `/event-stream`, the stores, …). They still work. Import from the root.
-- `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
-  `KortixMasterProject`. The platform's `KortixProject` (from the root) is
-  unchanged and keeps its name.
+
+- The remaining legacy subpaths (`/projects-client`, `/turns`, `/files`,
+  `/session`, the stores, …). They still work. Import from the root.
+- The daemon-project `KortixProject` alias — renamed to `KortixMasterProject`.
+  The platform's `KortixProject` (from the root) is unchanged and keeps its name.
+- The OpenCode-wire projection stack (`transcript.ts`'s `formatTranscript` /
+  `TranscriptOptions` / `SessionInfo` / `MessageWithParts` /
+  `DEFAULT_TRANSCRIPT_OPTIONS`; `core/turns/classify.ts`'s `classifyPart` /
+  `classifyTurn`; `core/turns/view-model.ts`'s `toolViewModel`;
+  `core/turns/tool-registry.ts`'s `toolInfo`; `react/chat/use-chat-turns.ts`'s
+  `useChatTurns` / `TurnView`) — superseded by the ACP projection layer
+  (`acpTranscriptMarkdown`/`acpTranscriptHtml`/`projectAcpChatItems`). JSDoc
+  tags only; every export keeps working (`apps/whitelabel-demo`'s chat rendering
+  and `apps/web`'s transcript-export modal still depend on it directly;
+  `apps/mobile` uses a hand-forked local copy, and `?oc` deep-links are
+  unrelated to this stack — see the WS3-P3-a consumer inventory). A golden
+  parity harness (`core/turns/__fixtures__/opencode-wire-mixed.json` + three
+  captured golden outputs, asserted by `transcript.golden.test.ts`) now pins
+  current output so a future removal has a contract to satisfy or explicitly
+  break against. Removal itself is deferred to a future cycle.
 
 ### Fixed
+
+- Native ACP `session/load` history replay no longer appears as duplicate
+  user/assistant turns after reload or reconnect. The durable envelope log
+  remains lossless; only semantic chat/context/transcript/export projections
+  classify load-scoped update notifications as bootstrap history. `AcpSession`
+  applies the same rule to live SSE replay emitted while the load RPC is still
+  in flight, so the active page does not show a transient extra copy.
+- `session/load` replay frames that arrive AFTER the load response row — the
+  API bridge's split SSE/POST channels let the response overtake the
+  still-persisting replay stream, so the load-window rule above cannot bracket
+  them — are now recognized by content identity instead of ordering, covering
+  every harness replay shape: same-id re-walks (claude paragraph fragments,
+  opencode part re-delivery) via a per-stream prefix-walk cursor that may only
+  start when the latest load postdates the stream's last growth; new-id
+  consolidated chunks (codex `item-N`) via whitespace-trimmed full-text match
+  against a finished same-role stream; and id-less complete messages (pi) via
+  trimmed full-text match against an existing same-role chat item. All checks
+  require a `session/load` to have been folded, so never-reconnected sessions
+  render exactly as before.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient
   `502`/`503`/`504` responses on idempotent reads (`GET`/`HEAD`) up to two times
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
+- The cloud API's ACP SSE proxy (`apps/api/src/projects/lib/acp-sse-proxy.ts`)
+  and the headless ACP engine
+  (`apps/api/src/projects/session-lifecycle/headless-acp.ts`) now both consume
+  the SDK's shared `sse-core.ts` block parser instead of their own hand-rolled
+  parsing, fixing two latent defects the consolidation surfaced: the proxy
+  could silently drop or misparse a block whose `\r\n\r\n` terminator split
+  across a chunk boundary (no CRLF holdback), and the headless engine could
+  kill an entire prompt/response cycle on a single malformed SSE payload (no
+  poison-event tolerance).
+
+### Removed
+
+- Kortix application/public SDK dependency on `@opencode-ai/sdk`, the OpenCode
+  HTTP runtime client, global event stream, OpenCode session mapping, and
+  OpenCode-named React hooks/stores. OpenCode remains supported only as one ACP
+  harness behind the same protocol as Claude Code, Codex, and Pi.
 
 ### Internal
+
+- `acp/sse-core.ts` extracted from `AcpClient`'s previously module-private
+  `consumeSse` (`createSseBlockParser`, `isDeliverableSseBlock`,
+  `isAcpResponseEnvelope`) — behavior-preserving, parity-pinned before and
+  after extraction. Now the one SSE block parser shared by the SDK client,
+  the cloud API's SSE proxy, and the headless ACP engine (previously each
+  maintained its own copy). Additive runtime/type exports.
+- `AcpSession` (`acp/session.ts`) recovers from a reload mid-turn:
+  bootstrap-from-history already surfaced a persisted, unanswered
+  `session/prompt` as `turnState.busy`; a new signal-based wedge guard
+  (`clearStalePersistedBusy`, triggered by a terminal bootstrap failure or
+  the live stream reaching connection state `'failed'` — never a wall-clock
+  timeout) now clears that stale busy state when the turn is provably dead,
+  instead of leaving it wedged indefinitely. A harness that dies without
+  either signal ever surfacing is a stated residual case, not silently
+  covered — `send()`/`cancel()` already supersede persisted-only busy
+  regardless.
+- Bounded history/dedupe growth: `AcpSession`'s internal `historyOrdinals`
+  (an unbounded per-row `Set<number>`) is now a single
+  `historyHighWaterMark` scalar, sound because transcript ordinals are a
+  strictly-increasing identity column and history is always replayed from
+  the full transcript. The reducer's `dedupeKeys` (a public-function-facing
+  structure) instead uses a bounded 256-entry recency window, since an
+  external caller can feed it out-of-order rows a bare high-water mark could
+  misclassify.
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.
 - A bare-global tripwire (`process`/`window`/`document`/`localStorage`/
@@ -96,7 +203,7 @@ domains promoted into the facade.
     `tierConfigurations` (read-only entitlement/usage surface), plus a curated
     mutation surface: `billing.checkout.{createSession, confirmSession}`,
     `billing.subscription.{createPortalSession, cancel, reactivate,
-    scheduleDowngrade, cancelScheduledChange, prorationPreview}`,
+scheduleDowngrade, cancelScheduledChange, prorationPreview}`,
     `billing.credits.{purchase, autoTopupSettings, configureAutoTopup}`.
   - `project(id).marketplace` / `.registry` — install/list/updates/update/
     updateAll/remove for a catalog item on a project's default branch.
@@ -143,7 +250,7 @@ domains promoted into the facade.
   are now real classes (`instanceof`-able, enumerable `message`, `name`/shape
   preserved for legacy string-sniffers) instead of ad-hoc
   `Object.create(Error.prototype)` objects — and every layer (`backendApi` /
-  `platformFetch`/`authenticatedFetch`, the files client, the opencode client,
+  `platformFetch`/`authenticatedFetch`, the files client, the runtime client,
   `ensureReady()`) now throws/returns the SAME classes instead of duck-typed
   shapes. `BillingError`/`RequestTooLargeError` + their helpers
   (`parseBillingError`, `isBillingError`, `formatBillingErrorForUI`) are

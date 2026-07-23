@@ -114,6 +114,14 @@ assign('retired', [
   'integration_run', 'integration_request', 'integration_exec',
 ]);
 
+/** The part's raw `state.status` — same idiom `derive-panels.ts`'s private
+ * `statusOf` and `group-steps.ts` read inline. Exported here (rather than
+ * duplicated again) because `easy-panel.tsx` needs it too, to count
+ * completed 'run'-family calls for the ports-refetch trigger (W1). */
+export function toolPartStatus(part: ToolPart): string | undefined {
+  return (part.state as { status?: string } | undefined)?.status;
+}
+
 export function familyForTool(toolName: string): StepFamily | 'hidden' {
   const n = normalizeName(toolName);
   if (HIDDEN.has(n)) return 'hidden';

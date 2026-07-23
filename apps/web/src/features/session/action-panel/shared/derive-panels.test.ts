@@ -1,6 +1,6 @@
 import type { ToolPart } from '@/ui';
 import { describe, expect, it } from 'bun:test';
-import { deriveContext, deriveOutputs } from './derive-panels';
+import { deriveContext, deriveOutputs, isSyntheticShowPart } from './derive-panels';
 
 function part(
   tool: string,
@@ -529,6 +529,50 @@ describe('deriveContext', () => {
     const { tools } = deriveContext([part('bash', { command: 'ls' }, { status: 'error' })]);
     expect(tools).toEqual([]);
   });
+
+  // ─── W4 / W3 Mechanism 1: the tools bucket used to dedup by the *humanized
+  // label*, not by identity — so two genuinely different tools that happen to
+  // share a leaf name collapsed into one chip, hiding one behind the other.
+  // Dedup by the tool's real identity instead. ──────────────────────────────
+  it('keeps two distinct tools that humanize to the same label as separate chips', () => {
+    const { tools } = deriveContext([
+      part('mcp__linear__create_issue', { title: 'Bug' }),
+      part('mcp__github__create_issue', { title: 'Bug' }),
+    ]);
+    // Both humanize to "Create Issue" — but they are different tools and must
+    // not be merged (one's calls would ride, mislabeled, on the other's chip).
+    expect(tools).toHaveLength(2);
+    expect(new Set(tools.map((t) => t.callID)).size).toBe(2);
+  });
+
+  it('still collapses repeated calls to the SAME tool into one chip carrying every call', () => {
+    const { tools } = deriveContext([
+      part('bash', { command: 'ls' }),
+      part('bash', { command: 'pwd' }),
+      part('bash', { command: 'whoami' }),
+    ]);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].label).toBe('Bash');
+    // Every call rides along so the card's count badge reads "Bash · 3".
+    expect(tools[0].parts).toHaveLength(3);
+  });
+
+  // ─── W4 end-to-end (real codex shape, session `8023ee8f…`): once the SDK
+  // stops misreading `write_stdin` as a file edit, it arrives here with its
+  // own identity (family `other`) and must surface as its own visible chip —
+  // NOT be dropped like an edit, and NOT pollute files. This is the 44% of
+  // codex tool volume W3 measured as invisible on both cards. ───────────────
+  it('surfaces a write_stdin (PTY-poll) tool as its own Context chip, never as a dropped edit', () => {
+    const { files, web, tools } = deriveContext([
+      part('write_stdin', { name: 'write_stdin', arguments: { session_id: 3700 } }),
+      part('write_stdin', { name: 'write_stdin', arguments: { session_id: 7377 } }),
+    ]);
+    expect(files).toEqual([]);
+    expect(web).toEqual([]);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].label).toBe('Write Stdin');
+    expect(tools[0].parts).toHaveLength(2);
+  });
 });
 
 describe('deriveOutputs — running apps', () => {
@@ -784,6 +828,112 @@ describe('deriveOutputs — last-write-wins + normalized keys (W11)', () => {
       partOf('write', 'c2', { filePath: 'report.md' }),
     ];
     expect(deriveOutputs(parts)).toHaveLength(1);
+  });
+});
+
+describe('deriveOutputs — synthetic (daemon-discovered) show parts', () => {
+  // The sandbox daemon emits its own `show` tool calls for files it discovers
+  // on disk, marked via `part.state.metadata.acp._meta.kortix.synthetic`. A
+  // machine finding a file on disk is not the same signal as the agent
+  // handing it to the user — it must never rank or dedupe like an explicit
+  // `show`.
+  const SYNTHETIC_METADATA = {
+    acp: { _meta: { kortix: { synthetic: 'filesystem-delta' } } },
+  };
+
+  it('isSyntheticShowPart recognizes the daemon marker and ignores a plain show', () => {
+    const synthetic = part('show', { path: '/workspace/found.txt' }, {
+      metadata: SYNTHETIC_METADATA,
+    });
+    const explicit = part('show', { path: '/workspace/made.txt' });
+    expect(isSyntheticShowPart(synthetic)).toBe(true);
+    expect(isSyntheticShowPart(explicit)).toBe(false);
+  });
+
+  it('a synthetic show yields a row with shown falsy; a normal show still yields shown: true', () => {
+    const synthetic = part('show', { path: '/workspace/found.txt' }, {
+      metadata: SYNTHETIC_METADATA,
+    });
+    const explicit = part('show', { path: '/workspace/made.txt' });
+    const out = deriveOutputs([synthetic, explicit]);
+
+    const bySynthetic = out.find((o) => o.name === 'found.txt');
+    const byExplicit = out.find((o) => o.name === 'made.txt');
+    expect(bySynthetic?.shown).toBeFalsy();
+    expect(byExplicit?.shown).toBe(true);
+  });
+
+  it('a workspace-recovery synthetic marker (one-shot show on session/load) behaves identically to filesystem-delta: shown falsy', () => {
+    // The daemon's OutputScanTracker emits this marker for its one-shot
+    // recovery scan (apps/kortix-sandbox-agent-server/src/acp/output-scan.ts)
+    // instead of the per-prompt `filesystem-delta` marker. isSyntheticShowPart
+    // is presence-based on `_meta.kortix.synthetic` (any value), so both
+    // markers must be treated the same here — this pins that.
+    const recovery = part('show', { path: '/workspace/recovered.txt' }, {
+      metadata: { acp: { _meta: { kortix: { synthetic: 'workspace-recovery' } } } },
+    });
+    const explicit = part('show', { path: '/workspace/made.txt' });
+    const out = deriveOutputs([recovery, explicit]);
+
+    expect(isSyntheticShowPart(recovery)).toBe(true);
+    const byRecovery = out.find((o) => o.name === 'recovered.txt');
+    const byExplicit = out.find((o) => o.name === 'made.txt');
+    expect(byRecovery?.shown).toBeFalsy();
+    expect(byExplicit?.shown).toBe(true);
+  });
+
+  it('an explicit show wins over a synthetic rediscovery of the same path — explicit first', () => {
+    const explicitShow = part('show', {
+      path: '/workspace/report.pdf',
+      title: 'Q3 Report',
+    });
+    const syntheticShow = part(
+      'show',
+      { path: '/workspace/report.pdf' },
+      { metadata: SYNTHETIC_METADATA },
+    );
+
+    const out = deriveOutputs([explicitShow, syntheticShow]);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe('Q3 Report');
+    expect(out[0].shown).toBe(true);
+  });
+
+  it('an explicit show wins over a synthetic rediscovery of the same path — synthetic first', () => {
+    const syntheticShow = part(
+      'show',
+      { path: '/workspace/report.pdf' },
+      { metadata: SYNTHETIC_METADATA },
+    );
+    const explicitShow = part('show', {
+      path: '/workspace/report.pdf',
+      title: 'Q3 Report',
+    });
+
+    const out = deriveOutputs([syntheticShow, explicitShow]);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe('Q3 Report');
+    expect(out[0].shown).toBe(true);
+  });
+
+  it('a synthetic re-occurrence of an explicitly shown path in the latest run still marks the surviving row fresh: "updated"', () => {
+    const explicitShow = part('show', {
+      path: '/workspace/report.pdf',
+      title: 'Q3 Report',
+    });
+    const syntheticShow = part(
+      'show',
+      { path: '/workspace/report.pdf' },
+      { metadata: SYNTHETIC_METADATA },
+    );
+
+    const out = deriveOutputs([explicitShow, syntheticShow], {
+      latestRun: new Set([syntheticShow.callID]),
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].fresh).toBe('updated');
+    expect(out[0].shown).toBe(true);
+    expect(out[0].title).toBe('Q3 Report');
   });
 });
 

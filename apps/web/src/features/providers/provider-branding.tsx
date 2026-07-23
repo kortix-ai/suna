@@ -38,6 +38,7 @@ export const PROVIDER_NOTES: Record<string, string> = {
 const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },
   openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
+  pi: { src: '/provider-icons/pi.svg', fallback: 'PI' },
   codex: { src: '/provider-icons/openai.svg', fallback: 'GPT' },
   opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
   kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
@@ -123,7 +124,7 @@ export function ProviderLogo({
   providerID,
   name,
   className,
-  size = 'default',
+  size = 'large',
 }: {
   providerID: string;
   name?: string;
@@ -135,7 +136,7 @@ export function ProviderLogo({
   const sizeClasses = {
     small: 'size-7',
     default: 'size-9',
-    large: 'size-11',
+    large: 'size-9',
   };
 
   const iconSizes = {
@@ -147,7 +148,7 @@ export function ProviderLogo({
   return (
     <span
       className={cn(
-        'flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 shrink-0',
+        'flex shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800',
         sizeClasses[size],
         className,
       )}
@@ -164,7 +165,7 @@ export function ProviderLogo({
       ) : (
         <span
           className={cn(
-            'font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300',
+            'font-semibold tracking-wide text-zinc-600 uppercase dark:text-zinc-300',
             size === 'small' ? 'text-xs' : size === 'large' ? 'text-xs' : 'text-xs',
           )}
         >

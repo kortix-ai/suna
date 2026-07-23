@@ -10,7 +10,9 @@ const GENERIC_DATA_PATHS = [
   'platform/sandbox-env.ts',
   'projects/lib/sandbox-daemon-ready.ts',
   'projects/lib/sandbox-env-sync.ts',
-  'projects/opencode-mapping.ts',
+  'projects/lib/session-runtime-context.ts',
+  'projects/routes/acp.ts',
+  'projects/runtime-inspection.ts',
   'projects/routes/shared.ts',
   'projects/sandbox-busy-probe.ts',
 ];

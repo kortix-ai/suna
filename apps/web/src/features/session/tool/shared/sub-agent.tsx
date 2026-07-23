@@ -5,7 +5,7 @@ import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getChildSessionError, getRetryInfo, getRetryMessage } from '@/ui';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import { useEffect, useMemo, useState } from 'react';
 
 export function SubAgentActivity({

@@ -20,7 +20,7 @@ import {
   selectionToIntent,
 } from '@/features/workspace/shared/sharing-picker';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
 import { isBillingEnabled } from '@/lib/config';
 import {
   listProjectSecrets,

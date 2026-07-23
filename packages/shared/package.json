@@ -10,6 +10,8 @@
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/upload-limits.ts",
     "./runtime-versions": "./src/runtime-versions.ts",
+    "./harnesses": "./src/harnesses.ts",
+    "./auth-providers": "./src/auth-providers.ts",
     "./sandbox": "./src/sandbox/index.ts"
   },
   "scripts": {

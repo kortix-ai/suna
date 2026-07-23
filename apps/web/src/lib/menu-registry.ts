@@ -624,13 +624,13 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'providers-quick',
-    label: 'LLM Providers',
+    label: 'Connect a model',
     icon: Bot,
     group: 'quickActions',
     subGroup: 'security',
     showIn: ['rightSidebar'],
     kind: 'action',
-    actionId: 'openProviderModal',
+    actionId: 'connectModel',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -787,13 +787,14 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'llm-providers',
-    label: 'LLM Providers',
+    label: 'Connect a model',
     icon: Bot,
     group: 'settingsPages',
     showIn: ['commandPalette'],
     kind: 'action',
-    actionId: 'openProviderModal',
-    keywords: 'llm providers models anthropic openai openrouter google groq xai',
+    actionId: 'connectModel',
+    requiresProject: true,
+    keywords: 'llm providers models connect anthropic openai openrouter google groq xai',
   },
   // ──────────────────────────────────────────────────────────────────────────
   // PREFERENCES — open settings modal to a tab

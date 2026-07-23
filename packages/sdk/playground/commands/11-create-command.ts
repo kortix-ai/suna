@@ -15,7 +15,7 @@ import {
 } from "../_shared";
 
 const COMMAND_NAME = "sdk-test-command";
-const COMMAND_DIR = "/workspace/.kortix/opencode/commands";
+const COMMAND_DIR = "/workspace/.opencode/commands";
 const COMMAND_PATH = `${COMMAND_DIR}/${COMMAND_NAME}.md`;
 const COMMAND_MD = `---
 description: Throwaway command created by the SDK playground to prove command files round-trip.

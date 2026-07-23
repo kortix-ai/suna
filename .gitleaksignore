@@ -38,3 +38,17 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # Historical version of this file (commit 791a47c8) whose comment quoted the
 # flagged value before being reworded — same self-reference as 619d83ee.
 791a47c8930ef3a8d2daa30f971e4d48535274bc:.gitleaksignore:generic-api-key:29
+
+# False positive: the generic-api-key rule matched the `key:` field of an ACP
+# turn-group assertion whose VALUE is the literal group key 'reasoning-thought-1'
+# (a deterministic grouping id in the test, not a credential). Reviewed 2026-07-18.
+ad5076c2d7c6a488349e8283afc39e6c3caaff54:apps/web/src/features/session/acp-turn-grouping.test.ts:generic-api-key:122
+
+# Historical localhost diagnostic token. The recorded request returned 401
+# "Invalid Kortix token". The value was not a usable credential.
+7ecff87449c0154763543f46c348a5100aff4e68:docs/specs/2026-07-21-codex-billing-leak-verification.md:curl-auth-header:92
+
+# False positive: this unit test generates an ephemeral Ed25519 keypair at
+# runtime and assigns its exported private key to the in-memory config. The
+# source contains no private key value. Reviewed 2026-07-23.
+18f089fa8b82d86b24822a8d06920030d7de27b7:apps/api/src/__tests__/unit-code-storage-git-backend.test.ts:generic-api-key:147

@@ -7,7 +7,7 @@
       "name": "hello-skill",
       "type": "registry:skill",
       "title": "Hello Skill",
-      "description": "A minimal example skill, installed into .kortix/opencode/skills/hello/.",
+      "description": "A minimal example skill, installed into .opencode/skills/hello/.",
       "categories": ["example"],
       "files": [
         {

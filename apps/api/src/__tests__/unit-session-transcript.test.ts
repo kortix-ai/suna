@@ -1,42 +1,36 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// When set, `sandboxOpencodeEndpoint` throws this error instead of resolving —
-// simulates a Daytona 429 `ThrottlerException` / archived box on preview-link
-// resolution (the post-#3567 recurrence path).
-let endpointThrow: Error | null = null;
-let endpointResult: { url: string; headers: Record<string, string> } | null = {
-  url: 'http://daemon.local',
-  headers: {},
+type StoredRow = {
+  ordinal: number;
+  direction: 'client_to_agent' | 'agent_to_client';
+  streamEventId: string | null;
+  envelope: Record<string, unknown>;
+  createdAt: Date;
 };
-let ensuredPin: string | null = 'oc-root-1';
-let ensuredReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 
-mock.module('../projects/opencode-mapping', () => ({
-  sandboxOpencodeEndpoint: async () => {
-    if (endpointThrow) throw endpointThrow;
-    return endpointResult;
-  },
-  ensureOpencodeSessionPin: async () => ({
-    pin: ensuredPin,
-    changed: false,
-    reason: ensuredReason,
-    sessions: [],
-  }),
-}));
+let transcriptRows: StoredRow[] = [];
+let selectCalls = 0;
 
 mock.module('../shared/db', () => ({
   db: {
-    select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [] }) }) }) }),
+    select: () => {
+      selectCalls += 1;
+      return {
+        from: () => ({
+          where: () => ({
+            orderBy: async () => transcriptRows,
+          }),
+        }),
+      };
+    },
   },
 }));
 
 const { buildSessionTranscriptDigest } = await import('../projects/lib/session-transcript');
 
-afterEach(() => {
-  endpointThrow = null;
-  endpointResult = { url: 'http://daemon.local', headers: {} };
-  ensuredPin = 'oc-root-1';
-  ensuredReason = 'unchanged';
+beforeEach(() => {
+  transcriptRows = [];
+  selectCalls = 0;
 });
 
 function session(overrides: Record<string, unknown> = {}) {
@@ -44,68 +38,48 @@ function session(overrides: Record<string, unknown> = {}) {
     sessionId: 'session-1',
     projectId: 'project-1',
     accountId: 'account-1',
-    opencodeSessionId: 'oc-root-1',
     status: 'running',
-    // Embeds the external id (/p/<externalId>/) so resolveSessionExternalId
-    // short-circuits without a DB hit.
-    sandboxUrl: 'https://preview.kortix.com/v1/p/sandbox-ext-1/8000',
-    metadata: {},
+    metadata: {
+      runtime_protocol: 'acp',
+      acp_session_id: 'acp-session-1',
+    },
     ...overrides,
   } as any;
 }
 
 describe('buildSessionTranscriptDigest', () => {
-  test('degrades to an unavailable digest when endpoint resolution throws a Daytona 429 (post-#3567 regression)', async () => {
-    // Regression: sandboxOpencodeEndpoint resolves the Daytona preview link,
-    // which throws DaytonaRateLimitError / ThrottlerException when the shared
-    // org is throttled. The transcript read must NOT 500 / surface an unhandled
-    // Sentry event — it must degrade to an unavailable digest (sibling of the
-    // #3567 title-sync fix; this is the post-#3567 call site that was left
-    // unguarded).
-    endpointThrow = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
-    const result = await buildSessionTranscriptDigest({
-      session: session(),
-      projectId: 'project-1',
-      accountId: 'account-1',
-      userId: 'user-1',
-      limit: 40,
-      maxChars: 700,
-    });
-    expect(result.available).toBe(false);
-    expect(result.message_count).toBe(0);
-    expect(result.opencode_session_id).toBe('oc-root-1');
-    // The provider error is surfaced as a controlled reason (NOT propagated),
-    // so the route returns a 200 unavailable digest instead of 500ing.
-    expect(result.reason).toContain('could not reach sandbox');
-    expect(result.reason).toContain('ThrottlerException');
-  });
-
-  test('degrades to unavailable when the sandbox has no service key', async () => {
-    endpointResult = null;
-    const result = await buildSessionTranscriptDigest({
-      session: session(),
-      projectId: 'project-1',
-      accountId: 'account-1',
-      userId: 'user-1',
-      limit: 40,
-      maxChars: 700,
-    });
-    expect(result.available).toBe(false);
-    expect(result.reason).toContain('service key');
-  });
-
-  test('returns a real transcript when the daemon answers', async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(
-        JSON.stringify([
-          {
-            info: { role: 'assistant', time: { created: 1000, completed: 2000 } },
-            parts: [{ type: 'text', text: 'hello' }],
+  test('projects persisted ACP envelopes without calling a harness-native API', async () => {
+    transcriptRows = [
+      {
+        ordinal: 1,
+        direction: 'client_to_agent',
+        streamEventId: null,
+        envelope: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'session/prompt',
+          params: { prompt: [{ type: 'text', text: 'Fix it' }] },
+        },
+        createdAt: new Date('2026-07-13T12:00:00.000Z'),
+      },
+      {
+        ordinal: 2,
+        direction: 'agent_to_client',
+        streamEventId: 'evt-2',
+        envelope: {
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'Done' },
+            },
           },
-        ]),
-        { status: 200 },
-      ),
-    ) as unknown as typeof fetch;
+        },
+        createdAt: new Date('2026-07-13T12:00:01.000Z'),
+      },
+    ];
+
     const result = await buildSessionTranscriptDigest({
       session: session(),
       projectId: 'project-1',
@@ -114,8 +88,35 @@ describe('buildSessionTranscriptDigest', () => {
       limit: 40,
       maxChars: 700,
     });
+
     expect(result.available).toBe(true);
-    expect(result.message_count).toBe(1);
-    expect(result.messages[0].text).toBe('hello');
+    expect(result.runtime_session_id).toBe('acp-session-1');
+    expect(result.message_count).toBe(2);
+    expect(result.messages.map((message) => [message.role, message.text])).toEqual([
+      ['user', 'Fix it'],
+      ['assistant', 'Done'],
+    ]);
+    expect(selectCalls).toBe(1);
+    expect('opencode_session_id' in result).toBe(false);
+  });
+
+  test('returns an explicit unavailable digest for a non-ACP legacy session', async () => {
+    const result = await buildSessionTranscriptDigest({
+      session: session({ metadata: {} }),
+      projectId: 'project-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+      limit: 40,
+      maxChars: 700,
+    });
+
+    expect(result).toEqual({
+      available: false,
+      reason: 'Transcript export is only available for ACP sessions.',
+      runtime_session_id: null,
+      message_count: 0,
+      messages: [],
+    });
+    expect(selectCalls).toBe(0);
   });
 });

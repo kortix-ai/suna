@@ -6,9 +6,8 @@ import { Terminal as XTerm, ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
+import { getPtyWebSocketUrl, useUpdatePty, type Pty } from '@/hooks/runtime/use-runtime-pty';
 import { invalidateTokenCache } from '@/lib/auth-token';
-import type { Pty } from '@kortix/sdk/opencode-client';
 import { classifyPtyClose, shouldExpirePtyConnect } from './pty-connection';
 
 // ============================================================================
@@ -440,7 +439,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       ref={terminalRef}
       className={cn(
         'overflow-hidden',
-        'bg-[#0f0f0f]',
+        // Terminal chrome is always dark regardless of app theme (matches
+        // terminalTheme.background above, and the xterm ANSI palette which
+        // assumes a dark canvas) — the fixed `black` scale, not a raw hex.
+        'bg-black',
         'px-3 py-2',
         hidden && 'invisible pointer-events-none',
         className,

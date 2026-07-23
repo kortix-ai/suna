@@ -27,19 +27,13 @@ import { useEffect, useRef, useState } from 'react';
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
  * for resumes, and dead-center in the side panel while a fresh session boots.
- * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
+ * All the heavy lifting (provision / wake / Runtime readiness + pin) is
  * server-side behind POST /sessions/:id/start; this just reports the real stage.
  *
  * Visual: super-minimal, perfectly centered. A single kortix-green pulse, the
  * heading, a clean stepped checklist (no connector rails), and one quiet hint.
  */
 const LOADER_DELAY_MS = 100;
-/**
- * How long we sit in the backend `starting` stage before softly advancing from
- * "Preparing your workspace" to "Starting the agent". Both happen within that
- * one backend stage (clone → OpenCode boot), so the advance reflects real order.
- */
-const STARTING_SUBSTEP_MS = 5_000;
 /** After this long, swap the footer copy to set expectations for a cold start. */
 const SLOW_AFTER_MS = 15_000;
 /**
@@ -70,47 +64,47 @@ interface Step {
 type BootStepVariant = 'default' | 'stepper';
 
 const STEPS: Step[] = [
-  { label: 'Provisioning your computer', description: 'Allocating a secure sandbox' },
-  { label: 'Preparing your workspace', description: 'Cloning your project files' },
+  { label: 'Starting your computer', description: 'Provisioning or waking a secure runtime' },
+  { label: 'Preparing your workspace', description: 'Restoring or cloning project files' },
   { label: 'Starting the agent', description: 'Booting the runtime and tools' },
   { label: 'Connecting', description: 'Linking up your session' },
 ];
 
 /**
- * Resolve which step is CURRENTLY active from the backend stage plus how long
- * we've been in it. The index is the floor we KNOW we're at — earlier steps are
- * genuinely complete, later ones haven't started.
+ * Resolve the current visible step from the API's concrete start reason.
+ * Unknown reasons fall back to the coarse stage. Time never advances a step.
  */
-function activeStep(stage: SessionStartStage, msInStage: number): number {
+export function sessionBootStep(stage: SessionStartStage, reason?: string | null): number {
+  if (reason === 'runtime_waking' || reason === 'runtime_status_unknown') return 0;
+  if (reason === 'runtime_restoring_in_place' || reason === 'runtime_recovery_in_progress')
+    return 1;
+  if (
+    reason === 'runtime_recovered_in_place' ||
+    reason === 'acp_starting' ||
+    reason === 'acp_boot_error'
+  )
+    return 2;
+  if (reason === 'acp_ready') return 3;
   if (stage === 'provisioning') return 0;
-  if (stage === 'starting') return msInStage >= STARTING_SUBSTEP_MS ? 2 : 1;
+  if (stage === 'starting') return 1;
   return 3; // ready → the FE active-server switch + health poll ("connecting")
 }
 
 /**
- * The shared boot clock: a 1s tick that resolves the CURRENT active step from
- * the backend stage plus time-in-stage (so the `starting` soft-advance fires),
- * and exposes `now` for any caller-side elapsed/slow/stuck math. Both the side
- * panel loader and the inline thread checklist consume this, so the two always
- * report the same step.
+ * The shared boot clock resolves the active step from API state. Its 1s tick
+ * exists only for elapsed, slow-start, and restart actions.
  */
-function useBootProgress(stage: SessionStartStage): { active: number; now: number } {
+function useBootProgress(
+  stage: SessionStartStage,
+  reason?: string | null,
+): { active: number; now: number } {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
 
-  // Reset the per-stage clock whenever the backend stage changes, so the
-  // soft-advance measures time spent in the CURRENT stage (not since mount).
-  const stageEnteredAt = useRef(now);
-  const prevStage = useRef(stage);
-  if (prevStage.current !== stage) {
-    prevStage.current = stage;
-    stageEnteredAt.current = now;
-  }
-
-  return { active: activeStep(stage, now - stageEnteredAt.current), now };
+  return { active: sessionBootStep(stage, reason), now };
 }
 
 /**
@@ -182,7 +176,7 @@ function BootStepList({
     // activeStep), but clamp defensively so the row is always resolvable.
     const step = STEPS[Math.min(active, STEPS.length - 1)];
     return (
-      <div className="flex h-4 min-w-0 items-center">
+      <div className="flex min-w-0 items-center">
         <StepLabelShimmer key={step.label} label={step.label} />
       </div>
     );
@@ -218,7 +212,7 @@ function BootStepList({
               </StepperIndicator>
               <StepperSeparator className="bg-border group-data-[state=completed]/step:bg-kortix-green/40 m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-3" />
             </StepperItem>
-            <div className="flex h-4 min-w-0 items-center">
+            <div className="flex min-w-0 items-center">
               {current ? (
                 <StepLabelShimmer label={step.label} />
               ) : (
@@ -236,6 +230,7 @@ function BootStepList({
 
 export function SessionStartingLoader({
   stage = 'provisioning',
+  reason,
   /** Delay before the content fades in. The full-screen resume loader keeps the
    *  default so a warm open never flashes it; the side panel passes 0 because the
    *  user opened it deliberately and expects to see status immediately. */
@@ -251,6 +246,7 @@ export function SessionStartingLoader({
   variant = 'stepper',
 }: {
   stage?: SessionStartStage;
+  reason?: string | null;
   delayMs?: number;
   projectId?: string;
   sessionId?: string;
@@ -268,9 +264,9 @@ export function SessionStartingLoader({
     return () => clearTimeout(t);
   }, [delayMs]);
 
-  // The shared boot clock owns the 1s tick + per-stage soft-advance; `now` also
-  // drives the footer copy below (and the inline checklist reuses the same hook).
-  const { active, now } = useBootProgress(stage);
+  // The shared boot clock uses API state for progress. `now` drives only the
+  // elapsed fallback copy and restart action.
+  const { active, now } = useBootProgress(stage, reason);
   // A manual restart pushes the "stuck" clock back out so the button doesn't
   // reappear immediately while the fresh boot is still in progress.
   const clockStart = useRef(now);
@@ -354,12 +350,14 @@ export function SessionStartingLoader({
  */
 export function SessionBootChecklistInline({
   stage = 'provisioning',
+  reason,
   className,
 }: {
   stage?: SessionStartStage;
+  reason?: string | null;
   className?: string;
 }) {
-  const { active, now } = useBootProgress(stage);
+  const { active, now } = useBootProgress(stage, reason);
   const startRef = useRef(now);
   const elapsed = formatDuration(now - startRef.current);
   return (

@@ -3,42 +3,41 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
-import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import {
   detectManifestVersion,
   type ManifestVersion,
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
+import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
+import { CodingAgentsPanel } from '@/features/workspace/customize/sections/view/coding-agents-panel';
+import {
+  ACP_HARNESS_ICON_PROVIDER_ID,
+  ACP_HARNESS_LABELS,
+} from '@/features/workspace/customize/sections/view/runtime-profile-options';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
+import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import type { AcpHarness } from '@kortix/sdk/projects-client';
 import {
   type AgentGrantSet,
-  type ProjectConfigSummary,
   listConnectors,
   listProjectAccess,
   listProjectResourceGrants,
   listProjectSecrets,
+  type ProjectConfigSummary,
   setAgentScope,
-  updateProjectDefaultAgent,
 } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
+import { Bot, Check, Cpu, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
@@ -57,22 +56,35 @@ export function AgentsView({ projectId }: { projectId: string }) {
       emptyIcon={Bot}
       emptyTitle="No agents yet"
       emptyDescription="Create an agent to customize how sessions run."
-      emptyDocsHref="https://opencode.ai/docs/agents/"
+      emptyDocsHref="https://agentclientprotocol.com/get-started/agents"
       emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
       select={(config) => config.agents}
-      renderContext={(config) => (
-        <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
-      )}
+      // Coding agents is project setup, not an agent — so it's a pinned rail
+      // row, not a strip above the split. As a strip it ate the top half of the
+      // viewport and pushed the agent list (the thing this section is FOR)
+      // below the fold.
+      railEntry={{
+        label: 'Coding agents',
+        icon: Cpu,
+        // Short enough to survive the 264px rail without an ellipsis, and it
+        // answers "what IS a coding agent" by example for anyone who doesn't
+        // already know.
+        hint: 'Claude Code, Codex & more',
+        render: (config) => (
+          <CodingAgentsPanel projectId={projectId} config={config} canWrite={canWrite} />
+        ),
+      }}
       renderTriggerLabel={(agent) => agent.name}
-      className=' p-4  lg:py-0'
+      className="p-4 lg:py-0"
       renderRowTrailing={(agent, config) => (
         <>
+          <AgentHarnessBadge harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="muted" size="xs">
               {formatMode(agent.mode)}
             </Badge>
           ) : null}
-          {config.open_code_default_agent === agent.name ? (
+          {config.runtime_default_agent === agent.name ? (
             <StarSolid className="text-kortix-orange size-4 shrink-0 fill-current" />
           ) : null}
         </>
@@ -80,6 +92,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
+          <AgentHarnessBadge harness={agent.harness} size="sm" />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -87,14 +100,14 @@ export function AgentsView({ projectId }: { projectId: string }) {
           ) : null}
           {agent.source ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
-              {agent.source === 'opencode'
-                ? 'OpenCode'
-                : detectManifestVersion(config.manifest_raw) === 2
+              {agent.source === 'runtime'
+                ? 'Runtime'
+                : detectManifestVersion(config.manifest_raw) >= 2
                   ? 'kortix.yaml'
                   : 'kortix.toml'}
             </Badge>
           ) : null}
-          {config.open_code_default_agent === agent.name ? (
+          {config.runtime_default_agent === agent.name ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
               <StarSolid className="text-kortix-orange size-3.5 shrink-0" />
               Default
@@ -127,65 +140,40 @@ export function AgentsView({ projectId }: { projectId: string }) {
   );
 }
 
-function DefaultAgentSelector({
-  projectId,
-  config,
-  canWrite,
+/**
+ * Which ACP harness this agent runs on — the harness icon + label, same
+ * presentation idiom the composer's `AgentSelector` uses for its own harness
+ * marks (`features/session/agent-selector.tsx`'s `HarnessIcon` +
+ * `harnessPresentation`). Reused here rather than imported: the composer
+ * lives in a different lane and keys its icon lookup off `KortixHarness`
+ * (the SDK's live-session harness id), while this row reads the manifest's
+ * resolved `agent.harness` directly — same four values, same marks
+ * (`ACP_HARNESS_ICON_PROVIDER_ID` / `ACP_HARNESS_LABELS`, the canonical
+ * `@kortix/shared` harness descriptor this file already pulls from for the
+ * per-agent runtime-profile picker in `agent-editor.tsx`).
+ *
+ * `null`/`undefined` (a legacy or Runtime-discovered agent with no resolved
+ * harness) renders nothing rather than a placeholder — never claim a harness
+ * that isn't actually known.
+ */
+function AgentHarnessBadge({
+  harness,
+  size = 'xs',
 }: {
-  projectId: string;
-  config: ProjectConfigSummary;
-  canWrite: boolean;
+  harness?: AcpHarness | null;
+  size?: 'xs' | 'sm';
 }) {
-  const queryClient = useQueryClient();
-  const isV2 = detectManifestVersion(config.manifest_raw) === 2;
-  const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
-  const current = config.open_code_default_agent;
-  const mutation = useMutation({
-    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
-    onSuccess: async (result) => {
-      successToast(`${result.default_agent} is now the project default`);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
-        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
-      ]);
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
-  });
-
-  if (!isV2 || availableAgents.length === 0 || !current) return null;
-
+  if (!harness) return null;
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-foreground text-sm font-medium">Default agent</p>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          New chats in this project start with this agent selected.
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-        <Select
-          value={current}
-          onValueChange={(agentName) => mutation.mutate(agentName)}
-          disabled={!canWrite || mutation.isPending}
-        >
-          <SelectTrigger
-            aria-label="Default agent"
-            className="w-48 shrink-0"
-            variant="popover"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {availableAgents.map((agent) => (
-              <SelectItem key={agent.name} value={agent.name}>
-                {agent.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
+    <Badge variant="outline" size={size} className="text-muted-foreground gap-1 font-medium">
+      <ProviderLogo
+        providerID={ACP_HARNESS_ICON_PROVIDER_ID[harness]}
+        name={ACP_HARNESS_LABELS[harness]}
+        size="small"
+        className="size-3 shrink-0 rounded-none bg-transparent dark:bg-transparent"
+      />
+      {ACP_HARNESS_LABELS[harness]}
+    </Badge>
   );
 }
 
@@ -240,8 +228,8 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
         ))}
       </div>
       <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        These members &amp; groups inherit this agent's declared secrets &amp; connectors
-        (below) as their own — usable in Secrets, sessions, and connector calls.
+        These members &amp; groups inherit this agent's declared secrets &amp; connectors (below) as
+        their own — usable in Secrets, sessions, and connector calls.
       </p>
     </div>
   );
@@ -261,7 +249,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
     staleTime: 20_000,
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
   const explicit = defaults.agentDefaults[agentName] ?? null;
@@ -349,7 +337,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
  * connectors it may call, which Kortix-CLI powers it has. Editors EDIT
  * secrets + connectors here (persisted straight to the manifest); everyone
  * else sees the read-only mirror. `kortix_cli` stays read-only (a sharper
- * escalation, manifest-only). Absent for OpenCode-discovered agents, which
+ * escalation, manifest-only). Absent for Runtime-discovered agents, which
  * aren't governed by the manifest.
  */
 function AgentScope({
@@ -362,7 +350,7 @@ function AgentScope({
   scope?: Agent['scope'];
 }) {
   // Pure prop-guard (no hooks) so the editable inner component can call hooks
-  // unconditionally — an OpenCode agent with no scope simply renders nothing.
+  // unconditionally — an Runtime agent with no scope simply renders nothing.
   if (!scope) return null;
   return <AgentScopeCard projectId={projectId} agentName={agentName} scope={scope} />;
 }
@@ -475,7 +463,10 @@ function AgentScopeCard({
       <div className="border-border/50 flex items-center justify-between gap-3 border-t pt-3">
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
           Members assigned to this agent inherit exactly these secrets &amp; connectors. Saved to{' '}
-          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>.
+          <span className="font-mono">
+            {manifestVersion && manifestVersion >= 2 ? 'kortix.yaml' : 'kortix.toml'}
+          </span>
+          .
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {dirty && (
@@ -514,7 +505,7 @@ function ScopeHeader({ manifestVersion }: { manifestVersion: ManifestVersion | n
       <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
       <span className="text-foreground/80 text-xs font-medium">Access scope</span>
       <Badge variant="muted" size="xs" className="font-mono">
-        {manifestVersion === 2 ? 'kortix.yaml agents:' : 'kortix.toml [[agents]]'}
+        {manifestVersion && manifestVersion >= 2 ? 'kortix.yaml agents:' : 'kortix.toml [[agents]]'}
       </Badge>
     </div>
   );

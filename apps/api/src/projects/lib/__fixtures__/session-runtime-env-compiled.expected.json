@@ -1,0 +1,17 @@
+{
+  "KORTIX_REPO_URL": "https://example.test/acme/repo.git",
+  "KORTIX_DEFAULT_BRANCH": "main",
+  "KORTIX_BASE_REF": "main",
+  "KORTIX_BRANCH_NAME": "sess-1",
+  "KORTIX_PROJECT_ID": "proj-1",
+  "KORTIX_SESSION_ID": "sess-1",
+  "KORTIX_SERVICE_PORT": "8000",
+  "KORTIX_AGENT_NAME": "claude",
+  "KORTIX_API_URL": "https://api.kortix.test/v1",
+  "KORTIX_INITIAL_PROMPT": "fix the bug",
+  "KORTIX_COMPILED_RUNTIME_PLAN": "{\"kind\":\"acp\",\"version\":3,\"defaultAgent\":\"claude\",\"runtimes\":{\"claude\":{\"name\":\"claude\",\"harness\":\"claude\",\"configDir\":\".claude\"}},\"agents\":{\"claude\":{\"name\":\"claude\",\"runtime\":\"claude\",\"harness\":\"claude\",\"nativeAgent\":null,\"enabled\":true,\"connectors\":\"none\",\"secrets\":\"none\",\"skills\":\"none\",\"kortixCli\":\"none\",\"workspace\":\"runtime\"}}}",
+  "KORTIX_RUNTIME_NAME": "claude",
+  "KORTIX_RUNTIME_HARNESS": "claude",
+  "KORTIX_RUNTIME_CONFIG_DIR": ".claude",
+  "KORTIX_RUNTIME_MODEL": "claude-opus-4.8"
+}

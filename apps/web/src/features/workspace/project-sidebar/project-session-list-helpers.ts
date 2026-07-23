@@ -13,10 +13,33 @@ export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [
   'provisioning',
 ];
 
-/** Whether the session list should keep polling — true while any session is
- *  still mid-provisioning (queued/branching/provisioning). */
+/**
+ * How long a freshly-created, still-untitled session keeps the list polling
+ * once it's past provisioning — long enough for the harness-emitted title
+ * (claude-agent-acp) or the first-prompt fallback (every other harness) to
+ * land, short enough that an abandoned/long-idle session doesn't poll
+ * forever. See ../../../../apps/api/src/projects/lib/acp-session-title.ts
+ * for the server-side write path this is waiting on.
+ */
+export const UNTITLED_SESSION_POLL_WINDOW_MS = 3 * 60 * 1000;
+
+/** Whether the session list should keep polling. True while any session is
+ *  still mid-provisioning (queued/branching/provisioning) — status alone. Also
+ *  true for a session that is past provisioning but still has NO title
+ *  (`name` unset — neither a harness title nor the first-prompt fallback has
+ *  landed yet) and is within `UNTITLED_SESSION_POLL_WINDOW_MS` of creation:
+ *  without this, a session's status routinely settles to 'running' seconds
+ *  before its title exists, so polling would already have stopped by the time
+ *  the title could ever show up — the exact "sidebar frozen on New session"
+ *  symptom this closes. */
 export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
-  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
+  const now = Date.now();
+  return (sessions ?? []).some((session) => {
+    if (LIVE_SESSION_STATUSES.includes(session.status)) return true;
+    if (session.name) return false;
+    const age = now - new Date(session.created_at).getTime();
+    return age >= 0 && age < UNTITLED_SESSION_POLL_WINDOW_MS;
+  });
 }
 
 /** Newest-first sort by `created_at`. Extracted so the ordering rule (and its

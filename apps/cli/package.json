@@ -25,6 +25,7 @@
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",
+    "@kortix/sdk": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
     "smol-toml": "^1.3.0",

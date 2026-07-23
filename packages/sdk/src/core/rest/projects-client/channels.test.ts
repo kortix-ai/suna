@@ -241,7 +241,7 @@ test('listChannelBindings hits the bindings collection', async () => {
           channelName: null,
           channelType: null,
           agentName: null,
-          opencodeModel: null,
+          model: null,
           conversationPolicy: 'project_open',
           installedAt: '2026-01-01',
           effectiveAgent: { agent: 'support', source: 'project' },
@@ -268,7 +268,7 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
       channelName: null,
       channelType: null,
       agentName: 'billing',
-      opencodeModel: null,
+      model: null,
       conversationPolicy: 'owner_only',
       installedAt: '2026-01-01',
       effectiveAgent: { agent: 'billing', source: 'explicit' },
@@ -276,11 +276,16 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
   };
   const result = await updateChannelBinding('P1', 'b1', {
     agentName: 'billing',
+    model: 'anthropic/claude-opus-4-8',
     conversationPolicy: 'owner_only',
   });
   expect(last().url).toContain('/projects/P1/channels/bindings/b1');
   expect(last().method).toBe('PATCH');
-  expect(last().body).toEqual({ agentName: 'billing', conversationPolicy: 'owner_only' });
+  expect(last().body).toEqual({
+    agentName: 'billing',
+    model: 'anthropic/claude-opus-4-8',
+    conversationPolicy: 'owner_only',
+  });
   expect(result.agentName).toBe('billing');
 
   nextResponse = { status: 404, body: { message: 'not found' } };

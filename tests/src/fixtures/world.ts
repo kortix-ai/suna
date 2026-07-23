@@ -106,7 +106,9 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     sharedProject() {
       if (!sharedProjectPromise) {
         sharedProjectPromise = (async () => {
-          const id = await provisionProject(adminClient, { name: `e2e-${runId}-shared` });
+          const id = await provisionProject(adminClient, {
+            name: `e2e-${runId}-shared`,
+          });
           sharedStack.push('project', id);
           return { id, name: `e2e-${runId}-shared` } as CreatedProject;
         })();
@@ -190,7 +192,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // field now that the HTTP boundary rejects unknown create properties.
       const res = await adminClient.post(
         '/v1/projects/:projectId/sessions',
-        { initial_prompt: opts?.prompt ?? 'noop' },
+        {
+          initial_prompt: opts?.prompt ?? 'noop',
+          model_selection: { kind: 'default' },
+        },
         {
           params: { projectId: project.id },
         },

@@ -12,7 +12,11 @@ import {
   unwrap,
 } from './shared';
 
-/** Stable ids for experimental features (mirrors apps/api experimental/features). */
+/** Stable ids for experimental features (mirrors apps/api experimental/features).
+ *  NOTE: this mirror is now complete against the authoritative registry —
+ *  `@kortix/api-contract`'s `ExperimentalFeatureMapSchema`
+ *  (`packages/api-contract/src/index.ts`). Keep both in sync when either
+ *  side adds a key. See PROGRESS.md Discovered-this-session (DISC-07). */
 export type ExperimentalFeatureKey =
   | 'agent_tunnel'
   | 'marketplace'
@@ -70,19 +74,33 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
-  open_code_raw: string | null;
-  open_code_default_agent: string | null;
-  agent_discovery: 'opencode' | 'declarative';
+  runtime_configs: Array<{
+    runtime: string;
+    harness: 'claude' | 'codex' | 'opencode' | 'pi';
+    config_dir: string;
+    path: string;
+    raw: string | null;
+  }>;
+  runtime_config_raw: string | null;
+  runtime_default_agent: string | null;
+  agent_source: 'native' | 'declarative';
+  /** @deprecated Use agent_source. */
+  agent_discovery: 'runtime' | 'declarative';
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
-    source?: 'opencode' | 'kortix.toml';
+    source?: 'runtime' | 'opencode' | 'kortix.toml' | 'kortix.yaml';
     enabled?: boolean;
+    /** kortix.yaml v3 runtime profile selected by this logical agent. */
+    runtime?: string | null;
+    /** ACP harness resolved by the single runtime compiler entrypoint. */
+    harness?: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+    native_agent?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
-     *  OpenCode-discovered agents (not governed by `agents:`). */
+     *  Runtime-discovered agents (not governed by `agents:`). */
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';

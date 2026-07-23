@@ -18,11 +18,11 @@
  * hooks.
  *
  * The "active server" resolution (which sandbox these calls hit) does NOT
- * need injecting: `useServerStore`/`getActiveOpenCodeUrl` (`../state/server-store`)
+ * need injecting: `useServerStore`/`getActiveRuntimeUrl` (`../state/server-store`)
  * is already a host-agnostic part of this SDK — apps/web's
  * `@/stores/server-store` is already just a re-export of it. Hooks here use
  * it directly, exactly like the existing `./use-runtime-reconnect` and
- * `./use-opencode-events` SDK hooks do.
+ * `./use-runtime-events` SDK hooks do.
  *
  * Query keys below are copied VERBATIM from the pre-migration web hooks
  * (array literal contents, ordering, and types unchanged) — this is a hard
@@ -101,7 +101,7 @@ import {
   reconcileServices,
   registerService,
   systemReload,
-} from '../core/runtime/client';
+} from '../core/runtime/kortix-master';
 import type {
   CredentialItem,
   CredentialWithValue,
@@ -135,11 +135,10 @@ import type {
   RegisterSandboxServicePayload,
   SandboxServiceAction,
   SystemReloadMode,
-} from '../core/runtime/client';
+} from '../core/runtime/kortix-master';
 
-// Re-export the request/response types unchanged — hosts that today import
-// them from `@kortix/sdk/opencode-client` (via the web hook files) keep that
-// path working; hosts consuming this module directly get the same names.
+// Re-export the request/response types unchanged for hosts consuming this
+// module directly.
 export type {
   CredentialItem,
   CredentialWithValue,
@@ -339,7 +338,7 @@ export function useKortixProjectForSession(
 
 /**
  * Fetch sessions linked to a specific project.
- * Returns OpenCode session objects enriched with title, time, etc.
+ * Returns Runtime session objects enriched with title, time, etc.
  */
 export function useKortixProjectSessions(
   identity: KortixMasterIdentity,
@@ -348,7 +347,7 @@ export function useKortixProjectSessions(
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   // `listKortixProjectSessions` itself returns `unknown[]` (its enriched
-  // OpenCode-session shape isn't schema-typed at the source) — mirror that
+  // Runtime-session shape isn't schema-typed at the source) — mirror that
   // here rather than lying about the element shape with `any`.
   return useQuery<unknown[]>({
     queryKey: ['kortix', 'projects', projectId, 'sessions', identity.userId ?? 'anonymous', serverUrl],
@@ -1271,10 +1270,7 @@ export function useRegisterSandboxService() {
   });
 }
 
-// Reload already has a home in the SDK (`systemReload` in `../opencode/client`,
-// backing `POST /kortix/services/system/reload`) — reused directly rather
-// than duplicated here. It resolves the active runtime URL itself (the same
-// zustand state `getActiveServerUrl()` above reads).
+// Reload is a Kortix daemon operation and resolves the active runtime URL.
 export function useSandboxRuntimeReload() {
   return useMutation({
     mutationFn: ({ mode }: { mode: SystemReloadMode }) => systemReload(mode),

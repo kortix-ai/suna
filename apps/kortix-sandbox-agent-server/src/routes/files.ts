@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { constants as fsConstants, realpathSync, type Stats } from 'node:fs'
 import crypto from 'node:crypto'
 
 import type { Config } from '../config'
@@ -19,8 +20,8 @@ import { isLikelyBinary, mimeTypeFor } from '../file-mime'
  * previews and downloads were 0-byte/corrupt. Serving reads off disk here fixes
  * that and gives one coherent contract. (Text-search/find lives in find.ts.)
  *
- * Mounted at `/file`. Only `/project/current` + `/global/health` still fall
- * through to OpenCode (server metadata, not file ops).
+ * Mounted at `/file`. Workspace identity is fixed by the ACP session cwd and
+ * health is owned by `/kortix/health`; neither depends on a harness API.
  *
  * Security: every path is resolved to an absolute path and validated against
  * ALLOWED_ROOTS before any filesystem operation (no traversal escapes).
@@ -28,28 +29,13 @@ import { isLikelyBinary, mimeTypeFor } from '../file-mime'
 
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
 
-async function readFileSnapshot(filePath: string): Promise<{ data: Buffer; size: number }> {
-  const handle = await fs.open(filePath, 'r')
-  try {
-    const stat = await handle.stat()
-    if (stat.isDirectory()) {
-      const error = new Error('Path is a directory') as NodeJS.ErrnoException
-      error.code = 'EISDIR'
-      throw error
-    }
-    return { data: await handle.readFile(), size: stat.size }
-  } finally {
-    await handle.close()
-  }
-}
-
 /**
  * Which of `absPaths` are git-ignored. Uses `git check-ignore -z --stdin` (NUL
  * I/O so paths with spaces/newlines are safe). Returns an empty set when the
  * workspace isn't a git repo (check-ignore exits 128) — runGit never throws on
  * non-zero, so we just parse whatever matched.
  */
-async function gitIgnoredSet(workspace: string, absPaths: string[]): Promise<Set<string>> {
+export async function gitIgnoredSet(workspace: string, absPaths: string[]): Promise<Set<string>> {
   const set = new Set<string>()
   if (!absPaths.length) return set
   const res = await runGit(['check-ignore', '-z', '--stdin'], {
@@ -75,7 +61,7 @@ async function countTextLines(absPath: string): Promise<number> {
   }
 }
 
-type GitFileStatus = {
+export type GitFileStatus = {
   path: string
   added: number
   removed: number
@@ -88,7 +74,7 @@ type GitFileStatus = {
  * from `git diff --numstat HEAD` (tracked) + line-count for untracked files.
  * Returns [] when not a git repo.
  */
-async function gitWorkingStatus(workspace: string): Promise<GitFileStatus[]> {
+export async function gitWorkingStatus(workspace: string): Promise<GitFileStatus[]> {
   const st = await runGit(['-c', 'core.quotePath=false', 'status', '--porcelain', '-uall'], {
     cwd: workspace,
   })
@@ -137,6 +123,13 @@ export function createFilesRouter(cfg: Config): Hono {
   // The configured workspace is always writable, even when it isn't the
   // canonical /workspace (e.g. a non-default KORTIX_WORKSPACE, or tests).
   const allowedRoots = Array.from(new Set([path.resolve(workspace), ...DEFAULT_ALLOWED_ROOTS]))
+  const canonicalAllowedRoots = allowedRoots.map((root) => {
+    try {
+      return realpathSync(root)
+    } catch {
+      return root
+    }
+  })
 
   /**
    * Resolve + validate a path. Relative paths resolve against the workspace.
@@ -150,6 +143,53 @@ export function createFilesRouter(cfg: Config): Hono {
       throw new Error('Access denied: path outside allowed directories')
     }
     return resolved
+  }
+
+  class SecureReadError extends Error {
+    constructor(readonly status: 400 | 403 | 404 | 500, message: string) {
+      super(message)
+    }
+  }
+
+  /** Open first, then prove that the opened inode is the canonical allowed
+   * target before reading from that same handle. O_NOFOLLOW rejects a final
+   * symlink, while the post-open realpath + inode comparison also catches a
+   * parent directory being replaced between path resolution and open. */
+  async function readAllowedFile(raw: string): Promise<{ data: Buffer; stat: Stats; canonical: string }> {
+    const resolved = resolvePath(raw)
+    let handle: Awaited<ReturnType<typeof fs.open>>
+    try {
+      handle = await fs.open(resolved, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') throw new SecureReadError(404, 'File not found')
+      if (code === 'ELOOP') throw new SecureReadError(403, 'Access denied: symbolic links are not readable')
+      throw err
+    }
+    try {
+      const stat = await handle.stat()
+      if (stat.isDirectory()) throw new SecureReadError(400, 'Path is a directory')
+
+      let canonical: string
+      let pathStat: Stats
+      try {
+        ;[canonical, pathStat] = await Promise.all([fs.realpath(resolved), fs.stat(resolved)])
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new SecureReadError(403, 'Access denied: path changed during open')
+        }
+        throw err
+      }
+      if (!canonicalAllowedRoots.some((root) => canonical === root || canonical.startsWith(root + '/'))) {
+        throw new SecureReadError(403, 'Access denied: path outside allowed directories')
+      }
+      if (stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) {
+        throw new SecureReadError(403, 'Access denied: path changed during open')
+      }
+      return { data: await handle.readFile(), stat, canonical }
+    } finally {
+      await handle.close()
+    }
   }
 
   /** Short high-entropy suffix (~12 chars) for disambiguating filenames. */
@@ -217,25 +257,29 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    let snapshot: { data: Buffer; size: number }
+    let opened: Awaited<ReturnType<typeof readAllowedFile>>
     try {
-      snapshot = await readFileSnapshot(resolved)
+      opened = await readAllowedFile(resolved)
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
-      if (code === 'EISDIR') return c.json({ error: 'Path is a directory' }, 400)
+      if (err instanceof SecureReadError) return c.json({ error: err.message }, err.status)
       logger.warn('[files] raw read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
 
     // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
-    // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
-    // for the SPA shell and reject it.
-    return new Response(snapshot.data, {
+    // BodyInit at runtime (Bun's real `Response` accepts it), sent verbatim.
+    // Never text/html, so clients don't mistake it for the SPA shell and
+    // reject it. The `as unknown as BodyInit` cast (same idiom
+    // `packages/sdk/src/acp/client.test.ts` uses for the mirror-image
+    // `fetch` mismatch) works around a static-only conflict: adding the
+    // "DOM" lib to this project's tsconfig (needed to typecheck
+    // `@kortix/sdk`) left `BodyInit` resolving to a narrower shape here than
+    // Bun's actual runtime `Response` accepts.
+    return new Response(opened.data as unknown as BodyInit, {
       status: 200,
       headers: {
-        'Content-Type': mimeTypeFor(resolved, true),
-        'Content-Length': String(snapshot.size),
+        'Content-Type': mimeTypeFor(opened.canonical, true),
+        'Content-Length': String(opened.stat.size),
         'Cache-Control': 'no-store',
       },
     })
@@ -259,32 +303,30 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    let snapshot: { data: Buffer; size: number }
+    let opened: Awaited<ReturnType<typeof readAllowedFile>>
     try {
-      snapshot = await readFileSnapshot(resolved)
+      opened = await readAllowedFile(resolved)
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
-      if (code === 'EISDIR') return c.json({ error: 'Path is a directory' }, 400)
+      if (err instanceof SecureReadError) return c.json({ error: err.message }, err.status)
       logger.warn('[files] content read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
 
-    const binary = isLikelyBinary(snapshot.data, resolved)
+    const binary = isLikelyBinary(opened.data, opened.canonical)
     if (binary) {
       return c.json({
         type: 'binary',
-        content: snapshot.data.toString('base64'),
+        content: opened.data.toString('base64'),
         encoding: 'base64',
-        mimeType: mimeTypeFor(resolved, true),
-        size: snapshot.size,
+        mimeType: mimeTypeFor(opened.canonical, true),
+        size: opened.stat.size,
       })
     }
     return c.json({
       type: 'text',
-      content: snapshot.data.toString('utf8'),
-      mimeType: mimeTypeFor(resolved, false),
-      size: snapshot.size,
+      content: opened.data.toString('utf8'),
+      mimeType: mimeTypeFor(opened.canonical, false),
+      size: opened.stat.size,
     })
   })
 

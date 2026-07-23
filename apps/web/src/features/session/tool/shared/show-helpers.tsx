@@ -7,7 +7,7 @@ import {
   ShowContentRenderer,
   showDomain,
 } from '@/features/file-renderers/show-content-renderer';
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
+import { toSandboxAbsolutePath } from '@/features/files/api/runtime-files';
 import {
   ServicePreviewViewport,
   useProxyUrl,

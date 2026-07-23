@@ -10,6 +10,7 @@
   "scripts": {
     "test": "playwright test -c playwright.config.ts",
     "test:e2e:browser": "playwright test -c playwright.config.ts",
+    "test:e2e:acp:all": "bash e2e/scripts/run-acp-all-harnesses-e2e.sh",
     "test:e2e:gate5:preflight": "GATE5_PREFLIGHT_ONLY=1 bash e2e/scripts/run-gate5-target-rehearsal.sh",
     "test:e2e:gate5:target": "bash e2e/scripts/run-gate5-target-rehearsal.sh",
     "test:e2e:gate5:local": "bash e2e/scripts/run-gate5-local-verification.sh",

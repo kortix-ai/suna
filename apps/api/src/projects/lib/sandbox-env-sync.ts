@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -14,7 +15,6 @@ import {
 } from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
 /**
  * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
@@ -135,15 +135,11 @@ async function postEnvToDaemon(args: {
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
-}): Promise<{ opencodeState: string | null }> {
+}): Promise<void> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${args.serviceKey}`,
-    ...args.providerHeaders,
-  };
+  const headers = buildEnvSyncHeaders(args);
 
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
@@ -166,11 +162,21 @@ async function postEnvToDaemon(args: {
     const body = await res.text().catch(() => '');
     throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
   }
-  // The daemon echoes opencode's post-sync state. After a model-affecting change
-  // it restarts opencode and reports `starting` here — the signal we use to wait
-  // for readiness before the prompt is forwarded.
-  const body = (await res.json().catch(() => null)) as { opencode?: unknown } | null;
-  return { opencodeState: typeof body?.opencode === 'string' ? body.opencode : null };
+  await res.arrayBuffer().catch(() => undefined);
+}
+
+/** Build the service-to-service env-sync boundary. Provider ingress credentials
+ * are preserved, but a user-scoped preview context must never reach the daemon's
+ * privileged secret refresh route or override its sandbox service credential. */
+export function buildEnvSyncHeaders(args: {
+  providerHeaders: Record<string, string>;
+  serviceKey: string;
+}): Headers {
+  const headers = new Headers(args.providerHeaders);
+  headers.delete(KORTIX_USER_CONTEXT_HEADER);
+  headers.set('Authorization', `Bearer ${args.serviceKey}`);
+  headers.set('Content-Type', 'application/json');
+  return headers;
 }
 
 export async function syncSandboxEnvForPrompt(args: {
@@ -188,7 +194,7 @@ export async function syncSandboxEnvForPrompt(args: {
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
   if (!snapshot) return;
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
-  const { opencodeState } = await postEnvToDaemon({
+  await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
@@ -198,22 +204,9 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
-  // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
-  // is forwarded the instant this returns, so block until opencode is serving —
-  // otherwise the forward hits the restart window and 503s "opencode not ready",
-  // dropping the session's first prompt (the user then has to resend).
-  if (opencodeState && opencodeState !== 'ok') {
-    const waitStartedAt = Date.now();
-    const ready = await waitForDaemonOpencodeReady({
-      previewUrl: args.previewUrl,
-      providerHeaders: args.providerHeaders,
-    });
-    console.log(
-      `[env-sync] opencode restarted by prompt env-sync (state=${opencodeState}); ` +
-        `waited ${Date.now() - waitStartedAt}ms for readiness before forwarding ` +
-        `(ready=${ready}) session=${args.sessionId}`,
-    );
-  }
+  // The ACP daemon recycles only idle processes and starts the selected harness
+  // again on the immediately following /acp request. Busy processes are deferred
+  // by the daemon so a credential rotation never kills an in-flight turn.
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
 }
 
@@ -241,8 +234,17 @@ export async function propagateProjectSecretsToActiveSandboxes(
       try {
         const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) return;
-        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-        await postEnvToDaemon({ previewUrl: url, providerHeaders: headers, serviceKey, snapshot, refreshModels: opts?.refreshModels });
+        const { url, headers } = await resolveSandboxIngress(row.externalId, {
+          port: SANDBOX_SERVICE_PORT,
+          transport: 'http',
+        });
+        await postEnvToDaemon({
+          previewUrl: url,
+          providerHeaders: headers,
+          serviceKey,
+          snapshot,
+          refreshModels: opts?.refreshModels,
+        });
       } catch (err) {
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,
@@ -287,7 +289,10 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
         const snapshot =
           (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
           emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
+        const { url, headers } = await resolveSandboxIngress(row.externalId, {
+          port: SANDBOX_SERVICE_PORT,
+          transport: 'http',
+        });
         await postEnvToDaemon({
           previewUrl: url,
           providerHeaders: headers,

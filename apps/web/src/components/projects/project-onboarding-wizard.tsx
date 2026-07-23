@@ -62,7 +62,7 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
@@ -119,7 +119,10 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   // Pipedream configured (default true), so this is a no-op there.
   const connectorsEnabled = isConnectorsEnabled();
   const steps = useMemo<StepId[]>(
-    () => (connectorsEnabled ? ['welcome', 'tools', 'slack', 'model', 'done'] : ['welcome', 'slack', 'model', 'done']),
+    () =>
+      connectorsEnabled
+        ? ['welcome', 'tools', 'slack', 'model', 'done']
+        : ['welcome', 'slack', 'model', 'done'],
     [connectorsEnabled],
   );
   const stepId = steps[index] ?? 'welcome';
@@ -290,7 +293,7 @@ function StepPrimaryAction({
 }) {
   const slackInstall = useSlackInstall(stepId === 'slack' ? projectId : null);
   const slackConnected = !!slackInstall.data;
-  const modelProviders = useOpenCodeProviders();
+  const modelProviders = useRuntimeProviders();
   const { hasSelectableModels } = useModelConnectionGate(flattenModels(modelProviders.data));
 
   if (stepId === 'slack') {
@@ -736,7 +739,7 @@ function SlackGlyph() {
 // ─── Step 4: Connect a model ────────────────────────────────────────────────────
 
 function ModelStep() {
-  const { data: providers, isLoading } = useOpenCodeProviders();
+  const { data: providers, isLoading } = useRuntimeProviders();
   const {
     openConnectProvider,
     openUpgrade,
@@ -787,7 +790,7 @@ function ModelStep() {
               size="lg"
               variant={showUpgradeOption ? 'outline' : 'default'}
               className="gap-2"
-              onClick={() => openConnectProvider('providers')}
+              onClick={() => openConnectProvider()}
             >
               <KeyRound className="size-4" />
               Bring your own key

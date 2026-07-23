@@ -71,6 +71,9 @@ const EXEMPT_PREFIXES = [
 // can exceed the deadline while behaving correctly. Enumerated from 7 days of
 // prod duration data (2026-06-12).
 const EXEMPT_FRAGMENTS = [
+  '/acp',                    // ACP JSON-RPC prompt calls complete when the
+                             // harness turn completes; Codex commonly exceeds
+                             // the ordinary browser-request deadline
   '/turn-stream',
   '/turn-question',
   '/provision-stream',

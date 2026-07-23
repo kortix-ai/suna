@@ -14,7 +14,7 @@
  */
 
 import type { ToolPart } from '@/ui';
-import { toWorkspaceRelative } from '@/features/files/api/opencode-files';
+import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
@@ -219,6 +219,14 @@ export function deriveOutputs(
     }
     // Re-produced. The later item wins; if the re-production happened in the
     // latest run it reads as an update, otherwise it stays unmarked history.
+    const current = out[existing];
+    // A machine-discovered (synthetic) row never overwrites a human hand-over —
+    // the explicit show's title/description/intent is the better identity for
+    // the same file; the rediscovery only refreshes recency.
+    if (current?.shown && !item.shown) {
+      if (isLatest && !current.fresh) current.fresh = 'updated';
+      return;
+    }
     if (isLatest) item.fresh = 'updated';
     out[existing] = item;
   };
@@ -299,11 +307,35 @@ interface ShowPayload {
   description?: unknown;
 }
 
-/** A single shown thing → the row it becomes, or null if there's nothing to open. */
-function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
+/**
+ * The daemon-discovered marker on a synthetic `show` — the sandbox daemon
+ * emits its own `show` tool calls for files it finds on disk (never the
+ * agent handing something to the user), tagged via
+ * `part.state.metadata.acp._meta.kortix.synthetic` (the SDK surfaces the
+ * tool's own data as `metadata.acp`). Exported so tests can build these
+ * parts without duplicating the marker's exact shape.
+ */
+export function isSyntheticShowPart(part: ToolPart): boolean {
+  const acp = (part.state as { metadata?: { acp?: Record<string, unknown> } } | undefined)
+    ?.metadata?.acp;
+  const meta = acp && typeof acp === 'object' ? (acp as Record<string, unknown>)._meta : undefined;
+  const kortix = meta && typeof meta === 'object' ? (meta as Record<string, unknown>).kortix : undefined;
+  return !!(kortix && typeof kortix === 'object' && (kortix as Record<string, unknown>).synthetic);
+}
+
+/** A single shown thing → the row it becomes, or null if there's nothing to open.
+ *  `shown` defaults to true (an explicit `show` is a human hand-over); callers
+ *  pass `false` for a daemon-synthesized discovery, which must rank and dedupe
+ *  differently (see `push` in `deriveOutputs`). */
+function showPayloadToOutput(
+  payload: ShowPayload,
+  callID: string,
+  shown = true,
+): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
   if (url && /^https?:\/\//i.test(url)) {
-    return { ...appOutput(url, payload.title, payload.description, callID), shown: true };
+    const app = appOutput(url, payload.title, payload.description, callID);
+    return shown ? { ...app, shown: true } : app;
   }
 
   const path = typeof payload.path === 'string' ? payload.path.trim() : '';
@@ -328,7 +360,9 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
         ? 'presentation'
         : 'file';
 
-  return { callID, name, title, description, path, kind, shown: true };
+  return shown
+    ? { callID, name, title, description, path, kind, shown: true }
+    : { callID, name, title, description, path, kind };
 }
 
 /**
@@ -350,15 +384,19 @@ function showOutputsOf(part: ToolPart): OutputItem[] {
   if (tool !== 'show' && tool !== 'show_user') return [];
 
   const input = (part.state?.input ?? {}) as Record<string, unknown> & ShowPayload;
+  // A daemon-discovered file on disk, not the agent handing something over —
+  // it must never outrank or overwrite an explicit show of the same path
+  // (see `isSyntheticShowPart` and the dedupe guard in `push`).
+  const shown = !isSyntheticShowPart(part);
 
   const items = parseShowItems(input.items);
   if (items.length > 0) {
     return items
-      .map((item) => showPayloadToOutput(item ?? {}, part.callID))
+      .map((item) => showPayloadToOutput(item ?? {}, part.callID, shown))
       .filter((item): item is OutputItem => item !== null);
   }
 
-  const single = showPayloadToOutput(input, part.callID);
+  const single = showPayloadToOutput(input, part.callID, shown);
   return single ? [single] : [];
 }
 
@@ -540,17 +578,22 @@ export function deriveContext(parts: ToolPart[]): {
       continue;
     }
 
-    // Everything else is recorded once, by name, as "a tool that was used".
-    // Every call to that tool rides along on `parts` so the UI can show what
-    // the tool actually did when the user asks — one chip, all its calls.
-    const label = humanizeToolName(part.tool);
-    const seen = seenTools.get(label);
+    // Everything else is recorded once, keyed by the tool's real IDENTITY, as
+    // "a tool that was used". Every call to that tool rides along on `parts`
+    // so the UI can show what the tool actually did when the user asks — one
+    // chip, all its calls, its count badge. Dedup by identity (`tool`), NOT by
+    // the humanized label: two genuinely different tools can share a leaf name
+    // (`mcp__linear__create_issue` and `mcp__github__create_issue` both read
+    // as "Create Issue"), and merging them would hide one tool's calls behind
+    // the other's chip.
+    const identity = normalizeName(part.tool);
+    const seen = seenTools.get(identity);
     if (seen) {
       (seen.parts ??= []).push(part);
       continue;
     }
-    const item: ContextItem = { callID: part.callID, label, kind: 'tool', parts: [part] };
-    seenTools.set(label, item);
+    const item: ContextItem = { callID: part.callID, label: humanizeToolName(part.tool), kind: 'tool', parts: [part] };
+    seenTools.set(identity, item);
     tools.push(item);
   }
 

@@ -6,6 +6,7 @@ import {
   shortRelative,
   shouldPollProjectSessions,
   sortSessionsByCreatedAt,
+  UNTITLED_SESSION_POLL_WINDOW_MS,
 } from './project-session-list-helpers';
 import type { ProjectSession } from '@kortix/sdk/projects-client';
 
@@ -48,6 +49,51 @@ describe('shouldPollProjectSessions', () => {
   test('does not poll an empty or undefined list', () => {
     expect(shouldPollProjectSessions([])).toBe(false);
     expect(shouldPollProjectSessions(undefined)).toBe(false);
+  });
+
+  test('keeps polling a settled but still-untitled fresh session (title lands seconds after status settles)', () => {
+    const session = makeSession({
+      status: 'running',
+      name: null,
+      created_at: new Date(Date.now() - 5_000).toISOString(),
+    });
+    expect(shouldPollProjectSessions([session])).toBe(true);
+  });
+
+  test('stops polling a settled session once it has a title', () => {
+    const session = makeSession({
+      status: 'running',
+      name: 'A real title',
+      created_at: new Date(Date.now() - 5_000).toISOString(),
+    });
+    expect(shouldPollProjectSessions([session])).toBe(false);
+  });
+
+  test('stops polling an untitled session once it ages past the untitled poll window', () => {
+    const session = makeSession({
+      status: 'running',
+      name: null,
+      created_at: new Date(Date.now() - (UNTITLED_SESSION_POLL_WINDOW_MS + 1_000)).toISOString(),
+    });
+    expect(shouldPollProjectSessions([session])).toBe(false);
+  });
+
+  test('a session right at the edge of the untitled poll window still polls (inclusive lower bound at age 0)', () => {
+    const session = makeSession({
+      status: 'running',
+      name: null,
+      created_at: new Date().toISOString(),
+    });
+    expect(shouldPollProjectSessions([session])).toBe(true);
+  });
+
+  test('a future created_at (clock skew) does not poll forever — treated as out of window, not "infinitely fresh"', () => {
+    const session = makeSession({
+      status: 'running',
+      name: null,
+      created_at: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expect(shouldPollProjectSessions([session])).toBe(false);
   });
 });
 

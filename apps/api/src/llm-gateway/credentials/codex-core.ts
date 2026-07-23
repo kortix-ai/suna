@@ -17,6 +17,20 @@ export interface StoredCodexAuth {
 export interface CodexCredential {
   access: string;
   accountId?: string;
+  /**
+   * Epoch ms the current access token expires, `undefined`/absent if
+   * unknown. Additive OPTIONAL field (2026-07-22, docs/specs/2026-07-22-
+   * unified-auth-gateway.md §4) — kept optional (not required) specifically
+   * so the several existing test files that construct a bare
+   * `{ access, accountId }` literal as `resolveCodex`'s injected mock
+   * (`harness-models.test.ts`, `harness-capability-conformance.test.ts`,
+   * `resolve-candidates.test.ts`, `codex-subscription.test.ts` — none in
+   * this task's lane, none touched here) keep type-checking unchanged.
+   * `codex.ts`'s real `resolveCodexCredential` always populates it now;
+   * `auth/resolve-credential-status.ts` reads `credential.expiresAt ?? null`
+   * rather than requiring every caller (real or mocked) to supply it.
+   */
+  expiresAt?: number | null;
 }
 
 export interface RefreshTokenResponse {

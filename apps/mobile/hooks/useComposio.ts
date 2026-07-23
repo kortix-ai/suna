@@ -162,7 +162,6 @@ const useComposioToolkitDetails = (slug: string, options?: { enabled?: boolean }
       return response.json();
     },
     enabled: options?.enabled !== false && !!slug,
-    enabled: !!slug,
     staleTime: 10 * 60 * 1000,
   });
 };

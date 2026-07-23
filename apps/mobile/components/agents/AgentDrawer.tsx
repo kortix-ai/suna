@@ -130,7 +130,7 @@ export function AgentDrawer({
   const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId);
 
   const isOpeningRef = React.useRef(false);
-  const timeoutRef = React.useRef<number | null>(null);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [currentView, setCurrentView] = React.useState<ViewState>('main');
   const [selectedComposioApp, setSelectedComposioApp] = React.useState<any>(null);

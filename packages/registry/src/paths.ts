@@ -4,15 +4,16 @@
  */
 
 export interface TargetContext {
-  /** The OpenCode config dir, e.g. ".kortix/opencode". */
+  /** The OpenCode config dir, e.g. ".opencode". */
   configDir: string;
   /** Memory dir, e.g. ".kortix/memory". */
   memoryDir?: string;
 }
 
+/** Linear-time trailing-slash trim (regex `\/+$` backtracks polynomially). */
 export function trimTrailingSlashes(value: string): string {
   let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  while (end > 0 && value[end - 1] === '/') end--;
   return value.slice(0, end);
 }
 

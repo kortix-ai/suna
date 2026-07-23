@@ -8,7 +8,7 @@ import {
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
 } from '@/features/session/pty-connection';
-import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
+import { useCreatePty, useRuntimePtyList, type Pty } from '@/hooks/runtime/use-runtime-pty';
 import { useServerStore } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { requestRuntimeReconnect } from '@kortix/sdk/sandbox-connection-store';
@@ -47,14 +47,14 @@ export function SessionTerminalPanel({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
-  // The terminal belongs to the sandbox daemon. It does not depend on OpenCode
+  // The terminal belongs to the sandbox daemon. It does not depend on the ACP harness
   // health. Bind every PTY operation to this session's explicit runtime URL.
   const {
     data: ptys,
     isLoading,
     isError: isListError,
     refetch: refetchPtys,
-  } = useOpenCodePtyList({ serverUrl, enabled: !!serverUrl });
+  } = useRuntimePtyList({ serverUrl, enabled: !!serverUrl });
   // Failures surface in the pane (retry button / reconnect flow) — keep them
   // out of the app-global "Failed to perform action" toast.
   const createPty = useCreatePty({ serverUrl, onError: () => {} });
@@ -209,7 +209,7 @@ export function SessionTerminalPanel({
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0f0f14]">
+    <div className="flex h-full w-full flex-col bg-black">
       {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>

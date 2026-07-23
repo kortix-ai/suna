@@ -1,0 +1,18 @@
+[
+  {
+    "kind": "file-read",
+    "path": "tests/login.test.ts",
+    "preview": "test('login', async () => { await sleep(10); expect(loggedIn).toBe(true); })"
+  },
+  {
+    "kind": "shell",
+    "command": "bun test tests/login.test.ts",
+    "stdout": "FAIL login.test.ts",
+    "exitCode": 1
+  },
+  {
+    "kind": "web-search",
+    "query": "flaky test race condition sleep",
+    "error": "Insufficient credits"
+  }
+]

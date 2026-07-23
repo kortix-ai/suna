@@ -1,5 +1,4 @@
-import type { Model } from '@opencode-ai/sdk/v2/client';
-import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-opencode-sessions';
+import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-runtime-sessions';
 
 /**
  * Some provider payloads aren't the full opencode `Model` shape — notably the
@@ -9,30 +8,9 @@ import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-opencode-
  * union covers both without lying about the shape via `any`; every field
  * access below is narrowed via `hasCapabilities` rather than cast.
  */
-type LooseModel =
-  | Model
-  | {
-      id?: string;
-      name?: string;
-      variants?: Record<string, Record<string, unknown>>;
-      reasoning?: boolean;
-      tool_call?: boolean;
-      modalities?: { input?: string[]; output?: string[] };
-      limit?: { context?: number; output?: number };
-      release_date?: string;
-      family?: string;
-      cost?: { input?: number; output?: number };
-      // The REAL upstream provider this model resolves against — see
-      // `FlatModel.provider` below. Absent on plain opencode `Model` values
-      // (which don't carry it); present on every gateway-served model.
-      provider?: string;
-      reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
-      description?: string;
-      open_weights?: boolean;
-      last_updated?: string;
-    };
+type LooseModel = any;
 
-function hasCapabilities(model: LooseModel): model is Model {
+function hasCapabilities(model: LooseModel): boolean {
   return 'capabilities' in model && model.capabilities != null;
 }
 
@@ -114,7 +92,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
       let capabilities: FlatModel['capabilities'];
       if (hasCapabilities(model)) {
-        const caps = model.capabilities;
+        const caps = model.capabilities ?? {};
         capabilities = {
           reasoning: caps.reasoning ?? false,
           vision: caps.input?.image ?? false,

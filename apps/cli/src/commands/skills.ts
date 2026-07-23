@@ -73,7 +73,7 @@ Examples:
 /** Skills are served from the base Kortix catalog under this source id. */
 const SKILLS_SOURCE = 'kortix';
 /** Where a skill's files live inside a Kortix project. */
-const SKILLS_DIR = '.kortix/opencode/skills';
+const SKILLS_DIR = '.opencode/skills';
 
 function parseFlags(argv: string[]): SkillsFlags {
   return {
@@ -235,15 +235,14 @@ async function skillsGet(argv: string[], flags: SkillsFlags): Promise<number> {
 }
 
 /** Walk up from cwd to a Kortix project root, else use cwd. Keys on a project
- *  marker (a `kortix.yaml`/`kortix.toml` manifest or a `.kortix/opencode` dir),
- *  not a bare `.kortix/` — otherwise the CLI's own `~/.kortix` home dir matches. */
+ *  marker (a `kortix.yaml`/`kortix.toml` manifest or a real `.opencode` dir). */
 function projectRoot(): string {
   let dir = process.cwd();
   for (let i = 0; i < 8; i += 1) {
     if (
       existsSync(join(dir, 'kortix.yaml')) ||
       existsSync(join(dir, 'kortix.toml')) ||
-      existsSync(join(dir, '.kortix', 'opencode'))
+      existsSync(join(dir, '.opencode'))
     ) {
       return dir;
     }

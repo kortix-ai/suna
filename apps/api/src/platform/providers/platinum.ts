@@ -171,7 +171,7 @@ export class PlatinumProvider implements SandboxProvider {
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
     // the sandbox is running — before the FE connects. Expose is otherwise lazy
     // (first /v1/p request triggers it), which left a window where the FE's
-    // /agent, /session, /global/events calls hit an un-routed edge → 504s right
+    // Runtime helper and legacy event calls hit an un-routed edge → 504s right
     // after runtime-ready. Best-effort: a failure here just falls back to the
     // lazy expose in resolveEndpoint.
     let exposedUrl = '';
@@ -188,9 +188,9 @@ export class PlatinumProvider implements SandboxProvider {
     const _exposeMs = Date.now() - _tExpose0;
 
     // Return as soon as the VM is running and the agent port is exposed — do NOT
-    // block on the in-guest runtime (repo clone + opencode). That readiness is
-    // polled by the frontend (useOpenCodeRuntimeReady + the react-query
-    // "opencode not ready" retry) EXACTLY as it is for Daytona, whose create()
+    // block on the in-guest runtime (repo clone + runtime boot). That readiness is
+    // polled by the frontend (useRuntimeReady + the react-query
+    // "runtime not ready" retry) EXACTLY as it is for Daytona, whose create()
     // also returns a not-yet-usable box and defers readiness to the FE.
     //
     // Why this matters: the old code polled /kortix/health for runtimeReady up

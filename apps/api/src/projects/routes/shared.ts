@@ -9,10 +9,14 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionMetadataModel } from '../lib/session-metadata';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
-import { ensureOpencodeSessionPin } from '../opencode-mapping';
+import {
+  buildSessionSandboxEnvVars,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
+import { inspectSandboxRuntime } from '../runtime-inspection';
 import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
@@ -26,7 +30,7 @@ import {
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
  * destroying it and cold-reprovisioning a fresh one. A stopped row whose
  * `externalId` is still set is a powered-down VM whose disk — the repo clone,
- * installed deps, opencode — is intact, so resuming it skips the dominant boot
+ * installed dependencies and harness state is intact, so resuming it skips the dominant boot
  * costs (snapshot pull + clone + deps).
  *
  * Atomically wins the stopped→active transition (so concurrent opens don't
@@ -66,8 +70,6 @@ export async function resumeStoppedSandbox(row: {
     'needsReprovision',
     'runtimeWakeError',
     'runtimeWakeFailedAt',
-    'opencodeReadyWaitStartedAt',
-    'opencodeReadyWaitReason',
   ])
     delete wakeMetadata[key];
   Object.assign(wakeMetadata, {
@@ -106,7 +108,13 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId, null, row.provider as SandboxProviderName).catch((err) =>
+  void reopenComputeForSandbox(
+    row.sandboxId,
+    row.accountId,
+    row.sessionId,
+    null,
+    row.provider as SandboxProviderName,
+  ).catch((err) =>
     console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
   );
 
@@ -207,7 +215,7 @@ const PRERESUME_THROTTLE_MS = 30_000;
 
 /**
  * When a user returns to a project, proactively resume their most-recently-used
- * STOPPED session sandbox(es) so the ~8s in-place resume (VM restart + opencode
+ * STOPPED session sandbox(es) so the in-place resume (VM restart + ACP runtime
  * re-warm) overlaps the user's navigation and the session is ready by the time
  * they open it. Reuses resumeStoppedSandbox (idempotent with the on-open resume:
  * if the box is already resuming/active, the conditional stopped→active lock
@@ -309,8 +317,11 @@ export async function allocateRuntimeOnOpen(
     .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
-  const opencodeModel =
-    typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
+  // Dual-read: pre-rename rows only carry opencode_model — see session-metadata.ts.
+  const runtimeModel = resolveSessionMetadataModel(session.metadata);
+  const runtimeAuthKind = typeof session.metadata?.auth_connection === 'string'
+    ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind
+    : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 
@@ -334,7 +345,8 @@ export async function allocateRuntimeOnOpen(
         repoUrl: loaded.row.repoUrl,
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
-        opencodeModel,
+        runtimeModel,
+        runtimeAuthKind,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
@@ -366,7 +378,6 @@ export function sessionRuntimeUrlPath(externalId: string): string {
 const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
 const STALE_RUNTIME_WAKE_MS = 90 * 1000;
-const STALE_OPENCODE_READY_MS = 5 * 60 * 1000;
 
 function parseTimestampMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
@@ -437,29 +448,6 @@ function staleRuntimeWakeReason(
   return null;
 }
 
-function staleOpencodeReadyReason(
-  row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
-  nowMs = Date.now(),
-): string | null {
-  if (reason !== 'not_ready' && reason !== 'unreachable') return null;
-  const metadata = sandboxMetadata(row);
-  const readyWaitStartedAtMs = parseTimestampMs(metadata.opencodeReadyWaitStartedAt);
-  if (readyWaitStartedAtMs && nowMs - readyWaitStartedAtMs > STALE_OPENCODE_READY_MS) {
-    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
-  }
-
-  const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
-  if (
-    !readyWaitStartedAtMs &&
-    initSucceededAtMs &&
-    nowMs - initSucceededAtMs > STALE_OPENCODE_READY_MS
-  ) {
-    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
-  }
-  return null;
-}
-
 function removedRuntimeStillInGrace(
   row: typeof sessionSandboxes.$inferSelect,
   nowMs = Date.now(),
@@ -490,29 +478,6 @@ async function markRuntimeWakeStarted(
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
     console.warn(`[start] failed to mark runtime wake for ${row.sandboxId}:`, err);
-  }
-}
-
-async function markOpencodeReadyWaitStarted(
-  row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
-): Promise<void> {
-  const metadata = sandboxMetadata(row);
-  if (typeof metadata.opencodeReadyWaitStartedAt === 'string') return;
-  try {
-    await db
-      .update(sessionSandboxes)
-      .set({
-        metadata: {
-          ...metadata,
-          opencodeReadyWaitStartedAt: new Date().toISOString(),
-          opencodeReadyWaitReason: reason,
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-  } catch (err) {
-    console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
   }
 }
 
@@ -586,7 +551,6 @@ async function preserveEstablishedRuntimeOnOpen(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
       reason,
     };
   }
@@ -596,7 +560,6 @@ async function preserveEstablishedRuntimeOnOpen(
     agent_name: visible.row.agentName ?? 'default',
     retriable: false,
     sandbox: preserved ? serializeSandboxRow(preserved) : serializeSandboxRow(row),
-    opencode_session_id: null,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: RUNTIME_IDENTITY_UNAVAILABLE,
   };
@@ -605,7 +568,7 @@ async function preserveEstablishedRuntimeOnOpen(
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
- * resumes a hibernated/idle one, and resolves the canonical OpenCode pin once the
+ * resumes a hibernated/idle one, and reports ACP runtime readiness once the
  * box is reachable. Returns ONE readiness payload the client polls until `ready`.
  */
 export async function openSession(args: {
@@ -616,7 +579,6 @@ export async function openSession(args: {
       sandboxProvider: string;
       baseRef: string | null;
       agentName: string | null;
-      opencodeSessionId: string | null;
       accountId: string;
       metadata?: Record<string, unknown> | null;
     };
@@ -684,7 +646,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: null,
-        opencode_session_id: null,
       };
     }
     if (visible.row.status !== 'provisioning') {
@@ -706,7 +667,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
     };
   }
 
@@ -734,7 +694,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: visible.row.opencodeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_recovery_in_progress',
     };
@@ -750,7 +709,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
     };
   }
 
@@ -777,7 +735,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_removed_checking',
       };
@@ -789,7 +746,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.opencodeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_recovery_in_progress',
       };
@@ -806,7 +762,6 @@ export async function openSession(args: {
           agent_name: visible.row.agentName ?? 'default',
           retriable: false,
           sandbox: null,
-          opencode_session_id: null,
           reason: 'runtime_recovery_cancelled',
         };
       }
@@ -815,7 +770,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(recoveringRow),
-        opencode_session_id: visible.row.opencodeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason:
           recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
@@ -838,7 +792,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.opencodeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_restoring_in_place',
       };
@@ -867,7 +820,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: providerStatus === 'stopped' ? 'runtime_waking' : 'runtime_status_unknown',
     };
@@ -881,10 +833,9 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: null,
-        opencode_session_id: null,
         reason: 'runtime_recovery_cancelled',
-    };
-  }
+      };
+    }
     row = finalized;
   }
   const runningExternalId = row.externalId;
@@ -892,42 +843,58 @@ export async function openSession(args: {
     throw new Error(`Provider-running sandbox ${row.sandboxId} has no external_id`);
   }
 
-  // Box is provider-running. Resolve OpenCode readiness + the canonical pin
-  // server-side — safe now that the box is confirmed up, so the daemon answers
-  // FAST (a 503 'not_ready' while OpenCode is still booting, not an 8s timeout
-  // against a dead box). This keeps ALL the lifecycle logic server-side: the
-  // client just polls until stage='ready' and gets the pin handed to it.
-  const ensured = await ensureOpencodeSessionPin({
-    projectId,
-    sessionId,
-    accountId,
-    externalId: runningExternalId,
-    userId: loaded.userId,
-    currentPin: visible.row.opencodeSessionId ?? null,
-  });
-  const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
-  if (booting) {
-    const staleBoot = staleOpencodeReadyReason(row, ensured.reason);
-    if (staleBoot) {
-      return preserveEstablishedRuntimeOnOpen(
-        loaded,
-        visible,
-        projectId,
-        sessionId,
-        row,
-        staleBoot,
-      );
-    }
-    await markOpencodeReadyWaitStarted(row, ensured.reason);
+  // Box is provider-running. Inspect the daemon-owned runtime mode. Every
+  // supported harness, including OpenCode, is ready only through ACP.
+  const runtimeHealth = await inspectSandboxRuntime(runningExternalId, loaded.userId);
+  if (!runtimeHealth) {
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      runtime_protocol: 'acp',
+      runtime_id: null,
+      runtime_session_id:
+        typeof visible.row.metadata?.acp_session_id === 'string'
+          ? visible.row.metadata.acp_session_id
+          : null,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: 'acp_starting',
+    };
   }
+  if (runtimeHealth?.runtime === 'acp') {
+    const ready = runtimeHealth.runtimeReady && !!runtimeHealth.acpServerId;
+    return {
+      stage: ready ? 'ready' : 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: !ready,
+      sandbox: serializeSandboxRow(row),
+      runtime_protocol: 'acp',
+      runtime_id: runtimeHealth.acpServerId,
+      runtime_session_id:
+        typeof visible.row.metadata?.acp_session_id === 'string'
+          ? visible.row.metadata.acp_session_id
+          : null,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: ready
+        ? 'acp_ready'
+        : runtimeHealth.bootError ? 'acp_boot_error' : 'acp_starting',
+    };
+  }
+
+  // Every supported harness, including OpenCode, must be reached through ACP.
+  // A box reporting the removed native runtime is not a compatibility path;
+  // it must be rebuilt/restarted with the v3 compiled runtime plan.
   return {
-    stage: booting ? 'starting' : 'ready',
+    stage: 'failed',
     agent_name: visible.row.agentName ?? 'default',
-    retriable: booting,
+    retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: ensured.pin,
+    runtime_protocol: null,
+    runtime_id: null,
+    runtime_session_id: null,
     runtime_url: sessionRuntimeUrlPath(runningExternalId),
-    reason: ensured.reason,
+    reason: 'non_acp_runtime',
   };
 }
 

@@ -1,21 +1,20 @@
 'use client';
 
-// @kortix/sdk/react — the complete OpenCode React hook surface, relocated
-// verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
-// and type). This is the single source of truth the web UI binds to.
-export * from './opencode';
+// @kortix/sdk/react — the complete Kortix React hook surface. Legacy
+// useRuntime* exports remain only as deprecated compatibility aliases while
+// the implementation moves to ACP/runtime-neutral hooks.
+export * from './runtime';
 
-// `useSession`'s reply/error-classification surface — not (yet) re-exported by
-// `./opencode`'s explicit barrel list, so re-exported directly here.
+// ACP session lifecycle and shared runtime error classification.
 export {
-  answerQuestion,
-  answerPermission,
-  rejectQuestion,
   classifySendError,
   type KortixSendError,
   type KortixSendErrorKind,
   type SendState,
 } from './use-session';
+export { useAcpSession, type AcpStoredSessionEnvelope } from './use-acp-session';
+export * from './use-composer-capabilities';
+export * from './use-models-page';
 
 // The billing/API error classes + helpers, relocated from apps/web's
 // `lib/api/errors.ts` (byte-for-byte duplicate of `platform/api/errors.ts`) —
@@ -29,52 +28,12 @@ export {
   type BillingErrorUI,
 } from '../core/http/api/errors';
 
-// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
-// (exported above via `./opencode`) wraps. Re-exported here too so a host
-// already importing from `@kortix/sdk/react` can build its own binding
-// (e.g. a non-QueryClient consumer) without a second import from
-// `@kortix/sdk/event-stream`.
-export {
-  openEventStream,
-  type EventStreamClient,
-  type EventStreamHandle,
-  type EventStreamTimers,
-  type OpenCodeEvent,
-  type OpenEventStreamOptions,
-} from '../core/stream/event-stream';
-
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six
 // `apps/web/src/hooks/{kortix/*,use-sandbox-services}.ts` files — see
 // `use-kortix-master.ts` for the full contract, including the injectable
 // `KortixMasterIdentity` seam that replaces web's direct `useAuth()` calls.
 export * from './use-kortix-master';
-
-// The send / stash-replay / error-recovery core extracted from apps/web's
-// `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
-// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
-// directly here (same reasoning as the other direct re-exports above).
-export {
-  useSessionSend,
-  beginOptimisticSend,
-  abandonOptimisticSend,
-  recoverFromSendFailure,
-  sendAndRecover,
-  applyOptimisticAbort,
-  replayStartStash,
-  type OpenCodeMessagesClient,
-  type SendRecoveryOptions,
-  type SendAndRecoverArgs,
-  type SendAndRecoverResult,
-  type StashReplayTimerHandle,
-  type StashReplayTimers,
-  type PreparedStashSend,
-  type StartStashReplayOptions,
-  type StartStashReplayHandle,
-  type UseSessionSendOptions,
-  type SendCallOptions,
-  type UseSessionSendResult,
-} from './use-session-send';
 
 // The headless chat kit — `useChatTurns` (memoized `classifyTurn` over a
 // message list) + `renderParts` (compile-time-exhaustive part -> T
@@ -93,9 +52,10 @@ export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
+export { usePermissionPolicy, permissionPolicyKey } from './use-permission-policy';
 
 // The expected "no compaction model configured" configuration state thrown by
 // `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback
 // tier fails. Re-exported here so hosts + the telemetry noise gate can
 // `instanceof`-match it without reaching into the hook's internal path.
-export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
+export { NoCompactionModelError } from './use-runtime-sessions/no-compaction-model-error';

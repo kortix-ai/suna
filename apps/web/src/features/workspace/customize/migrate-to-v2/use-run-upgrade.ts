@@ -19,7 +19,7 @@ import { type StartStash, writeStartStash } from '@kortix/sdk/react';
 
 /** Pure — the exact stash payload an upgrade session is seeded with. */
 export function buildUpgradeStash(prompt: string): StartStash {
-  return { prompt, agent: null, model: null, variant: null };
+  return { prompt };
 }
 
 export interface RunUpgrade {

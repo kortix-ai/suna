@@ -222,7 +222,9 @@ async function parseJsonBody(res: Response): Promise<unknown> {
 /** RFC 9457 problem-details on most endpoints; commit-pack's own `{result:{message}}` shape on conflict. */
 function extractErrorDetail(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
-  const b = body as Record<string, unknown> & { result?: { message?: unknown } };
+  const b = body as Record<string, unknown> & {
+    result?: { message?: unknown };
+  };
   const detail = b.detail ?? b.title ?? b.error ?? b.result?.message ?? b.message;
   return typeof detail === 'string' ? detail : null;
 }
@@ -250,6 +252,7 @@ function buildCloneUrl(repoPath: string): string {
 interface CommitPackFile {
   path: string;
   content: string;
+  mode?: '100644' | '120000';
 }
 
 /**
@@ -269,6 +272,7 @@ async function commitPack(
   const commitFiles: CommitPackFile[] = opts.files.map((f) => ({
     path: f.path,
     content: f.content,
+    mode: f.mode,
   }));
   const metadataLine = JSON.stringify({
     metadata: {
@@ -279,7 +283,7 @@ async function commitPack(
         path: f.path,
         operation: 'upsert',
         content_id: `blob-${i}`,
-        mode: '100644',
+        mode: f.mode ?? '100644',
       })),
     },
   });

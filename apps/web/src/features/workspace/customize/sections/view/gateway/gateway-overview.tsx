@@ -4,7 +4,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { listProjectSessions } from '@kortix/sdk/projects-client';
 import {
   useGatewayBreakdown,
@@ -48,15 +51,45 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>('cost');
 
-  const { data: overview } = useGatewayOverview(projectId, days);
-  const { data: seriesData } = useGatewaySeries(projectId, days);
-  const { data: breakdown } = useGatewayBreakdown(projectId, days);
-  const { data: sessionsData } = useGatewaySessions(projectId, days);
-  const { data: errorData } = useGatewayErrors(projectId, days);
+  const overviewQuery = useGatewayOverview(projectId, days);
+  const seriesQuery = useGatewaySeries(projectId, days);
+  const breakdownQuery = useGatewayBreakdown(projectId, days);
+  const sessionsQuery = useGatewaySessions(projectId, days);
+  const errorsQuery = useGatewayErrors(projectId, days);
+  const { data: overview } = overviewQuery;
+  const { data: seriesData } = seriesQuery;
+  const { data: breakdown } = breakdownQuery;
+  const { data: sessionsData } = sessionsQuery;
+  const { data: errorData } = errorsQuery;
+
+  const isLoading =
+    overviewQuery.isLoading ||
+    seriesQuery.isLoading ||
+    breakdownQuery.isLoading ||
+    sessionsQuery.isLoading ||
+    errorsQuery.isLoading;
+  const isError =
+    overviewQuery.isError ||
+    seriesQuery.isError ||
+    breakdownQuery.isError ||
+    sessionsQuery.isError ||
+    errorsQuery.isError;
+  // No mutations live in this component, but a failed background refetch on
+  // any one of the five queries still shouldn't blank a dashboard that has
+  // data from the others (or a previous successful fetch) — only fall back
+  // to the full-page ErrorState when none of them have data left to render.
+  const hasAnyData = !!overview || !!seriesData || !!breakdown || !!sessionsData || !!errorData;
+  const retry = () => {
+    void overviewQuery.refetch();
+    void seriesQuery.refetch();
+    void breakdownQuery.refetch();
+    void sessionsQuery.refetch();
+    void errorsQuery.refetch();
+  };
 
   // Resolve session ids → human names so spend reads as "Fix login bug", not a
-  // raw uuid. Map both the kortix and opencode ids since the gateway may key on
-  // either.
+  // raw uuid. Map both the Kortix project session id and runtime session id
+  // since the gateway may key on either.
   const { data: projectSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -69,7 +102,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
       const label = s.name ?? s.custom_name ?? null;
       if (!label) continue;
       m.set(s.session_id, label);
-      if (s.opencode_session_id) m.set(s.opencode_session_id, label);
+      if (s.runtime_session_id) m.set(s.runtime_session_id, label);
     }
     return m;
   }, [projectSessions]);
@@ -91,6 +124,31 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const maxErrorCount = Math.max(1, ...errorTypes.map((e) => e.count));
 
   const activeMetric = METRICS.find((m) => m.key === metric) ?? METRICS[0];
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <OverviewSkeleton />
+      </div>
+    );
+  }
+
+  if (isError && !hasAnyData) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-5">
+        <ErrorState
+          size="sm"
+          title="Couldn't load usage"
+          description="Something went wrong loading usage for this project."
+          action={
+            <Button variant="outline" size="sm" onClick={retry}>
+              Retry
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -271,6 +329,32 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
             </div>
           </Panel>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loading placeholder shaped like the real dashboard — a stat-card row, the
+ * trend chart, and the two breakdown panels — so the layout doesn't jump
+ * once the queries resolve.
+ */
+function OverviewSkeleton() {
+  return (
+    <div className="w-full space-y-5 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-5 w-28 rounded-md" />
+        <Skeleton className="h-8 w-40 rounded-md" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-md" />
+        ))}
+      </div>
+      <Skeleton className="h-64 rounded-md" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-48 rounded-md" />
+        <Skeleton className="h-48 rounded-md" />
       </div>
     </div>
   );

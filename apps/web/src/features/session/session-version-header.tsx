@@ -66,7 +66,7 @@ function SubTab({
 }
 
 export function SessionVersionHeader({
-  /** OpenCode chat session id — the agent we message to open the change request. */
+  /** Runtime chat session id — the agent we message to open the change request. */
   chatSessionId,
   mode,
   onModeChange,

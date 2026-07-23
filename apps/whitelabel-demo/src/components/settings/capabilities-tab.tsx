@@ -21,7 +21,7 @@ export function CapabilitiesTab({ projectId }: { projectId: string }) {
         icon={Bot}
         title="Agents"
         items={config.agents}
-        defaultName={config.open_code_default_agent}
+        defaultName={config.runtime_default_agent}
       />
       <Section icon={Slash} title="Commands" items={config.commands} prefix="/" />
       <Section icon={Sparkles} title="Skills" items={config.skills} />

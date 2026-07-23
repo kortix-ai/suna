@@ -155,15 +155,17 @@ const INIT_INTRO: Line[] = [
 
 const AGENT_PICK_INTRO: Line[] = [
   [],
-  [t('  Pick your local coding agent to configure this Kortix project.', 'dim')],
+  [t('  Pick the agent that will configure this Kortix project.', 'dim')],
   [],
-  [t('  It picks up the Kortix skill — ask it to scaffold triggers,', 'dim')],
-  [t('  custom agents, or edit kortix.yaml for you.', 'dim')],
-  [t('  (Kortix itself runs opencode inside every sandbox session.)', 'dim')],
+  [t('  Local tools get compatibility files for editing the repo.', 'dim')],
+  [t('  This Git-owned project includes four ACP profiles:', 'dim')],
+  [t('  OpenCode · Claude Code · Codex · Pi', 'fg')],
+  [t('  One Kortix SDK session contract powers web', 'dim')],
+  [t('  and reference apps across platforms.', 'dim')],
   [],
 ];
 
-const AGENTS = ['opencode', 'claude', 'codex', 'cursor'];
+const AGENTS = ['OpenCode', 'Claude Code', 'Codex', 'Pi'];
 const PROJECT_NAME_LABEL: Line = [t('Project name '), t('(my-app)', 'dim'), t(': ')];
 
 const initTail = (name: string): Line[] => [
@@ -172,10 +174,11 @@ const initTail = (name: string): Line[] => [
   [t('Wrote 9 files:')],
   [t('  + ', 'faded'), t('kortix.yaml')],
   [t('  + ', 'faded'), t('.kortix/Dockerfile')],
-  [t('  + ', 'faded'), t('.kortix/opencode/opencode.jsonc')],
-  [t('  + ', 'faded'), t('.kortix/opencode/agents/kortix.md')],
-  [t('  + ', 'faded'), t('.kortix/opencode/skills/kortix-system/SKILL.md')],
-  [t('  + ', 'faded'), t('.claude/skills/kortix/SKILL.md')],
+  [t('  + ', 'faded'), t('.opencode/opencode.jsonc')],
+  [t('  + ', 'faded'), t('.opencode/agents/kortix.md')],
+  [t('  + ', 'faded'), t('.opencode/skills/kortix-system/SKILL.md')],
+  [t('  + ', 'faded'), t('.agents → .opencode')],
+  [t('  + ', 'faded'), t('AGENTS.md')],
   [t('Git: initialized (main)', 'dim')],
   [],
   [t('Next:')],

@@ -23,14 +23,17 @@ function session(
     sandbox_provider: 'daytona',
     sandbox_id: sessionId,
     sandbox_url: `https://api.test/v1/p/external-${sessionId}/8000`,
-    opencode_session_id: `oc-${sessionId}`,
+    runtime_session_id: `runtime-session-${sessionId}`,
+    runtime_protocol: 'acp',
+    runtime_id: `runtime-${sessionId}`,
+    acp_session_id: `acp-${sessionId}`,
     name: null,
     custom_name: null,
     agent_name: null,
     status,
     error: null,
     metadata: {},
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: '2026-07-23T00:00:00.000Z',
     updated_at: '2026-07-23T00:00:00.000Z',
     ...options,
@@ -38,41 +41,51 @@ function session(
 }
 
 describe('runningSessionWarmupTargets', () => {
-  test('prefetches bounded tails without opening one permanent stream per session', () => {
-    expect(keeperSource).toContain('void prefetchSession(');
+  test('seeds ACP readiness without opening one permanent stream per session', () => {
+    expect(keeperSource).toContain('queryClient.setQueryData');
+    expect(keeperSource).not.toContain('prefetchSession');
     expect(keeperSource).not.toContain('openEventStream');
     expect(keeperSource).not.toContain('BackgroundSessionStream');
+    expect(keeperSource).not.toContain('OpenCode');
   });
 
-  test('warms every accessible running session except the active session', () => {
+  test('warms every accessible ACP session except the active session', () => {
+    const targets = runningSessionWarmupTargets(
+      [
+        session('active', 'running'),
+        session('running-1', 'running'),
+        session('running-2', 'running'),
+        session('stopped', 'stopped'),
+        session('private', 'running', { can_access: false }),
+      ],
+      'active',
+    );
     expect(
-      runningSessionWarmupTargets(
-        [
-          session('active', 'running'),
-          session('running-1', 'running'),
-          session('running-2', 'running'),
-          session('stopped', 'stopped'),
-          session('private', 'running', { can_access: false }),
-        ],
-        'active',
-      ),
+      targets.map(({ sessionId, startSeed }) => ({
+        sessionId,
+        runtimeId: startSeed.runtime_id,
+        runtimeUrl: startSeed.runtime_url,
+      })),
     ).toEqual([
       {
-        openCodeSessionId: 'oc-running-1',
+        sessionId: 'running-1',
+        runtimeId: 'runtime-running-1',
         runtimeUrl: 'https://api.test/v1/p/external-running-1/8000',
       },
       {
-        openCodeSessionId: 'oc-running-2',
+        sessionId: 'running-2',
+        runtimeId: 'runtime-running-2',
         runtimeUrl: 'https://api.test/v1/p/external-running-2/8000',
       },
     ]);
   });
 
-  test('skips rows without a canonical OpenCode session or routable sandbox', () => {
+  test('skips rows without an ACP runtime or routable sandbox', () => {
     expect(
       runningSessionWarmupTargets(
         [
-          session('no-pin', 'running', { opencode_session_id: null }),
+          session('no-runtime', 'running', { runtime_id: null }),
+          session('wrong-protocol', 'running', { runtime_protocol: null }),
           session('no-url', 'running', { sandbox_url: null }),
         ],
         null,

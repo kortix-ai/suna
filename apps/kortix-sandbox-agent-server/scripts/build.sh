@@ -54,8 +54,14 @@ compile_with_retry() {
 # 8000 never rebound → every proxied request 502'd → sandboxes stuck at
 # "Starting the agent" forever. Gate the compile on a clean tsc so it can never
 # recur.
+# tsconfig.build.json excludes *.test.ts. The isolated Docker build copies only
+# this app (no monorepo), so the two workspace-package integration tests
+# (harness-registry.conformance / sdk-bridge.e2e — they import @kortix/shared and
+# @kortix/sdk) can't resolve here; they are typechecked in the monorepo via the
+# default tsconfig.json. The compiled binary only ever bundles src/main.ts's
+# graph, which never reaches a test file.
 echo "Typechecking (tsc --noEmit) before compile…"
-bun run typecheck
+bun tsc --noEmit -p tsconfig.build.json
 
 compile_with_retry
 chmod +x dist/kortix-agent

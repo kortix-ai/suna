@@ -1,11 +1,18 @@
 import { createInterface } from 'node:readline';
 
 import { CATALOG, isProviderAuthSatisfied, primaryAuthEnvVars } from '@kortix/llm-catalog';
+import {
+  type AuthFlow,
+  type AuthProviderPublic,
+  accountDoorProviders,
+  findAuthProviderPublic,
+} from '@kortix/shared/auth-providers';
+import { HARNESSES, type HarnessId, compatibleHarnessesFor } from '@kortix/shared/harnesses';
 
-import { ApiError } from '../api/client.ts';
+import { type ApiClient, ApiError } from '../api/client.ts';
 import type {
+  AuthProvidersResponse,
   OauthFlowStartResponse,
-  OauthListResponse,
   OauthPollResponse,
   ProjectSecret,
 } from '../api/types.ts';
@@ -21,27 +28,33 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
 
-Configure LLM providers for the linked Kortix project. Two paths:
+Connect LLM credentials to the linked Kortix project. Two doors, one registry
+(the same one the web dashboard reads — docs/specs/2026-07-22-unified-auth-
+gateway.md):
 
-  • OAuth (zero config) — uses the upstream provider's device-code flow
-    (ChatGPT Pro/Plus, GitHub Copilot). Tokens land encrypted on the
-    project, get refreshed on each sandbox boot.
+  • Account — sign in with a subscription. Codex/ChatGPT uses a device-code
+    flow; Claude Code pastes a \`claude setup-token\`. Tokens land encrypted
+    on the project and are refreshed on each sandbox boot.
 
-  • API key — stored as an encrypted project secret. Injected into
-    sessions at boot, picked up by opencode's provider lookup.
+  • API key — stored as an encrypted project secret, injected into sessions
+    at boot. One key can unlock several harnesses (an Anthropic key serves
+    Claude Code, OpenCode, and Pi).
 
 Subcommands:
-  ls [--json]                       List configured providers (OAuth +
-                                    API-key secrets that map to known
-                                    providers).
-  login <provider>                  Run the OAuth device-code flow.
-                                    Providers: openai, github-copilot.
+  ls [--json]                       List every provider door with its live
+                                    status and which harnesses it unlocks.
+  login <provider>                  Connect an account (subscription).
+                                    Providers: openai (alias codex),
+                                    claude (alias for anthropic's subscription).
   set <provider> [<key>]            Save an API key as a project secret.
-                                    Provider → env-var mapping below.
                                     With no <key>, reads from stdin.
                                     bedrock also needs --region <region>.
-  rm <provider>                     Remove the OAuth credential and/or
-                                    the matching API-key secret(s).
+  rm <provider>                     Disconnect an account and/or remove the
+                                    matching API-key secret(s).
+
+Account providers (subscription sign-in):
+  openai / codex     ChatGPT / Codex — device-code flow
+  claude / anthropic Claude Code — paste a \`claude setup-token\`
 
 Known API-key providers (provider → project secret(s)):
   anthropic       → ANTHROPIC_API_KEY
@@ -58,7 +71,6 @@ Global options:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
-  --enterprise <url> (login github-copilot) Enterprise GHE URL.
   -h, --help         Show this help.
 `;
 
@@ -102,8 +114,74 @@ export function isProviderConnected(envVars: string[], secretNames: Set<string>)
   );
 }
 
-// Providers that support the OAuth device-code flow.
-const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot']);
+// ── Account-door resolution — registry-driven, no hardcoded provider set ────
+// The old `OAUTH_PROVIDERS = new Set(['openai'])` is gone: which providers
+// offer an account/subscription door is now read from the shared registry
+// (`@kortix/shared/auth-providers`), the SAME table the web reads (spec §8.3),
+// so the CLI and web can never drift on it again.
+
+/** CLI-friendly aliases → the registry account-door provider id. `codex`/
+ *  `chatgpt` are the honest names for OpenAI's SUBSCRIPTION door (it unlocks
+ *  the Codex harness, not a generic OpenAI-brand OAuth); `claude` names
+ *  Anthropic's subscription door specifically (vs. the `anthropic` API key). */
+const ACCOUNT_ALIASES: Record<string, string> = {
+  claude: 'anthropic',
+  'claude-code': 'anthropic',
+  codex: 'openai',
+  chatgpt: 'openai',
+};
+
+/** The flows this CLI build can actually complete. `browser-oauth` is NOT
+ *  here: the local-callback browser sign-in the registry lists first for
+ *  Codex (spec §6.2) needs a server-side direct-store route AND the server-
+ *  only `OAuthClientConfig` — neither is shipped in the landed Step-3 backend,
+ *  so the CLI falls through to the next flow (device-code) instead. See the
+ *  task report for the deferral rationale. */
+const CLI_SUPPORTED_FLOWS: ReadonlySet<AuthFlow> = new Set(['device-code', 'paste-token']);
+
+/** Account-door secret names for paste-token providers — mirrors the server's
+ *  `accountSecretName()` in apps/api/.../routes/auth-providers.ts (the source
+ *  of truth). Only `claude_subscription` is paste-token today. */
+const ACCOUNT_PASTE_SECRET_BY_KIND: Record<string, string> = {
+  claude_subscription: 'CLAUDE_CODE_OAUTH_TOKEN',
+};
+
+/** Resolve a user-typed provider name to a registry account-door entry,
+ *  honouring the friendly aliases. `undefined` if it names no account door. */
+function resolveAccountProvider(input: string): AuthProviderPublic | undefined {
+  const direct = findAuthProviderPublic(input, 'account');
+  if (direct) return direct;
+  const aliased = ACCOUNT_ALIASES[input];
+  return aliased ? findAuthProviderPublic(aliased, 'account') : undefined;
+}
+
+/** Pick the flow the CLI will actually run for an account provider, skipping
+ *  gated flows (Anthropic one-click, off by default) and flows this build
+ *  can't complete (`browser-oauth`). Returns the chosen flow plus whether a
+ *  preferred-but-unavailable browser flow was skipped, so `login` can say so. */
+function chooseCliFlow(entry: AuthProviderPublic): {
+  flow: AuthFlow | null;
+  browserSkipped: 'gated' | 'unsupported' | null;
+} {
+  let browserSkipped: 'gated' | 'unsupported' | null = null;
+  for (const flow of entry.flows.cli) {
+    if (flow === 'browser-oauth') {
+      // Registry may list browser-oauth first; skip it and remember why.
+      browserSkipped = entry.gatedBehind ? 'gated' : 'unsupported';
+      continue;
+    }
+    if (CLI_SUPPORTED_FLOWS.has(flow)) return { flow, browserSkipped };
+  }
+  return { flow: null, browserSkipped };
+}
+
+/** "Claude Code, OpenCode, Pi" from a HarnessAuthKind — the unlocks copy. */
+function unlocksLabels(harnessIds: readonly string[]): string {
+  const labels = harnessIds
+    .map((id) => HARNESSES[id as HarnessId]?.label ?? id)
+    .filter((l): l is string => Boolean(l));
+  return labels.length > 0 ? labels.join(', ') : '—';
+}
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -117,13 +195,11 @@ export async function runProviders(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
-  let enterpriseFlag: string | undefined;
   let regionFlag: string | undefined;
   let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
-    enterpriseFlag = takeFlagValue(rest, ['--enterprise']);
     regionFlag = takeFlagValue(rest, ['--region']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
@@ -138,7 +214,7 @@ export async function runProviders(argv: string[]): Promise<number> {
       return providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
-      return providersLogin(rest[0], enterpriseFlag, ctxOpts);
+      return providersLogin(rest[0], ctxOpts);
     case 'set':
       return providersSet(rest[0], rest[1], regionFlag, ctxOpts);
     case 'rm':
@@ -151,15 +227,35 @@ export async function runProviders(argv: string[]): Promise<number> {
   }
 }
 
+// ── ls ──────────────────────────────────────────────────────────────────────
+
+/** Map the server's `CredentialStatus` onto the ONE status vocabulary the web
+ *  uses (connection-status.ts) so a credential reads the same word on every
+ *  surface. `absent`/null → "Not connected". */
+function statusWord(status: string | null | undefined): { text: string; color: string } {
+  switch (status) {
+    case 'healthy':
+      return { text: 'Connected', color: C.green };
+    case 'expired':
+      return { text: 'Expired', color: C.red };
+    case 'invalid':
+      return { text: 'Needs attention', color: C.red };
+    case 'unverified':
+      return { text: 'Checking', color: C.yellow };
+    default:
+      return { text: 'Not connected', color: C.dim };
+  }
+}
+
 async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  let oauthList: OauthListResponse;
+  let providers: AuthProvidersResponse;
   let secrets: { items: ProjectSecret[] };
   try {
-    [oauthList, secrets] = await Promise.all([
-      ctx.client.get<OauthListResponse>(`/projects/${ctx.projectId}/oauth`),
+    [providers, secrets] = await Promise.all([
+      ctx.client.get<AuthProvidersResponse>(`/projects/${ctx.projectId}/auth-providers`),
       ctx.client.get<{ items: ProjectSecret[] }>(`/projects/${ctx.projectId}/secrets`),
     ]);
   } catch (err) {
@@ -167,90 +263,161 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (json) {
-    emitJson({ oauth: oauthList.items, secrets: secrets.items });
+    emitJson({ providers: providers.providers, byok: providers.byok, secrets: secrets.items });
     return 0;
   }
+
+  const accountRows = providers.providers.filter((p) => p.door === 'account');
+  const apiKeyRows = providers.providers.filter(
+    (p) => p.door === 'api-key' && (p.compatibleHarnesses.length > 0 || p.status),
+  );
 
   process.stdout.write('\n');
-  const setSecretNames = new Set(secrets.items.map((s) => s.name));
 
-  if (oauthList.items.length === 0 && setSecretNames.size === 0) {
+  // ── Accounts door ──
+  if (accountRows.length > 0) {
     process.stdout.write(
-      `  ${C.dim}No providers configured. Try:${C.reset}\n` +
-        `    ${C.cyan}kortix providers login openai${C.reset}\n` +
-        `    ${C.cyan}kortix providers set anthropic sk-ant-...${C.reset}\n\n`,
+      `  ${C.bold}Accounts${C.reset}  ${C.dim}(subscription sign-in)${C.reset}\n`,
     );
-    return 0;
-  }
-
-  if (oauthList.items.length > 0) {
-    process.stdout.write(`  ${C.bold}OAuth${C.reset}\n`);
-    const nameW = Math.max(...oauthList.items.map((c) => c.provider_id.length), 14);
+    const nameW = Math.max(...accountRows.map((r) => r.label.length), 14);
     process.stdout.write(
-      `  ${C.dim}${pad('PROVIDER', nameW)}   EXPIRES IN     UPDATED${C.reset}\n`,
+      `  ${C.dim}${pad('PROVIDER', nameW)}   ${pad('STATUS', 15)}  ${pad('UNLOCKS', 22)}  EXPIRES${C.reset}\n`,
     );
-    for (const c of oauthList.items) {
-      const expIn = c.expires_in_ms === null ? 'never' : formatDuration(c.expires_in_ms);
-      const ts = formatRelative(c.updated_at);
+    for (const row of accountRows) {
+      const sw = statusWord(row.status?.status);
+      const unlocks = unlocksLabels(row.compatibleHarnesses);
+      // `gated` only marks the off-by-default browser one-click (Anthropic) —
+      // the provider is still connectable via its default flow, so it must not
+      // read as an expiry/availability signal here.
+      const exp =
+        row.status?.expiresAt != null ? formatDuration(row.status.expiresAt - Date.now()) : '—';
       process.stdout.write(
-        `  ${pad(c.provider_id, nameW)}   ${pad(expIn, 13)}  ${C.faded}${ts}${C.reset}\n`,
+        `  ${pad(row.label, nameW)}   ${sw.color}${pad(sw.text, 15)}${C.reset}  ${pad(unlocks, 22)}  ${C.faded}${exp}${C.reset}\n`,
       );
     }
     process.stdout.write('\n');
   }
 
-  const keyRows: Array<{ provider: string; env: string }> = [];
-  for (const [provider, envVars] of Object.entries(PROVIDER_ENV_VARS)) {
-    if (isProviderConnected(envVars, setSecretNames)) {
-      keyRows.push({ provider, env: envVars.join(' + ') });
-    }
-  }
-  if (keyRows.length > 0) {
+  // ── API-key door ── (registry entries with a real harness set, + connected BYOK)
+  const setSecretNames = new Set(secrets.items.map((s) => s.name));
+  const byokConnected = providers.byok.filter((b) =>
+    isProviderConnected(b.apiKeyEnvVars, setSecretNames),
+  );
+
+  if (apiKeyRows.length > 0 || byokConnected.length > 0) {
     process.stdout.write(`  ${C.bold}API keys${C.reset}\n`);
-    const nameW = Math.max(...keyRows.map((r) => r.provider.length), 14);
-    for (const r of keyRows) {
-      process.stdout.write(`  ${pad(r.provider, nameW)}   ${C.dim}${r.env}${C.reset}\n`);
+    const nameW = Math.max(
+      ...apiKeyRows.map((r) => r.label.length),
+      ...byokConnected.map((b) => b.label.length),
+      14,
+    );
+    process.stdout.write(
+      `  ${C.dim}${pad('PROVIDER', nameW)}   ${pad('STATUS', 15)}  UNLOCKS${C.reset}\n`,
+    );
+    for (const row of apiKeyRows) {
+      const sw = statusWord(row.status?.status);
+      process.stdout.write(
+        `  ${pad(row.label, nameW)}   ${sw.color}${pad(sw.text, 15)}${C.reset}  ${unlocksLabels(row.compatibleHarnesses)}\n`,
+      );
+    }
+    for (const b of byokConnected) {
+      process.stdout.write(
+        `  ${pad(b.label, nameW)}   ${C.green}${pad('Connected', 15)}${C.reset}  ${C.dim}${b.apiKeyEnvVars.join(' + ')}${C.reset}\n`,
+      );
     }
     process.stdout.write('\n');
+  }
+
+  const nothingConnected =
+    accountRows.every((r) => !r.status || r.status.status === 'absent') &&
+    apiKeyRows.every((r) => !r.status || r.status.status === 'absent') &&
+    byokConnected.length === 0;
+  if (nothingConnected) {
+    process.stdout.write(
+      `  ${C.dim}Nothing connected yet. Try:${C.reset}\n` +
+        `    ${C.cyan}kortix providers login codex${C.reset}     ${C.dim}(ChatGPT/Codex subscription)${C.reset}\n` +
+        `    ${C.cyan}kortix providers login claude${C.reset}    ${C.dim}(Claude setup-token)${C.reset}\n` +
+        `    ${C.cyan}kortix providers set anthropic sk-ant-...${C.reset}\n\n`,
+    );
   }
 
   return 0;
 }
 
-async function providersLogin(
-  provider: string | undefined,
-  enterpriseUrl: string | undefined,
-  opts: CtxOpts,
-): Promise<number> {
+// ── login ───────────────────────────────────────────────────────────────────
+
+async function providersLogin(provider: string | undefined, opts: CtxOpts): Promise<number> {
   if (!provider) {
     process.stderr.write(
-      `${status.err('Pass a provider: kortix providers login <openai|github-copilot>')}\n`,
+      `${status.err('Pass a provider: kortix providers login <codex|claude>')}\n`,
     );
     return 2;
   }
-  if (!OAUTH_PROVIDERS.has(provider)) {
+
+  const entry = resolveAccountProvider(provider);
+  if (!entry) {
+    if (PROVIDER_ENV_VARS[provider]?.length) {
+      process.stderr.write(
+        `${status.err(`"${provider}" connects via an API key, not an account sign-in.`)}\n` +
+          `  ${C.dim}Run ${C.reset}${C.cyan}kortix providers set ${provider} <key>${C.reset}${C.dim} instead.${C.reset}\n`,
+      );
+    } else {
+      const accountNames = accountDoorProviders().map((p) => p.id);
+      process.stderr.write(
+        `${status.err(`"${provider}" isn't an account provider.`)}\n` +
+          `  ${C.dim}Account sign-in: ${accountNames.join(', ')} (aliases: ${Object.keys(ACCOUNT_ALIASES).join(', ')}).${C.reset}\n` +
+          `  ${C.dim}Or connect an API key: ${C.reset}${C.cyan}kortix providers set <provider> <key>${C.reset}\n`,
+      );
+    }
+    return 2;
+  }
+
+  const { flow, browserSkipped } = chooseCliFlow(entry);
+  if (!flow) {
     process.stderr.write(
-      `${status.err(`OAuth not supported for "${provider}".`)}\n` +
-        `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`,
+      `${status.err(`No usable sign-in flow for ${entry.label} in this CLI build.`)}\n` +
+        `  ${C.dim}The registry lists it, but every flow is gated or unsupported here.${C.reset}\n`,
     );
-    return 2;
+    return 1;
   }
+  // Note when a browser flow was the registry's first choice but we skipped it.
+  if (browserSkipped === 'unsupported') {
+    process.stdout.write(
+      `  ${C.dim}Browser sign-in isn't available in this CLI build yet — using device code.${C.reset}\n`,
+    );
+  }
+
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  // Kick off the device-code flow.
+  const unlocks = unlocksLabels(compatibleHarnessesFor(entry.producesAuthKind));
+
+  if (flow === 'paste-token') {
+    return loginPasteToken(entry, ctx, unlocks);
+  }
+  return loginDeviceCode(entry, ctx, unlocks);
+}
+
+/** Device-code flow (Codex today) — start + poll against the unified
+ *  /oauth-credentials routes. Any replica can serve the poll: the flow state
+ *  round-trips through an opaque encrypted handle. */
+async function loginDeviceCode(
+  entry: AuthProviderPublic,
+  ctx: { client: ApiClient; projectId: string },
+  unlocks: string,
+): Promise<number> {
   let flow: OauthFlowStartResponse;
   try {
     flow = await ctx.client.post<OauthFlowStartResponse>(
-      `/projects/${ctx.projectId}/oauth/${provider}/start`,
-      enterpriseUrl ? { enterprise_url: enterpriseUrl } : {},
+      `/projects/${ctx.projectId}/oauth-credentials/${entry.id}/start`,
+      {},
     );
   } catch (err) {
     return surfaceApiError(err);
   }
 
   process.stdout.write(
-    `\n  ${C.bold}Authorize ${provider}${C.reset}\n` +
+    `\n  ${C.bold}Connect ${entry.label}${C.reset}\n` +
       `  ${C.dim}Open this URL and enter the code:${C.reset}\n` +
       `    ${C.cyan}${flow.verification_url}${C.reset}\n` +
       `    code: ${C.bold}${flow.user_code}${C.reset}\n` +
@@ -258,7 +425,6 @@ async function providersLogin(
   );
   openInBrowser(flow.verification_url);
 
-  // Poll until success/failure/expiry.
   const deadline = flow.expires_at;
   let intervalMs = flow.interval_ms || 5000;
   while (Date.now() < deadline) {
@@ -266,7 +432,7 @@ async function providersLogin(
     let resp: OauthPollResponse;
     try {
       resp = await ctx.client.post<OauthPollResponse>(
-        `/projects/${ctx.projectId}/oauth/${provider}/poll`,
+        `/projects/${ctx.projectId}/oauth-credentials/${entry.id}/poll`,
         { flow_id: flow.flow_id },
       );
     } catch (err) {
@@ -275,7 +441,8 @@ async function providersLogin(
     }
     if (resp.status === 'success') {
       process.stdout.write(
-        `\n${status.ok(`Authorized ${C.bold}${provider}${C.reset} on this project`)}\n`,
+        `\n${status.ok(`Connected ${C.bold}${entry.label}${C.reset} on this project`)}\n` +
+          `  ${C.dim}Unlocks: ${unlocks}${C.reset}\n`,
       );
       const exp = resp.credential.expires_in_ms;
       if (exp !== null) {
@@ -303,6 +470,54 @@ async function providersLogin(
   process.stderr.write(`${status.err('Authorization deadline passed.')}\n`);
   return 1;
 }
+
+/** Paste-token flow (Claude Code) — Anthropic's policy forbids third-party
+ *  browser relay of a subscription, so its sanctioned path is a `claude
+ *  setup-token` paste written straight to project secrets (spec §6.6(2)). */
+async function loginPasteToken(
+  entry: AuthProviderPublic,
+  ctx: { client: ApiClient; projectId: string },
+  unlocks: string,
+): Promise<number> {
+  const secretName = ACCOUNT_PASTE_SECRET_BY_KIND[entry.producesAuthKind];
+  if (!secretName) {
+    process.stderr.write(
+      `${status.err(`No paste target known for ${entry.label} (${entry.producesAuthKind}).`)}\n`,
+    );
+    return 1;
+  }
+
+  process.stdout.write(
+    `\n  ${C.bold}Connect ${entry.label}${C.reset}\n` +
+      `  ${C.dim}Claude Code uses Anthropic's own browser sign-in, not a device code.${C.reset}\n` +
+      `  ${C.dim}On your machine, run:${C.reset}\n` +
+      `    ${C.cyan}claude setup-token${C.reset}\n` +
+      `  ${C.dim}then paste the token it prints below.${C.reset}\n`,
+  );
+  const token = await readSecret('  Token (input hidden): ');
+  if (!token) {
+    process.stderr.write(`${status.err('Empty token — aborting.')}\n`);
+    return 1;
+  }
+
+  try {
+    await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      name: secretName,
+      value: token,
+    });
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  process.stdout.write(
+    `\n${status.ok(`Connected ${C.bold}${entry.label}${C.reset} on this project`)}\n` +
+      `  ${C.dim}Unlocks: ${unlocks}${C.reset}\n` +
+      `  ${C.dim}Stored as ${secretName}; injected on the next sandbox boot.${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+// ── set ─────────────────────────────────────────────────────────────────────
 
 async function providersSet(
   provider: string | undefined,
@@ -369,12 +584,31 @@ async function providersSet(
   } catch (err) {
     return surfaceApiError(err);
   }
+
+  // "Unlocks" — the many-to-many credential→harness set, derived from the same
+  // catalog id the api-key door maps onto. Only the two catalog providers that
+  // gate a real HarnessAuthKind (anthropic/openai) have a meaningful set today.
+  const unlocks = unlocksForApiKeyProvider(provider);
+  const unlocksLine = unlocks ? `  ${C.dim}Unlocks: ${unlocks}${C.reset}\n` : '';
   process.stdout.write(
-    `\n${status.ok(`Saved ${C.bold}${Object.keys(values).join(', ')}${C.reset} for ${C.bold}${provider}${C.reset}`)}\n` +
-      `  ${C.dim}Will be injected on the next sandbox boot.${C.reset}\n\n`,
+    `\n${status.ok(`Saved ${C.bold}${Object.keys(values).join(', ')}${C.reset} for ${C.bold}${provider}${C.reset}`)}\n${unlocksLine}  ${C.dim}Will be injected on the next sandbox boot.${C.reset}\n\n`,
   );
   return 0;
 }
+
+/** The harness set an API-key provider unlocks, or `null` when the CLI can't
+ *  name it (a plain BYOK key that only widens the gateway catalog, not a
+ *  distinct HarnessAuthKind). Only the two catalog providers that gate a real
+ *  kind (anthropic/openai) have one today — the api-key doors live in the
+ *  server registry, not the public account-only table, so resolve by kind. */
+function unlocksForApiKeyProvider(provider: string): string | null {
+  const catalogId = PROVIDER_CATALOG_ID[provider] ?? provider;
+  if (catalogId === 'anthropic') return unlocksLabels(compatibleHarnessesFor('anthropic_api_key'));
+  if (catalogId === 'openai') return unlocksLabels(compatibleHarnessesFor('openai_api_key'));
+  return null;
+}
+
+// ── rm ──────────────────────────────────────────────────────────────────────
 
 async function providersRm(provider: string | undefined, opts: CtxOpts): Promise<number> {
   if (!provider) {
@@ -384,13 +618,19 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  let removedOauth = false;
+  const isAlias = provider in ACCOUNT_ALIASES;
+  const accountEntry = resolveAccountProvider(provider);
+  // An alias (claude/codex) targets the account door only; a bare provider
+  // name (anthropic/openai/openrouter) removes everything for that provider.
+  const envVars = isAlias ? [] : (PROVIDER_ENV_VARS[provider] ?? []);
+
+  let removedAccount = false;
   const removedKeys: string[] = [];
 
-  if (OAUTH_PROVIDERS.has(provider)) {
+  if (accountEntry) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/oauth/${provider}`);
-      removedOauth = true;
+      await ctx.client.delete(`/projects/${ctx.projectId}/oauth-credentials/${accountEntry.id}`);
+      removedAccount = true;
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
         return surfaceApiError(err);
@@ -398,7 +638,6 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
     }
   }
 
-  const envVars = PROVIDER_ENV_VARS[provider] ?? [];
   for (const envVar of envVars) {
     try {
       await ctx.client.delete(`/projects/${ctx.projectId}/secrets/${envVar}`);
@@ -410,12 +649,12 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
     }
   }
 
-  if (!removedOauth && removedKeys.length === 0) {
+  if (!removedAccount && removedKeys.length === 0) {
     process.stdout.write(`  ${C.dim}Nothing to remove for "${provider}".${C.reset}\n`);
     return 0;
   }
   const parts: string[] = [];
-  if (removedOauth) parts.push('OAuth credential');
+  if (removedAccount) parts.push('account credential');
   if (removedKeys.length > 0)
     parts.push(`secret${removedKeys.length > 1 ? 's' : ''} ${removedKeys.join(', ')}`);
   process.stdout.write(
@@ -440,18 +679,6 @@ function formatDuration(ms: number): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-
-function formatRelative(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diffMs / 60_000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 /** Read a plain (non-secret) value with normal echoed input — e.g. a region,

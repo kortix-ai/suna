@@ -12,6 +12,12 @@
  * new tools in an existing family are categorized correctly without a
  * registry update. Anything else falls back to a humanized version of the
  * raw name with category 'other'.
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — only consumed by
+ * `classify.ts`/`view-model.ts` in this directory (see their module docs).
+ * The ACP tool-card shape (`AcpToolCall` in `./acp/transcript.ts`) already
+ * carries a harness-supplied `title`/`toolKind` and doesn't need a
+ * name -> {label, category} lookup. Kept working, not removed.
  */
 
 export type ToolCategory = 'shell' | 'files' | 'search' | 'edit' | 'web' | 'task' | 'other';
@@ -111,6 +117,9 @@ export function humanizeToolName(name: string): string {
  * Look up display info for a tool name. Never throws, always returns a
  * usable label — unknown tools humanize their raw name with category
  * 'other' (or a family category, if the name matches a known prefix).
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — see the module
+ * doc at the top of this file.
  */
 export function toolInfo(name: string): ToolInfoEntry {
   const normalized = normalizeToolName(name);

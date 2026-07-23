@@ -12,21 +12,21 @@
  * committed without the agent reading + wiring it in first.
  */
 
-import { createRoute, z } from '@hono/zod-openapi';
-import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { getAgentGrant } from '../../iam/agent-scope';
-import { getCatalogEntry } from '../../marketplace/catalog';
+import { createRoute, z } from "@hono/zod-openapi";
+import { manifestCandidatePaths } from "@kortix/manifest-schema";
+import { getAgentGrant } from "../../iam/agent-scope";
+import { getCatalogEntry } from "../../marketplace/catalog";
 import {
   buildRegistryProjectInstallPrompt,
   buildTemplateInstallPrompt,
-} from './marketplace-install-prompts';
-import { auth, errors, json } from '../../openapi';
-import { readManifestFromRepo } from '../git/files';
-import { loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
-import { loadGitProject } from '../lib/git';
-import { readBody, requestAuditContext } from '../lib/serializers';
-import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+} from "./marketplace-install-prompts";
+import { auth, errors, json } from "../../openapi";
+import { readManifestFromRepo } from "../git/files";
+import { loadProjectForUser } from "../lib/access";
+import { AnyObject, projectsApp } from "../lib/app";
+import { loadGitProject } from "../lib/git";
+import { readBody, requestAuditContext } from "../lib/serializers";
+import { createProjectSession, sendSessionCreateError } from "../lib/sessions";
 
 /** The project's manifest raw text, preferring kortix.yaml over kortix.toml
  *  (dual-format). */
@@ -49,41 +49,45 @@ function buildItemInstallPrompt(
   id: string,
 ): string {
   const item = entry.item;
-  const typeLabel = item.type.replace('registry:', '');
-  const meta = (item.meta ?? {}) as { capabilities?: { connectors?: string[]; secrets?: string[] } };
+  const typeLabel = item.type.replace("registry:", "");
+  const meta = (item.meta ?? {}) as {
+    capabilities?: { connectors?: string[]; secrets?: string[] };
+  };
   const needs = [
     ...(meta.capabilities?.connectors ?? []),
     ...(meta.capabilities?.secrets ?? []),
-    ...Object.keys((item as { envVars?: Record<string, unknown> }).envVars ?? {}),
+    ...Object.keys(
+      (item as { envVars?: Record<string, unknown> }).envVars ?? {},
+    ),
   ];
   const lines: string[] = [
     `Add the "${item.title ?? item.name}" ${typeLabel} to THIS project and set it up.`,
-    '',
-    item.description ?? '',
-    '',
-    'Steps:',
+    "",
+    item.description ?? "",
+    "",
+    "Steps:",
     `1. Fetch its source (marketplace item id "${id}") — read its files (SKILL.md / agent / tool definition) and place them into this project, following the project's existing conventions.`,
-    '2. Read its SKILL.md (or equivalent) to see what it does and what it needs.',
+    "2. Read its SKILL.md (or equivalent) to see what it does and what it needs.",
   ];
   if (needs.length) {
     lines.push(
-      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with the \`request_secret\` / \`connect\` tools (or \`kortix secrets request\` / \`kortix connectors link\`) — never ask me to paste a raw key.`,
-      '4. Tell me in one line what it can now do and how to use it.',
+      `3. It needs these connected: ${needs.join(", ")}. Mint a setup link with the \`request_secret\` / \`connect\` tools (or \`kortix secrets request\` / \`kortix connectors link\`) — never ask me to paste a raw key.`,
+      "4. Tell me in one line what it can now do and how to use it.",
     );
   } else {
-    lines.push('3. Tell me in one line what it can now do and how to use it.');
+    lines.push("3. Tell me in one line what it can now do and how to use it.");
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 async function handleMarketplaceInstallSession(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const projectId = c.req.param("projectId");
+  const loaded = await loadProjectForUser(c, projectId, "write");
+  if (!loaded) return c.json({ error: "Not found" }, 404);
 
   const body = await readBody(c);
-  const id = typeof body?.id === 'string' ? body.id.trim() : '';
-  if (!id) return c.json({ error: 'id is required' }, 400);
+  const id = typeof body?.id === "string" ? body.id.trim() : "";
+  if (!id) return c.json({ error: "id is required" }, 400);
 
   const entry = await getCatalogEntry(id);
   if (!entry) return c.json({ error: `Unknown item "${id}"` }, 400);
@@ -94,9 +98,12 @@ async function handleMarketplaceInstallSession(c: any) {
     // Whole projects get merged (judgment-heavy, guards the target's kortix.yaml);
     // a use-case template renders inputs + wires its scheduled trigger; everything
     // else is a straight install + setup.
-    if (entry.item.type === 'registry:project') {
-      prompt = buildRegistryProjectInstallPrompt(entry, await manifestRawOrNull(project));
-    } else if (entry.item.type === 'registry:template') {
+    if (entry.item.type === "registry:project") {
+      prompt = buildRegistryProjectInstallPrompt(
+        entry,
+        await manifestRawOrNull(project),
+      );
+    } else if (entry.item.type === "registry:template") {
       prompt = buildTemplateInstallPrompt(entry, id);
     } else {
       prompt = buildItemInstallPrompt(entry, id);
@@ -109,19 +116,20 @@ async function handleMarketplaceInstallSession(c: any) {
     project: loaded.row,
     userId: loaded.userId,
     requestingPrincipalType:
-      c.get('authType') === 'service_account' ? 'service_account' : 'human',
+      c.get("authType") === "service_account" ? "service_account" : "human",
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,
-      metadata: { kind: 'marketplace-install', item_id: id },
+      metadata: { kind: "marketplace-install", item_id: id },
     },
-    visibility: 'project',
+    metadata: { source: "marketplace-install" },
+    visibility: "project",
     // Derive origin from the caller's token kind, same as POST /sessions (r7),
     // so a backend-driven install records origin='backend' rather than 'user'.
     // No origin_ref is accepted here — the body is composed server-side.
-    authType: c.get('authType') as string | undefined,
-    apiKeyType: c.get('apiKeyType') as string | undefined,
-    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+    authType: c.get("authType") as string | undefined,
+    apiKeyType: c.get("apiKeyType") as string | undefined,
+    inSession: c.get("sessionId") != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
   });
   if (result.error) return sendSessionCreateError(c, result.error);
@@ -131,17 +139,17 @@ async function handleMarketplaceInstallSession(c: any) {
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/marketplace/install-session',
-    tags: ['marketplace'],
-    summary: 'POST /:projectId/marketplace/install-session',
+    method: "post",
+    path: "/{projectId}/marketplace/install-session",
+    tags: ["marketplace"],
+    summary: "POST /:projectId/marketplace/install-session",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { "application/json": { schema: AnyObject } } },
     },
     responses: {
-      201: json(z.any(), 'Session started'),
+      201: json(z.any(), "Session started"),
       ...errors(400, 404),
     },
   }),

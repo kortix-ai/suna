@@ -1,6 +1,6 @@
 /**
  * SkillsPage — the project's OpenCode skills (web parity: customize/sections
- * skills-view). Lists the skills declared under .kortix/opencode/skills/ and,
+ * skills-view). Lists the skills declared under .opencode/skills/ and,
  * on tap, shows the skill's markdown source. Read-only; skill authoring flows
  * through a session (to be wired next).
  *

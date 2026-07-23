@@ -1,4 +1,4 @@
-import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, statSync, mkdirSync, readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -23,13 +23,13 @@ import { appendGitExcludeEntries } from '../git-exclude.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink .opencode → .kortix/opencode';
+      return "OpenCode harness: this project's real .opencode/ config dir";
     case 'claude':
-      return 'symlink .claude → .kortix/opencode';
+      return 'Claude Code harness: native .claude config and skills';
     case 'codex':
-      return 'symlink .agents → .kortix/opencode + AGENTS.md';
-    case 'cursor':
-      return 'AGENTS.md (read natively — no rule file)';
+      return 'Codex harness: native .codex skills + local .agents compatibility';
+    case 'pi':
+      return 'Pi harness: native .pi skills + AGENTS.md';
     default:
       return '';
   }
@@ -40,7 +40,8 @@ const HELP = help`Usage: kortix init [project-name] [options]
 Start a new Kortix project.
 
 A fresh, self-contained workspace your agents can run from day one — the
-full OpenCode runtime, project memory, and a kortix.yaml to make it yours.
+Kortix ACP runtime manifest, project memory, and local agent compatibility
+files to make it yours.
 By default this works like create-next-app and creates a new directory. In an
 already-cloned Kortix repository, pass --force to wire local coding agents in
 place without replacing repository files.
@@ -49,20 +50,21 @@ Arguments:
   project-name         Your project's name — and the directory it's created
                        in. Prompted if omitted.
 
-Pick the coding agent(s) to wire up. The OpenCode config dir is symlinked into
-each agent's native location (.opencode / .claude; codex wires .agents) so its
-skills and agents are shared; Codex and Cursor also get a root AGENTS.md pointer
-they read natively.
+Pick the local coding agent(s) to wire up for editing the project. This is
+local compatibility wiring only: Kortix cloud sessions use the v3 \`runtimes\`
+profiles in kortix.yaml and launch the selected ACP harness. Codex and Pi
+also get a root AGENTS.md pointer they read natively.
 
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
-                       Example: --agents claude,cursor
+                       Example: --agents claude,pi
   --template <name>    Starter template: general-knowledge-worker (default, full
                        skill kit) or minimal (base plumbing only).
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
+                       Requires kortix.yaml (or kortix.toml) and .opencode
+                       (or, for an un-migrated legacy clone, .kortix/opencode).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -176,7 +178,9 @@ function parseFlags(argv: string[]): InitFlags {
 function normalizeProjectName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return 'kortix-project';
-  return trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project';
+  return (
+    trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project'
+  );
 }
 
 function dirIsGitRepo(path: string): boolean {
@@ -191,13 +195,43 @@ function gitAvailable(): boolean {
   return spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0;
 }
 
-/** Keep post-clone agent wiring local so setup never dirties the user's repo. */
+/** True if either OpenCode runtime layout is present: the canonical
+ * `.opencode` (lstat-based, so a real dir, a kept legacy compat symlink, or
+ * even a not-yet-reconciled dangling legacy symlink all pass and the latter
+ * gets reconciled downstream by `wireCodingAgents`), or the legacy
+ * `.kortix/opencode` real dir a fresh clone of an un-migrated project has
+ * instead — its old `.opencode` symlink was local-only wiring
+ * (`.git/info/exclude`), never committed, so a fresh clone has no
+ * `.opencode` entry at all. */
+function hasOpencodeRuntime(cwd: string): boolean {
+  try {
+    lstatSync(resolve(cwd, '.opencode'));
+    return true;
+  } catch {
+    // No entry at `.opencode` at all — fall through to the legacy layout.
+  }
+  return existsSync(resolve(cwd, '.kortix/opencode'));
+}
+
+/** Keep post-clone agent wiring local so setup never dirties the user's repo.
+ * `/.opencode` is only added when `.opencode` is the local legacy compat
+ * symlink (an un-migrated clone, reconciled by `wireCodingAgents` before
+ * this runs) — on a migrated repo `.opencode` is the real, committed config
+ * tree, and excluding it would hide new files written under it from `git
+ * status`/`git add`. */
 function excludeLocalAgentWiring(repoRoot: string): void {
-  appendGitExcludeEntries(
-    repoRoot,
-    ['/.agents', '/.claude', '/.opencode', '/AGENTS.md'],
-    'Kortix local coding-agent wiring',
-  );
+  const entries = ['/.agents', '/.claude/skills', '/.codex/skills', '/.pi/skills'];
+  if (isOpencodeCompatSymlink(repoRoot)) entries.push('/.opencode');
+  entries.push('/AGENTS.md');
+  appendGitExcludeEntries(repoRoot, entries, 'Kortix local coding-agent wiring');
+}
+
+function isOpencodeCompatSymlink(repoRoot: string): boolean {
+  try {
+    return lstatSync(resolve(repoRoot, '.opencode')).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /** Layered: bright headline up top, dim supporting text below for the
@@ -212,10 +246,10 @@ function printAgentPreamble(): void {
     '',
     `  Pick the coding agent(s) to wire into this Kortix project.`,
     '',
-    `  ${dim}Each one is symlinked to the project's OpenCode config dir, so it${reset}`,
-    `  ${dim}shares the same skills + agents — ask it to scaffold triggers,${reset}`,
-    `  ${dim}custom agents, or edit kortix.yaml for you.${reset}`,
-    `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
+    `  ${dim}This wires local editor/CLI compatibility. Cloud sessions use${reset}`,
+    `  ${dim}kortix.yaml v3 runtime profiles and launch ACP harness adapters.${reset}`,
+    `  ${dim}The starter includes OpenCode, Claude Code, Codex, and Pi ACP${reset}`,
+    `  ${dim}runtime profiles. OpenCode remains the default.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -259,7 +293,9 @@ export async function runInit(argv: string[]): Promise<number> {
   } else if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
-    process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
+    process.stderr.write(
+      `kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`,
+    );
     return 2;
   } else {
     const answer = await prompt(`Project name`, 'my-kortix-project');
@@ -268,9 +304,7 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // Create the project in a fresh directory next to the shell's cwd. Refuse to
   // scaffold into an existing non-empty folder — a Kortix project is standalone.
-  const cwd = configureExisting
-    ? resolve(process.cwd())
-    : resolve(process.cwd(), projectName);
+  const cwd = configureExisting ? resolve(process.cwd()) : resolve(process.cwd(), projectName);
   if (
     !configureExisting &&
     existsSync(cwd) &&
@@ -287,13 +321,12 @@ export async function runInit(argv: string[]): Promise<number> {
 
   if (configureExisting) {
     const hasManifest =
-      existsSync(resolve(cwd, "kortix.yaml")) ||
-      existsSync(resolve(cwd, "kortix.toml"));
-    const hasRuntime = existsSync(resolve(cwd, ".kortix", "opencode"));
+      existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
+    const hasRuntime = hasOpencodeRuntime(cwd);
     if (!hasManifest || !hasRuntime) {
       process.stderr.write(
-        "kortix init --force: this directory is not a cloned Kortix project.\n" +
-          "Expected kortix.yaml (or kortix.toml) and .kortix/opencode.\n",
+        'kortix init --force: this directory is not a cloned Kortix project.\n' +
+          'Expected kortix.yaml (or kortix.toml) and .opencode (or .kortix/opencode).\n',
       );
       return 1;
     }
@@ -358,15 +391,15 @@ export async function runInit(argv: string[]): Promise<number> {
   const result = configureExisting
     ? { written: [] as string[], skipped: [] as string[] }
     : applyScaffold({
-    repoRoot: cwd,
-    projectName,
-    template,
-    preserveExisting: !flags.overwrite,
-  });
+        repoRoot: cwd,
+        projectName,
+        template,
+        preserveExisting: !flags.overwrite,
+      });
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
-  // Symlink the OpenCode config dir into each agent's native location
-  // (.opencode/.claude; codex wires .agents) + an AGENTS.md pointer for Codex & Cursor.
+  // Wire local coding-agent compatibility. This is not the cloud runtime
+  // selector; cloud sessions are governed by kortix.yaml v3 runtime profiles.
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,
@@ -377,7 +410,10 @@ export async function runInit(argv: string[]): Promise<number> {
   // ── Optional `git init` ──────────────────────────────────────────────
   let gitNote = '';
   if (!flags.noGit && !dirIsGitRepo(cwd) && gitAvailable()) {
-    const r = spawnSync('git', ['init', '-b', 'main'], { cwd, encoding: 'utf8' });
+    const r = spawnSync('git', ['init', '-b', 'main'], {
+      cwd,
+      encoding: 'utf8',
+    });
     gitNote = r.status === 0 ? 'Git: initialized (main)' : `Git: init failed — ${r.stderr.trim()}`;
   } else if (flags.noGit) {
     gitNote = 'Git: skipped (--no-git)';
@@ -399,9 +435,7 @@ export async function runInit(argv: string[]): Promise<number> {
 
   const totalSkipped = result.skipped.length + agentInstall.skipped.length;
   if (totalSkipped > 0) {
-    lines.push(
-      `Preserved ${totalSkipped} existing file${totalSkipped === 1 ? '' : 's'} (pass --overwrite to replace):`,
-    );
+    lines.push(`Preserved ${totalSkipped} existing path${totalSkipped === 1 ? '' : 's'}:`);
     for (const f of result.skipped) lines.push(`  · ${f}`);
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }

@@ -6,15 +6,15 @@ import { getFileHistory, getFileCommitDiff, getFileAtCommit } from '../api/git-h
 import type { FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 export const fileHistoryKeys = {
-  all: ['opencode-files', 'history'] as const,
+  all: ['runtime-files', 'history'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['opencode-files', 'history', serverUrl, filePath] as const,
+    ['runtime-files', 'history', serverUrl, filePath] as const,
   filePaged: (serverUrl: string, filePath: string, skip: number, limit: number) =>
-    ['opencode-files', 'history', serverUrl, filePath, skip, limit] as const,
+    ['runtime-files', 'history', serverUrl, filePath, skip, limit] as const,
   commitDiff: (serverUrl: string, filePath: string, commitHash: string) =>
-    ['opencode-files', 'history', 'diff', serverUrl, filePath, commitHash] as const,
+    ['runtime-files', 'history', 'diff', serverUrl, filePath, commitHash] as const,
   fileAtCommit: (serverUrl: string, filePath: string, commitHash: string) =>
-    ['opencode-files', 'history', 'content', serverUrl, filePath, commitHash] as const,
+    ['runtime-files', 'history', 'content', serverUrl, filePath, commitHash] as const,
 };
 
 /**

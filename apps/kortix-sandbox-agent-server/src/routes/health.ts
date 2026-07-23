@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
-import type { Opencode } from '../opencode'
+import type { AcpRuntime } from '../acp/runtime'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -45,12 +45,11 @@ export type SandboxBootState = {
   repoMaterializationError: string | null
   /** In-container boot timeline (ms since process start) for latency benchmarking. */
   timeline: BootMark[]
-  /** True when boot must create a first OpenCode conversation before the UI is usable. */
-  initialOpenCodeSessionRequired?: boolean
-  /** OpenCode session id created during boot, if one was requested. */
-  initialOpenCodeSessionId?: string | null
-  /** Boot-time OpenCode session creation failure. */
-  initialOpenCodeSessionError?: string | null
+  /** Selected v3 ACP harness and process identity. */
+  acpHarness?: 'claude' | 'codex' | 'opencode' | 'pi' | null
+  acpServerId?: string | null
+  acpRuntimeReady?: boolean
+  acpRuntimeError?: string | null
 }
 
 /**
@@ -61,30 +60,26 @@ export type SandboxBootState = {
  *     daemon: 'ok',
  *     status: 'ok' | 'starting' | 'down' | 'error',
  *     runtimeReady: boolean,
- *     opencode: 'ok' | 'starting' | 'down',
  *     uptime_s: number,
- *     opencode_pid: number | null,
  *     static_web_port: number | null,  // bound static-web port, null if down
  *     repo: string | null,    // remote URL of the materialized repo, if any
  *     branch: string | null,
  *     commit_sha: string | null
  *   }
  *
- * Always returns 200 even when opencode is down — this is the daemon's own
- * liveness probe, not opencode's.
+ * Always returns 200 because this is the daemon's own liveness probe.
  */
 export function createHealthRouter(
   cfg: Config,
-  opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState,
   staticWebPort: number | null = null,
+  acpRuntime?: AcpRuntime,
 ): Hono {
   const router = new Hono()
 
   router.get('/', async (c) => {
     const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
-    const opencodeState = opencode.getState()
     const repoRequired = sessionWantsRepo(cfg.autoClone)
     // A repo on disk isn't ready until it's on the SESSION branch: the clone
     // path renames the repo into place BEFORE the branch checkout (which can
@@ -96,28 +91,55 @@ export function createHealthRouter(
     const wantBranch = repoRequired ? wantedSessionBranch() : ''
     const repoReady =
       !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
-    const initialSessionReady =
-      !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-    const initialSessionError = bootState.initialOpenCodeSessionError ?? null
+    // `bootState.acpRuntimeReady` is a ONE-TIME flag set the instant `main.ts`'s
+    // single boot-time `getOrCreate` call resolved without throwing — it is
+    // NEVER updated again for the rest of this daemon's life. A harness that
+    // spawned fine at boot but has since died (crashed, was OOM-killed, or was
+    // recycled after a credential rotation — see `AcpRuntime.recycleIdle`) left
+    // this flag stuck at `true` forever, so `/kortix/health` kept reporting
+    // `acp_ready: true` / `runtimeReady: true` long after the actual process
+    // was gone (`acpRuntime.list()` empty). `/start`'s polling loop
+    // (routes/shared.ts) trusts this field verbatim to decide `stage: 'ready'`
+    // — a lying "ready" here means the session page's ACP handshake gate opens
+    // for a harness that isn't running, the client's own `initialize` POSTs
+    // fail against a dead/respawning process, and — because `session.phase`
+    // is ALREADY `'ready'` from this stale signal — the web app's 90s
+    // wall-clock boot backstop (`hasSessionBootTimedOut`) never even arms
+    // (it explicitly no-ops once `ready` is true, deferring to the ACP layer's
+    // own error handling). Net effect: "Connecting" spins forever with no
+    // terminal signal anywhere in the stack. Cross-check the boot flag against
+    // the RUNTIME'S OWN CURRENT registry (`acpRuntime.get`, already used below
+    // for `acp_busy`) so a harness that has since died is reported honestly on
+    // every poll — the next `/acp` request still transparently respawns it
+    // (this is just a status report, not a control action).
+    const acpProcessLive = !!(bootState.acpServerId && acpRuntime?.get(bootState.acpServerId))
+    const runtimeError =
+      bootState.acpRuntimeError ??
+      (bootState.acpRuntimeReady && !acpProcessLive
+        ? 'ACP harness process is not currently running (it will respawn on the next request)'
+        : null)
     const runtimeReady =
       repoReady &&
       !bootState.repoMaterializationError &&
-      !initialSessionError &&
-      opencodeState === 'ok' &&
-      initialSessionReady
+      !runtimeError &&
+      !!bootState.acpRuntimeReady &&
+      acpProcessLive
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError
+      : bootState.repoMaterializationError || runtimeError
         ? 'error'
-        : opencodeState
+        : 'starting'
 
     return c.json({
       daemon: 'ok',
       status,
       runtimeReady,
-      opencode: opencodeState,
+      runtime: 'acp',
+      acp_harness: bootState.acpHarness ?? null,
+      acp_server_id: bootState.acpServerId ?? null,
+      acp_ready: runtimeReady,
+      acp_busy: acpRuntime?.get(bootState.acpServerId ?? '')?.busy ?? false,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
-      opencode_pid: opencode.getPid(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,
@@ -126,9 +148,7 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
-      boot_error: bootState.repoMaterializationError ?? initialSessionError,
-      opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
-      opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
+      boot_error: bootState.repoMaterializationError ?? runtimeError,
       // In-container boot timeline (ms since process start) so the dashboard can
       // attribute the post-create boot latency (clone vs opencode vs proxy).
       boot_timeline: bootState.timeline,

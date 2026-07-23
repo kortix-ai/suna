@@ -71,6 +71,55 @@ export const ExperimentalFeatureViewSchema = z.object({
 });
 export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
 
+/**
+ * Persistent, project-level ACP permission policy (Task WS5-P1-a). Storage:
+ * `projects.metadata.acp_permission_policy` (JSONB — no migration). Deny-by-
+ * default: an absent/malformed stored value resolves to these same defaults
+ * (`autoApprove: 'none'`, `toolDecisions: {}`) — i.e. exactly today's
+ * behavior, every tool call prompts and nothing is remembered. The policy
+ * only ever REDUCES prompting friction; it can never grant an ACP tool call
+ * beyond what a user could already click through in the composer.
+ */
+// Bounds mirror `SessionRuntimeContextSchema` below: an unbounded
+// `Record<string, ...>` inside project metadata (JSONB) is a bloat vector for
+// any caller with `project.customize.write` — cap both the number of
+// remembered tool decisions and the length of each tool-name key. Tool names
+// span plain builtins (`Bash`, `Read`) and namespaced MCP tools
+// (`mcp__server__tool`), so unlike the lower-case-only runtime-context key
+// pattern, only length is bounded here, not character class.
+export const ACP_PERMISSION_POLICY_MAX_TOOLS = 128;
+export const ACP_PERMISSION_POLICY_MAX_KEY_LENGTH = 256;
+
+export const AcpPermissionPolicySchema = z.object({
+  /** 'none' = prompt for every tool call (conservative default). 'reads' =
+   *  auto-approve read-only tool calls. 'all' = auto-approve every tool call. */
+  autoApprove: z.enum(['none', 'reads', 'all']).default('none'),
+  /** Per-tool remembered decision, keyed by tool name — overrides `autoApprove`
+   *  for that specific tool. Bounded to at most
+   *  `ACP_PERMISSION_POLICY_MAX_TOOLS` entries, each keyed by a tool name of
+   *  at most `ACP_PERMISSION_POLICY_MAX_KEY_LENGTH` characters. */
+  toolDecisions: z
+    .record(
+      z
+        .string()
+        .max(
+          ACP_PERMISSION_POLICY_MAX_KEY_LENGTH,
+          `toolDecisions keys must be at most ${ACP_PERMISSION_POLICY_MAX_KEY_LENGTH} characters`,
+        ),
+      z.enum(['allow', 'deny']),
+    )
+    .default({})
+    .superRefine((value, ctx) => {
+      if (Object.keys(value).length > ACP_PERMISSION_POLICY_MAX_TOOLS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `toolDecisions may contain at most ${ACP_PERMISSION_POLICY_MAX_TOOLS} entries`,
+        });
+      }
+    }),
+});
+export type AcpPermissionPolicy = z.infer<typeof AcpPermissionPolicySchema>;
+
 /** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
 export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
@@ -316,6 +365,55 @@ export type UpdateConnectionProfileCredentialInput = z.infer<
   typeof UpdateConnectionProfileCredentialInputSchema
 >;
 
+export const HarnessAuthKindSchema = z.enum([
+  'managed_gateway',
+  'claude_subscription',
+  'anthropic_api_key',
+  'codex_subscription',
+  'openai_api_key',
+  'openai_compatible',
+  'anthropic_compatible',
+  'native_config',
+]);
+export type HarnessAuthKind = z.infer<typeof HarnessAuthKindSchema>;
+
+export const SessionModelSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('default'),
+    model_id: z.null().optional(),
+    connection_id: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('preset'),
+    model_id: z.string().min(1),
+    connection_id: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('custom'),
+    model_id: z.string().min(1),
+    connection_id: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+]);
+export type SessionModelSelection = z.infer<typeof SessionModelSelectionSchema>;
+
+const LegacySessionModelSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('default'),
+    modelId: z.null().optional(),
+    connectionId: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('preset'),
+    modelId: z.string().min(1),
+    connectionId: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('custom'),
+    modelId: z.string().min(1),
+    connectionId: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+]);
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -323,7 +421,10 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
-    opencode_model: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    runtime_model: z.string().min(1).optional(),
+    connection_id: HarnessAuthKindSchema.optional(),
+    model_selection: SessionModelSelectionSchema.optional(),
     name: z.string().optional(),
     session_id: z
       .string()
@@ -353,7 +454,8 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
-    opencodeModel: z.string().min(1).optional(),
+    connectionId: HarnessAuthKindSchema.optional(),
+    modelSelection: LegacySessionModelSelectionSchema.optional(),
     sessionId: z
       .string()
       .regex(
@@ -376,7 +478,10 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
-  opencode_session_id: z.string().nullable(),
+  runtime_session_id: z.string().nullable(),
+  runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
+  runtime_id: z.string().nullable().optional(),
+  acp_session_id: z.string().nullable().optional(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -385,7 +490,7 @@ export const ProjectSessionSchema = z.object({
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
-  opencode_sessions: z.array(z.unknown()),
+  runtime_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
@@ -463,10 +568,14 @@ export const SessionStartResultSchema = z.object({
   retriable: z.boolean(),
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
-  /** Canonical OpenCode root pin, resolved server-side once the box is up. */
-  opencode_session_id: z.string().nullable(),
+  /** Canonical runtime transport. ACP is the v3 path; opencode is v1/v2 compatibility. */
+  runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
+  /** Runtime process/server identity, independent of the ACP conversation. */
+  runtime_id: z.string().nullable().optional(),
+  /** Runtime-owned conversation id. For ACP this is assigned by session/new. */
+  runtime_session_id: z.string().nullable().optional(),
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000),
+   * Relative proxy path for this session's runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns
    * the proxy scheme; absent until the box has an external_id.
    */

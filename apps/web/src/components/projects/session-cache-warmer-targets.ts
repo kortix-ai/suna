@@ -1,8 +1,12 @@
-import { projectSessionStartSeed, type ProjectSession } from '@kortix/sdk/projects-client';
+import {
+  projectSessionStartSeed,
+  type ProjectSession,
+  type SessionStartResult,
+} from '@kortix/sdk/projects-client';
 
 export interface RunningSessionWarmupTarget {
-  openCodeSessionId: string;
-  runtimeUrl: string;
+  sessionId: string;
+  startSeed: SessionStartResult;
 }
 
 export function runningSessionWarmupTargets(
@@ -11,18 +15,14 @@ export function runningSessionWarmupTargets(
 ): RunningSessionWarmupTarget[] {
   const targets: RunningSessionWarmupTarget[] = [];
   for (const session of sessions) {
-    if (
-      session.session_id === activeSessionId ||
-      session.can_access === false ||
-      !session.opencode_session_id
-    ) {
+    if (session.session_id === activeSessionId || session.can_access === false) {
       continue;
     }
-    const runtimeUrl = projectSessionStartSeed(session)?.runtime_url;
-    if (!runtimeUrl) continue;
+    const startSeed = projectSessionStartSeed(session);
+    if (!startSeed) continue;
     targets.push({
-      openCodeSessionId: session.opencode_session_id,
-      runtimeUrl,
+      sessionId: session.session_id,
+      startSeed,
     });
   }
   return targets;

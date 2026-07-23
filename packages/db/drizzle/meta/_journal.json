@@ -40,12 +40,19 @@
     {
       "idx": 5,
       "version": "7",
+      "when": 1784397972005,
+      "tag": "20260718180612_acp_session_envelopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
       "when": 1784665625784,
       "tag": "20260721202705_add_audit_events_occurred_at_index",
       "breakpoints": true
     },
     {
-      "idx": 6,
+      "idx": 7,
       "version": "7",
       "when": 1784711662984,
       "tag": "20260722091422_add_session_origin",

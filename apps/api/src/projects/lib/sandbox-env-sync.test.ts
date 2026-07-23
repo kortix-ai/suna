@@ -8,6 +8,8 @@
 // llm-gateway/sandbox-base-url.test.ts for the formula itself).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+
 process.env.KORTIX_URL = 'https://api.example.com';
 process.env.FRONTEND_URL = 'https://app.example.com';
 delete process.env.LLM_GATEWAY_BASE_URL;
@@ -24,7 +26,25 @@ mock.module('../../platform/providers', () => ({
 }));
 
 const { config } = await import('../../config');
-const { llmGatewayBaseUrlForProvider } = await import('./sandbox-env-sync');
+const { buildEnvSyncHeaders, llmGatewayBaseUrlForProvider } = await import('./sandbox-env-sync');
+
+describe('buildEnvSyncHeaders', () => {
+  test('keeps provider ingress credentials but strips user context from the internal env route', () => {
+    const headers = buildEnvSyncHeaders({
+      providerHeaders: {
+        'X-Daytona-Preview-Token': 'provider-token',
+        [KORTIX_USER_CONTEXT_HEADER.toLowerCase()]: 'signed-user-context',
+        Authorization: 'Bearer user-scoped-value',
+      },
+      serviceKey: 'sandbox-service-key',
+    });
+
+    expect(headers.get('X-Daytona-Preview-Token')).toBe('provider-token');
+    expect(headers.get(KORTIX_USER_CONTEXT_HEADER)).toBeNull();
+    expect(headers.get('Authorization')).toBe('Bearer sandbox-service-key');
+    expect(headers.get('Content-Type')).toBe('application/json');
+  });
+});
 
 describe('llmGatewayBaseUrlForProvider', () => {
   beforeEach(() => {

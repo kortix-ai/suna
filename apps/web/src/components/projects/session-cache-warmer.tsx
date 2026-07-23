@@ -4,17 +4,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 
-import {
-  listProjectSessions,
-  projectSessionStartSeed,
-  sessionStartKey,
-} from '@kortix/sdk/projects-client';
-import { prefetchSession } from '@kortix/sdk/react';
+import { listProjectSessions, sessionStartKey } from '@kortix/sdk/projects-client';
 import { runningSessionWarmupTargets } from './session-cache-warmer-targets';
 
 /**
- * Seeds known-running session readiness and fetches one bounded message tail.
- * The active route owns the only live SSE stream and revalidates its cached tail.
+ * Seeds known-running ACP session readiness.
+ * The active route owns the live ACP connection and transcript synchronization.
  */
 export function SessionCacheWarmer({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -32,16 +27,11 @@ export function SessionCacheWarmer({ projectId }: { projectId: string }) {
   );
 
   useEffect(() => {
-    for (const session of sessions ?? []) {
-      const seed = projectSessionStartSeed(session);
-      if (!seed) continue;
-      const key = sessionStartKey(projectId, session.session_id);
-      if (queryClient.getQueryData(key) == null) queryClient.setQueryData(key, seed);
-    }
     for (const target of targets) {
-      void prefetchSession(target.openCodeSessionId, target.runtimeUrl);
+      const key = sessionStartKey(projectId, target.sessionId);
+      if (queryClient.getQueryData(key) == null) queryClient.setQueryData(key, target.startSeed);
     }
-  }, [projectId, queryClient, sessions, targets]);
+  }, [projectId, queryClient, targets]);
 
   return null;
 }

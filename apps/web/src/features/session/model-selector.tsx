@@ -14,29 +14,17 @@ import {
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import {
-  Bot,
-  Check,
-  ChevronDown,
-  CreditCard,
-  FolderGit2,
-  KeyRound,
-  Plus,
-  SlidersHorizontal,
-  Star,
-} from 'lucide-react';
+import { Check, ChevronDown, CreditCard, KeyRound, Plus, SlidersHorizontal } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
+import { useModelStore } from '@/hooks/runtime/use-model-store';
+import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import type { ProviderModalTab } from '@/stores/provider-modal-store';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
@@ -46,35 +34,7 @@ import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
-// Re-export for consumers
-export { ConnectProviderContent } from '@/features/providers/connect-provider-content';
 export { Tag };
-
-// ─── Backward-compat wrappers ────────────────────────────────────────────────
-
-export function ConnectProviderDialog({
-  open,
-  onOpenChange,
-  providers: _providers,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  providers: ProviderListResponse | undefined;
-}) {
-  const { openProviderModal, closeProviderModal } = useProviderModalStore();
-
-  useEffect(() => {
-    if (open) openProviderModal('providers');
-    else closeProviderModal();
-  }, [open, openProviderModal, closeProviderModal]);
-
-  const isStoreOpen = useProviderModalStore((s) => s.isOpen);
-  useEffect(() => {
-    if (!isStoreOpen && open) onOpenChange(false);
-  }, [isStoreOpen, open, onOpenChange]);
-
-  return null;
-}
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
@@ -127,29 +87,37 @@ export function pickerGroupLabel(groupID: string, model: FlatModel): string {
   return PROVIDER_LABELS[groupID] ?? model.providerName;
 }
 
-// ─── ModelSelector ───────────────────────────────────────────────────────────
-
-type ModelRef = { providerID: string; modelID: string };
-
-// Optional "set this model as a default" controls. When provided, the picker
-// shows a footer to pin the selected model as the account default (and, when an
-// agent is active, that agent's default). These persist server-side — the LLM
-// gateway resolves `auto` against them. Omitted in non-session pickers.
-export interface ModelDefaultControls {
-  /** Current agent name; enables the per-agent default action when set. */
-  agentName?: string;
-  onSetAccountDefault: (model: ModelRef) => void;
-  onSetAgentDefault?: (model: ModelRef) => void;
-  /** When set (in-project picker), pin the model as this project's default. */
-  onSetProjectDefault?: (model: ModelRef) => void;
+// The trigger pill's label. The selected model's own name when it resolves to a
+// row in the feed; otherwise AUTO (`{ kortix, auto }`, the synthetic managed
+// default that is deliberately NOT a feed row — filtered from `visibleModels`,
+// exposed only as the standalone toggle) reads "Auto"; otherwise `unsetLabel`
+// ("No model"). A composer whose server capability allows the managed default
+// seeds the AUTO sentinel as its effective selection, so the pill must read
+// "Auto" — a real, resolvable choice — never a blank "No model" with a live
+// Send. Independent of `featureFlags.enableAutoModel` (that only governs the
+// in-popover toggle, not this label).
+export function resolveModelSelectorLabel(input: {
+  currentModelName: string | undefined;
+  selectedModel: { providerID: string; modelID: string } | null | undefined;
+  unsetLabel: string;
+}): string {
+  if (input.currentModelName) return input.currentModelName;
+  if (
+    input.selectedModel?.providerID === 'kortix' &&
+    input.selectedModel?.modelID === AUTO_MODEL_ID
+  ) {
+    return 'Auto';
+  }
+  return input.unsetLabel;
 }
+
+// ─── ModelSelector ───────────────────────────────────────────────────────────
 
 export interface ModelSelectorProps {
   models: FlatModel[];
   selectedModel: { providerID: string; modelID: string } | null;
   onSelect: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
-  defaultControls?: ModelDefaultControls;
   /**
    * Trigger label shown when `selectedModel` is null. Defaults to "No model"
    * (the chat-input/schedule meaning: falls back to the agent/account/platform
@@ -165,7 +133,6 @@ export function ModelSelector({
   models,
   selectedModel,
   onSelect,
-  defaultControls,
   unsetLabel = 'No model',
   disabled = false,
 }: ModelSelectorProps) {
@@ -245,7 +212,11 @@ export function ModelSelector({
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || unsetLabel;
+  const displayName = resolveModelSelectorLabel({
+    currentModelName: current?.modelName,
+    selectedModel,
+    unsetLabel,
+  });
 
   // Reset transient picker state when closing.
   useEffect(() => {
@@ -353,8 +324,15 @@ export function ModelSelector({
     [onSelect],
   );
 
+  // Adapted from main's `ProviderModalTab` ('providers' | 'models') to this
+  // branch's connect modal, whose tabs are 'subscriptions' | 'api-keys' (see
+  // `useModelConnectionGate`/`connect-modal-host.tsx` — the account-wide
+  // `provider-modal-store` main used doesn't exist here, replaced by the
+  // root-mounted `ConnectModalHost`). "+" (add a new provider) maps to the
+  // api-keys tab; the sliders "Manage models" affordance has no equivalent
+  // tab in the new modal, so it opens the connect modal on its default view.
   const handleOpenProviderModal = useCallback(
-    (tab: ProviderModalTab) => {
+    (tab?: 'subscriptions' | 'api-keys') => {
       setOpen(false);
       openConnectProvider(tab);
     },
@@ -425,7 +403,7 @@ export function ModelSelector({
                         <button
                           type="button"
                           aria-label="Add provider"
-                          onClick={() => handleOpenProviderModal('providers')}
+                          onClick={() => handleOpenProviderModal('api-keys')}
                           className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
                           <Plus className="size-4" />
@@ -442,7 +420,7 @@ export function ModelSelector({
                         <button
                           type="button"
                           aria-label="Manage models"
-                          onClick={() => handleOpenProviderModal('models')}
+                          onClick={() => handleOpenProviderModal()}
                           className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
                           <SlidersHorizontal className="size-4" />
@@ -559,7 +537,7 @@ export function ModelSelector({
                         type="button"
                         size="xs"
                         variant={showUpgradeOption ? 'outline' : 'default'}
-                        onClick={() => handleOpenProviderModal('providers')}
+                        onClick={() => handleOpenProviderModal('api-keys')}
                       >
                         <KeyRound className="size-3.5" />
                         Connect provider
@@ -568,47 +546,6 @@ export function ModelSelector({
                   </div>
                 )}
               </CommandList>
-              {defaultControls && selectedModel ? (
-                <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      defaultControls.onSetAccountDefault(selectedModel);
-                      setOpen(false);
-                    }}
-                    className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                  >
-                    <Star className="size-3.5 shrink-0" />
-                    Set as my default model
-                  </button>
-                  {defaultControls.onSetProjectDefault ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        defaultControls.onSetProjectDefault?.(selectedModel);
-                        setOpen(false);
-                      }}
-                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                    >
-                      <FolderGit2 className="size-3.5 shrink-0" />
-                      Set as this project&apos;s default
-                    </button>
-                  ) : null}
-                  {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        defaultControls.onSetAgentDefault?.(selectedModel);
-                        setOpen(false);
-                      }}
-                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                    >
-                      <Bot className="size-3.5 shrink-0" />
-                      Set as default for {defaultControls.agentName}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
             </>
           ) : (
             <div className="p-1.5 pt-0">

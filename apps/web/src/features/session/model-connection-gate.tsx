@@ -42,11 +42,7 @@ export function ModelConnectionGate({
               Upgrade
             </Button>
           ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => openConnectProvider('providers')}
-            >
+            <Button type="button" size="sm" onClick={() => openConnectProvider()}>
               <KeyRound className="size-3.5" />
               Bring your own key
             </Button>
@@ -58,7 +54,7 @@ export function ModelConnectionGate({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => openConnectProvider('providers')}
+              onClick={() => openConnectProvider()}
             >
               <KeyRound className="size-3.5" />
               Bring your own key
@@ -79,14 +75,30 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
 
 /**
  * Non-blocking variant of the gate — a slim status strip that slides out from
- * under the chat input card (the composer stays visible; sends are already
- * disabled by `modelUnavailable`). Left side says what's wrong, right side
- * offers the same two ways out as the full gate.
+ * under the chat input card (the composer stays visible; sends may already be
+ * disabled — see `capabilityBlocked` / legacy `modelUnavailable` in
+ * `session-chat-input.tsx`). Left side says what's wrong, right side offers a
+ * way out.
  *
  * `show` must only flip on settled data (see `entitlementsPending`) — the
  * animation assumes it renders once with the final answer, not per-query.
  */
-export function ModelConnectionBar({ show }: { show: boolean }) {
+export function ModelConnectionBar({
+  show,
+  reason,
+  action,
+  connectKind,
+}: {
+  show: boolean;
+  reason?: string | null;
+  /** ONE direct action for a capability-governed block (e.g. "Connect Claude
+   *  Code"), see `deriveComposerBlockingAction`. Replaces the generic
+   *  Upgrade + Connect model pair with the precise next step. */
+  action?: string | null;
+  /** Deep link the action straight into that method's connect form (e.g.
+   *  claude_subscription for "Connect Claude Code") instead of the list. */
+  connectKind?: import('@kortix/sdk/projects-client').HarnessAuthKind | null;
+}) {
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
   const reduceMotion = useReducedMotion();
 
@@ -120,28 +132,46 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
                   <KeyRound className="size-3.5 shrink-0" />
                   <span className="truncate">
-                    No model connected
-                    <span className="hidden sm:inline"> — connect one to start chatting</span>
+                    {reason || 'No model connected'}
+                    {!reason ? <span className="hidden sm:inline"> — connect one to start chatting</span> : null}
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {showUpgradeOption && (
-                    <button
+                  {action ? (
+                    <Button
                       type="button"
-                      onClick={openUpgrade}
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
+                      size="toolbar"
+                      className="rounded-full active:scale-[0.96]"
+                      onClick={() =>
+                        openConnectProvider(undefined, connectKind ? { connectKind } : undefined)
+                      }
                     >
-                      <CreditCard className="size-3.5" />
-                      Upgrade
-                    </button>
+                      {action}
+                    </Button>
+                  ) : (
+                    <>
+                      {showUpgradeOption && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="toolbar"
+                          className="text-muted-foreground hover:text-foreground rounded-full active:scale-[0.96]"
+                          onClick={openUpgrade}
+                        >
+                          <CreditCard className="size-3.5" />
+                          Upgrade
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        size="toolbar"
+                        className="rounded-full active:scale-[0.96]"
+                        onClick={() => openConnectProvider()}
+                      >
+                        Connect model
+                      </Button>
+                    </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => openConnectProvider('providers')}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
-                  >
-                    Connect model
-                  </button>
                 </div>
               </div>
             </motion.div>

@@ -1,0 +1,806 @@
+[
+  {
+    "ordinal": 1,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "session/prompt",
+      "params": {
+        "prompt": [
+          {
+            "type": "text",
+            "text": "Look at this file and image"
+          },
+          {
+            "type": "resource_link",
+            "uri": "https://example.com/a.pdf",
+            "name": "a.pdf",
+            "mimeType": "application/pdf"
+          },
+          {
+            "type": "image",
+            "data": "aGVsbG8=",
+            "mimeType": "image/png"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 2,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_thought_chunk",
+          "content": {
+            "type": "text",
+            "text": "Let me check"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 3,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_thought_chunk",
+          "content": {
+            "type": "text",
+            "text": " the file first."
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 4,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "I will read "
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 5,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "the file now."
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 6,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "call-1",
+          "title": "Read file",
+          "kind": "read",
+          "status": "pending",
+          "rawInput": {
+            "path": "a.pdf"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 7,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "call-1",
+          "status": "in_progress"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 8,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "call-1",
+          "status": "completed",
+          "rawOutput": "file contents",
+          "content": [
+            {
+              "type": "text",
+              "text": "file contents"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 9,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "call-2",
+          "status": "pending"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 10,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "call-2",
+          "title": "Write file",
+          "kind": "edit",
+          "rawInput": {
+            "path": "b.txt"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 11,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "plan",
+          "entries": [
+            {
+              "content": "Step 1",
+              "status": "pending"
+            },
+            {
+              "content": "Step 2",
+              "status": "pending"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 12,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "plan",
+          "entries": [
+            {
+              "content": "Step 1",
+              "status": "completed"
+            },
+            {
+              "content": "Step 2",
+              "status": "in_progress"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 13,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "perm-1",
+      "method": "session/request_permission",
+      "params": {
+        "permission": "bash",
+        "patterns": [
+          "rm -rf *"
+        ],
+        "options": [
+          {
+            "optionId": "allow_once",
+            "kind": "allow_once",
+            "name": "Allow once"
+          }
+        ],
+        "toolCall": {
+          "title": "Shell"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 14,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "perm-1",
+      "result": {
+        "outcome": {
+          "outcome": "selected",
+          "optionId": "allow_once"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 15,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "perm-2",
+      "method": "session/request_permission",
+      "params": {
+        "permission": "edit",
+        "options": [
+          {
+            "optionId": "allow_once"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 16,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 9,
+      "method": "elicitation/create",
+      "params": {
+        "message": "Choose an environment",
+        "requestedSchema": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "title": "Environment",
+              "enum": [
+                "staging",
+                "production"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 17,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 9,
+      "result": {
+        "action": "accept",
+        "content": {
+          "environment": "staging"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 18,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 10,
+      "method": "elicitation/create",
+      "params": {
+        "message": "Pick a color",
+        "options": [
+          {
+            "optionId": "red",
+            "label": "Red"
+          },
+          {
+            "optionId": "blue",
+            "label": "Blue"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 19,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 53000,
+          "size": 200000,
+          "cost": {
+            "amount": 0.045,
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 20,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 61000,
+          "size": 200000
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 21,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "stopReason": "end_turn",
+        "usage": {
+          "totalTokens": 120,
+          "inputTokens": 80,
+          "outputTokens": 40,
+          "thoughtTokens": 10,
+          "cachedReadTokens": 5,
+          "cachedWriteTokens": 2
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 22,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "some_other_update",
+          "foo": "bar"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 23,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 55,
+      "method": "fs/read_text_file",
+      "params": {
+        "path": "/workspace/notes.txt"
+      }
+    }
+  },
+  {
+    "ordinal": 24,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 55,
+      "result": {
+        "content": "notes"
+      }
+    }
+  },
+  {
+    "ordinal": 25,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "session/prompt",
+      "params": {
+        "prompt": []
+      }
+    }
+  },
+  {
+    "ordinal": 26,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "local-1700000000000",
+      "method": "session/prompt",
+      "params": {
+        "prompt": [
+          {
+            "type": "text",
+            "text": "optimistic echo"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 27,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "Done."
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 28,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "resource",
+            "resource": {
+              "uri": "file:///workspace/out.txt",
+              "name": "out.txt",
+              "mimeType": "text/plain"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 29,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "unknown_block"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 30,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "call-3",
+          "title": "Run tests",
+          "kind": "execute",
+          "status": "pending"
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 31,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "call-3",
+          "status": "completed",
+          "rawOutput": "ok",
+          "locations": [
+            {
+              "path": "/workspace"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 32,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_thought_chunk",
+          "content": {
+            "type": "text",
+            "text": "Tests passed."
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 33,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "All checks "
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 34,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "are green."
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 35,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "stopReason": "end_turn"
+      }
+    }
+  },
+  {
+    "ordinal": 36,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "perm-3",
+      "method": "session/request_permission",
+      "params": {
+        "permission": "network",
+        "options": [
+          {
+            "optionId": "deny",
+            "name": "Deny"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 37,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "perm-3",
+      "error": {
+        "code": -32000,
+        "message": "cancelled"
+      }
+    }
+  },
+  {
+    "ordinal": 38,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 70000,
+          "size": 200000,
+          "cost": {
+            "amount": 0.09,
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 39,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 11,
+      "method": "session/request_input",
+      "params": {
+        "questions": [
+          {
+            "key": "confirm",
+            "question": "Proceed?",
+            "options": [
+              {
+                "optionId": "yes",
+                "label": "Yes"
+              },
+              {
+                "optionId": "no",
+                "label": "No"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 40,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "session/prompt",
+      "params": {
+        "prompt": [
+          {
+            "type": "text",
+            "text": "thanks!"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 41,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {
+        "stopReason": "end_turn"
+      }
+    }
+  },
+  {
+    "ordinal": 42,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "You are welcome."
+          }
+        }
+      }
+    }
+  },
+  {
+    "ordinal": 43,
+    "direction": "client_to_agent",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "session/prompt",
+      "params": {
+        "prompt": [
+          {
+            "type": "text",
+            "text": "Listen to this"
+          },
+          {
+            "type": "audio",
+            "data": "ZmFrZS1hdWRpbw==",
+            "mimeType": "audio/wav"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "ordinal": 44,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "result": {
+        "stopReason": "end_turn"
+      }
+    }
+  },
+  {
+    "ordinal": 45,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/log",
+      "params": {
+        "level": "info",
+        "message": "housekeeping"
+      }
+    }
+  },
+  {
+    "ordinal": 46,
+    "direction": "agent_to_client",
+    "envelope": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "call-1",
+          "status": "completed",
+          "rawOutput": "file contents (re-read)"
+        }
+      }
+    }
+  }
+]

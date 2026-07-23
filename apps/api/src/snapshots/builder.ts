@@ -307,7 +307,7 @@ type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
  *   • a distinct predecessor snapshot exists (there's a real drift), and
  *   • the drift is provably agent-ONLY: the new identity's swapKey (user image +
  *     spec + NON-agent runtime layer) equals the predecessor's STORED swapKey, so
- *     the ONLY thing that changed is the agent binary. A bumped opencode /
+ *     the ONLY thing that changed is the agent binary. A bumped harness /
  *     entrypoint / CLI / slack-cli / executor-sdk / manifest-schema / browser /
  *     layer version — or the user image or spec — moves swapKey → full rebuild.
  *     (No isShared shortcut: the shared default's runtime LAYER is not constant,
@@ -404,11 +404,11 @@ async function runInlineBuild(
       slug: template.slug,
       isShared: !!template.isShared,
       // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
-      // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
+      // and cold-boots it (entrypoint re-runs → runtime re-inits) on spawn
       // AND on resume — the SAME path Daytona takes, no provider divergence.
-      // Stateful/warm capture used to resume opencode mid-state off a CH memory
+      // Stateful/warm capture used to resume a runtime mid-state off a CH memory
       // snapshot, which intermittently wedged it (virtio-net RX stall after
-      // restore → /global/event + /pty hang while /kortix/health still
+      // restore → runtime event + PTY transports can hang while /kortix/health still
       // answered). A cold boot avoids that entirely.
     });
     if (buildId) await closeBuildLogReady(buildId);
@@ -1273,7 +1273,7 @@ export async function ensurePerProjectWarmImage(
   const provider = getSandboxProvider(buildProvider);
   if (!provider.isConfigured()) throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
 
-  // Base runtime == the SHARED default (same opencode/agent/CLI a cold session
+  // Base runtime == the SHARED default (same harnesses/agent/CLI a cold session
   // gets). The repo is layered ON TOP via warmRepo — the userDockerfile is the
   // platform default's, unchanged, so the runtime is byte-identical to default.
   const template = await resolveTemplateBySlug(project, DEFAULT_SANDBOX_SLUG);
@@ -1307,7 +1307,7 @@ export async function ensurePerProjectWarmImage(
     );
   }
 
-  const warmRepo = await resolveWarmRepoContext(project);
+  const warmRepo = await resolveWarmRepoContext(project, tip);
 
   // FAST PATH: FROM the already-built shared default image instead of
   // recomposing + rebuilding the full ~15-layer toolchain (apt/pip/opencode/
@@ -1414,11 +1414,14 @@ export async function resolveWarmBaseImageRef(
 /**
  * Resolve the build-time clone credentials + runtime proxy origin for a project's
  * per-project warm bake. Reads the full project row (the GitBackedProject subset
- * lacks the fields `resolveProjectUpstream` needs). The build-time auth header is
- * a short-lived git-host credential embedded ONLY in a one-shot RUN; origin is
- * reset to the Kortix proxy so the daemon re-auths per session at runtime.
+ * lacks the fields `resolveProjectUpstream` needs). The API materializes the
+ * exact commit before provider upload; the archived checkout's origin is reset
+ * to the Kortix proxy so the daemon re-auths per session at runtime.
  */
-async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRepoContext> {
+async function resolveWarmRepoContext(
+  project: GitBackedProject,
+  commitSha: string,
+): Promise<WarmRepoContext> {
   const { projects } = await import('@kortix/db');
   const { resolveProjectUpstream } = await import('../projects/lib/git');
   const { proxyGitUrl } = await import('../projects/lib/sessions');
@@ -1433,6 +1436,7 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
     cloneUrl: upstream.url,
     cloneHeaders: upstream.headers ?? {},
     branch: project.defaultBranch,
+    commitSha,
     originUrl: proxyGitUrl(project.projectId),
   };
 }

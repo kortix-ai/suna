@@ -24,26 +24,27 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useConnectModal } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
+import { useRuntimeAgents, useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { systemReload } from '@kortix/sdk/opencode-client';
 import {
-  type ExperimentalFeatureKey,
-  type KortixAccount,
-  type KortixProject,
-  type ProjectSession,
   getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
+  restartProjectSession,
+  type ExperimentalFeatureKey,
+  type KortixAccount,
+  type KortixProject,
+  type ProjectSession,
 } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -76,19 +77,15 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
-import {
-  useCreateOpenCodeSession,
-  useOpenCodeMessages,
-} from '@/hooks/opencode/use-opencode-sessions';
+import { useModelStore } from '@/hooks/runtime/use-model-store';
+import { useCreatePty } from '@/hooks/runtime/use-runtime-pty';
+import { useCreateRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   buildWebProxyUrl,
   normalizeExternalInput,
@@ -96,13 +93,10 @@ import {
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersSolid } from '@mynaui/icons-react';
@@ -112,7 +106,6 @@ type PalettePage =
   | 'root'
   | 'agents'
   | 'models'
-  | 'messages'
   | 'projects'
   | 'accounts'
   | 'sessions'
@@ -275,84 +268,6 @@ function FileSearchPage({
   );
 }
 
-function MessagesPage({
-  sessionId,
-  query,
-  onSelect,
-}: {
-  sessionId: string;
-  query: string;
-  onSelect: (messageId: string) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useOpenCodeMessages(sessionId);
-
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
-
-  const items = useMemo(() => {
-    return turns
-      .map((turn) => {
-        const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-        const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-        return {
-          id: turn.userMessage.info.id,
-          text: stripped,
-        };
-      })
-      .filter((item) => item.text.length > 0);
-  }, [turns]);
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => (item.text || '').toLowerCase().includes(q));
-  }, [items, query]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>
-          {tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}
-        </TextShimmer>
-      </div>
-    );
-  }
-
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <MessageCircle className="text-muted-foreground/30 size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query ? `No messages matching "${query}"` : 'No messages in this session'}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <CommandGroup heading={`Messages (${filtered.length})`} forceMount>
-      {filtered.map((item, index) => (
-        <CommandItem
-          key={item.id}
-          value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
-          onSelect={() => onSelect(item.id)}
-        >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 flex-shrink-0" />
-          <span className="text-muted-foreground/50 w-6 flex-shrink-0 text-right text-xs tabular-nums">
-            #{index + 1}
-          </span>
-          <span className="flex-1 truncate text-sm">
-            {item.text.length > 80 ? `${item.text.slice(0, 80)}...` : item.text}
-          </span>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
-
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -376,6 +291,7 @@ export function CommandPalette() {
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
+  const { open: openConnectModal } = useConnectModal();
   const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
   const currentSessionId = useMemo(() => {
     if (params?.sessionId) return params.sessionId;
@@ -385,7 +301,7 @@ export function CommandPalette() {
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
-  const createSession = useCreateOpenCodeSession();
+  const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
   const activeWallpaperId = useUserPreferencesStore(
@@ -394,8 +310,8 @@ export function CommandPalette() {
   const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
   const billingEnabled = isBillingEnabled();
 
-  const { data: agents } = useOpenCodeAgents();
-  const { data: providers } = useOpenCodeProviders();
+  const { data: agents } = useRuntimeAgents();
+  const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { data: accountsList } = useQuery({
@@ -677,12 +593,6 @@ export function CommandPalette() {
         keywords: 'change model llm switch select provider anthropic openai claude gpt',
         targetPage: 'models',
       });
-      items.push({
-        id: 'jump-to-message',
-        label: 'Jump to Message',
-        keywords: 'jump message go scroll navigate find conversation chat',
-        targetPage: 'messages',
-      });
     }
     return items.filter((item) => {
       const haystack = [item.label, item.keywords].join(' ').toLowerCase();
@@ -845,16 +755,6 @@ export function CommandPalette() {
     [projectId, router, close],
   );
 
-  const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
-
-  const handleJumpToMessage = useCallback(
-    (messageId: string) => {
-      jumpToMessage(messageId);
-      close();
-    },
-    [jumpToMessage, close],
-  );
-
   const detectedUrl = useMemo(() => {
     const q = query.trim();
     if (!q) return null;
@@ -865,7 +765,7 @@ export function CommandPalette() {
     }
 
     if (/^\d{2,5}$/.test(q)) {
-      const port = Number.parseInt(q, 10);
+      const port = parseInt(q, 10);
       if (port >= 1 && port <= 65535) {
         return {
           kind: 'localhost' as const,
@@ -1000,41 +900,6 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
-  const handleTogglePanelMode = useCallback(() => {
-    close();
-    const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
-    track('panel_mode_switched', { to: nextMode });
-    useUserPreferencesStore.getState().togglePanelMode();
-  }, [close, panelMode]);
-
-  /**
-   * "Open Terminal" / "Open Audit" / "Open Browser" (Easy: the Easy panel's
-   * detail layer, Advanced: the panel's Terminal/Audit/Browser tab). The
-   * id-space-sensitive branching lives in `openSessionQuickView` — shared
-   * with the session header's terminal/browser buttons, so it can never
-   * drift between them.
-   */
-  const handleOpenQuickView = useCallback(
-    (view: 'terminal' | 'audit' | 'browser') => {
-      close();
-      openSessionQuickView(view, 'palette');
-    },
-    [close],
-  );
-
-  const handleOpenSessionTerminal = useCallback(
-    () => handleOpenQuickView('terminal'),
-    [handleOpenQuickView],
-  );
-  const handleOpenSessionAudit = useCallback(
-    () => handleOpenQuickView('audit'),
-    [handleOpenQuickView],
-  );
-  const handleOpenSessionBrowser = useCallback(
-    () => handleOpenQuickView('browser'),
-    [handleOpenQuickView],
-  );
-
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
       close();
@@ -1111,12 +976,10 @@ export function CommandPalette() {
     [triggerBackScale],
   );
 
-  const handleOpenProviderModal = useCallback(() => {
+  const handleConnectModel = useCallback(() => {
     close();
-    import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
-      useProviderModalStore.getState().openProviderModal('connected');
-    });
-  }, [close]);
+    openConnectModal();
+  }, [close, openConnectModal]);
 
   const handleGenerateSSHKey = useCallback(() => {
     close();
@@ -1127,17 +990,58 @@ export function CommandPalette() {
 
   const handleRestartConfig = useCallback(() => {
     close();
-    systemReload('dispose-only')
+    const projectId = typeof params.id === 'string' ? params.id : null;
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null;
+    if (!projectId || !sessionId) return errorToast('Open a session first');
+    restartProjectSession(projectId, sessionId)
       .then(() => successToast('Config reloaded'))
       .catch(() => errorToast('Restart failed'));
-  }, [close]);
+  }, [close, params.id, params.sessionId]);
+
+  const handleTogglePanelMode = useCallback(() => {
+    close();
+    const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
+    track('panel_mode_switched', { to: nextMode });
+    useUserPreferencesStore.getState().togglePanelMode();
+  }, [close, panelMode]);
+
+  /**
+   * "Open Terminal" / "Open Audit" / "Open Browser" (Easy: the Easy panel's
+   * detail layer, Advanced: the panel's Terminal/Audit/Browser tab). The
+   * id-space-sensitive branching lives in `openSessionQuickView` — shared
+   * with the session header's terminal/browser buttons, so it can never
+   * drift between them.
+   */
+  const handleOpenQuickView = useCallback(
+    (view: 'terminal' | 'audit' | 'browser') => {
+      close();
+      openSessionQuickView(view, 'palette');
+    },
+    [close],
+  );
+
+  const handleOpenSessionTerminal = useCallback(
+    () => handleOpenQuickView('terminal'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionAudit = useCallback(
+    () => handleOpenQuickView('audit'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionBrowser = useCallback(
+    () => handleOpenQuickView('browser'),
+    [handleOpenQuickView],
+  );
 
   const handleRestartFull = useCallback(() => {
     close();
-    systemReload('full')
+    const projectId = typeof params.id === 'string' ? params.id : null;
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null;
+    if (!projectId || !sessionId) return errorToast('Open a session first');
+    restartProjectSession(projectId, sessionId)
       .then(() => successToast('Full restart initiated'))
       .catch(() => errorToast('Restart failed'));
-  }, [close]);
+  }, [close, params.id, params.sessionId]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
@@ -1153,7 +1057,7 @@ export function CommandPalette() {
       openSessionBrowser: handleOpenSessionBrowser,
       logout: handleLogout,
       openPlan: handleOpenPlan,
-      openProviderModal: handleOpenProviderModal,
+      connectModel: handleConnectModel,
       generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
       restartFull: handleRestartFull,
@@ -1171,7 +1075,7 @@ export function CommandPalette() {
       handleOpenSessionBrowser,
       handleLogout,
       handleOpenPlan,
-      handleOpenProviderModal,
+      handleConnectModel,
       handleGenerateSSHKey,
       handleRestartConfig,
       handleRestartFull,
@@ -1264,7 +1168,6 @@ export function CommandPalette() {
     if (page === 'projects') return filteredProjectsList.length;
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
-    if (page === 'messages') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
@@ -1290,7 +1193,6 @@ export function CommandPalette() {
     if (page === 'agents') return 'Search agents...';
     if (page === 'models') return 'Search models...';
     if (page === 'files') return 'Search files in this project...';
-    if (page === 'messages') return 'Search messages...';
     if (page === 'projects') return 'Search projects...';
     if (page === 'accounts') return 'Search accounts...';
     if (page === 'sessions') return 'Search sessions...';
@@ -1301,7 +1203,6 @@ export function CommandPalette() {
     if (page === 'agents') return 'Change Agent';
     if (page === 'models') return 'Change Model';
     if (page === 'files') return 'Search Files';
-    if (page === 'messages') return 'Jump to Message';
     if (page === 'projects') return 'Switch Project';
     if (page === 'accounts') return 'Switch Account';
     if (page === 'sessions') return 'Open Session';
@@ -1418,18 +1319,6 @@ export function CommandPalette() {
                                 )?.modelName || currentModelKey.modelID}
                               </span>
                             )}
-                            <ChevronRight className="text-muted-foreground/30 size-3" />
-                          </CommandItem>
-                          <CommandItem
-                            value="suggestion jump to message go scroll navigate"
-                            onSelect={() => goToPage('messages')}
-                          >
-                            <MessageCircle className="size-4" />
-                            <span className="flex-1">
-                              {tHardcodedUi.raw(
-                                'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                              )}
-                            </span>
                             <ChevronRight className="text-muted-foreground/30 size-3" />
                           </CommandItem>
                         </>
@@ -1965,13 +1854,6 @@ export function CommandPalette() {
                 </div>
               ))}
 
-            {page === 'messages' && currentSessionId && (
-              <MessagesPage
-                sessionId={currentSessionId}
-                query={query}
-                onSelect={handleJumpToMessage}
-              />
-            )}
           </CommandList>
         </FadedScrollArea>
 

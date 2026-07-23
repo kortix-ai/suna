@@ -26,6 +26,9 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let sessionCreateBody: Record<string, unknown> | null = null;
 let sessionList: Record<string, unknown>[] = [];
 let transcriptRequests: URL[] = [];
+// When set, POST /sessions responds with this instead of a created session —
+// used to simulate the COMPOSER_CAPABILITY_BLOCKED 409.
+let sessionCreateFailure: { status: number; body: Record<string, unknown> } | null = null;
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -59,6 +62,7 @@ describe('sessions new CLI flow', () => {
     sessionCreateBody = null;
     sessionList = [];
     transcriptRequests = [];
+    sessionCreateFailure = null;
 
     mkdirSync(repo, { recursive: true });
     git(['init', '-b', 'main'], repo);
@@ -105,6 +109,11 @@ describe('sessions new CLI flow', () => {
         }
         if (req.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
           sessionCreateBody = await req.json() as Record<string, unknown>;
+          if (sessionCreateFailure) {
+            return Response.json(sessionCreateFailure.body, {
+              status: sessionCreateFailure.status,
+            });
+          }
           const sessionId = sessionCreateBody.session_id as string;
           return Response.json({
             session_id: sessionId,
@@ -257,12 +266,24 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: runningId,
         sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
-        opencode_session_id: 'ses_test',
+        runtime_session_id: 'ses_test',
+        runtime_protocol: 'acp',
         name: 'Digest target',
         agent_name: 'memory-reflector',
         status: 'running',
         error: null,
-        metadata: { opencode_sessions: [{ title: 'Digest target' }] },
+        metadata: {},
+        runtime_sessions: [
+          {
+            id: 'ses_test',
+            title: 'Digest target',
+            parent_id: null,
+            project_id: null,
+            created_at: 0,
+            updated_at: 0,
+            archived_at: null,
+          },
+        ],
         created_at: '2026-06-20T00:00:00.000Z',
         updated_at: '2026-06-20T00:05:00.000Z',
       },
@@ -275,12 +296,14 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: stoppedId,
         sandbox_url: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
+        runtime_protocol: 'acp',
         name: 'Stopped target',
         agent_name: 'default',
         status: 'stopped',
         error: null,
         metadata: {},
+        runtime_sessions: [],
         created_at: '2026-06-20T00:00:00.000Z',
         updated_at: '2026-06-20T00:03:00.000Z',
       },
@@ -296,9 +319,13 @@ describe('sessions new CLI flow', () => {
     expect(transcriptRequests[0]!.searchParams.get('chars')).toBe('120');
 
     const parsed = JSON.parse(stdout) as {
-      sessions: Array<{ transcript: { available: boolean; messages: Array<{ tools: unknown[] }> } }>;
+      sessions: Array<{
+        session: { runtime_titles: string[] };
+        transcript: { available: boolean; messages: Array<{ tools: unknown[] }> };
+      }>;
     };
     expect(parsed.sessions).toHaveLength(2);
+    expect(parsed.sessions[0]!.session.runtime_titles).toEqual(['Digest target']);
     expect(parsed.sessions[0]!.transcript.available).toBe(true);
     expect(parsed.sessions[1]!.transcript.available).toBe(false);
     expect(JSON.stringify(parsed)).not.toContain('must not leak');
@@ -306,7 +333,59 @@ describe('sessions new CLI flow', () => {
       { tool: 'bash', status: 'completed' },
     ]);
   });
+
+  test('a COMPOSER_CAPABILITY_BLOCKED 409 prints an actionable message, not a raw HTTP error', async () => {
+    sessionCreateFailure = {
+      status: 409,
+      body: {
+        error: 'Pi has no compatible credential connected.',
+        code: 'COMPOSER_CAPABILITY_BLOCKED',
+        capabilities: {
+          agent: { name: 'pi', runtime: 'pi', harness: 'pi', native_agent: null, enabled: true },
+          auth: {
+            compatible: ['managed_gateway', 'anthropic_api_key', 'openai_api_key'],
+            active: null,
+            ready: false,
+            reason: null,
+          },
+          model: {
+            policy: 'gateway-catalog',
+            default_allowed: false,
+            custom_allowed: false,
+            live_change: false,
+            presets: [],
+          },
+          can_start: false,
+          blocking_reason: 'Pi has no compatible credential connected.',
+        },
+      },
+    };
+
+    const { code, stderr } = await captureStderr(() => runSessions(['new', '--agent', 'pi']));
+
+    expect(code).toBe(1);
+    expect(stderr).toContain('pi');
+    expect(stderr).toContain('Pi has no compatible credential connected.');
+    expect(stderr).toContain('managed_gateway');
+    expect(stderr).toContain('kortix providers ls');
+    expect(stderr).not.toContain('HTTP 409');
+  });
 });
+
+async function captureStderr(fn: () => Promise<number>): Promise<{ code: number; stderr: string }> {
+  const originalWrite = process.stderr.write;
+  let stderr = '';
+  process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    const code = await fn();
+    return { code, stderr };
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+}
 
 async function captureStdout(fn: () => Promise<number>): Promise<{ code: number; stdout: string }> {
   const originalWrite = process.stdout.write;

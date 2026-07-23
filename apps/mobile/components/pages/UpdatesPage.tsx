@@ -25,6 +25,7 @@ import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { Ionicons } from '@expo/vector-icons';
 import { UpdateDialog } from '@/components/updates/UpdateDialog';
+import { normalizeReleaseTitle } from './updates-page-utils';
 
 // ─── Version type classification ─────────────────────────────────────────
 
@@ -37,28 +38,6 @@ function parseVersionType(version: string): VersionType {
   if (parts[2] === '0' && parts[1] === '0') return 'major';
   if (parts[2] === '0') return 'minor';
   return 'patch';
-}
-
-function normalizeReleaseTitle(title: string | undefined, version: string): string | undefined {
-  if (!title) return title;
-  if (version.startsWith('dev-')) return title;
-  const lowerTitle = title.toLowerCase();
-  for (const prefix of [`v${version}`, version]) {
-    if (!lowerTitle.startsWith(prefix.toLowerCase())) continue;
-    let offset = prefix.length;
-    const separator = title[offset];
-    if (separator !== ' ' && separator !== '\t' && separator !== '—' && separator !== '–' && separator !== ':' && separator !== '-') {
-      continue;
-    }
-    while (offset < title.length) {
-      const char = title[offset];
-      if (char !== ' ' && char !== '\t' && char !== '—' && char !== '–' && char !== ':' && char !== '-') break;
-      offset += 1;
-    }
-    const normalized = title.slice(offset).trim();
-    return normalized || title;
-  }
-  return title;
 }
 
 function normalizeReleaseBody(body: string | undefined, version: string, title?: string): string | undefined {
@@ -128,7 +107,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     refreshCurrentVersion,
   } = useGlobalSandboxUpdate();
 
-  const currentChannel = detectChannel(currentVersion);
+  const currentChannel = detectChannel(currentVersion ?? undefined);
 
   // Filter state
   const [showDev, setShowDev] = useState(currentChannel === 'dev');
@@ -283,7 +262,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               className="mt-4 self-start"
               style={{ backgroundColor: themeColors.primary }}
             >
-              <Icon as={ArrowDownToLine} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+              <Icon as={ArrowDownToLine} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
               <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                 Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
               </Text>

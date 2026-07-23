@@ -18,7 +18,15 @@ export * from './icon-mapping';
 // Parsing & formatting
 export { formatCredits, formatCreditsWithSign, dollarsToCredits, creditsToDollars, formatDollarsAsCredits, CREDITS_PER_DOLLAR } from '@kortix/shared';
 
-export * from './tool-data-extractor';
+// Tool call utilities
+export {
+  extractToolCall,
+  extractToolResult,
+  extractToolCallFromToolMessage,
+  extractToolData,
+  extractToolCallAndResult,
+  type ToolCallData,
+} from './tool-data-extractor';
 
 // Domain-specific utilities
 export * from './thread-utils';

@@ -2,7 +2,7 @@
  * Platform API Client for Kortix Computer Mobile
  *
  * Communicates with the Computer backend to manage sandbox lifecycle
- * and provides the sandbox URL for OpenCode session operations.
+ * and provides the selected session runtime URL for daemon helper operations.
  *
  * All sandbox operations are proxied through:
  *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
@@ -23,8 +23,8 @@ import {
 // straight from the SDK's public `projects-client` subpath instead of adding
 // an export mobile itself doesn't otherwise need.
 import { stopProjectSession } from '@kortix/sdk/projects-client';
-// The SDK's kortix-master service wrappers are public via the
-// `@kortix/sdk/opencode-client` subpath (client.ts re-exports the module).
+// The SDK's kortix-master service wrappers are public via the provider-neutral
+// root SDK surface.
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
@@ -32,16 +32,14 @@ import { stopProjectSession } from '@kortix/sdk/projects-client';
 // `systemReload` targets the globally-active runtime URL, not an explicit
 // sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
 import {
+  getProviders as sdkGetProviders,
   getServiceLogs as sdkGetServiceLogs,
   listServices as sdkListServices,
   reconcileServices as sdkReconcileServices,
   serviceAction as sdkServiceAction,
-} from '@kortix/sdk/opencode-client';
-import {
-  getProviders as sdkGetProviders,
   type ProvidersInfo,
   type SandboxProviderName,
-} from '@kortix/sdk/platform-client';
+} from '@kortix/sdk';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -55,7 +53,7 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type { SandboxProviderName } from '@kortix/sdk/platform-client';
+export type { SandboxProviderName } from '@kortix/sdk';
 
 export interface SandboxInfo {
   sandbox_id: string;
@@ -110,7 +108,7 @@ interface ProjectSessionSandbox {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the OpenCode server URL for a sandbox.
+ * Build the runtime server URL for a sandbox.
  * Pattern: {BACKEND_URL}/p/{externalId}/8000
  */
 export function getSandboxUrl(sandboxExternalId: string): string {
@@ -281,9 +279,12 @@ export async function ensureSandbox(opts?: {
     throw new Error('Create a project before starting a sandbox');
   }
 
-  const session = (await createProjectSession(project.project_id, {
-    ...(opts?.provider ? { provider: opts.provider } : {}),
-  })) as unknown as ProjectSessionSummary;
+  const session = (await createProjectSession(
+    project.project_id,
+    {
+      ...(opts?.provider ? { provider: opts.provider } : {}),
+    }
+  )) as unknown as ProjectSessionSummary;
   const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
   const sandbox = toSandboxInfo(project, session, runtime);
 

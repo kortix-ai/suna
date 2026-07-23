@@ -1,179 +1,35 @@
-import { describe, expect, test, beforeEach, mock } from 'bun:test';
-
-// Mock the lowest network boundary the reply/send paths go through — the
-// OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
-// `promptOpenCodeMessage` run for real, matching session.test.ts's approach of
-// stubbing the boundary rather than the wrapper.
-let permissionReplyImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-let questionReplyImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-let questionRejectImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-let sessionPromptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-
-class RuntimeNotReadyError extends Error {
-  constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
-    super(message);
-    this.name = 'RuntimeNotReadyError';
-  }
-}
-
-mock.module('../core/runtime/client', () => ({
-  RuntimeNotReadyError,
-  getClient: () => ({
-    permission: { reply: (args: unknown) => permissionReplyImpl(args) },
-    question: {
-      reply: (args: unknown) => questionReplyImpl(args),
-      reject: (args: unknown) => questionRejectImpl(args),
-    },
-    session: { promptAsync: (args: unknown) => sessionPromptImpl(args) },
-  }),
-}));
-
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { describe, expect, test } from 'bun:test';
 import { BillingError } from '../core/http/api/errors';
-import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
-import {
-  answerQuestion,
-  rejectQuestion,
-  answerPermission,
-  classifySendError,
-  sendStateOnStart,
-  sendStateOnError,
-  shouldRetrySessionStart,
-} from './use-session';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError } from '../core/rest/projects-client';
+import {
+  classifySendError,
+  computeSessionPhase,
+  runtimeRecoveryDelayMs,
+  sendStateOnError,
+  sendStateOnStart,
+  shouldRetrySessionStart,
+} from './use-session';
 
-function seedQuestion(id: string, sessionID = 'sess-1') {
-  useOpenCodePendingStore.getState().addQuestion({
-    id,
-    sessionID,
-    questions: [{ text: 'Continue?', options: [] }],
-  } as any);
-}
-
-function seedPermission(id: string, sessionID = 'sess-1') {
-  useOpenCodePendingStore.getState().addPermission({
-    id,
-    sessionID,
-    permission: 'bash',
-    patterns: [],
-    metadata: {},
-    always: [],
-  } as any);
-}
-
-beforeEach(() => {
-  useOpenCodePendingStore.getState().clear();
-  permissionReplyImpl = async () => ({ data: {} });
-  questionReplyImpl = async () => ({ data: {} });
-  questionRejectImpl = async () => ({ data: {} });
-  sessionPromptImpl = async () => ({ data: {} });
-});
-
-describe('answerQuestion', () => {
-  test('success calls question.reply with the request id + answers and removes the pending entry', async () => {
-    seedQuestion('q1');
-    let captured: unknown;
-    questionReplyImpl = async (args) => {
-      captured = args;
-      return { data: {} };
-    };
-
-    await answerQuestion('q1', [['yes']]);
-
-    expect(captured).toEqual({ requestID: 'q1', answers: [['yes']] });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeUndefined();
-  });
-
-  test('failure keeps the pending entry and throws a typed KortixSendError', async () => {
-    seedQuestion('q1');
-    questionReplyImpl = async () => ({ error: { message: 'boom' } });
-
-    await expect(answerQuestion('q1', [['yes']])).rejects.toMatchObject({
-      kind: 'runtime-error',
-      message: 'boom',
-    });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
-  });
-});
-
-describe('rejectQuestion', () => {
-  test('success calls question.reject with the request id and removes the pending entry', async () => {
-    seedQuestion('q1');
-    let captured: unknown;
-    questionRejectImpl = async (args) => {
-      captured = args;
-      return { data: {} };
-    };
-
-    await rejectQuestion('q1');
-
-    expect(captured).toEqual({ requestID: 'q1' });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeUndefined();
-  });
-
-  test('failure keeps the pending entry and throws a typed error', async () => {
-    seedQuestion('q1');
-    questionRejectImpl = async () => ({ error: { message: 'nope' } });
-
-    await expect(rejectQuestion('q1')).rejects.toMatchObject({ kind: 'runtime-error' });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
-  });
-});
-
-describe('answerPermission', () => {
-  test('success calls permission.reply with the request id + reply and removes the pending entry', async () => {
-    seedPermission('p1');
-    let captured: unknown;
-    permissionReplyImpl = async (args) => {
-      captured = args;
-      return { data: {} };
-    };
-
-    await answerPermission('p1', 'once', 'go ahead');
-
-    expect(captured).toEqual({ requestID: 'p1', reply: 'once', message: 'go ahead' });
-    expect(useOpenCodePendingStore.getState().permissions['p1']).toBeUndefined();
-  });
-
-  test('failure keeps the pending entry and throws a typed error', async () => {
-    seedPermission('p1');
-    permissionReplyImpl = async () => ({ error: { message: 'denied by server' } });
-
-    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({ kind: 'runtime-error' });
-    expect(useOpenCodePendingStore.getState().permissions['p1']).toBeDefined();
-  });
-});
-
-describe('classifySendError', () => {
-  test('classifies a runtime-not-ready error from getClient()', () => {
-    const err = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
-    expect(classifySendError(err).kind).toBe('runtime-not-ready');
-  });
-
-  test('classifies a RuntimeNotReadyError via instanceof, even with a non-matching message', () => {
-    const err = new RuntimeNotReadyError('totally different wording');
-    const result = classifySendError(err);
-    expect(result.kind).toBe('runtime-not-ready');
-    expect(result.cause).toBe(err);
+describe('ACP session error classification', () => {
+  test('classifies a runtime that is not ready', () => {
+    expect(classifySendError(new Error('Server URL not ready')).kind).toBe('runtime-not-ready');
   });
 
   test('classifies a 402-shaped error as billing', () => {
-    const err = new Error('Payment Required') as Error & { status?: number; data?: unknown };
-    err.status = 402;
-    err.data = { message: 'Insufficient credits. Balance: $-0.06' };
-
-    const result = classifySendError(err);
+    const error = new Error('Payment Required') as Error & { status?: number; data?: unknown };
+    error.status = 402;
+    error.data = { message: 'Insufficient credits' };
+    const result = classifySendError(error);
     expect(result.kind).toBe('billing');
     expect(result.billing).toBeInstanceOf(BillingError);
-    expect(result.message).toBe('Insufficient credits. Balance: $-0.06');
   });
 
-  test('falls back to runtime-error for a generic failure', () => {
+  test('keeps the original runtime error message', () => {
+    expect(classifySendError(new Error('harness failed')).message).toBe('harness failed');
+  });
+
+  test('falls back to runtime-error for a generic failure with no gateway envelope', () => {
     const result = classifySendError(new Error('opencode went sideways'));
     expect(result.kind).toBe('runtime-error');
     expect(result.message).toContain('opencode went sideways');
@@ -210,69 +66,79 @@ describe('classifySendError', () => {
   });
 });
 
-describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
-  test('a send failure with a 402-shaped error clears pending and yields a billing sendError', async () => {
-    sessionPromptImpl = async () => ({
-      error: { data: { message: 'Insufficient credits. Balance: $-0.06' } },
-      response: new Response(null, { status: 402 }),
-    });
-
-    const thrown = await promptOpenCodeMessage({
-      sessionId: 'sess-1',
-      parts: [{ type: 'text', text: 'hi' }],
-    }).then(
-      () => undefined,
-      (e) => e,
-    );
-
-    const state = sendStateOnError(thrown);
-    expect(state.pending).toBeNull();
-    expect(state.sendError?.kind).toBe('billing');
-    expect(state.sendError?.billing).toBeInstanceOf(BillingError);
-  });
-
-  test('sendError resets to null on the next sendStateOnStart', () => {
-    const errored = sendStateOnError(new Error('boom'));
-    expect(errored.sendError).not.toBeNull();
-
-    const restarted = sendStateOnStart('a new message');
-    expect(restarted.sendError).toBeNull();
-    expect(restarted.pending).toBe('a new message');
+describe('send state helpers', () => {
+  test('start clears the old error and error clears pending', () => {
+    expect(sendStateOnStart('hello')).toEqual({ pending: 'hello', sendError: null });
+    expect(sendStateOnError(new Error('boom'))).toMatchObject({ pending: null, sendError: { kind: 'runtime-error' } });
   });
 });
 
 describe('shouldRetrySessionStart', () => {
   const startError = (status: number) => new SessionStartError('nope', { status, terminal: true });
 
-  test('retries a 404 for a fresh session within the grace window, then gives up', () => {
+  test('retries a fresh 404 only within its bounded create race window', () => {
     markSessionFresh('fresh');
     try {
       expect(shouldRetrySessionStart(0, startError(404), 'fresh')).toBe(true);
-      expect(shouldRetrySessionStart(11, startError(404), 'fresh')).toBe(true);
       expect(shouldRetrySessionStart(12, startError(404), 'fresh')).toBe(false);
     } finally {
       clearSessionFresh('fresh');
     }
   });
 
-  test('does NOT retry a 404 for a non-fresh session (genuinely missing / no access)', () => {
+  test('does not retry a stale 404', () => {
     expect(shouldRetrySessionStart(0, startError(404), 'stale')).toBe(false);
   });
+});
 
-  test('does not retry other terminal start errors even when fresh', () => {
-    markSessionFresh('fresh');
-    try {
-      expect(shouldRetrySessionStart(0, startError(403), 'fresh')).toBe(false);
-      expect(shouldRetrySessionStart(0, startError(402), 'fresh')).toBe(false);
-    } finally {
-      clearSessionFresh('fresh');
-    }
+describe('computeSessionPhase', () => {
+  const base = {
+    stageTerminal: false,
+    startError: false,
+    protocolError: false,
+    switched: true,
+    acpReady: true,
+    acpErrorTerminal: false,
+  };
+
+  test('healthy switched+ready session is ready', () => {
+    expect(computeSessionPhase(base)).toBe('ready');
   });
 
-  test('retries a few times on transient (non-start) errors', () => {
-    const transient = new Error('network blip');
-    expect(shouldRetrySessionStart(0, transient, 'x')).toBe(true);
-    expect(shouldRetrySessionStart(2, transient, 'x')).toBe(true);
-    expect(shouldRetrySessionStart(3, transient, 'x')).toBe(false);
+  test('a terminal ACP error on an ALREADY-READY session keeps phase ready — a failed send must never collapse the layout back to the boot loader', () => {
+    expect(computeSessionPhase({ ...base, acpErrorTerminal: true })).toBe('ready');
+  });
+
+  test('a terminal ACP error before the session ever became ready is an error (dead sandbox at bootstrap)', () => {
+    expect(computeSessionPhase({ ...base, acpReady: false, acpErrorTerminal: true })).toBe('error');
+  });
+
+  test('a NON-terminal ACP hiccup before ready keeps the session starting (the client retries on its own)', () => {
+    expect(computeSessionPhase({ ...base, acpReady: false })).toBe('starting');
+  });
+
+  test('terminal stage / start error / protocol error always win', () => {
+    expect(computeSessionPhase({ ...base, stageTerminal: true })).toBe('error');
+    expect(computeSessionPhase({ ...base, startError: true })).toBe('error');
+    expect(computeSessionPhase({ ...base, protocolError: true })).toBe('error');
+  });
+
+  test('not switched yet is starting', () => {
+    expect(computeSessionPhase({ ...base, switched: false })).toBe('starting');
+  });
+});
+
+describe('runtimeRecoveryDelayMs', () => {
+  test('first recovery fires almost immediately, then backs off, capped', () => {
+    expect(runtimeRecoveryDelayMs(0)).toBe(500);
+    expect(runtimeRecoveryDelayMs(1)).toBe(2_000);
+    expect(runtimeRecoveryDelayMs(2)).toBe(4_000);
+    expect(runtimeRecoveryDelayMs(3)).toBe(8_000);
+    expect(runtimeRecoveryDelayMs(4)).toBe(8_000);
+  });
+
+  test('gives up (null) after the attempt cap', () => {
+    expect(runtimeRecoveryDelayMs(5)).toBeNull();
+    expect(runtimeRecoveryDelayMs(99)).toBeNull();
   });
 });

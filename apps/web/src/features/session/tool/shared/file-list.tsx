@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ChevronRight, FileIcon, FileText, Folder } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
+import { useRuntimeFileOpen } from '@/features/session/use-runtime-file-open';
 import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
 import { getDirectory, getFilename } from '@/ui';
 

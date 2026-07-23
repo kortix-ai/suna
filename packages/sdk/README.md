@@ -1,11 +1,11 @@
 # @kortix/sdk
 
 The **single, opinionated data layer** for the Kortix agent platform. One typed
-client wraps both the **Kortix REST API** and the **OpenCode v2 runtime** so a
-host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
-`@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
-below is the target state, not yet fully true of apps/web — see Rules of the
-road.)
+client wraps the **Kortix REST API**, session-scoped **ACP** conversation
+endpoints, and the provider-neutral daemon/runtime helpers so a host app — web,
+mobile, reference — imports **only `@kortix/sdk`** and never the native SDK for a
+specific harness. (The no-raw-`backendApi`/`authenticatedFetch` rule below is
+the target state, not yet fully true of apps/web — see Rules of the road.)
 
 > Philosophy: **one Kortix token, one client, every action a method.** Keys never
 > leave the server; mutations own their side-effects there; the host states intent.
@@ -24,9 +24,12 @@ npm install @kortix/sdk
 ```
 
 ```ts
-import { createKortix } from '@kortix/sdk';
+import { createKortix } from "@kortix/sdk";
 
-const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
+const kortix = createKortix({
+  backendUrl: "https://api.kortix.com/v1",
+  getToken,
+});
 await kortix.projects.list();
 ```
 
@@ -53,10 +56,10 @@ no build step required:
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.
 Three others exist, each for a reason that fits in one sentence:
 
-| Entry | Why it can't live at root |
-|---|---|
-| `@kortix/sdk/react` | React is a peer dependency |
-| `@kortix/sdk/server` | imports `node:async_hooks` |
+| Entry                    | Why it can't live at root   |
+| ------------------------ | --------------------------- |
+| `@kortix/sdk/react`      | React is a peer dependency  |
+| `@kortix/sdk/server`     | imports `node:async_hooks`  |
 | `@kortix/sdk/internal/*` | unsupported, outside semver |
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
@@ -70,47 +73,100 @@ table for the full list (20 of them).
 ## Quick start
 
 ```ts
-import { createKortix } from '@kortix/sdk';
+import { createKortix } from "@kortix/sdk";
 
 const kortix = createKortix({
-  backendUrl: 'https://api.kortix.com/v1',
-  getToken: () => supabase.auth.getSession().then(s => s.data.session?.access_token ?? null),
+  backendUrl: "https://api.kortix.com/v1",
+  getToken: () =>
+    supabase.auth
+      .getSession()
+      .then((s) => s.data.session?.access_token ?? null),
 });
 
 // Projects
 const projects = await kortix.projects.list();
-const detail   = await kortix.project(pid).detail();
-await kortix.project(pid).secrets.upsert({ name: 'STRIPE_API_KEY', value });
+const detail = await kortix.project(pid).detail();
+await kortix.project(pid).secrets.upsert({ name: "STRIPE_API_KEY", value });
 const visibleSessions = await kortix.project(pid).sessions.list();
-const projectInventory = await kortix.project(pid).sessions.list({ scope: 'project' }); // manager only
+const projectInventory = await kortix
+  .project(pid)
+  .sessions.list({ scope: "project" }); // manager only
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
-await s.send('Build me a widget');   // provisions/resumes if needed, then prompts
+await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
 await s.previews();
 
-// Lower level: the typed opencode client for THIS session's runtime.
-// `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { opencodeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
+// Lower level: ACP transport for THIS session's runtime.
+// The ACP session id is runtime-owned, not the Kortix `sid`.
+const { runtimeSessionId } = await s.ensureReady({
+  deadlineMs: 300_000,
+  onProgress: ({ stage, reason }) => console.log(stage, reason),
+});
+const acp = await s.acp.client();
+await acp.prompt(runtimeSessionId!, [
+  { type: "text", text: "Inspect this repo" },
+]);
 ```
+
+`ensureReady()` polls retriable boot stages until the runtime is ready. Its
+default deadline is five minutes. Concurrent calls for the same session share
+one start operation. Use `onProgress` to render the server's `stage` and
+`reason` values.
 
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not
 exhaustive — see `API-MAP.md` for the full per-domain surface:
 
-| namespace | what |
-|---|---|
-| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (Enterprise audit trail) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
-| `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
-| `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
-| `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
+| namespace                  | what                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kortix.projects`          | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `kortix.accounts`          | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (Enterprise audit trail) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`)                                                                                                                                                                                                                                                                                                                                                                        |
+| `kortix.billing`           | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`                                                                                                                                                                                                   |
+| `kortix.marketplace`       | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace`                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `kortix.validateToken()`   | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kortix.project(id)`       | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort` (ACP prompt wrappers) · `stream()` / `.acp.*` (ACP live transport) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you)                                                                                                                                                                    |
+| `kortix.runtime()`         | structural daemon/runtime helpers for the active session runtime (escape hatch, not the conversation protocol)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+### Harness-aware agent and model selection
+
+Agents declare the ACP harness that executes them: `claude`, `codex`,
+`opencode`, or `pi`. Read that capability from `@kortix/sdk/react` instead of
+branching on agent names:
+
+```ts
+import {
+  agentHarness,
+  agentRequiresCatalogModel,
+  harnessPresentation,
+} from "@kortix/sdk/react";
+
+const harness = agentHarness(agent);
+const usesGatewayCatalog = agentRequiresCatalogModel(agent);
+const label = harness ? harnessPresentation(harness).label : "Agent";
+```
+
+The model contract intentionally has two paths:
+
+- **OpenCode** uses the project/provider model catalog. Send its selected model
+  through the existing catalog-model field.
+- **Claude Code, Codex, and Pi** own their native default model. Omit a model to
+  keep that default, or send one explicit harness model id as `runtime_model`
+  when the project session is created.
+
+```ts
+await kortix.project(projectId).sessions.create({
+  agent_name: "codex",
+  runtime_model: "openai/gpt-5.4", // optional, immutable launch-time override
+});
+```
+
+`runtime_model` is persisted with the project session and applied when the ACP
+runtime launches. It is not a provider/model catalog key, and it should not be
+reused across harness switches. Hosts should keep a separate pending value per
+harness and omit the field for "Harness default".
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -125,7 +181,7 @@ to the agent only as one `KORTIX_SESSION_CONTEXT` JSON envelope:
 
 ```ts
 await kortix.project(projectId).sessions.create({
-  runtime_context: { workspace_id: 'org_123', locale: 'de' },
+  runtime_context: { workspace_id: "org_123", locale: "de" },
 });
 ```
 
@@ -136,27 +192,27 @@ credential endpoint, and pass only the non-secret profile id at session create:
 ```ts
 const project = kortix.project(projectId);
 const profile = await project.connectors.profiles.reconcile({
-  connector_alias: 'customer-data',
-  owner_type: 'external',
+  connector_alias: "customer-data",
+  owner_type: "external",
   owner_id: wrapperUserId,
-  label: 'Customer data',
+  label: "Customer data",
   metadata: { tenant_ref: wrapperTenantReference },
 });
 
 // Omit `auth` when creating to apply source-advertised authentication.
 const auth = await project.connectors.auth.discover({
-  slug: 'hubspot',
-  provider: 'postman',
-  spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  slug: "hubspot",
+  provider: "postman",
+  spec: "https://github.com/HubSpot/HubSpot-public-api-spec-collection",
 });
 await project.connectors.profiles.updateCredential(profile.profile_id, {
   value: shortLivedCapability,
-  kind: 'secret',
+  kind: "secret",
 });
 await project.sessions.create({
-  runtime_context: { locale: 'de' },
+  runtime_context: { locale: "de" },
   connector_bindings: {
-    'customer-data': { profile_id: profile.profile_id },
+    "customer-data": { profile_id: profile.profile_id },
   },
 });
 ```
@@ -167,8 +223,8 @@ token:
 
 ```ts
 const profile = await project.connectors.profiles.reconcileMember({
-  connector_alias: 'gmail',
-  label: 'My Gmail',
+  connector_alias: "gmail",
+  label: "My Gmail",
 });
 await project.connectors.profiles.pipedreamConnect(profile.profile_id);
 // Complete OAuth, then:
@@ -202,8 +258,8 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
-under the hood — it just also writes into the React Query cache.
+`@kortix/sdk/react`'s session hooks use the same primitive under the hood — they
+also write into the React Query/cache stores that the web UI consumes.
 
 ## Kortix as a Backend (server-side)
 
@@ -219,12 +275,12 @@ in-flight request.
 it statically imports `node:async_hooks`) fixes this with `AsyncLocalStorage`:
 
 ```ts
-import { createScopedKortix } from '@kortix/sdk/server';
+import { createScopedKortix } from "@kortix/sdk/server";
 
 // Express/Hono/Bun.serve — any per-request handler. One scoped client PER
 // REQUEST; each end user's token stays isolated to that request's own async
 // call tree, even across `await`s, even under concurrency.
-app.get('/projects', async (req, res) => {
+app.get("/projects", async (req, res) => {
   const kortix = createScopedKortix({
     backendUrl: process.env.KORTIX_API_URL!,
     getToken: async () => resolveKortixTokenFor(req), // per-end-user PAT/token
@@ -240,7 +296,7 @@ it never writes the process-global singleton. For middleware-style wrapping of
 an entire request body instead, use the lower-level primitive:
 
 ```ts
-import { runWithKortix } from '@kortix/sdk/server';
+import { runWithKortix } from "@kortix/sdk/server";
 
 app.use(async (req, res, next) => {
   await runWithKortix(
@@ -261,7 +317,7 @@ mode — see its README.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (`@kortix/sdk/turns`, framework-free)
-normalize all twelve opencode part types (text, reasoning, tool, file,
+normalize the runtime part types (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -271,8 +327,8 @@ renderer for **every** part kind at compile time, so a new part type is a
 build error at your call site instead of a silent drop in production:
 
 ```tsx
-import { renderParts, type PartRenderers } from '@kortix/sdk/react';
-import { classifyTurn } from '@kortix/sdk/turns';
+import { renderParts, type PartRenderers } from "@kortix/sdk/react";
+import { classifyTurn } from "@kortix/sdk/turns";
 
 const renderers: PartRenderers<React.ReactNode> = {
   text: (p) => <Markdown>{p.text}</Markdown>,
@@ -283,16 +339,21 @@ const renderers: PartRenderers<React.ReactNode> = {
   patch: (p) => <DiffStat files={p.fileCount} />,
   retry: (p) => <Note>{`retrying (attempt ${p.attempt})`}</Note>,
   compaction: () => <Note>context compacted</Note>,
-  snapshot: () => null,  // internal checkpoint hash — nothing to show
-  agent: () => null,     // inline @mention, already in the sibling text
-  step: () => null,      // model-step bookkeeping
-  unknown: () => null,   // forward-compat: newer server than client
+  snapshot: () => null, // internal checkpoint hash — nothing to show
+  agent: () => null, // inline @mention, already in the sibling text
+  step: () => null, // model-step bookkeeping
+  unknown: () => null, // forward-compat: newer server than client
 };
 
 function Turn({ message }: { message: MessageWithParts }) {
   const { parts, error, isEmpty } = classifyTurn(message);
   if (isEmpty && !error) return null;
-  return <>{renderParts(parts, renderers)}{error && <TurnFailed {...error} />}</>;
+  return (
+    <>
+      {renderParts(parts, renderers)}
+      {error && <TurnFailed {...error} />}
+    </>
+  );
 }
 ```
 
@@ -310,7 +371,7 @@ chat UI actually dispatches on.
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
 platform client's `platformFetch`, `authenticatedFetch`, the files client, the
-opencode client, and `ensureReady()` all throw/return the same classes (from
+daemon/runtime client, and `ensureReady()` all throw/return the same classes (from
 the root barrel or `@kortix/sdk/api-client`; `@kortix/sdk/react` re-exports
 them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
@@ -331,17 +392,19 @@ The canonical server-side wrapper shape — catch a 402 and pass the payload
 through to your own client for re-billing, instead of leaking a Kortix error:
 
 ```ts
-import { ApiError, AuthError, BillingError } from '@kortix/sdk';
+import { ApiError, AuthError, BillingError } from "@kortix/sdk";
 
 try {
   await kortix.session(pid, sid).send(prompt);
 } catch (err) {
   if (err instanceof BillingError) {
     // 402 — surface the upgrade/cost payload under YOUR billing story.
-    return res.status(402).json({ reason: 'quota', detail: err.detail });
+    return res.status(402).json({ reason: "quota", detail: err.detail });
   }
-  if (err instanceof AuthError) return res.status(401).json({ error: 'not authenticated' });
-  if (err instanceof ApiError) return res.status(err.status ?? 502).json({ error: err.message });
+  if (err instanceof AuthError)
+    return res.status(401).json({ error: "not authenticated" });
+  if (err instanceof ApiError)
+    return res.status(err.status ?? 502).json({ error: err.message });
   throw err;
 }
 ```
@@ -360,23 +423,23 @@ Idempotent reads (`GET`/`HEAD`) also absorb transient gateway blips: `502`,
 Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 — see `package.json`'s `exports` field for the complete list (it also includes
 `./config`, `./api-client`, `./feature-flags`, `./fresh-sessions`,
-`./instance-routes`, `./opencode-errors`, `./platform-client`, `./event-stream`,
-`./sandbox-connection-store`, `./opencode-pending-store`, `./session/url`,
+`./instance-routes`, `./runtime-errors`, `./platform-client`,
+`./sandbox-connection-store`, `./runtime-pending-store`, `./session/url`,
 `./idb-sync-cache`):
 
-| import | provides |
-|---|---|
-| `@kortix/sdk` | `createKortix`, `configureKortix`, `files`, the error classes, `classifyPart`/`classifyTurn`, `narrowChatEvent`, `openEventStream`, domain result types |
-| `@kortix/sdk/server` | **Node/Bun only** — `runWithKortix`, `createScopedKortix`, `getScopedConfig` (per-request config isolation; see "Kortix as a Backend") |
-| `@kortix/sdk/react` | every `useOpenCode*` hook + providers (reactive data), `useSession`, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`) |
-| `@kortix/sdk/turns` | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers) |
-| `@kortix/sdk/files` | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, … |
-| `@kortix/sdk/session` | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
-| `@kortix/sdk/opencode-client` | `getClient`, `getClientForUrl` + the **full opencode v2 type surface** (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …) |
-| `@kortix/sdk/projects-client` | the raw REST functions (the facade wraps these) |
-| `@kortix/sdk/auth` | `authenticatedFetch`, token accessors |
-| `@kortix/sdk/api-client` | the raw `backendApi` primitive — host code should go through the facade or another subpath module instead of calling this directly |
-| `@kortix/sdk/server-store` · `@kortix/sdk/sync-store` | active-sandbox state · live message/part/status store |
+| import                                                | provides                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@kortix/sdk`                                         | `createKortix`, `configureKortix`, `files`, the error classes, ACP transcript projections, `classifyPart`/`classifyTurn`, and domain result types                                                                                                                 |
+| `@kortix/sdk/server`                                  | **Node/Bun only** — `runWithKortix`, `createScopedKortix`, `getScopedConfig` (per-request config isolation; see "Kortix as a Backend")                                                                                                                            |
+| `@kortix/sdk/react`                                   | `useSession`, ACP/runtime hooks, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`)                                                                                                                        |
+| `@kortix/sdk/turns`                                   | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers)                                                                                                                                                  |
+| `@kortix/sdk/files`                                   | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, …                                                                                |
+| `@kortix/sdk/session`                                 | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
+| `@kortix/sdk/acp`                                     | ACP client helpers, protocol types, project-session endpoint helpers, and transcript projection utilities                                                                                                                                                         |
+| `@kortix/sdk/projects-client`                         | the raw REST functions (the facade wraps these)                                                                                                                                                                                                                   |
+| `@kortix/sdk/auth`                                    | `authenticatedFetch`, token accessors                                                                                                                                                                                                                             |
+| `@kortix/sdk/api-client`                              | the raw `backendApi` primitive — host code should go through the facade or another subpath module instead of calling this directly                                                                                                                                |
+| `@kortix/sdk/server-store` · `@kortix/sdk/sync-store` | active-sandbox state · live message/part/status store                                                                                                                                                                                                             |
 
 ## Configuration
 
@@ -403,16 +466,14 @@ in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
 The framework-free core modules — `turns`, `session/url`, `session` (health),
 `projects-client`, `files`, `transcript` — have no React or DOM dependency and are
 usable from any JS host; `apps/mobile` already imports `@kortix/sdk/turns` this way.
-React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
-`createHttpSessionSyncController` for message history, status recovery, and older
-pagination. Mobile keeps its platform-specific event transport because React
-Native cannot consume the SDK's fetch-based SSE stream.
+React Native uses `@kortix/sdk/react` with durable ACP transcript polling.
+React Native's fetch implementation cannot consume the SDK's incremental SSE body.
 
 ## Rules of the road
 
-- **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk/opencode-client`. The SDK is the sole owner of that dependency.
-  (Holds today — no host imports it.)
+- **No native harness SDKs in host code.** Host apps and `@kortix/sdk` do not
+  depend on native harness SDKs. Conversation traffic is ACP-first; remaining
+  daemon helpers go through `@kortix/sdk/runtime-client`.
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel
@@ -432,6 +493,6 @@ pnpm --filter @kortix/sdk typecheck  # package + examples/ (examples/tsconfig.js
 pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript, session url/health, projects-client domains
 ```
 
-See **`API-MAP.md`** for the complete endpoint catalogue (REST + opencode runtime)
+See **`API-MAP.md`** for the complete endpoint catalogue (REST + ACP/runtime)
 and per-domain SDK coverage status, and **`CHANGELOG.md`** for what changed per
 release.

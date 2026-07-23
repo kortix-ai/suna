@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ACP_PERMISSION_POLICY_MAX_KEY_LENGTH,
+  ACP_PERMISSION_POLICY_MAX_TOOLS,
+  AcpPermissionPolicySchema,
   ConnectionProfileMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
   ErrorEnvelopeSchema,
@@ -65,14 +68,14 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_provider: 'daytona',
     sandbox_id: null,
     sandbox_url: null,
-    opencode_session_id: 'ses_abc',
+    runtime_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
     agent_name: 'default',
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
     visibility: 'private',
@@ -240,7 +243,6 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
     });
     expect(parsed.runtime_url).toBeUndefined();
   });
@@ -251,7 +253,9 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: sandboxFixture(),
-      opencode_session_id: 'ses_abc',
+      runtime_protocol: 'acp',
+      runtime_id: 'runtime-abc',
+      runtime_session_id: 'ses_abc',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     });
@@ -265,7 +269,6 @@ describe('SessionStartResultSchema', () => {
         agent_name: 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
       }),
     ).toThrow();
   });
@@ -382,11 +385,82 @@ describe('envelopes', () => {
   });
 });
 
+describe('AcpPermissionPolicySchema', () => {
+  test('conservative defaults apply when both fields are omitted — deny-by-default: no auto-approval, nothing remembered', () => {
+    const parsed = AcpPermissionPolicySchema.parse({});
+    expect(parsed).toEqual({ autoApprove: 'none', toolDecisions: {} });
+  });
+
+  test('accepts every autoApprove level and an arbitrary per-tool decision map', () => {
+    for (const autoApprove of ['none', 'reads', 'all'] as const) {
+      expect(() => AcpPermissionPolicySchema.strict().parse({
+        autoApprove,
+        toolDecisions: { bash: 'allow', edit_file: 'deny' },
+      })).not.toThrow();
+    }
+  });
+
+  test('rejects an unrecognized autoApprove level', () => {
+    expect(AcpPermissionPolicySchema.safeParse({ autoApprove: 'everything' }).success).toBe(false);
+  });
+
+  test('rejects a toolDecisions value outside allow/deny', () => {
+    expect(
+      AcpPermissionPolicySchema.safeParse({ toolDecisions: { bash: 'ask' } }).success,
+    ).toBe(false);
+  });
+
+  test('strict() rejects an unknown top-level key (the route layer 422s on this)', () => {
+    expect(
+      AcpPermissionPolicySchema.strict().safeParse({ autoApprove: 'none', toolDecisions: {}, extra: true }).success,
+    ).toBe(false);
+  });
+
+  test('accepts exactly ACP_PERMISSION_POLICY_MAX_TOOLS sane tool-name keys', () => {
+    const toolDecisions = Object.fromEntries(
+      Array.from({ length: ACP_PERMISSION_POLICY_MAX_TOOLS }, (_, index) => [`tool_${index}`, 'allow']),
+    );
+    const result = AcpPermissionPolicySchema.safeParse({ toolDecisions });
+    expect(result.success).toBe(true);
+    expect(Object.keys(result.success ? result.data.toolDecisions : {})).toHaveLength(
+      ACP_PERMISSION_POLICY_MAX_TOOLS,
+    );
+  });
+
+  test('rejects a toolDecisions map one entry over ACP_PERMISSION_POLICY_MAX_TOOLS with a clear message', () => {
+    const toolDecisions = Object.fromEntries(
+      Array.from({ length: ACP_PERMISSION_POLICY_MAX_TOOLS + 1 }, (_, index) => [`tool_${index}`, 'allow']),
+    );
+    const result = AcpPermissionPolicySchema.safeParse({ toolDecisions });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes('at most'))).toBe(true);
+    }
+  });
+
+  test('rejects a tool-name key over ACP_PERMISSION_POLICY_MAX_KEY_LENGTH characters', () => {
+    const longKey = 'x'.repeat(ACP_PERMISSION_POLICY_MAX_KEY_LENGTH + 44);
+    const result = AcpPermissionPolicySchema.safeParse({ toolDecisions: { [longKey]: 'allow' } });
+    expect(result.success).toBe(false);
+  });
+
+  test('accepts a tool-name key at exactly ACP_PERMISSION_POLICY_MAX_KEY_LENGTH characters', () => {
+    const maxKey = 'x'.repeat(ACP_PERMISSION_POLICY_MAX_KEY_LENGTH);
+    expect(AcpPermissionPolicySchema.safeParse({ toolDecisions: { [maxKey]: 'deny' } }).success).toBe(true);
+  });
+});
+
 describe('SessionCreateInputSchema runtime_context', () => {
   test('accepts a bounded scalar map and the complete public create shape', () => {
     const parsed = SessionCreateInputSchema.parse({
       session_id: '11111111-1111-4111-a111-111111111111',
       agent_name: 'veyris',
+      connection_id: 'managed_gateway',
+      model_selection: {
+        kind: 'custom',
+        model_id: 'anthropic/claude-sonnet-4-6',
+        connection_id: 'managed_gateway',
+      },
       provider: 'daytona',
       branch_already_created: true,
       runtime_context: {
@@ -398,6 +472,13 @@ describe('SessionCreateInputSchema runtime_context', () => {
       },
     });
     expect(parsed.runtime_context?.workspace_id).toBe('org_123');
+    expect(parsed.model_selection?.kind).toBe('custom');
+  });
+
+  test('rejects malformed canonical model and connection selections', () => {
+    expect(SessionCreateInputSchema.safeParse({ connection_id: 'not-a-route' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ model_selection: { kind: 'preset' } }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ model_selection: { kind: 'default', model_id: 'must-be-omitted' } }).success).toBe(false);
   });
 
   test('rejects nested values, arrays and non-finite numbers', () => {
@@ -450,18 +531,20 @@ describe('SessionCreateInputSchema runtime_context', () => {
     ).toBe(false);
   });
 
-  test('retains deprecated camelCase inputs already accepted by the route', () => {
+  test('retains deprecated camelCase inputs already accepted by the route except model', () => {
     expect(
       SessionCreateInputSchema.safeParse({
       baseRef: 'main',
       agentName: 'veyris',
       sandboxSlug: 'default',
       initialPrompt: 'hello',
-      opencodeModel: 'kortix/auto',
+      model: 'kortix/auto',
       sessionId: '11111111-1111-4111-a111-111111111111',
       branchAlreadyCreated: true,
       }).success,
     ).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ opencodeModel: 'kortix/auto' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ opencode_model: 'kortix/auto' }).success).toBe(false);
   });
 });
 

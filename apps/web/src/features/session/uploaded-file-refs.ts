@@ -1,4 +1,4 @@
-import type { UploadResult } from '@/features/files/api/opencode-files';
+import type { UploadResult } from '@/features/files/api/runtime-files';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 
 export type PromptFilePart = {

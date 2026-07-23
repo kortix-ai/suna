@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test';
 import {
 	buildAuthHeaders,
 	isStreamingRequest,
+	normalizeAuthenticatedUrl,
 	syntheticUnauthenticatedResponse,
 	withDefaultTimeout,
 	withTokenRetry,
@@ -73,12 +74,21 @@ test('applies a default (non-aborted) timeout signal to a non-streaming request'
 	expect(signal?.aborted).toBe(false);
 });
 
-test('does NOT impose a default timeout on the SSE event stream endpoint (/global/event)', () => {
-	expect(isStreamingRequest('http://sbx.test/global/event')).toBe(true);
-	const signal = withDefaultTimeout('http://sbx.test/global/event', undefined);
-	// No caller signal was supplied and this is the exempted streaming path —
-	// no timeout signal should be synthesized.
-	expect(signal).toBeUndefined();
+test('the removed OpenCode /global/event route is not treated as a canonical stream', () => {
+	expect(isStreamingRequest('http://sbx.test/global/event')).toBe(false);
+	expect(withDefaultTimeout('http://sbx.test/global/event', undefined)).toBeDefined();
+});
+
+test('does NOT impose a default timeout on a session-scoped ACP request', () => {
+	const url = 'http://api.test/v1/projects/p/sessions/s/acp';
+	expect(isStreamingRequest(url)).toBe(true);
+	expect(withDefaultTimeout(url, { method: 'POST' })).toBeUndefined();
+});
+
+test('does NOT impose a default timeout on a direct ACP daemon request', () => {
+	const url = 'http://sandbox.test/acp/runtime-id?agent=codex';
+	expect(isStreamingRequest(url)).toBe(true);
+	expect(withDefaultTimeout(url, { method: 'POST' })).toBeUndefined();
 });
 
 test('composes a caller-supplied signal with the default timeout on a non-streaming request', () => {
@@ -91,9 +101,9 @@ test('composes a caller-supplied signal with the default timeout on a non-stream
 	expect(signal?.aborted).toBe(true);
 });
 
-test('preserves the caller-supplied signal as-is on the streaming endpoint (never overridden)', () => {
+test('preserves the caller-supplied signal as-is on the ACP streaming endpoint', () => {
 	const controller = new AbortController();
-	const signal = withDefaultTimeout('http://sbx.test/global/event', {
+	const signal = withDefaultTimeout('http://sbx.test/acp/runtime-id?agent=codex', {
 		signal: controller.signal,
 	});
 	expect(signal).toBe(controller.signal);
@@ -101,7 +111,7 @@ test('preserves the caller-supplied signal as-is on the streaming endpoint (neve
 
 test('a Request input carries its own signal through the streaming exemption', () => {
 	const controller = new AbortController();
-	const req = new Request('http://sbx.test/global/event', { signal: controller.signal });
+	const req = new Request('http://sbx.test/acp/runtime-id?agent=codex', { signal: controller.signal });
 	const signal = withDefaultTimeout(req, undefined);
 	// A Request always carries a signal (the caller's, here) — it must pass
 	// through untouched on the exempted path.
@@ -128,4 +138,22 @@ test('the synthetic 401 is a JSON fetch-semantics Response (no network call impl
 	const res = syntheticUnauthenticatedResponse();
 	expect(res.status).toBe(401);
 	expect(await res.json()).toEqual({ error: 'Not authenticated' });
+});
+
+test('authenticated request URLs are canonicalized and reject unsafe URL forms', () => {
+	expect(
+		normalizeAuthenticatedUrl(
+			'https://api.kortix.test/v1/projects/p/sessions/s/acp',
+			'https://api.kortix.test/v1',
+		),
+	).toBe('https://api.kortix.test/v1/projects/p/sessions/s/acp');
+	expect(
+		normalizeAuthenticatedUrl('https://runtime.kortix.test/acp', 'https://api.kortix.test/v1'),
+	).toBe('https://runtime.kortix.test/acp');
+	expect(() =>
+		normalizeAuthenticatedUrl('https://user:pass@api.kortix.test/v1', 'https://api.kortix.test/v1'),
+	).toThrow('cannot contain credentials');
+	expect(() =>
+		normalizeAuthenticatedUrl('file:///tmp/token', 'https://api.kortix.test/v1'),
+	).toThrow('must use http or https');
 });

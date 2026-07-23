@@ -65,12 +65,12 @@ import {
 import { FileBreadcrumb } from '@/components/files/FileBreadcrumb';
 import { FileViewer } from '@/components/files/FileViewer';
 import {
-  useOpenCodeFiles,
-  useOpenCodeUploadFile,
-  useOpenCodeDeleteFile,
-  useOpenCodeMkdir,
-  useOpenCodeRenameFile,
-  useOpenCodeWriteFile,
+  useRuntimeFiles,
+  useRuntimeUploadFile,
+  useRuntimeDeleteFile,
+  useRuntimeMkdir,
+  useRuntimeRenameFile,
+  useRuntimeWriteFile,
 } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
@@ -224,21 +224,21 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     }
   }, [selectedFile, onFileSelectionChange, onRequestMenu]);
 
-  // Fetch files via OpenCode API (same as frontend)
+  // Fetch files via the runtime API (same as frontend)
   const {
     data: files,
     isLoading,
     error,
     refetch,
     isRefetching,
-  } = useOpenCodeFiles(sandboxUrl, currentPath);
+  } = useRuntimeFiles(sandboxUrl, currentPath);
 
-  // Mutations via OpenCode API
-  const uploadMutation = useOpenCodeUploadFile();
-  const deleteMutation = useOpenCodeDeleteFile();
-  const createFolderMutation = useOpenCodeMkdir();
-  const writeFileMutation = useOpenCodeWriteFile();
-  const renameMutation = useOpenCodeRenameFile();
+  // Mutations via the runtime API
+  const uploadMutation = useRuntimeUploadFile();
+  const deleteMutation = useRuntimeDeleteFile();
+  const createFolderMutation = useRuntimeMkdir();
+  const writeFileMutation = useRuntimeWriteFile();
+  const renameMutation = useRuntimeRenameFile();
 
   // Bottom sheet backdrop
   const renderBackdrop = useCallback(

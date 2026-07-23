@@ -56,7 +56,10 @@ export async function createAuthUser(email: string, options: AuthOptions): Promi
   return body.user ?? body;
 }
 
-export async function deleteAuthUser(userId: string, options: Omit<AuthOptions, 'password'>): Promise<void> {
+export async function deleteAuthUser(
+  userId: string,
+  options: Omit<AuthOptions, 'password'>,
+): Promise<void> {
   const serviceRoleKey = optionalEnvValue(
     'SUPABASE_SERVICE_ROLE_KEY',
     ...(options.envFiles ?? ['apps/web/.env', 'apps/api/.env']),
@@ -96,36 +99,41 @@ export async function installBrowserSession(
   page: Page,
   session: AuthSession,
   returnUrl: string,
-  password: string,
+  _password: string,
 ): Promise<void> {
-  await page.context().clearCookies();
+  const context = page.context();
+  await context.clearCookies();
+
+  // These tests already obtained a real Supabase password-grant session above.
+  // Install that session directly instead of sending a magic-link email and
+  // immediately racing a password sign-in against GoTrue's OTP mutation. This
+  // is the same base64url cookie representation @supabase/ssr writes.
   await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  const origin = new URL(page.url()).origin;
+  const url = new URL(origin);
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  const cookieName = local && url.port ? `sb-kortix-auth-token-${url.port}` : 'sb-kortix-auth-token';
+  const cookieValue = `base64-${Buffer.from(JSON.stringify(session), 'utf8').toString('base64url')}`;
+  const chunks =
+    cookieValue.length <= 3180
+      ? [{ name: cookieName, value: cookieValue }]
+      : Array.from({ length: Math.ceil(cookieValue.length / 3180) }, (_, index) => ({
+          name: `${cookieName}.${index}`,
+          value: cookieValue.slice(index * 3180, (index + 1) * 3180),
+        }));
+
+  await context.addCookies(
+    chunks.map((chunk) => ({
+      ...chunk,
+      url: origin,
+      sameSite: 'Lax' as const,
+      expires: session.expires_at,
+    })),
+  );
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('tab', { name: /^Sign in$/i }).click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
   await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/\/auth(?:[/?#]|$)/, { timeout: 30_000 });
 }

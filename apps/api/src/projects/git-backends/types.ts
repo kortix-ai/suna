@@ -49,6 +49,7 @@ export interface ProvisionedRepo {
 export interface SeedFile {
   path: string;
   content: string;
+  mode?: '100644' | '120000';
 }
 
 export interface GitHostBackend {
@@ -68,7 +69,11 @@ export interface GitHostBackend {
    * creator can pull "their" repo into their own host account. Self-resolves an
    * admin-capable credential; only meaningful for managed repos.
    */
-  inviteCollaborator?(ref: GitConnectionRef, username: string, scope: GitScope): Promise<InviteResult>;
+  inviteCollaborator?(
+    ref: GitConnectionRef,
+    username: string,
+    scope: GitScope,
+  ): Promise<InviteResult>;
   /**
    * Mint a short-lived, credential-embedded git URL for pushing to this repo
    * from an EXTERNAL context (e.g. a legacy-migration VM) where `buildUpstream`'s
