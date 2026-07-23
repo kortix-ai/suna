@@ -39,6 +39,10 @@ resource "aws_kms_key" "cloudtrail" {
       { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-east-1.amazonaws.com" },
         Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
       Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-east-1:${local.account_id}:log-group:*" } } },
+      # CloudTrail must decrypt and generate data keys directly when it
+      # validates and publishes to an encrypted SNS notification topic.
+      { Sid = "AllowCloudTrailSNSEncryption", Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" },
+      Action = ["kms:Decrypt", "kms:GenerateDataKey*"], Resource = "*" },
       { Sid    = "AllowSNSEncryption", Effect = "Allow", Principal = { Service = "sns.amazonaws.com" },
         Action = ["kms:Decrypt", "kms:GenerateDataKey*"], Resource = "*",
       Condition = { StringEquals = { "kms:CallerAccount" = local.account_id } } }
