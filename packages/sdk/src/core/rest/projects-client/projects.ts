@@ -404,17 +404,106 @@ export async function updateExperimentalFeature(
   );
 }
 
+/**
+ * The durable provider-migration transition the API returns on the PATCH prepare
+ * branch (a switch to a different, non-default enabled provider — e.g.
+ * Daytona→Platinum) and that {@link getProjectSandboxProviderTransition} polls.
+ * Distinguished from a plain project by `kind:'preparation'`. The switch does NOT
+ * flip the active provider synchronously; the target image is built + verified
+ * first, then activated, and the client polls until a terminal `status`.
+ */
+export interface PreparationView {
+  kind: 'preparation';
+  transition_id: string | null;
+  project_id: string;
+  /** ProviderTransitionStatus | 'noop' | 'cleared' — see the transition core. */
+  status: string;
+  source_provider: string | null;
+  target_provider: string | null;
+  active_provider: string | null;
+  label: string;
+  generation: number | null;
+  snapshot_name: string | null;
+  external_template_id: string | null;
+  commit_sha: string | null;
+  attempts: number;
+  last_error: string | null;
+  error_class: string | null;
+  requested_at: string | null;
+  ready_at: string | null;
+  activated_at: string | null;
+  immediate: boolean;
+}
+
+/**
+ * The result of {@link updateProjectSandboxProvider}: EITHER the updated project
+ * (a safe/immediate switch — null clear, the platform default, or the
+ * already-active provider) tagged `kind:'project'`, OR a {@link PreparationView}
+ * (the prepare branch) tagged `kind:'preparation'`. Both arrive under HTTP 200 —
+ * branch on `kind`, never shape-sniff. A `kind:'preparation'` result must NOT be
+ * written into the project cache; poll
+ * {@link getProjectSandboxProviderTransition} until it settles.
+ */
+export type UpdateProjectSandboxProviderResult =
+  | ({ kind: 'project' } & KortixProject)
+  | PreparationView;
+
 /** Set or clear the per-project sandbox-provider pin (Customize → Settings).
  *  Pass `null` to clear (follow the platform default/distribution). The value must
- *  be one of the project's `available_sandbox_providers`. */
+ *  be one of the project's `available_sandbox_providers`.
+ *
+ *  Returns a tagged union (see {@link UpdateProjectSandboxProviderResult}): a
+ *  `kind:'project'` immediate result, or a `kind:'preparation'` transition the
+ *  caller polls via {@link getProjectSandboxProviderTransition}. */
 export async function updateProjectSandboxProvider(
   projectId: string,
   provider: SandboxProviderName | null,
+): Promise<UpdateProjectSandboxProviderResult> {
+  return unwrap(
+    await backendApi.patch<UpdateProjectSandboxProviderResult>(
+      `/projects/${projectId}/sandbox-provider`,
+      { provider },
+    ),
+  );
+}
+
+/** PUBLIC provider-migration transition view served by the poll endpoint. Carries
+ *  only status / providers / generation / timestamps / a user-safe error class +
+ *  label — never internal build/lease detail. */
+export interface SandboxProviderTransitionView {
+  transition_id: string | null;
+  project_id: string;
+  status: string;
+  source_provider: string | null;
+  target_provider: string | null;
+  generation: number | null;
+  label: string;
+  error_class: string | null;
+  requested_at: string | null;
+  ready_at: string | null;
+  activated_at: string | null;
+  immediate: boolean;
+}
+
+export interface SandboxProviderTransitionState {
+  active_provider: string | null;
+  latest: SandboxProviderTransitionView | null;
+  history: SandboxProviderTransitionView[];
+}
+
+/** Poll the durable per-project sandbox-provider migration. After
+ *  {@link updateProjectSandboxProvider} returns a `kind:'preparation'` result,
+ *  poll this until `latest` reaches a terminal status (activated / failed /
+ *  superseded / cancelled) — or `latest` is null (no live transition). */
+export async function getProjectSandboxProviderTransition(
+  projectId: string,
+  options?: ApiClientOptions,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {
-      provider,
-    }),
+    await backendApi.get<SandboxProviderTransitionState>(
+      `/projects/${projectId}/sandbox-provider/transition`,
+      { showErrors: false, ...options },
+    ),
   );
 }
 

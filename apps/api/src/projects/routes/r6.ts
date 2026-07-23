@@ -13,7 +13,13 @@ import { accountGroupMembers, accountGroups, accountInvitations, accountMembers,
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
-import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
+import {
+  AccessMemberSchema,
+  AnyObject,
+  SandboxProviderPatchResultSchema,
+  SandboxProviderTransitionStateSchema,
+  projectsApp,
+} from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
@@ -22,7 +28,11 @@ import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../e
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
-import { requestProviderTransition, ProviderTransitionError } from '../provider-transition/provider-transition-service';
+import {
+  requestProviderTransition,
+  readPublicProjectTransitionState,
+  ProviderTransitionError,
+} from '../provider-transition/provider-transition-service';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -1207,7 +1217,10 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(AnyObject, 'Updated project'),
+      // FIX-L: EITHER the updated project (immediate) OR a preparation object
+      // (prepare branch), discriminated by `kind`. Both are HTTP 200 (clients may
+      // hard-check === 200); `kind` disambiguates without shape-sniffing.
+      200: json(SandboxProviderPatchResultSchema, 'Updated project or preparation'),
       ...errors(400, 401, 403, 404),
     },
   }),
@@ -1234,10 +1247,19 @@ projectsApp.openapi(
       const result = await requestProviderTransition({ projectId, targetRaw: raw });
       if (result.kind === 'immediate') {
         if (result.projectRow.status === 'archived') return c.json({ error: 'Not found' }, 404);
-        return c.json(
-          serializeProject(result.projectRow, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }),
-        );
+        // FIX-L: tag the immediate body with the `kind:'project'` discriminant so
+        // the client can branch on it without shape-sniffing (the prepare body
+        // already carries `kind:'preparation'` via serializeTransition).
+        return c.json({
+          kind: 'project' as const,
+          ...serializeProject(result.projectRow, {
+            projectRole: loaded.projectRole,
+            effectiveRole: loaded.effectiveRole,
+          }),
+        });
       }
+      // The prepare branch's view is `serializeTransition(...)`, which already
+      // carries `kind:'preparation'`.
       return c.json(result.view);
     } catch (err) {
       if (err instanceof ProviderTransitionError) {
@@ -1245,5 +1267,37 @@ projectsApp.openapi(
       }
       throw err;
     }
+  },
+);
+
+// GET /:projectId/sandbox-provider/transition — poll the durable provider-migration
+// transition for this project. The PATCH prepare branch (Daytona→Platinum) returns
+// a `kind:'preparation'` body but does NOT flip the active provider; the client
+// polls this endpoint until the transition reaches a terminal status. Project-scoped
+// (loadProjectForUser rejects cross-project/non-member with a 404, same scoping as
+// the PATCH). The body is a PUBLIC projection (see readPublicProjectTransitionState):
+// status / provider / generation / timestamps / user-safe error class only — never
+// the lease epoch, lease holder, raw provider error strings, image names, or template
+// ids.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sandbox-provider/transition',
+    tags: ['projects'],
+    summary: 'Poll the per-project sandbox-provider migration transition',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(SandboxProviderTransitionStateSchema, 'Public provider-transition state'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    return c.json(await readPublicProjectTransitionState(projectId));
   },
 );

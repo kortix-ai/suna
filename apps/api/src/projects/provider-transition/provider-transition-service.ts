@@ -32,10 +32,16 @@ import {
 import {
   classifyProviderSwitch,
   normalizeTargetProvider,
-  preparationLabel,
   type PrepIdentity,
-  type ProviderTransitionStatus,
 } from './provider-transition-core';
+import {
+  serializeTransition,
+  toPublicTransitionView,
+  toPublicTransitionState,
+  type PreparationView,
+  type PublicTransitionView,
+  type PublicTransitionState,
+} from './provider-transition-view';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
 import { logger } from '../../lib/logger';
 
@@ -143,53 +149,12 @@ export function kickDrive(transitionId: string, database: Database = appDb): voi
   );
 }
 
-export interface PreparationView {
-  transition_id: string | null;
-  project_id: string;
-  status: ProviderTransitionStatus | 'noop' | 'cleared';
-  source_provider: string | null;
-  target_provider: string | null;
-  active_provider: string | null;
-  label: string;
-  generation: number | null;
-  snapshot_name: string | null;
-  external_template_id: string | null;
-  commit_sha: string | null;
-  attempts: number;
-  last_error: string | null;
-  error_class: string | null;
-  requested_at: string | null;
-  ready_at: string | null;
-  activated_at: string | null;
-  immediate: boolean;
-}
-
-export function serializeTransition(
-  row: ProviderTransitionRow,
-  activeProvider: string | null,
-  opts: { immediate?: boolean } = {},
-): PreparationView {
-  return {
-    transition_id: row.transitionId,
-    project_id: row.projectId,
-    status: row.status,
-    source_provider: row.sourceProvider,
-    target_provider: row.targetProvider,
-    active_provider: activeProvider,
-    label: preparationLabel(row.status, row.targetProvider, row.sourceProvider),
-    generation: row.generation,
-    snapshot_name: row.snapshotName,
-    external_template_id: row.externalTemplateId,
-    commit_sha: row.commitSha,
-    attempts: row.attempts ?? 0,
-    last_error: row.lastError,
-    error_class: row.errorClass,
-    requested_at: row.requestedAt?.toISOString() ?? null,
-    ready_at: row.readyAt?.toISOString() ?? null,
-    activated_at: row.activatedAt?.toISOString() ?? null,
-    immediate: opts.immediate ?? false,
-  };
-}
+// FIX-L: the PATCH-response + poll-endpoint shapes (PreparationView,
+// serializeTransition, the PUBLIC projection) live in the pure, config-free
+// provider-transition-view module (imported above). Re-export the locals so
+// existing importers keep this module as their entrypoint.
+export { serializeTransition, toPublicTransitionView, toPublicTransitionState };
+export type { PreparationView, PublicTransitionView, PublicTransitionState };
 
 export class ProviderTransitionError extends Error {
   constructor(message: string, readonly code: 'bad_provider' | 'not_found') {
@@ -287,6 +252,16 @@ export async function readProjectTransitionState(
     latest: rows[0] ? serializeTransition(rows[0], active) : null,
     history: rows.map((r) => serializeTransition(r, active)),
   };
+}
+
+/** FIX-L: project-scoped PUBLIC transition state for the poll route
+ *  (GET /sandbox-provider/transition). Maps the internal PreparationView(s)
+ *  through toPublicTransitionState, which strips internal build/lease detail. */
+export async function readPublicProjectTransitionState(
+  projectId: string,
+  database: Database = appDb,
+): Promise<PublicTransitionState> {
+  return toPublicTransitionState(await readProjectTransitionState(projectId, database));
 }
 
 /**
