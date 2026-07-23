@@ -210,9 +210,8 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
 }
 
 # ── Load balancer ─────────────────────────────────────────────────────────────
+#trivy:ignore:AVD-AWS-0089 This is the terminal ALB access-log bucket. Enabling server access logging on the terminal bucket creates recursive log delivery.
 resource "aws_s3_bucket" "alb_logs" {
-  #trivy:ignore:AVD-AWS-0089 This is the terminal ALB access-log bucket. Enabling server access logging on the terminal bucket creates recursive log delivery.
-  #trivy:ignore:AVD-AWS-0132 Elastic Load Balancing access-log delivery supports SSE-S3. It does not support customer-managed KMS keys.
   #checkov:skip=CKV_AWS_18:This bucket is the terminal ALB access-log destination; logging it to another bucket creates a recursive log chain.
   #checkov:skip=CKV_AWS_144:ALB access logs are regional operational data with lifecycle retention; cross-region replication is not required.
   #checkov:skip=CKV_AWS_145:Elastic Load Balancing access logs support SSE-S3 and do not support customer-managed KMS keys.
@@ -237,6 +236,7 @@ resource "aws_s3_bucket_ownership_controls" "alb_logs" {
   }
 }
 
+#trivy:ignore:AVD-AWS-0132 Elastic Load Balancing access-log delivery supports SSE-S3. It does not support customer-managed KMS keys.
 resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
   bucket = aws_s3_bucket.alb_logs.id
   rule {
