@@ -4,7 +4,7 @@ Domain Research CLI -- Free domain availability checking, WHOIS/RDAP lookup.
 Zero credentials required. Uses RDAP (1195+ TLDs) with whois CLI fallback.
 
 Usage:
-  python3 domain-lookup.py <command> [options]
+  uv run domain-lookup.py <command> [options]
 
 Commands:
   check <domain1,domain2,...>          Check domain availability

@@ -7,6 +7,8 @@ defaultProjectInstallOrder: 40
 
 # PDF Processing
 
+Run Python files with `uv run --with "pkg1,pkg2,pkg3" script.py` — declare all dependencies inline in one comma-separated `--with`. Version pins are allowed inside the list (e.g. `--with "reportlab==4.2.5,pypdf"`).
+
 ## Quick Start
 
 ```python
@@ -47,6 +49,8 @@ Use this for fast inspection. Move to the tool-specific sections below when you 
 
 **CJK text:** Fonts like Inter and DM Sans only cover Latin glyphs. ReportLab has no automatic font fallback — unregistered scripts render as tofu. Register Noto Sans CJK for Chinese, Japanese, or Korean text. See [libraries/reportlab.md](libraries/reportlab.md) (CJK Font Support).
 
+**Currency & symbol glyphs:** The same Latin-only fonts also lack many currency and symbol glyphs — e.g. `₹` (U+20B9), `₩`, `₫`, `₴`, `﷼`. ReportLab and matplotlib render these as tofu with no fallback (matplotlib warns `Glyph ... missing from font(s)`). Either register a font that includes the glyph (e.g. Noto Sans), or use an ASCII fallback consistently (e.g. `Rs` for INR) across **both** charts and PDF body text so they match.
+
 ## PDF Metadata
 
 Always set metadata when creating PDFs:
@@ -84,6 +88,8 @@ All URLs in generated PDFs must be clickable. In ReportLab Paragraph objects, us
 **Encrypted PDFs:** Use `pypdf` to detect and decrypt (`reader.is_encrypted` / `reader.decrypt(pw)`). If you don't have the password, try `qpdf --password=X --decrypt`. Run `qpdf --show-encryption` to inspect what protection is applied.
 
 **Corrupted PDFs:** Run `qpdf --check` to diagnose structural problems, then `qpdf --replace-input` to attempt repair.
+
+**Verifying generated PDFs:** Rendering pages to images (pypdfium2/pdftoppm) only helps if your model can view images. If it can't, verify via text extraction instead — dump `page.extract_text()` with pypdf and check content, ordering, and that nothing overflowed — and confirm metadata (`title`, `author`) is set.
 
 **Text extraction fails:** If pdfplumber or pdftotext return empty/garbled text, the PDF is likely scanned images. Fall back to OCR (see below).
 
