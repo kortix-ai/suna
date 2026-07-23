@@ -11,6 +11,10 @@ const projectAccessSource = readFileSync(
   join(import.meta.dir, '../../components/projects/project-access-boundary.tsx'),
   'utf8',
 );
+const projectHomeSource = readFileSync(
+  join(import.meta.dir, '../workspace/project-layout/project-home.tsx'),
+  'utf8',
+);
 
 describe('session navigation loading boundaries', () => {
   test('runtime-not-ready retries never render the full-page ASCII logo', () => {
@@ -34,6 +38,12 @@ describe('session navigation loading boundaries', () => {
   test('the access boundary uses the lightweight project route', () => {
     expect(projectAccessSource).toContain('getProject(projectId');
     expect(projectAccessSource).not.toContain('getProjectDetail(projectId');
-    expect(projectAccessSource).toContain("queryKey: ['project-access', projectId]");
+  });
+
+  test('the access boundary cannot collide with the project members query', () => {
+    expect(projectAccessSource).toContain("queryKey: ['project-access-boundary', projectId]");
+    expect(projectAccessSource).not.toContain("queryKey: ['project-access', projectId]");
+    expect(projectHomeSource).toContain("queryKey: ['project-access', projectId]");
+    expect(projectHomeSource).toContain('access.data?.members?.length ?? 0');
   });
 });
