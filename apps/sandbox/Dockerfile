@@ -177,9 +177,8 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
 # install offline + fast — no per-boot download.
 # Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
 RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \
-    && cd /tmp/oc-deps \
-    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \
-    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install \
+    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > /tmp/oc-deps/package.json \
+    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install --cwd /tmp/oc-deps \
     && rm -rf /tmp/oc-deps
 
 # agent-browser (Vercel agent-browser): browser-automation CLI for the agent.

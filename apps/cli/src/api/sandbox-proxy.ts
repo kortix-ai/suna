@@ -30,6 +30,9 @@ interface RequestOpts {
   query?: Record<string, string | undefined>;
   /** Per-request timeout. */
   timeoutMs?: number;
+  /** Sent as the Idempotency-Key header so the server proxy can dedupe its own
+   *  502/timeout retries and never deliver the same message twice. */
+  idempotencyKey?: string;
 }
 
 function joinProxyUrl(opts: RequestOpts): string {
@@ -57,6 +60,7 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
     Authorization: `Bearer ${opts.token}`,
   };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
 
   const controller = new AbortController();
   const timeoutMs = opts.timeoutMs ?? 30_000;
@@ -195,6 +199,7 @@ async function submitPromptAsync(
   sessionId: string,
   body: Record<string, unknown>,
   deadline: number,
+  idempotencyKey?: string,
 ): Promise<void> {
   let lastSubmitError: unknown;
 
@@ -206,6 +211,7 @@ async function submitPromptAsync(
         method: 'POST',
         body,
         timeoutMs: Math.max(1, Math.min(30_000, deadline - Date.now())),
+        idempotencyKey,
       });
       return;
     } catch (error) {
@@ -242,11 +248,12 @@ async function sendPromptAsyncAndWait(
   parts: OpencodePromptPart[],
   extra: { agent?: string; model?: { providerID: string; modelID: string } } | undefined,
   timeoutMs: number,
+  idempotencyKey?: string,
 ): Promise<{ info: OpencodeAssistantMessage; parts: OpencodePart[] }> {
   const deadline = Date.now() + timeoutMs;
   const messageID = promptMessageId();
   const body = { parts, messageID, ...(extra ?? {}) };
-  await submitPromptAsync(base, sessionId, body, deadline);
+  await submitPromptAsync(base, sessionId, body, deadline, idempotencyKey);
 
   while (Date.now() < deadline) {
     try {
@@ -345,8 +352,9 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
       parts: OpencodePromptPart[],
       extra?: { agent?: string; model?: { providerID: string; modelID: string } },
       timeoutMs?: number,
+      idempotencyKey?: string,
     ) =>
-      sendPromptAsyncAndWait(base, sessionId, parts, extra, timeoutMs ?? 5 * 60_000),
+      sendPromptAsyncAndWait(base, sessionId, parts, extra, timeoutMs ?? 5 * 60_000, idempotencyKey),
     abortSession: (sessionId: string) =>
       sandboxRequest<boolean>({
         ...base,

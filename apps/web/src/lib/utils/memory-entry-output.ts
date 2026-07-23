@@ -200,28 +200,48 @@ function parseObservationReport(text: string): ParsedObservationMemory | null {
   };
 }
 
+function parseLtmFields(body: string): Map<string, string> {
+  const labels = ['Caption:', 'Content:', 'Session:', 'Created:', 'Tags:'];
+  const lower = body.toLowerCase();
+  const positions = labels
+    .map((label) => ({ label, index: lower.indexOf(label.toLowerCase()) }))
+    .filter((entry) => entry.index >= 0)
+    .sort((a, b) => a.index - b.index);
+  const fields = new Map<string, string>();
+  for (let index = 0; index < positions.length; index += 1) {
+    const current = positions[index]!;
+    const next = positions[index + 1];
+    const start = current.index + current.label.length;
+    fields.set(current.label, body.slice(start, next?.index ?? body.length).trim());
+  }
+  return fields;
+}
+
 function parseLtmEntry(text: string): ParsedLtmMemory | null {
   const normalized = text.replace(/\r\n?/g, '\n').trim();
   if (!normalized.includes('===') || !normalized.includes('LTM #')) return null;
 
-  const header = normalized.match(/===\s*LTM\s*#([^\s\]]+)\s*\[([^\]]+)\]\s*===\s*([\s\S]*)$/i);
-  if (!header) return null;
-
-  const [, id, type, body] = header;
+  const upper = normalized.toUpperCase();
+  const prefixIndex = upper.indexOf('LTM #');
+  const typeStart = normalized.indexOf('[', prefixIndex + 5);
+  const typeEnd = typeStart >= 0 ? normalized.indexOf(']', typeStart + 1) : -1;
+  const headerEnd = typeEnd >= 0 ? normalized.indexOf('===', typeEnd + 1) : -1;
+  if (prefixIndex < 0 || typeStart < 0 || typeEnd < 0 || headerEnd < 0) return null;
+  const id = normalized.slice(prefixIndex + 5, typeStart).trim();
+  const type = normalized.slice(typeStart + 1, typeEnd).trim();
+  const body = normalized.slice(headerEnd + 3);
   const compactBody = body.replace(/\s+/g, ' ').trim();
-
-  const caption = compactBody.match(/Caption:\s*([\s\S]*?)(?=\s+Content:|\s+Session:|\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() ?? '';
-  const content = compactBody.match(/Content:\s*([\s\S]*?)(?=\s+Session:|\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() ?? '';
-  const session = compactBody.match(/Session:\s*([^\s|]+(?:\s*[^\s|]+)*)?(?=\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() || null;
-  const createdAndUpdated = compactBody.match(/Created:\s*([\s\S]*?)(?=\s+Tags:|$)/i)?.[1]?.trim() ?? '';
+  const fields = parseLtmFields(compactBody);
+  const caption = fields.get('Caption:') ?? '';
+  const content = fields.get('Content:') ?? '';
+  const session = fields.get('Session:') || null;
+  const createdAndUpdated = fields.get('Created:') ?? '';
   const created = createdAndUpdated.split('|')[0]?.trim() || null;
-  const updated = createdAndUpdated.includes('|')
-    ? createdAndUpdated
-        .split('|')[1]
-        ?.replace(/^(Updated:\s*)+/i, '')
-        .trim() || null
-    : null;
-  const tagsRaw = compactBody.match(/Tags:\s*([\s\S]*?)$/i)?.[1] ?? '';
+  let updated = createdAndUpdated.includes('|') ? createdAndUpdated.split('|')[1]?.trim() || null : null;
+  while (updated?.toLowerCase().startsWith('updated:')) {
+    updated = updated.slice('updated:'.length).trim() || null;
+  }
+  const tagsRaw = fields.get('Tags:') ?? '';
   const tags = tagsRaw
     .split(',')
     .map((tag) => tag.trim())

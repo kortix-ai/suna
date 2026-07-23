@@ -9,8 +9,8 @@
  * Validate the `db` transaction + that opening a migrated session rehydrates the
  * chat before enabling the button in prod.
  *
- * Resumability note: the bundle is assembled in an ephemeral /tmp dir keyed by
- * migrationId. The durable checkpoints are the REPO (created once, idempotent)
+ * Resumability note: the bundle is assembled in a securely created ephemeral
+ * directory. The durable checkpoints are the REPO (created once, idempotent)
  * and the uploaded opencode archive + the DB rows. A crash before `repo`
  * re-extracts (idempotent: un-archive + tar again).
  */
@@ -25,18 +25,27 @@ import { normalizeAgentpressThread, type AgentpressMessageRow } from './agentpre
 import { writeConversations, seedOpencodeSchema, type SessionToWrite } from './opencode-db-writer';
 import { pushBundleAsRepo } from './suna-push';
 import type { SunaMigrationContext } from './suna-migration-runner';
+import {
+  validatedMigrationTempDirectory,
+  validatedMigrationTempFile,
+} from './migration-temp-paths';
 
 interface SessionSpec { slug: string; title: string; opencodeSessionId: string; messageCount: number; }
 
-function bundlePath(migrationId: string): string {
-  return join(tmpdir(), `suna-mig-${migrationId}`);
+function checkpointTempDirectory(ctx: SunaMigrationContext, key: string, prefix: string): string | null {
+  return validatedMigrationTempDirectory(ctx.progress[key], prefix);
+}
+
+function checkpointTempFile(ctx: SunaMigrationContext, key: string, directoryPrefix: string, fileName: string): string | null {
+  return validatedMigrationTempFile(ctx.progress[key], directoryPrefix, fileName);
 }
 
 /** extract: discover the account's Suna projects, pull each sandbox's files into
  *  bundle/legacy/<slug>/, build the N-session opencode.db, capture session ids. */
 export async function extractStep(ctx: SunaMigrationContext): Promise<void> {
-  const out = bundlePath(ctx.migrationId);
-  rmSync(out, { recursive: true, force: true });
+  const previous = checkpointTempDirectory(ctx, 'bundle_dir', 'suna-mig-');
+  if (previous) rmSync(previous, { recursive: true, force: true });
+  const out = mkdtempSync(join(tmpdir(), 'suna-mig-'));
   mkdirSync(join(out, 'legacy'), { recursive: true });
 
   // Window over the account's projects, newest-first: plan.{limit,offset}.
@@ -102,25 +111,32 @@ export async function extractStep(ctx: SunaMigrationContext): Promise<void> {
  *  on-open rehydrate can ship it (keyed by the new projectId). */
 export async function repoStep(ctx: SunaMigrationContext): Promise<void> {
   if (typeof ctx.progress.project_id === 'string') { ctx.log('repo: already done'); return; }
-  const out = bundlePath(ctx.migrationId);
-  const dbAside = join(tmpdir(), `suna-mig-${ctx.migrationId}.opencode.db`);
-  const bundleDb = join(out, 'opencode.db');
+  let out = checkpointTempDirectory(ctx, 'bundle_dir', 'suna-mig-');
+  let dbAside = checkpointTempFile(ctx, 'db_aside', 'suna-db-', 'opencode.db');
 
   // The bundle lives in this pod's /tmp. On EKS a retry can resume on a
   // DIFFERENT pod (3–12 replicas, leader-only worker, no stickiness) where
   // neither the bundle nor a prior aside exists — rebuild it from the live DB
   // (extract is idempotent + self-contained) so repo is pod-independent.
-  if (!existsSync(bundleDb) && !existsSync(dbAside)) {
+  if (!out || (!existsSync(join(out, 'opencode.db')) && (!dbAside || !existsSync(dbAside)))) {
     ctx.log('repo: bundle absent on this pod, re-extracting');
     await extractStep(ctx);
+    out = checkpointTempDirectory(ctx, 'bundle_dir', 'suna-mig-');
   }
+  if (!out) throw new Error('repo: secure bundle path missing after extract');
+  const bundleDb = join(out, 'opencode.db');
 
   // Move opencode.db out of the bundle BEFORE pushing (chat storage, not source)
   // and key the aside to the stable migrationId — NOT the projectId, which
   // pushBundleAsRepo mints fresh on every call. A retry that re-enters repoStep
   // must still find the db an earlier attempt moved aside. Move once; idempotent.
-  if (existsSync(bundleDb)) renameSync(bundleDb, dbAside);
-  if (!existsSync(dbAside)) throw new Error('repo: opencode.db missing after re-extract');
+  if (existsSync(bundleDb)) {
+    const asideDir = mkdtempSync(join(tmpdir(), 'suna-db-'));
+    dbAside = join(asideDir, 'opencode.db');
+    renameSync(bundleDb, dbAside);
+    await ctx.checkpoint({ db_aside: dbAside });
+  }
+  if (!dbAside || !existsSync(dbAside)) throw new Error('repo: opencode.db missing after re-extract');
 
   const repo = await pushBundleAsRepo(ctx.accountId, out);
 
@@ -137,7 +153,7 @@ export async function repoStep(ctx: SunaMigrationContext): Promise<void> {
     repo_name: repo.repoName, default_branch: repo.defaultBranch, provider: repo.provider,
     external_repo_id: repo.externalRepoId, installation_id: repo.installationId, credential_ref: repo.credentialRef,
   });
-  rmSync(dbAside, { force: true });
+  rmSync(join(dbAside, '..'), { recursive: true, force: true });
   ctx.log('repo: pushed + opencode archive uploaded', { repo: repo.upstreamUrl });
 }
 
@@ -203,7 +219,8 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     }
   });
 
-  rmSync(bundlePath(ctx.migrationId), { recursive: true, force: true });
+  const bundleDir = checkpointTempDirectory(ctx, 'bundle_dir', 'suna-mig-');
+  if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
   await ctx.checkpoint({ db_committed: true });
   ctx.log('db: committed', { project_id: projectId, sessions: specs.length });
 }

@@ -28,10 +28,89 @@ terraform {
   }
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
+resource "aws_kms_key" "eks_secrets" {
+  count                   = var.secrets_encryption_kms_key_arn == null ? 1 : 0
+  description             = "Envelope encryption for ${var.name} Kubernetes secrets"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AccountAdministration"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action = [
+          "kms:CancelKeyDeletion",
+          "kms:CreateAlias",
+          "kms:CreateGrant",
+          "kms:Decrypt",
+          "kms:DeleteAlias",
+          "kms:DescribeKey",
+          "kms:DisableKey",
+          "kms:DisableKeyRotation",
+          "kms:EnableKey",
+          "kms:EnableKeyRotation",
+          "kms:Encrypt",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListAliases",
+          "kms:ListGrants",
+          "kms:ListKeyPolicies",
+          "kms:ListKeyRotations",
+          "kms:ListResourceTags",
+          "kms:ListRetirableGrants",
+          "kms:PutKeyPolicy",
+          "kms:ReEncryptFrom",
+          "kms:ReEncryptTo",
+          "kms:RetireGrant",
+          "kms:RevokeGrant",
+          "kms:RotateKeyOnDemand",
+          "kms:ScheduleKeyDeletion",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:UpdateAlias",
+          "kms:UpdateKeyDescription",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-secrets"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = "eks"
+  }
+}
+
+resource "aws_kms_alias" "eks_secrets" {
+  count         = var.secrets_encryption_kms_key_arn == null ? 1 : 0
+  name          = "alias/${var.name}-secrets"
+  target_key_id = aws_kms_key.eks_secrets[0].key_id
+}
+
+locals {
+  secrets_encryption_kms_key_arn = coalesce(
+    var.secrets_encryption_kms_key_arn,
+    one(aws_kms_key.eks_secrets[*].arn),
+  )
+}
+
+#trivy:ignore:AVD-AWS-0040 GitHub-hosted deployment jobs require the IAM-authenticated public EKS endpoint until deployments run inside the VPC.
+#trivy:ignore:AVD-AWS-0041 GitHub-hosted runner egress CIDRs are not stable enough for an endpoint CIDR allowlist; IAM and Kubernetes RBAC enforce access.
 resource "aws_eks_cluster" "this" {
   #checkov:skip=CKV_AWS_38:Public endpoint exposure is caller-controlled; enterprise-vpc explicitly disables it and supplies no public CIDRs.
   #checkov:skip=CKV_AWS_39:This reusable module supports legacy public clusters; the enterprise root sets endpoint_public_access=false.
-  #checkov:skip=CKV_AWS_58:Encryption is a caller-supplied KMS key; enterprise-vpc always passes its customer-owned data key.
   name     = var.name
   role_arn = aws_iam_role.cluster.arn
   version  = var.cluster_version
@@ -51,14 +130,11 @@ resource "aws_eks_cluster" "this" {
   # Ship control-plane logs to CloudWatch for audit/forensics (SOC 2).
   enabled_cluster_log_types = var.cluster_log_types
 
-  dynamic "encryption_config" {
-    for_each = var.secrets_encryption_kms_key_arn == null ? [] : [var.secrets_encryption_kms_key_arn]
-    content {
-      provider {
-        key_arn = encryption_config.value
-      }
-      resources = ["secrets"]
+  encryption_config {
+    provider {
+      key_arn = local.secrets_encryption_kms_key_arn
     }
+    resources = ["secrets"]
   }
 
   tags = {
