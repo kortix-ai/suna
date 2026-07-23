@@ -174,3 +174,46 @@ flow(
     });
   },
 );
+
+flow(
+  'KAAB-7',
+  { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ seed: true });
+    const key = ctx.fixtures.name('kaab-idem-ident');
+    await ctx.step('backend create with Idempotency-Key + origin_ref:alice → 201', async () => {
+      const r = await ctx.client
+        .as(ctx.P.PAT_ACCT)
+        .post(
+          '/v1/projects/:projectId/sessions',
+          { origin_ref: 'alice' },
+          { params: { projectId: p.id }, headers: { 'Idempotency-Key': key } },
+        );
+      r.status(201);
+      const id = r.json<any>()?.session_id ?? r.json<any>()?.id;
+      if (id) ctx.track('session', id, { projectId: p.id });
+    });
+    await ctx.step('same key, DIFFERENT origin_ref:bob → 409 (no cross-end-user session bleed)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.PAT_ACCT)
+        .post(
+          '/v1/projects/:projectId/sessions',
+          { origin_ref: 'bob' },
+          { params: { projectId: p.id }, headers: { 'Idempotency-Key': key } },
+        );
+      r.status(409);
+      r.body().has('$.code', 'IDEMPOTENCY_ORIGIN_CONFLICT');
+    });
+    await ctx.step('oversized Idempotency-Key header → 400 INVALID_IDEMPOTENCY_KEY (not a 500)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.PAT_ACCT)
+        .post(
+          '/v1/projects/:projectId/sessions',
+          {},
+          { params: { projectId: p.id }, headers: { 'Idempotency-Key': 'x'.repeat(300) } },
+        );
+      r.status(400);
+      r.body().has('$.code', 'INVALID_IDEMPOTENCY_KEY');
+    });
+  },
+);

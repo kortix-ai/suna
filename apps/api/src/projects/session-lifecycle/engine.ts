@@ -6,6 +6,7 @@ import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
+import { originRefConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
 import { resolveProjectAutomationActor } from './actor';
@@ -121,6 +122,40 @@ export async function createSession(
         },
       };
     }
+    // Attribution/identity conflict. Within one backend account origin_ref is how
+    // a wrapper distinguishes its end-users, so replaying a key with a different
+    // origin_ref (or runtime_context) must NOT return the first end-user's
+    // session — that would land end-user B's prompts in A's conversation and
+    // misattribute usage. Refuse it, mirroring the guards above. (Cross-ACCOUNT
+    // key collision is a separate concern — see the account-scope fix.)
+    if (originRefConflicts(existingBody.origin_ref, command.body.origin_ref)) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used for a different origin_ref',
+            code: 'IDEMPOTENCY_ORIGIN_CONFLICT',
+          },
+        },
+      };
+    }
+    if (runtimeContextConflicts(existingBody.runtime_context, command.body.runtime_context)) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different runtime_context',
+            code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
+          },
+        },
+      };
+    }
     const existingResult = resultFromExistingCommand(claimed.row);
     if (existingResult.sessionId) {
       const [row] = await db
@@ -128,7 +163,28 @@ export async function createSession(
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, existingResult.sessionId))
         .limit(1);
-      if (row) existingResult.row = row;
+      if (row) {
+        // A soft-deleted session is gone — deleteSession() stamps
+        // metadata.deletedAt and leaves status 'stopped'. Handing the tombstone
+        // back as a create "success" poisons the key forever (every follow-up
+        // continueSession → no-session). Treat it as spent: 409, use a new key.
+        const rowMeta = (row.metadata ?? {}) as Record<string, unknown>;
+        if (typeof rowMeta.deletedAt === 'string') {
+          return {
+            status: 'failed',
+            commandId: claimed.row.commandId,
+            retryable: false,
+            error: {
+              status: 409,
+              body: {
+                error: 'Idempotency key maps to a deleted session — use a new key',
+                code: 'IDEMPOTENCY_KEY_SESSION_DELETED',
+              },
+            },
+          };
+        }
+        existingResult.row = row;
+      }
     }
     return existingResult;
   }
