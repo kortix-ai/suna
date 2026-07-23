@@ -3958,9 +3958,15 @@ export function SessionChat({
   // Seeded with anything queued in the instant shell while the computer was
   // still booting (same handoff lifecycle as pending-files-store) — the drain
   // effect below flushes it once the auto-sent first prompt hits a boundary.
-  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>(() =>
-    usePendingQueueStore.getState().consumePendingQueue(),
-  );
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  useEffect(() => {
+    const pendingMessages = usePendingQueueStore.getState().consumePendingQueue();
+    if (pendingMessages.length === 0) return;
+
+    // The instant-shell messages predate messages queued after this component
+    // commits, so retain their position at the front of the queue.
+    setQueuedMessages((currentMessages) => [...pendingMessages, ...currentMessages]);
+  }, []);
   const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   useEffect(() => {
     queuedMessagesRef.current = queuedMessages;
