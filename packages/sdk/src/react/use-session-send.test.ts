@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 // Mirrors messages.test.ts / use-session.test.ts: stub the lowest network
 // boundary (the OpenCode SDK client singleton) so the real send/recovery
 // logic under test runs unmodified.
-let messagesImpl: (args: { sessionID: string }) => Promise<{ data?: unknown }> = async () => ({
+let lastMessagesArgs: { sessionID: string; limit?: number } | undefined;
+let messagesImpl: (args: { sessionID: string; limit?: number }) => Promise<{ data?: unknown }> = async () => ({
   data: undefined,
 });
 let promptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
@@ -15,7 +16,10 @@ mock.module('../core/runtime/client', () => ({
     if (getClientThrows) throw getClientThrows;
     return {
       session: {
-        messages: (args: { sessionID: string }) => messagesImpl(args),
+        messages: (args: { sessionID: string; limit?: number }) => {
+          lastMessagesArgs = args;
+          return messagesImpl(args);
+        },
         promptAsync: (args: unknown) => promptImpl(args),
       },
     };
@@ -47,6 +51,7 @@ beforeEach(() => {
   messagesImpl = async () => ({ data: undefined });
   promptImpl = async () => ({ data: {} });
   getClientThrows = null;
+  lastMessagesArgs = undefined;
   useSyncStore.getState().reset();
 });
 
@@ -116,6 +121,8 @@ describe('recoverFromSendFailure', () => {
     expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'idle' });
 
     await tick();
+
+    expect(lastMessagesArgs).toEqual({ sessionID: 'sess-1', limit: 10 });
 
     // hydrate() ran with the server's echo of the same message — the
     // optimistic entry is superseded, not just deleted outright.

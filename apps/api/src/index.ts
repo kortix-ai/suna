@@ -234,6 +234,7 @@ app.use(
       'tracestate',
       'X-Request-Id',
     ],
+    exposeHeaders: ['X-Next-Cursor', 'X-Request-Id'],
     credentials: true,
   }),
 );

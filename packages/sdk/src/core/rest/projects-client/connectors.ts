@@ -20,6 +20,8 @@ export interface AdminConnector {
   name: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: 'slack' | 'email' | null;
+  /** Provider icon materialized during connector synchronization. */
+  iconUrl?: string | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model. Always `shared` — `per_user` (each member's
    *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
