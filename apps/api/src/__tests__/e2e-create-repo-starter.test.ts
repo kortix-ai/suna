@@ -958,6 +958,54 @@ describe('create-repo starter scaffold contract', () => {
     );
   });
 
+  test("commits the SEO Department marketplace project into the new GitHub repository", async () => {
+    const app = createApp();
+    const res = await app.request("/v1/projects/create-repo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: "seo-team",
+        project_name: "Acme SEO",
+        private: true,
+        source_item_id: "kortix-projects:seo-department",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(commitCalls.map((call) => call.path)).toEqual(
+      expect.arrayContaining([
+        ".kortix/opencode/agents/seo-director.md",
+        ".kortix/opencode/agents/technical-seo.md",
+        ".kortix/opencode/agents/content-strategist.md",
+        ".kortix/opencode/agents/serp-analyst.md",
+        ".kortix/opencode/agents/seo-repo-watchdog.md",
+        ".kortix/opencode/skills/seo-operating-system/SKILL.md",
+        ".kortix/opencode/skills/technical-seo-audit/SKILL.md",
+        ".kortix/opencode/skills/seo-repo-monitoring/SKILL.md",
+        ".kortix/opencode/skills/content-seo-workflow/SKILL.md",
+        ".kortix/opencode/skills/serp-intelligence/SKILL.md",
+        ".kortix/memory/SEO.md",
+      ]),
+    );
+    const manifest = commitCalls.find((call) => call.path === "kortix.yaml")?.content;
+    expect(manifest).toContain('name: "Acme SEO"');
+    expect(manifest).toContain("default_agent: seo-director");
+    expect(manifest).toContain("daily-serp-watch");
+    expect(manifest).toContain("repo-seo-watch");
+    expect(manifest).toContain("daily-repo-seo-sweep");
+    expect(manifest).toContain("weekly-technical-audit");
+    expect(manifest).toContain("weekly-content-refresh");
+    expect(manifest).toContain("monthly-seo-growth-report");
+    expect(gitConnectionRows).toContainEqual(
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        provider: "github",
+        managed: true,
+      }),
+    );
+  });
+
   test('rejects hidden marketplace projects before creating a GitHub repository', async () => {
     const app = createApp();
     const res = await app.request('/v1/projects/create-repo', {
