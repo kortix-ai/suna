@@ -85,6 +85,7 @@ let grantedProjectRole: any | null;
 let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let githubInstallationStateConsumed: boolean;
+let ownerRepoListCalls: any[];
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -118,6 +119,7 @@ function resetState() {
   grantedProjectRole = null;
   gitConnectionRows = [];
   githubInstallationStateConsumed = false;
+  ownerRepoListCalls = [];
   installationRows = [{
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
@@ -275,7 +277,10 @@ mock.module('../projects/github', () => ({
   // Not exercised by this file's scenarios (App installations only, no
   // managed-git PAT fallback here) — stubbed so the mocked module still
   // satisfies github-repositories.ts's named import.
-  listOwnerRepositories: async () => [],
+  listOwnerRepositories: async (input: any) => {
+    ownerRepoListCalls.push(input);
+    return [];
+  },
   listRepositoryBranches: async ({ owner, repo }: { owner: string; repo: string }) => [
     { name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main', protected: true },
     { name: 'dev', protected: false },
@@ -741,6 +746,26 @@ describe('create-repo starter scaffold contract', () => {
         managed: false,
       }),
     );
+  });
+
+  test('forwards bounded search options to the managed GitHub repository lister', async () => {
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
+
+    const app = createApp();
+    const response = await app.request(
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
+        '&installation_id=pat&search=customer%20portal&limit=25',
+    );
+
+    expect(response.status).toBe(200);
+    expect(ownerRepoListCalls).toEqual([
+      expect.objectContaining({
+        owner: 'managed-kortix',
+        search: 'customer portal',
+        limit: 25,
+      }),
+    ]);
   });
 
   test('commits the default starter scaffold with the account GitHub App token before registering the project', async () => {

@@ -2,7 +2,9 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
 import {
+  listGitHubRepositories,
   listGitHubRepositoryBranches,
+  type GitHubRepositoriesResponse,
   type GitHubRepositoryBranchesResponse,
 } from './github';
 
@@ -39,5 +41,27 @@ test('lists repository branches through the typed account-scoped GitHub surface'
   expect(result.branches).toEqual([
     { name: 'trunk', protected: true },
     { name: 'release/next', protected: false },
+  ]);
+});
+
+test('passes bounded repository search options through the typed GitHub surface', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    calls.push(String(input instanceof Request ? input.url : input));
+    return Response.json({
+      account_id: 'account 1',
+      installation_id: 'pat',
+      owner_login: 'managed-kortix',
+      repositories: [],
+    } satisfies GitHubRepositoriesResponse);
+  }) as unknown as typeof fetch;
+
+  await listGitHubRepositories('account 1', 'pat', {
+    search: 'customer portal',
+    limit: 25,
+  });
+
+  expect(calls).toEqual([
+    'http://test.local/v1/projects/github/repositories?' +
+      'account_id=account+1&installation_id=pat&search=customer+portal&limit=25',
   ]);
 });
