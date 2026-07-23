@@ -55,6 +55,8 @@ let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
+let assertedIamActions: string[] = [];
+let deniedIamAction: string | null = null;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -138,6 +140,8 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
+  assertedIamActions = [];
+  deniedIamAction = null;
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -417,7 +421,12 @@ mock.module('../shared/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 
-mockIamEngineAllowAll();
+mockIamEngineAllowAll((action) => {
+  assertedIamActions.push(action);
+  if (action === deniedIamAction) {
+    throw new HTTPException(403, { message: `Denied ${action}` });
+  }
+});
 
 mockIamMembershipSyncNoop();
 
@@ -859,6 +868,16 @@ describe('project session API contract', () => {
   });
 
   beforeEach(() => resetState());
+
+  test('GET project session inventory rejects callers without project.session.read', async () => {
+    deniedIamAction = 'project.session.read';
+    const app = createApp();
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
+
+    expect(response.status).toBe(403);
+    expect(assertedIamActions).toContain('project.session.read');
+  });
 
   test('in-place resume clears stale readiness timers and the prior terminal session error', async () => {
     const staleReadyWaitStartedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
