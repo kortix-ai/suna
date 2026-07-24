@@ -135,8 +135,8 @@ function scopedRuntimeUnavailable(): never {
   throw new Error(
     'kortix.runtime() is not available on a @kortix/sdk/server (scoped) client: it resolves the ' +
       "process-global active runtime, which in a multi-tenant server is another request's sandbox. " +
-      'Reach a specific session\'s runtime via kortix.session(projectId, sessionId).runtime ' +
-      '(await .ensureReady() first).',
+      "Reach a specific session's runtime via `const s = kortix.session(projectId, sessionId); " +
+      'await s.ensureReady(); s.runtime`.',
   );
 }
 
