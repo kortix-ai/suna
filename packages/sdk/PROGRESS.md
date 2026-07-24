@@ -171,7 +171,7 @@ Also stop if the same failure survives three different fixes (use
 | 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `9409701e3` |
 | 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `c4cf6b453` |
 | 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `b88df4a55` |
-| 5 | Typed platform API coverage | NOT STARTED | — | — | — |
+| 5 | Typed platform API coverage | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 | 6 | Remove runtime routing knowledge | NOT STARTED | — | — | — |
 | 7 | Local parity proof | NOT STARTED | — | — | — |
 | 8 | Delivery and dev proof | NOT STARTED | — | — | — |
