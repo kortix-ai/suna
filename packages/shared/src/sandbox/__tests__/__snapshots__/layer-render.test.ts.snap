@@ -44,7 +44,7 @@ RUN case "$(uname -m)" in \\
     && echo "\${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\
     && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\
     && rm /tmp/uv.tar.gz \\
-    && test "$(uv --version)" = "uv 0.11.30" \\
+    && uv --version | grep -Eq '^uv 0.11.30( |$)' \\
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
     && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
     && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
@@ -198,7 +198,7 @@ RUN case "$(uname -m)" in \\
     && echo "\${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\
     && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\
     && rm /tmp/uv.tar.gz \\
-    && test "$(uv --version)" = "uv 0.11.30" \\
+    && uv --version | grep -Eq '^uv 0.11.30( |$)' \\
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
     && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
     && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
@@ -353,7 +353,7 @@ RUN case "$(uname -m)" in \\
     && echo "\${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\
     && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\
     && rm /tmp/uv.tar.gz \\
-    && test "$(uv --version)" = "uv 0.11.30" \\
+    && uv --version | grep -Eq '^uv 0.11.30( |$)' \\
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
     && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
     && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
