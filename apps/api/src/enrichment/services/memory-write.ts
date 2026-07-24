@@ -70,7 +70,12 @@ export function renderProfileMarkdown(
   const title = profile.name?.trim() || provenance.domain;
 
   out.push(`# ${title}`, '');
-  if (profile.tagline) out.push(`_${profile.tagline}_`, '');
+  // `tagline` and `headline` are the same "one-line pitch" role for a company
+  // and a person respectively; a profile only ever fills in the one that
+  // matches its subject, so falling back keeps the subtitle from going blank
+  // just because the subject wasn't a company.
+  const subtitle = profile.tagline || profile.headline;
+  if (subtitle) out.push(`_${subtitle}_`, '');
 
   const facts = [
     bullet('Domain', provenance.domain),
@@ -86,7 +91,16 @@ export function renderProfileMarkdown(
     );
   }
 
-  if (profile.description) out.push('## Overview', '', profile.description, '');
+  const overview = profile.description || profile.bio;
+  if (overview) out.push('## Overview', '', overview, '');
+
+  if (profile.positioning) out.push('## Positioning', '', profile.positioning, '');
+
+  if (profile.keyFacts.length > 0) {
+    out.push('## Key facts', '');
+    for (const fact of profile.keyFacts) out.push(`- **${fact.label}:** ${fact.value}`);
+    out.push('');
+  }
 
   if (profile.products.length > 0) {
     out.push('## Products', '');
@@ -104,6 +118,27 @@ export function renderProfileMarkdown(
     for (const member of profile.team) {
       const name = member.link ? `[${member.name}](${member.link})` : member.name;
       out.push(member.role ? `- ${name} — ${member.role}` : `- ${name}`);
+    }
+    out.push('');
+  }
+
+  if (profile.roles.length > 0) {
+    out.push('## Experience', '');
+    for (const role of profile.roles) {
+      const span = [role.start, role.end].filter((part): part is string => Boolean(part)).join(' – ');
+      const where = role.org ? ` at ${role.org}` : '';
+      const when = span ? ` (${span})` : '';
+      const heading = `- **${role.title}**${where}${when}`;
+      out.push(role.summary ? `${heading} — ${role.summary}` : heading);
+    }
+    out.push('');
+  }
+
+  if (profile.projects.length > 0) {
+    out.push('## Projects', '');
+    for (const project of profile.projects) {
+      const heading = project.url ? `[${project.name}](${project.url})` : project.name;
+      out.push(project.description ? `- **${heading}** — ${project.description}` : `- **${heading}**`);
     }
     out.push('');
   }

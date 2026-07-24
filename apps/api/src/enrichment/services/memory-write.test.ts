@@ -19,17 +19,40 @@ const PROVENANCE: ProfileProvenance = {
 
 function profile(overrides: Partial<CompanyProfile> = {}): CompanyProfile {
   return {
+    subjectType: 'company',
     name: 'Example Inc',
     tagline: 'We do things',
     description: 'Example Inc builds tools for teams.',
-    products: [{ name: 'Widget', description: 'A widget', url: 'https://example.com/widget' }],
-    team: [{ name: 'Ada Lovelace', role: 'CEO', link: 'https://example.com/team/ada' }],
+    products: [
+      { name: 'Widget', description: 'A widget', url: 'https://example.com/widget', audience: null },
+    ],
+    team: [
+      { name: 'Ada Lovelace', role: 'CEO', link: 'https://example.com/team/ada', bio: null },
+    ],
     socials: [{ platform: 'twitter', url: 'https://twitter.com/example' }],
     pricingSummary: 'Free tier plus paid plans.',
-    blogPosts: [{ title: 'Launch', url: 'https://example.com/blog/launch', date: '2026-01-02' }],
+    pricing: { model: null, currency: null, freeTier: null, tiers: [] },
+    blogPosts: [
+      { title: 'Launch', url: 'https://example.com/blog/launch', date: '2026-01-02', summary: null, tags: [] },
+    ],
     contact: { email: 'hi@example.com', phone: null, address: null },
     sectionSources: [{ section: 'team', urls: ['https://example.com/team'] }],
     sources: ['https://example.com/', 'https://example.com/team'],
+    keyFacts: [],
+    positioning: null,
+    integrations: [],
+    techStack: [],
+    caseStudies: [],
+    faq: [],
+    locations: [],
+    founded: null,
+    headline: null,
+    bio: null,
+    roles: [],
+    projects: [],
+    writing: [],
+    skills: [],
+    speaking: [],
     ...overrides,
   };
 }
@@ -84,6 +107,75 @@ describe('renderProfileMarkdown', () => {
     expect(md).not.toContain('## Products');
     expect(md).not.toContain('## Team');
     expect(md).not.toContain('## Pricing');
+  });
+
+  test('falls back to the headline when tagline is unset', () => {
+    const md = renderProfileMarkdown(profile({ tagline: null, headline: 'Mathematician' }), PROVENANCE);
+    expect(md).toContain('_Mathematician_');
+  });
+
+  test('prefers tagline over headline when both are set', () => {
+    const md = renderProfileMarkdown(profile({ headline: 'Mathematician' }), PROVENANCE);
+    expect(md).toContain('_We do things_');
+    expect(md).not.toContain('_Mathematician_');
+  });
+
+  test('falls back to bio for the overview when description is unset', () => {
+    const md = renderProfileMarkdown(profile({ description: null, bio: 'Writes about engines.' }), PROVENANCE);
+    expect(md).toContain('## Overview');
+    expect(md).toContain('Writes about engines.');
+  });
+
+  test('renders key facts', () => {
+    const md = renderProfileMarkdown(
+      profile({ keyFacts: [{ label: 'Founded', value: '2015' }] }),
+      PROVENANCE,
+    );
+    expect(md).toContain('## Key facts');
+    expect(md).toContain('- **Founded:** 2015');
+  });
+
+  test('renders positioning', () => {
+    const md = renderProfileMarkdown(profile({ positioning: 'The simplest way to ship widgets.' }), PROVENANCE);
+    expect(md).toContain('## Positioning');
+    expect(md).toContain('The simplest way to ship widgets.');
+  });
+
+  test('renders experience from roles', () => {
+    const md = renderProfileMarkdown(
+      profile({
+        roles: [
+          { title: 'Collaborator', org: 'Analytical Engine Project', start: '1842', end: '1843', summary: 'Wrote the first published algorithm.' },
+        ],
+      }),
+      PROVENANCE,
+    );
+    expect(md).toContain('## Experience');
+    expect(md).toContain('Collaborator');
+    expect(md).toContain('Analytical Engine Project');
+    expect(md).toContain('Wrote the first published algorithm.');
+  });
+
+  test('renders projects with a link when a url is known', () => {
+    const md = renderProfileMarkdown(
+      profile({
+        projects: [
+          { name: 'Notes on the Analytical Engine', url: 'https://example.com/notes', description: 'An extended commentary.', tech: [] },
+        ],
+      }),
+      PROVENANCE,
+    );
+    expect(md).toContain('## Projects');
+    expect(md).toContain('[Notes on the Analytical Engine](https://example.com/notes)');
+    expect(md).toContain('An extended commentary.');
+  });
+
+  test('omits key facts, positioning, experience and projects when empty', () => {
+    const md = renderProfileMarkdown(profile(), PROVENANCE);
+    expect(md).not.toContain('## Key facts');
+    expect(md).not.toContain('## Positioning');
+    expect(md).not.toContain('## Experience');
+    expect(md).not.toContain('## Projects');
   });
 
   test('links team members and products when a url is known', () => {
