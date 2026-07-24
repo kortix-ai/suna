@@ -53,6 +53,18 @@ describe('pricing model billing copy', () => {
     expect(normalizedPricingCopy).toContain('input, output, and cached tokens use Team credits');
   });
 
+  test('shows the rounded per-seat Agent Computer hours', () => {
+    expect(calculatorSource).toContain('aria-label="hours"');
+    expect(calculatorSource).toContain('2,500');
+    expect(calculatorSource).toContain('<span>125</span>');
+    expect(calculatorSource).toContain(
+      '1 Team seat equals 2,500 pooled credits equals 125 Agent Computer hours per month.',
+    );
+    expect(calculatorSource).toContain('Agent Computer hours / month');
+    expect(calculatorSource).not.toContain('teamMembers');
+    expect(calculatorSource).not.toContain('<Slider');
+  });
+
   test('keeps the model billing correction in every translated pricing page', () => {
     for (const [locale, tokenTerm] of Object.entries(translatedTokenTerms)) {
       const translations = JSON.parse(
