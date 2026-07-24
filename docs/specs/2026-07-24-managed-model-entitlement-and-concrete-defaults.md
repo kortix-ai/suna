@@ -1,6 +1,6 @@
 # Managed Model Entitlement and Concrete Defaults
 
-Status: approved for implementation  
+Status: approved for implementation
 Date: 2026-07-24
 
 ## Problem
