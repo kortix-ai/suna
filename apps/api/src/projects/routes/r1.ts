@@ -24,6 +24,8 @@ import {
   normalizeMarketplaceItems,
 } from '../seed-files';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
+import { enqueueJob } from '../../enrichment/repositories/jobs';
+import { idempotencyKey, normalizeDomain } from '../../enrichment/services/normalize';
 import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
@@ -443,6 +445,20 @@ projectsApp.openapi(
     );
   }
 
+  // Optional company domain. Enrichment is a bonus on top of project creation,
+  // never a precondition for it: a domain we cannot parse is dropped here and
+  // the project is still created. The client validates first, so a typo is
+  // caught there rather than silently ignored.
+  const rawDomain = normalizeString(body.domain);
+  let enrichmentDomain: string | null = null;
+  if (rawDomain) {
+    try {
+      enrichmentDomain = normalizeDomain(rawDomain);
+    } catch {
+      enrichmentDomain = null;
+    }
+  }
+
   // "Clone project" — seed the new repo from a `registry:project` marketplace
   // item instead of the blank starter. Resolved + type-checked BEFORE any
   // upstream repo/DB row is created, same as the name checks above.
@@ -527,6 +543,10 @@ projectsApp.openapi(
         // createProjectSession). Pre-existing projects (this flag absent/false)
         // keep the v1 adopt-to-govern behavior untouched.
         require_declared_agents: true,
+        // The company this project is about. Recorded even though enrichment
+        // consumes it asynchronously, so the value survives a failed run and
+        // a re-enrichment does not need the user to retype it.
+        ...(enrichmentDomain ? { domain: enrichmentDomain } : {}),
       },
       updatedAt: now,
     })
@@ -672,6 +692,28 @@ projectsApp.openapi(
         gitAuthHeaders: writeUpstream?.headers ?? {},
       },
       { accountId: scope.accountId, source: 'project-create' },
+    );
+  }
+
+  // Kick off enrichment for the company this project is about. Fire-and-forget
+  // in the same shape as the prebuild above: the crawl takes minutes, the
+  // response is due now, and a queue insert that fails must not turn a created
+  // project into an error the user sees. The worker polls, so writing the row
+  // is the entire handoff.
+  if (enrichmentDomain) {
+    void enqueueJob({
+      accountId: scope.accountId,
+      projectId: row.projectId,
+      createdBy: scope.userId,
+      domain: enrichmentDomain,
+      idempotencyKey: idempotencyKey(row.projectId, enrichmentDomain),
+      force: false,
+    }).catch((err) =>
+      console.warn('[projects] failed to queue domain enrichment', {
+        projectId: row.projectId,
+        domain: enrichmentDomain,
+        error: err instanceof Error ? err.message : String(err),
+      }),
     );
   }
 
