@@ -100,15 +100,15 @@ import {
   useAbortOpenCodeSession,
   useOpenCodeAgents,
   useOpenCodeCommands,
+  useExecuteOpenCodeCommand,
   useOpenCodeProviders,
   useOpenCodeRuntimeReady,
   useOpenCodeSession,
   useOpenCodeSessions,
 } from '@kortix/sdk/react';
-import { useSessionSync } from '@kortix/sdk/react';
+import { useSessionSync, type UseSessionResult } from '@kortix/sdk/react';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { getClient } from '@kortix/sdk';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -3362,6 +3362,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Complete SDK state for the root session. Omit for a read-only child session. */
+  sessionState?: UseSessionResult;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
   projectId?: string;
   /** Immutable project-session agent. When set, prompts are locked to this agent. */
@@ -3378,6 +3380,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  sessionState,
   projectId,
   boundAgentName,
   headerLeadingAction,
@@ -3517,13 +3520,14 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
+  const localSync = useSessionSync(sessionState ? '' : sessionId);
   const {
     messages: syncMessages,
     isLoading: syncMessagesLoading,
     hasOlder,
     isLoadingOlder,
     loadOlder,
-  } = useSessionSync(sessionId);
+  } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
@@ -3545,6 +3549,7 @@ export function SessionChat({
   const { data: config } = useOpenCodeConfig();
   const projectConfig = useProjectConfig(projectId);
   const abortSession = useAbortOpenCodeSession();
+  const executeCommand = useExecuteOpenCodeCommand();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useOpenCodeLocal({
@@ -3831,7 +3836,7 @@ export function SessionChat({
   const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
     Boolean(s.compactingBySession[sessionId]),
   );
-  const sessionStatus = syncStatus;
+  const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // Pending: last assistant message has no time.completed.
@@ -4307,13 +4312,15 @@ export function SessionChat({
   // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
   // `useOpenCodeEventStream`'s reconnect-gap hydration.
   useQuestionSelfHeal(sessionId, messages, {
-    enabled: isActiveSessionTab,
+    enabled: !sessionState && isActiveSessionTab,
     isSuppressed: isQuestionSuppressed,
   });
   // The permission twin — a missed `permission.asked` frame otherwise leaves
   // the agent silently blocked with no card to answer (the "have to type
   // `continue`" wedge).
-  usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
+  usePermissionSelfHeal(sessionId, messages, {
+    enabled: !sessionState && isActiveSessionTab,
+  });
 
   // ---- Permission/question reply handlers ----
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -4911,9 +4918,7 @@ export function SessionChat({
 
       playSound('send');
       const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
-      const selectedModel = local.model.sendKey
-        ? formatModelString(local.model.sendKey)
-        : undefined;
+      const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
         setPendingCommand(null);
         setPendingUserMessage(null);
@@ -4943,20 +4948,23 @@ export function SessionChat({
       // SSE delivers it. Commands use the blocking /command endpoint
       // which can take minutes; using TQ would cause retry on timeout.
       commandInFlightRef.current = true;
-      const client = getClient();
-      void client.session
-        .command({
-          sessionID: sessionId,
+      const agent = lockedAgentName || local.agent.current?.name;
+      const variant = local.model.variant.current;
+      void (
+        sessionState?.runCommand(cmd.name, args || '', {
+          agent,
+          model: selectedModel,
+          variant,
+        }) ??
+        executeCommand.mutateAsync({
+          sessionId,
           command: cmd.name,
-          arguments: args || '',
-          ...((lockedAgentName || local.agent.current?.name) && {
-            agent: lockedAgentName || local.agent.current?.name,
-          }),
-          ...(selectedModel && { model: selectedModel }),
-          ...(local.model.variant.current && {
-            variant: local.model.variant.current,
-          }),
-        } as any)
+          args: args || '',
+          ...(agent ? { agent } : {}),
+          ...(selectedModel ? { model: formatModelString(selectedModel) } : {}),
+          ...(variant ? { variant } : {}),
+        })
+      )
         .then((res: any) => {
           if (res?.error) {
             handleCommandError(res.error);
@@ -4973,6 +4981,8 @@ export function SessionChat({
       sessionId,
       scrollToBottom,
       lockedAgentName,
+      sessionState,
+      executeCommand,
       local.agent.current,
       local.model.currentKey,
       local.model.sendKey,

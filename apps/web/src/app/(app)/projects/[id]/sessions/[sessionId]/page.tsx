@@ -40,7 +40,12 @@ import {
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
-import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
+import {
+  migrateStash,
+  readStartStash,
+  useSession,
+  type UseSessionResult,
+} from '@kortix/sdk/react';
 import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
 
 /**
@@ -89,14 +94,11 @@ export default function ProjectSessionPage() {
   // seeding (no client health poll), and the canonical id. Gated on the billing
   // check so a no-plan account never spins on a sandbox that won't provision.
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
-  // chatEngine:false — this page only reads boot/lifecycle fields (switched,
-  // stage, sandbox, opencodeSessionId); `SessionChat` below mounts its own
-  // useSessionSync + useQuestionSelfHeal. Leaving the default `true` here would
-  // double-mount both against the same session for no reason.
+  // The default chat engine stays enabled. This hook owns message sync and the
+  // question and permission recovery pollers for the root session.
   const session = useSession(projectId, sessionId, {
     enabled: !!user && !billingGatePending && !noPlan,
     replayStartStash: false,
-    chatEngine: false,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -376,6 +378,7 @@ export default function ProjectSessionPage() {
                   projectId={projectId}
                   sessionId={sessionId}
                   pinFromStart={session.opencodeSessionId}
+                  sessionState={session}
                   onChatReady={() => setChatReady(true)}
                 />
               )}
@@ -463,11 +466,13 @@ function ActiveSessionChat({
   projectId,
   sessionId,
   pinFromStart,
+  sessionState,
   onChatReady,
 }: {
   projectId: string;
   sessionId: string;
   pinFromStart: string | null;
+  sessionState: UseSessionResult;
   onChatReady?: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -654,7 +659,14 @@ function ActiveSessionChat({
       projectSessionId={sessionId}
     >
       <ClientErrorBoundary>
-        <SessionChat key={chatSessionId} sessionId={chatSessionId} projectId={projectId} />
+        <SessionChat
+          key={chatSessionId}
+          sessionId={chatSessionId}
+          projectId={projectId}
+          sessionState={
+            chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined
+          }
+        />
       </ClientErrorBoundary>
     </SessionLayout>
   );

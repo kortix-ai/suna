@@ -40,6 +40,7 @@ import {
   rejectQuestion,
   answerPermission,
   classifySendError,
+  buildSessionCommandInput,
   sendStateOnStart,
   sendStateOnError,
   shouldRetrySessionStart,
@@ -238,6 +239,39 @@ describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
     const restarted = sendStateOnStart('a new message');
     expect(restarted.sendError).toBeNull();
     expect(restarted.pending).toBe('a new message');
+  });
+});
+
+describe('buildSessionCommandInput', () => {
+  test('preserves the command model, agent, and variant overrides', () => {
+    expect(
+      buildSessionCommandInput('ses_root', 'review', 'src', {
+        agent: 'coder',
+        model: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' },
+        variant: 'high',
+      }),
+    ).toEqual({
+      sessionId: 'ses_root',
+      command: 'review',
+      args: 'src',
+      agent: 'coder',
+      model: 'kortix/anthropic/claude-sonnet-4-6',
+      variant: 'high',
+    });
+  });
+
+  test('omits empty optional overrides', () => {
+    expect(
+      buildSessionCommandInput('ses_root', 'review', '', {
+        agent: null,
+        model: null,
+        variant: null,
+      }),
+    ).toEqual({
+      sessionId: 'ses_root',
+      command: 'review',
+      args: '',
+    });
   });
 });
 
