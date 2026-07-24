@@ -383,6 +383,7 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     expect(rendered).toContain(
       'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
     );
+    expect(rendered).not.toContain('rm -f /tmp/kortix-warm-repo-git.tar');
     // … and MAIN's opencode instance re-warm via the cache-only warm-up script,
     // which for a per-project warm keeps the baked /workspace checkout.
     expect(rendered).toContain(
