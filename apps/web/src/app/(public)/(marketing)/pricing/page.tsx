@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
+import { ComputeCreditCalculator } from '@/features/billing/compute-credit-calculator';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { ArrowRight } from 'lucide-react';
@@ -29,7 +30,7 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
   },
   {
     title: 'Compute by the second',
-    body: 'Billed per resource, per second: $0.0000084/vCPU, $0.0000027/GiB RAM, $0.000000018/GiB disk. The default 2 vCPU / 4 GiB / 20 GiB machine runs about $0.10/hour, and auto-stops when idle so you pay $0 the moment it’s not running.',
+    body: 'Billed per resource, per second: $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage. The default 2 vCPU / 4 GiB / 20 GiB machine runs about $0.20/hour, and auto-stops when idle so you pay $0 the moment it’s not running.',
   },
 ];
 
@@ -41,7 +42,7 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
   },
   {
     label: 'Team scale',
-    body: 'Upgrade when you want the latest AI models, pooled credits, and seats for the whole team.',
+    body: 'Each Team seat includes 2,500 pooled credits. Used only for compute, that covers about 125 hours on the default Agent Computer.',
   },
 ];
 
@@ -56,7 +57,7 @@ const FAQ: [string, string][] = [
   ],
   [
     'How are models and compute priced?',
-    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent Computer compute is billed per second, per resource — $0.0000084/vCPU, $0.0000027/GiB RAM, $0.000000018/GiB disk — about $0.10/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped.',
+    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent Computer compute is billed per second, per resource — $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage — about $0.20/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped.',
   ],
   [
     'Do I pay per seat or per usage?',
@@ -118,6 +119,9 @@ export default function PricingPage() {
                 'autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6',
               )}
             </p>
+          </div>
+          <div className="mt-10">
+            <ComputeCreditCalculator />
           </div>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
             {CREDIT_POINTS.map((p) => (

@@ -11,6 +11,7 @@ export type PricingPlan = {
   highlight?: boolean;
   badge?: string;
   features: string[];
+  featureDetails?: Record<string, string>;
 };
 
 export const PRICING_PLANS: PricingPlan[] = [
@@ -43,6 +44,10 @@ export const PRICING_PLANS: PricingPlan[] = [
       'Top up credits anytime',
       'Support via email',
     ],
+    featureDetails: {
+      '2,500 credits / month per seat, pooled':
+        'About 125 default Agent Computer hours when used only for compute.',
+    },
   },
   {
     id: 'enterprise',
