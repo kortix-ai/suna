@@ -182,7 +182,7 @@ describe('buildLayeredDockerfile', () => {
       opencodeConfigPath: 'kortix-opencode-config',
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
       },
     });

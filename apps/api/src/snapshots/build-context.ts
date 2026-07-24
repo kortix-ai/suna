@@ -134,8 +134,14 @@ export interface WarmRepoContext {
 
 /** Basename (in the build context) of the staged credential-free checkout. */
 export const WARM_REPO_STAGED_DIR = 'kortix-warm-repo';
-/** Visible duplicate of `.git` for provider uploaders that omit dot-directories. */
-export const WARM_REPO_STAGED_GIT_DIR = 'kortix-warm-repo-git';
+/**
+ * Visible tar archive of `.git`.
+ *
+ * Daytona uploads each Dockerfile COPY source as a separate context object.
+ * A directory COPY into `/workspace/.git` can complete without restoring a
+ * usable repository. A single visible file crosses that boundary unchanged.
+ */
+export const WARM_REPO_STAGED_GIT_ARCHIVE = 'kortix-warm-repo-git.tar';
 
 /**
  * A conservative safe-subset of git branch/ref names: letters, digits, and
@@ -337,12 +343,16 @@ export async function stageWarmRepoCheckout(
   }
 
   await assertCheckoutHasNoCredentials(dest);
-  const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_DIR);
-  await rm(stagedGit, { recursive: true, force: true });
-  await cp(join(dest, '.git'), stagedGit, { recursive: true });
+  const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_ARCHIVE);
+  await rm(stagedGit, { force: true });
+  await execFileAsyncBC('tar', ['-cf', stagedGit, '-C', dest, '.git'], {
+    env: plainEnv,
+    timeout: 300_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
   return {
     stagedPath: WARM_REPO_STAGED_DIR,
-    stagedGitPath: WARM_REPO_STAGED_GIT_DIR,
+    stagedGitPath: WARM_REPO_STAGED_GIT_ARCHIVE,
     headSha,
   };
 }
@@ -637,7 +647,7 @@ async function assertContextComplete(
   // opaque remote "Path does not exist" mid-build.
   if (warmRepoStagedPath) {
     required.push(join(warmRepoStagedPath, '.git'));
-    required.push(WARM_REPO_STAGED_GIT_DIR);
+    required.push(WARM_REPO_STAGED_GIT_ARCHIVE);
   }
   for (const rel of required) {
     try {

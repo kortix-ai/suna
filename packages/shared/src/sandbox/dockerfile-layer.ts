@@ -181,8 +181,8 @@ export interface WarmRepoConfig {
    */
   stagedPath: string;
   /**
-   * Visible build-context path to a copy of the checkout's `.git` directory.
-   * Provider context uploaders can omit nested dot-directories.
+   * Visible build-context path to a tar archive of the checkout's `.git`
+   * directory. Provider uploaders transfer this as one regular file.
    */
   stagedGitPath: string;
   /**
@@ -295,9 +295,10 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     // runtime user (COPY defaults to uid/gid 0). opencode + the daemon run as
     // `kortix` and must be able to write /workspace and its `.git` at runtime.
     `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
-    // Daytona omits nested `.git` directories from uploaded build contexts.
-    // Copy the credential-free visible duplicate explicitly.
-    `COPY --chown=kortix:kortix ${warmRepo.stagedGitPath}/ /workspace/.git/`,
+    // Daytona uploads each COPY source as a separate context object. Transfer
+    // Git metadata as one visible file, then restore the canonical directory.
+    `COPY ${warmRepo.stagedGitPath} /tmp/kortix-warm-repo-git.tar`,
+    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && rm -f /tmp/kortix-warm-repo-git.tar && chown -R kortix:kortix /workspace/.git',
     // Verify the baked checkout is a real repo. The branch is shell-quoted via
     // `shq` (never interpolated raw), so a hostile branch name cannot inject a
     // build-time shell command — closing the latent sink in the old echo.
