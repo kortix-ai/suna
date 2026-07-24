@@ -358,14 +358,31 @@ function modelsRoute(path: string) {
 //                      (direct calls here vs HTTP in the standalone service).
 //   /internal/gateway  Control-plane RPC the out-of-process gateway pod calls.
 //   /v1/llm-gateway/*  Reverse proxy to the standalone gateway (when configured).
+// ONE gateway instance per process, shared by the HTTP surface below and by
+// in-process callers that never go through HTTP (the enrichment worker). The
+// instance owns per-provider circuit breakers, so a second `createGateway()`
+// would keep its own copy: an upstream that tripped for request traffic would
+// still look healthy to background traffic, and neither would learn from the
+// other's failures. Lazy so process start does not pay for it when nothing
+// asks for a completion.
+let inProcessGateway: ReturnType<typeof createGateway> | null = null;
+
+/**
+ * The process-wide in-process gateway. Callers outside the HTTP layer use this
+ * to run a completion through the full pipeline (routing, failover, breakers,
+ * budgets, usage recording) with a token that resolves to a real principal, so
+ * spend is attributed exactly as it would be for an API request.
+ */
+export function getInProcessGateway(): ReturnType<typeof createGateway> {
+  inProcessGateway ??= createGateway(createInProcessGatewayHooks(), { captureBodies: true });
+  return inProcessGateway;
+}
+
 export function mountLlmGateway(app: OpenAPIHono): void {
   if (!config.LLM_GATEWAY_ENABLED) {
     app.all('/v1/llm/*', (c) => c.json({ error: 'LLM gateway is disabled' }, 503));
   } else {
-    // One gateway instance per process — its circuit breakers are long-lived.
-    const gateway = createGateway(createInProcessGatewayHooks(), {
-      captureBodies: true,
-    });
+    const gateway = getInProcessGateway();
     // OpenAPIHono (not a plain Hono) so the inference surface below registers
     // in the shared OpenAPI registry — `.route()` merges a child OpenAPIHono's
     // registry into the parent, path-prefixed, the same way `projectsApp` does
