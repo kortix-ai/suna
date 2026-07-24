@@ -167,9 +167,9 @@ Also stop if the same failure survives three different fixes (use
 
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
-| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `4014c6113` |
-| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `bc81aa283` |
-| 3 | One session engine | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
+| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `9e29839f0` |
+| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `f110bb1b3` |
+| 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `76964a95c` |
 | 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
 | 5 | Typed platform API coverage | NOT STARTED | — | — | — |
 | 6 | Remove runtime routing knowledge | NOT STARTED | — | — | — |
@@ -1670,3 +1670,31 @@ file. Two errors are in the OG template test. Two errors are unresolved
 generated docs-source imports.
 
 **Shippable to production: NOT YET.** Tasks 3 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 3)
+
+Enabled the complete `useSession(projectId, sessionId)` engine on the project
+session page. The root `SessionChat` now consumes its messages, status, and
+pagination state. Child session modals retain an isolated read-only sync engine.
+
+Moved permission recovery into `useSession`. Disabled duplicate question and
+permission recovery inside the root `SessionChat`. Replaced the frontend
+`getClient().session.command()` call with the typed SDK command action.
+
+**TDD evidence:** the first command-input test failed because
+`buildSessionCommandInput` did not exist. The first runtime forwarding test
+failed because `executeOpenCodeCommand` did not exist. The GREEN SDK run
+reported **20 pass / 0 fail**.
+
+The web architecture test first reported **0 pass / 2 fail**. It detected
+`chatEngine: false`, a second message sync engine, duplicate recovery pollers,
+and a direct runtime client call. The GREEN web run reported **53 pass / 0
+fail** across 11 focused files.
+
+The SDK typecheck exited 0. The web typecheck reported four existing errors.
+None references a changed file. ESLint reported 0 errors and one existing
+`react-hooks/exhaustive-deps` warning.
+
+**Shippable to production: NOT YET.** Tasks 4 through 8 remain incomplete.
