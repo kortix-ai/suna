@@ -1,26 +1,36 @@
 'use client';
 
-import React, { useCallback, useMemo } from 'react';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { cn } from '@/lib/utils';
 import { splitTextByPaths } from '@/lib/utils/path-detection';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import {
-  getActivePanelSessionId,
-  openFileInSessionPanel,
-} from '@/stores/session-browser-store';
-import { toast } from '@/lib/toast';
+import { getActivePanelSessionId, openFileInSessionPanel } from '@/stores/session-browser-store';
+import React, { useCallback, useMemo } from 'react';
 
 // ---------------------------------------------------------------------------
-// Path validation
+// Path resolution
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a file path is absolute (starts with /).
- * Relative paths are rejected — they resolve to wrong locations in the sandbox
- * and would show empty file content to the user.
+ * Agents write workspace-relative paths (`docs/bio.md`) far more often than
+ * absolute ones, so rejecting them made the common case unclickable — the user
+ * got "Cannot open relative path" for a file that exists.
+ *
+ * `toSandboxAbsolutePath` is the same resolution the rest of the app already
+ * applies to exactly these strings (`show-helpers.tsx`,
+ * `show-content-renderer.tsx`, `file-content-renderer.tsx`): anything already
+ * under an allowed sandbox root passes through, everything else anchors under
+ * `/workspace`. This component was the one surface that rejected instead of
+ * resolving.
+ *
+ * A path that resolves but doesn't exist is not this function's problem — the
+ * viewer reports "couldn't be opened", the same as any dead absolute path, and
+ * that beats refusing to try.
  */
-function isAbsolutePath(filePath: string): boolean {
-  return filePath.startsWith('/');
+export function resolveOpenablePath(filePath: string): string | null {
+  const trimmed = filePath.trim();
+  if (!trimmed) return null;
+  return toSandboxAbsolutePath(trimmed);
 }
 
 // ---------------------------------------------------------------------------
@@ -57,42 +67,32 @@ export function ClickablePath({
       e.preventDefault();
       e.stopPropagation();
 
-      // Reject relative paths — they resolve to wrong locations and show empty files
-      if (!isAbsolutePath(filePath)) {
-        toast.error(`Cannot open relative path: ${filePath}`);
-        return;
-      }
+      const resolved = resolveOpenablePath(filePath);
+      if (!resolved) return;
 
-      // Inside a session → reveal the file in the side-panel Files tab, mirroring
-      // how a localhost link opens the Browser tab. Elsewhere (no side panel host)
-      // fall back to the in-place preview modal.
+      // Inside a session → the panel opens the file in its detail layer.
+      // Elsewhere (no side-panel host) fall back to the app-level preview modal.
       const sessionId = getActivePanelSessionId();
       if (sessionId) {
-        openFileInSessionPanel(sessionId, filePath, lineNumber);
+        openFileInSessionPanel(sessionId, resolved, lineNumber);
         return;
       }
-      openPreview(filePath, lineNumber);
+      openPreview(resolved, lineNumber);
     },
     [filePath, lineNumber, openPreview],
   );
 
-  const isRelative = !isAbsolutePath(filePath);
-
-  const title = isRelative
-    ? `${filePath} — Relative path (cannot open)`
-    : lineNumber
-      ? `${filePath}:${lineNumber}${column ? `:${column}` : ''} — Click to preview`
-      : `${filePath} — Click to preview`;
+  const title = lineNumber
+    ? `${filePath}:${lineNumber}${column ? `:${column}` : ''} — Click to preview`
+    : `${filePath} — Click to preview`;
 
   if (variant === 'terminal') {
     return (
       <span
         className={cn(
           'underline decoration-dotted decoration-1 underline-offset-2',
-          'transition-colors inline-flex items-center gap-0.5 group/path',
-          isRelative
-            ? 'text-muted-foreground/70 cursor-not-allowed'
-            : 'cursor-pointer text-blue-400 hover:text-blue-300 dark:text-blue-400 dark:hover:text-blue-300',
+          'group/path inline-flex items-center gap-0.5 transition-colors',
+          'cursor-pointer text-blue-400 hover:text-blue-300 dark:text-blue-400 dark:hover:text-blue-300',
           className,
         )}
         onClick={handleClick}
@@ -102,7 +102,10 @@ export function ClickablePath({
       >
         {children || filePath}
         {lineNumber && (
-          <span className="text-blue-400/60">:{lineNumber}{column ? `:${column}` : ''}</span>
+          <span className="text-blue-400/60">
+            :{lineNumber}
+            {column ? `:${column}` : ''}
+          </span>
         )}
       </span>
     );
@@ -112,11 +115,9 @@ export function ClickablePath({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.5 group/path',
-        'underline decoration-dotted underline-offset-2 decoration-1',
-        isRelative
-          ? 'text-muted-foreground/70 decoration-muted-foreground/30 cursor-not-allowed'
-          : 'cursor-pointer text-foreground hover:text-blue-600 dark:hover:text-blue-400 decoration-blue-400/40 hover:decoration-blue-500/70',
+        'group/path inline-flex items-center gap-0.5',
+        'underline decoration-dotted decoration-1 underline-offset-2',
+        'text-foreground cursor-pointer decoration-blue-400/40 hover:text-blue-600 hover:decoration-blue-500/70 dark:hover:text-blue-400',
         'transition-colors',
         className,
       )}
@@ -127,7 +128,10 @@ export function ClickablePath({
     >
       {children || filePath}
       {lineNumber && (
-        <span className="text-muted-foreground">:{lineNumber}{column ? `:${column}` : ''}</span>
+        <span className="text-muted-foreground">
+          :{lineNumber}
+          {column ? `:${column}` : ''}
+        </span>
       )}
     </span>
   );
@@ -150,35 +154,37 @@ interface TextWithPathsProps {
  * Renders a string of text with all detected file paths made clickable.
  * Paths are rendered using ClickablePath, which opens the file preview on click.
  */
-export const TextWithPaths = React.memo<TextWithPathsProps>(({ text, className, variant = 'inline' }) => {
-  const segments = useMemo(() => splitTextByPaths(text), [text]);
+export const TextWithPaths = React.memo<TextWithPathsProps>(
+  ({ text, className, variant = 'inline' }) => {
+    const segments = useMemo(() => splitTextByPaths(text), [text]);
 
-  // If no paths found, return plain text
-  if (segments.length === 1 && segments[0].type === 'text') {
-    return <>{text}</>;
-  }
+    // If no paths found, return plain text
+    if (segments.length === 1 && segments[0].type === 'text') {
+      return <>{text}</>;
+    }
 
-  return (
-    <span className={className}>
-      {segments.map((seg, i) => {
-        if (seg.type === 'text') {
-          return <React.Fragment key={i}>{seg.value}</React.Fragment>;
-        }
-        return (
-          <ClickablePath
-            key={i}
-            filePath={seg.filePath!}
-            lineNumber={seg.lineNumber}
-            column={seg.column}
-            variant={variant}
-          >
-            {seg.filePath}
-          </ClickablePath>
-        );
-      })}
-    </span>
-  );
-});
+    return (
+      <span className={className}>
+        {segments.map((seg, i) => {
+          if (seg.type === 'text') {
+            return <React.Fragment key={i}>{seg.value}</React.Fragment>;
+          }
+          return (
+            <ClickablePath
+              key={i}
+              filePath={seg.filePath!}
+              lineNumber={seg.lineNumber}
+              column={seg.column}
+              variant={variant}
+            >
+              {seg.filePath}
+            </ClickablePath>
+          );
+        })}
+      </span>
+    );
+  },
+);
 
 TextWithPaths.displayName = 'TextWithPaths';
 
