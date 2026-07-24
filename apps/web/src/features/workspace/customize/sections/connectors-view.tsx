@@ -800,10 +800,15 @@ function RailItem({
 function ConnectionIdField({ profileId }: { profileId: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    void navigator.clipboard.writeText(profileId).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    // clipboard.writeText can reject (insecure context, denied permission, no
+    // clipboard API) — surface it instead of leaving an unhandled rejection.
+    navigator.clipboard.writeText(profileId).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => errorToast('Could not copy — select and copy the ID manually.'),
+    );
   };
   return (
     <div className="bg-muted/40 rounded-md border px-4 py-3">

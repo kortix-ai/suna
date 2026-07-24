@@ -29,6 +29,7 @@ session's origin **`backend`** automatically. See [Authentication](/docs/sdk/aut
 and [Accounts](/docs/accounts).
 
 ```bash
+export KORTIX_API_URL="https://your-kortix-deployment.com/v1"   # API root, including /v1
 export KORTIX_API_KEY="kortix_pat_…"
 export KORTIX_PROJECT_ID="…"
 ```
@@ -43,7 +44,7 @@ of your end-users. All of them are optional; send only what you need.
 ### Call create with the user's overrides
 
 ```bash
-curl -X POST "$KORTIX_API_URL/v1/projects/$KORTIX_PROJECT_ID/sessions" \
+curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -H "Authorization: Bearer $KORTIX_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
