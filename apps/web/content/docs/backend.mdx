@@ -88,6 +88,7 @@ never races another request's config.
 | --- | --- |
 | `origin_ref` | An opaque id for *your* end-user. Attribution only — it tags the session and usage; it does **not** resolve that user's connectors or secrets by itself. |
 | `connector_bindings` | Map a connector alias → a specific **connection profile** (your end-user's own connected account). Resolved server-side at use time; the credential never enters the sandbox. |
+| `inherit_unbound` | With `connector_bindings` set, keep the project-default fallback for connectors you did *not* bind (instead of all-or-nothing). Only ever inherits the project default. |
 | `secrets` | An allow-list of project secret names to expose to this session. Narrowing only — a session can never see a secret you did not list. |
 | `opencode_model` | The model this session runs, in `provider/model` form. Validated at create; an unservable model fails fast with `400 INVALID_SESSION_MODEL`. |
 | `agent_name` | Which declared agent handles the session. |
@@ -148,7 +149,10 @@ await kortix.project(projectId).connectors.profiles.pipedreamFinalize(profile.pr
 <Callout type="info">
   **All-or-nothing binding.** If a session's `connector_bindings` sets *any* alias,
   every *unbound* alias resolves to null for that session — bind every connector the
-  agent needs in the one call. If a user disconnects mid-session (the profile is
+  agent needs in the one call, **or** pass `inherit_unbound: true` to keep the
+  project-default fallback for the unbound aliases (so you can override just one
+  connector without re-binding the rest; it only ever inherits the project *default*,
+  never another user's profile). If a user disconnects mid-session (the profile is
   revoked), the connector fails closed rather than falling back to a shared account;
   prompt the user to reconnect.
 </Callout>

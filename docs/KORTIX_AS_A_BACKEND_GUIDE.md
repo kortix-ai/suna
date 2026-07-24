@@ -226,7 +226,11 @@ both mintable with your API key:
 
 > **All-or-nothing binding:** if a session's `connector_bindings` sets *any*
 > alias, every *unbound* alias resolves to null for that session. Bind every
-> connector the agent needs in the one call.
+> connector the agent needs in the one call — **or** pass **`inherit_unbound: true`**
+> to keep the project-default fallback for the unbound aliases, so you can override
+> just one connector (e.g. one end-user's own account) without re-binding the rest.
+> `inherit_unbound` only ever inherits the project *default* — never another
+> user's profile — so it is safe for any caller.
 
 > **Revoked mid-session fails closed.** If an end-user disconnects their account
 > (the profile goes `revoked`) while a session is live, the broker returns
