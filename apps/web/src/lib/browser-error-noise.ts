@@ -290,6 +290,78 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
 ] as const;
 
+// Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate
+// throw — a SIBLING of the null-context crash class above, but a DIFFERENT
+// throw. When the library's shader mount detects that WebGL is unavailable
+// (a stripped-down/mobile WebView, a headless renderer, a browser with WebGL
+// disabled, or a GPU blacklisted at context creation), the library throws its
+// OWN deliberate `Error('Paper Shaders: WebGL is not supported in this browser')`
+// from its constructor — NOT a null-context `TypeError` from calling a WebGL2
+// method on a `null` context (the `getSupportedExtensions` / `getAttribLocation`
+// wording covered by `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` above). The
+// `Paper Shaders:` prefix is the library's own canonical marker, so this exact
+// message is the library's deliberate signal that the browser cannot render the
+// decorative shader; it is an EXPECTED degradation state on WebGL-less browsers,
+// never a product bug.
+//
+// Better Stack pattern
+// f1abf79ece48a86faf8eb32cec8bbb6bf270627f9fd5d423fb1ee43b9abcfb23
+// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// `Paper Shaders: WebGL is not supported in this browser`, 1 occurrence /
+// 0 identified users (anonymous), last 2026-07-23 17:26:32 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route `/`
+// (marketing homepage), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached a React error boundary, `handled:false`).
+// Browser: Chrome 150.0.0.0 on Android 10 (mobile), UA
+// `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko)
+// Chrome/150.0.0.0 Mobile Safari/537.36` — a stripped-down/mobile Android
+// browser without WebGL. Stack frames: 2, both minified
+// `@paper-design/shaders` chunk frames — NO first-party `apps/web/src/…`
+// frame:
+//   - `app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno`
+//     function `?` lineno 251 colno 3276
+//   - same chunk function `new a` lineno 401 colno 1131  (call_site_function)
+//
+// The `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
+// degrades to the fallback BEFORE this throw fires (it calls
+// `getContext('webgl2')` + `getSupportedExtensions()` on a probe canvas and
+// treats a `null`/throw as unsupported). But the probe is a one-shot memo that
+// runs at first `render` of `<ShaderSafe>`, while the library's own `new a`
+// constructor throws synchronously on a browser where WebGL is `null` — and on
+// some code paths the probe's result is computed after the library has already
+// been dynamically imported and its constructor reached. The residual async
+// throw then escapes as an unhandled rejection (the library constructor runs
+// inside a dynamic import / `useEffect` that bypasses the React error
+// boundary). This matcher is the leak-path backstop for that residual throw,
+// the way `isPaperShaderNullContextNoise` is the backstop for the null-context
+// `TypeError` class.
+//
+// The message is the library's OWN canonical string (the `Paper Shaders:`
+// prefix is the library's deliberate marker, never emitted by first-party app
+// code), so an EXACT-message match is safe — a real first-party
+// `throw new Error('Paper Shaders: WebGL is not supported in this browser')`
+// regression is vanishingly unlikely AND would de-minify to `apps/web/src/…`
+// frames, which the mandatory negative guard below preserves. Unlike
+// `isPaperShaderNullContextNoise` (message-only, no negative guard — safe
+// because WebGL2 API method names are never called from first-party code),
+// this message COULD theoretically be thrown from first-party code, so the
+// first-party-frame negative guard MUST run when frames are present. The prod
+// event has only minified `81107` chunk frames, so the negative guard does
+// not fire for it. A frameless capture with this exact message still
+// classifies as noise (the message alone is specific — the `Paper Shaders:`
+// library prefix is part of the anchor). `Error: ` / `Unhandled promise
+// rejection: ` / `Unhandled promise rejection: Error: ` wrappers are stripped
+// before matching so all capture paths (window.onerror,
+// onunhandledrejection, Sentry exception) classify consistently. Deliberately
+// NOT added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has
+// no frame context, so a bare-string match there could swallow a real
+// first-party throw the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the
+// only safe gate.
+const PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE =
+  'Paper Shaders: WebGL is not supported in this browser';
+
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
 // browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
 // WebView, in-app browsers, mail-client preview WebViews) tries to evaluate a
@@ -1141,6 +1213,71 @@ export function isPaperShaderNullContextNoise(message: unknown): boolean {
   return PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS.some((pattern) =>
     stripped.includes(pattern),
   );
+}
+
+/**
+ * Whether a Sentry event is the Paper Shaders
+ * (`@paper-design/shaders-react`) WebGL-unsupported deliberate-throw noise
+ * class: the library's OWN canonical
+ * `Paper Shaders: WebGL is not supported in this browser` `Error`, thrown from
+ * the library's shader-mount constructor when WebGL is unavailable (a
+ * stripped-down/mobile WebView, a headless renderer, a browser with WebGL
+ * disabled, or a GPU blacklisted at context creation). This is a SIBLING of
+ * the null-context crash class (`isPaperShaderNullContextNoise`), but a
+ * DIFFERENT throw — a deliberate library `Error`, NOT a null-context
+ * `TypeError` from calling a WebGL2 method on a `null` context. The throw
+ * escapes `<ShaderSafe>` (it fires from the library constructor inside a
+ * dynamic import / `useEffect` that bypasses the React error boundary) and
+ * reaches Sentry as an uncaught global `onunhandledrejection` — an EXPECTED
+ * degradation state on WebGL-less browsers, never a product bug. The
+ * `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
+ * degrades to the fallback BEFORE the throw; this matcher is the leak-path
+ * backstop for the residual async throw that bypasses the one-shot probe.
+ *
+ * Requires the EXACT library message (case-sensitive; the `Paper Shaders:`
+ * prefix is the library's canonical marker, never emitted by first-party
+ * app code) AND a NEGATIVE guard: if ANY frame resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a
+ * real first-party `throw new Error('Paper Shaders: WebGL is not supported
+ * in this browser')` regression de-minifies to `apps/web/src/…` and must not
+ * be hidden). The production noise pattern carries only minified
+ * `@paper-design/shaders` chunk frames, so the negative guard does not fire
+ * for it. A frameless capture with this exact message still classifies as
+ * noise (the message alone is specific — the `Paper Shaders:` library prefix
+ * is part of the anchor, so a near-worded `WebGL is not supported in this
+ * browser` without the prefix does NOT match). See
+ * `PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE` for the full rationale.
+ */
+export function isPaperShaderWebGLUnsupportedNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and typed
+  // `<Name>Error: ` prefixes (e.g. `TypeError: `), but NOT a bare `Error: `
+  // (its `[A-Za-z]+Error:` requires a leading prefix). Sentry capture paths
+  // can deliver either shape, so additionally strip a leading bare `Error: `
+  // here — mirroring `isBareImageLoadNoiseMessage`'s explicit `Error: ` form.
+  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(
+    /^Error: /,
+    '',
+  );
+  if (stripped !== PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw this exact message → a real first-party regression (even
+  // though the `Paper Shaders:` prefix is the library's canonical marker, a
+  // hostile/copy-pasted first-party throw could share it). Keep reporting so
+  // the call site can be found + fixed. Only the library throw (minified
+  // `@paper-design/shaders` chunk frames, or frameless) is dropped. No second
+  // "any resolvable frame" guard is needed — the message is specific enough
+  // (the library's canonical string) that a frameless capture is safe to
+  // drop, unlike the generic `undefined` / `OperationError` matchers.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  return true;
 }
 
 // Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
@@ -2057,6 +2194,23 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // the `<ShaderSafe>` error boundary and reaches Sentry as a global error.
   // Decorative-canvas noise on incompatible GPUs; never an app defect.
   if (isPaperShaderNullContextNoise(message)) {
+    return true;
+  }
+
+  // Paper Shaders WebGL-unsupported deliberate-throw noise — the library's
+  // OWN canonical `Paper Shaders: WebGL is not supported in this browser`
+  // `Error`, thrown from the library's shader-mount constructor when WebGL is
+  // unavailable (stripped-down/mobile WebView, headless renderer, WebGL
+  // disabled). A SIBLING of the null-context crash class above, but a
+  // DIFFERENT throw (a deliberate library `Error`, not a null-context
+  // `TypeError`). An EXPECTED degradation state on WebGL-less browsers;
+  // never a product bug. Requires the exact library message AND a NEGATIVE
+  // guard: a resolved first-party `apps/web/src/…` frame means our own code
+  // threw this exact message (a real first-party regression) → keep
+  // reporting. The production noise pattern carries only minified
+  // `@paper-design/shaders` chunk frames. NOT in `ignoreErrors` (no frame
+  // context there). See `isPaperShaderWebGLUnsupportedNoise`.
+  if (isPaperShaderWebGLUnsupportedNoise({ message, frames })) {
     return true;
   }
 
