@@ -272,7 +272,6 @@ export async function restartSession(input: {
       .set({
         status: 'provisioning',
         error: null,
-        sandboxUrl: null,
         updatedAt: new Date(),
       })
       .where(eq(projectSessions.sessionId, sessionId));
