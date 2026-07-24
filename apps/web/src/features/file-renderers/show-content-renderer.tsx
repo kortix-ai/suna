@@ -262,6 +262,44 @@ export function ShowContentRenderer({
 
   const fileName = useMemo(() => path.split('/').pop() || '', [path]);
 
+  /**
+   * ── One header, never two ──────────────────────────────────────────────
+   *
+   * PDF, DOCX, XLSX and CSV each draw a real toolbar (thumbnails, zoom, search,
+   * a file menu). Inline in the chat column that toolbar is noise: nobody zooms
+   * or searches a 420px card, and stacking our actions above it produced eight
+   * controls and two header rows for one small file.
+   *
+   * So the surface decides which single header exists:
+   *   inline  → the viewer goes `compact` (its toolbar hidden) and `ViewerFrame`
+   *             is the one header, carrying name + refresh/full screen/Preview
+   *   panel   → the viewer's own toolbar is the one header, and our actions ride
+   *             in its native `toolbarActions` slot beside zoom and search
+   *
+   * Renderers with no toolbar of their own (PPTX, and the plain-text/code
+   * viewer whose header is suppressed) use `ViewerFrame` on both surfaces —
+   * it is their only header, so it can never double up.
+   */
+  const framed = (node: React.ReactNode) =>
+    fill ? (
+      node
+    ) : (
+      <ViewerFrame label={fileName} actions={toolbarActions}>
+        {node}
+      </ViewerFrame>
+    );
+
+  /** For renderers that never draw a header themselves. */
+  const alwaysFramed = (node: React.ReactNode) => (
+    <ViewerFrame label={fileName} actions={toolbarActions}>
+      {node}
+    </ViewerFrame>
+  );
+
+  /** Props every toolbar-owning renderer takes: hide its chrome inline, hand it
+   *  the actions in the panel. Exactly one of the two is ever in play. */
+  const viewerChrome = { compact: !fill, toolbarActions: fill ? toolbarActions : undefined };
+
   // ═════════════════════════════════════════════════════════════════════════
   // Data loading hooks — called unconditionally (React rules), gated by path
   // ═════════════════════════════════════════════════════════════════════════
@@ -525,12 +563,14 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={mediaH}>
-            <PdfRenderer
-              fileContent={pdfData.content}
-              fileName={fileName}
-              className="h-full"
-              toolbarActions={toolbarActions}
-            />
+            {framed(
+              <PdfRenderer
+                fileContent={pdfData.content}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -550,9 +590,14 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <ViewerFrame label={fileName} actions={toolbarActions}>
-              <CsvRenderer content={inlineOrLoadedCsv} fileName={fileName} className="h-full" />
-            </ViewerFrame>
+            {framed(
+              <CsvRenderer
+                content={inlineOrLoadedCsv}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -567,12 +612,14 @@ export function ShowContentRenderer({
     return (
       <Suspense fallback={<RendererFallback className={mediaH} />}>
         <div className={cn(mediaH, 'overflow-hidden')}>
-          <XlsxRenderer
-            filePath={sandboxPath}
-            fileName={fileName}
-            className="h-full"
-            toolbarActions={toolbarActions}
-          />
+          {framed(
+            <XlsxRenderer
+              filePath={sandboxPath}
+              fileName={fileName}
+              className="h-full"
+              {...viewerChrome}
+            />,
+          )}
         </div>
       </Suspense>
     );
@@ -588,12 +635,14 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <DocxRenderer
-              blob={rawBlob}
-              fileName={fileName}
-              className="h-full"
-              toolbarActions={toolbarActions}
-            />
+            {framed(
+              <DocxRenderer
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -611,15 +660,15 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <ViewerFrame label={fileName} actions={toolbarActions}>
+            {alwaysFramed(
               <PptxRenderer
                 blob={rawBlob}
                 binaryUrl={blobUrl}
                 filePath={sandboxPath || ''}
                 fileName={fileName}
                 className="h-full"
-              />
-            </ViewerFrame>
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -639,15 +688,15 @@ export function ShowContentRenderer({
   if (shouldRenderFromSandboxFile(sandboxPath, content)) {
     return (
       <div className={mediaH}>
-        <ViewerFrame label={fileName} actions={toolbarActions}>
+        {alwaysFramed(
           <FileContentRenderer
             filePath={sandboxPath!}
             showHeader={false}
             className="h-full"
             errorFallback={fileErrorFallback}
             onStatusChange={onStatusChange}
-          />
-        </ViewerFrame>
+          />,
+        )}
       </div>
     );
   }

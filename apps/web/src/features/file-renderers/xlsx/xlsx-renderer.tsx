@@ -18,6 +18,7 @@ interface XlsxRendererProps {
   fileName: string;
   /** Extra controls for the viewer's own toolbar, rendered after zoom and
    *  before the file menu. */
+  compact?: boolean;
   toolbarActions?: React.ReactNode;
   className?: string;
   sandboxId?: string;
@@ -31,7 +32,13 @@ interface XlsxRendererProps {
   isDownloading?: boolean;
 }
 
-export function XlsxRenderer({ filePath, fileName, className, toolbarActions }: XlsxRendererProps) {
+export function XlsxRenderer({
+  filePath,
+  fileName,
+  className,
+  compact = false,
+  toolbarActions,
+}: XlsxRendererProps) {
   const { resolvedTheme } = useTheme();
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +114,7 @@ export function XlsxRenderer({ filePath, fileName, className, toolbarActions }: 
       fileName={fileName}
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
+      showToolbar={!compact}
       showUpload={false}
       className={cn('h-full w-full', className)}
       toolbarActions={toolbarActions}
