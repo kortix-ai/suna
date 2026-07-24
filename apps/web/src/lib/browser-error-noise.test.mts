@@ -7,6 +7,7 @@ import {
   isClientRequestTimeoutMessage,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isEmbedPdfTilingReactUpdateDepthNoise,
+  isEmbedPdfTilingTileDestructureNoise,
   isExpectedBillingGateMessage,
   isExpectedCompactionNoModelMessage,
   isExtensionRejectedObjectNoise,
@@ -3259,7 +3260,229 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
 })
 
 // ---------------------------------------------------------------------------
-// Firefox-specific React scheduler re-entrancy noise (React #327
+// @embedpdf/plugin-tiling `TilingLayer` viewport-advance tile-destructure noise
+// (Better Stack patterns
+// 3e579401d40807f7f06bf57e7f3ad299846977ed05c2823d0ded45d8e89c1430 and
+// 70272e1ebef3ed66061cda5a46c7963f75d114408113ef131ac88981b4679f15, Kortix
+// Frontend prod, application_id 2346967). A SIBLING of the React #185 class
+// above (pattern 366115d4…, PR #4718) but a DIFFERENT throw from a different
+// embedpdf tiling path: under a rapid scroll/zoom burst the tiling plugin's
+// tile queue drains mid-burst, the viewport-advance path (`t5.advance` →
+// `iA.ignore` → `iA.onScroll` / `iA.onScrollChanged`, plus the
+// `IntersectionObserver` threshold callback) calls `const { tile } =
+// queue.pop()` on an `undefined` pop result, and V8 throws
+// `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` Two
+// patterns, SAME root cause, SAME user/session (`7254bee8-…`/`bd1306e9-…`), 1
+// occurrence each, 0 identified users, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route
+// `/projects/:id/sessions/:sessionId`, Chrome 150 on Windows 10. Pattern
+// `3e579401` mechanism `auto.browser.browserapierrors.addEventListener` (top
+// throw frame `HTMLDivElement.u` in chunk `66499-…`, then `c63a46fc-…` fns
+// `iA.onScroll` → `iA.ignore` → `t5.advance`); pattern `70272e1e` mechanism
+// `auto.browser.global_handlers.onerror` (top throw frame
+// `IntersectionObserver.intersection.IntersectionObserver.threshold`, then
+// `c63a46fc-…` fns `iA.onScrollChanged` → `iA.ignore` → `t5.advance`). All
+// frames are minified `@embedpdf` tiling chunks (`c63a46fc-…` / `66499-…`) — NO
+// first-party `apps/web/src/…` frame. The #4718 matcher (React #185 +
+// `onTileRendering`) does NOT catch it (different message, different anchor), so
+// this new matcher pins the EXACT prod call site: BOTH patterns' frames classify
+// as noise. Anchored on the EXACT message (the `tile` property name + the
+// `r.pop(...)` destructure target pin the call site) AND a positive viewport-
+// advance frame anchor (function name OR the `c63a46fc` tiling chunk), with a
+// first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact V8 wording from both production events (the minified tile queue is
+// `r`, so the destructure target renders as `r.pop(...)`).
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE =
+  "Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined."
+
+// Pattern 3e579401 — mechanism `auto.browser.browserapierrors.addEventListener`
+// (top throw frame `HTMLDivElement.u` in chunk `66499-…`, then the tiling chunk
+// `c63a46fc-…` viewport-advance path `iA.onScroll` → `iA.ignore` → `t5.advance`).
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401 = [
+  { filename: 'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'HTMLDivElement.u' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.onScroll' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.ignore' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.run' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.forward' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 't5.advance' },
+]
+
+// Pattern 70272e1e — mechanism `auto.browser.global_handlers.onerror` (top throw
+// frame `IntersectionObserver.intersection.IntersectionObserver.threshold`, then
+// the tiling chunk `c63a46fc-…` viewport-advance path `iA.onScrollChanged` →
+// `iA.ignore` → `t5.advance`).
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_70272E1E = [
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'IntersectionObserver.intersection.IntersectionObserver.threshold' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.onScrollChanged' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.ignore' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.run' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.forward' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 't5.advance' },
+]
+
+test('classifies both @embedpdf tiling tile-destructure prod patterns as noise', () => {
+  for (const [label, frames] of [
+    ['3e579401', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401],
+    ['70272e1e', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_70272E1E],
+  ] as const) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+        frames,
+      }),
+      true,
+      `expected pattern ${label} to classify as noise`,
+    )
+  }
+})
+
+test('suppresses both @embedpdf tiling tile-destructure Sentry events via the beforeSend gate', () => {
+  for (const [label, frames] of [
+    ['3e579401', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401],
+    ['70272e1e', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_70272E1E],
+  ] as const) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: {
+          url: 'https://kortix.com/projects/7254bee8-0000-0000-0000-000000000000/sessions/bd1306e9-0000-0000-0000-000000000000',
+        },
+        exception: {
+          values: [
+            {
+              value: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress pattern ${label}`,
+    )
+  }
+})
+
+test('suppresses the @embedpdf tiling tile-destructure message through all three capture-path forms', () => {
+  // The message must classify as noise regardless of whether the capture path
+  // delivered it raw, with a `TypeError: ` prefix, or with a stacked
+  // `Unhandled promise rejection: TypeError: ` prefix (stripErrorWrappers peels
+  // all three before the exact match).
+  const messageVariants = [
+    EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+    `TypeError: ${EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE}`,
+    `Unhandled promise rejection: TypeError: ${EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE}`,
+  ]
+  for (const message of messageVariants) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message,
+        frames: EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401,
+      }),
+      true,
+      `expected "${message}" to classify as noise`,
+    )
+  }
+})
+
+test('does NOT suppress the @embedpdf tiling tile-destructure message with NO frames (frameless capture)', () => {
+  // No frames → can't confirm the tiling viewport-advance anchor; keep reporting
+  // so a frameless but otherwise-identical throw from app code stays observable.
+  assert.equal(
+    isEmbedPdfTilingTileDestructureNoise({
+      message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the @embedpdf tiling tile-destructure message when a first-party frame is present (a real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code is the destructure
+  // culprit → actionable; the negative guard MUST preserve it so the call site
+  // can be found + fixed. A real first-party `{ tile } = arr.pop()` regression
+  // de-minifies to `apps/web/src/…` and must never be hidden.
+  for (const frames of [
+    [{ filename: 'apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'PDFViewerInner' }],
+    [
+      { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js', function: 't5.advance' },
+      { filename: 'app:///apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'renderPage' },
+    ],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party tile-destructure from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party tile-destructure from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a DIFFERENT destructure message even with the tiling viewport-advance frames (over-match guard)', () => {
+  // The `tile` property name is part of the anchor, not just the `r.pop()`
+  // destructure target. A same-shape throw destructuring a DIFFERENT property
+  // from the same tiling queue is a different, actionable throw and must keep
+  // reporting — only the exact `tile`-property destructure is dropped.
+  const differentDestructureMessage =
+    "Cannot destructure property 'foo' of 'r.pop(...)' as it is undefined."
+  assert.equal(
+    isEmbedPdfTilingTileDestructureNoise({
+      message: differentDestructureMessage,
+      frames: EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: differentDestructureMessage,
+            stacktrace: { frames: EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401 },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the exact tile-destructure message with non-tiling frames (over-match guard)', () => {
+  // The exact message but with frames that are NOT the embedpdf tiling
+  // viewport-advance path (different third-party lib, or unattributable minified
+  // chunks) → can't confirm the tiling anchor; keep reporting.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/app.js', function: 'someCallback' }],
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected exact message from ${JSON.stringify(frames)} (no tiling anchor) to keep reporting`,
+    )
+  }
+})
+
+
 // "Should not already be working.", Better Stack pattern
 // 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7,
 // Kortix Frontend prod, application_id 2346967). The React production
