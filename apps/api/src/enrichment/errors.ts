@@ -7,12 +7,18 @@
  *   blocked            — the site refused us (challenge page, 403, nothing fetched)
  *   timeout            — the job exceeded its wall-clock budget
  *   extraction_failed  — the model never produced a schema-valid profile
+ *   internal_error     — anything on our side: a database error, an upstream
+ *                        5xx, a bug. Kept distinct from `timeout` so a failure
+ *                        we caused is never reported to the user as the site
+ *                        being slow, and so it does not inherit timeout's
+ *                        deliberately short retry budget.
  */
 export type EnrichmentErrorCode =
   | 'invalid_domain'
   | 'blocked'
   | 'timeout'
-  | 'extraction_failed';
+  | 'extraction_failed'
+  | 'internal_error';
 
 export class EnrichmentError extends Error {
   constructor(

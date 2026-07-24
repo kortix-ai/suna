@@ -30,7 +30,7 @@ Three tables in the `kortix` schema (Drizzle schema + generated migration).
 - `job_id` uuid PK, `account_id` uuid NOT NULL, `project_id` uuid NOT NULL → `projects`, `created_by` uuid
 - `domain` text NOT NULL (normalized), `idempotency_key` text NOT NULL (`<project_id>:<domain>`)
 - `status` enum `queued | running | succeeded | failed | dead_lettered`
-- `error_code` text nullable — `invalid_domain | blocked | timeout | extraction_failed`
+- `error_code` text nullable — `invalid_domain | blocked | timeout | extraction_failed | internal_error`
 - `last_error` text, `attempts` int default 0, `available_at` timestamptz (backoff), `locked_by` text, `locked_until` timestamptz
 - `payload` jsonb (`{ force: boolean }`), `result` jsonb (`{ domain, memoryPath, crawlStatus, pagesDiscovered, pagesFetched, cacheHit }`)
 - `created_at`, `updated_at`, `finished_at`
@@ -74,7 +74,9 @@ Stages:
 7. **Extract.** One call through the exported gateway singleton (`gateway.chatCompletions`, model `KORTIX_ENRICHMENT_MODEL`, `response_format: json_schema` derived from the Zod schema via `zod-to-json-schema`). Prompt contract: JSON only; unknown fields `null`; never invent people, emails, or facts absent from the input; cite source URLs per section; top-level `sources[]` mandatory. Response → strict Zod parse; on failure, retry with the validation errors appended (max 2 repairs); still failing → `extraction_failed`, raw crawl preserved (page cache + URL list in `result`), **no profile stored**. On success: upsert `enrichment_profiles`.
 8. **Memory write.** Load `ProjectRow` by `project_id` (channel-manifest pattern — `commitRepoFile` handles auth internally via `withProjectGitAuth`). Render the profile to markdown (overview, product, team, pricing, blog index, contact, socials, sources, `crawledAt`, status complete/partial, plus the JSON in a fenced block) and commit two files sequentially through the existing engine: `.kortix/memory/enrichment/<domain>.md` (idempotent full-file replace), then `MEMORY.md` with one index line under an `## Enriched companies` heading (idempotent line upsert matched on the sub-file link; heading created if absent). Profile-then-index order so a failure never leaves a dangling index entry. Commit CAS conflicts retried ×3 with re-read.
 
-**Retry policy:** transient failures (network, 5xx from Jina/gateway, commit CAS exhaustion) → `attempts + 1`, backoff via `available_at` (1 min, 5 min), `dead_lettered` after 3. Permanent failures (`invalid_domain`, `blocked`, `extraction_failed`) → `failed` immediately with `error_code`. `timeout` retries once, then `failed`.
+**Retry policy:** transient failures (network, 5xx from Jina/gateway, commit CAS exhaustion) are recorded as `internal_error` → `attempts + 1`, backoff via `available_at` (1 min, 5 min), `dead_lettered` after 3. Permanent failures (`invalid_domain`, `blocked`, `extraction_failed`) → `failed` immediately with `error_code`. `timeout` retries once, then `failed`.
+
+`internal_error` was added to the taxonomy during implementation. Without it, any failure on our side (a database error, an upstream 5xx, a bug) had to borrow the `timeout` code — which misreports the cause to the user as the site being slow, and wrongly inherits timeout's deliberately short retry budget.
 
 ## 6. Extraction schema (Zod, `schemas.ts`)
 
