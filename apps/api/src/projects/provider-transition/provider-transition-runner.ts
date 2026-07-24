@@ -40,7 +40,6 @@ import {
   acquireLease,
   activateWithCas,
   failTransition,
-  findLiveTransitionByIdentity,
   getTransition,
   heartbeat,
   insertPrebuildTransition,

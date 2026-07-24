@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, ne } from 'drizzle-orm';
-import { createDb, accounts, projects, providerTransitions, sandboxTemplates, type Database } from '@kortix/db';
+import { createDb, accounts, projects, sandboxTemplates, type Database } from '@kortix/db';
 import { perProjectWarmImageName } from '../../snapshots/ppwarm-names';
 import {
   providerTransitionMetricsSnapshot,

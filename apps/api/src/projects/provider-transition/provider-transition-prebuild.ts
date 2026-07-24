@@ -11,7 +11,7 @@
  * key as an on-demand switch, so a switch that lands mid-prebuild adopts the
  * in-flight/ready row rather than starting a duplicate build.
  */
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { projectSessions, projects, type Database } from '@kortix/db';
 import { db as appDb } from '../../shared/db';
 import { logger } from '../../lib/logger';
