@@ -16,6 +16,7 @@ import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
 
@@ -174,7 +175,6 @@ adminApp.openapi(
   }
   },
 );
-
 // ── Account members ──────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -487,6 +487,78 @@ adminApp.openapi(
     }
 
     return c.json({ ok: true, tier });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+  },
+);
+
+// ── Set account concurrent-session override ─────────────────────────────────
+// `null` restores the tier-derived limit. Operators use this route for account
+// policy changes and for bounded end-to-end limit verification.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/session-limit',
+    tags: ['admin'],
+    summary: "Set an account's concurrent-session override",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              max_concurrent_sessions: z.number().int().min(1).max(MAX_ACCOUNT_SESSION_LIMIT).nullable(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          ok: z.boolean(),
+          previous: z.number().int().nullable(),
+          current: z.number().int().nullable(),
+        }),
+        'Updated concurrent-session override',
+      ),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const accountId = c.req.param('id');
+    const actorUserId = (c.get('userId') as string | undefined) ?? null;
+    const body = c.req.valid('json') as { max_concurrent_sessions: number | null };
+    const { getSubscriptionInfo, upsertCreditAccount } = await import(
+      '../billing/repositories/credit-accounts'
+    );
+    const { clearAccountLimitCache } = await import('../shared/account-limits');
+    const { recordAuditEvent } = await import('../shared/audit');
+
+    const result = await setAccountSessionLimit(
+      {
+        accountId,
+        actorUserId,
+        maxConcurrentSessions: body.max_concurrent_sessions,
+        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        userAgent: c.req.header('user-agent') || null,
+      },
+      {
+        getCurrent: async () => (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
+        persist: async (id, value) => {
+          await upsertCreditAccount(id, { maxConcurrentSessions: value });
+        },
+        clearCache: clearAccountLimitCache,
+        recordAudit: recordAuditEvent,
+      },
+    );
+
+    return c.json({ ok: true, ...result });
   } catch (e: any) {
     return c.json({ error: e?.message || String(e) }, 500);
   }

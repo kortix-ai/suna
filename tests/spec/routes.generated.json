@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 501,
+  "count": 502,
   "routes": [
     {
       "method": "GET",
@@ -481,6 +481,10 @@
     {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/projects"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/session-limit"
     },
     {
       "method": "POST",

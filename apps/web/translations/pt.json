@@ -320,10 +320,7 @@
         "Bom dia! O que vamos construir?",
         "Bom dia! Pronto para arrasar?"
       ],
-      "afternoon": [
-        "Boa tarde! Como posso ajudar?",
-        "E aí, tudo bem? O que vamos fazer?"
-      ],
+      "afternoon": ["Boa tarde! Como posso ajudar?", "E aí, tudo bem? O que vamos fazer?"],
       "evening": [
         "Boa noite! Trabalhando até tarde?",
         "Boa noite! No que estamos trabalhando?",
@@ -7000,9 +6997,9 @@
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": "e implemente o agente que você já usa.",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "Implantar agentes internos",
     "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "Preços simples por assento. Pague pelo que você usa.",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Cada assento recebe a plataforma completa mais um crédito mensal. Pague apenas pelos modelos e calcule que seus agentes realmente executam — sem token m",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Os créditos fortalecem tudo",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Um saldo simples para modelos e computadores de agentes — sem matemática simbólica, sem contas surpresa.",
+    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Cada assento inclui a plataforma completa e créditos mensais para o runtime do Agent Computer. Use sua própria chave de API ou conecte o ChatGPT para acessar modelos. Os modelos gerenciados continuam disponíveis e consomem créditos com base no uso de tokens.",
+    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Pague pelo computador. Use seu próprio modelo.",
+    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Os créditos Kortix destinam-se principalmente ao runtime do Agent Computer. Use sua própria chave de API ou assinatura do ChatGPT para manter a cobrança do modelo com seu provedor. Modelos gerenciados opcionais consomem créditos Team com base no uso de tokens.",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "Comece a construir",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "Comece sua equipe",
     "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "US$ 40 por assento, com US$ 20 de créditos de uso cada. Rateado automaticamente, cancele a qualquer momento ou fale conosco sobre o Enterprise.",

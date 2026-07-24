@@ -29,6 +29,7 @@
 import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor, sleep } from '../core/poll';
+import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
 import type { FlowContext } from '../core/types';
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
@@ -40,32 +41,36 @@ async function waitForSessionReady(
   sessionId: string,
   timeoutMs = 300_000,
 ): Promise<any> {
-  return waitFor(
-    async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions/:sessionId/start',
-        {},
-        {
-          params: { projectId, sessionId },
-          query: { wait_ms: '8000' },
-          // The server may hold the request for the full 8s wait window, and
-          // Cloudflare/ECS transit can add several more seconds under load.
-          timeoutMs: 25_000,
-        },
-      );
-      if (r.statusCode >= 500 && r.statusCode <= 599) return null;
-      r.status(200);
-      return r.json<any>();
-    },
-    {
-      until: (s) =>
-        s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-      timeoutMs,
-      intervalMs: 3_000,
-      description: `session runtime ready for ${sessionId}`,
-      retryOnError: isKe2eRetryableError,
-    },
-  );
+  try {
+    return await waitFor(
+      async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          {
+            params: { projectId, sessionId },
+            query: { wait_ms: '8000' },
+            // The server may hold the request for the full 8s wait window, and
+            // Cloudflare/ECS transit can add several more seconds under load.
+            timeoutMs: 25_000,
+          },
+        );
+        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
+        r.status(200);
+        return r.json<any>();
+      },
+      {
+        until: (s) =>
+          s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+        timeoutMs,
+        intervalMs: 3_000,
+        description: `session runtime ready for ${sessionId}`,
+        retryOnError: isKe2eRetryableError,
+      },
+    );
+  } catch (error) {
+    throw markSessionReadinessTimeoutRetryable(error, sessionId);
+  }
 }
 
 /**
@@ -439,6 +444,7 @@ flow(
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
+    retry: { attempts: 2 },
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -491,24 +497,39 @@ flow(
   },
 );
 
-// ─── SESS-2: concurrency cap — Nth session over tier cap → 429 + RateLimit hdrs
+// ─── SESS-2: concurrency cap — second session at limit 1 → 429 + headers ────
 flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['admin', 'funded', 'daytona'],
     serial: true,
     timeoutMs: 300_000,
-    routes: ['POST /v1/projects/:projectId/sessions'],
+    routes: [
+      'POST /v1/admin/api/accounts/:id/session-limit',
+      'POST /v1/projects/:projectId/sessions',
+    ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
-    await ctx.step('creating sessions past the tier cap → 429 + X-RateLimit headers', async () => {
-      // Fire sessions until one is rejected with 429 (the concurrency cap). The
-      // cap is tier-bound and modest; we bound the loop so a misconfigured (very
-      // high) cap doesn't run away.
-      let capped: any = null;
-      for (let i = 0; i < 25 && !capped; i++) {
+    if (!ctx.env.adminToken) {
+      throw new Error('SESS-2 requires the run-scoped platform-admin token');
+    }
+    const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
+    let previousLimit: number | null | undefined;
+
+    await ctx.step('set the run account concurrent-session override to 1', async () => {
+      const r = await admin.post(
+        '/v1/admin/api/accounts/:id/session-limit',
+        { max_concurrent_sessions: 1 },
+        { params: { id: ctx.P.accountId } },
+      );
+      r.status(200);
+      previousLimit = r.json<{ previous: number | null }>().previous;
+    });
+
+    try {
+      const project = await ctx.fixtures.project({ seed: true });
+      await ctx.step('first session at limit 1 → 201', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
@@ -516,17 +537,35 @@ flow(
             { initial_prompt: 'noop' },
             { params: { projectId: project.id } },
           );
-        if (r.statusCode === 201) {
-          const id = r.json<any>()?.session_id ?? r.json<any>()?.id;
-          if (id) ctx.track('session', id, { projectId: project.id });
-          continue;
-        }
-        if (r.statusCode === 429) capped = r;
-        else break; // any other status (402/403/…) ends the probe
+        r.status(201);
+        const body = r.json<{ session_id?: string; id?: string }>();
+        const id = body.session_id ?? body.id;
+        if (!id) throw new Error(`session create returned no id: ${r.text()}`);
+        ctx.track('session', id, { projectId: project.id });
+      });
+
+      await ctx.step('second session over limit 1 → 429 + X-RateLimit headers', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { initial_prompt: 'noop' },
+            { params: { projectId: project.id } },
+          );
+        r.status(429).headerExists('x-ratelimit-limit').headerExists('x-ratelimit-remaining');
+      });
+    } finally {
+      if (previousLimit !== undefined) {
+        await ctx.step('restore the previous concurrent-session override', async () => {
+          const r = await admin.post(
+            '/v1/admin/api/accounts/:id/session-limit',
+            { max_concurrent_sessions: previousLimit },
+            { params: { id: ctx.P.accountId } },
+          );
+          r.status(200);
+        });
       }
-      if (!capped) ctx.skip('concurrency cap not reached within probe budget on this tier');
-      capped.status(429).headerExists('x-ratelimit-limit').headerExists('x-ratelimit-remaining');
-    });
+    }
   },
 );
 
