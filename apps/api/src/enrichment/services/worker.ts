@@ -29,20 +29,28 @@ import {
 import { createProjectMemoryPort, loadProject } from '../repositories/memory-port';
 import { getFreshProfile, upsertProfile } from '../repositories/profiles';
 import type { CompanyProfile, CrawlStatus } from '../schemas';
-import { consolidate } from './consolidate';
+import type { ConsolidatePage } from './consolidate';
 import { discover } from './discovery';
-import { extractProfile } from './extract';
+import { extractProfileFromPages } from './extract';
 import { withGatewayChat } from './gateway-chat';
-import { fetchPages } from './page-fetch';
+import { fetchPages, type FetchedPage } from './page-fetch';
 import { canonicalOrigin } from './normalize';
 import { assertSafeUrl, boundedFetch } from './safe-fetch';
-import { writeProfileToMemory, type MemoryPort } from './memory-write';
-import { selectUrls, type UrlTier } from './url-filter';
+import { writeProfileToMemory, type MemoryPageContent, type MemoryPort } from './memory-write';
+import { classifyUrl, selectUrls, MAX_SELECTED_URLS, type UrlTier } from './url-filter';
 
 const MAX_ATTEMPTS = 3;
 const LEASE_MS = 6 * 60 * 1000;
 const MAX_CONCURRENT_JOBS = 2;
 const BACKOFF_MS = [60_000, 300_000];
+
+/**
+ * Blog posts get their own budget rather than competing with priority pages
+ * in one shared cap — a blog-heavy site would otherwise crowd out /about and
+ * /pricing, and a blog post fetched in full is usually richer material than
+ * one more "other"-tier page.
+ */
+const MAX_BLOG_POSTS = 20;
 
 type Timer = ReturnType<typeof setInterval>;
 const g = globalThis as unknown as { __kortixEnrichmentTimer?: Timer | null };
@@ -58,12 +66,23 @@ function isPermanent(code: EnrichmentErrorCode): boolean {
   return code === 'invalid_domain' || code === 'blocked' || code === 'extraction_failed';
 }
 
+/** How many fetched pages each vendor tier served this run. `cache` (the
+ * per-URL page cache, distinct from the whole-profile cache) is deliberately
+ * not counted here — those pages did not cost a vendor call this run. */
+export interface FetchTierCounts {
+  jina: number;
+  firecrawl: number;
+  direct: number;
+}
+
 export interface JobResult {
   domain: string;
   memoryPath: string;
   crawlStatus: CrawlStatus;
   pagesDiscovered: number;
   pagesFetched: number;
+  blogPostsFetched: number;
+  fetchTiers: FetchTierCounts;
   cacheHit: boolean;
 }
 
@@ -145,29 +164,49 @@ async function executePipeline(
 
   if (cached) {
     // Another org already paid for this crawl. The profile still has to be
-    // written into THIS project's memory, which is the part that is per-tenant.
-    const memoryPath = await writeToMemory(deps, job, cached.profile, {
-      domain,
-      crawledAt: cached.crawledAt.toISOString(),
-      crawlStatus: cached.crawlStatus,
-      model: cached.model ?? model,
-    });
+    // written into THIS project's memory, which is the part that is
+    // per-tenant — including the page/blog content, not just the profile, so
+    // this project's memory folder is not left thinner than one that crawled
+    // the domain itself.
+    const { pages, blogPosts } = await recoverCachedPages(cached.profile);
+    const memoryPath = await writeToMemory(
+      deps,
+      job,
+      cached.profile,
+      {
+        domain,
+        crawledAt: cached.crawledAt.toISOString(),
+        crawlStatus: cached.crawlStatus,
+        model: cached.model ?? model,
+      },
+      { pages, blogPosts },
+    );
     return {
       domain,
       memoryPath,
       crawlStatus: cached.crawlStatus,
       pagesDiscovered: 0,
       pagesFetched: 0,
+      blogPostsFetched: 0,
+      fetchTiers: { jina: 0, firecrawl: 0, direct: 0 },
       cacheHit: true,
     };
   }
 
   const discovery = await discover(origin, { signal, fetchImpl: deps.fetchImpl });
-  const ranked = selectUrls(discovery.urls, origin);
-  const tierByUrl = new Map<string, UrlTier>(ranked.map((r) => [r.url, r.tier]));
+
+  // Site pages and blog posts draw from separate budgets (see MAX_BLOG_POSTS
+  // above), so `selectUrls` is called uncapped here and each tier is sliced to
+  // its own budget below rather than letting one global cap ration them
+  // against each other.
+  const ranked = selectUrls(discovery.urls, origin, Infinity);
+  const siteRanked = ranked.filter((r) => r.tier !== 'blog').slice(0, MAX_SELECTED_URLS);
+  const blogRanked = ranked.filter((r) => r.tier === 'blog').slice(0, MAX_BLOG_POSTS);
+  const selected = [...siteRanked, ...blogRanked];
+  const tierByUrl = new Map<string, UrlTier>(selected.map((r) => [r.url, r.tier]));
 
   const fetched = await fetchPages(
-    ranked.map((r) => r.url),
+    selected.map((r) => r.url),
     {
       jinaApiKey: config.JINA_API_KEY || undefined,
       firecrawlApiKey: config.FIRECRAWL_API_KEY || undefined,
@@ -201,15 +240,19 @@ async function executePipeline(
       ? 'partial'
       : 'complete';
 
-  const consolidated = consolidate(
-    domain,
-    fetched.pages.map((page) => ({
-      url: page.url,
-      markdown: page.markdown,
-      tier: tierByUrl.get(page.url) ?? 'other',
-    })),
-    discovery.signals,
-  );
+  // Split by the url-selection tier (blog vs everything else), not by
+  // `page.tier` — that is the fetch tier (jina/firecrawl/direct/cache) that
+  // served the page and says nothing about what kind of page it is.
+  const pagesForExtraction: ConsolidatePage[] = [];
+  const sitePages: MemoryPageContent[] = [];
+  const blogPosts: MemoryPageContent[] = [];
+  for (const page of fetched.pages) {
+    const urlTier = tierByUrl.get(page.url) ?? 'other';
+    pagesForExtraction.push({ url: page.url, markdown: page.markdown, tier: urlTier });
+    const memoryEntry: MemoryPageContent = { url: page.url, markdown: page.markdown, tier: page.tier };
+    if (urlTier === 'blog') blogPosts.push(memoryEntry);
+    else sitePages.push(memoryEntry);
+  }
 
   const { profile } = await deps.runChat(
     {
@@ -217,26 +260,71 @@ async function executePipeline(
       userId: job.createdBy ?? job.accountId,
       projectId: job.projectId,
     },
-    (chat) => extractProfile(consolidated.text, { chat, model, signal }),
+    (chat) => extractProfileFromPages(domain, pagesForExtraction, discovery.signals, { chat, model, signal }),
   );
 
   await upsertProfile({ domain, profile, crawlStatus, model });
 
-  const memoryPath = await writeToMemory(deps, job, profile, {
-    domain,
-    crawledAt: new Date().toISOString(),
-    crawlStatus,
-    model,
-  });
+  const memoryPath = await writeToMemory(
+    deps,
+    job,
+    profile,
+    { domain, crawledAt: new Date().toISOString(), crawlStatus, model },
+    { pages: sitePages, blogPosts },
+  );
 
   return {
     domain,
     memoryPath,
     crawlStatus,
-    pagesDiscovered: ranked.length,
+    pagesDiscovered: selected.length,
     pagesFetched: fetched.pages.length,
+    blogPostsFetched: blogPosts.length,
+    fetchTiers: countFetchTiers(fetched.pages),
     cacheHit: false,
   };
+}
+
+/** Tallies which vendor tier served each fetched page, for the job result. */
+function countFetchTiers(pages: FetchedPage[]): FetchTierCounts {
+  const counts: FetchTierCounts = { jina: 0, firecrawl: 0, direct: 0 };
+  for (const page of pages) {
+    if (page.tier === 'jina' || page.tier === 'firecrawl' || page.tier === 'direct') {
+      counts[page.tier] += 1;
+    }
+  }
+  return counts;
+}
+
+/**
+ * A cache hit means another org already paid for the crawl, so there is no
+ * fresh page list to draw from — only a DB read against the per-URL page
+ * cache, keyed by the URLs the cached profile itself cites (`sources` plus
+ * each `blogPosts` entry's `url`). Any of those whose markdown has since been
+ * pruned from the cache is silently absent from the result; if none remain at
+ * all, `{}` is returned so the caller passes `undefined` for both `pages` and
+ * `blogPosts` to `writeProfileToMemory` — leaving whatever page/blog files
+ * this project already has untouched rather than deleting them for lack of
+ * evidence they are actually gone. `classifyUrl` (the same per-URL classifier
+ * `selectUrls` uses) decides the pages/blog split here, since there is no
+ * fresh `selectUrls` ranking to read a tier off on this path.
+ */
+async function recoverCachedPages(
+  profile: CompanyProfile,
+): Promise<{ pages?: MemoryPageContent[]; blogPosts?: MemoryPageContent[] }> {
+  const candidateUrls = [...new Set([...profile.sources, ...profile.blogPosts.map((p) => p.url)])];
+  if (candidateUrls.length === 0) return {};
+
+  const cachedMarkdown = await getCachedPages(candidateUrls);
+  if (cachedMarkdown.size === 0) return {};
+
+  const pages: MemoryPageContent[] = [];
+  const blogPosts: MemoryPageContent[] = [];
+  for (const [url, markdown] of cachedMarkdown) {
+    const bucket = classifyUrl(url).tier === 'blog' ? blogPosts : pages;
+    bucket.push({ url, markdown, tier: 'cache' });
+  }
+  return { pages, blogPosts };
 }
 
 async function writeToMemory(
@@ -244,12 +332,15 @@ async function writeToMemory(
   job: EnrichmentJobRow,
   profile: CompanyProfile,
   provenance: { domain: string; crawledAt: string; crawlStatus: CrawlStatus; model: string },
+  content: { pages?: MemoryPageContent[]; blogPosts?: MemoryPageContent[] },
 ): Promise<string> {
   const port = await deps.memoryPortFor(job.projectId);
   const { profilePath } = await writeProfileToMemory(port, {
     domain: provenance.domain,
     profile,
     provenance,
+    pages: content.pages,
+    blogPosts: content.blogPosts,
   });
   return profilePath;
 }

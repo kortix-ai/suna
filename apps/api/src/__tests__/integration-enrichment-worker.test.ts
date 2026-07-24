@@ -12,13 +12,15 @@
  * Skips itself when the local Postgres has no project to attach to, so it
  * degrades to a no-op rather than a false failure on a bare checkout.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { claimDueJobs, completeJob, enqueueJob } from '../enrichment/repositories/jobs';
 import { getProfile } from '../enrichment/repositories/profiles';
 import type { BoundedResponse } from '../enrichment/services/safe-fetch';
 import { runEnrichmentJob, type EnrichmentJobDeps } from '../enrichment/services/worker';
+
+setDefaultTimeout(30_000);
 
 const memoryWrites: Array<{ path: string; content: string }> = [];
 let extractionResponse = '';
@@ -50,7 +52,8 @@ const SITE: Record<string, () => Response> = {
     new Response('User-agent: *\nAllow: /', { status: 200, headers: { 'content-type': 'text/plain' } }),
   [`${ORIGIN}/sitemap.xml`]: () =>
     new Response(
-      `<urlset><url><loc>${ORIGIN}/about</loc></url><url><loc>${ORIGIN}/team</loc></url></urlset>`,
+      `<urlset><url><loc>${ORIGIN}/about</loc></url><url><loc>${ORIGIN}/team</loc></url>` +
+        `<url><loc>${ORIGIN}/blog/launch</loc></url></urlset>`,
       { status: 200, headers: { 'content-type': 'application/xml' } },
     ),
   [`${ORIGIN}/`]: () =>
@@ -61,6 +64,7 @@ const SITE: Record<string, () => Response> = {
     ),
   [`${ORIGIN}/about`]: () => page('<html><body><h1>About us</h1></body></html>'),
   [`${ORIGIN}/team`]: () => page('<html><body><h1>Team</h1></body></html>'),
+  [`${ORIGIN}/blog/launch`]: () => page('<html><body><h1>We launched</h1></body></html>'),
 };
 
 let fetchLog: string[] = [];
@@ -181,16 +185,33 @@ describe('enrichment worker (integration)', () => {
     expect(result.domain).toBe(DOMAIN);
     expect(result.cacheHit).toBe(false);
     expect(result.pagesFetched).toBeGreaterThan(0);
+    expect(result.blogPostsFetched).toBe(1);
+    expect(result.fetchTiers.jina + result.fetchTiers.firecrawl + result.fetchTiers.direct).toBe(
+      result.pagesFetched,
+    );
 
     const stored = await getProfile(DOMAIN);
     expect(stored?.profile.name).toBe('Integration Example Inc');
 
     expect(memoryWrites.map((w) => w.path)).toEqual([
       `.kortix/memory/enrichment/${DOMAIN}/profile.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/pages/index.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/pages/about.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/pages/team.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/blog/blog-launch.md`,
       '.kortix/memory/MEMORY.md',
     ]);
     expect(memoryWrites[0].content).toContain('Integration Example Inc');
-    expect(memoryWrites[1].content).toContain(`enrichment/${DOMAIN}/profile.md`);
+    expect(memoryWrites.find((w) => w.path.endsWith('pages/about.md'))?.content).toContain(
+      `source: "${ORIGIN}/about"`,
+    );
+    expect(memoryWrites.find((w) => w.path.endsWith('blog/blog-launch.md'))?.content).toContain(
+      `source: "${ORIGIN}/blog/launch"`,
+    );
+    const index = memoryWrites.at(-1)!;
+    expect(index.path).toBe('.kortix/memory/MEMORY.md');
+    expect(index.content).toContain(`enrichment/${DOMAIN}/profile.md`);
+    expect(index.content).toContain(`enrichment/${DOMAIN}/blog/blog-launch.md`);
   });
 
   test('marks the job succeeded with its result', async () => {
@@ -242,10 +263,50 @@ describe('enrichment worker (integration)', () => {
     expect(result.cacheHit).toBe(true);
     expect(gatewayCalls).toBe(0);
     expect(fetchLog).toHaveLength(0);
-    // The crawl is shared, but landing the profile in this project's memory
-    // is not — it still has to happen.
-    expect(memoryWrites.length).toBeGreaterThan(0);
+    expect(result.pagesFetched).toBe(0);
+    expect(result.blogPostsFetched).toBe(0);
+    expect(result.fetchTiers).toEqual({ jina: 0, firecrawl: 0, direct: 0 });
     expect(second.jobId).not.toBe(first.jobId);
+
+    expect(memoryWrites.map((w) => w.path)).toEqual([
+      `.kortix/memory/enrichment/${DOMAIN}/profile.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/pages/index.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/pages/about.md`,
+      '.kortix/memory/MEMORY.md',
+    ]);
+  });
+
+  test('a cache hit whose cited pages are no longer in the page cache leaves existing memory files alone', async () => {
+    if (!ctx) return;
+    const first = await seedJob();
+    const [claimedFirst] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
+    await runEnrichmentJob(claimedFirst, testDeps());
+    await completeJob(first.jobId, {});
+
+    await db.execute(sql`delete from kortix.enrichment_page_cache where url like ${`${ORIGIN}%`}`);
+
+    const staleIndex = memoryWrites.filter((w) => w.path === '.kortix/memory/MEMORY.md').at(-1)!;
+    memoryWrites.push({
+      path: '.kortix/memory/MEMORY.md',
+      content: staleIndex.content.replace(
+        `- **${DOMAIN}**`,
+        `- **${DOMAIN}**\n  - [pages/stale](enrichment/${DOMAIN}/pages/stale.md)`,
+      ),
+    });
+    memoryWrites.push({
+      path: `.kortix/memory/enrichment/${DOMAIN}/pages/stale.md`,
+      content: 'stale content that must survive an unrecoverable cache hit',
+    });
+
+    const second = await seedJob();
+    const [claimedSecond] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
+    const result = await runEnrichmentJob(claimedSecond, testDeps());
+
+    expect(result.cacheHit).toBe(true);
+    expect(
+      memoryWrites.some((w) => w.path === `.kortix/memory/enrichment/${DOMAIN}/pages/stale.md`),
+    ).toBe(true);
+    expect(memoryWrites.at(-1)!.content).toContain(`enrichment/${DOMAIN}/pages/stale.md`);
   });
 
   test('force bypasses the cache', async () => {
