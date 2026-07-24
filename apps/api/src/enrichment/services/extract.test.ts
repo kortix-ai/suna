@@ -304,6 +304,28 @@ describe('mergeHarvestedSignals', () => {
     );
     expect(merged.socials).toEqual([]);
   });
+
+  test('dedupes a harvested social matching a model social except for trailing slash', () => {
+    const profile = profileWith({
+      socials: [{ platform: 'twitter', url: 'https://twitter.com/example/' }],
+    });
+    const merged = mergeHarvestedSignals(
+      profile,
+      emptySignals({ socials: [{ platform: 'twitter', url: 'https://twitter.com/example' }] }),
+    );
+    expect(merged.socials).toHaveLength(1);
+  });
+
+  test('dedupes a harvested social matching except for case', () => {
+    const profile = profileWith({
+      socials: [{ platform: 'twitter', url: 'https://twitter.com/example' }],
+    });
+    const merged = mergeHarvestedSignals(
+      profile,
+      emptySignals({ socials: [{ platform: 'twitter', url: 'https://twitter.com/EXAMPLE' }] }),
+    );
+    expect(merged.socials).toHaveLength(1);
+  });
 });
 
 describe('buildReduceInput', () => {

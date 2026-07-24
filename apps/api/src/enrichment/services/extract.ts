@@ -22,6 +22,7 @@ import { parseJsonLoose, type ChatFn, type ChatMessage } from './chat-json';
 import { CHARS_PER_TOKEN, renderSignals, truncate, type ConsolidatePage } from './consolidate';
 import type { StructuredSignals } from './discovery';
 import { mapPages, renderMappedPage, type MapPagesResult } from './page-summary';
+import { normalizeUrl } from './url-filter';
 
 // Re-exported so existing callers (`gateway-chat.ts`, tests) that import these
 // from `./extract` keep working — the types and the loose-JSON parser moved
@@ -240,10 +241,16 @@ export function mergeHarvestedSignals(
   profile: CompanyProfile,
   signals: StructuredSignals,
 ): CompanyProfile {
-  const seenUrls = new Set(profile.socials.map((s) => s.url.trim().toLowerCase()));
+  function getDedupeKey(url: string): string {
+    const trimmed = url.trim();
+    const normalized = normalizeUrl(trimmed);
+    return (normalized ?? trimmed).toLowerCase();
+  }
+
+  const seenUrls = new Set(profile.socials.map((s) => getDedupeKey(s.url)));
   const socials = [...profile.socials];
   for (const harvested of signals.socials) {
-    const key = harvested.url.trim().toLowerCase();
+    const key = getDedupeKey(harvested.url);
     if (seenUrls.has(key)) continue;
     const parsed = SocialLinkSchema.safeParse(harvested);
     if (!parsed.success) continue;

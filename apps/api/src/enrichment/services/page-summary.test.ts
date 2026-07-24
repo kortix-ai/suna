@@ -198,6 +198,25 @@ describe('mapPages', () => {
 
     expect(maxInFlight).toBeLessThanOrEqual(MAP_CONCURRENCY);
   });
+
+  test('every map call throws but still completes with all pages degraded to excerpts', async () => {
+    const long = 's'.repeat(PAGE_SUMMARY_THRESHOLD + 1);
+    const chat: ChatFn = async () => {
+      throw new Error('upstream 500');
+    };
+    const pages = [
+      page('https://example.com/a', long),
+      page('https://example.com/b', long),
+      page('https://example.com/c', long),
+    ];
+
+    const result = await mapPages(pages, { chat, model: 'm', excerptChars: 100 });
+
+    expect(result.failedCount).toBe(3);
+    expect(result.summarizedCount).toBe(0);
+    expect(result.mapped).toHaveLength(3);
+    expect(result.mapped.every((m) => m.kind === 'excerpt' && m.degraded)).toBe(true);
+  });
 });
 
 describe('renderMappedPage', () => {
