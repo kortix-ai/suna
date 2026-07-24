@@ -17,9 +17,7 @@ flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects
 flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
   await ctx.step("managed provision → 201 with repo", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
-    // 502 can occur transiently when the managed git host is rate-limited/unavailable.
-    r.status([200, 201, 502]);
-    if (r.statusCode < 400) r.body().exists("$.project_id").exists("$.repo_url");
+    r.status(201).body().exists("$.project_id").exists("$.repo_url");
     ctx.track("project", r.json<any>().project_id);
   });
   await ctx.step("name over 120 chars → 400, nothing provisioned upstream", async () => {
@@ -105,47 +103,74 @@ flow(
     const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects");
     list.status(200);
     const existing = list.json<any[]>()?.length ?? 0;
-
-    for (let index = existing; index < 3; index += 1) {
-      await ctx.step(`free account: project ${index + 1} of 3 allowed (201)`, async () => {
-        let r = await ctx.client
-          .as(ctx.P.NONMEMBER)
-          .post("/v1/projects/provision", {
-            name: ctx.fixtures.name(`free-${index + 1}`),
-          });
-        // The managed Git host can return a transient 502. Retry the same quota
-        // slot before deciding the contract failed; only a real 201 advances it.
-        for (let attempt = 1; r.statusCode === 502 && attempt < 4; attempt += 1) {
-          await Bun.sleep(2_000 * attempt);
-          r = await ctx.client
-            .as(ctx.P.NONMEMBER)
-            .post("/v1/projects/provision", {
-              name: ctx.fixtures.name(`free-${index + 1}-retry-${attempt}`),
-            });
-        }
-        r.status(201).body().exists("$.project_id");
-        ctx.track("project", r.json<any>().project_id);
-      });
+    if (existing !== 0) {
+      throw new Error(`PROJ-18 requires a fresh free account; found ${existing} existing projects`);
     }
 
-    await ctx.step("free account: 4th project rejected (403 project_limit_reached)", async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-4") });
-      // The quota gate runs before any repository is provisioned.
-      r.status(403)
-        .body()
-        .has("$.code", "project_limit_reached")
-        .has("$.limit", 3)
-        .has("$.count", 3);
-    });
+    const createdProjectIds: string[] = [];
+    let repositorySourceProjectId: string | null = null;
+    try {
+      for (let index = 0; index < 3; index += 1) {
+        await ctx.step(`free account: project ${index + 1} of 3 allowed (201)`, async () => {
+          const r = await ctx.client
+            .as(ctx.P.NONMEMBER)
+            .post("/v1/projects/provision", {
+              name: ctx.fixtures.name(`free-${index + 1}`),
+              ...(repositorySourceProjectId
+                ? {
+                    repository_source_project_id: repositorySourceProjectId,
+                    default_branch: ctx.fixtures.name(`free-branch-${index + 1}`),
+                  }
+                : { seed_starter: true }),
+            });
+          r.status(201).body().exists("$.project_id");
+          const projectId = r.json<any>().project_id;
+          createdProjectIds.push(projectId);
+          repositorySourceProjectId ??= projectId;
+        });
+      }
+
+      await ctx.step("free account: 4th project rejected (403 project_limit_reached)", async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post("/v1/projects/provision", {
+            name: ctx.fixtures.name("free-4"),
+            repository_source_project_id: repositorySourceProjectId,
+            default_branch: ctx.fixtures.name("free-branch-4"),
+          });
+        // The quota gate runs before any repository branch is created.
+        r.status(403)
+          .body()
+          .has("$.code", "project_limit_reached")
+          .has("$.limit", 3)
+          .has("$.count", 3);
+      });
+    } finally {
+      // These projects belong to NONMEMBER's personal account. The global
+      // OWNER teardown client cannot delete them. Delete derived projects
+      // first, then delete the one upstream-owning source project.
+      const cleanupFailures: string[] = [];
+      for (const projectId of createdProjectIds.reverse()) {
+        const response = await ctx.client.as(ctx.P.NONMEMBER).del("/v1/projects/:id", {
+          params: { id: projectId },
+          query: { purge: "true" },
+        });
+        if (![200, 404].includes(response.statusCode)) {
+          cleanupFailures.push(
+            `${projectId}: HTTP ${response.statusCode}: ${response.text().slice(0, 500)}`,
+          );
+        }
+      }
+      if (cleanupFailures.length > 0) {
+        throw new Error(`PROJ-18 cleanup failed: ${cleanupFailures.join("; ")}`);
+      }
+    }
   },
 );
 
 flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
-  // Not tracked: this flow deletes it itself.
-  const r0 = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
-  const id = r0.json<any>().project_id;
+  const project = await ctx.fixtures.project({ name: ctx.fixtures.name("del") });
+  const id = project.id;
   await ctx.step("OWNER archives project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true);

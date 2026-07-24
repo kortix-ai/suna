@@ -80,8 +80,16 @@ describe('stopSession', () => {
     expect(stopCalls).toEqual([]);
   });
 
-  test('409s when the sandbox is not currently active', async () => {
+  test('returns the stopped state without calling the provider when already stopped', async () => {
     sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'stopped', metadata: {} };
+    const result = await stopSession(baseInput);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopped' });
+    expect(stopCalls).toEqual([]);
+  });
+
+  test('409s when the sandbox is provisioning', async () => {
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'provisioning', metadata: {} };
     const result = await stopSession(baseInput);
     expect(result.status).toBe(409);
     expect(stopCalls).toEqual([]);

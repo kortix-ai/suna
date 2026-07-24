@@ -4,6 +4,16 @@
  */
 import { flow } from '../core/flow';
 
+function triggerIndex(body: unknown, slug: string): number {
+  const triggers =
+    body && typeof body === 'object' && Array.isArray((body as any).triggers)
+      ? (body as any).triggers
+      : [];
+  return triggers.findIndex((trigger: unknown) => {
+    return Boolean(trigger && typeof trigger === 'object' && (trigger as any).slug === slug);
+  });
+}
+
 flow(
   'TRG-1',
   { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers'] },
@@ -54,7 +64,11 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(201).body().has('triggers[0].model', 'anthropic/claude-sonnet-4-6');
+      r.status(201);
+      const index = triggerIndex(r.json(), 'nightly');
+      r.body()
+        .has(`triggers[${index}].slug`, 'nightly')
+        .has(`triggers[${index}].model`, 'anthropic/claude-sonnet-4-6');
     });
     await ctx.step('duplicate slug → 409', async () => {
       const r = await ctx.client
@@ -113,7 +127,11 @@ flow(
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
-      r.status(200).body().has('triggers[0].model', 'openai/gpt-5');
+      r.status(200);
+      const index = triggerIndex(r.json(), 'toggle-me');
+      r.body()
+        .has(`triggers[${index}].slug`, 'toggle-me')
+        .has(`triggers[${index}].model`, 'openai/gpt-5');
     });
   },
 );
