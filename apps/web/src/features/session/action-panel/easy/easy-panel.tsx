@@ -761,6 +761,14 @@ function StepDetailBody({ parts, sessionId }: { parts: ToolPart[]; sessionId: st
 
   const safeIndex = clampIndex(index, parts.length);
   const current = parts[safeIndex];
+  const atLatest = safeIndex >= parts.length - 1;
+
+  // Stable identity so ActionNavigator's keydown effect doesn't re-subscribe
+  // on every streaming re-render; setState setters are already stable.
+  const handleIndexChange = useCallback((i: number, m: FollowMode) => {
+    setMode(m);
+    setIndex(i);
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -770,11 +778,8 @@ function StepDetailBody({ parts, sessionId }: { parts: ToolPart[]; sessionId: st
       <ActionNavigator
         parts={parts}
         index={safeIndex}
-        isLive={mode === 'live'}
-        onIndexChange={(i, m) => {
-          setMode(m);
-          setIndex(i);
-        }}
+        isLive={atLatest && mode === 'live'}
+        onIndexChange={handleIndexChange}
       />
     </div>
   );

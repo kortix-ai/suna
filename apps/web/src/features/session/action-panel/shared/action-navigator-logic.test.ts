@@ -171,4 +171,12 @@ describe('isEditableTarget', () => {
     slider.setAttribute('data-slot', 'slider');
     expect(isEditableTarget(slider)).toBe(true);
   });
+
+  it('is true for a contenteditable element', () => {
+    // isContentEditable is readonly in lib.dom's HTMLElement — the stub carries
+    // it as a plain writable field, same as tagName/className above.
+    const editable = document.createElement('div') as HTMLElement & { isContentEditable: boolean };
+    editable.isContentEditable = true;
+    expect(isEditableTarget(editable)).toBe(true);
+  });
 });

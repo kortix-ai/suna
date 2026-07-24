@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
 import { collectToolParts } from '../shared/collect-tool-parts';
 import {
@@ -49,6 +49,13 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   const atLatest = safeIndex >= count - 1;
   const isLive = atLatest && mode === 'live';
 
+  // Stable identity so ActionNavigator's keydown effect doesn't re-subscribe
+  // on every streaming re-render; setState setters are already stable.
+  const handleIndexChange = useCallback((i: number, m: 'live' | 'manual') => {
+    setMode(m);
+    setIndex(i);
+  }, []);
+
   // Jump to the tool the user clicked in the chat (focus by callID, robust to
   // ordering). Pins manual mode so it doesn't immediately snap back to live.
   const focusedToolCallId = useFocusedToolCallId();
@@ -91,10 +98,7 @@ export const AdvancedPanel = memo(function AdvancedPanel({
         parts={parts}
         index={safeIndex}
         isLive={isLive}
-        onIndexChange={(i, m) => {
-          setMode(m);
-          setIndex(i);
-        }}
+        onIndexChange={handleIndexChange}
       />
     </div>
   );
