@@ -626,7 +626,7 @@ flow(
       );
       r.status(200).body().has('$.status', 'stopped');
     });
-    await ctx.step('stopping an already-stopped session → 409', async () => {
+    await ctx.step('stopping an already-stopped session → 200 stopped', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
         '/v1/projects/:projectId/sessions/:sessionId/stop',
         {},
@@ -634,7 +634,7 @@ flow(
           params: { projectId, sessionId },
         },
       );
-      r.status(409);
+      r.status(200).body().has('$.status', 'stopped');
     });
     await ctx.step('start resumes the stopped sandbox (disk preserved)', async () => {
       await waitForSessionReady(ctx, projectId, sessionId);

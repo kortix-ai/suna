@@ -34,6 +34,7 @@ import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../li
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
+import { createRemoteSessionBranch } from '../git';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import { createProjectWebhookRateLimitMiddleware } from '../../shared/rate-limit';
@@ -397,7 +398,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(z.any(), 'OK'),
-        ...errors(400, 403, 502, 503),
+        ...errors(400, 403, 404, 409, 502, 503),
     },
   }),
   async (c: any) => {
@@ -405,23 +406,6 @@ projectsApp.openapi(
   const scope = await resolveProjectAccount(c, body);
   if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  // Managed-git provider, provider-agnostic via the backend registry. GitHub is
-  // the default + only active managed backend. Forgejo / Artifacts slot in here
-  // as drop-ins.
-  const provider =
-    normalizeString(body.provider) ??
-    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
-  if (!hasBackend(provider)) {
-    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
-  }
-  const backend = getBackend(provider);
-  if (!(await backend.isConfigured())) {
-    return c.json(
-      { error: `Managed git provider "${provider}" is not configured on this server` },
-      503,
-    );
   }
 
   const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
@@ -440,6 +424,148 @@ projectsApp.openapi(
     return c.json(
       { error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` },
       400,
+    );
+  }
+
+  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+  const repositorySourceProjectId = normalizeString(
+    body.repository_source_project_id ?? body.repositorySourceProjectId,
+  );
+
+  // Every isolated project counts toward the target account's quota. Reusing
+  // an upstream repository saves host resources; it does not bypass project
+  // limits.
+  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
+  if (provisionQuota) return provisionQuota;
+
+  if (repositorySourceProjectId) {
+    const source = await loadProjectForUser(c, repositorySourceProjectId, 'manage');
+    if (!source) return c.json({ error: 'Repository source project not found' }, 404);
+
+    const sourceConnection = await getProjectGitConnection(source.row.projectId);
+    if (!sourceConnection?.managed || sourceConnection.status !== 'connected') {
+      return c.json(
+        { error: 'Repository source project must own a connected managed repository' },
+        409,
+      );
+    }
+    if (defaultBranch === source.row.defaultBranch) {
+      return c.json(
+        { error: 'default_branch must identify a new isolated repository branch' },
+        400,
+      );
+    }
+
+    // The API creates the branch with server-managed credentials. The caller
+    // never receives the shared repository credential.
+    try {
+      await createRemoteSessionBranch(
+        await withProjectGitAuth(source.row),
+        defaultBranch,
+        source.row.defaultBranch,
+      );
+    } catch (error) {
+      return c.json(
+        { error: (error as Error).message || 'Failed to create isolated repository branch' },
+        502,
+      );
+    }
+
+    const authMethod = 'managed_shared';
+    const now = new Date();
+    const sourceMetadata = (source.row.metadata ?? {}) as Record<string, unknown>;
+    const projectId = randomUUID();
+    const [row] = await db
+      .insert(projects)
+      .values({
+        projectId,
+        accountId: scope.accountId,
+        name,
+        repoUrl: sourceConnection.repoUrl,
+        defaultBranch,
+        manifestPath: source.row.manifestPath,
+        status: 'active',
+        metadata: {
+          git: {
+            url: sourceConnection.repoUrl,
+            upstream_url: sourceConnection.upstreamUrl,
+            default_branch: defaultBranch,
+            provider: sourceConnection.provider,
+            managed: false,
+            auth: {
+              method: authMethod,
+              installation_id: sourceConnection.installationId,
+            },
+            repo_id: sourceConnection.externalRepoId,
+            owner: sourceConnection.repoOwner,
+            name: sourceConnection.repoName,
+          },
+          repository_source_project_id: source.row.projectId,
+          require_declared_agents: true,
+          ...(typeof sourceMetadata.default_agent === 'string'
+            ? { default_agent: sourceMetadata.default_agent }
+            : {}),
+        },
+        updatedAt: now,
+      })
+      .returning();
+
+    await grantProjectRole({
+      accountId: scope.accountId,
+      projectId: row.projectId,
+      userId: scope.userId,
+      role: 'manager',
+      grantedBy: scope.userId,
+    });
+    await upsertProjectGitConnection({
+      accountId: scope.accountId,
+      projectId: row.projectId,
+      provider: sourceConnection.provider,
+      repoUrl: sourceConnection.repoUrl,
+      upstreamUrl: sourceConnection.upstreamUrl,
+      managed: false,
+      repoOwner: sourceConnection.repoOwner,
+      repoName: sourceConnection.repoName,
+      externalRepoId: sourceConnection.externalRepoId,
+      defaultBranch,
+      authMethod,
+      installationId: sourceConnection.installationId,
+      credentialRef: sourceConnection.credentialRef,
+      permissions: sourceConnection.permissions,
+      visibility: sourceConnection.visibility,
+      status: 'connected',
+      metadata: {
+        ...((sourceConnection.metadata ?? {}) as Record<string, unknown>),
+        shared_repository_owner_project_id: source.row.projectId,
+      },
+    });
+
+    return c.json(
+      {
+        ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+        push_token: null,
+        git_username: null,
+        repo_id: sourceConnection.externalRepoId,
+        seeded: true,
+      },
+      201,
+    );
+  }
+
+  // Managed-git provider, provider-agnostic via the backend registry. GitHub is
+  // the default + only active managed backend. Forgejo / Artifacts slot in here
+  // as drop-ins.
+  const provider =
+    normalizeString(body.provider) ??
+    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+  if (!hasBackend(provider)) {
+    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
+  }
+  const backend = getBackend(provider);
+  if (!(await backend.isConfigured())) {
+    return c.json(
+      { error: `Managed git provider "${provider}" is not configured on this server` },
+      503,
     );
   }
 
@@ -464,14 +590,6 @@ projectsApp.openapi(
     'kortix-project'
   ).slice(0, 40);
   const repoSlug = `${baseSlug}-${projectId}`;
-  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
-
-  // Provision always mints a brand-new managed repo, so the quota check is a
-  // straight count — no repoUrl to treat as an idempotent re-link. Runs after
-  // request validation but before we create anything upstream.
-  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
-  if (provisionQuota) return provisionQuota;
-
   let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
   try {
     provisioned = await backend.createRepo({

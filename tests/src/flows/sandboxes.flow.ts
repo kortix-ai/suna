@@ -157,6 +157,7 @@ flow(
   "SBX-4",
   {
     domain: "sandboxes",
+    serial: true,
     routes: [
       "POST /v1/projects/:projectId/sandbox-templates",
       "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",

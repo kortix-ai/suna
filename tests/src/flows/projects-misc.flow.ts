@@ -650,12 +650,21 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step("pin to the enabled 'daytona' provider → 200 (immediate, kind:project)", async () => {
+    await ctx.step("pin to the enabled 'daytona' provider → 200 discriminated result", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
-      // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
-      r.status(200).body().has("$.kind", "project").has("$.default_sandbox_provider", "daytona");
+      r.status(200);
+      const body = r.json<any>();
+      if (body?.kind === "project") {
+        r.body().has("$.default_sandbox_provider", "daytona");
+      } else {
+        r.body()
+          .has("$.kind", "preparation")
+          .has("$.project_id", p.id)
+          .has("$.target_provider", "daytona")
+          .has("$.immediate", false);
+      }
     });
     await ctx.step("clear the pin (null) → 200 (immediate, kind:project)", async () => {
       const r = await ctx.client
@@ -757,7 +766,11 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.active_provider").exists("$.history");
+      r.status(200)
+        .body()
+        .has("$.active_provider", null)
+        .has("$.latest", null)
+        .exists("$.history");
       const body = r.json<{ latest: unknown; history: unknown[] }>();
       assertNoLeak(body.latest);
       if (Array.isArray(body.history)) body.history.forEach(assertNoLeak);

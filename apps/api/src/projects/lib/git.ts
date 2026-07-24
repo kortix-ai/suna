@@ -429,7 +429,10 @@ export function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote
 
 export async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
-  if (remote.provider === 'github' && remote.authMethod === 'github_app') {
+  if (
+    remote.provider === 'github' &&
+    (remote.authMethod === 'github_app' || remote.authMethod === 'managed_shared')
+  ) {
     return true;
   }
   return false;
@@ -446,7 +449,10 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   // exist without access to every repository. Repeated failed token minting
   // adds remote latency to every Git-backed project read. The PAT is internal
   // and is never exported by the API/CLI push-token boundary.
-  if (remote.provider === 'github' && remote.managed) {
+  if (
+    remote.provider === 'github' &&
+    (remote.managed || remote.authMethod === 'managed_shared')
+  ) {
     const pat = managedGithubToken();
     if (pat) {
       return {
