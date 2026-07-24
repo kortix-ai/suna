@@ -35,7 +35,10 @@ import { createPortal } from 'react-dom';
 
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import { ConnectProviderDialog, type ModelDefaultControls } from '@/features/session/model-selector';
+import {
+  ConnectProviderDialog,
+  type ModelDefaultControls,
+} from '@/features/session/model-selector';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -62,9 +65,9 @@ import { GridFileCard } from './grid-file-card';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import Loading from '@/components/ui/loading';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
@@ -2746,7 +2749,11 @@ function SessionTurn({
           defaultOpen
         />
         {turnError && (
-          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+          <TurnErrorDisplay
+            errorText={turnError}
+            errorDetails={turnErrorDetails}
+            className="mt-2"
+          />
         )}
         <ConnectProviderDialog
           open={connectProviderOpen}
@@ -5167,7 +5174,7 @@ export function SessionChat({
   if (isDataLoading) {
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
-        <SessionStartingLoader stage="ready" variant='compact' />
+        <SessionStartingLoader stage="ready" variant="compact" />
       </div>
     );
   }
@@ -5375,7 +5382,7 @@ export function SessionChat({
                         key={turn.userMessage.info.id}
                         data-turn-id={turn.userMessage.info.id}
                         className={cn(
-                          '[content-visibility:auto] [contain-intrinsic-size:auto_600px]',
+                          '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
                           turnIndex === 0 ? '' : 'mt-12',
                         )}
                       >
@@ -5441,7 +5448,7 @@ export function SessionChat({
               <Button
                 onClick={handleSelectionReply}
                 size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom text-xs duration-150 ease-out"
               >
                 Reply
                 <svg

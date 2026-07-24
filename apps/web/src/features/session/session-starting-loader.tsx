@@ -334,7 +334,7 @@ function BootCompactMessage({
     // bought nothing — a 20px glyph and a 2-line message coexist happily at
     // 256px — and it cost the one relationship that matters here: the spinner
     // reads as belonging to the message it sits beside.
-    <div className="flex items-start gap-2.5">
+    <div className="flex flex-col items-start gap-2.5 sm:flex-row">
       {/* mt-1 optically centres the 20px spinner on the headline's 28px line
           box — geometric top-alignment sits it visibly high against a bold cap. */}
       {/* `spokes` to match the reference: beside a headline the ticking wheel
