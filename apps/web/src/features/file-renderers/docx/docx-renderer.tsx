@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
+import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
 import { DocxViewerPreview } from './docx-viewer';
 
 /**
@@ -37,6 +37,10 @@ export function resolveDocxSource({
 }
 
 interface DocxRendererProps {
+  /** Extra controls for the viewer's own toolbar, rendered after zoom and
+   *  before the file menu — so a caller adds actions to the ONE header this
+   *  viewer already has, instead of stacking a second one above it. */
+  toolbarActions?: React.ReactNode;
   url?: string;
   blob?: Blob;
   /**
@@ -49,7 +53,14 @@ interface DocxRendererProps {
   compact?: boolean;
 }
 
-export function DocxRenderer({ url, blob, fileName, className, compact = false }: DocxRendererProps) {
+export function DocxRenderer({
+  url,
+  blob,
+  fileName,
+  className,
+  compact = false,
+  toolbarActions,
+}: DocxRendererProps) {
   const { resolvedTheme } = useTheme();
   const [src, setSrc] = useState<string | null>(null);
 
@@ -76,12 +87,13 @@ export function DocxRenderer({ url, blob, fileName, className, compact = false }
   return (
     <DocxViewerPreview
       src={src}
-      fileName={fileName ? ensureDocxFileName(fileName) : (blob ? 'document.docx' : undefined)}
+      fileName={fileName ? ensureDocxFileName(fileName) : blob ? 'document.docx' : undefined}
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
       showToolbar={!compact}
       showUpload={false}
       className={cn('h-full w-full', className)}
+      toolbarActions={toolbarActions}
     />
   );
 }

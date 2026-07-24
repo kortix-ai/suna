@@ -105,13 +105,15 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   const isWebsitePreview = !!resolvedPreviewUrl;
 
   /**
-   * A file-backed show — anything with a sandbox path that isn't being served
-   * as a live website preview. Covers PDF, PPTX, DOCX, XLSX, CSV, YAML, code,
-   * markdown and images alike: they all read from a path, so they all earn the
-   * same header actions. Carousels included, using the active item's path, so
-   * paging between deliverables keeps the toolbar rather than losing it.
+   * A file-backed show gets its actions INSIDE the renderer's own header —
+   * `ShowContentRenderer` routes them to each viewer's native toolbar slot, or
+   * supplies the row itself for the viewers that ship none. There is never a
+   * second header stacked above the viewer.
    */
-  const showsFile = !isWebsitePreview && !!activePath;
+  const fileActions =
+    !isWebsitePreview && activePath ? (
+      <ShowFileActions path={activePath} inPanel={fill} />
+    ) : undefined;
   const preview = useServicePreview(
     resolvedPreviewUrl,
     activeTitle || title || description || undefined,
@@ -200,32 +202,15 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
           fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
         )}
       >
-        {/* One header, two payloads. A `show` is backed either by a URL or by
-            a file, and both need the same thing: what am I looking at, and what
-            can I do with it. Only the URL case used to get this row, so a PDF,
-            deck, doc or YAML rendered as a bare card with no refresh, no way to
-            open it larger, and no route into the panel. */}
-        {(isWebsitePreview || showsFile) && (
+        {isWebsitePreview && (
           <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              {isWebsitePreview ? (
-                <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
-              ) : (
-                <span className="text-muted-foreground/50 shrink-0">
-                  {showTypeIcon(activeType || 'file', 'size-3.5')}
-                </span>
-              )}
+              <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
               <span className="text-foreground/80 truncate text-xs font-medium">
-                {isWebsitePreview
-                  ? preview.displayLabel
-                  : activeTitle || activePath.split('/').pop() || activePath}
+                {preview.displayLabel}
               </span>
             </div>
-            {isWebsitePreview ? (
-              <ServicePreviewActions preview={preview} />
-            ) : (
-              <ShowFileActions path={activePath} inPanel={fill} />
-            )}
+            <ServicePreviewActions preview={preview} />
           </div>
         )}
 
@@ -237,6 +222,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
                 fill={fill}
+                toolbarActions={fileActions}
               />
             </ActiveServicePreviewContext.Provider>
           ) : isWebsitePreview ? (
@@ -256,6 +242,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}
+                  toolbarActions={fileActions}
                 />
               </div>
               {description && !title && (

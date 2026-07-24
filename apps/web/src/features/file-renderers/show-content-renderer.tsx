@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
 
@@ -183,6 +184,17 @@ export interface ShowContentProps {
    * audio/pdf/csv/docx/pptx) and forwarded from the generic-file renderer.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /**
+   * Controls for the file's header row (refresh / full screen / open in the
+   * panel).
+   *
+   * There is exactly ONE header per show, never two. PDF, DOCX and XLSX own a
+   * real toolbar, so these go into its native `toolbarActions` slot, landing
+   * after zoom and before the file menu. CSV, PPTX and the plain-text viewer
+   * ship no toolbar, so `ViewerFrame` supplies the same row for them. Either
+   * way the user sees one header with the actions on its right.
+   */
+  toolbarActions?: React.ReactNode;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -199,6 +211,7 @@ export function ShowContentRenderer({
   LocalhostPreview,
   fill = false,
   onStatusChange,
+  toolbarActions,
 }: ShowContentProps) {
   const arCSS = showAspectRatioToCSS(aspectRatio);
 
@@ -512,7 +525,12 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={mediaH}>
-            <PdfRenderer fileContent={pdfData.content} fileName={fileName} className="h-full" />
+            <PdfRenderer
+              fileContent={pdfData.content}
+              fileName={fileName}
+              className="h-full"
+              toolbarActions={toolbarActions}
+            />
           </div>
         </Suspense>
       );
@@ -532,7 +550,9 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <CsvRenderer content={inlineOrLoadedCsv} fileName={fileName} className="h-full" />
+            <ViewerFrame label={fileName} actions={toolbarActions}>
+              <CsvRenderer content={inlineOrLoadedCsv} fileName={fileName} className="h-full" />
+            </ViewerFrame>
           </div>
         </Suspense>
       );
@@ -547,7 +567,12 @@ export function ShowContentRenderer({
     return (
       <Suspense fallback={<RendererFallback className={mediaH} />}>
         <div className={cn(mediaH, 'overflow-hidden')}>
-          <XlsxRenderer filePath={sandboxPath} fileName={fileName} className="h-full" />
+          <XlsxRenderer
+            filePath={sandboxPath}
+            fileName={fileName}
+            className="h-full"
+            toolbarActions={toolbarActions}
+          />
         </div>
       </Suspense>
     );
@@ -563,7 +588,12 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+            <DocxRenderer
+              blob={rawBlob}
+              fileName={fileName}
+              className="h-full"
+              toolbarActions={toolbarActions}
+            />
           </div>
         </Suspense>
       );
@@ -581,13 +611,15 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <PptxRenderer
-              blob={rawBlob}
-              binaryUrl={blobUrl}
-              filePath={sandboxPath || ''}
-              fileName={fileName}
-              className="h-full"
-            />
+            <ViewerFrame label={fileName} actions={toolbarActions}>
+              <PptxRenderer
+                blob={rawBlob}
+                binaryUrl={blobUrl}
+                filePath={sandboxPath || ''}
+                fileName={fileName}
+                className="h-full"
+              />
+            </ViewerFrame>
           </div>
         </Suspense>
       );
@@ -607,13 +639,15 @@ export function ShowContentRenderer({
   if (shouldRenderFromSandboxFile(sandboxPath, content)) {
     return (
       <div className={mediaH}>
-        <FileContentRenderer
-          filePath={sandboxPath!}
-          showHeader={false}
-          className="h-full"
-          errorFallback={fileErrorFallback}
-          onStatusChange={onStatusChange}
-        />
+        <ViewerFrame label={fileName} actions={toolbarActions}>
+          <FileContentRenderer
+            filePath={sandboxPath!}
+            showHeader={false}
+            className="h-full"
+            errorFallback={fileErrorFallback}
+            onStatusChange={onStatusChange}
+          />
+        </ViewerFrame>
       </div>
     );
   }
@@ -751,6 +785,9 @@ export interface ShowCarouselProps {
   onIndexChange?: (index: number) => void;
   /** Fill the available height (side-panel surface) instead of a fixed-height card. */
   fill?: boolean;
+  /** Header actions for the ACTIVE item, forwarded to its renderer so paging
+   *  between deliverables keeps the toolbar instead of losing it after item 1. */
+  toolbarActions?: React.ReactNode;
 }
 
 const SHOW_TYPE_LABELS: Record<string, string> = {
@@ -830,6 +867,7 @@ export function ShowCarousel({
   LocalhostPreview,
   onIndexChange,
   fill = false,
+  toolbarActions,
 }: ShowCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
@@ -899,6 +937,7 @@ export function ShowCarousel({
           language={currentItem.language}
           aspectRatio={currentItem.aspect_ratio}
           LocalhostPreview={LocalhostPreview}
+          toolbarActions={toolbarActions}
           fill={fill}
         />
       </div>
