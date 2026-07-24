@@ -6,8 +6,8 @@
  * it, and return structured data.
  */
 
-import { createKortixPty, removeKortixPty, getKortixPtyWebSocketUrl } from '@/lib/opencode-sdk';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { createKortixPty, removeKortixPty, getKortixPtyWebSocketUrl } from '@kortix/sdk';
+import { getActiveOpenCodeUrl } from '@kortix/sdk/internal/server-store';
 import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------

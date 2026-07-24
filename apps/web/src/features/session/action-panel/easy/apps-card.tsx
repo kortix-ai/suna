@@ -20,7 +20,7 @@
  * unlike a live thumbnail it cannot half-load and libel a working app as broken.
  */
 
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { useSyncExternalStore } from 'react';

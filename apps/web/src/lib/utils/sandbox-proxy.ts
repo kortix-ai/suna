@@ -1,7 +1,7 @@
 import {
   getActiveOpenCodeUrl,
   deriveSubdomainOpts,
-} from '@/stores/server-store';
+} from '@kortix/sdk/internal/server-store';
 import {
   getProxyBaseUrl,
   proxyLocalhostUrl,

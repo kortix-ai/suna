@@ -50,10 +50,10 @@ import {
   normalizeCustomProviderForm,
   validateCustomProviderForm,
 } from '@/features/providers/custom-provider-config';
-import { configKeys } from '@/hooks/opencode/use-opencode-config';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
+import { configKeys } from '@kortix/sdk/react';
+import type { ProviderListResponse } from '@kortix/sdk/react';
+import { opencodeKeys } from '@kortix/sdk/react';
+import { getClient } from '@kortix/sdk';
 import { useQueryClient } from '@tanstack/react-query';
 
 const FALLBACK_PROVIDER_CARDS: Array<{ id: string; name: string }> = [];

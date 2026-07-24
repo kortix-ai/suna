@@ -13,7 +13,7 @@ import {
 import { fileListKeys } from './use-file-list';
 import { fileContentKeys } from './use-file-content';
 import { gitStatusKeys } from './use-git-status';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import type { FileNode } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------

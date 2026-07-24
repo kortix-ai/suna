@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
 import { AppsCard } from './apps-card';
 
 const app = { callID: 'a', name: 'Dashboard', kind: 'app' as const, url: 'http://localhost:3000' };

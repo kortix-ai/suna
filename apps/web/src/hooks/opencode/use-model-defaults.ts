@@ -21,7 +21,7 @@ import {
   seedGlobalDefaultFromServer,
   setGlobalDefaultModel,
   wireToModelKey,
-} from './use-model-store';
+} from '@kortix/sdk/react';
 
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;

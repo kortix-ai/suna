@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { Message, Part } from '@kortix/sdk/opencode-client';
+import type { Message, Part } from '@kortix/sdk';
 
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 
 import { hasUnsettledToolPart } from './idle-reconcile';
 

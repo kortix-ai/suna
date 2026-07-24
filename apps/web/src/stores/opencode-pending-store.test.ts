@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { PermissionRequest, QuestionRequest } from '@kortix/sdk/opencode-client';
+import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
 
-import { useOpenCodePendingStore } from './opencode-pending-store';
+import { useOpenCodePendingStore } from '@kortix/sdk/internal/opencode-pending-store';
 
 const q = (id: string, sessionID = 'ses_1'): QuestionRequest =>
   ({

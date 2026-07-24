@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { computeLatestSet, isDefaultVisible } from './use-model-store';
+import { computeLatestSet, isDefaultVisible } from '@kortix/sdk/react';
 
 function monthsAgo(months: number): string {
   const date = new Date();

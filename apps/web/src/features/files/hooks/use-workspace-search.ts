@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import { findText } from '../api/opencode-files';
 import type { FindMatch } from '@/features/file-browser/types';
 import {

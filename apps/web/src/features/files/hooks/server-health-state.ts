@@ -1,5 +1,5 @@
 import type { ServerHealth } from '@/features/file-browser/types';
-import type { SandboxConnectionStatus } from '@kortix/sdk/sandbox-connection-store';
+import type { SandboxConnectionStatus } from '@kortix/sdk/internal/sandbox-connection-store';
 
 export function fileServerHealthState(
   status: SandboxConnectionStatus,

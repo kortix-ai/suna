@@ -22,11 +22,11 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeSession } from '@kortix/sdk/react';
 import {
   loadSessionTranscriptMessages,
   useSessionSync,
-} from '@/hooks/opencode/use-session-sync';
+} from '@kortix/sdk/react';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,

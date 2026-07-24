@@ -15,11 +15,11 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeMessages } from '@kortix/sdk/react';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 import {
   SessionPanelView,
   sessionPreviewTabId,

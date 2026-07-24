@@ -1,4 +1,4 @@
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getActiveOpenCodeUrl } from '@kortix/sdk/internal/server-store';
 import { findFiles, listFiles } from '../api/opencode-files';
 import type { FileNode } from '@/features/file-browser/types';
 import {

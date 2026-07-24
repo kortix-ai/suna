@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import { readFile } from '../api/opencode-files';
 import type { FileContent } from '@/features/file-browser/types';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';

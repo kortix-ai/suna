@@ -34,7 +34,7 @@ import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
 import {
   AlertTriangle,
   ArrowLeft,

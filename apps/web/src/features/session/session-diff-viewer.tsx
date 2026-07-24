@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
-import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@kortix/sdk/react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { createTwoFilesPatch } from 'diff';
 import type { FileDiff, ApplyPatchFile } from '@/ui/types';

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import { readFileAsBlob } from '../api/opencode-files';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 

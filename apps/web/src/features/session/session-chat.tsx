@@ -83,7 +83,7 @@ import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { useOpenCodeConfig } from '@kortix/sdk/react';
 import {
   type ModelKey,
   formatModelString,
@@ -91,7 +91,7 @@ import {
   parseModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   ascendingId,
   rejectQuestion,
@@ -104,11 +104,11 @@ import {
   useOpenCodeRuntimeReady,
   useOpenCodeSession,
   useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
+} from '@kortix/sdk/react';
+import { useSessionSync } from '@kortix/sdk/react';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { getClient } from '@/lib/opencode-sdk';
+import { getClient } from '@kortix/sdk';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -131,8 +131,8 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useOpenCodePendingStore } from '@kortix/sdk/internal/opencode-pending-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { usePendingQueueStore } from '@/stores/pending-queue-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';

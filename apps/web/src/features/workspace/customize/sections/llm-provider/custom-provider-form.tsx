@@ -6,7 +6,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, Copy, Info, Plus, TriangleAlert } from 'lucide-react';

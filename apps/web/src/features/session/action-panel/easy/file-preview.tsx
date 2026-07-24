@@ -29,7 +29,7 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
 import {
   Check,
   Copy,

@@ -16,7 +16,7 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeMessages } from '@kortix/sdk/react';
 import {
   getChildSessionId,
   getChildSessionToolParts,

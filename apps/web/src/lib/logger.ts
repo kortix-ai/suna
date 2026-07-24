@@ -8,7 +8,7 @@
  *   logger.error('Stream disconnected', { runId, attempt: 3 });
  */
 
-import { getClient } from '@/lib/opencode-sdk';
+import { getClient } from '@kortix/sdk';
 
 const SERVICE_NAME = 'frontend';
 

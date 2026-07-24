@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { getClient } from '@/lib/opencode-sdk';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
+import { getClient } from '@kortix/sdk';
+import { opencodeKeys } from '@kortix/sdk/react';
 
 /**
  * Module-level cache of candidate prefixes.

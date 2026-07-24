@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getManagedModel } from '@kortix/llm-catalog';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import type { ModelCostRates, ModelPricingLookup } from '@kortix/sdk/turns';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import { searchWorkspaceFilePaths } from '../search/workspace-search-service';
 
 export const fileSearchKeys = {

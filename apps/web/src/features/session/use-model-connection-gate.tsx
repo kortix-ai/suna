@@ -8,7 +8,7 @@ import { ProjectProviderModal } from '@/features/workspace/customize/sections/ll
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { hasUsableModel } from '@/hooks/opencode/use-model-store';
+import { hasUsableModel } from '@kortix/sdk/react';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';

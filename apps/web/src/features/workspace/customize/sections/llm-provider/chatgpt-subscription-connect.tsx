@@ -5,7 +5,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk/projects-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ExternalLink, TriangleAlert } from 'lucide-react';

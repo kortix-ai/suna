@@ -1,4 +1,4 @@
-import type { ProviderListResponse as SdkProviderListResponse } from '@kortix/sdk/opencode-client';
+import type { ProviderListResponse as SdkProviderListResponse } from '@kortix/sdk';
 
 import { LLM_PROVIDERS } from '@/lib/llm-providers';
 import { type ProviderAuthRequirement, isProviderAuthSatisfied } from '@kortix/llm-catalog';

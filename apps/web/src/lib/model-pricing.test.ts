@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 
 import { buildModelsDevPricingMap, createModelPricingLookup } from './model-pricing';
 

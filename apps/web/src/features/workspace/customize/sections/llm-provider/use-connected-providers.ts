@@ -1,6 +1,6 @@
 'use client';
 
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeProviders } from '@kortix/sdk/react';
 import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';

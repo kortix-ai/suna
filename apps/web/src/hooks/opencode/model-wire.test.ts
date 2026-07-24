@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { modelKeyToWire, wireToModelKey } from './use-model-store';
+import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 
 // The gateway wire model is what opencode sends as body.model and what the
 // model-defaults store persists. These conversions keep the picker's ModelKey

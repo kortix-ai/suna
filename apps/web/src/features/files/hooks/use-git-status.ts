@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import { getFileStatus } from '../api/opencode-files';
 import type { GitFileStatus } from '@/features/file-browser/types';
 import { useCurrentProject, useServerHealth } from './use-server-health';

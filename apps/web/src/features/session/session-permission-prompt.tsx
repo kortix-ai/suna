@@ -20,15 +20,15 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@kortix/sdk/react';
 import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useOpenCodePendingStore } from '@kortix/sdk/internal/opencode-pending-store';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
 import { ShieldCheck } from 'lucide-react';
 import { useParams } from 'next/navigation';

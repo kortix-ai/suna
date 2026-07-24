@@ -33,7 +33,7 @@ import {
   useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useOpenCodePendingStore } from '@kortix/sdk/internal/opencode-pending-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';

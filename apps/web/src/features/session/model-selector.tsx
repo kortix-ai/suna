@@ -32,8 +32,8 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { useModelStore } from '@kortix/sdk/react';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';

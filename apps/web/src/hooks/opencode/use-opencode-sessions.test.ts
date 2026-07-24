@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { canQueryOpenCodeSession } from './use-opencode-sessions';
+import { canQueryOpenCodeSession } from '@kortix/sdk/react';
 
 describe('OpenCode session id boundaries', () => {
   test('does not query OpenCode session endpoints with project session UUIDs', () => {

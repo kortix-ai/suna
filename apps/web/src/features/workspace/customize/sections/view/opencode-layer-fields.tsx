@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeProviders } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import type { OpencodeAgentConfig, PermissionConfig } from '@kortix/sdk/projects-client';

@@ -7,14 +7,14 @@ import {
   SessionChatInput,
   type TrackedMention,
 } from '@/features/session/session-chat-input';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { useOpenCodeConfig } from '@kortix/sdk/react';
 import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
 import {
   type Command,
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { useProjectConfig } from '@kortix/sdk/react';
 
 export interface ComposerOptions {

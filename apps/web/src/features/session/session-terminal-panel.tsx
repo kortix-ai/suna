@@ -8,10 +8,10 @@ import {
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
 } from '@/features/session/pty-connection';
-import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
-import { useServerStore } from '@/stores/server-store';
+import { useCreatePty, useOpenCodePtyList, type Pty } from '@kortix/sdk/react';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { requestRuntimeReconnect } from '@kortix/sdk/sandbox-connection-store';
+import { requestRuntimeReconnect } from '@kortix/sdk/internal/sandbox-connection-store';
 import { Plus, Terminal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';

@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
+import { useModelStore } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';

@@ -8,7 +8,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
 import {

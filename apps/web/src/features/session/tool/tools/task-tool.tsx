@@ -9,7 +9,7 @@ import {
   firstMeaningfulLine,
 } from '@/features/session/tool/shared/infrastructure';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeMessages } from '@kortix/sdk/react';
 import {
   ExternalLink,
   SquareKanban,

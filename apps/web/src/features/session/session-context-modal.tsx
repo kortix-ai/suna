@@ -23,9 +23,9 @@ import type { MessageWithParts } from '@/ui/types';
 import { childMapByParent, allDescendantIds, getSessionCost, formatCost } from '@kortix/sdk/turns';
 import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk/opencode-client';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import type { ProviderListResponse } from '@kortix/sdk/react';
+import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 
 // ============================================================================
 // Context metrics — ported 1:1 from SolidJS session-context-metrics.ts

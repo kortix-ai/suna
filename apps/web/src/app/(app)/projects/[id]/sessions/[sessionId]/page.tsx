@@ -22,7 +22,7 @@ import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,
   useCanonicalOpenCodeSession,
-} from '@/hooks/opencode/use-canonical-opencode-session';
+} from '@kortix/sdk/react';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
@@ -34,14 +34,14 @@ import {
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
-import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
+import { formatOpenCodeRuntimeError } from '@kortix/sdk';
 import {
   getProjectDetail,
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
 import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.

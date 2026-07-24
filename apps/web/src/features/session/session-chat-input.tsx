@@ -14,11 +14,11 @@ import type {
   MessageWithParts,
   ProviderListResponse,
   Session,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import {
   useOpenCodeSessionTodo,
   useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';

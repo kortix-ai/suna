@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import { flattenModels } from './model-flatten';
 
 // `provider` must survive from the API catalog (`GatewayModel.provider`)

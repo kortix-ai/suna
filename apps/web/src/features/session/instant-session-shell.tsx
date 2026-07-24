@@ -14,7 +14,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import type { Command } from '@kortix/sdk/react';
 import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';

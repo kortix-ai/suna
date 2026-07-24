@@ -62,12 +62,12 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import {
   type Agent,
   useOpenCodeProviders,
   useVisibleAgents,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';

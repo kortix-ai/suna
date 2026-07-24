@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getAuthToken } from '@/lib/auth-token';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore } from '@kortix/sdk/internal/server-store';
 import {
   buildPreviewAuthEndpoint,
   isSubdomainPreviewUrl,

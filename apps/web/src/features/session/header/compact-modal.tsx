@@ -11,7 +11,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { loadingToast } from '@/components/ui/toast';
-import { useSummarizeOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { useSummarizeOpenCodeSession } from '@kortix/sdk/react';
 import { Layers } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';

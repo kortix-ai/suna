@@ -15,7 +15,7 @@
 
 import { track } from '@/lib/track';
 import { useKortixComputerStore, useIsSidePanelOpen } from '@/stores/kortix-computer-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useOpenCodePendingStore } from '@kortix/sdk/internal/opencode-pending-store';
 import type { MessageWithParts } from '@/ui';
 import { useEffect, useMemo, useRef } from 'react';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
