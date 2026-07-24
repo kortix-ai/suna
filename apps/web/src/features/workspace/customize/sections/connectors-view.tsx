@@ -973,13 +973,9 @@ function ConnectorDetail({
   const canManageProfiles =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE).allowed === true;
   const startPrivateSession = () => {
-    if (!myPrivateProfile) return;
-    newSession({
-      create: {
-        connector_bindings: { [connector.slug]: { profile_id: myPrivateProfile.profile_id } },
-        inherit_unbound: true,
-      },
-    });
+    // Require THIS user's own connection by alias — the server resolves their
+    // member profile and, if it was revoked, the connect-to-start gate re-prompts.
+    newSession({ create: { require_connectors: [connector.slug] } });
   };
   const [credOpen, setCredOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
