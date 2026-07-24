@@ -17,10 +17,10 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import {
-  type FileCategory,
   FileContentRenderer,
   FileSourceProvider,
   getFileCategory,
+  type FileCategory,
 } from '@/features/file-viewer';
 import { isBrowserViewable } from '@/features/files/api/opencode-files';
 import { workspaceFileSource } from '@/features/files/file-source';
@@ -28,12 +28,21 @@ import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
+import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { Check, Copy, FileWarning, MessageSquarePlus, Presentation } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  FileWarning,
+  Maximize2,
+  MessageSquarePlus,
+  Minimize2,
+  Presentation,
+} from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
-import { PanelWidthButton, ShareFileButton, type ShareContext } from './viewer-actions';
+import { DownloadButton, FileViewer, isSvg, OpenInNewTabButton } from './file-viewer';
+import { ShareFileButton, type ShareContext } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -74,7 +83,9 @@ function PreviewShell({
    *  separate display title. */
   fileName?: string;
   path: string;
-  /** Forwarded to the toolbar's share control. See `FilePreview`. */
+  /** Project-session ids the share link is scoped to. Omitted where the session
+   *  has no project context yet, in which case the control is omitted entirely
+   *  rather than shown disabled (W4). */
   shareContext?: ShareContext;
   onClose: () => void;
   /** Seeds the composer with a starter line about this file and closes the
@@ -91,6 +102,8 @@ function PreviewShell({
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const isExpanded = useIsExpanded();
+  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   return (
@@ -134,7 +147,25 @@ function PreviewShell({
           {actions}
           <ShareFileButton shareContext={shareContext} path={path} fileName={fileName} />
           <DownloadButton path={path} fileName={fileName} />
-          <PanelWidthButton isMobile={isMobile} />
+          {/* The store flip is a no-op on mobile — the drawer never reads
+              `isExpanded` — so the control was dead weight there. */}
+          {!isMobile && (
+            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleExpanded}
+                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
+                className="size-7 active:scale-[0.96]"
+              >
+                {isExpanded ? (
+                  <Minimize2 className="size-3.5" />
+                ) : (
+                  <Maximize2 className="size-3.5" />
+                )}
+              </Button>
+            </Hint>
+          )}
           <CloseButton onClose={onClose} />
         </span>
       </div>
@@ -224,6 +255,22 @@ const RICH_CATEGORIES = new Set<FileCategory>([
   'image',
 ]);
 
+/**
+ * `.svg` classifies as an `image`, which is true of how it looks and wrong
+ * about what it is. Left on the rich path it reaches `FileContentRenderer`,
+ * which only ever knows a URL — so the markup the user wants to read never
+ * arrives anywhere that could show it. Sending SVG down the text path instead
+ * hands `FileViewer` the real source, and it renders the picture itself (see
+ * its `isSvg` branch). Nothing is lost: the preview there is the same
+ * `ImageRenderer` the rich path would have reached.
+ *
+ * Exported for tests: which path a file takes decides whether its source is
+ * ever fetched, and that is worth pinning without mounting the whole preview.
+ */
+export function isRich(fileName: string): boolean {
+  return RICH_CATEGORIES.has(getFileCategory(fileName)) && !isSvg(fileName);
+}
+
 export function FilePreview({
   path,
   name,
@@ -234,6 +281,8 @@ export function FilePreview({
   onPresent,
 }: {
   path: string;
+  /** Forwarded to the toolbar's share control. See `PreviewShell`. */
+  shareContext?: ShareContext;
   /** The display name shown in the toolbar — a human title when the output
    *  carries one (W3), the real filename otherwise. */
   name: string;
@@ -242,8 +291,6 @@ export function FilePreview({
    *  detection — all of which need the real extension, not a human title that
    *  may carry none. Defaults to `name` for callers with no separate title. */
   fileName?: string;
-  /** Forwarded to the toolbar's share control. See `PreviewShell`. */
-  shareContext?: ShareContext;
   /** The detail layer's header is suppressed for files — the viewer's toolbar
    *  owns the name and the close, so there is one bar instead of two. */
   onClose: () => void;
@@ -255,7 +302,7 @@ export function FilePreview({
    *  entirely (not disabled) for anything that isn't a presentation_gen deck. */
   onPresent?: () => void;
 }) {
-  const rich = RICH_CATEGORIES.has(getFileCategory(fileName));
+  const rich = isRich(fileName);
 
   const sandboxAlive = useSyncExternalStore(
     useSandboxConnectionStore.subscribe,
@@ -271,9 +318,9 @@ export function FilePreview({
     return (
       <PreviewShell
         name={name}
+        shareContext={shareContext}
         fileName={fileName}
         path={path}
-        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -289,9 +336,9 @@ export function FilePreview({
     return (
       <PreviewShell
         name={name}
+        shareContext={shareContext}
         fileName={fileName}
         path={path}
-        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -307,9 +354,9 @@ export function FilePreview({
     return (
       <PreviewShell
         name={name}
+        shareContext={shareContext}
         fileName={fileName}
         path={path}
-        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -334,9 +381,9 @@ export function FilePreview({
     return (
       <PreviewShell
         name={name}
+        shareContext={shareContext}
         fileName={fileName}
         path={path}
-        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -366,7 +413,6 @@ export function FilePreview({
       content={data.content}
       fileName={fileName}
       path={path}
-      shareContext={shareContext}
       onClose={onClose}
       onAskForChanges={onAskForChanges}
     />

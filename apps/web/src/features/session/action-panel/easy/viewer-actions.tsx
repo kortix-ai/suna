@@ -13,7 +13,7 @@ import { PublicShareLinkButton } from '@/components/projects/public-share-link-b
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { ChevronsLeftRight, ChevronsRightLeft } from 'lucide-react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 
 /** Project-session ids a share link is scoped to. */
 export interface ShareContext {
@@ -56,12 +56,7 @@ export function ShareFileButton({
 }
 
 /**
- * Widen the side panel to fill the window, and back.
- *
- * This is NOT full screen, and must not borrow full screen's glyph: it changes
- * how much room the panel takes, while the document keeps its own frame.
- * Sharing `Maximize2` between the two is why the real full-screen viewer read
- * as missing rather than as moved.
+ * Expand the side panel to fill the window, and back.
  *
  * Absent on mobile, where the drawer never reads `isExpanded` and the control
  * would be dead weight.
@@ -72,21 +67,19 @@ export function PanelWidthButton({ isMobile }: { isMobile: boolean }) {
 
   if (isMobile) return null;
 
-  const label = isExpanded ? 'Restore panel width' : 'Widen panel';
-
   return (
-    <Hint label={label} side="bottom">
+    <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
       <Button
         variant="ghost"
         size="icon"
         onClick={toggleExpanded}
-        aria-label={label}
+        aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
         className="size-7 active:scale-[0.96]"
       >
         {isExpanded ? (
-          <ChevronsRightLeft className="size-3.5" />
+          <Minimize2 className="size-3.5" />
         ) : (
-          <ChevronsLeftRight className="size-3.5" />
+          <Maximize2 className="size-3.5" />
         )}
       </Button>
     </Hint>
