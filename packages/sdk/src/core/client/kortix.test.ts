@@ -161,7 +161,7 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('PUT');
 
   await kortix.project('PID123').gateway.routing.preview({
-    requestedModel: 'auto',
+    requestedModel: 'codex/gpt-5.6-sol',
     imageInput: false,
   });
   expect(last().url).toContain('/projects/PID123/gateway/routing-policy/preview');

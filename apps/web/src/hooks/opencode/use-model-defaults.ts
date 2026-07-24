@@ -3,11 +3,8 @@
 /**
  * Server-backed model defaults across project, account, and agent scopes.
  *
- * The LLM gateway is the source of truth for the default model: a request for
- * the synthetic `auto` resolves server-side to the per-agent default → project
- * default → account default → platform default. This hook reads and writes those
- * defaults, replacing the old localStorage `globalDefault` authority and per-sandbox
- * `/kortix/preferences/model` round-trip.
+ * The LLM gateway is the source of truth for concrete model defaults. This hook
+ * reads and writes per-agent, project, account, and platform defaults.
  */
 
 import {
@@ -115,10 +112,16 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
         (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
         data?.projectDefault ??
         data?.accountDefault ??
-        data?.platformDefault;
+        (data?.freeTier ? undefined : data?.platformDefault);
       return wire ? wireToModelKey(wire) : undefined;
     },
-    [data?.agentDefaults, data?.projectDefault, data?.accountDefault, data?.platformDefault],
+    [
+      data?.agentDefaults,
+      data?.projectDefault,
+      data?.accountDefault,
+      data?.platformDefault,
+      data?.freeTier,
+    ],
   );
 
   const setAccountDefault = useCallback(

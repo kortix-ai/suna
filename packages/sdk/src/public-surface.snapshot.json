@@ -633,6 +633,7 @@
     "resetSessionPermissions",
     "resolveCurrentAgentName",
     "resolveHiddenAutoModel",
+    "resolvePromptModel",
     "safeParseJsonArray",
     "scopedModelSelectionKey",
     "seedGlobalDefaultFromServer",

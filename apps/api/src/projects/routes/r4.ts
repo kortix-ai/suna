@@ -2635,12 +2635,9 @@ projectsApp.openapi(
 );
 
 // ─── Default model preferences (account-scoped) ─────────────────────────────
-// The gateway is the source of truth for the default model: a request for the
-// synthetic `auto` resolves server-side to the per-agent default → account
-// default → platform default. These routes manage the account/agent defaults;
-// they operate on the project's OWNER account, the same account the gateway
-// principal carries, so the picker and the gateway always agree. Stored values
-// are gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
+// The gateway is the source of truth for concrete model defaults. These routes
+// manage account, project, and agent defaults. Stored values are gateway wire
+// models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
 // GET /v1/projects/:projectId/model-defaults
 projectsApp.openapi(
@@ -2684,7 +2681,8 @@ projectsApp.openapi(
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? config.LLM_GATEWAY_DEFAULT_MODEL,
+      resolvedForCaller:
+        resolved.model ?? (freeTier ? null : config.LLM_GATEWAY_DEFAULT_MODEL),
       resolvedSource: resolved.source,
       freeTier,
     });
@@ -2719,10 +2717,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (model defaults are
-    // project customization). NOTE: /{projectId}/model-defaults is ALSO defined in
-    // routes/model-defaults.ts (registered later in projects/index.ts) — both are
-    // gated here to be safe against route-registration order; dedupe is follow-up.
+    // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -2812,8 +2807,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (see PUT above; also
-    // mirrored in routes/model-defaults.ts).
+    // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(

@@ -404,10 +404,8 @@ export async function refreshGatewayCatalogFile(opts: {
   return { changed, catalogFile: opts.targetCatalogFile }
 }
 
-// New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
-// images → a vision model) — not a single pinned model. Used for both the main
-// model and the cheap `small_model`.
-const DEFAULT_KORTIX_MODEL = 'kortix/auto'
+// Concrete fallback for sessions that predate KORTIX_LLM_DEFAULT_MODEL injection.
+const DEFAULT_KORTIX_MODEL = 'kortix/glm-5.2'
 
 // One `reasoning_options` entry (models.dev's shape, mirrored — see
 // @kortix/llm-catalog's CatalogReasoningOption). Present iff the model
@@ -467,17 +465,6 @@ type KortixGatewayModel = {
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  // AUTO — the default model; present so the baked default never dangles when this
-  // fallback is used (gateway + baked catalog both unreachable at boot).
-  auto: {
-    name: 'Auto',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
   'claude-opus-4.8': {
     name: 'Claude Opus 4.8',
     provider: 'kortix',
@@ -496,8 +483,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
-  // Managed default (AUTO's text target + the explicit default a fresh session
-  // opts into). Bare id = Kortix-managed; text-only, so no attachment.
+  // Managed default for fresh sessions. Bare id = Kortix-managed.
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',
