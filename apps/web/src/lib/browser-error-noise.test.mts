@@ -12,6 +12,7 @@ import {
   isExtensionRejectedObjectNoise,
   isExtensionSource,
   isFirefoxReactSchedulerReentryNoise,
+  isFramelessNetworkErrorNoise,
   isInjectedAppSource,
   isInpageWalletStreamNoise,
   isKnownBrowserNoiseMessage,
@@ -4101,6 +4102,197 @@ test('does NOT suppress a frameless rejection with a different message', () => {
       }),
       false,
       `expected Sentry event for frameless "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Bare lowercase `network error` rejection noise (Better Stack pattern
+// 2403c9ba5deee2af387834e95461cfb32b9b5080b21d6f307b2f09bb09e71f21, Kortix
+// Frontend prod, application_id 2346967). The canonical Axios / XMLHttpRequest
+// transport-abort message (lowercase; Axios emits this from the underlying XHR
+// `onerror`), captured as an uncaught global `onunhandledrejection` (mechanism
+// `auto.browser.global_handlers.onunhandledrejection`, `handled:false` — never
+// reached a React error boundary) with ZERO stack frames (`stacktrace.frames`
+// is an empty array, no `call_site_file`/`call_site_function`/`call_stack_hash`).
+// 1 occurrence / 0 identified users, last 2026-07-23 16:53:55 UTC, release
+// `470fe6f3…` (v0.10.13), transaction `/projects/:id/sessions/:sessionId`,
+// Chrome 150 on Generic Linux. Breadcrumbs: 88 fetches, 0 non-200 — the
+// rejection is a fire-and-forget `.then()` or a network-abort that didn't
+// surface a status. The same degraded session that hit the 25s-deadline +
+// audit 503s.
+//
+// Same family as the prior frameless browser-internal rejection noise matchers
+// — `isNonErrorUndefinedRejectionNoise` (PR #5200), `isOperationErrorPopError-
+// ScopeNoise` (PR #5237), `isFirefoxReactSchedulerReentryNoise` (PR #5185) —
+// a frameless unhandled rejection dropped by a precise exact-message matcher
+// with two negative guards preserving any first-party or resolvable frame.
+//
+// The message is GENERIC: a real first-party `new Error('network error')` /
+// `Promise.reject('network error')` would surface with the SAME message, so the
+// matcher requires BOTH the EXACT bare lowercase `network error` string
+// (case-sensitive, after `stripErrorWrappers` — the capitalized `Network Error`
+// Axios wrapper is a DIFFERENT surface and is deliberately NOT matched) AND a
+// frameless positive guard, plus two negative guards: any resolved first-party
+// `apps/web/src/…` frame → keep reporting; any resolvable frame location →
+// keep reporting. Only the FRAMELESS capture is dropped.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (lowercase, bare).
+const FRAMELESS_NETWORK_ERROR = 'network error'
+
+test('classifies the frameless bare network error noise', () => {
+  // Exact production shape: the bare lowercase `network error` message, NO
+  // frames (the rejection carried no stack).
+  assert.equal(
+    isFramelessNetworkErrorNoise({
+      message: FRAMELESS_NETWORK_ERROR,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the frameless network error Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `TypeError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), NO stacktrace
+  // frames, request URL the co-worker session page.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/66f6788a-0000-0000-0000-000000000000/sessions/d16b4555-0000-0000-0000-000000000000',
+      },
+      exception: {
+        values: [
+          {
+            value: FRAMELESS_NETWORK_ERROR,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the frameless network error noise when frames are absent entirely (no stacktrace key)', () => {
+  // Sentry omits the stacktrace key entirely when there is nothing to
+  // serialize. The gate must still drop it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/x/sessions/y' },
+      exception: {
+        values: [{ value: FRAMELESS_NETWORK_ERROR }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the network error rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw/rejected with
+  // `new Error('network error')` → actionable; the negative guard MUST preserve
+  // it so the call site can be found + fixed. This is the whole reason the
+  // matcher is frame-aware (the bare `network error` message is generic).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/workspace/index.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isFramelessNetworkErrorNoise({
+        message: FRAMELESS_NETWORK_ERROR,
+        frames,
+      }),
+      false,
+      `expected first-party network error rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: FRAMELESS_NETWORK_ERROR, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party network error rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the network error rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject(new Error('network error'))` with a stack we can trace.
+  // Keep reporting; only the frameless capture (the production noise pattern)
+  // is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/lib.js', function: 'init' }],
+  ]) {
+    assert.equal(
+      isFramelessNetworkErrorNoise({
+        message: FRAMELESS_NETWORK_ERROR,
+        frames,
+      }),
+      false,
+      `expected attributable network error rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the capitalized "Network Error" wrapper (over-match guard)', () => {
+  // The capitalized `Network Error` is Axios's OWN wrapper Error
+  // (`new Error('Network Error')`) — a DIFFERENT surface from the bare
+  // lowercase XHR-`onerror` message. It is deliberately NOT matched so a
+  // blanket-silence does not hide a real Axios rejection we may want to
+  // triage. Frameless here on purpose (to prove the message alone — not the
+  // frameless shape — is what keeps it reporting).
+  const message = 'Network Error'
+  assert.equal(
+    isFramelessNetworkErrorNoise({
+      message,
+      frames: [],
+    }),
+    false,
+    `expected capitalized "${message}" to keep reporting`,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+    }),
+    false,
+    `expected Sentry event for capitalized "${message}" to keep reporting`,
+  )
+})
+
+test('does NOT suppress a near-worded message (over-match guard)', () => {
+  // Only the EXACT bare `network error` string is noise. A near-worded message
+  // such as `network error: failed to fetch` is a different (attributable)
+  // error class and must keep reporting.
+  for (const message of [
+    'network error: failed to fetch',
+    'network error.',
+    'a network error occurred',
+    'Network error',
+    'network errors',
+  ]) {
+    assert.equal(
+      isFramelessNetworkErrorNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for near-worded "${message}" to keep reporting`,
     )
   }
 })

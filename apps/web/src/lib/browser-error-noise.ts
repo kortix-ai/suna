@@ -1758,6 +1758,109 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   return true;
 }
 
+// Bare lowercase `network error` rejection noise — the canonical Axios /
+// `XMLHttpRequest` transport-abort message. Axios throws this (or the
+// capitalized `Network Error` wrapper — a DIFFERENT surface, see below) when a
+// request fails at the transport layer (DNS failure, connection refused, TLS
+// abort, CORS preflight rejection, or the server dropping the connection
+// mid-flight). The underlying XHR `onerror` emits the lowercase `network error`
+// string; Axios wraps it as `new Error('Network Error')` (capitalized) for its
+// own rejection. This matcher targets ONLY the bare lowercase form.
+//
+// Better Stack pattern
+// 2403c9ba5deee2af387834e95461cfb32b9b5080b21d6f307b2f09bb09e71f21
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `network error` (lowercase, bare), 1 occurrence / 0 identified users, last
+// 2026-07-23 16:53:55 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
+// `/projects/:id/sessions/:sessionId` (co-worker session page), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary), Chrome 150 on Generic
+// Linux. Stack frames: ZERO — `stacktrace.frames` is an empty array, no
+// `call_site_file`, no `call_site_function`, no `call_stack_hash`. Breadcrumbs:
+// 100 total, 88 fetches, 0 non-200 (so no fetch visibly failed with a non-200
+// in the captured window — the rejection is a fire-and-forget `.then()` or a
+// network-abort that didn't surface a status). This is the same session that
+// hit the 25s-deadline + audit 503s — a degraded-network user.
+//
+// With ZERO frames and an UNCAUGHT `onunhandledrejection`, this is a
+// fire-and-forget `.then()` whose rejection was never caught — likely a
+// third-party script (analytics, the CookieYes cookie banner, Vercel insights)
+// or an app fetch whose `.catch()` was missing, on a degraded network. It is
+// the same family as the prior frameless browser-internal rejection noise
+// matchers — `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`), and `isFirefoxReactSchedulerReentryNoise` (PR #5185, pattern
+// `0f03b24e…`).
+//
+// The message is GENERIC — a real first-party unhandled rejection that throws
+// `new Error('network error')` (or `Promise.reject('network error')`) would
+// surface with the SAME message — so the matcher requires BOTH:
+//   1. The EXACT bare message `network error` (lowercase, case-sensitive,
+//      after `stripErrorWrappers`). The capitalized `Network Error` (Axios's
+//      own wrapper Error) is a DIFFERENT surface and is deliberately NOT
+//      matched — it is left to report so a blanket-silence does not hide a
+//      real Axios rejection we may want to triage. A near-worded message such
+//      as `network error: failed to fetch` is also NOT matched (only the EXACT
+//      bare string is noise).
+//   2. A FRAMELESS positive guard: the event has NO resolvable frames (empty
+//      `stacktrace.frames` AND no resolvable `filename`/`call_site` anywhere)
+//      — mirroring `isOperationErrorPopErrorScopeNoise` /
+//      `isNonErrorUndefinedRejectionNoise`. A real first-party
+//      `new Error('network error')` throw almost always has a stack with a
+//      resolvable frame (chunk URL or `apps/web/src/…`), so requiring
+//      framelessness is the over-match guard.
+// Plus TWO negative guards (mirror the frameless-noise matchers): (a) any
+// resolved first-party `apps/web/src/…` frame → keep reporting; (b) ANY
+// resolvable frame location (chunk/URL/named file) → keep reporting. Only the
+// FRAMELESS capture is dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `new Error('network error')` the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const FRAMELESS_NETWORK_ERROR_MESSAGE = 'network error';
+
+/**
+ * Whether a Sentry event is the bare lowercase `network error` rejection noise
+ * class: the canonical Axios / `XMLHttpRequest` transport-abort message (lower-
+ * case; distinct from Axios's capitalized `Network Error` wrapper, which is a
+ * different surface and is NOT matched), captured as an uncaught global
+ * `onunhandledrejection` with NO resolvable stack frames. A fire-and-forget
+ * `.then()` or a third-party script (analytics / cookie banner / tag manager)
+ * on a degraded network whose promise rejected with the bare transport-abort
+ * string; never attributable first-party app code. Requires the EXACT bare
+ * message (case-sensitive, after `stripErrorWrappers`) AND NEGATIVE guards:
+ * any resolved first-party `apps/web/src/…` frame OR any resolvable frame
+ * location → keep reporting (a real first-party `new Error('network error')`
+ * we can attribute should still surface). The production noise pattern has NO
+ * frames at all; only the frameless capture is dropped. See
+ * `FRAMELESS_NETWORK_ERROR_MESSAGE` for the full rationale.
+ */
+export function isFramelessNetworkErrorNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (message !== FRAMELESS_NETWORK_ERROR_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw/rejected with `new Error('network error')` → actionable;
+  // keep reporting so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -2246,6 +2349,24 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
+    return true;
+  }
+
+  // Bare lowercase `network error` rejection noise — the canonical Axios / XHR
+  // transport-abort message (lowercase; distinct from Axios's capitalized
+  // `Network Error` wrapper, which is a different surface and is NOT matched),
+  // captured as an uncaught global `onunhandledrejection` with NO resolvable
+  // stack frames. A fire-and-forget `.then()` or a third-party script on a
+  // degraded network (the same session hit the 25s-deadline + audit 503s)
+  // whose promise rejected with the bare transport-abort string; never
+  // attributable first-party app code. Requires the EXACT bare message AND
+  // NEGATIVE guards: any resolved first-party `apps/web/src/…` frame OR any
+  // resolvable frame location → keep reporting (a real first-party
+  // `new Error('network error')` we can attribute should still surface). The
+  // production noise pattern has NO frames at all; only the frameless capture
+  // is dropped. See `isFramelessNetworkErrorNoise`. NOT in `ignoreErrors` (no
+  // frame context there).
+  if (isFramelessNetworkErrorNoise({ message, frames })) {
     return true;
   }
 
