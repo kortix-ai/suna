@@ -167,10 +167,10 @@ Also stop if the same failure survives three different fixes (use
 
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
-| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `9e29839f0` |
-| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `f110bb1b3` |
-| 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `76964a95c` |
-| 4 | Runtime-neutral web state | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
+| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `a8972701f` |
+| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `9409701e3` |
+| 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `c4cf6b453` |
+| 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `b88df4a55` |
 | 5 | Typed platform API coverage | NOT STARTED | — | — | — |
 | 6 | Remove runtime routing knowledge | NOT STARTED | — | — | — |
 | 7 | Local parity proof | NOT STARTED | — | — | — |
@@ -1698,3 +1698,31 @@ None references a changed file. ESLint reported 0 errors and one existing
 `react-hooks/exhaustive-deps` warning.
 
 **Shippable to production: NOT YET.** Tasks 4 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 4)
+
+Moved provider normalization, provider merging, and server-backed model defaults
+into `@kortix/sdk/react`. Added `useSessionModelSelection` as the
+runtime-neutral project model and agent hook.
+
+Moved optimistic compaction state behind `useSession`. Consolidated first-message
+files and boot-time queued messages into one presentation-only web store.
+Deleted every file under `apps/web/src/hooks/opencode`.
+
+The boundary baseline decreased from 47 violations to 32 violations. The host
+runtime category decreased from 15 imports to 0 imports. The remaining 32
+violations are host-owned Kortix API imports assigned to Task 5.
+
+**TDD evidence:** the provider merge test failed because
+`mergeProviderLists` did not exist. The model-default test failed because
+`use-model-defaults` did not exist. The compaction boundary test failed while
+`SessionChat` imported the host compaction store.
+
+The GREEN SDK run reported **113 pass / 0 fail**. The GREEN web run reported
+**33 pass / 0 fail**. The SDK typecheck exited 0. The web typecheck retained
+four unrelated existing errors. ESLint reported 0 errors and two existing hook
+warnings.
+
+**Shippable to production: NOT YET.** Tasks 5 through 8 remain incomplete.
