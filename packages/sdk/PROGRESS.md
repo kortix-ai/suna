@@ -169,7 +169,7 @@ Also stop if the same failure survives three different fixes (use
 |---|---|---|---|---|---|
 | 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `4014c6113` |
 | 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `bc81aa283` |
-| 3 | One session engine | NOT STARTED | — | — | — |
+| 3 | One session engine | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 | 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
 | 5 | Typed platform API coverage | NOT STARTED | — | — | — |
 | 6 | Remove runtime routing knowledge | NOT STARTED | — | — | — |
