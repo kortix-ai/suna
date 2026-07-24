@@ -585,6 +585,7 @@ export const EasyPanel = memo(function EasyPanel({
           chatSessionId={sessionId}
           projectId={projectId}
           projectSessionId={projectSessionId}
+          ephemeral
         />
       ),
     });
