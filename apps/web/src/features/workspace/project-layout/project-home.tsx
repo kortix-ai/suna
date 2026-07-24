@@ -2,7 +2,15 @@
 
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, CalendarClock, Container, FileCode, Package, type LucideIcon } from 'lucide-react';
+import {
+  Bell,
+  CalendarClock,
+  Container,
+  FileCode,
+  Package,
+  PanelLeft,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
@@ -18,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
@@ -57,6 +66,9 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const sidebarToggleLabel =
+    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
@@ -117,6 +129,18 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
+      <Button
+        type="button"
+        aria-label={sidebarToggleLabel}
+        variant="ghost"
+        size="icon"
+        onClick={toggleSidebar}
+        onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+        onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+      >
+        <PanelLeft className="cn-rtl-flip size-4" />
+      </Button>
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint
