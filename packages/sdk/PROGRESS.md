@@ -167,7 +167,7 @@ Also stop if the same failure survives three different fixes (use
 
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
-| 1 | Baseline and static boundary gate | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
+| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `4014c6113` |
 | 2 | Canonical SDK imports | NOT STARTED | — | — | — |
 | 3 | One session engine | NOT STARTED | — | — | — |
 | 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
@@ -1574,7 +1574,6 @@ remains unexecuted.
 **Shippable to production: YES** for B16 and the published SDK surface.
 Repository PR, Deploy Dev, deployed-SHA proof, and live-dev verification remain
 part of the repository lifecycle.
-
 ---
 
 ### 2026-07-24 — session `native-oauth-sharepoint` (B17 claim)
@@ -1631,3 +1630,20 @@ database reports zero rows for its project and auth user.
 **Shippable to production: YES** for B17 and the published SDK surface.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 1)
+
+Created the web SDK-only specification and implementation plan. Added an AST
+boundary scanner, an exact ratchet baseline, and ESLint import restrictions.
+
+The RED test reported 155 forbidden production imports. The categories were 103
+host runtime imports, 32 host-owned Kortix API imports, and 20 deprecated SDK
+runtime imports.
+
+The focused GREEN run reported 1 pass and 0 failures. ESLint returned one
+`no-restricted-imports` error for a synthetic `@opencode-ai/sdk` import outside
+the baseline. ESLint passed for the changed configuration, scanner, and test.
+
+**Shippable to production: NOT YET.** The baseline still contains 155 violations.
