@@ -134,6 +134,8 @@ export interface WarmRepoContext {
 
 /** Basename (in the build context) of the staged credential-free checkout. */
 export const WARM_REPO_STAGED_DIR = 'kortix-warm-repo';
+/** Visible duplicate of `.git` for provider uploaders that omit dot-directories. */
+export const WARM_REPO_STAGED_GIT_DIR = 'kortix-warm-repo-git';
 
 /**
  * A conservative safe-subset of git branch/ref names: letters, digits, and
@@ -235,7 +237,7 @@ export function warmCloneProtocolPinArgs(cloneUrl: string): string[] {
 export async function stageWarmRepoCheckout(
   contextDir: string,
   warmRepo: WarmRepoContext,
-): Promise<{ stagedPath: string; headSha: string }> {
+): Promise<{ stagedPath: string; stagedGitPath: string; headSha: string }> {
   if (!isSafeGitBranchName(warmRepo.branch)) {
     throw new Error(
       `refusing to bake per-project warm image: unsafe default branch name ${JSON.stringify(warmRepo.branch)}`,
@@ -335,7 +337,14 @@ export async function stageWarmRepoCheckout(
   }
 
   await assertCheckoutHasNoCredentials(dest);
-  return { stagedPath: WARM_REPO_STAGED_DIR, headSha };
+  const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_DIR);
+  await rm(stagedGit, { recursive: true, force: true });
+  await cp(join(dest, '.git'), stagedGit, { recursive: true });
+  return {
+    stagedPath: WARM_REPO_STAGED_DIR,
+    stagedGitPath: WARM_REPO_STAGED_GIT_DIR,
+    headSha,
+  };
 }
 
 /**
@@ -457,10 +466,10 @@ export async function stageBuildContext(
   // PHASE 1: for a per-project COLD warm, clone the repo API-side into a
   // SANITIZED, credential-free checkout the Dockerfile only COPYs. The git auth
   // header is used here (Suna host) and NEVER embedded in the built image.
-  let warmRepoBake: { stagedPath: string; branch: string } | undefined;
+  let warmRepoBake: { stagedPath: string; stagedGitPath: string; branch: string } | undefined;
   if (warmRepo) {
-    const { stagedPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
-    warmRepoBake = { stagedPath, branch: warmRepo.branch };
+    const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+    warmRepoBake = { stagedPath, stagedGitPath, branch: warmRepo.branch };
   }
 
   // Bake the FULL gateway model catalog into the image. The no-restart warm seed
@@ -551,13 +560,13 @@ export async function stageWarmFromBaseContext(
 
   // PHASE 1: sanitized, credential-free repo checkout — cloned API-side, only
   // COPY'd by the rendered Dockerfile (no git auth header in the image).
-  const { stagedPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+  const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
 
   const dockerfileName = '.kortix-snapshot.Dockerfile';
   const composedPath = join(contextDir, dockerfileName);
   const composed = buildPerProjectWarmFromBaseDockerfile({
     baseImageRef,
-    warmRepo: { stagedPath, branch: warmRepo.branch },
+    warmRepo: { stagedPath, stagedGitPath, branch: warmRepo.branch },
     opencodeConfigPath,
     opencodeWarmupScriptPath: 'kortix-opencode-warmup',
   });
@@ -626,7 +635,10 @@ async function assertContextComplete(
   // A per-project warm bake COPYs the staged checkout — verify it (and its
   // baked .git) actually landed, so a staging miss fails HERE rather than as an
   // opaque remote "Path does not exist" mid-build.
-  if (warmRepoStagedPath) required.push(join(warmRepoStagedPath, '.git'));
+  if (warmRepoStagedPath) {
+    required.push(join(warmRepoStagedPath, '.git'));
+    required.push(WARM_REPO_STAGED_GIT_DIR);
+  }
   for (const rel of required) {
     try {
       await stat(join(contextDir, rel));
