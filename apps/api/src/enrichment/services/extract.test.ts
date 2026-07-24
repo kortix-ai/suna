@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import { EnrichmentError } from '../errors';
-import { CompanyProfileSchema } from '../schemas';
-import { extractProfile, formatIssues, parseJsonLoose, type ChatFn } from './extract';
+import { CompanyProfileSchema, type CompanyProfile } from '../schemas';
+import type { ConsolidatePage } from './consolidate';
+import type { StructuredSignals } from './discovery';
+import {
+  buildReduceInput,
+  extractProfile,
+  extractProfileFromPages,
+  formatIssues,
+  mergeHarvestedSignals,
+  parseJsonLoose,
+  type ChatFn,
+} from './extract';
+import type { MapPagesResult } from './page-summary';
 
 const VALID_PROFILE = {
   name: 'Example Inc',
@@ -16,6 +27,24 @@ const VALID_PROFILE = {
   sectionSources: [{ section: 'team', urls: ['https://example.com/team'] }],
   sources: ['https://example.com/', 'https://example.com/team'],
 };
+
+function emptySignals(overrides: Partial<StructuredSignals> = {}): StructuredSignals {
+  return {
+    title: null,
+    jsonLd: [],
+    openGraph: {},
+    meta: {},
+    socials: [],
+    emails: [],
+    phones: [],
+    otherExternal: [],
+    ...overrides,
+  };
+}
+
+function page(url: string, markdown: string): ConsolidatePage {
+  return { url, markdown, tier: 'priority' };
+}
 
 function scriptedChat(responses: string[]): { chat: ChatFn; calls: number } {
   const state = { calls: 0 };
@@ -219,5 +248,278 @@ describe('extractProfile', () => {
     const recorder = recordingChat([JSON.stringify(VALID_PROFILE)]);
     await extractProfile('THE-PAGE-TEXT', { ...OPTS, chat: recorder.chat });
     expect(recorder.seen[0].some((m) => m.content.includes('THE-PAGE-TEXT'))).toBe(true);
+  });
+});
+
+describe('mergeHarvestedSignals', () => {
+  function profileWith(overrides: Partial<CompanyProfile>): CompanyProfile {
+    return CompanyProfileSchema.parse({ ...VALID_PROFILE, ...overrides });
+  }
+
+  test('adds a harvested social the model did not return', () => {
+    const profile = profileWith({ socials: [] });
+    const merged = mergeHarvestedSignals(
+      profile,
+      emptySignals({ socials: [{ platform: 'github', url: 'https://github.com/example' }] }),
+    );
+    expect(merged.socials).toEqual([{ platform: 'github', url: 'https://github.com/example' }]);
+  });
+
+  test('does not duplicate a harvested social already returned by the model', () => {
+    const profile = profileWith({
+      socials: [{ platform: 'twitter', url: 'https://twitter.com/example' }],
+    });
+    const merged = mergeHarvestedSignals(
+      profile,
+      emptySignals({ socials: [{ platform: 'twitter', url: 'https://twitter.com/Example' }] }),
+    );
+    expect(merged.socials).toHaveLength(1);
+  });
+
+  test('never drops a model social absent from the harvest', () => {
+    const profile = profileWith({
+      socials: [{ platform: 'twitter', url: 'https://twitter.com/example' }],
+    });
+    const merged = mergeHarvestedSignals(profile, emptySignals());
+    expect(merged.socials).toEqual([{ platform: 'twitter', url: 'https://twitter.com/example' }]);
+  });
+
+  test('fills contact.email from the harvest when the model left it null', () => {
+    const profile = profileWith({ contact: { email: null, phone: null, address: null } });
+    const merged = mergeHarvestedSignals(profile, emptySignals({ emails: ['hi@example.com'] }));
+    expect(merged.contact.email).toBe('hi@example.com');
+  });
+
+  test('keeps the model contact email over the harvest', () => {
+    const profile = profileWith({ contact: { email: 'model@example.com', phone: null, address: null } });
+    const merged = mergeHarvestedSignals(profile, emptySignals({ emails: ['harvested@example.com'] }));
+    expect(merged.contact.email).toBe('model@example.com');
+  });
+
+  test('drops a malformed harvested social rather than throwing', () => {
+    const profile = profileWith({ socials: [] });
+    const merged = mergeHarvestedSignals(
+      profile,
+      emptySignals({ socials: [{ platform: 'x', url: 'not-a-url' }] }),
+    );
+    expect(merged.socials).toEqual([]);
+  });
+});
+
+describe('buildReduceInput', () => {
+  function summaryMapResult(): MapPagesResult {
+    return {
+      mapped: [
+        {
+          url: 'https://example.com/about',
+          kind: 'summary',
+          summary: {
+            url: 'https://example.com/about',
+            pageKind: 'about',
+            purpose: 'Introduces the company.',
+            keyPoints: ['Founded in 2010'],
+            entities: ['Example Inc'],
+            pricingTiers: [],
+            quotes: [],
+          },
+        },
+        {
+          url: 'https://example.com/contact',
+          kind: 'excerpt',
+          markdown: 'Call us at 555-0100.',
+          degraded: false,
+        },
+      ],
+      summarizedCount: 1,
+      failedCount: 0,
+    };
+  }
+
+  test('renders the trusted signals header', () => {
+    const result = buildReduceInput(
+      'example.com',
+      emptySignals({ jsonLd: [{ '@type': 'Organization', name: 'Example Inc' }] }),
+      summaryMapResult(),
+    );
+    expect(result.text).toContain('TRUSTED structured data');
+  });
+
+  test('renders a summarized page with its structured fields', () => {
+    const result = buildReduceInput('example.com', emptySignals(), summaryMapResult());
+    expect(result.text).toContain('Founded in 2010');
+    expect(result.includedUrls).toContain('https://example.com/about');
+  });
+
+  test('renders an excerpt page as raw text', () => {
+    const result = buildReduceInput('example.com', emptySignals(), summaryMapResult());
+    expect(result.text).toContain('Call us at 555-0100.');
+  });
+
+  test('omits pages once the token budget is spent and records them', () => {
+    const result = buildReduceInput('example.com', emptySignals(), summaryMapResult(), 1);
+    expect(result.omittedUrls.length).toBeGreaterThan(0);
+    expect(result.text).toContain('were not included');
+  });
+});
+
+describe('extractProfileFromPages', () => {
+  const DOMAIN = 'example.com';
+
+  test('skips the map call for a short page and still produces a profile', async () => {
+    let calls = 0;
+    const chat: ChatFn = async () => {
+      calls += 1;
+      return JSON.stringify(VALID_PROFILE);
+    };
+    const result = await extractProfileFromPages(
+      DOMAIN,
+      [page('https://example.com/about', 'A short about page.')],
+      emptySignals(),
+      { chat, model: 'glm-5.2' },
+    );
+    expect(calls).toBe(1);
+    expect(result.profile.name).toBe('Example Inc');
+    expect(result.summarizedPages).toBe(0);
+  });
+
+  test('summarizes each long page exactly once', async () => {
+    const long = `# About\n\n${'a'.repeat(5_000)}`;
+    let mapCalls = 0;
+    const chat: ChatFn = async ({ messages }) => {
+      if (messages[0].content.includes('You summarize a single page')) {
+        mapCalls += 1;
+        return JSON.stringify({
+          pageKind: 'about',
+          purpose: 'A long about page.',
+          keyPoints: [],
+          entities: [],
+          pricingTiers: [],
+          quotes: [],
+        });
+      }
+      return JSON.stringify(VALID_PROFILE);
+    };
+    const result = await extractProfileFromPages(
+      DOMAIN,
+      [page('https://example.com/a', long), page('https://example.com/b', long)],
+      emptySignals(),
+      { chat, model: 'glm-5.2' },
+    );
+    expect(mapCalls).toBe(2);
+    expect(result.summarizedPages).toBe(2);
+  });
+
+  test('feeds the reduce pass the page summaries rather than the raw text', async () => {
+    const long = `# About\n\nRAW-MARKER-ONLY-IN-SOURCE ${'a'.repeat(5_000)}`;
+    let reduceUserContent = '';
+    const chat: ChatFn = async ({ messages }) => {
+      if (messages[0].content.includes('You summarize a single page')) {
+        return JSON.stringify({
+          pageKind: 'about',
+          purpose: 'Distinctive summarized purpose text.',
+          keyPoints: [],
+          entities: [],
+          pricingTiers: [],
+          quotes: [],
+        });
+      }
+      reduceUserContent = messages[messages.length - 1].content;
+      return JSON.stringify(VALID_PROFILE);
+    };
+    await extractProfileFromPages(
+      DOMAIN,
+      [page('https://example.com/about', long)],
+      emptySignals(),
+      { chat, model: 'glm-5.2' },
+    );
+    expect(reduceUserContent).toContain('Distinctive summarized purpose text.');
+    expect(reduceUserContent).not.toContain('RAW-MARKER-ONLY-IN-SOURCE');
+  });
+
+  test('degrades a failed map call to an excerpt and still produces a profile', async () => {
+    const long = `# About\n\nDISTINCTIVE-RAW-TEXT ${'a'.repeat(5_000)}`;
+    const chat: ChatFn = async ({ messages }) => {
+      if (messages[0].content.includes('You summarize a single page')) {
+        throw new Error('upstream 500');
+      }
+      return JSON.stringify(VALID_PROFILE);
+    };
+    const result = await extractProfileFromPages(
+      DOMAIN,
+      [page('https://example.com/about', long)],
+      emptySignals(),
+      { chat, model: 'glm-5.2' },
+    );
+    expect(result.degradedPages).toBe(1);
+    expect(result.profile.name).toBe('Example Inc');
+  });
+
+  test('merges harvested socials into the profile even when the model omits them', async () => {
+    const chat: ChatFn = async () => JSON.stringify({ ...VALID_PROFILE, socials: [] });
+    const result = await extractProfileFromPages(
+      DOMAIN,
+      [page('https://example.com/', 'short home page')],
+      emptySignals({ socials: [{ platform: 'github', url: 'https://github.com/example' }] }),
+      { chat, model: 'glm-5.2' },
+    );
+    expect(result.profile.socials).toEqual([
+      { platform: 'github', url: 'https://github.com/example' },
+    ]);
+  });
+
+  test('still runs the repair loop on the reduce call without re-running the map pass', async () => {
+    const long = `# About\n\n${'a'.repeat(5_000)}`;
+    let mapCalls = 0;
+    let reduceCalls = 0;
+    const chat: ChatFn = async ({ messages }) => {
+      if (messages[0].content.includes('You summarize a single page')) {
+        mapCalls += 1;
+        return JSON.stringify({
+          pageKind: 'about',
+          purpose: 'ok',
+          keyPoints: [],
+          entities: [],
+          pricingTiers: [],
+          quotes: [],
+        });
+      }
+      reduceCalls += 1;
+      return reduceCalls === 1
+        ? JSON.stringify({ ...VALID_PROFILE, sources: [] })
+        : JSON.stringify(VALID_PROFILE);
+    };
+    const result = await extractProfileFromPages(
+      DOMAIN,
+      [page('https://example.com/about', long)],
+      emptySignals(),
+      { chat, model: 'glm-5.2' },
+    );
+    expect(mapCalls).toBe(1);
+    expect(reduceCalls).toBe(2);
+    expect(result.attempts).toBe(2);
+  });
+
+  test('reports extraction_failed once the reduce repair budget is exhausted', async () => {
+    const chat: ChatFn = async ({ messages }) => {
+      if (messages[0].content.includes('You summarize a single page')) {
+        return JSON.stringify({
+          pageKind: 'about',
+          purpose: 'ok',
+          keyPoints: [],
+          entities: [],
+          pricingTiers: [],
+          quotes: [],
+        });
+      }
+      return JSON.stringify({ ...VALID_PROFILE, sources: [] });
+    };
+    await expect(
+      extractProfileFromPages(
+        DOMAIN,
+        [page('https://example.com/about', `# About\n\n${'a'.repeat(5_000)}`)],
+        emptySignals(),
+        { chat, model: 'glm-5.2' },
+      ),
+    ).rejects.toThrow(EnrichmentError);
   });
 });

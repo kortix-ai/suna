@@ -22,7 +22,7 @@ import type { StructuredSignals } from './discovery';
 import type { UrlTier } from './url-filter';
 
 /** ~4 characters per token is close enough for budgeting and needs no tokenizer. */
-const CHARS_PER_TOKEN = 4;
+export const CHARS_PER_TOKEN = 4;
 export const DEFAULT_TOKEN_BUDGET = 60_000;
 export const DEFAULT_PER_PAGE_CHARS = 15_000;
 
@@ -44,7 +44,9 @@ export interface ConsolidateResult {
   approxTokens: number;
 }
 
-function truncate(text: string, limit: number): { text: string; truncated: boolean } {
+/** Exported for reuse by the map pass (`page-summary.ts`), which truncates a
+ * page's raw markdown the same way when it falls back to an excerpt. */
+export function truncate(text: string, limit: number): { text: string; truncated: boolean } {
   if (text.length <= limit) return { text, truncated: false };
   // Cut at a paragraph break when one is nearby so the model never sees a
   // sentence sliced mid-word.
@@ -66,7 +68,9 @@ export function titleOf(markdown: string): string | null {
   return null;
 }
 
-function renderSignals(domain: string, signals: StructuredSignals): string {
+/** Exported so the map/reduce reduce pass (`extract.ts`) can render the same
+ * trusted-signals header without duplicating it. */
+export function renderSignals(domain: string, signals: StructuredSignals): string {
   const lines: string[] = [`# Site: ${domain}`, ''];
 
   if (signals.title) lines.push(`Page title: ${signals.title}`);

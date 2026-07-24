@@ -17,22 +17,20 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { EnrichmentError } from '../errors';
-import { CompanyProfileSchema, type CompanyProfile } from '../schemas';
+import { ContactSchema, SocialLinkSchema, CompanyProfileSchema, type CompanyProfile } from '../schemas';
+import { parseJsonLoose, type ChatFn, type ChatMessage } from './chat-json';
+import { CHARS_PER_TOKEN, renderSignals, truncate, type ConsolidatePage } from './consolidate';
+import type { StructuredSignals } from './discovery';
+import { mapPages, renderMappedPage, type MapPagesResult } from './page-summary';
+
+// Re-exported so existing callers (`gateway-chat.ts`, tests) that import these
+// from `./extract` keep working — the types and the loose-JSON parser moved
+// to `./chat-json` only so `page-summary.ts` could reuse them without a
+// runtime import cycle between the two modules.
+export { parseJsonLoose };
+export type { ChatFn, ChatMessage };
 
 export const MAX_REPAIR_ATTEMPTS = 2;
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-/** Runs one completion and returns the assistant's raw text. */
-export type ChatFn = (args: {
-  messages: ChatMessage[];
-  model: string;
-  jsonSchema: Record<string, unknown>;
-  signal?: AbortSignal;
-}) => Promise<string>;
 
 export interface ExtractOptions {
   chat: ChatFn;
@@ -47,10 +45,20 @@ export interface ExtractResult {
 }
 
 const SYSTEM_PROMPT = [
-  'You extract structured company profiles from the text of a company website.',
+  'You extract structured profiles from the text of a website. The site may be a',
+  'company, an individual (a personal site or portfolio), a single product with no',
+  'distinct company or person visible, or something you cannot tell from the evidence.',
   '',
   'Rules:',
   '- Respond with a single JSON object and nothing else. No prose, no markdown fences.',
+  '- Decide "subjectType" from what the pages actually show, not from a guess: "company"',
+  '  when the site speaks for a business, "person" when it speaks for one individual,',
+  '  "product" when it is one product with no distinct owner visible, "unknown" when the',
+  '  evidence does not support any of those. Fill in the field group that matches — company',
+  '  fields (products, pricing, team, caseStudies, faq, integrations, techStack, locations,',
+  '  founded) or person fields (headline, bio, roles, projects, writing, skills, speaking).',
+  '  A site can genuinely be both (a founder\'s personal site that is also the company',
+  '  homepage); when it is, fill in both groups rather than picking one.',
   '- Use null for anything the pages do not state. An empty array is correct when a section has no entries.',
   '- Never invent a person, email, product, price or fact that is not present in the supplied pages.',
   '  If you are unsure whether something was stated, leave it out.',
@@ -59,6 +67,8 @@ const SYSTEM_PROMPT = [
   '- "sectionSources" should attribute each populated section to the page URLs it came from.',
   '- Structured data blocks marked as trusted are the site\'s own machine-readable claims;',
   '  prefer them over prose when the two disagree.',
+  '- Some pages below are shown as a "(summarized)" digest rather than their full text —',
+  '  that digest is a compressed, factual view of the same page, not a lower-trust source.',
 ].join('\n');
 
 function buildJsonSchema(): Record<string, unknown> {
@@ -67,37 +77,6 @@ function buildJsonSchema(): Record<string, unknown> {
     target: 'jsonSchema7',
     $refStrategy: 'none',
   }) as Record<string, unknown>;
-}
-
-/**
- * Models sometimes wrap JSON in fences or add a sentence before it despite
- * instructions. Recovering from that is cheaper than burning a repair round,
- * so peel the common wrappers before giving up.
- */
-export function parseJsonLoose(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (!trimmed) throw new SyntaxError('empty response');
-
-  const candidates: string[] = [trimmed];
-
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) candidates.push(fenced[1].trim());
-
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
-  }
-
-  let lastError: unknown;
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new SyntaxError('unparseable response');
 }
 
 /** Compact, model-readable rendering of what was wrong with the last answer. */
@@ -182,4 +161,143 @@ export async function extractProfile(
     'extraction_failed',
     `no schema-valid profile after ${maxRepairs + 1} attempts: ${lastProblem}`,
   );
+}
+
+/**
+ * The reduce pass gets more room than a single-pass extraction did (80k vs the
+ * old 60k) because map summaries are dense — most of what used to be spent on
+ * truncated raw prose is now spent on structured facts, so the same budget
+ * covers more of the site rather than more of each page.
+ */
+export const REDUCE_TOKEN_BUDGET = 80_000;
+
+export interface MapReduceOptions extends ExtractOptions {
+  tokenBudget?: number;
+  mapThreshold?: number;
+  mapConcurrency?: number;
+}
+
+export interface MapReduceResult extends ExtractResult {
+  summarizedPages: number;
+  degradedPages: number;
+  includedUrls: string[];
+  omittedUrls: string[];
+}
+
+/**
+ * Assemble the reduce prompt from the trusted-signals header (identical to the
+ * single-pass consolidator's) plus one rendering per page — a compact digest
+ * for pages that were mapped, raw text for pages that were short enough to
+ * skip mapping or that fell back to an excerpt after a failed map call. Budget
+ * enforcement mirrors `consolidate()`: append until the budget is spent, then
+ * name what got left out rather than silently shrinking the model's view.
+ */
+export function buildReduceInput(
+  domain: string,
+  signals: StructuredSignals,
+  mapResult: MapPagesResult,
+  tokenBudget: number = REDUCE_TOKEN_BUDGET,
+): { text: string; includedUrls: string[]; omittedUrls: string[] } {
+  const budgetChars = tokenBudget * CHARS_PER_TOKEN;
+  const header = renderSignals(domain, signals);
+  const sections: string[] = [header];
+  let used = header.length;
+
+  const includedUrls: string[] = [];
+  const omittedUrls: string[] = [];
+
+  for (const page of mapResult.mapped) {
+    const rendered = renderMappedPage(page);
+    if (used + rendered.length > budgetChars) {
+      omittedUrls.push(page.url);
+      continue;
+    }
+    sections.push(rendered);
+    used += rendered.length;
+    includedUrls.push(page.url);
+  }
+
+  if (omittedUrls.length > 0) {
+    sections.push(
+      `\n[${omittedUrls.length} further page(s) were not included because the input limit was reached. Do not guess at their contents.]`,
+    );
+  }
+
+  return { text: sections.join('\n\n'), includedUrls, omittedUrls };
+}
+
+/**
+ * Task 2's link harvest is deterministic HTML parsing, not the model's
+ * judgment — so a social or email the model never mentioned is evidence it
+ * didn't look, not evidence the site lacks one. This runs strictly after the
+ * profile has already cleared the Zod gate in `extractProfile`, and every
+ * value it adds is re-validated through the same per-field schemas the model's
+ * own output goes through, so a malformed harvested URL can never slip past
+ * the "nothing unvalidated is stored" guarantee just because it skipped the
+ * repair loop.
+ */
+export function mergeHarvestedSignals(
+  profile: CompanyProfile,
+  signals: StructuredSignals,
+): CompanyProfile {
+  const seenUrls = new Set(profile.socials.map((s) => s.url.trim().toLowerCase()));
+  const socials = [...profile.socials];
+  for (const harvested of signals.socials) {
+    const key = harvested.url.trim().toLowerCase();
+    if (seenUrls.has(key)) continue;
+    const parsed = SocialLinkSchema.safeParse(harvested);
+    if (!parsed.success) continue;
+    seenUrls.add(key);
+    socials.push(parsed.data);
+  }
+
+  // The schema has one contact email, not a list — fill it from the harvest
+  // only when the model left it null; never overwrite what the model found.
+  const email = profile.contact.email ?? ContactSchema.shape.email.parse(signals.emails[0] ?? null);
+
+  return {
+    ...profile,
+    socials,
+    contact: { ...profile.contact, email },
+  };
+}
+
+/**
+ * The map/reduce entry point: map each page (or pass it through raw, or
+ * degrade it to an excerpt) via `page-summary.ts`, reduce the result through
+ * the same repair-loop `extractProfile` already runs, then merge in the
+ * deterministically harvested links. Exported so the worker can call this in
+ * place of `consolidate()` + `extractProfile()` with a single-line change.
+ */
+export async function extractProfileFromPages(
+  domain: string,
+  pages: ConsolidatePage[],
+  signals: StructuredSignals,
+  opts: MapReduceOptions,
+): Promise<MapReduceResult> {
+  const mapResult = await mapPages(pages, {
+    chat: opts.chat,
+    model: opts.model,
+    signal: opts.signal,
+    threshold: opts.mapThreshold,
+    concurrency: opts.mapConcurrency,
+  });
+
+  const { text, includedUrls, omittedUrls } = buildReduceInput(
+    domain,
+    signals,
+    mapResult,
+    opts.tokenBudget ?? REDUCE_TOKEN_BUDGET,
+  );
+
+  const { profile, attempts } = await extractProfile(text, opts);
+
+  return {
+    profile: mergeHarvestedSignals(profile, signals),
+    attempts,
+    summarizedPages: mapResult.summarizedCount,
+    degradedPages: mapResult.failedCount,
+    includedUrls,
+    omittedUrls,
+  };
 }
