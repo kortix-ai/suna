@@ -151,6 +151,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
+      - name: Enforce frontend SDK boundary
+        run: |
+          pnpm --dir apps/web exec bun test src/sdk-boundary.test.ts
+          pnpm --dir apps/web exec eslint src --quiet
+
       - name: Build standalone frontend
         run: pnpm --filter ./apps/web build
         env:

@@ -21,6 +21,7 @@ const sdkBoundaryLegacyFiles = [
     }),
   ),
 ];
+const sdkBoundaryShimFiles = ['src/lib/iam-client.ts'];
 
 const eslintConfig = [
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
@@ -37,7 +38,7 @@ const eslintConfig = [
   },
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: sdkBoundaryLegacyFiles,
+    ignores: [...sdkBoundaryLegacyFiles, ...sdkBoundaryShimFiles],
     rules: {
       'no-restricted-imports': [
         'error',
