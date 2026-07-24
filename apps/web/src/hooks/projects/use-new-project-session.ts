@@ -8,6 +8,7 @@ import { errorToast, loadingToast } from '@/components/ui/toast';
 import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
+import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { type SessionConnectorBindings, createProjectSession } from '@kortix/sdk/projects-client';
@@ -36,33 +37,40 @@ import { prefetchSessionStart } from '@kortix/sdk/react';
  * `create` carries create-time overrides (e.g. a chosen `sandbox_slug`)
  * straight to the persist POST.
  */
+/**
+ * Options for a new-session start.
+ * `agent_name` binds the session's immutable boot agent at birth. It MUST match
+ * the agent the composer sends on the first prompt — the API proxy rejects any
+ * prompt whose `agent` differs with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.
+ * `connector_bindings` binds specific connection profiles; `inherit_unbound`
+ * keeps the project-default fallback for every OTHER connector so binding one
+ * doesn't null the rest. `require_connectors` names connectors that must resolve
+ * to the acting user's OWN connection — a missing one opens the connect gate.
+ */
+export type NewProjectSessionOpts = {
+  onNavigate?: (sessionId: string) => void;
+  onError?: () => void;
+  create?: {
+    sandbox_slug?: string;
+    agent_name?: string;
+    connector_bindings?: SessionConnectorBindings;
+    inherit_unbound?: boolean;
+    require_connectors?: string[];
+  };
+};
+
 export function useNewProjectSession(projectId: string | undefined) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const creatingRef = useRef(false);
   const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
+  const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
+  // A ref so the connect-to-start gate's `retry` re-invokes the LATEST create fn.
+  const startRef = useRef<(opts?: NewProjectSessionOpts) => void>(() => {});
 
-  return useCallback(
-    (opts?: {
-      onNavigate?: (sessionId: string) => void;
-      onError?: () => void;
-      // `agent_name` binds the session's immutable boot agent at birth. It MUST
-      // match the agent the composer sends on the first prompt — the API proxy
-      // rejects any prompt whose `agent` differs from the session's bound agent
-      // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      // `connector_bindings` binds specific connection profiles for this session
-      // (e.g. a member's own private connection); `inherit_unbound` keeps the
-      // project-default fallback for every OTHER connector so binding one doesn't
-      // null the rest. A member-owned binding also requires the session to be
-      // private — which is already the create default.
-      create?: {
-        sandbox_slug?: string;
-        agent_name?: string;
-        connector_bindings?: SessionConnectorBindings;
-        inherit_unbound?: boolean;
-      };
-    }) => {
+  const startSession = useCallback(
+    (opts?: NewProjectSessionOpts) => {
       if (!projectId || creatingRef.current) {
         opts?.onError?.();
         return;
@@ -105,6 +113,15 @@ export function useNewProjectSession(projectId: string | undefined) {
           const action = resolveCreateFailure(code);
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
+          } else if (action === 'connect') {
+            // A required connector isn't connected — open the gate so the user
+            // connects their own account, then re-run this exact create.
+            const connector = (err as { data?: { connector?: string } })?.data?.connector;
+            if (projectId && connector) {
+              openConnectorGate({ projectId, connector, retry: () => startRef.current(opts) });
+            } else {
+              errorToast(err instanceof Error ? err.message : 'Failed to start session');
+            }
           } else if (action === 'toast') {
             errorToast(err instanceof Error ? err.message : 'Failed to start session');
           }
@@ -115,6 +132,17 @@ export function useNewProjectSession(projectId: string | undefined) {
           creatingRef.current = false;
         });
     },
-    [projectId, router, queryClient, billingLoading, canRun, accountId, openUpgradeDialog],
+    [
+      projectId,
+      router,
+      queryClient,
+      billingLoading,
+      canRun,
+      accountId,
+      openUpgradeDialog,
+      openConnectorGate,
+    ],
   );
+  startRef.current = startSession;
+  return startSession;
 }

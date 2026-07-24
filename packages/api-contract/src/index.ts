@@ -344,6 +344,18 @@ export const SessionCreateInputSchema = z
     // inherits the project DEFAULT profile — never another owner's — so it is not
     // origin-gated (any caller may set it).
     inherit_unbound: z.boolean().optional(),
+    // Interactive-only: require each named connector to resolve to the ACTING
+    // USER's OWN connected account for this session. Like connector_bindings but
+    // BY ALIAS — the server finds the caller's member profile for each. If the
+    // user hasn't connected one, session-create is refused with a structured
+    // CONNECTOR_CONNECTION_REQUIRED (409) naming the connector, so the UI can
+    // prompt them to connect it. Implies inherit_unbound (other connectors keep
+    // their project defaults). Rejected for backend/service-account origin — a
+    // backend caller has no single "current user"; it uses connector_bindings.
+    require_connectors: z
+      .array(z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'))
+      .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
+      .optional(),
     // Backend-only: the wrapper's opaque end-user handle this session acts for.
     // Accepted only from a backend-origin caller (an account API key / PAT or a
     // service-account bearer); any other origin supplying it is rejected 403

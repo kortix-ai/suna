@@ -396,6 +396,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorSensitive(projectId, ...a),
         profiles: {
           list: () => P.listConnectionProfiles(projectId),
+          listAll: () => P.listAllConnectionProfiles(projectId),
           reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
             P.reconcileConnectionProfile(projectId, ...a),
           reconcileMember: (

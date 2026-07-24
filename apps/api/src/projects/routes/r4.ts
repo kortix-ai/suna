@@ -313,6 +313,62 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'get',
+    path: '/{projectId}/connector-profiles/all',
+    tags: ['connectors'],
+    summary: "List EVERY member's connection profile (owner/admin, read-only roster)",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ profiles: z.array(ConnectionProfileViewSchema) }), 'Profiles'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A read-only roster of EVERY member's connection for this project — who has
+    // connected which account, and its status. Manage-gated (owner/manager). The
+    // per-caller member scoping the plain list applies is deliberately NOT applied
+    // here; credentials are never in this shape (serializeConnectionProfile omits
+    // them), so it exposes existence + status + label + owner, never a secret.
+    const mayManage = await projectCapabilityAllowed(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    );
+    if (!mayManage) {
+      return c.json(
+        { error: 'You do not have permission to view all connection profiles', code: 'FORBIDDEN' },
+        403,
+      );
+    }
+    const rows = await db
+      .select({
+        profileId: executorConnectionProfiles.profileId,
+        connectorAlias: executorConnectors.slug,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
+        label: executorConnectionProfiles.label,
+        status: executorConnectionProfiles.status,
+        isDefault: executorConnectionProfiles.isDefault,
+        metadata: executorConnectionProfiles.metadata,
+      })
+      .from(executorConnectionProfiles)
+      .innerJoin(
+        executorConnectors,
+        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+      )
+      .where(eq(executorConnectionProfiles.projectId, projectId));
+    return c.json({ profiles: rows.map(serializeConnectionProfile) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'post',
     path: '/{projectId}/connector-profiles/me',
     tags: ['connectors'],

@@ -240,6 +240,93 @@ export async function validateSessionConnectorBindings(input: {
   return { ok: true, bindings: validated };
 }
 
+export type RequiredConnectorResolution =
+  | { ok: true; bindings: ValidatedSessionConnectorBinding[] }
+  | { ok: false; connector: string; error: string; code: 'CONNECTOR_CONNECTION_REQUIRED' };
+
+/**
+ * Resolve each REQUIRED connector alias to the ACTING USER's OWN active member
+ * connection profile. Unlike validateSessionConnectorBindings (which verifies a
+ * caller-supplied profile_id), this DISCOVERS the user's own profile by
+ * (owner_type='member', owner_id, connector slug). If the user has not connected
+ * a required connector — or it is revoked/disabled, or the caller is a service
+ * account with no personal identity — it fails CONNECTOR_CONNECTION_REQUIRED,
+ * naming the PUBLIC alias so the UI can prompt a connect. Returned bindings share
+ * the ValidatedSessionConnectorBinding shape and merge into the same persist path;
+ * being member-owned they force the session private, and the caller forces
+ * inherit_unbound so the agent's OTHER connectors keep their project defaults.
+ */
+export async function resolveRequiredMemberConnectorProfiles(input: {
+  accountId: string;
+  projectId: string;
+  actingUserId: string;
+  actingPrincipalIsServiceAccount: boolean;
+  aliases: readonly string[];
+}): Promise<RequiredConnectorResolution> {
+  const bindings: ValidatedSessionConnectorBinding[] = [];
+  const seen = new Set<string>();
+  for (const requestedAlias of input.aliases) {
+    const alias = canonicalConnectorAlias(requestedAlias);
+    if (seen.has(alias)) continue;
+    seen.add(alias);
+    const publicAlias = publicConnectorAlias(alias);
+    // A service account has no personal ("member") identity, so it can never
+    // satisfy a personal-connection requirement — fail closed (the caller also
+    // rejects backend origin up front; this is defense in depth).
+    if (input.actingPrincipalIsServiceAccount) {
+      return {
+        ok: false,
+        connector: publicAlias,
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
+        error: `Connector "${publicAlias}" requires a personal connection`,
+      };
+    }
+    const [row] = await db
+      .select({
+        profileId: executorConnectionProfiles.profileId,
+        connectorId: executorConnectionProfiles.connectorId,
+        ownerId: executorConnectionProfiles.ownerId,
+        status: executorConnectionProfiles.status,
+        connectorEnabled: executorConnectors.enabled,
+      })
+      .from(executorConnectionProfiles)
+      .innerJoin(
+        executorConnectors,
+        and(
+          eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+          eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
+          eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+        ),
+      )
+      .where(
+        and(
+          eq(executorConnectionProfiles.accountId, input.accountId),
+          eq(executorConnectionProfiles.projectId, input.projectId),
+          eq(executorConnectionProfiles.ownerType, 'member'),
+          eq(executorConnectionProfiles.ownerId, input.actingUserId),
+          eq(executorConnectors.slug, alias),
+        ),
+      )
+      .limit(1);
+    if (!row || row.status !== 'active' || !row.connectorEnabled) {
+      return {
+        ok: false,
+        connector: publicAlias,
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
+        error: `Connect your "${publicAlias}" account to start this session`,
+      };
+    }
+    bindings.push({
+      alias,
+      profileId: row.profileId,
+      connectorId: row.connectorId,
+      ownerType: 'member',
+      ownerId: row.ownerId,
+    });
+  }
+  return { ok: true, bindings };
+}
+
 export async function persistSessionConnectorBindings(input: {
   sessionId: string;
   accountId: string;

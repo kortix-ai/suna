@@ -272,6 +272,30 @@ describe('connection profile owner authorization over HTTP', () => {
     expect(new Set(ids)).toEqual(new Set([DEFAULT_PROFILE, EXTERNAL_PROFILE]));
   });
 
+  test('managers see EVERY member connection via the read-only roster (/all)', async () => {
+    const response = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/all`,
+      await mint(MANAGER),
+    );
+    expect(response.status).toBe(200);
+    const ids = (
+      (await response.json()) as { profiles: Array<{ profile_id: string }> }
+    ).profiles.map((profile) => profile.profile_id);
+    // The roster surfaces members' personal profiles that the plain list hides.
+    expect(ids).toContain(ALICE_PROFILE);
+    expect(ids).toContain(DEFAULT_PROFILE);
+  });
+
+  test('a non-manager member cannot use the roster (/all) — 403', async () => {
+    const response = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles/all`,
+      await mint(ALICE),
+    );
+    expect(response.status).toBe(403);
+  });
+
   test('member reconciliation forces ownership to the bearer-token user', async () => {
     const response = await request(
       'POST',

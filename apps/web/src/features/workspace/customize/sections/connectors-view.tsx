@@ -90,6 +90,10 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
+import {
+  usePipedreamConnectMember,
+  withPipedreamOverlayEscape,
+} from '@/hooks/connectors/use-pipedream-connect-member';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -110,14 +114,13 @@ import {
   getConnectorConfig,
   getConnectorPolicies,
   getProjectDetail,
+  listAllConnectionProfiles,
   listConnectionProfiles,
   listConnectors,
+  listProjectAccess,
   listPipedreamApps,
   pipedreamConnect,
-  pipedreamConnectConnectionProfile,
   pipedreamFinalize,
-  pipedreamFinalizeConnectionProfile,
-  reconcileMemberConnectionProfile,
   revokeConnectionProfile,
   setConnectorCredential,
   setConnectorName,
@@ -156,45 +159,6 @@ function providerLabel(p: AdminConnector['provider']): string {
   return p.toUpperCase();
 }
 
-const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
-
-function withPipedreamOverlayEscape(): () => void {
-  if (typeof document === 'undefined') return () => {};
-
-  const releasePointerEvents = () => {
-    document.querySelectorAll<HTMLIFrameElement>(PIPEDREAM_IFRAME_SELECTOR).forEach((el) => {
-      el.style.pointerEvents = 'auto';
-    });
-  };
-  const observer = new MutationObserver(releasePointerEvents);
-  observer.observe(document.body, { childList: true });
-  releasePointerEvents();
-
-  const isPipedreamFrame = (node: EventTarget | null): boolean =>
-    node instanceof Element && node.matches(PIPEDREAM_IFRAME_SELECTOR);
-
-  const guardFocus = (event: FocusEvent) => {
-    if (isPipedreamFrame(event.target) || isPipedreamFrame(event.relatedTarget)) {
-      event.stopImmediatePropagation();
-    }
-  };
-  document.addEventListener('focusin', guardFocus, true);
-  document.addEventListener('focusout', guardFocus, true);
-
-  const guardEscape = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape') return;
-    if (document.querySelector(PIPEDREAM_IFRAME_SELECTOR)) event.stopImmediatePropagation();
-  };
-  document.addEventListener('keydown', guardEscape, true);
-
-  return () => {
-    observer.disconnect();
-    document.removeEventListener('focusin', guardFocus, true);
-    document.removeEventListener('focusout', guardFocus, true);
-    document.removeEventListener('keydown', guardEscape, true);
-  };
-}
-
 function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
   return useMutation({
     mutationFn: async () => {
@@ -227,54 +191,6 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
     onSuccess: (res) => {
       if (!res.connected) return;
       successToast('Connected');
-      onConnected();
-    },
-    onError: (err: Error) => errorToast(err.message),
-  });
-}
-
-/**
- * Connect the CURRENT USER's own private (member-owned) account for a Pipedream
- * connector: mint a member profile, run the same Pipedream OAuth handshake as the
- * shared connect, then finalize. The result is usable ONLY in this user's own
- * private sessions and is never shared with the team. Mirrors usePipedreamConnect.
- */
-function usePipedreamConnectMember(projectId: string, slug: string, onConnected: () => void) {
-  return useMutation({
-    mutationFn: async () => {
-      const profile = await reconcileMemberConnectionProfile(projectId, {
-        connector_alias: slug,
-        label: 'Private connection',
-      });
-      const { token, app } = await pipedreamConnectConnectionProfile(projectId, profile.profile_id);
-      if (!token || !app) throw new Error('App connect is not configured');
-      const pd = createFrontendClient({
-        externalUserId: `${projectId}:${slug}:${profile.profile_id}`,
-        tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
-      });
-      const release = withPipedreamOverlayEscape();
-      let connected = false;
-      try {
-        connected = await new Promise<boolean>((resolve, reject) => {
-          pd.connectAccount({
-            app,
-            token,
-            onSuccess: () => resolve(true),
-            onClose: (status: { successful: boolean }) => resolve(status.successful),
-            onError: (err: unknown) =>
-              reject(new Error((err as Error)?.message || 'Connection cancelled')),
-          });
-        });
-      } finally {
-        release();
-      }
-      if (!connected) return { connected: false };
-      await pipedreamFinalizeConnectionProfile(projectId, profile.profile_id);
-      return { connected: true };
-    },
-    onSuccess: (res) => {
-      if (!res.connected) return;
-      successToast('Connected privately — only you can use this');
       onConnected();
     },
     onError: (err: Error) => errorToast(err.message),
@@ -912,6 +828,85 @@ function PrivateConnectionBanner({
   );
 }
 
+function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {
+  if (status === 'active') {
+    return (
+      <Badge variant="outline" size="sm" className="text-emerald-600">
+        Connected
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" size="sm" className="text-muted-foreground">
+      {status === 'revoked' ? 'Disconnected' : 'Error'}
+    </Badge>
+  );
+}
+
+/**
+ * Owner/admin read-only roster: which project members have connected their OWN
+ * account for this connector, and its status. Manage-gated at the API; never
+ * shows credentials (only existence + status + owner). Read-only.
+ */
+function ConnectionRoster({
+  projectId,
+  connectorSlug,
+  displayName,
+}: {
+  projectId: string;
+  connectorSlug: string;
+  displayName: string;
+}) {
+  const profilesQuery = useQuery({
+    queryKey: ['connector-profiles-all', projectId],
+    queryFn: () => listAllConnectionProfiles(projectId),
+    staleTime: 30_000,
+  });
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 60_000,
+  });
+  const emailByUser = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of accessQuery.data?.members ?? []) {
+      if (member.email) map.set(member.user_id, member.email);
+    }
+    return map;
+  }, [accessQuery.data]);
+  const rows = (profilesQuery.data?.profiles ?? []).filter(
+    (p) => p.connector_alias === connectorSlug && p.owner_type === 'member',
+  );
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div className="text-muted-foreground border-b px-4 py-2.5 text-xs font-medium">
+        Team members' own {displayName} connections
+      </div>
+      {profilesQuery.isLoading ? (
+        <div className="text-muted-foreground px-4 py-3 text-sm">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-muted-foreground px-4 py-3 text-sm">
+          No team member has connected their own {displayName} yet.
+        </div>
+      ) : (
+        <ul className="divide-y">
+          {rows.map((profile) => (
+            <li
+              key={profile.profile_id}
+              className="flex items-center justify-between gap-3 px-4 py-2.5"
+            >
+              <span className="min-w-0 truncate text-sm">
+                {emailByUser.get(profile.owner_id ?? '') ?? profile.owner_id ?? 'Unknown member'}
+              </span>
+              <RosterStatusBadge status={profile.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ConnectorDetail({
   projectId,
   connector,
@@ -975,14 +970,12 @@ function ConnectorDetail({
   // uses, so binding just this one doesn't null the rest. The session is private by
   // default, which is required for a member-owned binding to resolve.
   const newSession = useNewProjectSession(projectId);
+  const canManageProfiles =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE).allowed === true;
   const startPrivateSession = () => {
-    if (!myPrivateProfile) return;
-    newSession({
-      create: {
-        connector_bindings: { [connector.slug]: { profile_id: myPrivateProfile.profile_id } },
-        inherit_unbound: true,
-      },
-    });
+    // Require THIS user's own connection by alias — the server resolves their
+    // member profile and, if it was revoked, the connect-to-start gate re-prompts.
+    newSession({ create: { require_connectors: [connector.slug] } });
   };
   const [credOpen, setCredOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1195,6 +1188,13 @@ function ConnectorDetail({
             onConnect={() => privateConnect.mutate()}
             onDisconnect={() => disconnectPrivate.mutate()}
             onStartSession={startPrivateSession}
+          />
+        )}
+        {isPipedream && !isChannel && !isComputer && canManageProfiles && (
+          <ConnectionRoster
+            projectId={projectId}
+            connectorSlug={connector.slug}
+            displayName={displayName}
           />
         )}
         {/* The sensitive toggle lives under Permissions (it IS a permission
