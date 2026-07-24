@@ -376,6 +376,15 @@ export async function resolveSessionConnectorProfile(input: {
     // Once a session opts into durable profile selection, every connector must
     // be selected explicitly. Falling back for an unbound alias would let a
     // partially bound session inherit an unrelated project-wide credential.
+    //
+    // Only a caller-REQUESTED binding (`source: 'request'`) counts as opting in.
+    // A `source: 'default'` row is auto-wired by the platform — today only
+    // `ensureEmailSessionBinding` mints one when an inbound email lands on a
+    // session — and must NOT trip the all-or-nothing gate: otherwise auto-binding
+    // the email inbox would silently disable the project-default fallback for
+    // every OTHER connector (slack, meet, …) on that session, which the caller
+    // never chose. The auto email binding still resolves via its own bound row
+    // above; this gate governs only the UNBOUND aliases.
     const [anyBinding] = await db
       .select({ sessionId: projectSessionConnectorBindings.sessionId })
       .from(projectSessionConnectorBindings)
@@ -384,6 +393,7 @@ export async function resolveSessionConnectorProfile(input: {
           eq(projectSessionConnectorBindings.sessionId, input.sessionId),
           eq(projectSessionConnectorBindings.accountId, input.accountId),
           eq(projectSessionConnectorBindings.projectId, input.projectId),
+          eq(projectSessionConnectorBindings.source, 'request'),
         ),
       )
       .limit(1);
