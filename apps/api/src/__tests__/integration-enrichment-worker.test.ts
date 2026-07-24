@@ -107,8 +107,19 @@ function testDeps(): Partial<EnrichmentJobDeps> {
     memoryPortFor: async () => ({
       read: async (path: string) =>
         memoryWrites.filter((w) => w.path === path).at(-1)?.content ?? null,
-      commit: async (path: string, content: string) => {
-        memoryWrites.push({ path, content });
+      commitMany: async ({
+        files,
+        deletes,
+      }: {
+        files: Array<{ path: string; content: string }>;
+        deletes: string[];
+      }) => {
+        for (const file of files) memoryWrites.push(file);
+        for (const path of deletes) {
+          for (let i = memoryWrites.length - 1; i >= 0; i -= 1) {
+            if (memoryWrites[i].path === path) memoryWrites.splice(i, 1);
+          }
+        }
       },
     }),
   };
@@ -175,11 +186,11 @@ describe('enrichment worker (integration)', () => {
     expect(stored?.profile.name).toBe('Integration Example Inc');
 
     expect(memoryWrites.map((w) => w.path)).toEqual([
-      `.kortix/memory/enrichment/${DOMAIN}.md`,
+      `.kortix/memory/enrichment/${DOMAIN}/profile.md`,
       '.kortix/memory/MEMORY.md',
     ]);
     expect(memoryWrites[0].content).toContain('Integration Example Inc');
-    expect(memoryWrites[1].content).toContain(`enrichment/${DOMAIN}.md`);
+    expect(memoryWrites[1].content).toContain(`enrichment/${DOMAIN}/profile.md`);
   });
 
   test('marks the job succeeded with its result', async () => {

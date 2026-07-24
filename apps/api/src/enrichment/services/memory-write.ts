@@ -1,24 +1,41 @@
 /**
- * Writing a profile into project memory.
+ * Writing enrichment output into project memory.
  *
- * Company memory is markdown in the project's git repo, and `MEMORY.md` is an
- * index — one line per sub-file, by the memory system's own convention. So a
- * profile lands as its own file under `.kortix/memory/enrichment/` and earns a
- * single line in the index, rather than being pasted into the index itself.
- * That keeps the file agents read first short, and it means re-enriching a
- * domain rewrites one self-contained file instead of editing around whatever
- * else has accumulated.
+ * Memory is markdown in the project's git repo. The original version
+ * distilled a whole crawl into one profile file, which meant every fetched
+ * page was thrown away the moment the model finished with it — the actual
+ * pricing table, the actual team bios, were gone the instant the summary
+ * landed. Now each domain gets its own folder under
+ * `.kortix/memory/enrichment/`: `profile.md` for the rendered/validated
+ * summary, `pages/<slug>.md` for every other page's cleaned content, and
+ * `blog/<slug>.md` for posts — kept separate because a blog is read
+ * differently than a landing page (chronological, many of them, low signal
+ * per post) and deserves its own shelf rather than diluting `pages/`.
  *
- * Both writes are idempotent, because enrichment is expected to run again for
- * the same domain: the profile file is replaced wholesale, and the index line
- * is matched on its link target so a second run updates in place instead of
- * appending a duplicate.
+ * `MEMORY.md` stays the index every agent reads first, so it has to earn that
+ * role by pointing at everything, not just the profile: a domain gets a
+ * parent bullet plus one nested bullet per generated file. That is the
+ * point of this module — an index that lists a profile but silently drops
+ * forty crawled pages is not actually an index.
  *
- * Order matters. The profile is committed first and the index second, so an
- * interruption leaves an unreferenced file (harmless, and fixed by the next
- * run) rather than an index pointing at a file that does not exist.
+ * The whole write — every file in the folder, the stale-file deletes, and
+ * the index update — lands as ONE commit. Splitting it across several
+ * commits (as the single-file version did, profile then index) would let a
+ * crash between them leave memory half-updated: new pages present but the
+ * index not yet pointing at them, or a page deleted from the index but not
+ * from disk. One commit makes that failure mode impossible — an
+ * interruption leaves the previous commit fully intact rather than a folder
+ * in a state nothing ever asked for.
+ *
+ * Idempotent by construction: re-running a domain replaces its whole block in
+ * the index (matched on the domain itself, since the profile is no longer
+ * the block's sole link target) and its whole set of files. Whatever
+ * page/blog files existed under the domain's folder before but are not
+ * produced by this run are deleted in the same commit — a page that vanished
+ * from the site must not linger in memory forever.
  */
 import type { CompanyProfile, ProfileProvenance } from '../schemas';
+import type { PageFetchTier } from './page-fetch';
 
 export const MEMORY_DIR = '.kortix/memory';
 export const MEMORY_INDEX_PATH = `${MEMORY_DIR}/MEMORY.md`;
@@ -26,26 +43,58 @@ export const ENRICHMENT_SUBDIR = 'enrichment';
 export const INDEX_HEADING = '## Enriched companies';
 
 const MAX_COMMIT_ATTEMPTS = 3;
+const MAX_SLUG_LENGTH = 80;
 
 export interface MemoryPort {
   /** Returns null when the file does not exist yet. */
   read(path: string): Promise<string | null>;
-  commit(path: string, content: string, message: string): Promise<void>;
+  /**
+   * Write and delete a set of files in one atomic commit. Widened from a
+   * single-file `commit` because a domain write now touches a whole folder
+   * plus the index, and those must never land as separate commits (see
+   * module header).
+   */
+  commitMany(args: {
+    files: Array<{ path: string; content: string }>;
+    deletes: string[];
+    message: string;
+  }): Promise<void>;
+}
+
+/** A page (or blog post) fetched during the crawl, as produced by `fetchPages`. */
+export interface MemoryPageContent {
+  url: string;
+  markdown: string;
+  tier: PageFetchTier;
 }
 
 export interface WriteProfileArgs {
   domain: string;
   profile: CompanyProfile;
   provenance: ProfileProvenance;
+  /** Non-blog pages, written under `pages/`. */
+  pages?: MemoryPageContent[];
+  /** Pages whose url-filter tier is `blog`, written under `blog/`. */
+  blogPosts?: MemoryPageContent[];
 }
 
 export interface WriteProfileResult {
   profilePath: string;
   indexPath: string;
+  pagePaths: string[];
+  blogPaths: string[];
+}
+
+export function domainRelativeDir(domain: string): string {
+  return `${ENRICHMENT_SUBDIR}/${domain}`;
+}
+
+export function domainRepoDir(domain: string): string {
+  return `${MEMORY_DIR}/${domainRelativeDir(domain)}`;
 }
 
 export function profileRelativePath(domain: string): string {
-  return `${ENRICHMENT_SUBDIR}/${domain}.md`;
+  return `${domainRelativeDir(domain)}/profile.md`;
 }
 
 export function profileRepoPath(domain: string): string {
@@ -182,71 +231,185 @@ export function renderProfileMarkdown(
   return out.join('\n');
 }
 
-function indexLineFor(domain: string, profile: CompanyProfile): string {
-  const summary = profile.tagline?.trim() || profile.description?.trim()?.split('\n')[0] || null;
-  const label = profile.name?.trim() || domain;
-  const link = `- [${label}](${profileRelativePath(domain)})`;
-  if (!summary) return link;
-  const short = summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
-  return `${link} — ${short}`;
+/**
+ * Slug for a page's file name: the URL's path, lowercased, non-alphanumerics
+ * collapsed to a single `-`. The path (not the full URL) is enough to be
+ * readable and stays stable across the http/https and www-vs-not variants
+ * `normalizeUrl` already folds together upstream. The root path has no
+ * alphanumeric content of its own, so it falls back to `index`.
+ */
+export function slugForUrl(url: string): string {
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    path = url;
+  }
+  const collapsed = path
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const base = (collapsed || 'index').slice(0, MAX_SLUG_LENGTH).replace(/-+$/g, '');
+  return base || 'index';
+}
+
+/** Assigns a stable slug per item, deduping collisions with a numeric suffix. */
+function withDedupedSlugs<T extends { url: string }>(items: T[]): Array<T & { slug: string }> {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const base = slugForUrl(item.url);
+    const count = (seen.get(base) ?? 0) + 1;
+    seen.set(base, count);
+    const slug = count === 1 ? base : `${base}-${count}`;
+    return { ...item, slug: slug.slice(0, MAX_SLUG_LENGTH) };
+  });
+}
+
+/** Cleaned page content as its own file, with just enough front matter to trace it back to the crawl. */
+function renderPageMarkdown(page: MemoryPageContent, fetchedAt: string): string {
+  return [
+    '---',
+    `source: "${page.url}"`,
+    `fetchedAt: "${fetchedAt}"`,
+    `tier: ${page.tier}`,
+    '---',
+    '',
+    page.markdown.trim(),
+    '',
+  ].join('\n');
+}
+
+interface MemoryIndexEntry {
+  /** Nested bullet's link text, e.g. `profile`, `pages/about`, `blog/launch`. */
+  label: string;
+  /** Relative to MEMORY_DIR, so links from MEMORY.md resolve correctly. */
+  relativePath: string;
+  summary?: string;
+}
+
+function truncateSummary(summary: string): string {
+  return summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
+}
+
+function profileEntry(domain: string, profile: CompanyProfile): MemoryIndexEntry {
+  const raw = profile.tagline?.trim() || profile.description?.trim()?.split('\n')[0] || undefined;
+  return {
+    label: 'profile',
+    relativePath: profileRelativePath(domain),
+    summary: raw ? truncateSummary(raw) : undefined,
+  };
+}
+
+function contentFiles(
+  domain: string,
+  kind: 'pages' | 'blog',
+  items: MemoryPageContent[],
+  fetchedAt: string,
+): { files: Array<{ path: string; content: string }>; entries: MemoryIndexEntry[] } {
+  const files: Array<{ path: string; content: string }> = [];
+  const entries: MemoryIndexEntry[] = [];
+  for (const item of withDedupedSlugs(items)) {
+    const relativePath = `${domainRelativeDir(domain)}/${kind}/${item.slug}.md`;
+    files.push({ path: `${MEMORY_DIR}/${relativePath}`, content: renderPageMarkdown(item, fetchedAt) });
+    entries.push({ label: `${kind}/${item.slug}`, relativePath });
+  }
+  return { files, entries };
+}
+
+function nestedBulletLine(entry: MemoryIndexEntry): string {
+  const link = `[${entry.label}](${entry.relativePath})`;
+  return entry.summary ? `  - ${link} — ${entry.summary}` : `  - ${link}`;
+}
+
+function domainParentPrefix(domain: string): string {
+  return `- **${domain}**`;
+}
+
+const TOP_BULLET_RE = /^- /;
+const NESTED_BULLET_RE = /^ {2}- /;
+const LINK_TARGET_RE = /\(([^)]+)\)/;
+
+function findDomainBlock(lines: string[], parentPrefix: string): { start: number; end: number } | null {
+  const start = lines.findIndex((l) => l.startsWith(parentPrefix));
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length && NESTED_BULLET_RE.test(lines[end])) end += 1;
+  return { start, end };
+}
+
+/** End of the section's bullet run, right after the heading and its optional blank line. */
+function sectionEnd(lines: string[], headingIndex: number): number {
+  let i = headingIndex + 1;
+  if (i < lines.length && !lines[i].trim()) i += 1;
+  while (i < lines.length && (TOP_BULLET_RE.test(lines[i]) || NESTED_BULLET_RE.test(lines[i]))) i += 1;
+  return i;
 }
 
 /**
- * Add or replace this domain's line in the index. The line is located by its
- * link target, which is stable across renames of the company itself, and the
- * section heading is created on first use.
+ * Replace this domain's whole block — the parent line plus a nested bullet
+ * for every generated file — so MEMORY.md alone lists everything available
+ * for the domain. The block is matched on the domain itself (not on the
+ * profile's link, since the profile is now just one of several nested
+ * entries), and whatever nested paths it PREVIOUSLY listed but the new block
+ * does not are returned as stale, so the caller deletes those files in the
+ * same commit.
  */
-export function upsertIndexLine(
+function upsertIndexBlock(
   existing: string | null,
   domain: string,
-  profile: CompanyProfile,
-): string {
-  const line = indexLineFor(domain, profile);
-  const target = `(${profileRelativePath(domain)})`;
+  entries: MemoryIndexEntry[],
+): { content: string; stalePaths: string[] } {
+  const parentPrefix = domainParentPrefix(domain);
   const base = existing ?? '# Project Memory\n';
   const lines = base.split('\n');
+  const block = [parentPrefix, ...entries.map(nestedBulletLine)];
+  const newRelPaths = new Set(entries.map((e) => e.relativePath));
 
-  const existingIndex = lines.findIndex((l) => l.includes(target));
-  if (existingIndex >= 0) {
-    lines[existingIndex] = line;
-    return lines.join('\n');
+  const found = findDomainBlock(lines, parentPrefix);
+  if (found) {
+    const stalePaths: string[] = [];
+    for (let i = found.start + 1; i < found.end; i += 1) {
+      const match = lines[i].match(LINK_TARGET_RE);
+      if (match && !newRelPaths.has(match[1])) stalePaths.push(`${MEMORY_DIR}/${match[1]}`);
+    }
+    lines.splice(found.start, found.end - found.start, ...block);
+    return { content: lines.join('\n'), stalePaths };
   }
 
   const headingIndex = lines.findIndex((l) => l.trim() === INDEX_HEADING);
   if (headingIndex >= 0) {
-    // Insert after the heading's existing entries so ordering stays stable.
-    let insertAt = headingIndex + 1;
-    while (insertAt < lines.length && (lines[insertAt].startsWith('- ') || !lines[insertAt].trim())) {
-      if (lines[insertAt].startsWith('- ')) insertAt += 1;
-      else if (insertAt + 1 < lines.length && lines[insertAt + 1].startsWith('- ')) insertAt += 1;
-      else break;
-    }
-    lines.splice(insertAt, 0, line);
-    return lines.join('\n');
+    lines.splice(sectionEnd(lines, headingIndex), 0, ...block);
+    return { content: lines.join('\n'), stalePaths: [] };
   }
 
   const trimmed = base.replace(/\s+$/, '');
-  return `${trimmed}\n\n${INDEX_HEADING}\n\n${line}\n`;
+  return { content: `${trimmed}\n\n${INDEX_HEADING}\n\n${block.join('\n')}\n`, stalePaths: [] };
 }
 
 /**
- * Commit with a bounded retry. The underlying commit is compare-and-swap on
- * the branch tip with no retry of its own, so a concurrent write (another
- * enrichment, an agent editing memory) loses the race and must re-read before
- * trying again.
+ * Commit with a bounded retry. `commitMany` is compare-and-swap on the branch
+ * tip with no retry of its own, so a concurrent write (another enrichment, an
+ * agent editing memory) loses the race and must re-read the index before
+ * trying again — the file contents don't depend on the index, only the
+ * index's own merge does, so only it needs re-reading per attempt.
  */
-async function commitWithRetry(
+async function commitDomainWithRetry(
   port: MemoryPort,
-  path: string,
-  build: (current: string | null) => Promise<string> | string,
+  domain: string,
+  files: Array<{ path: string; content: string }>,
+  entries: MemoryIndexEntry[],
   message: string,
 ): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_COMMIT_ATTEMPTS; attempt += 1) {
-    const current = await port.read(path);
-    const content = await build(current);
+    const currentIndex = await port.read(MEMORY_INDEX_PATH);
+    const { content: indexContent, stalePaths } = upsertIndexBlock(currentIndex, domain, entries);
     try {
-      await port.commit(path, content, message);
+      await port.commitMany({
+        files: [...files, { path: MEMORY_INDEX_PATH, content: indexContent }],
+        deletes: stalePaths,
+        message,
+      });
       return;
     } catch (err) {
       lastError = err;
@@ -254,29 +417,32 @@ async function commitWithRetry(
   }
   throw lastError instanceof Error
     ? lastError
-    : new Error(`failed to commit ${path} after ${MAX_COMMIT_ATTEMPTS} attempts`);
+    : new Error(`failed to commit memory for ${domain} after ${MAX_COMMIT_ATTEMPTS} attempts`);
 }
 
 export async function writeProfileToMemory(
   port: MemoryPort,
   args: WriteProfileArgs,
 ): Promise<WriteProfileResult> {
-  const profilePath = profileRepoPath(args.domain);
-  const rendered = renderProfileMarkdown(args.profile, args.provenance);
+  const { domain, profile, provenance } = args;
+  const profilePath = profileRepoPath(domain);
 
-  await commitWithRetry(
-    port,
+  const files: Array<{ path: string; content: string }> = [
+    { path: profilePath, content: renderProfileMarkdown(profile, provenance) },
+  ];
+  const entries: MemoryIndexEntry[] = [profileEntry(domain, profile)];
+
+  const pagesBuilt = contentFiles(domain, 'pages', args.pages ?? [], provenance.crawledAt);
+  const blogBuilt = contentFiles(domain, 'blog', args.blogPosts ?? [], provenance.crawledAt);
+  files.push(...pagesBuilt.files, ...blogBuilt.files);
+  entries.push(...pagesBuilt.entries, ...blogBuilt.entries);
+
+  await commitDomainWithRetry(port, domain, files, entries, `memory: enrich ${domain}`);
+
+  return {
     profilePath,
-    () => rendered,
-    `memory: enrich ${args.domain}`,
-  );
-
-  await commitWithRetry(
-    port,
-    MEMORY_INDEX_PATH,
-    (current) => upsertIndexLine(current, args.domain, args.profile),
-    `memory: index ${args.domain}`,
-  );
-
-  return { profilePath, indexPath: MEMORY_INDEX_PATH };
+    indexPath: MEMORY_INDEX_PATH,
+    pagePaths: pagesBuilt.files.map((f) => f.path),
+    blogPaths: blogBuilt.files.map((f) => f.path),
+  };
 }

@@ -5,8 +5,9 @@ import {
   MEMORY_INDEX_PATH,
   profileRepoPath,
   renderProfileMarkdown,
-  upsertIndexLine,
+  slugForUrl,
   writeProfileToMemory,
+  type MemoryPageContent,
   type MemoryPort,
 } from './memory-write';
 
@@ -57,22 +58,51 @@ function profile(overrides: Partial<CompanyProfile> = {}): CompanyProfile {
   };
 }
 
+function page(url: string, markdown: string, tier: MemoryPageContent['tier'] = 'jina'): MemoryPageContent {
+  return { url, markdown, tier };
+}
+
 function memoryPort(seed: Record<string, string> = {}) {
   const files = new Map(Object.entries(seed));
-  const commits: Array<{ path: string; message: string }> = [];
+  const commits: Array<{
+    files: Array<{ path: string; content: string }>;
+    deletes: string[];
+    message: string;
+  }> = [];
   const port: MemoryPort = {
     read: async (path) => files.get(path) ?? null,
-    commit: async (path, content, message) => {
-      commits.push({ path, message });
-      files.set(path, content);
+    commitMany: async ({ files: writes, deletes, message }) => {
+      commits.push({ files: writes, deletes, message });
+      for (const f of writes) files.set(f.path, f.content);
+      for (const d of deletes) files.delete(d);
     },
   };
   return { port, files, commits };
 }
 
 describe('profileRepoPath', () => {
-  test('places the profile in the enrichment subdirectory', () => {
-    expect(profileRepoPath('example.com')).toBe('.kortix/memory/enrichment/example.com.md');
+  test('places the profile inside the domain folder', () => {
+    expect(profileRepoPath('example.com')).toBe('.kortix/memory/enrichment/example.com/profile.md');
+  });
+});
+
+describe('slugForUrl', () => {
+  test('lowercases and collapses non-alphanumerics', () => {
+    expect(slugForUrl('https://example.com/About-Us/')).toBe('about-us');
+  });
+
+  test('falls back to index for the root path', () => {
+    expect(slugForUrl('https://example.com/')).toBe('index');
+    expect(slugForUrl('https://example.com')).toBe('index');
+  });
+
+  test('caps length at 80 characters', () => {
+    const slug = slugForUrl(`https://example.com/${'a'.repeat(200)}`);
+    expect(slug.length).toBeLessThanOrEqual(80);
+  });
+
+  test('falls back to index when the path collapses to nothing', () => {
+    expect(slugForUrl('https://example.com/???')).toBe('index');
   });
 });
 
@@ -202,61 +232,8 @@ describe('renderProfileMarkdown', () => {
   });
 });
 
-describe('upsertIndexLine', () => {
-  test('creates the section when the index has none', () => {
-    const result = upsertIndexLine('# Project Memory\n\nSome preamble.\n', 'example.com', profile());
-    expect(result).toContain(INDEX_HEADING);
-    expect(result).toContain('[Example Inc](enrichment/example.com.md)');
-  });
-
-  test('preserves existing index content', () => {
-    const result = upsertIndexLine('# Project Memory\n\nSome preamble.\n', 'example.com', profile());
-    expect(result).toContain('Some preamble.');
-  });
-
-  test('appends into an existing section', () => {
-    const existing = `# Project Memory\n\n${INDEX_HEADING}\n\n- [Other](enrichment/other.com.md) — other\n`;
-    const result = upsertIndexLine(existing, 'example.com', profile());
-    expect(result).toContain('enrichment/other.com.md');
-    expect(result).toContain('enrichment/example.com.md');
-  });
-
-  test('replaces the line for a domain already indexed', () => {
-    const existing = `# Project Memory\n\n${INDEX_HEADING}\n\n- [Stale name](enrichment/example.com.md) — old summary\n`;
-    const result = upsertIndexLine(existing, 'example.com', profile());
-
-    expect(result).not.toContain('Stale name');
-    expect(result).not.toContain('old summary');
-    expect(result.match(/enrichment\/example\.com\.md/g)).toHaveLength(1);
-  });
-
-  test('is stable when applied twice', () => {
-    const once = upsertIndexLine(null, 'example.com', profile());
-    const twice = upsertIndexLine(once, 'example.com', profile());
-    expect(twice).toBe(once);
-  });
-
-  test('handles a missing index file', () => {
-    const result = upsertIndexLine(null, 'example.com', profile());
-    expect(result).toContain('[Example Inc](enrichment/example.com.md)');
-  });
-
-  test('falls back to the domain as the label', () => {
-    const result = upsertIndexLine(null, 'example.com', profile({ name: null, tagline: null, description: null }));
-    expect(result).toContain('[example.com](enrichment/example.com.md)');
-  });
-
-  test('truncates a long summary', () => {
-    const long = 'x'.repeat(400);
-    const result = upsertIndexLine(null, 'example.com', profile({ tagline: long }));
-    const line = result.split('\n').find((l) => l.includes('enrichment/example.com.md'))!;
-    expect(line.length).toBeLessThan(200);
-    expect(line).toContain('...');
-  });
-});
-
-describe('writeProfileToMemory', () => {
-  test('writes the profile file and the index', async () => {
+describe('writeProfileToMemory — folder layout', () => {
+  test('writes the profile under the domain folder', async () => {
     const mem = memoryPort();
     const result = await writeProfileToMemory(mem.port, {
       domain: 'example.com',
@@ -264,46 +241,179 @@ describe('writeProfileToMemory', () => {
       provenance: PROVENANCE,
     });
 
-    expect(result.profilePath).toBe('.kortix/memory/enrichment/example.com.md');
+    expect(result.profilePath).toBe('.kortix/memory/enrichment/example.com/profile.md');
     expect(mem.files.get(result.profilePath)).toContain('# Example Inc');
-    expect(mem.files.get(MEMORY_INDEX_PATH)).toContain('enrichment/example.com.md');
   });
 
-  test('commits the profile before the index', async () => {
+  test('writes each page under pages/<slug>.md and each blog post under blog/<slug>.md', async () => {
     const mem = memoryPort();
+    const result = await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', 'About body')],
+      blogPosts: [page('https://example.com/blog/launch', 'Launch body', 'direct')],
+    });
+
+    expect(result.pagePaths).toEqual(['.kortix/memory/enrichment/example.com/pages/about.md']);
+    expect(result.blogPaths).toEqual(['.kortix/memory/enrichment/example.com/blog/blog-launch.md']);
+    expect(mem.files.get(result.pagePaths[0])).toContain('About body');
+    expect(mem.files.get(result.blogPaths[0])).toContain('Launch body');
+  });
+
+  test('renders page front matter with source, fetchedAt and tier', async () => {
+    const mem = memoryPort();
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', '# About\n\nWe do things.', 'firecrawl')],
+    });
+
+    const content = mem.files.get('.kortix/memory/enrichment/example.com/pages/about.md')!;
+    expect(content).toContain('source: "https://example.com/about"');
+    expect(content).toContain(`fetchedAt: "${PROVENANCE.crawledAt}"`);
+    expect(content).toContain('tier: firecrawl');
+    expect(content).toContain('We do things.');
+  });
+
+  test('slug collisions get a distinct numeric suffix', async () => {
+    const mem = memoryPort();
+    const result = await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [
+        page('https://example.com/about', 'One'),
+        page('https://example.com/About/', 'Two'),
+      ],
+    });
+
+    expect(result.pagePaths.sort()).toEqual([
+      '.kortix/memory/enrichment/example.com/pages/about-2.md',
+      '.kortix/memory/enrichment/example.com/pages/about.md',
+    ]);
+  });
+});
+
+describe('writeProfileToMemory — MEMORY.md index', () => {
+  test('lists the profile, every page and every blog post', async () => {
+    const mem = memoryPort();
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', 'About body')],
+      blogPosts: [page('https://example.com/blog/launch', 'Launch body')],
+    });
+
+    const index = mem.files.get(MEMORY_INDEX_PATH)!;
+    expect(index).toContain(INDEX_HEADING);
+    expect(index).toContain('enrichment/example.com/profile.md');
+    expect(index).toContain('enrichment/example.com/pages/about.md');
+    expect(index).toContain('enrichment/example.com/blog/blog-launch.md');
+  });
+
+  test('preserves existing preamble content outside the section', async () => {
+    const mem = memoryPort({ [MEMORY_INDEX_PATH]: '# Project Memory\n\nSome preamble.\n' });
     await writeProfileToMemory(mem.port, {
       domain: 'example.com',
       profile: profile(),
       provenance: PROVENANCE,
     });
 
-    expect(mem.commits[0].path).toBe('.kortix/memory/enrichment/example.com.md');
-    expect(mem.commits[1].path).toBe(MEMORY_INDEX_PATH);
+    expect(mem.files.get(MEMORY_INDEX_PATH)).toContain('Some preamble.');
   });
 
-  test('replaces the profile on re-enrichment without duplicating the index line', async () => {
-    const mem = memoryPort();
-    const args = { domain: 'example.com', profile: profile(), provenance: PROVENANCE };
-    await writeProfileToMemory(mem.port, args);
+  test('appends alongside an existing domain block', async () => {
+    const mem = memoryPort({
+      [MEMORY_INDEX_PATH]: `# Project Memory\n\n${INDEX_HEADING}\n\n- **other.com**\n  - [profile](enrichment/other.com/profile.md)\n`,
+    });
     await writeProfileToMemory(mem.port, {
-      ...args,
-      profile: profile({ tagline: 'A new tagline' }),
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
     });
 
     const index = mem.files.get(MEMORY_INDEX_PATH)!;
-    expect(index.match(/enrichment\/example\.com\.md/g)).toHaveLength(1);
+    expect(index).toContain('enrichment/other.com/profile.md');
+    expect(index).toContain('enrichment/example.com/profile.md');
+  });
+
+  test('replaces the block for a domain already indexed rather than duplicating it', async () => {
+    const mem = memoryPort();
+    const args = {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', 'About body')],
+    };
+    await writeProfileToMemory(mem.port, args);
+    await writeProfileToMemory(mem.port, { ...args, profile: profile({ tagline: 'A new tagline' }) });
+
+    const index = mem.files.get(MEMORY_INDEX_PATH)!;
+    expect(index.match(/enrichment\/example\.com\/profile\.md/g)).toHaveLength(1);
+    expect(index.match(/enrichment\/example\.com\/pages\/about\.md/g)).toHaveLength(1);
     expect(index).toContain('A new tagline');
   });
 
+  test('drops a page that no longer exists on the next run, from both disk and the index', async () => {
+    const mem = memoryPort();
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [
+        page('https://example.com/about', 'About body'),
+        page('https://example.com/team', 'Team body'),
+      ],
+    });
+    expect(mem.files.has('.kortix/memory/enrichment/example.com/pages/team.md')).toBe(true);
+
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', 'About body v2')],
+    });
+
+    expect(mem.files.has('.kortix/memory/enrichment/example.com/pages/team.md')).toBe(false);
+    expect(mem.commits.at(-1)!.deletes).toContain('.kortix/memory/enrichment/example.com/pages/team.md');
+    expect(mem.files.get(MEMORY_INDEX_PATH)).not.toContain('pages/team.md');
+  });
+
+  test('writes the whole folder plus the index in exactly one commit', async () => {
+    const mem = memoryPort();
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', 'About body')],
+      blogPosts: [page('https://example.com/blog/launch', 'Launch body')],
+    });
+
+    expect(mem.commits).toHaveLength(1);
+    expect(mem.commits[0].files.map((f) => f.path).sort()).toEqual(
+      [
+        MEMORY_INDEX_PATH,
+        '.kortix/memory/enrichment/example.com/profile.md',
+        '.kortix/memory/enrichment/example.com/pages/about.md',
+        '.kortix/memory/enrichment/example.com/blog/blog-launch.md',
+      ].sort(),
+    );
+  });
+});
+
+describe('writeProfileToMemory — commit retries', () => {
   test('retries a commit that loses the compare-and-swap race', async () => {
     const mem = memoryPort();
     let attempts = 0;
     const flaky: MemoryPort = {
       read: mem.port.read,
-      commit: async (path, content, message) => {
+      commitMany: async (args) => {
         attempts += 1;
         if (attempts === 1) throw new Error('ref update failed');
-        return mem.port.commit(path, content, message);
+        return mem.port.commitMany(args);
       },
     };
 
@@ -314,28 +424,31 @@ describe('writeProfileToMemory', () => {
     });
 
     expect(attempts).toBeGreaterThan(1);
-    expect(mem.files.get('.kortix/memory/enrichment/example.com.md')).toBeDefined();
+    expect(mem.files.get('.kortix/memory/enrichment/example.com/profile.md')).toBeDefined();
   });
 
   test('re-reads the index between retries so a concurrent write is not clobbered', async () => {
     const mem = memoryPort();
-    let indexCommits = 0;
+    let attempts = 0;
     const racing: MemoryPort = {
       read: mem.port.read,
-      commit: async (path, content, message) => {
-        if (path === MEMORY_INDEX_PATH) {
-          indexCommits += 1;
-          if (indexCommits === 1) {
-            // Another writer lands first, then our commit is rejected.
-            await mem.port.commit(
-              path,
-              `# Project Memory\n\n${INDEX_HEADING}\n\n- [Other](enrichment/other.com.md) — other\n`,
-              'concurrent',
-            );
-            throw new Error('ref update failed');
-          }
+      commitMany: async (args) => {
+        attempts += 1;
+        if (attempts === 1) {
+          // Another writer lands first, then our commit is rejected.
+          await mem.port.commitMany({
+            files: [
+              {
+                path: MEMORY_INDEX_PATH,
+                content: `# Project Memory\n\n${INDEX_HEADING}\n\n- **other.com**\n  - [profile](enrichment/other.com/profile.md)\n`,
+              },
+            ],
+            deletes: [],
+            message: 'concurrent',
+          });
+          throw new Error('ref update failed');
         }
-        return mem.port.commit(path, content, message);
+        return mem.port.commitMany(args);
       },
     };
 
@@ -346,14 +459,14 @@ describe('writeProfileToMemory', () => {
     });
 
     const index = mem.files.get(MEMORY_INDEX_PATH)!;
-    expect(index).toContain('enrichment/other.com.md');
-    expect(index).toContain('enrichment/example.com.md');
+    expect(index).toContain('enrichment/other.com/profile.md');
+    expect(index).toContain('enrichment/example.com/profile.md');
   });
 
   test('gives up after the retry budget', async () => {
     const failing: MemoryPort = {
       read: async () => null,
-      commit: async () => {
+      commitMany: async () => {
         throw new Error('ref update failed');
       },
     };
