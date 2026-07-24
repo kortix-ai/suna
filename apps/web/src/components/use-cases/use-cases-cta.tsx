@@ -1,11 +1,10 @@
-import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react/dist/ssr';
+import { ArrowRightIcon as HiArrowRight } from '@/lib/icons/ssr';
 import Link from 'next/link';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
-import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 
 /**
  * Closing CTA for the use-cases surface. Mirrors the landing page `#cta`
@@ -36,7 +35,7 @@ export function UseCasesCta() {
                 <Button asChild size="lg" className="w-full">
                   <Link href="/auth">
                     Get started
-                    <HiArrowRight className="size-4" weight={DEFAULT_ICON_WEIGHT} />
+                    <HiArrowRight className="size-4" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="accent" className="w-full">

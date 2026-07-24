@@ -1,9 +1,8 @@
 import { BlogCta } from '@/components/blog/blog-cta';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
-import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 import { cn } from '@/lib/utils';
-import { CheckIcon as Check, MinusIcon as Minus } from '@phosphor-icons/react/dist/ssr';
+import { CheckIcon as Check, MinusIcon as Minus } from '@/lib/icons/ssr';
 import Link from 'next/link';
 import { Fragment, type ReactNode } from 'react';
 
@@ -152,23 +151,23 @@ function LeanMark({ side, lean }: { side: 'them' | 'kortix'; lean: RowLean }) {
   const on = lean === side || lean === 'both';
   if (side === 'kortix') {
     return on ? (
-      <Check className="text-kortix-green mt-0.5 size-4 shrink-0" weight={DEFAULT_ICON_WEIGHT} />
+      <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
     ) : (
       <Minus
         className="text-background/40 mt-0.5 size-4 shrink-0"
-        weight={DEFAULT_ICON_WEIGHT}
+       
       />
     );
   }
   return on ? (
     <Check
       className="text-muted-foreground mt-0.5 size-4 shrink-0"
-      weight={DEFAULT_ICON_WEIGHT}
+     
     />
   ) : (
     <Minus
       className="text-muted-foreground/30 mt-0.5 size-4 shrink-0"
-      weight={DEFAULT_ICON_WEIGHT}
+     
     />
   );
 }

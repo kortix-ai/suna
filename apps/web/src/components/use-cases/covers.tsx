@@ -60,10 +60,9 @@ import {
   UsersIcon as Users,
   UserFocusIcon as UserSearch,
   WalletIcon as Wallet,
-} from '@phosphor-icons/react/dist/ssr';
+} from '@/lib/icons/ssr';
 import type { ComponentType, ReactNode } from 'react';
 
-import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 
 import type { Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
@@ -241,7 +240,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
         <GitHub key="g" />,
         <Linear key="l" />,
         <IconTile key="d">
-          <Database className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+          <Database className={cn(ic, 'text-foreground/70')} />
         </IconTile>,
       ]}
     />
@@ -249,22 +248,22 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   'docs-maintainer': () => (
     <RowCover>
       <IconTile>
-        <GitMerge className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+        <GitMerge className={cn(ic, 'text-foreground/70')} />
       </IconTile>
       <Kortix />
       <IconTile>
-        <FileText className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+        <FileText className={cn(ic, 'text-foreground/70')} />
       </IconTile>
     </RowCover>
   ),
   'qa-agent': () => (
     <RowCover>
       <IconTile>
-        <GitPullRequest className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+        <GitPullRequest className={cn(ic, 'text-foreground/70')} />
       </IconTile>
       <Kortix />
       <div className={cn(TILE, 'bg-emerald-500 text-white')}>
-        <CheckCircle2 className={ic} weight={DEFAULT_ICON_WEIGHT} />
+        <CheckCircle2 className={ic} />
       </div>
     </RowCover>
   ),
@@ -280,14 +279,14 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
       <GitHub />
       <Kortix />
       <IconTile>
-        <Tag className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+        <Tag className={cn(ic, 'text-foreground/70')} />
       </IconTile>
     </RowCover>
   ),
   'meeting-notes': () => (
     <RowCover>
       <IconTile>
-        <CalendarClock className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+        <CalendarClock className={cn(ic, 'text-foreground/70')} />
       </IconTile>
       <Kortix />
       <Linear />
@@ -300,7 +299,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
         <Slack key="s" />,
         <Linear key="l" />,
         <IconTile key="u">
-          <UserPlus className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+          <UserPlus className={cn(ic, 'text-foreground/70')} />
         </IconTile>,
       ]}
     />
@@ -318,7 +317,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Mail className={cn(ic, 'text-sky-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Mail className={cn(ic, 'text-sky-500')} />
         </IconTile>
       }
       b={<Linear />}
@@ -328,7 +327,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <BarChart3 className={cn(ic, 'text-indigo-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <BarChart3 className={cn(ic, 'text-indigo-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -338,7 +337,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Coffee className={cn(ic, 'text-rose-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Coffee className={cn(ic, 'text-rose-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -348,7 +347,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <KeyRound className={cn(ic, 'text-amber-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <KeyRound className={cn(ic, 'text-amber-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -358,7 +357,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Siren className={cn(ic, 'text-red-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Siren className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -368,7 +367,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <ClipboardList className={cn(ic, 'text-orange-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <ClipboardList className={cn(ic, 'text-orange-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -376,49 +375,49 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'lead-follow-up': () => (
     <FeatureCover glow="bg-orange-500/15">
-      <UserPlus className={cn(big, 'text-orange-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <UserPlus className={cn(big, 'text-orange-500')} />
     </FeatureCover>
   ),
   'crm-hygiene': () => (
     <FeatureCover glow="bg-fuchsia-500/15">
-      <Users className={cn(big, 'text-fuchsia-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Users className={cn(big, 'text-fuchsia-500')} />
     </FeatureCover>
   ),
   'expense-reconciliation': () => (
     <FeatureCover glow="bg-emerald-500/15">
-      <Receipt className={cn(big, 'text-emerald-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Receipt className={cn(big, 'text-emerald-500')} />
     </FeatureCover>
   ),
   'competitor-watch': () => (
     <FeatureCover glow="bg-cyan-500/15">
-      <Radar className={cn(big, 'text-cyan-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Radar className={cn(big, 'text-cyan-500')} />
     </FeatureCover>
   ),
   'compliance-monitoring': () => (
     <FeatureCover glow="bg-teal-500/15">
-      <ShieldCheck className={cn(big, 'text-teal-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <ShieldCheck className={cn(big, 'text-teal-500')} />
     </FeatureCover>
   ),
   'contract-review': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <ScrollText className={cn(big, 'text-violet-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <ScrollText className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   'ar-chaser': () => (
     <FeatureCover glow="bg-green-500/15">
-      <CircleDollarSign className={cn(big, 'text-green-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <CircleDollarSign className={cn(big, 'text-green-500')} />
     </FeatureCover>
   ),
   'investor-update': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <TrendingUp className={cn(big, 'text-blue-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <TrendingUp className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'security-questionnaire': () => (
     <DuoCover
       a={
         <IconTile>
-          <ClipboardCheck className={cn(ic, 'text-blue-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <ClipboardCheck className={cn(ic, 'text-blue-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -428,7 +427,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <PhoneCall className={cn(ic, 'text-emerald-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <PhoneCall className={cn(ic, 'text-emerald-500')} />
         </IconTile>
       }
       b={<Linear />}
@@ -436,19 +435,19 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'outbound-outreach': () => (
     <FeatureCover glow="bg-sky-500/15">
-      <Send className={cn(big, 'text-sky-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Send className={cn(big, 'text-sky-500')} />
     </FeatureCover>
   ),
   'resume-triage': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <UserSearch className={cn(big, 'text-violet-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <UserSearch className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   'employee-offboarding': () => (
     <DuoCover
       a={
         <IconTile>
-          <UserMinus className={cn(ic, 'text-red-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <UserMinus className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -458,7 +457,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <TrendingDown className={cn(ic, 'text-rose-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <TrendingDown className={cn(ic, 'text-rose-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -468,7 +467,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <MessagesSquare className={cn(ic, 'text-fuchsia-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <MessagesSquare className={cn(ic, 'text-fuchsia-500')} />
         </IconTile>
       }
       b={<Linear />}
@@ -478,11 +477,11 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   'payment-recovery': () => (
     <RowCover>
       <IconTile>
-        <CreditCard className={cn(ic, 'text-rose-500')} weight={DEFAULT_ICON_WEIGHT} />
+        <CreditCard className={cn(ic, 'text-rose-500')} />
       </IconTile>
       <Kortix />
       <div className={cn(TILE, 'bg-emerald-500 text-white')}>
-        <CircleDollarSign className={ic} weight={DEFAULT_ICON_WEIGHT} />
+        <CircleDollarSign className={ic} />
       </div>
     </RowCover>
   ),
@@ -490,7 +489,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Files className={cn(ic, 'text-amber-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Files className={cn(ic, 'text-amber-500')} />
         </IconTile>
       }
       b={<Slack />}
@@ -498,29 +497,29 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'saas-spend-audit': () => (
     <FeatureCover glow="bg-lime-500/15">
-      <Wallet className={cn(big, 'text-lime-600')} weight={DEFAULT_ICON_WEIGHT} />
+      <Wallet className={cn(big, 'text-lime-600')} />
     </FeatureCover>
   ),
   'renewal-manager': () => (
     <FeatureCover glow="bg-indigo-500/15">
-      <Repeat className={cn(big, 'text-indigo-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Repeat className={cn(big, 'text-indigo-500')} />
     </FeatureCover>
   ),
   'rfp-responder': () => (
     <FeatureCover glow="bg-purple-500/15">
-      <FileSignature className={cn(big, 'text-purple-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <FileSignature className={cn(big, 'text-purple-500')} />
     </FeatureCover>
   ),
   'pipeline-hygiene': () => (
     <FeatureCover glow="bg-pink-500/15">
-      <Filter className={cn(big, 'text-pink-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Filter className={cn(big, 'text-pink-500')} />
     </FeatureCover>
   ),
   'content-refresh': () => (
     <DuoCover
       a={
         <IconTile>
-          <RefreshCw className={cn(ic, 'text-orange-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <RefreshCw className={cn(ic, 'text-orange-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -528,36 +527,36 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'ad-performance': () => (
     <FeatureCover glow="bg-rose-500/15">
-      <Target className={cn(big, 'text-rose-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Target className={cn(big, 'text-rose-500')} />
     </FeatureCover>
   ),
   'qbr-prep': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <Presentation className={cn(big, 'text-blue-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Presentation className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'customer-onboarding': () => (
     <FeatureCover glow="bg-sky-500/15">
-      <Rocket className={cn(big, 'text-sky-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Rocket className={cn(big, 'text-sky-500')} />
     </FeatureCover>
   ),
   'data-pipeline-monitor': () => (
     <DuoCover
       a={
         <IconTile>
-          <Activity className={cn(ic, 'text-cyan-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Activity className={cn(ic, 'text-cyan-500')} />
         </IconTile>
       }
       b={
         <IconTile>
-          <Database className={cn(ic, 'text-foreground/70')} weight={DEFAULT_ICON_WEIGHT} />
+          <Database className={cn(ic, 'text-foreground/70')} />
         </IconTile>
       }
     />
   ),
   'candidate-sourcing': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <UserRoundSearch className={cn(big, 'text-violet-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <UserRoundSearch className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   // ── use-case-max batch ─────────────────────────────────────────────────────
@@ -565,7 +564,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <AlarmClock className={cn(ic, 'text-amber-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <AlarmClock className={cn(ic, 'text-amber-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -575,7 +574,7 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <DuoCover
       a={
         <IconTile>
-          <Bug className={cn(ic, 'text-red-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Bug className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -583,54 +582,54 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'flaky-test-triage': () => (
     <FeatureCover glow="bg-yellow-500/15">
-      <FlaskConical className={cn(big, 'text-yellow-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <FlaskConical className={cn(big, 'text-yellow-500')} />
     </FeatureCover>
   ),
   'cloud-cost-anomaly': () => (
     <FeatureCover glow="bg-amber-500/15">
-      <Cloud className={cn(big, 'text-amber-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Cloud className={cn(big, 'text-amber-500')} />
     </FeatureCover>
   ),
   'feature-flag-cleanup': () => (
     <FeatureCover glow="bg-orange-500/15">
-      <Flag className={cn(big, 'text-orange-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Flag className={cn(big, 'text-orange-500')} />
     </FeatureCover>
   ),
   'lead-routing': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <Route className={cn(big, 'text-blue-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Route className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'sales-forecast': () => (
     <FeatureCover glow="bg-emerald-500/15">
-      <LineChart className={cn(big, 'text-emerald-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <LineChart className={cn(big, 'text-emerald-500')} />
     </FeatureCover>
   ),
   'win-loss-analysis': () => (
     <FeatureCover glow="bg-violet-500/15">
-      <Scale className={cn(big, 'text-violet-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Scale className={cn(big, 'text-violet-500')} />
     </FeatureCover>
   ),
   'social-scheduler': () => (
     <FeatureCover glow="bg-pink-500/15">
-      <Share2 className={cn(big, 'text-pink-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Share2 className={cn(big, 'text-pink-500')} />
     </FeatureCover>
   ),
   'brand-monitor': () => (
     <FeatureCover glow="bg-fuchsia-500/15">
-      <AtSign className={cn(big, 'text-fuchsia-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <AtSign className={cn(big, 'text-fuchsia-500')} />
     </FeatureCover>
   ),
   'nps-analysis': () => (
     <FeatureCover glow="bg-cyan-500/15">
-      <Gauge className={cn(big, 'text-cyan-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Gauge className={cn(big, 'text-cyan-500')} />
     </FeatureCover>
   ),
   'ticket-to-kb': () => (
     <DuoCover
       a={
         <IconTile>
-          <Ticket className={cn(ic, 'text-sky-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <Ticket className={cn(ic, 'text-sky-500')} />
         </IconTile>
       }
       b={<GitHub />}
@@ -638,44 +637,44 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'escalation-manager': () => (
     <FeatureCover glow="bg-rose-500/15">
-      <TriangleAlert className={cn(big, 'text-rose-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <TriangleAlert className={cn(big, 'text-rose-500')} />
     </FeatureCover>
   ),
   'month-end-close': () => (
     <FeatureCover glow="bg-teal-500/15">
-      <Calculator className={cn(big, 'text-teal-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Calculator className={cn(big, 'text-teal-500')} />
     </FeatureCover>
   ),
   'vendor-onboarding': () => (
     <FeatureCover glow="bg-indigo-500/15">
-      <Handshake className={cn(big, 'text-indigo-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <Handshake className={cn(big, 'text-indigo-500')} />
     </FeatureCover>
   ),
   'interview-scheduler': () => (
     <FeatureCover glow="bg-purple-500/15">
-      <CalendarPlus className={cn(big, 'text-purple-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <CalendarPlus className={cn(big, 'text-purple-500')} />
     </FeatureCover>
   ),
   'hr-policy-qa': () => (
     <FeatureCover glow="bg-sky-500/15">
-      <HelpCircle className={cn(big, 'text-sky-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <HelpCircle className={cn(big, 'text-sky-500')} />
     </FeatureCover>
   ),
   'nda-turnaround': () => (
     <FeatureCover glow="bg-green-500/15">
-      <FileLock2 className={cn(big, 'text-green-600')} weight={DEFAULT_ICON_WEIGHT} />
+      <FileLock2 className={cn(big, 'text-green-600')} />
     </FeatureCover>
   ),
   'gdpr-dsar': () => (
     <FeatureCover glow="bg-blue-500/15">
-      <FileSearch className={cn(big, 'text-blue-500')} weight={DEFAULT_ICON_WEIGHT} />
+      <FileSearch className={cn(big, 'text-blue-500')} />
     </FeatureCover>
   ),
   'phishing-triage': () => (
     <DuoCover
       a={
         <IconTile>
-          <ShieldAlert className={cn(ic, 'text-red-500')} weight={DEFAULT_ICON_WEIGHT} />
+          <ShieldAlert className={cn(ic, 'text-red-500')} />
         </IconTile>
       }
       b={<Slack />}

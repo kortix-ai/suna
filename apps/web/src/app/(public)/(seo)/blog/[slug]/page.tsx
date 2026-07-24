@@ -1,4 +1,4 @@
-import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react/dist/ssr';
+import { ArrowLeftIcon as ArrowLeft } from '@/lib/icons/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -8,7 +8,6 @@ import { BlogCover } from '@/components/blog/blog-cover';
 import { PostByline } from '@/components/blog/post-byline';
 import { PostCard } from '@/components/blog/post-card';
 import { getAllPosts, getPostEntry, resolveAuthor } from '@/lib/blog';
-import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 import { siteMetadata } from '@/lib/site-metadata';
 
 interface PageProps {
@@ -116,7 +115,7 @@ export default async function BlogPostPage(props: PageProps) {
           href="/blog"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
         >
-          <ArrowLeft className="size-3.5" weight={DEFAULT_ICON_WEIGHT} />
+          <ArrowLeft className="size-3.5" />
           Blog
         </Link>
 

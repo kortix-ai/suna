@@ -235,30 +235,36 @@ removed and blocked by ESLint (`no-restricted-imports`).
 
 - Always import the `*Icon`-suffixed exports: `PlusIcon`, `MagnifyingGlassIcon`,
   `CaretRightIcon` — never the deprecated bare names (`Plus`).
-- **Never pass a `weight` prop for ordinary icons.** The app-wide weight is set
-  once in `src/lib/icons/icon-config.ts` (`DEFAULT_ICON_WEIGHT`) and applied by
-  `IconProvider` (root layout) via Phosphor's `IconContext`. Jay flips this to
-  compare thin/light/regular/bold/fill/duotone across the whole app.
+- **Never pass a `weight` prop.** One constant governs the whole app:
+  `DEFAULT_ICON_WEIGHT` in `src/lib/icons/icon-config.ts` (currently `bold`).
+  Change it, save, and every icon flips; commit it and production renders the
+  same. There is no runtime toggle and **no dev/prod branching** — the constant
+  is the single source of truth in every environment. Compare all six weights
+  at /design-system → Icons.
+- **Two delivery paths, same constant, both propless:**
+  - *Client components* → `IconProvider` (root layout) feeds it to Phosphor's
+    `IconContext`. Import from `@phosphor-icons/react`.
+  - *Server components (RSC)* → React context does not exist in RSC, so import
+    from **`@/lib/icons/ssr`**, where the weight is pre-bound. Importing
+    `@phosphor-icons/react/dist/ssr` directly is ESLint-blocked (it silently
+    defaults to `regular`); importing the main entry in a server component
+    crashes the build (`createContext` at module scope). Adding an icon to a
+    server component? Add its two lines to `src/lib/icons/ssr.tsx`.
 - **Exception — solid intent:** status tiles, success checks, destructive
   trash, and logo glyphs pass an explicit `weight="fill"` so they stay solid
-  regardless of the global weight.
-- In dev, a floating switcher (bottom-right) overrides the weight live
-  (`localStorage['kortix.icon-weight']`); production uses only the config
-  constant. Preview grid: /design-system → Icons.
+  regardless of the global weight. This is the only weight prop in the codebase.
 - Semantic layer: `src/components/ui/kortix-icons.ts` (`IconAdd`, `IconDelete`,
-  …) re-exports Phosphor icons; prefer it where already adopted. `kortix-icons.ts`
-  re-exports the main entry, so it is client-graph only — server components use
-  `@phosphor-icons/react/dist/ssr` directly.
+  …) re-exports Phosphor icons; prefer it where already adopted. It re-exports
+  the client entry, so it is client-graph only.
 - Sizing stays Tailwind-first (`size-4`, `size-3.5 shrink-0` in dense buttons);
   the provider's `size: 24` default only covers class-less usages.
-- **Server Components (RSC) must import from `@phosphor-icons/react/dist/ssr`**,
-  not the main entry — the main entry calls `createContext` at module scope
-  with no `'use client'` directive, which crashes the Next.js RSC build
-  (`TypeError: (0, d.createContext) is not a function`) the moment any
-  server-only module graph reaches it. The ssr entry ships the same
-  `*Icon` components with no context dependency, so pass
-  `weight={DEFAULT_ICON_WEIGHT}` explicitly on every icon in that file —
-  `IconProvider`'s `IconContext` never reaches a Server Component.
+- Background on the RSC rule above: the main entry calls `createContext` at
+  module scope with no `'use client'` directive, so a server-only module graph
+  reaching it crashes the build with
+  `TypeError: (0, d.createContext) is not a function`. Phosphor's own SSR entry
+  fixes the crash but hardcodes `weight="regular"`, which would quietly ignore
+  `DEFAULT_ICON_WEIGHT` — that is why `@/lib/icons/ssr` exists and why the raw
+  entry is ESLint-blocked outside it.
 
 ## Button icon-swap — buttery transitions (blur + scale + opacity)
 

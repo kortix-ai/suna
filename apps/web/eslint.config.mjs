@@ -42,10 +42,22 @@ const eslintConfig = [
               message:
                 'Icons come from @phosphor-icons/react. Global weight: src/lib/icons/icon-config.ts.',
             },
+            {
+              group: ['@phosphor-icons/react/dist/ssr', '@phosphor-icons/react/ssr'],
+              message:
+                "Server components import icons from '@/lib/icons/ssr' — those carry the app-wide weight. Phosphor's raw SSR entry silently defaults to 'regular'.",
+            },
           ],
         },
       ],
     },
+  },
+  {
+    /* The module that binds DEFAULT_ICON_WEIGHT onto the SSR icons, plus the
+       test that checks the binding against the raw entry. Nothing else may
+       reach past it. */
+    files: ['src/lib/icons/ssr.tsx', 'src/lib/icons/ssr.test.tsx'],
+    rules: { 'no-restricted-imports': 'off' },
   },
 ];
 

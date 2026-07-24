@@ -1,44 +1,51 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { PlusIcon } from '@phosphor-icons/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
-import { IconProvider, useIconWeight } from './icon-provider';
-
-function UseIconWeightConsumer() {
-  useIconWeight();
-  return null;
-}
+import { IconProvider } from './icon-provider';
 
 describe('IconProvider', () => {
-  test('icons inherit the configured default weight and size 24', () => {
+  test('icons inherit the configured weight without a weight prop', () => {
     const inProvider = renderToStaticMarkup(
       <IconProvider>
         <PlusIcon />
       </IconProvider>,
     );
-    const explicit = renderToStaticMarkup(
-      <PlusIcon weight={DEFAULT_ICON_WEIGHT} size={24} />,
+
+    expect(inProvider).toContain(
+      renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={24} />),
     );
-    expect(inProvider).toContain(explicit);
   });
 
-  test('a per-icon weight prop overrides the global default', () => {
+  test('a per-icon weight prop overrides the configured weight', () => {
     const inProvider = renderToStaticMarkup(
       <IconProvider>
-        <PlusIcon weight="duotone" />
+        <PlusIcon weight="fill" />
       </IconProvider>,
     );
-    const duotone = renderToStaticMarkup(<PlusIcon weight="duotone" size={24} />);
-    expect(inProvider).toContain(duotone);
+
+    expect(inProvider).toContain(renderToStaticMarkup(<PlusIcon weight="fill" size={24} />));
     expect(inProvider).not.toContain(
       renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={24} />),
     );
   });
 
-  test('useIconWeight throws outside of IconProvider', () => {
-    expect(() => renderToStaticMarkup(<UseIconWeightConsumer />)).toThrow(
-      'useIconWeight must be used within IconProvider',
-    );
+  test('renders identically in development and production', () => {
+    const previous = process.env.NODE_ENV;
+    const render = () =>
+      renderToStaticMarkup(
+        <IconProvider>
+          <PlusIcon />
+        </IconProvider>,
+      );
+
+    Object.defineProperty(process.env, 'NODE_ENV', { value: 'development', configurable: true });
+    const development = render();
+    Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', configurable: true });
+    const production = render();
+    Object.defineProperty(process.env, 'NODE_ENV', { value: previous, configurable: true });
+
+    expect(production).toBe(development);
   });
 });

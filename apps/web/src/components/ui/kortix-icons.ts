@@ -16,7 +16,8 @@
  * and give it a purposeful name.
  *
  * This file re-exports the client entry; server components (RSC) must
- * import from `@phosphor-icons/react/dist/ssr` instead.
+ * import from `@/lib/icons/ssr` instead, which carries the same app-wide
+ * weight. Never pass a weight prop in either case.
  */
 
 export {
