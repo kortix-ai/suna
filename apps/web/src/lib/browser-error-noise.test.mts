@@ -508,7 +508,7 @@ test('does NOT suppress a longer real error containing the billing-gate phrase',
 })
 
 // Reproduces Better Stack error 9f72dd9a2cb49a81aa57be27e9b3cb2f1ef06a8ebf59ede6900267febd3f7ded
-// (Kortix Frontend prod): the SDK's `useSummarizeOpenCodeSession` mutation
+// (Kortix Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
 // threw a plain `Error('No model available for compaction. …')` when every
 // model-resolution fallback tier failed (no config default, no assistant
 // message, no connected provider/model) — an EXPECTED, user-facing

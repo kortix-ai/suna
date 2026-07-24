@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { ProjectSnapshotBuild } from '@kortix/sdk/projects-client';
+import type { ProjectSnapshotBuild } from '@kortix/sdk';
 
 import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
 import type { SandboxProviderMode } from './sandbox-provider-coverage';

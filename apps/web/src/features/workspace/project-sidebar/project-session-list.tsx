@@ -42,7 +42,7 @@ import {
   stopProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';

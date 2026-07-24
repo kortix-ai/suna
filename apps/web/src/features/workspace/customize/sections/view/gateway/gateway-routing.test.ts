@@ -149,7 +149,7 @@ describe('gateway routing editor helpers', () => {
     expect(gatewayViewSource).toContain('modelDefaults.projectDefault');
     expect(gatewayViewSource).toContain('.setProjectDefault(m)');
     expect(gatewayViewSource).toContain('useProjectModels(projectId)');
-    expect(gatewayViewSource).not.toContain('useOpenCodeProviders');
+    expect(gatewayViewSource).not.toContain('useRuntimeProviders');
     expect(gatewayViewSource).not.toContain('modelDefaults.setAccountDefault');
     expect(gatewayViewSource).toContain('modelDefaults.isUpdating');
     expect(gatewayViewSource).toContain("errorToast('Could not update the project default')");

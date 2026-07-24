@@ -1,7 +1,7 @@
 /**
  * Project Files API — Git-backed, read-only.
  *
- * Mirrors the public surface of the sandbox `features/files/api/opencode-files.ts`
+ * Mirrors the public surface of the sandbox `features/files/api/runtime-files.ts`
  * (so the copy of all UI components/hooks needs no signature changes), but
  * every function dispatches against `/v1/projects/:projectId/files` instead
  * of the OpenCode SDK.
@@ -11,13 +11,13 @@
  * immutable from this view; users mutate via a session sandbox + commit.
  */
 
-import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk/projects-client';
+import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk';
 import type {
   FileContent,
   FileNode,
   FindMatch,
   GitFileStatus,
-  OpenCodeProjectInfo,
+  RuntimeProjectInfo,
   ServerHealth,
 } from '@/features/file-browser/types';
 
@@ -253,7 +253,7 @@ export async function findText(_pattern: string): Promise<FindMatch[]> {
   return [];
 }
 
-export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
+export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
   return {
     id: 'project-files',
     worktree: '/workspace',

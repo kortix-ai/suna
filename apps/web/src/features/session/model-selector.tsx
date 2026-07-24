@@ -38,7 +38,7 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';

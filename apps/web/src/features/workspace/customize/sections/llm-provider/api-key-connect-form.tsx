@@ -10,7 +10,7 @@ import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { upsertProjectSecret } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ExternalLink, Info, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';

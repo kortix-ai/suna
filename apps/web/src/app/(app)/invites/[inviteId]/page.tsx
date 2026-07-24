@@ -19,7 +19,7 @@ import {
   declineAccountInvite,
   describeAccountInvite,
   type AccountInviteDescribe,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 

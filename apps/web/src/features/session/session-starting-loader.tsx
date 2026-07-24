@@ -18,7 +18,7 @@ import {
   restartProjectSession,
   sessionStartKey,
   type SessionStartStage,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { formatDuration } from '@kortix/sdk/turns';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

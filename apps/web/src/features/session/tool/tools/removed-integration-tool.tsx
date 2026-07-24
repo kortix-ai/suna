@@ -10,7 +10,7 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import { useSyncStore } from '@kortix/sdk/internal/sync-store';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import {
   Plug,
 } from 'lucide-react';
@@ -110,7 +110,7 @@ function SubAgentStatusBanner({
   childSessionId?: string;
   childMessages?: MessageWithParts[];
 }) {
-  const childStatus = useSyncStore((s) =>
+  const childStatus = useSessionStateStore((s) =>
     childSessionId ? s.sessionStatus[childSessionId] : undefined,
   );
   const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);

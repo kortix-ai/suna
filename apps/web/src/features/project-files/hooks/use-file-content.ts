@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { readFile } from '../api/opencode-files';
+import { readFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
 import type { FileContent } from '@/features/file-browser/types';
 

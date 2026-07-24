@@ -124,7 +124,7 @@ import {
   setConnectorPolicies,
   setConnectorSensitive,
   syncConnectors,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   buildOAuth2CredentialInput,
   createConnectorWithOptionalOAuth2,

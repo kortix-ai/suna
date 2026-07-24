@@ -8,7 +8,7 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
-import { useOpenCodeMessages } from '@kortix/sdk/react';
+import { useRuntimeMessages } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import {
   Cpu,
@@ -40,7 +40,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];

@@ -22,7 +22,7 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk/projects-client';
+import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
 import { clearStartStash } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';

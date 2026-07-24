@@ -14,25 +14,25 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useOpenCodeProviders } from '@kortix/sdk/react';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import type { OpencodeAgentConfig, PermissionConfig } from '@kortix/sdk/projects-client';
+import type { RuntimeAgentConfig, PermissionConfig } from '@kortix/sdk';
 import { Gauge, Sliders } from 'lucide-react';
 import { AGENT_MODE_HELP, AGENT_MODES, THEME_COLORS } from './agent-editor-catalog';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { PermissionEditor } from './permission-editor';
 
-export function OpencodeLayerFields({
+export function RuntimeLayerFields({
   agentName,
   oc,
   setOc,
 }: {
   agentName: string;
-  oc: OpencodeAgentConfig;
-  setOc: <K extends keyof OpencodeAgentConfig>(key: K, value: OpencodeAgentConfig[K]) => void;
+  oc: RuntimeAgentConfig;
+  setOc: <K extends keyof RuntimeAgentConfig>(key: K, value: RuntimeAgentConfig[K]) => void;
 }) {
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = flattenModels(providers);
   const selectedModelKey = oc.model ? wireToModelKey(oc.model) : null;
   const permCount =

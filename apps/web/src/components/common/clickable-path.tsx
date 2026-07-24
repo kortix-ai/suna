@@ -1,6 +1,6 @@
 'use client';
 
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
+import { toSandboxAbsolutePath } from '@/features/files/api/runtime-files';
 import { cn } from '@/lib/utils';
 import { splitTextByPaths } from '@/lib/utils/path-detection';
 import { useFilePreviewStore } from '@/stores/file-preview-store';

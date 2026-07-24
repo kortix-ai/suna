@@ -22,14 +22,14 @@ import {
   getFileCategory,
   type FileCategory,
 } from '@/features/file-viewer';
-import { isBrowserViewable } from '@/features/files/api/opencode-files';
+import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
   Check,
   Copy,
@@ -53,7 +53,7 @@ import { ShareFileButton, type ShareContext } from './viewer-actions';
 // `getState()` for both snapshots sidesteps that — same live value, same
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
 const getSandboxAliveSnapshot = () => {
-  const s = useSandboxConnectionStore.getState();
+  const s = useRuntimeConnectionStore.getState();
   return s.status === 'connected' && s.healthy === true;
 };
 
@@ -305,7 +305,7 @@ export function FilePreview({
   const rich = isRich(fileName);
 
   const sandboxAlive = useSyncExternalStore(
-    useSandboxConnectionStore.subscribe,
+    useRuntimeConnectionStore.subscribe,
     getSandboxAliveSnapshot,
     getSandboxAliveSnapshot,
   );

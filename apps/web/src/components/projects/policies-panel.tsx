@@ -41,7 +41,7 @@ import {
   type PolicyAction,
   type PolicyDefaultMode,
   type ProjectPolicy,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 

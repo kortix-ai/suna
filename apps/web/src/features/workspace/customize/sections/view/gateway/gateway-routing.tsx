@@ -35,7 +35,7 @@ import type {
   GatewayFallbackChain,
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 

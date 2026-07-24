@@ -30,7 +30,7 @@ import {
   downloadFile,
   isBrowserViewable,
   openFileInNewTab,
-} from '@/features/files/api/opencode-files';
+} from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';

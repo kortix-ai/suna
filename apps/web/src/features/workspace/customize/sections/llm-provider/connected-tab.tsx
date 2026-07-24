@@ -15,12 +15,12 @@ import {
   deleteProjectSecret,
   type GatewayProviderVerifyResult,
   verifyGatewayProvider,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plug, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
-import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
+import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 import { providerCredentialSummary } from './utils';
 
 // GAP C1 — "Connected" only means a secret row exists in project_secrets; it
@@ -89,7 +89,7 @@ export function ConnectedTab({
           ? [
               ...provider.envVars,
               CODEX_AUTH_JSON_SECRET_NAME,
-              LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
+              LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
             ]
           : provider.envVars;
       await Promise.all(

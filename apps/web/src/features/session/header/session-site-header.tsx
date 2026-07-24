@@ -32,7 +32,7 @@ import {
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {

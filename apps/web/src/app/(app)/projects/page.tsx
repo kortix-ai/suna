@@ -38,7 +38,7 @@ import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus } from 'lucide-react';

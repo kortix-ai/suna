@@ -1,16 +1,16 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useServerStore } from '@kortix/sdk/internal/server-store';
-import { readFile } from '../api/opencode-files';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { readFile } from '../api/runtime-files';
 import type { FileContent } from '@/features/file-browser/types';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
-  all: ['opencode-files', 'content'] as const,
+  all: ['runtime-files', 'content'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['opencode-files', 'content', serverUrl, filePath] as const,
+    ['runtime-files', 'content', serverUrl, filePath] as const,
 };
 
 /**
@@ -23,7 +23,7 @@ export function useFileContent(
   filePath: string | null,
   options?: { enabled?: boolean; staleTime?: number },
 ) {
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
@@ -45,7 +45,7 @@ export function useFileContent(
  */
 export function useInvalidateFileContent() {
   const queryClient = useQueryClient();
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return (filePath?: string) => {
     if (filePath) {

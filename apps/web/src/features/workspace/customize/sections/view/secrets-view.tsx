@@ -59,7 +59,7 @@ import {
   getProjectDetail,
   listProjectSecrets,
   upsertProjectSecret,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { DangerTriangleSolid, Pencil, Search, TrashSolid } from '@mynaui/icons-react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;

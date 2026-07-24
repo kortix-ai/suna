@@ -10,7 +10,7 @@
 import { Segmented } from './agent-editor-primitives';
 import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
 import { cn } from '@/lib/utils';
-import type { AgentGrantSetV2 } from '@kortix/sdk/projects-client';
+import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { useState } from 'react';
 
 type GrantMode = 'all' | 'pick' | 'none';

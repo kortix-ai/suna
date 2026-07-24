@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSandboxHealth, ProjectSnapshotBuild } from '@kortix/sdk/projects-client';
+import type { ProjectSandboxHealth, ProjectSnapshotBuild } from '@kortix/sdk';
 import {
   currentFailedBuild,
   resolveSandboxAlertSeverity,

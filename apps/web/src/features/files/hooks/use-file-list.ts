@@ -2,15 +2,15 @@
 
 import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useServerStore } from '@kortix/sdk/internal/server-store';
-import { listFiles } from '../api/opencode-files';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { listFiles } from '../api/runtime-files';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 
 export const fileListKeys = {
-  all: ['opencode-files', 'list'] as const,
+  all: ['runtime-files', 'list'] as const,
   dir: (serverUrl: string, dirPath: string) =>
-    ['opencode-files', 'list', serverUrl, dirPath] as const,
+    ['runtime-files', 'list', serverUrl, dirPath] as const,
 };
 
 /**
@@ -23,7 +23,7 @@ export function useFileList(
   dirPath: string,
   options?: { enabled?: boolean },
 ) {
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const showHidden = useFilesStore((s) => s.showHidden);
 
   const query = useQuery<FileNode[]>({
@@ -67,7 +67,7 @@ export function useFileList(
  */
 export function useInvalidateFileList() {
   const queryClient = useQueryClient();
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return (dirPath?: string) => {
     if (dirPath) {

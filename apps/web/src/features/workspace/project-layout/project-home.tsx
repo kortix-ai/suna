@@ -42,7 +42,7 @@ import {
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { chalkColors } from '@kortix/shared';
 import { HiOutlineViewGrid } from 'react-icons/hi';
 

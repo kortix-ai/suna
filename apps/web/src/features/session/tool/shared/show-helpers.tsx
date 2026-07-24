@@ -9,7 +9,6 @@ import {
   ShowContentRenderer,
   showDomain,
 } from '@/features/file-renderers/show-content-renderer';
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { binaryBlobKeys } from '@/features/files/hooks/use-binary-blob';
 import { fileContentKeys } from '@/features/files/hooks/use-file-content';
 import {
@@ -30,7 +29,7 @@ import { useState } from 'react';
 import { GrRefresh } from 'react-icons/gr';
 
 import { STATUS_BORDER } from '@/components/ui/status';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
+import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
   AlertTriangle,
   Code2,
@@ -99,9 +98,8 @@ export function useShowOpenInTab(props: {
 
   const isHtmlFilePath =
     !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
-  const staticFilePort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
   const htmlStaticUrl = isHtmlFilePath
-    ? `http://localhost:${staticFilePort}/open?path=${encodeURIComponent(toSandboxAbsolutePath(path))}`
+    ? buildStaticFileLocalUrl(path)
     : '';
   const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
 
@@ -159,10 +157,7 @@ export function useShowOpenInTab(props: {
 }
 
 export function buildHtmlStaticUrl(filePath: string): string {
-  const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-  const normalized = toSandboxAbsolutePath(filePath);
-  const encoded = normalized.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return `http://localhost:${port}/open?path=/${encoded}`;
+  return buildStaticFileLocalUrl(filePath);
 }
 
 export { ServicePreviewViewport, useServicePreview };

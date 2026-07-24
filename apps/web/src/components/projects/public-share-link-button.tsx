@@ -12,7 +12,7 @@ import {
 import {
   createSessionPublicShare,
   type CreateSessionPublicShareInput,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 

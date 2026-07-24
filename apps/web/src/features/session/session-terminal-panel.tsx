@@ -8,10 +8,10 @@ import {
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
 } from '@/features/session/pty-connection';
-import { useCreatePty, useOpenCodePtyList, type Pty } from '@kortix/sdk/react';
-import { useServerStore } from '@kortix/sdk/internal/server-store';
+import { useCreatePty, useRuntimePtyList, type Pty } from '@kortix/sdk/react';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { requestRuntimeReconnect } from '@kortix/sdk/internal/sandbox-connection-store';
+import { requestRuntimeReconnect } from '@kortix/sdk/react';
 import { Plus, Terminal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -45,7 +45,7 @@ export function SessionTerminalPanel({
   hidden?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   // The terminal belongs to the sandbox daemon. It does not depend on OpenCode
   // health. Bind every PTY operation to this session's explicit runtime URL.
@@ -54,7 +54,7 @@ export function SessionTerminalPanel({
     isLoading,
     isError: isListError,
     refetch: refetchPtys,
-  } = useOpenCodePtyList({ serverUrl, enabled: !!serverUrl });
+  } = useRuntimePtyList({ serverUrl, enabled: !!serverUrl });
   // Failures surface in the pane (retry button / reconnect flow) — keep them
   // out of the app-global "Failed to perform action" toast.
   const createPty = useCreatePty({ serverUrl, onError: () => {} });

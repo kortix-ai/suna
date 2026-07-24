@@ -16,6 +16,10 @@ import {
   proxyLocalhostUrl,
   parseLocalhostUrl,
   isPreviewUrl,
+  buildStaticFilePreviewUrl,
+  buildStaticFileHealthPreviewUrl,
+  buildStaticFileLocalUrl,
+  buildStaticFileServicePath,
 } from './url';
 import {
   buildPreviewAuthEndpoint,
@@ -107,6 +111,30 @@ describe('session/preview', () => {
     expect(
       buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html'),
     ).toBe('http://localhost:8008/v1/p/auth');
+  });
+
+  it('buildStaticFilePreviewUrl owns the static-file service route', () => {
+    expect(buildStaticFilePreviewUrl('/workspace/reports/q1 report.html', {
+      sandboxId: 'sbx1',
+      backendPort: 8008,
+      apiBaseUrl: 'http://localhost:8008/v1',
+    })).toBe(
+      'http://p3211-sbx1.localhost:8008/open?path=/workspace/reports/q1%20report.html',
+    );
+  });
+
+  it('static-file helpers hide the service port and open route', () => {
+    expect(buildStaticFileServicePath('/workspace/a b.html')).toBe(
+      '/open?path=/workspace/a%20b.html',
+    );
+    expect(buildStaticFileLocalUrl('/workspace/a b.html')).toBe(
+      'http://localhost:3211/open?path=/workspace/a%20b.html',
+    );
+    expect(buildStaticFileHealthPreviewUrl({
+      sandboxId: 'sbx1',
+      backendPort: 8008,
+      apiBaseUrl: 'https://api.kortix.cloud/v1',
+    })).toBe('https://api.kortix.cloud/v1/p/sbx1/3211/health');
   });
 
   it('isSubdomainPreviewUrl + appendPreviewToken', () => {

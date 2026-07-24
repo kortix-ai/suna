@@ -16,8 +16,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useServerStore } from '@kortix/sdk/internal/server-store';
-import { findText } from '../api/opencode-files';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { findText } from '../api/runtime-files';
 import type { FindMatch } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
@@ -113,7 +113,7 @@ export function useWorkspaceSearch(
   query: string,
   options?: UseWorkspaceSearchOptions,
 ): WorkspaceSearchState {
-  const serverUrl = useServerStore((state) => state.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((state) => state.getActiveServerUrl());
   const {
     debounceMs = 150,
     maxResults = 50,

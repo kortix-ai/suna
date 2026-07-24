@@ -9,11 +9,11 @@ import {
   createFile,
   copyFile,
   type UploadResult,
-} from '../api/opencode-files';
+} from '../api/runtime-files';
 import { fileListKeys } from './use-file-list';
 import { fileContentKeys } from './use-file-content';
 import { gitStatusKeys } from './use-git-status';
-import { useServerStore } from '@kortix/sdk/internal/server-store';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import type { FileNode } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ export function useFileMkdir() {
 
 export function useFileRename() {
   const queryClient = useQueryClient();
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return useMutation<boolean, Error, { from: string; to: string }>({
     mutationFn: ({ from, to }) => renameFile(from, to),

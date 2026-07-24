@@ -1,11 +1,11 @@
 /**
- * OpenCode File API — re-export of the SDK's workspace file client.
+ * Runtime file API — re-export of the SDK's workspace file client.
  *
- * The daemon `/file` + `/find` data operations now live in `@kortix/sdk/files`
+ * The daemon `/file` + `/find` data operations now live in `@kortix/sdk`
  * (one owner, shared by every host). This module only adds the browser-only
  * download helpers (DOM + JSZip), which consume the SDK's data ops.
  */
-import { listFiles, readBlob } from '@kortix/sdk/files';
+import { listFiles, readBlob } from '@kortix/sdk';
 import JSZip from 'jszip';
 
 // Data operations — single source of truth in the SDK. Aliased to the names the
@@ -31,8 +31,8 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
-} from '@kortix/sdk/files';
-export type { UploadResult } from '@kortix/sdk/files';
+} from '@kortix/sdk';
+export type { UploadResult } from '@kortix/sdk';
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
 

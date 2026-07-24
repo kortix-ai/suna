@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isBrowserViewable, uniqueZipNames } from './opencode-files';
+import { isBrowserViewable, uniqueZipNames } from './runtime-files';
 
 describe('isBrowserViewable (W4)', () => {
   test('inert-as-a-top-level-document formats open in a new tab', () => {

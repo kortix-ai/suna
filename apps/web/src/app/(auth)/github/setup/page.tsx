@@ -15,7 +15,7 @@ import {
   listLinkableGitHubInstallations,
   saveGitHubInstallation,
   type LinkableGitHubInstallation,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { Github } from 'lucide-react';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';

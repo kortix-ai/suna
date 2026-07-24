@@ -32,7 +32,7 @@ import {
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
 import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, KeyRound, X } from 'lucide-react';

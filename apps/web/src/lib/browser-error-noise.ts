@@ -147,7 +147,7 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
 ] as const;
 
 // Expected "no compaction model configured" configuration state. The SDK's
-// `useSummarizeOpenCodeSession` mutation
+// `useSummarizeRuntimeSession` mutation
 // (`packages/sdk/src/react/use-opencode-sessions/sessions.ts`) throws a
 // sentinel-marked `NoCompactionModelError`
 // (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`,
@@ -1157,7 +1157,7 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
 
 /**
  * Whether a message is the EXPECTED "no compaction model configured"
- * configuration state thrown by the SDK's `useSummarizeOpenCodeSession`
+ * configuration state thrown by the SDK's `useSummarizeRuntimeSession`
  * mutation (`NoCompactionModelError`) when every model-resolution fallback
  * tier fails. The host already surfaces it via a user-facing toast; it must
  * never page Better Stack, but the sentinel error can leak to Sentry as an
@@ -2354,7 +2354,7 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   // Expected "no compaction model configured" configuration state — the SDK's
-  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `useSummarizeRuntimeSession` mutation throws a sentinel
   // `NoCompactionModelError` that the host already surfaces via a toast. It
   // leaks here as an unhandled promise rejection (`void loadingToast(...)`
   // re-throws after the toast → `onunhandledrejection`). Drop it so the
@@ -2577,7 +2577,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   // Expected "no compaction model configured" configuration state — the SDK's
-  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `useSummarizeRuntimeSession` mutation throws a sentinel
   // `NoCompactionModelError` that the host already surfaces via a toast. It
   // can leak to Sentry through capture paths that bypass the toast (the
   // `void loadingToast(...)` re-throw → `onunhandledrejection`, plus

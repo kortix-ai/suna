@@ -7,13 +7,13 @@ import {
   SessionChatInput,
   type TrackedMention,
 } from '@/features/session/session-chat-input';
-import { useOpenCodeConfig } from '@kortix/sdk/react';
+import { useRuntimeConfig } from '@kortix/sdk/react';
 import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
 import {
   type Command,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { useProjectConfig } from '@kortix/sdk/react';
 
@@ -30,7 +30,7 @@ export interface ComposerOptions {
  * and the instant session shell so neither hand-rolls the selector wiring.
  *
  * The current selections are handed to `onSend` / `onCommand` as `options`, so
- * callers never need their own `useOpenCodeLocal`.
+ * callers never need their own `useRuntimeLocal`.
  */
 export function ComposerChatInput({
   onSend,
@@ -85,10 +85,10 @@ export function ComposerChatInput({
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
 }) {
-  const { data: agents } = useOpenCodeAgents({ projectId });
-  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
-  const { data: commands } = useOpenCodeCommands();
-  const { data: config } = useOpenCodeConfig();
+  const { data: agents } = useRuntimeAgents({ projectId });
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
+  const { data: commands } = useRuntimeCommands();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
   const local = useSessionModelSelection({
     agents,

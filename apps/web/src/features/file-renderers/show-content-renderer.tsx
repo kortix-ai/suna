@@ -30,7 +30,6 @@ import { TextWithPaths } from '@/components/common/clickable-path';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
@@ -40,7 +39,7 @@ import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
+import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -425,10 +424,7 @@ export function ShowContentRenderer({
   // Handles: type='file' with .html/.htm extension, OR type='html' with path only
   // ═════════════════════════════════════════════════════════════════════════
   if ((isHtmlFile || (isHtml && !content)) && sandboxPath && LocalhostPreview) {
-    const staticPort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-    const normalizedPath = toSandboxAbsolutePath(sandboxPath);
-    const encodedPath = normalizedPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-    const staticUrl = `http://localhost:${staticPort}/open?path=/${encodedPath}`;
+    const staticUrl = buildStaticFileLocalUrl(sandboxPath);
     return <LocalhostPreview url={staticUrl} label={title || fileName || undefined} />;
   }
 

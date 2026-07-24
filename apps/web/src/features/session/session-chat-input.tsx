@@ -16,8 +16,8 @@ import type {
   Session,
 } from '@kortix/sdk/react';
 import {
-  useOpenCodeSessionTodo,
-  useOpenCodeSessions,
+  useRuntimeSessionTodo,
+  useRuntimeSessions,
 } from '@kortix/sdk/react';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -896,7 +896,7 @@ function MentionPopover({
 
 function TodoChip({ sessionId }: { sessionId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: todos } = useOpenCodeSessionTodo(sessionId);
+  const { data: todos } = useRuntimeSessionTodo(sessionId);
   const [expanded, setExpanded] = useState(false);
 
   if (!Array.isArray(todos) || todos.length === 0) return null;
@@ -1320,7 +1320,7 @@ function SessionChatInputImpl({
   }, [disabled]);
 
   // Sessions for @ mention search
-  const { data: allSessions } = useOpenCodeSessions();
+  const { data: allSessions } = useRuntimeSessions();
 
   useEffect(() => {
     if (text.trim().length > 0) return;

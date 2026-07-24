@@ -66,7 +66,7 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { type ModelKey, modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import { useOpenCodeProviders, useVisibleAgents } from '@kortix/sdk/react';
+import { useRuntimeProviders, useVisibleAgents } from '@kortix/sdk/react';
 import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -81,7 +81,7 @@ import {
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,
@@ -989,7 +989,7 @@ function AgentModelSection({
   onMutated: () => void;
 }) {
   const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
 
@@ -1785,7 +1785,7 @@ function CreateTriggerModal({
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
   useEffect(() => {

@@ -25,7 +25,7 @@ import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk';
-import { useSyncStore } from '@kortix/sdk/internal/sync-store';
+import { useSessionStateStore } from '@kortix/sdk/react';
 
 // ============================================================================
 // Context metrics — ported 1:1 from SolidJS session-context-metrics.ts
@@ -490,8 +490,8 @@ export function SessionContextModal({
   }, [ctx?.input, messages]);
 
   // ---- Sub-session aggregation ----
-  const storeMessages = useSyncStore((s) => s.messages);
-  const storeParts = useSyncStore((s) => s.parts);
+  const storeMessages = useSessionStateStore((s) => s.messages);
+  const storeParts = useSessionStateStore((s) => s.parts);
 
   const childMap = useMemo(
     () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),

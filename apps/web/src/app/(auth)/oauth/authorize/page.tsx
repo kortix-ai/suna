@@ -17,6 +17,10 @@ import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
+import {
+  getOAuthConsentRequest,
+  submitOAuthConsent,
+} from '@kortix/sdk';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
@@ -73,19 +77,10 @@ function OAuthConsent() {
         }
 
         const backendUrl = getEnv().BACKEND_URL || '';
-        const res = await fetch(
-          `${backendUrl}/oauth/authorize/consent/${encodeURIComponent(requestId)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          },
-        );
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          setError(data?.error_description || data?.error || 'Authorization request expired.');
-          return;
-        }
+        const data = await getOAuthConsentRequest(requestId, {
+          backendUrl,
+          accessToken: session.access_token,
+        });
         if (!cancelled) {
           setConsentRequest({
             clientName: data.client_name || 'Unknown App',
@@ -124,26 +119,14 @@ function OAuthConsent() {
       }
 
       const backendUrl = getEnv().BACKEND_URL || '';
-      const res = await fetch(`${backendUrl}/oauth/authorize/consent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          request_id: requestId,
-          approved,
-        }),
+      const data = await submitOAuthConsent({
+        requestId,
+        approved,
+      }, {
+        backendUrl,
+        accessToken: session.access_token,
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-        setError(err.error_description || err.error || 'Authorization failed');
-        setDecision(null);
-        return;
-      }
-
-      const data = await res.json();
       if (data.redirect_uri) {
         window.location.href = data.redirect_uri;
       }

@@ -30,7 +30,7 @@ import {
   type ProjectConfigSummary,
   getProjectDetail,
   readProjectFile,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, type LucideIcon, Plus } from 'lucide-react';

@@ -1,51 +1,29 @@
 /**
- * Fetch-based SSE client that supports Authorization headers.
- *
- * Unlike native EventSource, this uses `fetch()` + ReadableStream, which
- * allows setting custom headers (Authorization: Bearer). This eliminates
- * the need to pass tokens via query parameters.
- *
- * Usage:
- *   const sse = createSSEStream(url, token);
- *   sse.addEventListener('event_name', (data) => { ... });
- *   sse.connect();
- *   // later:
- *   sse.close();
+ * Fetch-based SSE client with header-based authentication.
  */
 
 export interface SSEStreamOptions {
-  /** The SSE endpoint URL (no token query params needed) */
   url: string;
-  /** Bearer token for Authorization header */
   token: string;
-  /** HTTP method (default GET). Use POST to send a JSON `body`. */
   method?: 'GET' | 'POST';
-  /** JSON-serializable request body (only sent for non-GET methods). */
   body?: unknown;
-  /** Called when a named SSE event is received */
   onEvent?: (event: string, data: string) => void;
-  /** Called when the connection is established */
   onOpen?: () => void;
-  /** Called when an error occurs or the connection drops */
   onError?: (error: Error) => void;
-  /** AbortSignal to cancel the stream */
   signal?: AbortSignal;
 }
 
 export interface SSEStream {
-  /** Start the SSE connection */
   connect: () => void;
-  /** Close the SSE connection */
   close: () => void;
-  /** Register a named event listener */
   addEventListener: (event: string, handler: (data: string) => void) => void;
-  /** Remove a named event listener */
   removeEventListener: (event: string, handler: (data: string) => void) => void;
 }
 
-/**
- * Create a fetch-based SSE stream with header-based auth.
- */
+export function buildTunnelEventStreamUrl(apiUrl: string): string {
+  return `${apiUrl.replace(/\/+$/, '')}/tunnel/permission-requests/stream`;
+}
+
 export function createSSEStream(options: SSEStreamOptions): SSEStream {
   const {
     url,
@@ -65,51 +43,42 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
   function emit(event: string, data: string) {
     onEvent?.(event, data);
     const handlers = listeners.get(event);
-    if (handlers) {
-      for (const handler of handlers) {
-        try {
-          handler(data);
-        } catch {
-          // Swallow listener errors
-        }
+    if (!handlers) return;
+    for (const handler of handlers) {
+      try {
+        handler(data);
+      } catch {
+        // Listener failures do not terminate the stream.
       }
     }
   }
 
   async function connect() {
     if (closed) return;
-
     abortController = new AbortController();
-    const combinedSignal = externalSignal
+    const signal = externalSignal
       ? AbortSignal.any([abortController.signal, externalSignal])
       : abortController.signal;
 
     try {
       const headers: Record<string, string> = {
-        'Accept': 'text/event-stream',
-        'Authorization': `Bearer ${token}`,
+        Accept: 'text/event-stream',
+        Authorization: `Bearer ${token}`,
       };
       if (method !== 'GET' && body !== undefined) {
         headers['Content-Type'] = 'application/json';
       }
-
       const response = await fetch(url, {
         method,
         headers,
-        body:
-          method !== 'GET' && body !== undefined ? JSON.stringify(body) : undefined,
-        signal: combinedSignal,
+        body: method !== 'GET' && body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
         credentials: 'include',
       });
-
       if (!response.ok) {
         throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
       }
-
-      if (!response.body) {
-        throw new Error('SSE response has no body');
-      }
-
+      if (!response.body) throw new Error('SSE response has no body');
       onOpen?.();
 
       const reader = response.body.getReader();
@@ -121,17 +90,11 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
       while (!closed) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
-
-        // Process complete lines
         const lines = buffer.split('\n');
-        // Keep the last potentially incomplete line in the buffer
         buffer = lines.pop() || '';
-
         for (const line of lines) {
           if (line === '') {
-            // Empty line = end of event
             if (currentData) {
               emit(currentEvent, currentData.trimEnd());
               currentEvent = 'message';
@@ -143,15 +106,13 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
             currentData += (currentData ? '\n' : '') + line.slice(6);
           } else if (line.startsWith('data:')) {
             currentData += (currentData ? '\n' : '') + line.slice(5);
-          } else if (line.startsWith(':')) {
-            // Comment (keep-alive) — ignore
           }
         }
       }
-    } catch (err) {
+    } catch (cause) {
       if (closed) return;
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      onError?.(err instanceof Error ? err : new Error(String(err)));
+      if (cause instanceof DOMException && cause.name === 'AbortError') return;
+      onError?.(cause instanceof Error ? cause : new Error(String(cause)));
     }
   }
 
@@ -163,10 +124,9 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
   }
 
   function addEventListener(event: string, handler: (data: string) => void) {
-    if (!listeners.has(event)) {
-      listeners.set(event, new Set());
-    }
-    listeners.get(event)!.add(handler);
+    const handlers = listeners.get(event) ?? new Set();
+    handlers.add(handler);
+    listeners.set(event, handlers);
   }
 
   function removeEventListener(event: string, handler: (data: string) => void) {
@@ -174,4 +134,14 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
   }
 
   return { connect, close, addEventListener, removeEventListener };
+}
+
+export function createTunnelEventStream(
+  apiUrl: string,
+  options: Omit<SSEStreamOptions, 'url'>,
+): SSEStream {
+  return createSSEStream({
+    ...options,
+    url: buildTunnelEventStreamUrl(apiUrl),
+  });
 }

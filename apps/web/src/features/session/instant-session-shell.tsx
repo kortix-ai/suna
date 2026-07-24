@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
-import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import type { SessionStartStage } from '@kortix/sdk';
 import { GridFileCard } from './grid-file-card';
 
 /**
@@ -99,7 +99,7 @@ export function InstantSessionShell({
 
       // Hand the message to the real chat: it auto-sends from this stash once
       // the runtime is healthy. `sessionId` here is the route/Kortix-session
-      // id, not the eventual OpenCode pin (`useCanonicalOpenCodeSession`
+      // id, not the eventual OpenCode pin (`useCanonicalRuntimeSession`
       // resolves those independently — see `ensureOpencodeSessionPin` in
       // apps/api/src/projects/routes/shared.ts); the session page's
       // `migrateStash` hands this canonical stash off onto the resolved pin

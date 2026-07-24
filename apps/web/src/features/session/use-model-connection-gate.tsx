@@ -17,7 +17,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import type { FlatModel } from './session-chat-input';
 
 /**

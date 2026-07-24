@@ -46,7 +46,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
+import { listProjectSessions } from '@kortix/sdk';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarClock, List, Mail, MessagesSquare, Webhook, type LucideIcon } from 'lucide-react';

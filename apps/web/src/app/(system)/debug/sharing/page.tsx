@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
-import type { ProjectAccessResponse } from '@kortix/sdk/projects-client';
+import type { ProjectAccessResponse } from '@kortix/sdk';
 
 const DEMO_PROJECT = 'demo';
 const DEMO_ACCESS: ProjectAccessResponse = {

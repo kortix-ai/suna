@@ -10,7 +10,7 @@ import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { type SessionConnectorBindings, createProjectSession } from '@kortix/sdk/projects-client';
+import { type SessionConnectorBindings, createProjectSession } from '@kortix/sdk';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**

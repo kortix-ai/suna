@@ -4,7 +4,7 @@ import { ProjectFilesProvider } from '@/features/project-files';
 import { ReviewCenterConnected } from '@/features/review-center/review-center-connected';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getProject } from '@kortix/sdk/projects-client';
+import { getProject } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 /**

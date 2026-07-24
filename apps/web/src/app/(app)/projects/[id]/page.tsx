@@ -13,7 +13,7 @@ import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
@@ -90,7 +90,7 @@ export default function ProjectIndexPage() {
         onError: () => setSending(false),
         onNavigate: (sessionId) => {
           // `sessionId` here is the route/Kortix session id, not the OpenCode
-          // pin the session page resolves later (`useCanonicalOpenCodeSession`
+          // pin the session page resolves later (`useCanonicalRuntimeSession`
           // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
           // route id via the SDK's canonical `writeStartStash` — the session
           // page's `migrateStash` hands this off onto the resolved pin once it

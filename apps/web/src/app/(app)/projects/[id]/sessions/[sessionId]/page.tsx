@@ -20,8 +20,8 @@ import { SessionStartingLoader } from '@/features/session/session-starting-loade
 import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
 import {
-  clearOpencodeEnsureGuard,
-  useCanonicalOpenCodeSession,
+  clearRuntimeEnsureGuard,
+  useCanonicalRuntimeSession,
 } from '@kortix/sdk/react';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
@@ -34,19 +34,19 @@ import {
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
-import { formatOpenCodeRuntimeError } from '@kortix/sdk';
+import { formatRuntimeError } from '@kortix/sdk';
 import {
   getProjectDetail,
   restartProjectSession,
   sessionStartKey,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import {
   migrateStash,
   readStartStash,
   useSession,
   type UseSessionResult,
 } from '@kortix/sdk/react';
-import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -459,7 +459,7 @@ function InlineSessionError({
 /**
  * Renders SessionLayout + SessionChat against this project session's sandbox.
  * useSession (at the page level) already resolved the canonical pin; this still
- * calls useCanonicalOpenCodeSession to surface the live OpenCode session LIST for
+ * calls useCanonicalRuntimeSession to surface the live OpenCode session LIST for
  * ?oc deep-links + sub-session rendering (React Query dedupes the shared queries).
  */
 function ActiveSessionChat({
@@ -476,10 +476,10 @@ function ActiveSessionChat({
   onChatReady?: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const runtimeReady = useSandboxConnectionStore(
+  const runtimeReady = useRuntimeConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
-  const runtimeBootError = useSandboxConnectionStore((s) => s.runtimeError);
+  const runtimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -490,7 +490,7 @@ function ActiveSessionChat({
     isLoading: sessionsLoading,
     listed: sessionsListed,
     error: runtimeError,
-  } = useCanonicalOpenCodeSession({ projectId, sessionId, pinFromStart });
+  } = useCanonicalRuntimeSession({ projectId, sessionId, pinFromStart });
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
@@ -504,7 +504,7 @@ function ActiveSessionChat({
       });
     },
     onSuccess: () => {
-      clearOpencodeEnsureGuard();
+      clearRuntimeEnsureGuard();
       queryClient.removeQueries({ queryKey: ['opencode'] });
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
@@ -619,9 +619,9 @@ function ActiveSessionChat({
   }
 
   if (runtimeError) {
-    const formatted = formatOpenCodeRuntimeError(runtimeError);
+    const formatted = formatRuntimeError(runtimeError);
     const restartError = restartMutation.error
-      ? formatOpenCodeRuntimeError(restartMutation.error)
+      ? formatRuntimeError(restartMutation.error)
       : null;
     return (
       <InlineSessionError

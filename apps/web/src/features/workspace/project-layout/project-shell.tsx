@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { PanelLeft } from 'lucide-react';
 
 const CommandPalette = lazy(() =>

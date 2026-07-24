@@ -34,7 +34,7 @@ import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { useSandboxConnectionStore } from '@kortix/sdk/internal/sandbox-connection-store';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -64,7 +64,7 @@ import { sandboxRecents } from './easy-panel-logic';
 // `getState()` for both snapshots sidesteps that — same live value, same
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
 const getSandboxAliveSnapshot = () => {
-  const s = useSandboxConnectionStore.getState();
+  const s = useRuntimeConnectionStore.getState();
   return s.status === 'connected' && s.healthy === true;
 };
 
@@ -133,7 +133,7 @@ export function AppPreview({
   const { copied, copy } = useCopy({ successMessage: 'Link copied' });
 
   const sandboxAlive = useSyncExternalStore(
-    useSandboxConnectionStore.subscribe,
+    useRuntimeConnectionStore.subscribe,
     getSandboxAliveSnapshot,
     getSandboxAliveSnapshot,
   );
