@@ -37,11 +37,13 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
-import type { MessageWithParts } from '@/ui';
+import type { MessageWithParts, ToolPart } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { FileText, Terminal as TerminalIcon } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActionNavigator } from '../shared/action-navigator';
+import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
@@ -543,7 +545,7 @@ export const EasyPanel = memo(function EasyPanel({
         title: step.label,
         icon: <StepIcon family={step.family} status={step.status} />,
         padded: false,
-        body: <ToolParts parts={step.parts} sessionId={sessionId} />,
+        body: <StepDetailBody parts={step.parts} sessionId={sessionId} />,
       });
     }
     clearFocusedToolCall();
@@ -738,3 +740,42 @@ export const EasyPanel = memo(function EasyPanel({
     </div>
   );
 });
+
+/**
+ * A step's tool calls with the chronology bar under them — Marko's ask: arrow
+ * keys from start to end of a run, with the wall-clock time of whatever you are
+ * looking at.
+ *
+ * Index and follow-mode live here rather than in `EasyPanel` because they are
+ * scoped to one open detail: closing it and opening another must start at the
+ * latest action again, and local state gives that for free by unmounting.
+ */
+function StepDetailBody({ parts, sessionId }: { parts: ToolPart[]; sessionId: string }) {
+  const [index, setIndex] = useState(parts.length - 1);
+  const [mode, setMode] = useState<FollowMode>('live');
+
+  useEffect(() => {
+    if (parts.length === 0) return;
+    setIndex((i) => (mode === 'live' ? parts.length - 1 : clampIndex(i, parts.length)));
+  }, [parts.length, mode]);
+
+  const safeIndex = clampIndex(index, parts.length);
+  const current = parts[safeIndex];
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto">
+        {current && <ToolParts parts={[current]} sessionId={sessionId} />}
+      </div>
+      <ActionNavigator
+        parts={parts}
+        index={safeIndex}
+        isLive={mode === 'live'}
+        onIndexChange={(i, m) => {
+          setMode(m);
+          setIndex(i);
+        }}
+      />
+    </div>
+  );
+}
