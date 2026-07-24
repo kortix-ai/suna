@@ -83,6 +83,10 @@ import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
 } from './projects/suna-migration/suna-migration-worker';
+import {
+  startProviderTransitionWorker,
+  stopProviderTransitionWorker,
+} from './projects/provider-transition/provider-transition-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -1184,6 +1188,10 @@ async function startSingletonWorkers() {
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   startSunaMigrationWorker();
+  // Resume durable sandbox-provider migrations (prepare→verify→activate) that
+  // were mid-flight when the API last stopped — a crash at building/ready/
+  // activating converges instead of stranding. Safe across replicas (lease CAS).
+  startProviderTransitionWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1196,6 +1204,7 @@ async function stopSingletonWorkers() {
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopSunaMigrationWorker();
+  stopProviderTransitionWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }

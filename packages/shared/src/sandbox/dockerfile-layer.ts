@@ -155,28 +155,42 @@ export interface KortixToolchainLayerOpts {
 }
 
 /**
- * Build-time git-clone inputs for a per-project COLD warm bake. Shared between
- * `kortixToolchainLayer` (the full monolithic build) and
+ * Render-time inputs for baking a per-project COLD warm repo checkout into the
+ * image. Shared between `kortixToolchainLayer` (the full monolithic build) and
  * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) so both
- * render the identical clone RUN — see `buildWarmRepoCloneLines`.
+ * render the identical COPY step — see `buildWarmRepoCopyLines`.
+ *
+ * SECURITY (PHASE 1): this shape carries NO credentials. The repo is cloned
+ * with the git-host credential, origin-reset to the Kortix proxy, and scrubbed
+ * of all auth material API-side in Suna (`stageWarmRepoCheckout`,
+ * build-context.ts) BEFORE the Dockerfile is rendered. The rendered image only
+ * `COPY`s the already-sanitized plain bytes at `stagedPath`, so a git auth
+ * header never enters the Dockerfile text, the build args, the OCI image
+ * history, the provider build logs, or any abandoned build-context object.
+ *
+ * The previous design embedded `git -c http.extraHeader=<Authorization: …>`
+ * directly in a `RUN` — that credential leaked into the uploaded build context,
+ * the image history, the build logs, and abandoned retry objects, and deleting
+ * the temp clone dir did NOT remove any of those copies.
  */
 export interface WarmRepoConfig {
-  /** Upstream URL to clone from at BUILD time (real git host or proxy). */
-  cloneUrl: string;
   /**
-   * Auth headers for the build-time clone, passed via `git -c
-   * http.extraHeader` inside a RUN that deletes the script in the same
-   * invocation — nothing credential-shaped survives into the image layer.
+   * Path (relative to the build context root) to the pre-staged,
+   * credential-free repo checkout produced API-side. The image `COPY`s these
+   * bytes verbatim into /workspace — nothing here is secret.
    */
-  cloneHeaders: Record<string, string>;
-  /** Branch to check out (the default branch tip is baked). */
+  stagedPath: string;
+  /**
+   * Visible build-context path to a tar archive of the checkout's `.git`
+   * directory. Provider uploaders transfer this as one regular file.
+   */
+  stagedGitPath: string;
+  /**
+   * Branch that was checked out (the default-branch tip). Diagnostic only —
+   * shell-quoted on render (never interpolated raw), so a hostile branch name
+   * cannot inject a build-time shell command.
+   */
   branch: string;
-  /**
-   * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
-   * the daemon's per-session credential helper re-auths pushes/fetches at
-   * runtime (the build credential is never persisted).
-   */
-  originUrl: string;
 }
 
 /**
@@ -250,42 +264,47 @@ export interface BuildLayeredDockerfileOpts
 const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
 /**
- * The per-project COLD warm clone RUN: clones `warmRepo` into /workspace at
- * BUILD time. The auth header goes through `git -c http.extraHeader` (never
- * written to git config) and the whole step is one RUN, so no credential-shaped
- * bytes persist. origin is reset to the Kortix proxy so the daemon re-auths per
- * session at runtime.
+ * The per-project COLD warm bake step: `COPY` the credential-free repo checkout
+ * that Suna already cloned, origin-reset, and scrubbed API-side
+ * (`stageWarmRepoCheckout`) into /workspace. NO auth material is present — this
+ * is the PHASE 1 fix for the credential leak that the old in-Dockerfile clone
+ * caused (the git auth header used to be embedded in a `RUN` that shipped to
+ * object storage, baked into OCI history, and printed to build logs).
  *
  * Shared verbatim between `kortixToolchainLayer` (the monolithic build) and
  * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) — the two
- * MUST render byte-identical clone text so the baked checkout is the same
- * either way. Returns `[]` when there's no repo to bake (the shared,
+ * MUST render byte-identical steps so the baked checkout is the same either
+ * way. Returns `[]` when there's no repo to bake (the shared,
  * project-independent default image).
  */
-function buildWarmRepoCloneLines(warmRepo: WarmRepoConfig | undefined): string[] {
+function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] {
   if (!warmRepo) return [];
   return [
     '',
     '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
-    // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
-    // small; the daemon fast-paths the baked .git and deepens on demand.
-    // NOTE: an earlier layer sets `WORKDIR /workspace` (either this image's own
-    // toolchain layer, or — on the FROM-base fast path — the inherited base
-    // image), so the build shell's CWD IS /workspace. We must NOT `rm -rf
-    // /workspace` (that orphans the CWD inode → git dies with "Unable to read
-    // current working directory"). Instead `cd /`, clone into a scratch dir,
-    // then move the contents into the (emptied) /workspace so the CWD inode
-    // stays valid.
-    `RUN cd / \\`,
-    `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
-    `    && git ${Object.entries(warmRepo.cloneHeaders)
-      .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
-      .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
-    `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
-    `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
-    `    && rm -rf /tmp/kortix-warm-repo \\`,
-    `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
-    `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
+    '# The repo was cloned with the git-host credential, origin-reset to the',
+    '# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before',
+    '# this Dockerfile was rendered. This image only COPYs the sanitized plain',
+    '# bytes — no git credential ever enters the Dockerfile, build args, image',
+    '# history, or build logs. See PHASE 1 provider-migration hardening.',
+    // Empty whatever an earlier layer left in /workspace, then COPY the baked
+    // checkout. `cd /` first so the build shell CWD isn't an inode we delete
+    // (WORKDIR is /workspace); `-mindepth 1` keeps the /workspace dir itself.
+    'RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
+    // `--chown=kortix:kortix` so the baked checkout lands owned by the non-root
+    // runtime user (COPY defaults to uid/gid 0). opencode + the daemon run as
+    // `kortix` and must be able to write /workspace and its `.git` at runtime.
+    `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
+    // Daytona uploads each COPY source as a separate context object. Transfer
+    // Git metadata as one visible file, then restore the canonical directory.
+    // Daytona exposes that copied context object as non-removable during RUN.
+    // Keep the credential-free archive instead of failing the image build.
+    `COPY ${warmRepo.stagedGitPath} /tmp/kortix-warm-repo-git.tar`,
+    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git',
+    // Verify the baked checkout is a real repo. The branch is shell-quoted via
+    // `shq` (never interpolated raw), so a hostile branch name cannot inject a
+    // build-time shell command — closing the latent sink in the old echo.
+    `RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" ${shq(warmRepo.branch)}`,
     '',
   ];
 }
@@ -378,7 +397,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     warmRepo,
   } = opts;
 
-  const warmRepoClone = buildWarmRepoCloneLines(warmRepo);
+  const warmRepoClone = buildWarmRepoCopyLines(warmRepo);
 
   return [
     '',
@@ -763,9 +782,10 @@ export interface PerProjectWarmFromBaseOpts {
  * toolchain) is INHERITED, not re-executed, so there is no download to miss.
  *
  * Only adds the two per-project-specific steps on top of the base — the
- * warm-repo clone and the opencode instance re-warm against the real project
- * — using the EXACT SAME line-builders as the monolithic path
- * (`buildWarmRepoCloneLines` / `buildOpencodeInstanceWarmupLines`), so the
+ * warm-repo COPY (credential-free, sanitized checkout staged API-side) and the
+ * opencode instance re-warm against the real project — using the EXACT SAME
+ * line-builders as the monolithic path
+ * (`buildWarmRepoCopyLines` / `buildOpencodeInstanceWarmupLines`), so the
  * resulting /workspace content is equivalent to what the full rebuild would
  * have produced. Everything else — WORKDIR, ENV, ENTRYPOINT, EXPOSE, the
  * baked agent/CLI binaries — is inherited from the base image, since Docker
@@ -785,8 +805,13 @@ export function buildPerProjectWarmFromBaseDockerfile(opts: PerProjectWarmFromBa
     '# build-cache hit. Do not add toolchain RUNs here — they belong in',
     '# kortixToolchainLayer, which this stage deliberately skips.',
     '',
+    // Run as the base image's non-root runtime user (`kortix`): /workspace is
+    // kortix-owned in the base, and the opencode instance re-warm below resolves
+    // its baked caches from HOME=/home/kortix. The warm-repo step is MY
+    // credential-free COPY (buildWarmRepoCopyLines) — NOT the old credentialed
+    // clone — so no git auth header is ever rendered into this FROM-base stage.
     'USER kortix',
-    ...buildWarmRepoCloneLines(warmRepo),
+    ...buildWarmRepoCopyLines(warmRepo),
     ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, opencodeWarmupScriptPath, warmRepo, isSharedDefault: false }),
   ].join('\n') + '\n';
 }

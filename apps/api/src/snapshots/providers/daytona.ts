@@ -166,7 +166,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
             },
           },
         );
-        await this.waitForActive(input.snapshotName);
+        await this.waitForActive(input.snapshotName, tap);
         invalidateSnapshotState(input.snapshotName);
         return;
       } catch (err) {
@@ -270,10 +270,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     return (await listDaytonaSnapshots()).map((snapshot) => ({ name: snapshot.name }));
   }
 
-  private async waitForActive(name: string): Promise<void> {
+  private async waitForActive(name: string, tap?: BuildLogTap): Promise<void> {
     const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
     let lastState = 'unknown';
     while (Date.now() < deadline) {
+      // Renew the caller's lease before each poll (outside the try/catch so a
+      // lost-ownership throw stops the wait, not swallowed as a lookup blip).
+      await tap?.heartbeat?.();
       try {
         // Bounded so one hung poll can't defeat this loop's own deadline
         // check — see deleteSnapshot()'s comment above for why.
