@@ -24,6 +24,7 @@ function projectRow(
     projectId: PROJECT_ID,
     accountId: ACCOUNT_ID,
     name: 'Demo Project',
+    sandboxProviderGeneration: 0,
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',

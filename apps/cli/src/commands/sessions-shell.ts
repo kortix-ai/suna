@@ -1,4 +1,9 @@
-import { kortixPtyWsUrl, sandboxRuntimeClient, type KortixPty } from '../api/sandbox-proxy.ts';
+import {
+  kortixPtyWsUrl,
+  openKortixPtyWebSocket,
+  sandboxRuntimeClient,
+  type KortixPty,
+} from '../api/sandbox-proxy.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import {
@@ -136,7 +141,7 @@ function createPty(resolved: ResolvedRuntimeSession): Promise<KortixPty> {
  *  WebSocket, and forward local resizes. Returns once the connection ends. */
 function runPtySession(resolved: ResolvedRuntimeSession, pty: KortixPty): Promise<number> {
   const wsUrl = kortixPtyWsUrl(resolved.auth, resolved.proxyId, pty.id);
-  const ws = new WebSocket(wsUrl);
+  const ws = openKortixPtyWebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;

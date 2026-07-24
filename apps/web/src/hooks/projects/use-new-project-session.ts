@@ -4,11 +4,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef } from 'react';
 
+import { errorToast, loadingToast } from '@/components/ui/toast';
 import { resolveNewSessionAgent } from '@/features/workspace/project-layout/new-session-create';
 import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { toast } from '@/lib/toast';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import {
@@ -105,7 +105,7 @@ export function useNewProjectSession(projectId: string | undefined) {
         return createProjectSession(projectId, { session_id: sessionId, ...create });
       };
 
-      createWithConcreteAgent()
+      loadingToast('Starting session…', createWithConcreteAgent(), { success: 'Session started' })
         .then((created) => {
           // Seed the per-session cache so the instant shell renders the real
           // bound agent immediately (no default-agent/model flash while the
@@ -123,7 +123,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
           } else if (action === 'toast') {
-            toast.error(err instanceof Error ? err.message : 'Failed to start session');
+            errorToast(err instanceof Error ? err.message : 'Failed to start session');
           }
           // 'silent': the global 429 handler already surfaced the session cap.
           opts?.onError?.();

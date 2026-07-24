@@ -1,6 +1,6 @@
 {
   "name": "@kortix/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live ACP streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch raw HTTP or harness-specific semantics.",
   "type": "module",
   "license": "Elastic-2.0",

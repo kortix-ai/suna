@@ -123,6 +123,14 @@ export interface SelectInput {
   all: SnapshotLike[];
   /** Names any local `sandbox_templates` row still points at. Never reaped. */
   referenced: ReadonlySet<string>;
+  /**
+   * FIX-K-lite: image identifiers (ppwarm NAME or provider external id) that are
+   * the ACTIVE routing pin of SOME project. Never reaped — a proj8 prefix
+   * collision must not let one project's superseded-tip selection delete another
+   * project's LIVE pinned image. Injected by the IO layer (it reads the projects
+   * table); defaults to empty so pure-unit callers keep the prior behavior.
+   */
+  pinnedImages?: ReadonlySet<string>;
   now: number;
 }
 
@@ -180,6 +188,7 @@ function byFreshestFirst(a: SnapshotLike, b: SnapshotLike): number {
  */
 export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   const { all, referenced, now } = input;
+  const pinned = input.pinnedImages ?? new Set<string>();
 
   const orgTotal = all.length;
   const managed = all.filter((s) => isManaged(s.name));
@@ -195,8 +204,12 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   };
   if (!underPressure) return result;
 
-  // Reapable universe: ours, not referenced by a local template row, not mid-build.
-  const pool = managed.filter((s) => !referenced.has(s.name) && !IN_FLIGHT_STATES.has(s.state));
+  // Reapable universe: ours, not referenced by a local template row, not mid-build,
+  // and NEVER a live pinned image of any project (FIX-K-lite: guards a proj8
+  // collision from deleting another project's active cache; matched by name OR id).
+  const pool = managed.filter(
+    (s) => !referenced.has(s.name) && !IN_FLIGHT_STATES.has(s.state) && !pinned.has(s.name) && !pinned.has(s.id),
+  );
 
   const candidates: ReapCandidate[] = [];
   const claimed = new Set<string>();

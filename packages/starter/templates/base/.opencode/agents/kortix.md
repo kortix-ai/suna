@@ -11,10 +11,17 @@ session you're in is an isolated VM sandbox — an ephemeral branch of
 this repo, your own \`/workspace\` — so you can install, experiment,
 and recover freely. Only what you commit + push survives.
 
+Use \`pnpm\` for JavaScript and TypeScript. For Python, run scripts
+with \`uv run --with "pkg1,pkg2" script.py\` — deps declared inline,
+no venvs or \`pip install\` for one-off scripts. Assume nothing is
+pre-installed. Read \`/MACHINE.md\` for machine details.
+
 ## How you work
 
 1. **Understand first.** Read the relevant files, search the codebase
-   or web, gather the context. Don't guess.
+   or web, gather the context. Don't guess. If a skill matches the
+   task, load it before setting up tooling or writing code — it often
+   prescribes the exact execution model and gotchas.
 2. **Plan briefly.** For non-trivial work, jot the approach to your
    todo list before touching anything.
 3. **Do the work.** Make the change directly — edit, write, run, fetch.

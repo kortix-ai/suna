@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir, symlink } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -78,6 +78,7 @@ let scaffoldPresentAtDaytonaBoundary = false;
 let executorNodeModulesPresentAtProviderBoundary = false;
 let warmArchivePresentAtDaytonaBoundary = false;
 let warmGitConfigAtDaytonaBoundary = '';
+let warmGitArchivePresentAtDaytonaBoundary = false;
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
 const contextPaths: string[] = [];
@@ -107,6 +108,9 @@ mock.module('@daytonaio/sdk', () => ({
             { encoding: 'utf8' },
           )
         : '';
+      warmGitArchivePresentAtDaytonaBoundary = existsSync(
+        join(path, '..', 'kortix-warm-repo-git.tar'),
+      );
       contextPaths.push(path);
       return { kind: 'mock-image', path };
     },
@@ -156,10 +160,11 @@ describe('Daytona snapshot build context', () => {
     await daytonaProvider.buildSnapshot({
       ...buildInput('kortix-warm-context-security'),
       warmRepo: {
-        cloneUrl: warmRepoPath,
+        cloneUrl: `file://${warmRepoPath}`,
         cloneHeaders: { Authorization: `Bearer ${secret}` },
         branch: 'main',
         commitSha: warmCommitSha,
+        tip: warmCommitSha,
         originUrl: 'https://api.example.test/v1/git/project.git',
       },
     });
@@ -177,6 +182,52 @@ describe('Daytona snapshot build context', () => {
     expect(warmGitConfigAtDaytonaBoundary).not.toContain(secret);
     expect(warmGitConfigAtDaytonaBoundary).not.toContain('extraHeader');
   });
+
+  test('uploads Git metadata as one visible archive and restores .git in the image', async () => {
+    const source = join(fixtureRoot, 'warm-source');
+    rmSync(source, { recursive: true, force: true });
+    await mkdir(source, { recursive: true });
+    writeFileSync(join(source, 'README.md'), '# warm\n');
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Kortix Test',
+      GIT_AUTHOR_EMAIL: 'test@kortix.test',
+      GIT_COMMITTER_NAME: 'Kortix Test',
+      GIT_COMMITTER_EMAIL: 'test@kortix.test',
+    };
+    execFileSync('git', ['init', '-b', 'main'], { cwd: source, env: gitEnv });
+    execFileSync('git', ['add', '-A'], { cwd: source, env: gitEnv });
+    execFileSync('git', ['commit', '-m', 'warm fixture'], { cwd: source, env: gitEnv });
+    const tip = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: source,
+      env: gitEnv,
+      encoding: 'utf8',
+    }).trim();
+
+    warmGitArchivePresentAtDaytonaBoundary = false;
+    await daytonaProvider.buildSnapshot({
+      snapshotName: 'kortix-warm-git-archive',
+      baseImageRef: 'registry.example.test/kortix-default:latest',
+      spec: {},
+      slug: 'default',
+      warmRepo: {
+        cloneUrl: `file://${source}`,
+        cloneHeaders: {},
+        branch: 'main',
+        commitSha: tip,
+        tip,
+        originUrl: 'https://api.example.test/v1/projects/project-1/git',
+      },
+    });
+
+    expect(warmGitArchivePresentAtDaytonaBoundary).toBe(true);
+    expect(dockerfileSeen).toContain(
+      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
+    );
+    expect(dockerfileSeen).toContain(
+      'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
+    );
+  }, 30_000);
 });
 
 describe('Daytona snapshot state', () => {
@@ -292,6 +343,32 @@ describe('Daytona snapshot state', () => {
 });
 
 describe('Daytona auto-build self-heal', () => {
+  test('deletes a retained failed snapshot and retries a duplicate snapshot name', async () => {
+    contextPaths.length = 0;
+    let attempt = 0;
+    let built = false;
+    let deleted = false;
+    createImpl = async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw new Error(
+          'Snapshot with name "kortix-default-7f989bb9735b" already exists for this organization',
+        );
+      }
+      built = true;
+    };
+    snapshotState = () => (built ? 'active' : 'failed');
+    deleteSnapshotImpl = async () => {
+      deleted = true;
+    };
+
+    await daytonaProvider.buildSnapshot(buildInput('kortix-default-7f989bb9735b'));
+
+    expect(deleted).toBe(true);
+    expect(attempt).toBe(2);
+    expect(contextPaths.length).toBe(2);
+  }, 15_000);
+
   test('re-stages a FRESH context + retries on a stale-context error, then succeeds', async () => {
     contextPaths.length = 0;
     let attempt = 0;

@@ -52,6 +52,7 @@ import {
   readAgentBlockV2,
   readAgentBlockV3,
 } from '../lib/agent-config-v2';
+import { metadataMerge } from '../lib/metadata-merge';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
 import {
@@ -397,13 +398,13 @@ projectsApp.openapi(
       );
     }
 
-    const metadata = {
-      ...((loaded.row.metadata as Record<string, unknown> | null) ?? {}),
-      default_agent: agentName,
-    };
+    // FIX-J: SQL-side atomic merge of ONLY `default_agent`. A git-commit round-trip
+    // sits above between this handler's metadata read and write — the widest lost-
+    // update window — so a whole-object write here could revert a routing pin
+    // activated in that gap. The merge reads the CURRENT row under its own lock.
     await db
       .update(projects)
-      .set({ metadata, updatedAt: new Date() })
+      .set({ metadata: metadataMerge({ default_agent: agentName }), updatedAt: new Date() })
       .where(eq(projects.projectId, projectId));
 
     return c.json({ ok: true, default_agent: agentName });

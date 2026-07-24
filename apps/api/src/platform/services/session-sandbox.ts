@@ -22,9 +22,12 @@ import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
   getProvider,
+  SandboxTemplateNotFoundError,
   type CreateSandboxOpts,
+  type ProvisionResult,
   type ProviderName,
 } from '../providers';
+import { readActiveRouting } from '../../projects/provider-transition/provider-transition-store';
 import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
@@ -153,6 +156,47 @@ async function mintExecutorToken(opts: {
     console.warn(`[session-sandbox] failed to mint executor token for ${opts.projectId}:`, err);
     return null;
   }
+}
+
+/**
+ * FIX-A kill-switch. Default ON: boot by the activated pinned template id, with
+ * a name-boot fallback ONLY on a definitive GC'd-pin 404. Set
+ * `KORTIX_SESSION_BOOT_BY_TEMPLATE_ID=0` (or off/false/no) to revert to the
+ * name-only boot — the safe escape hatch for the first rollout.
+ */
+export function sessionBootByTemplateIdEnabled(): boolean {
+  const raw = (process.env.KORTIX_SESSION_BOOT_BY_TEMPLATE_ID ?? '').trim().toLowerCase();
+  if (raw === '') return true; // default ON
+  return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
+}
+
+/**
+ * FIX-A: decide whether this boot should use the pinned EXACT template id. Pure
+ * (no I/O) so the gate is unit-testable. Returns the id ONLY when every guard
+ * holds:
+ *   - the kill-switch is ON,
+ *   - the provider actually supports id-boot (Platinum; others are name-only),
+ *   - a non-empty pinned id exists, AND
+ *   - MANDATORY provider-match: the pin belongs to the provider it was activated
+ *     for — `routing.activeProvider === providerName`. This is what makes a
+ *     rollback safe: a project reverted to Daytona with a leftover Platinum id
+ *     pin (activeProvider='daytona') booting a Daytona session must use the NAME,
+ *     never the stale Platinum id.
+ * `disabledForSession` lets the caller drop to name-boot after a 404 fallback.
+ */
+export function decideSessionBoot(input: {
+  killSwitchOn: boolean;
+  routing: { activeProvider: string | null; activeExternalTemplateId: string | null } | null;
+  providerName: string;
+  providerSupportsIdBoot: boolean;
+  disabledForSession?: boolean;
+}): { bootByTemplateId: string | null } {
+  const { killSwitchOn, routing, providerName, providerSupportsIdBoot, disabledForSession } = input;
+  if (disabledForSession || !killSwitchOn || !providerSupportsIdBoot) return { bootByTemplateId: null };
+  const pinnedId = routing?.activeExternalTemplateId ?? null;
+  if (!pinnedId) return { bootByTemplateId: null };
+  if (routing?.activeProvider !== providerName) return { bootByTemplateId: null }; // provider-match
+  return { bootByTemplateId: pinnedId };
 }
 
 export async function provisionSessionSandbox(opts: {
@@ -423,6 +467,20 @@ export async function provisionSessionSandbox(opts: {
     // second provider, so a session never bounces between providers forever.
     let fallbackAttempted = false;
     let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
+    // FIX-A: the project's ACTIVATED routing pin (provider + exact template id),
+    // read once, best-effort — a DB hiccup yields null → name-boot. Set
+    // `idBootDisabled` once a definitive GC'd-pin 404 forces this session down to
+    // a name-boot, so the retry never re-attempts the dead pin.
+    let activeRouting: { activeProvider: string | null; activeExternalTemplateId: string | null } | null = null;
+    try {
+      activeRouting = await readActiveRouting(db, projectId);
+    } catch (routingErr) {
+      console.warn(
+        `[session-sandbox] readActiveRouting failed for ${projectId} (falling back to name-boot):`,
+        routingErr instanceof Error ? routingErr.message : String(routingErr),
+      );
+    }
+    let idBootDisabled = false;
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
@@ -461,7 +519,29 @@ export async function provisionSessionSandbox(opts: {
       );
 
       const firstStage = provider.provisioning.stages[0];
-      const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
+      // FIX-A: honor the activated pinned template id (provider-matched) so the
+      // running sandbox is the EXACT warm image activation chose — behind the
+      // kill-switch, and only when the provider supports id-boot.
+      const bootDecision = decideSessionBoot({
+        killSwitchOn: sessionBootByTemplateIdEnabled(),
+        routing: activeRouting,
+        providerName,
+        providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
+        disabledForSession: idBootDisabled,
+      });
+      if (bootDecision.bootByTemplateId) {
+        console.log(
+          `[session-sandbox] booting ${sandbox.sandboxId} by PINNED template id ` +
+          `${bootDecision.bootByTemplateId} (provider ${providerName})`,
+        );
+      }
+      const createFn = bootDecision.bootByTemplateId
+        ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
+        : undefined;
+      let result: ProvisionResult;
+      let attempts: number;
+      try {
+      ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
         onAttemptStart: async (attempt) => {
           await db
             .update(sessionSandboxes)
@@ -492,7 +572,24 @@ export async function provisionSessionSandbox(opts: {
             })
             .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         },
-      });
+      }, createFn));
+      } catch (createErr) {
+        // FIX-A: a DEFINITIVE GC'd-pin 404 → fall back to a NAME boot for THIS
+        // session (re-enter the loop with id-boot disabled). Do NOT self-repair
+        // the pin here — that races the activation generation CAS; log it and let
+        // the provider-transition controller re-pin. A transient 5xx (or any
+        // other error) is re-thrown to the outer catch (failover/capacity/error)
+        // and surfaced — never silently name-booted onto a possibly-wrong image.
+        if (bootDecision.bootByTemplateId && createErr instanceof SandboxTemplateNotFoundError) {
+          console.warn(
+            `[session-sandbox] pinned template ${bootDecision.bootByTemplateId} for ${sandbox.sandboxId} ` +
+            `is gone (404) — booting by name; leaving the pin for the controller to re-pin`,
+          );
+          idBootDisabled = true;
+          continue provisioning;
+        }
+        throw createErr;
+      }
       bgExternalId = result.externalId;
       tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();

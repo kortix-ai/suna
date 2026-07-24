@@ -16,11 +16,24 @@ import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 import {
   AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  BUN_VERSION,
+  NODE_VERSION,
+  NPM_VERSION,
   OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PNPM_VERSION,
+  PYTHON_VERSION,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
+  UV_VERSION,
 } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
+import { metadataMerge } from '../projects/lib/metadata-merge';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
 import { SANDBOX_VERSION, config } from '../config';
@@ -38,7 +51,7 @@ import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { harnessVersionKey as _harnessVersionKey, sandboxVersionStr as _sandboxVersionStrBuilder } from './version-keys';
+import { harnessVersionKey as _harnessVersionKey } from './version-keys';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -46,6 +59,10 @@ const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src')
 const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
+const OPENCODE_WARMUP_PATH = process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
+const MACHINE_DOC_PATH = process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
@@ -186,12 +203,22 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // layer. Chromium's content hash is now stable across agent-source churn — it is
 // fetched at most once per pinned Playwright/agent-browser version and
 // cache-reused for every base rebuild after.
-// v30: opencode 1.17.11→1.18.4 (Claude Sonnet 5/Opus 4.7+ adaptive-thinking
-// fix), pi-coding-agent 0.80.6→0.81.1, bake official `claude`/`codex` CLIs
+// v30: run the toolchain and daemon as `kortix`, restore the runtime environment
+// when a provider discards image USER/ENV, extract OpenCode cache warming, and
+// bake the platform machine guide at /MACHINE.md.
+// v31: replace remote installer-script execution with versioned release
+// artifacts whose amd64 and arm64 SHA-256 digests live in the runtime manifest.
+// Pin Bun and include every artifact digest in the runtime fingerprint.
+// v32: accept uv's release target metadata in `uv --version`. uv 0.11.30 emits
+// `uv 0.11.30 (x86_64-unknown-linux-gnu)`, so v31's exact comparison failed
+// every cold image build. The version bump invalidates any cached v31 image.
+// v33: fold the ACP harness layer into the verified-artifacts base — opencode
+// 1.17.11→1.18.4 (Claude Sonnet 5/Opus 4.7+ adaptive-thinking fix),
+// pi-coding-agent 0.80.6→0.81.1, bake the official `claude`/`codex` CLIs
 // (@anthropic-ai/claude-code, @openai/codex) alongside the ACP adapters, and
-// apt-install fd-find+ripgrep so pi's tools-manager finds them on PATH
-// instead of downloading its own copies on first use.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v30';
+// apt-install fd-find+ripgrep so pi's tools-manager finds them on PATH instead
+// of downloading its own copies on first use. Supersedes both v30 lineages.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-harness-v33';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -827,12 +854,17 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
     const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
     const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
     if (current !== validDefault) {
-      const nextMeta = { ...meta };
-      if (validDefault) nextMeta.default_sandbox_slug = validDefault;
-      else delete nextMeta.default_sandbox_slug;
+      // FIX-J: SQL-side atomic merge of ONLY `default_sandbox_slug` (set / delete)
+      // so this manifest-sync write can't revert a routing pin written between the
+      // read above and this write.
       await db
         .update(projects)
-        .set({ metadata: nextMeta, updatedAt: new Date() })
+        .set({
+          metadata: validDefault
+            ? metadataMerge({ default_sandbox_slug: validDefault })
+            : metadataMerge({}, ['default_sandbox_slug']),
+          updatedAt: new Date(),
+        })
         .where(eq(projects.projectId, project.projectId));
     }
   } catch (err) {
@@ -877,6 +909,8 @@ const AGENT_RUNTIME_ARTIFACTS = [
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
+  { label: 'kortix-opencode-warmup', path: OPENCODE_WARMUP_PATH },
+  { label: 'kortix-machine-doc', path: MACHINE_DOC_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   // Only the in-sandbox `kortix executor` closure (NOT the whole apps/cli/src) —
@@ -894,11 +928,29 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
-// Re-export version key builders (imported from version-keys.ts)
+// Re-export the folded harness version key (from version-keys.ts) so callers
+// and tests can build it without loading this module's config/db deps.
 export const harnessVersionKey = _harnessVersionKey;
-export const sandboxVersionStr = () => _sandboxVersionStrBuilder(SANDBOX_VERSION, RUNTIME_LAYER_VERSION);
 
-const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${harnessVersionKey()}:${AGENT_BROWSER_VERSION}`;
+// SHA-256 digests of the pinned toolchain release artifacts (pnpm/uv/bun). A
+// digest re-pin must move the fingerprint even when the version strings are
+// unchanged, so it feeds both keys below.
+const runtimeIntegrityKey = () =>
+  [
+    PNPM_SHA256_AMD64,
+    PNPM_SHA256_ARM64,
+    UV_SHA256_AMD64,
+    UV_SHA256_ARM64,
+    BUN_SHA256_AMD64,
+    BUN_SHA256_ARM64,
+  ].join(':');
+// Folds BOTH the infra toolchain pins (pnpm/node/npm/uv/python/bun + integrity
+// digests) AND the ACP harness versions (opencode + ACP adapters + claude/codex
+// CLIs, via harnessVersionKey) so a change to either re-mints the snapshot name.
+const runtimeVersionKey = () =>
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${harnessVersionKey()}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
+export const sandboxVersionStr = () =>
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:harnesses:${harnessVersionKey()}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

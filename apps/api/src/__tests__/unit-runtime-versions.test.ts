@@ -8,7 +8,10 @@ import {
   PLAYWRIGHT_VERSION,
 } from '@kortix/shared';
 import { CODEX_USER_AGENT } from '../llm-gateway/credentials/codex-core';
-import { buildLayeredDockerfile, PLATFORM_DEFAULT_USER_DOCKERFILE } from '../snapshots/dockerfile-layer';
+import {
+  PLATFORM_DEFAULT_USER_DOCKERFILE,
+  buildLayeredDockerfile,
+} from '../snapshots/dockerfile-layer';
 
 const repoRoot = resolve(import.meta.dir, '../../../..');
 
@@ -43,6 +46,22 @@ describe('runtime version drift guards', () => {
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').opencode");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').agentBrowser");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').playwright");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').bun");
+    expect(dockerfile).toContain('pnpmSha256Amd64');
+    expect(dockerfile).toContain('pnpmSha256Arm64');
+    expect(dockerfile).toContain('uvSha256Amd64');
+    expect(dockerfile).toContain('uvSha256Arm64');
+    expect(dockerfile).toContain('bunSha256Amd64');
+    expect(dockerfile).toContain('bunSha256Arm64');
+    expect(
+      dockerfile.match(
+        /FROM oven\/bun:1\.3\.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f/g,
+      ),
+    ).toHaveLength(2);
+    expect(dockerfile).not.toContain('FROM oven/bun:1-debian');
+    expect(dockerfile).not.toContain('get.pnpm.io/install.sh');
+    expect(dockerfile).not.toContain('curl -LsSf "https://astral.sh/uv/');
+    expect(dockerfile).not.toContain('https://bun.com/install');
     expect(dockerfile).not.toMatch(/ARG OPENCODE_VERSION=/);
     expect(dockerfile).not.toMatch(/ARG AGENT_BROWSER_VERSION=/);
     expect(dockerfile).not.toMatch(/ARG PLAYWRIGHT_VERSION=/);

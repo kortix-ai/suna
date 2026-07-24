@@ -17,10 +17,11 @@ import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
+import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
-import { PPWARM_REAP_PROTECT_MS, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { PPWARM_REAP_PROTECT_MS, excludePinnedTargets, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { collectPinnedImageRefs } from './pinned-images';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -766,7 +767,11 @@ async function openBuildLog(args: {
         snapshotName: args.snapshotName,
         contentHash: args.contentHash,
         status: 'building',
-        metadata: { source: args.source, slug: args.slug, provider: args.provider },
+        // FIX-K-lite forward hygiene: record the FULL projectId as first-class
+        // snapshot build metadata (alongside the projectId column), so a warm
+        // image's owning project is recoverable beyond the lossy 8-hex proj8 in
+        // its name. Forward-only — legacy warm images churn out on the next commit.
+        metadata: { source: args.source, slug: args.slug, provider: args.provider, projectId: args.projectId },
       })
       .returning({ buildId: projectSnapshotBuilds.buildId });
     return row?.buildId ?? null;
@@ -1250,6 +1255,13 @@ export interface PerProjectWarmResult {
   tip: string;
   built: boolean;
   provider: string;
+  /**
+   * FIX-B: the EXACT external template id the provider build produced (Platinum),
+   * threaded straight from `buildSnapshot` so the transition runner pins the id
+   * the build PROVED instead of a name-list re-derivation. Absent when no fresh
+   * build ran (idempotent reuse) or for providers with no external-id concept.
+   */
+  externalTemplateId?: string;
 }
 
 /**
@@ -1266,7 +1278,14 @@ export interface PerProjectWarmResult {
  */
 export async function ensurePerProjectWarmImage(
   project: GitBackedProject,
-  opts: { accountId?: string; provider?: string; source?: SnapshotBuildSource } = {},
+  opts: {
+    accountId?: string;
+    provider?: string;
+    source?: SnapshotBuildSource;
+    /** Lease-renewal hook, forwarded into the provider's build-wait poll loop so
+     *  a long build never lets the caller's lease TTL lapse. */
+    heartbeat?: () => void | Promise<void>;
+  } = {},
 ): Promise<PerProjectWarmResult> {
   if (!project.repoUrl) throw new SnapshotBuildError('project has no repo url — cannot bake per-project warm image');
   const buildProvider = opts.provider ?? config.getDefaultProvider();
@@ -1307,7 +1326,11 @@ export async function ensurePerProjectWarmImage(
     );
   }
 
+  // Pin the warm bake to the EXACT tip the cache key (`snapshotName`) is keyed on,
+  // so the staged checkout can never drift to a newer branch tip mid-bake and
+  // poison the content-addressed image (SHA_X name ⇒ SHA_X content).
   const warmRepo = await resolveWarmRepoContext(project, tip);
+  const buildTap: BuildLogTap | undefined = opts.heartbeat ? { heartbeat: opts.heartbeat } : undefined;
 
   // FAST PATH: FROM the already-built shared default image instead of
   // recomposing + rebuilding the full ~15-layer toolchain (apt/pip/opencode/
@@ -1353,9 +1376,10 @@ export async function ensurePerProjectWarmImage(
       isShared: false,
       warmRepo,
     };
+    let buildResult: BuildSnapshotResult | void;
     if (baseImageRef) {
       try {
-        await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef });
+        buildResult = await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef }, buildTap);
       } catch (fastPathErr) {
         // Never let a fast-path failure (a stale/unpullable base ref, a
         // provider-side hiccup building FROM it, …) take down session boot —
@@ -1366,14 +1390,15 @@ export async function ensurePerProjectWarmImage(
           `[snapshots] per-project warm: FROM-base fast path failed for ${snapshotName} ` +
           `(base=${baseImageRef}) — falling back to full rebuild: ${msg.slice(0, 200)}`,
         );
-        await provider.buildSnapshot(fullRebuildInput);
+        buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
       }
     } else {
-      await provider.buildSnapshot(fullRebuildInput);
+      buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
     }
     if (buildId) await closeBuildLogReady(buildId);
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
-    return { snapshotName, tip, built: true, provider: buildProvider };
+    // FIX-B: carry the build-proven external template id up to the transition runner.
+    return { snapshotName, tip, built: true, provider: buildProvider, externalTemplateId: buildResult?.externalTemplateId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (buildId) await closeBuildLogFailed(buildId, message);
@@ -1418,10 +1443,7 @@ export async function resolveWarmBaseImageRef(
  * exact commit before provider upload; the archived checkout's origin is reset
  * to the Kortix proxy so the daemon re-auths per session at runtime.
  */
-async function resolveWarmRepoContext(
-  project: GitBackedProject,
-  commitSha: string,
-): Promise<WarmRepoContext> {
+async function resolveWarmRepoContext(project: GitBackedProject, tip: string): Promise<WarmRepoContext> {
   const { projects } = await import('@kortix/db');
   const { resolveProjectUpstream } = await import('../projects/lib/git');
   const { proxyGitUrl } = await import('../projects/lib/sessions');
@@ -1436,7 +1458,12 @@ async function resolveWarmRepoContext(
     cloneUrl: upstream.url,
     cloneHeaders: upstream.headers ?? {},
     branch: project.defaultBranch,
-    commitSha,
+    // Pin to the EXACT tip the snapshot name is keyed on (not just the branch),
+    // so the staged checkout is byte-identical to the cache key. Exposed under
+    // both WarmRepoContext names (`commitSha` for the full-rebuild archive path,
+    // `tip` for the FROM-base fast-path checkout) — both are this exact sha.
+    commitSha: tip,
+    tip,
     originUrl: proxyGitUrl(project.projectId),
   };
 }
@@ -1456,7 +1483,19 @@ async function reapOldPerProjectWarm(projectId: string, currentName: string, bui
   try {
     const provider = getSandboxProvider(buildProvider);
     const names = (await provider.listSnapshots()).map((snapshot) => snapshot.name);
-    const targets = ppwarmReapTargets(projectId, currentName, names);
+    const rawTargets = ppwarmReapTargets(projectId, currentName, names);
+    if (rawTargets.length === 0) return;
+    // FIX-K-lite: proj8 is only the first 8 hex of the projectId, so this prefix-
+    // scoped selection over an ORG-WIDE list could pick another project's LIVE
+    // pinned image on a proj8 collision. Cross-check against the active pins of
+    // EVERY project and never delete one — a collision then just skips a reap.
+    const pinned = await collectPinnedImageRefs();
+    const targets = excludePinnedTargets(rawTargets, pinned);
+    for (const name of rawTargets) {
+      if (pinned.has(name)) {
+        console.log(`[snapshots] per-project warm: keeping ${name} (it is another project's ACTIVE pinned image)`);
+      }
+    }
     if (targets.length === 0) return;
     // A "superseded" name built minutes ago is very likely another live code
     // version's CURRENT warm image (different runtime fingerprint → different

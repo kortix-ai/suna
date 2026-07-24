@@ -27,6 +27,7 @@ const COMMON = {
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
+  machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
   executorSdkPath: 'kortix-executor-sdk',
 };
@@ -77,10 +78,9 @@ const OPT_SHAPES: Array<{ label: string; opts: Omit<BuildLayeredDockerfileOpts, 
       ...COMMON,
       opencodeConfigPath: 'kortix-opencode-config',
       warmRepo: {
-        cloneUrl: 'https://git.example.com/acme/repo.git',
-        cloneHeaders: { Authorization: 'Bearer tok-en' },
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
-        originUrl: 'https://proxy.kortix.ai/git/acme/repo.git',
       },
     },
   },
@@ -118,7 +118,7 @@ describe('the halves join without a seam', () => {
 
   test('the artifact half is the contiguous staged-artifact tail', () => {
     const artifact = kortixArtifactLayer(opts);
-    expect(artifact.startsWith('COPY kortix-agent.gz /tmp/kortix-agent.gz\n')).toBe(true);
+    expect(artifact.startsWith('USER root\nCOPY kortix-agent.gz /tmp/kortix-agent.gz\n')).toBe(true);
     expect(artifact.endsWith('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]\n')).toBe(true);
   });
 
@@ -133,6 +133,7 @@ describe('the halves join without a seam', () => {
     expect(toolchain).not.toContain('ENTRYPOINT');
     // Artifacts: COPYs staged bytes, then wires the container.
     expect(artifact).toContain('COPY kortix.gz /tmp/kortix.gz');
+    expect(artifact).toContain('COPY MACHINE.md /MACHINE.md');
     expect(artifact).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(artifact).toContain('kortix --version');
     expect(artifact).toContain('ENV KORTIX_WORKSPACE=/workspace');
@@ -141,12 +142,11 @@ describe('the halves join without a seam', () => {
   });
 
   test('the toolchain half needs no staged artifacts — it renders from an empty context', () => {
-    // This is the whole point of the split: `kortixToolchainLayer` takes no
-    // artifact paths at all, so it cannot reference a file the caller didn't
-    // stage. (The type system enforces it; this pins the rendered output too.)
+    // The local CLI omits the optional cache-warm script, keeping this renderer
+    // usable with its intentionally empty build context.
     const toolchain = kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION });
     expect(toolchain).not.toContain('COPY ');
-    expect(toolchain).toContain('    && apt-get update \\');
+    expect(toolchain).toContain('RUN apt-get update \\');
   });
 
   test('the optional catalog COPY only appears when catalogPath is set', () => {

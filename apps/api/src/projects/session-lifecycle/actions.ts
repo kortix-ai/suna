@@ -20,6 +20,7 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import { prepareInPlaceRestartMetadata } from './readiness-clocks';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -288,16 +289,20 @@ export async function restartSession(input: {
       };
     }
 
+    const restartStartedAt = new Date();
     await db
       .update(sessionSandboxes)
-      .set({ status: 'provisioning', updatedAt: new Date() })
+      .set({
+        status: 'provisioning',
+        metadata: prepareInPlaceRestartMetadata(existingSandbox.metadata, restartStartedAt),
+        updatedAt: restartStartedAt,
+      })
       .where(eq(sessionSandboxes.sandboxId, sessionId));
     await db
       .update(projectSessions)
       .set({
         status: 'provisioning',
         error: null,
-        sandboxUrl: null,
         updatedAt: new Date(),
       })
       .where(eq(projectSessions.sessionId, sessionId));

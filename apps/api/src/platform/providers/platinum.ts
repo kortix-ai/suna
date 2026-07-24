@@ -29,6 +29,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
 } from './index';
+import { SandboxTemplateNotFoundError } from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
 
@@ -41,6 +42,18 @@ interface PlatinumSandbox {
   backup_state?: string | null;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+
+/**
+ * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
+ * POST (the template id doesn't exist / was GC'd). ONLY a 404 qualifies: a 400
+ * (bad request) or 5xx (transient outage) is NOT a GC'd pin and must NOT trigger
+ * a name-boot fallback. Matches the `platinum <method> <path> -> 404 …` shape
+ * platinumJson throws.
+ */
+function isDefinitiveTemplateNotFound(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return / -> 404\b/.test(message);
+}
 
 function isMissingSandboxError(error: unknown): boolean {
   const err = error as
@@ -90,7 +103,34 @@ export class PlatinumProvider implements SandboxProvider {
         '(a ready Platinum template id, e.g. kortix-computer).',
       );
     }
+    return this.provisionFromTemplate(template, opts);
+  }
 
+  /**
+   * FIX-A: boot from an EXACT pinned template id (the activation-recorded
+   * `active_sandbox_external_template_id`). Same POST /v1/sandboxes provisioning
+   * as create() — the only difference is error classification: a DEFINITIVE 404
+   * (the pinned id was GC'd) becomes {@link SandboxTemplateNotFoundError} so the
+   * boot path can fall back to a name-boot; a transient 5xx (or any other error)
+   * propagates UNCHANGED so it is surfaced/retried, never silently name-booted.
+   */
+  async createFromExternalId(externalTemplateId: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    if (!externalTemplateId || externalTemplateId.trim() === '') {
+      throw new Error('[platinum] createFromExternalId called without a template id');
+    }
+    try {
+      return await this.provisionFromTemplate(externalTemplateId, opts);
+    } catch (err) {
+      if (isDefinitiveTemplateNotFound(err)) {
+        throw new SandboxTemplateNotFoundError(
+          `[platinum] pinned template ${externalTemplateId} not found (404) — GC'd pin`,
+        );
+      }
+      throw err;
+    }
+  }
+
+  private async provisionFromTemplate(template: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')

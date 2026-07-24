@@ -60,6 +60,8 @@ export {
   acpSessionEnvelopes,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
+  providerTransitions,
+  providerTransitionStatusEnum,
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
