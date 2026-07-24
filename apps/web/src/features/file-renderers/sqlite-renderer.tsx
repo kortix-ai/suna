@@ -22,6 +22,7 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -36,7 +37,6 @@ import {
   HashIcon as Hash,
   KeyIcon as Key,
   ListIcon as List,
-  CircleNotchIcon as Loader2,
   PlayIcon as Play,
   PlusIcon as Plus,
   ArrowsClockwiseIcon as RefreshCw,
@@ -800,7 +800,7 @@ export function SqliteRenderer({
     return (
       <div className={cn('flex h-full w-full items-center justify-center', className)}>
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="text-muted-foreground/40 h-6 w-6 animate-spin" />
+          <Loading className="text-muted-foreground/40 h-6 w-6" />
           <span className="text-muted-foreground/60 text-sm">
             {tHardcodedUi.raw(
               'componentsFileRenderersSqliteRenderer.line733JsxTextLoadingDatabase',
@@ -917,7 +917,7 @@ export function SqliteRenderer({
                 )}
               >
                 {isSaving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loading className="h-3 w-3" />
                 ) : (
                   <Save className="h-3 w-3" />
                 )}
@@ -1343,7 +1343,7 @@ export function SqliteRenderer({
                       disabled={isQueryRunning || !sqlQuery.trim()}
                     >
                       {isQueryRunning ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <Loading className="h-3 w-3" />
                       ) : (
                         <Play className="h-3 w-3" />
                       )}

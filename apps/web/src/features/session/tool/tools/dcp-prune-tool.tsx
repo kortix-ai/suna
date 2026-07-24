@@ -1,5 +1,6 @@
 'use client';
 import { STATUS_TEXT } from '@/components/ui/status';
+import Loading from '@/components/ui/loading';
 import {
   BasicTool,
   isErrorOutput,
@@ -12,7 +13,7 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { CircleNotchIcon as Loader2, ScissorsIcon as Scissors } from '@phosphor-icons/react';
+import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
 export function DCPPruneTool({ part }: ToolProps) {
@@ -35,7 +36,7 @@ export function DCPPruneTool({ part }: ToolProps) {
           {ids && ids.length > 0 && (
             <span className="text-muted-foreground/60 ml-auto text-xs">{ids.length} tools</span>
           )}
-          {isRunning && <Loader2 className="text-muted-foreground ml-auto size-3 animate-spin" />}
+          {isRunning && <Loading className="text-muted-foreground ml-auto size-3" />}
         </div>
       }
     >

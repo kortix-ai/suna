@@ -23,13 +23,13 @@ import {
   IconCheck,
   IconDelete,
   IconInvite,
-  IconLoader,
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
 import { Label } from '@/components/ui/label';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserRow } from '@/components/ui/user-row';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCan } from '@/hooks/platform/use-can';
 import { cn } from '@/lib/utils';
@@ -142,7 +142,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
 
       {membersQuery.isLoading ? (
         <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <IconLoader className="h-4 w-4 animate-spin" />
+          <Loading className="h-4 w-4" />
           {tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line149JsxTextLoadingTeam')}
         </div>
       ) : membersQuery.error ? (
@@ -438,7 +438,7 @@ function MemberRowActions({
           className="text-muted-foreground hover:text-foreground h-7 w-7"
         >
           {pending ? (
-            <IconLoader className="h-3.5 w-3.5 animate-spin" />
+            <Loading className="h-3.5 w-3.5" />
           ) : (
             <IconMore className="h-4 w-4" />
           )}
@@ -633,7 +633,7 @@ function InviteDialog({
                 Cancel
               </Button>
               <Button type="submit" size="sm" disabled={!emailValid || pending}>
-                {pending ? <IconLoader className="h-4 w-4 animate-spin" /> : 'Send invite'}
+                {pending ? <Loading className="h-4 w-4" /> : 'Send invite'}
               </Button>
             </div>
           </div>

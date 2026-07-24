@@ -2,16 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  CircleNotchIcon as Loader2,
-  ArrowCounterClockwiseIcon as RotateCcw,
-} from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
@@ -332,7 +330,7 @@ export default function ProjectSessionPage() {
               disabled={restartMutation.isPending}
             >
               {restartMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loading className="h-3.5 w-3.5" />
               ) : (
                 <RotateCcw className="h-3.5 w-3.5" />
               )}
@@ -595,7 +593,7 @@ function ActiveSessionChat({
             disabled={restartMutation.isPending}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="h-3.5 w-3.5" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
             )}
@@ -624,7 +622,7 @@ function ActiveSessionChat({
             disabled={restartMutation.isPending}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="h-3.5 w-3.5" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
             )}

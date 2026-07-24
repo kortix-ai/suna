@@ -1,6 +1,7 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
 import { STATUS_TEXT } from '@/components/ui/status';
+import Loading from '@/components/ui/loading';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -18,7 +19,6 @@ import {
   CircleIcon as Circle,
   ClockIcon as Clock,
   StackIcon as Layers,
-  CircleNotchIcon as Loader2,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
@@ -79,7 +79,7 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
                   )}
                 >
                   {isActive ? (
-                    <Loader2 className="text-muted-foreground size-3 flex-shrink-0 animate-spin" />
+                    <Loading className="text-muted-foreground size-3 flex-shrink-0" />
                   ) : row.status === 'completed' ? (
                     <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
                   ) : row.status === 'input_needed' ? (

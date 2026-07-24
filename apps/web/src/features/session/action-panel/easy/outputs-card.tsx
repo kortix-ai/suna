@@ -14,6 +14,7 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
 import { track } from '@/lib/track';
@@ -23,7 +24,6 @@ import {
   DownloadIcon as Download,
   FileTextIcon as FileText,
   ImageIcon,
-  CircleNotchIcon as Loader2,
   PresentationIcon,
   VideoIcon,
 } from '@phosphor-icons/react';
@@ -250,7 +250,7 @@ function DownloadAllAction({ outputs }: { outputs: OutputItem[] }) {
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {busy ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loading className="text-muted-foreground size-3.5 motion-reduce:animate-none" />
         ) : (
           <Download className="size-3.5" />
         )}

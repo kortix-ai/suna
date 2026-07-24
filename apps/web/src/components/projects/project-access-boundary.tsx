@@ -4,7 +4,6 @@ import {
   WarningCircleIcon as AlertCircle,
   ArrowLeftIcon as ArrowLeft,
   CheckCircleIcon as CheckCircle2,
-  CircleNotchIcon as Loader2,
   LockIcon as LockKeyhole,
   ArrowsClockwiseIcon as RefreshCw,
   PaperPlaneTiltIcon as Send,
@@ -30,6 +29,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { setAdminBypass } from '@/lib/api-client';
@@ -186,7 +186,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
               disabled={bypassMutation.isPending}
             >
               {bypassMutation.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loading className="size-3.5" />
               ) : (
                 <ShieldAlert className="size-3.5" />
               )}
@@ -291,7 +291,7 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
               disabled={requestMutation.isPending}
             >
               {requestMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
+                <Loading className="size-4" />
               ) : (
                 <Send className="size-4" />
               )}

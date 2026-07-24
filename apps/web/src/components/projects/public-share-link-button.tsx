@@ -1,10 +1,11 @@
 'use client';
 
-import { LinkSimpleIcon as Link2, CircleNotchIcon as Loader2 } from '@phosphor-icons/react';
+import { LinkSimpleIcon as Link2 } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Loading from '@/components/ui/loading';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -62,7 +63,7 @@ export function PublicShareLinkButton({
           title={title}
         >
           {share.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loading className="h-4 w-4" />
           ) : (
             <Link2 className="h-4 w-4" />
           )}

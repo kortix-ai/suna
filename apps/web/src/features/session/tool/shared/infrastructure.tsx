@@ -32,7 +32,6 @@ import {
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
   ArrowsClockwiseIcon as GrRefresh,
-  CircleNotchIcon as Loader2,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
   ArrowSquareOutIcon as TbExternalLink,
@@ -486,7 +485,7 @@ export function StatusIcon({ status }: { status: string }) {
       return <CircleAlert className="text-muted-foreground size-3 flex-shrink-0" />;
     case 'running':
     case 'pending':
-      return <Loader2 className="text-muted-foreground size-3 flex-shrink-0 animate-spin" />;
+      return <Loading className="text-muted-foreground size-3 flex-shrink-0" />;
     default:
       return null;
   }
@@ -859,7 +858,7 @@ function ToolRightCluster({
         </span>
       )}
       {running && (
-        <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+        <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
       )}
       {!running && rightAccessory && (
         <span className="text-muted-foreground/30 group-hover:text-muted-foreground/60 flex-shrink-0 transition-colors [&>svg]:size-3">

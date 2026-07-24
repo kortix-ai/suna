@@ -14,9 +14,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import Loading from '@/components/ui/loading';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 import { cn } from '@/lib/utils';
-import { CircleNotchIcon as Loader2 } from '@phosphor-icons/react';
 import { AVAILABLE_SERVICES, MAINTENANCE_LEVELS } from './constants';
 import { DateTimePicker } from './date-time-picker';
 
@@ -195,7 +195,7 @@ export function MaintenanceConfigDialog({
             disabled={isPending || (!isNone && !message)}
             variant={level === 'blocking' || level === 'critical' ? 'destructive' : 'default'}
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isPending && <Loading className="h-4 w-4" />}
             {isNone ? 'Clear & Save' : 'Activate'}
           </Button>
         </div>

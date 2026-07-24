@@ -67,7 +67,6 @@ export {
   UserPlusIcon as IconInvite,
   LinkSimpleIcon as IconLink,
   ListIcon as IconList,
-  CircleNotchIcon as IconLoader,
   EnvelopeIcon as IconMail,
   ListIcon as IconMenu,
   ChatIcon as IconMessage,

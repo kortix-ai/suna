@@ -21,7 +21,6 @@ import {
   GlobeIcon as Globe,
   ImageIcon,
   StackIcon as Layers,
-  CircleNotchIcon as Loader2,
   ArrowBendUpLeftIcon as Reply,
   ScissorsIcon as Scissors,
   MagnifyingGlassIcon as Search,
@@ -69,6 +68,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Loading from '@/components/ui/loading';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
@@ -1942,7 +1942,7 @@ function GroupedReasoningCard({
 
           <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
           {reasoningStreaming && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
           )}
           <ChevronRight
             className={cn(
@@ -2128,7 +2128,7 @@ function SameToolGroup({
             </span>
           )}
           {anyRunning && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
+            <Loading className="text-muted-foreground/40 size-3 flex-shrink-0" />
           )}
           <ChevronRight
             className={cn(
@@ -2171,7 +2171,7 @@ function SameToolGroup({
                       </span>
                     )}
                     {running && (
-                      <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
+                      <Loading className="text-muted-foreground/40 size-2.5 flex-shrink-0" />
                     )}
                   </div>
                 );

@@ -5,6 +5,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
 import {
   useConnectTeams,
   useTeamsManifest,
@@ -16,7 +17,6 @@ import {
   CaretDownIcon as ChevronDown,
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
-  CircleNotchIcon as Loader2,
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 
@@ -230,7 +230,7 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
 
         <div className="flex justify-end">
           <Button size="sm" onClick={submit} disabled={connect.isPending || !canSubmit}>
-            {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+            {connect.isPending ? <Loading className="mr-2 h-3.5 w-3.5" /> : null}
             Connect Teams
           </Button>
         </div>

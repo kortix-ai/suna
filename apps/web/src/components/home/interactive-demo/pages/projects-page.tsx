@@ -3,11 +3,11 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
   GitBranchIcon as FolderGit2,
   GitBranchIcon as GitBranch,
-  CircleNotchIcon as Loader2,
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -30,7 +30,7 @@ function ProjectStatusBadge({ status }: { status: ProjectCard['status'] }) {
   if (status === 'shipping') {
     return (
       <Badge size="sm" variant="outline" className="gap-1 text-amber-600 dark:text-amber-500">
-        <Loader2 className="size-3 animate-spin" /> shipping
+        <Loading className="size-3" /> shipping
       </Badge>
     );
   }

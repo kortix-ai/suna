@@ -39,7 +39,6 @@ import {
   CaretDownIcon as ChevronDown,
   CreditCardIcon as CreditCard,
   KeyIcon as KeyRound,
-  CircleNotchIcon as Loader2,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
   SlidersHorizontalIcon as SlidersHorizontal,
@@ -56,6 +55,7 @@ import { Input } from '@/components/ui/input';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Loading from '@/components/ui/loading';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
 import { flattenModels } from '@/features/session/session-chat-input';
@@ -509,7 +509,7 @@ function ToolsStep({
                         disabled={appsQuery.isFetchingNextPage}
                       >
                         {appsQuery.isFetchingNextPage ? (
-                          <Loader2 className="mr-2 size-4 animate-spin" />
+                          <Loading className="mr-2 size-4" />
                         ) : null}
                         Load more
                       </Button>
@@ -595,7 +595,7 @@ function ToolTile({
       </span>
       <span className="shrink-0">
         {pending ? (
-          <Loader2 className="text-muted-foreground size-4 animate-spin" />
+          <Loading className="text-muted-foreground size-4" />
         ) : connected ? (
           <Check className="size-4 text-emerald-600" />
         ) : (
@@ -662,7 +662,7 @@ function SlackStep({ projectId }: { projectId: string }) {
           {waiting ? (
             <div className="flex flex-col items-center gap-2">
               <div className="text-foreground flex items-center gap-2 text-sm font-medium">
-                <Loader2 className="size-4 animate-spin" />
+                <Loading className="size-4" />
                 Waiting for you to approve in Slack…
               </div>
               <p className="text-muted-foreground max-w-sm text-xs leading-5">
@@ -759,7 +759,7 @@ function ModelStep() {
 
       {isLoading ? (
         <div className="border-border/60 bg-card text-muted-foreground flex items-center justify-center gap-2 rounded-2xl border px-6 py-10 text-sm">
-          <Loader2 className="size-4 animate-spin" />
+          <Loading className="size-4" />
           Checking your connected models…
         </div>
       ) : hasSelectableModels ? (

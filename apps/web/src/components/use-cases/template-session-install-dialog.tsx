@@ -2,7 +2,6 @@
 
 import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 import {
-  CircleNotchIcon as Loader2,
   SignInIcon as LogIn,
   ChatsIcon as MessagesSquare,
   SparkleIcon as Sparkles,
@@ -21,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
 
@@ -112,7 +112,7 @@ export function TemplateSessionInstallDialog({
 
             {authLoading ? (
               <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loader2 className="size-4 animate-spin" /> Checking your account…
+                <Loading className="size-4" /> Checking your account…
               </div>
             ) : !user ? (
               <div className="border-border/60 bg-muted/30 flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-8 text-center">
@@ -177,7 +177,7 @@ export function TemplateSessionInstallDialog({
               <Button size="sm" disabled={!projectId || opening} onClick={openSession}>
                 {opening ? (
                   <>
-                    <Loader2 className="size-4 animate-spin" /> Opening chat…
+                    <Loading className="size-4" /> Opening chat…
                   </>
                 ) : (
                   <>

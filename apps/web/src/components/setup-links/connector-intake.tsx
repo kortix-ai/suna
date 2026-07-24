@@ -1,11 +1,11 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
   CheckIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
-  CircleNotchIcon as Loader2,
   PlugIcon as Plug,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
@@ -98,7 +98,7 @@ export function ConnectorIntake({
   if (phase === 'loading') {
     return (
       <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />{' '}
+        <Loading className="h-4 w-4" />{' '}
         {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextLoading4e5fd209')}
       </div>
     );
@@ -148,7 +148,7 @@ export function ConnectorIntake({
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
         {starting ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <Loading className="mr-2 h-4 w-4" />
         ) : (
           <Plug className="mr-2 h-4 w-4" />
         )}

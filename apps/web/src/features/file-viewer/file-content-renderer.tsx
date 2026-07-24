@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { errorToast, successToast } from '@/components/ui/toast';
+import Loading from '@/components/ui/loading';
 import {
   appendPreviewToken,
   isSubdomainPreviewUrl,
@@ -35,7 +36,6 @@ import {
   FileXIcon as FileWarning,
   FileXIcon as FileX,
   GlobeIcon as Globe,
-  CircleNotchIcon as Loader2,
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
@@ -226,7 +226,7 @@ function isBlobCategory(cat: FileCategory): cat is BlobCategory {
 function RendererFallback() {
   return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+      <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
   );
 }
@@ -739,7 +739,7 @@ export function FileContentRenderer({
                   )}
                 >
                   {isSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loading className="h-3.5 w-3.5" />
                   ) : (
                     <Save className="h-3.5 w-3.5" />
                   )}
@@ -843,7 +843,7 @@ export function FileContentRenderer({
           {/* Loading */}
           {showLoadingState && (
             <div className="flex h-full items-center justify-center">
-              <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+              <Loading className="text-muted-foreground/40 h-4 w-4" />
             </div>
           )}
 
@@ -979,7 +979,7 @@ export function FileContentRenderer({
               {serverHealth !== 'unavailable' &&
                 (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
                   <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin opacity-40" />
+                    <Loading className="h-5 w-5 opacity-40" />
                     <p className="text-xs opacity-50">
                       {tHardcodedUi.raw(
                         'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',

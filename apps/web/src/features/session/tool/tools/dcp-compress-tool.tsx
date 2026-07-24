@@ -10,7 +10,8 @@ import {
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { CircleNotchIcon as Loader2, ScissorsIcon as Scissors } from '@phosphor-icons/react';
+import Loading from '@/components/ui/loading';
+import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
 export function DCPCompressTool({ part }: ToolProps) {
@@ -31,7 +32,7 @@ export function DCPCompressTool({ part }: ToolProps) {
           {topic && (
             <span className="text-muted-foreground/70 max-w-[200px] truncate text-xs">{topic}</span>
           )}
-          {isRunning && <Loader2 className="text-muted-foreground ml-auto size-3 animate-spin" />}
+          {isRunning && <Loading className="text-muted-foreground ml-auto size-3" />}
         </div>
       }
     >

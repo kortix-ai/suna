@@ -3,7 +3,6 @@
 import {
   ArrowsLeftRightIcon as ArrowRightLeft,
   CubeIcon as Boxes,
-  CircleNotchIcon as Loader2,
   DotsThreeIcon as MoreHorizontal,
   ArrowsClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
@@ -59,6 +58,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { backendApi } from '@/lib/api-client';
 import { toast } from '@/lib/toast';
@@ -466,7 +466,7 @@ export default function ProvidersPage() {
                   disabled={saveWeights.isPending || !allowed.length}
                   className="gap-1.5"
                 >
-                  {saveWeights.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {saveWeights.isPending && <Loading className="h-3.5 w-3.5" />}
                   {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveDistribution65ccde94')}
                 </Button>
               </>
@@ -502,7 +502,7 @@ export default function ProvidersPage() {
               disabled={saveFb.isPending}
               className="gap-1.5"
             >
-              {saveFb.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {saveFb.isPending && <Loading className="h-3.5 w-3.5" />}
               {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveFailoverffe7c977')}
             </Button>
           </div>
@@ -1011,7 +1011,7 @@ export default function ProvidersPage() {
               disabled={!target || migrate.isPending}
               className="gap-1.5"
             >
-              {migrate.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Migrate
+              {migrate.isPending && <Loading className="h-4 w-4" />}Migrate
             </Button>
           </DialogFooter>
         </DialogContent>

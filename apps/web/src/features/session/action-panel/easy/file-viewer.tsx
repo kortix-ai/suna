@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Loading from '@/components/ui/loading';
 import {
   downloadFile,
   isBrowserViewable,
@@ -40,7 +41,6 @@ import {
   DownloadIcon as Download,
   ArrowSquareOutIcon as ExternalLink,
   EyeIcon as Eye,
-  CircleNotchIcon as Loader2,
   ArrowsOutSimpleIcon as Maximize2,
   ChatIcon as MessageSquarePlus,
   ArrowsInSimpleIcon as Minimize2,
@@ -128,7 +128,7 @@ export function DownloadButton({ path, fileName }: { path: string; fileName: str
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {downloading ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loading className="text-muted-foreground size-3.5 motion-reduce:animate-none" />
         ) : (
           <Download className="size-3.5" />
         )}
@@ -171,7 +171,7 @@ export function OpenInNewTabButton({ path }: { path: string }) {
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {opening ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loading className="text-muted-foreground size-3.5 motion-reduce:animate-none" />
         ) : (
           <ExternalLink className="size-3.5" />
         )}

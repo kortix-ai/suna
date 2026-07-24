@@ -15,7 +15,6 @@ import {
   GitBranchIcon as FolderGit2,
   QuestionIcon as HelpCircle,
   InfoIcon as Info,
-  CircleNotchIcon as Loader2,
   EnvelopeIcon as Mail,
   DotsThreeIcon as MoreHorizontal,
   PlusIcon as Plus,
@@ -167,6 +166,7 @@ import {
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   PlugsConnectedIcon as Cable,
@@ -1541,7 +1541,7 @@ export default function BrandPage() {
                           )}
                         </Button>
                         <Button>
-                          <Loader2 className="size-4 animate-spin" /> Loading
+                          <Loading className="size-4" /> Loading
                         </Button>
                       </div>
                     </div>

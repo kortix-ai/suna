@@ -4,13 +4,13 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
   WarningCircleIcon as AlertCircle,
   CreditCardIcon as CreditCard,
-  CircleNotchIcon as Loader2,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 
@@ -284,7 +284,7 @@ export function SessionRetryDisplay({
         className,
       )}
     >
-      <Loader2 className="text-muted-foreground/70 mt-0.5 size-3.5 flex-shrink-0 animate-spin" />
+      <Loading className="text-muted-foreground/70 mt-0.5 size-3.5 flex-shrink-0" />
       <div className="min-w-0">
         <p className="text-muted-foreground text-xs break-words">{message}</p>
         <p className="text-muted-foreground/70 mt-1 text-xs">{line}</p>

@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 
-import { ClockIcon as Clock, CircleNotchIcon as Loader2 } from '@phosphor-icons/react';
+import { ClockIcon as Clock } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { useParams, useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -91,7 +92,7 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <div className="text-foreground/40 flex items-center gap-2.5 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loading className="h-4 w-4" />
           {tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}
         </div>
       </BrandSurface>
@@ -238,7 +239,7 @@ export default function InvitePage() {
             className="flex-1 text-sm"
           >
             {declinePending ? (
-              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              <Loading className="mx-auto h-4 w-4" />
             ) : (
               tHardcodedUi.raw('appInvitesInviteidPage.decline')
             )}
@@ -251,7 +252,7 @@ export default function InvitePage() {
             className="flex-1 text-sm"
           >
             {acceptPending ? (
-              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              <Loading className="mx-auto h-4 w-4" />
             ) : (
               tHardcodedUi.raw('appInvitesInviteidPage.accept')
             )}

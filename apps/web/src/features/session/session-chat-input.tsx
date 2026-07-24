@@ -34,7 +34,6 @@ import {
   ClockIcon as Clock,
   FolderIcon as Folder,
   ListChecksIcon as ListTodo,
-  CircleNotchIcon as Loader2,
   ChatIcon as MessageSquare,
   PaperclipIcon as Paperclip,
   ArrowBendUpLeftIcon as Reply,
@@ -71,6 +70,7 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import Loading from '@/components/ui/loading';
 
 export type { ProviderListResponse };
 
@@ -1000,7 +1000,7 @@ function MentionPopover({
         {/* Loading indicator while searching for files */}
         {loading && files.length === 0 && (
           <div className="text-muted-foreground/50 flex items-center gap-2 px-3 py-2">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loading className="size-3.5" />
             <span className="text-xs">
               {tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}
             </span>
@@ -2412,7 +2412,7 @@ function SessionChatInputImpl({
 
               {isSending && !lockForQuestion && (
                 <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loading className="size-4" />
                 </Button>
               )}
               {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (

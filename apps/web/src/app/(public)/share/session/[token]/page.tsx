@@ -4,7 +4,6 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   FileTextIcon as FileText,
   GlobeIcon as Globe,
-  CircleNotchIcon as Loader2,
   SignInIcon as LogIn,
   PlayIcon as Play,
   ShieldWarningIcon as ShieldAlert,
@@ -15,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
@@ -140,7 +140,7 @@ export default function PublicSessionSharePage() {
   if (loading) {
     return (
       <main className="bg-background text-foreground flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+        <Loading className="text-muted-foreground h-5 w-5" />
       </main>
     );
   }
@@ -209,7 +209,7 @@ export default function PublicSessionSharePage() {
           {offline && hasAuth && (
             <Button size="sm" className="h-8 gap-1.5" onClick={startSession} disabled={starting}>
               {starting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loading className="h-3.5 w-3.5" />
               ) : (
                 <Play className="h-3.5 w-3.5" />
               )}
@@ -255,7 +255,7 @@ export default function PublicSessionSharePage() {
               {hasAuth ? (
                 <Button className="mt-5 gap-1.5" onClick={startSession} disabled={starting}>
                   {starting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loading className="h-4 w-4" />
                   ) : (
                     <Play className="h-4 w-4" />
                   )}

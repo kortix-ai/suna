@@ -13,7 +13,6 @@ import { useTranslations } from 'next-intl';
 import {
   ShippingContainerIcon as Container,
   FileCodeIcon as FileCode,
-  CircleNotchIcon as Loader2,
   PackageIcon as Package,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -31,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import Loading from '@/components/ui/loading';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -370,7 +370,7 @@ export function SandboxTemplateForm({
             onClick={() => (isEdit ? editMut.mutate() : createMut.mutate())}
             disabled={!canSubmit || submitting}
           >
-            {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {submitting && <Loading className="mr-2 size-4" />}
             {isEdit ? 'Save changes' : 'Create template'}
           </Button>
         </DialogFooter>

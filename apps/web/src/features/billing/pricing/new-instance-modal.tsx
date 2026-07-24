@@ -6,6 +6,7 @@ import { INSTANCE_CONFIG } from '@/components/instance/config';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useServerTypes } from '@/hooks/instance/use-server-types';
 import { createCheckoutSession } from '@/lib/api/billing';
@@ -15,7 +16,6 @@ import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon as ArrowRight,
   CheckIcon as Check,
-  CircleNotchIcon as Loader2,
   XIcon as X,
 } from '@phosphor-icons/react';
 import Image from 'next/image';
@@ -319,7 +319,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
             onClick={handleCta}
           >
             {isLoading ? (
-              <Loader2 className="size-4 animate-spin" />
+              <Loading className="size-4" />
             ) : (
               <>
                 {tHardcodedUi.raw(

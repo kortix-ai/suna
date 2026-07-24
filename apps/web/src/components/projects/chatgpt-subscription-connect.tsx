@@ -3,7 +3,6 @@
 import {
   WarningCircleIcon as AlertCircle,
   ArrowSquareOutIcon as ExternalLink,
-  CircleNotchIcon as Loader2,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -17,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import Loading from '@/components/ui/loading';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import {
   type SharingSelection,
@@ -265,7 +265,7 @@ export function ChatGptSubscriptionConnect({
             </div>
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loading className="h-3.5 w-3.5" />
             {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
           </div>
         </div>
