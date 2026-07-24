@@ -2,7 +2,7 @@ import type {
   ConnectionProfileCredentialInput,
   ConnectorDraftInput,
   OAuth2ClientCredentials,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 
 export interface OAuth2CredentialForm {
   tokenUrl: string;
