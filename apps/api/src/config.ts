@@ -170,6 +170,16 @@ const envSchema = z.object({
   APIFY_API_URL: optUrl('https://api.apify.com'),
   APIFY_TOKEN: optStr,
 
+  // ── Domain enrichment (optional — feature inert unless worker enabled) ───
+  JINA_API_KEY: optStr,
+  KORTIX_ENRICHMENT_WORKER_ENABLED: optBoolFalse,
+  KORTIX_ENRICHMENT_MODEL: optStrDefault('glm-5.2'),
+  KORTIX_ENRICHMENT_REQS_PER_MIN_USER: optInt(5),
+  KORTIX_ENRICHMENT_REQS_PER_MIN_ACCOUNT: optInt(15),
+  KORTIX_ENRICHMENT_JINA_RPM: optInt(60),
+  KORTIX_ENRICHMENT_PROFILE_TTL_DAYS: optInt(60),
+  KORTIX_ENRICHMENT_JOB_TIMEOUT_MS: optInt(300_000),
+
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL: optUrl('https://api.firecrawl.dev'),
   FIRECRAWL_API_KEY: optStr,
@@ -761,6 +771,18 @@ function validateEnv(): z.infer<typeof envSchema> {
     }
   }
 
+  if (
+    ['true', '1', 'yes', 'on'].includes(String(raw.KORTIX_ENRICHMENT_WORKER_ENABLED ?? '').trim().toLowerCase())
+    && !raw.JINA_API_KEY
+  ) {
+    issues.push({
+      var: 'JINA_API_KEY',
+      message:
+        'Enrichment worker is on but JINA_API_KEY is unset — every page fetch will fail and jobs will finish as blocked',
+      level: 'warn',
+    });
+  }
+
   if (raw.MEET_ENABLED === 'true' && !raw.RECALL_API_KEY) {
     issues.push({
       var: 'RECALL_API_KEY',
@@ -862,6 +884,16 @@ export const config = {
   SERPER_API_KEY: env.SERPER_API_KEY,
   APIFY_API_URL: env.APIFY_API_URL,
   APIFY_TOKEN: env.APIFY_TOKEN,
+
+  // ─── Domain Enrichment ────────────────────────────────────────────────────
+  JINA_API_KEY: env.JINA_API_KEY,
+  KORTIX_ENRICHMENT_WORKER_ENABLED: env.KORTIX_ENRICHMENT_WORKER_ENABLED,
+  KORTIX_ENRICHMENT_MODEL: env.KORTIX_ENRICHMENT_MODEL,
+  KORTIX_ENRICHMENT_REQS_PER_MIN_USER: env.KORTIX_ENRICHMENT_REQS_PER_MIN_USER,
+  KORTIX_ENRICHMENT_REQS_PER_MIN_ACCOUNT: env.KORTIX_ENRICHMENT_REQS_PER_MIN_ACCOUNT,
+  KORTIX_ENRICHMENT_JINA_RPM: env.KORTIX_ENRICHMENT_JINA_RPM,
+  KORTIX_ENRICHMENT_PROFILE_TTL_DAYS: env.KORTIX_ENRICHMENT_PROFILE_TTL_DAYS,
+  KORTIX_ENRICHMENT_JOB_TIMEOUT_MS: env.KORTIX_ENRICHMENT_JOB_TIMEOUT_MS,
 
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
