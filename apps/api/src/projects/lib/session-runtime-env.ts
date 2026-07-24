@@ -43,9 +43,8 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
-    // model overrides (KORTIX_OPENCODE_MODEL above, or an explicit model on a
-    // prompt request) still win over whatever default model this bakes in —
-    // this only sets the manifest agent's/DEFAULT agent's fallback.
+    // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
+    // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? { KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig }
       : {}),
