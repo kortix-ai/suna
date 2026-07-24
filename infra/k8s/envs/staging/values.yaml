@@ -15,6 +15,7 @@ extraEnv:
   # per-user account-linking and project-access flow expected before prod.
   SLACK_REQUIRE_USER_IDENTITY: "true"
   LLM_GATEWAY_BASE_URL: "https://gateway-staging.kortix.com/v1/llm"
+  ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum"
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
   # Staging uses a 60-connection Supabase database. ECS can run 3 API tasks
   # while EKS runs 4 pods. Four app connections plus one leader connection per
