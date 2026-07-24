@@ -70,17 +70,12 @@ const isIdempotentMethod = (method?: string): boolean => {
   return m === 'GET' || m === 'HEAD';
 };
 
-/**
- * Bounded retry count for transient gateway (502/503/504) responses on
- * idempotent reads. Two retries (3 total attempts) with 250ms→500ms backoff
- * absorbs a single transient ALB/proxy blip — the signature of Better Stack
- * frontend pattern `994987…` (`ApiError: HTTP 502: ` on the background
- * `useSessionAudit` poll) — without surfacing it to `onError` / Sentry.
- * Persistent gateway failures exhaust the loop and surface normally, so real
- * outages still report. Mirrors the established retry pattern in
- * `apps/api/src/git-proxy/upstream.ts` (`fetchUpstreamBuffered`).
- */
-const TRANSIENT_GATEWAY_RETRIES = 2;
+const TRANSIENT_READ_RETRIES = 2;
+
+const isAbortError = (error: unknown): boolean =>
+  (error as { name?: string } | null)?.name === 'AbortError' ||
+  (error as { name?: string } | null)?.name === 'AbortSignal' ||
+  (error instanceof Error && error.message.includes('aborted'));
 
 // Platform-admin read-only bypass toggle (web only). In-memory, per-tab — never
 // persisted — so it resets on reload and can't linger silently. When on, every
@@ -159,61 +154,55 @@ async function makeRequest<T = any>(
     // Note: X-Refresh-Token was removed to reduce header size and prevent HTTP 431 errors.
     // The backend handles token refresh via Supabase directly.
 
-    let response = await fetch(url, {
-      ...fetchOptions,
-      headers,
-      signal: controller.signal,
-      // API auth is bearer-token based. Don't send browser cookies to the
-      // same-origin /v1 proxy; large localhost cookie jars can trip HTTP 431
-      // before the request reaches the API.
-      credentials: fetchOptions.credentials ?? 'omit',
-    });
+    const retryableRead = isIdempotentMethod(fetchOptions.method);
+    const maxAttempts = retryableRead ? TRANSIENT_READ_RETRIES + 1 : 1;
+    let response!: Response;
 
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
-    }
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await sleep(250 * 2 ** (attempt - 1));
+      }
 
-    // Absorb a single transient gateway blip (502/503/504) on idempotent reads
-    // instead of surfacing it to `onError` / Sentry on the first response. The
-    // next attempt usually succeeds; persistent gateway failures exhaust the
-    // loop and fall through to the normal error path below (so real outages
-    // still report). Non-idempotent methods (POST/PUT/PATCH/DELETE) and
-    // non-transient statuses are never retried.
-    if (
-      !response.ok &&
-      isIdempotentMethod(fetchOptions.method) &&
-      isTransientGatewayStatus(response.status)
-    ) {
-      for (let attempt = 0; attempt < TRANSIENT_GATEWAY_RETRIES; attempt++) {
-        // Drain + discard the transient error body before re-fetching.
-        try {
-          await response.arrayBuffer();
-        } catch {
-        }
-        await sleep(250 * 2 ** attempt);
-        const retryController = new AbortController();
-        let retryTimeoutId: NodeJS.Timeout | null = setTimeout(() => {
-          retryController.abort();
+      const attemptController = attempt === 0 ? controller : new AbortController();
+      if (attempt > 0) {
+        timeoutId = setTimeout(() => {
+          didTimeout = true;
+          attemptController.abort();
         }, timeout);
-        try {
-          response = await fetch(url, {
-            ...fetchOptions,
-            headers,
-            signal: retryController.signal,
-            credentials: fetchOptions.credentials ?? 'omit',
-          });
-        } catch {
-          // Network error / abort on the retry — give up retrying and surface
-          // the last (transient) response through the normal error path below.
-          break;
-        } finally {
-          if (retryTimeoutId) {
-            clearTimeout(retryTimeoutId);
-            retryTimeoutId = null;
-          }
+      }
+
+      try {
+        response = await fetch(url, {
+          ...fetchOptions,
+          headers,
+          signal: attemptController.signal,
+          credentials: fetchOptions.credentials ?? 'omit',
+        });
+      } catch (error) {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
         }
-        if (response.ok || !isTransientGatewayStatus(response.status)) break;
+        if (isAbortError(error) || attempt === maxAttempts - 1) {
+          throw error;
+        }
+        continue;
+      }
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      const retryableResponse =
+        retryableRead && isTransientGatewayStatus(response.status) && attempt < maxAttempts - 1;
+      if (!retryableResponse) {
+        break;
+      }
+
+      try {
+        await response.arrayBuffer();
+      } catch {
       }
     }
 
@@ -328,18 +317,16 @@ async function makeRequest<T = any>(
     }
 
     // Check if this is an abort error (timeout or manual abort)
-    const isAbortError = error?.name === 'AbortError' ||
-                         error?.name === 'AbortSignal' ||
-                         (error instanceof Error && error.message.includes('aborted'));
+    const requestWasAborted = isAbortError(error);
 
     // If it was aborted, mark it so we don't try to abort again
-    if (isAbortError) {
+    if (requestWasAborted) {
       isAborted = true;
     }
 
     let apiError: ApiError;
 
-    if (isAbortError) {
+    if (requestWasAborted) {
       // An external abort (Next.js client navigation, tab close, React Query
       // cancelling an in-flight request, a dropped connection) is NOT a
       // timeout — surfacing it as one produced the mysterious, URL-less

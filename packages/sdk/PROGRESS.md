@@ -197,6 +197,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`. | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input. | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector` |
 | B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback. | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account. | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement` |
 | B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing). | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green |
+| B16 | **Retry transient transport failures on idempotent REST reads before reporting them.** Browser CORS preflight failures surface as opaque `TypeError: Failed to fetch`, bypass the existing HTTP 502/503/504 retry loop, and call the host error handler before React Query retries successfully. Cache successful preflights to reduce exposure without retrying mutations. | Production session `d9abee06-5af1-48b9-ba92-53ca0fcf0589` logged continuous audit `200` responses after one browser preflight failure; `src/core/http/api-client.ts` retries response statuses but reports initial fetch throws immediately; `apps/api/src/index.ts` emits no `Access-Control-Max-Age`. | **DONE 2026-07-24** — implementation `9f6e5b615`; session `cors-transport-resilience` |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1512,3 +1513,45 @@ provider-funded candidate with no managed fallback. Free Codex reached
 **Shippable to production: YES** for B14 and the published SDK surface.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-24 — session `cors-transport-resilience` (B16 completion)
+
+Added bounded transport retries to the shared SDK HTTP client. `GET` and `HEAD`
+requests now use three total attempts. The retry delays are 250 ms and 500 ms.
+The client still retries HTTP 502, 503, and 504 responses. It does not retry
+mutations or abort errors. The host error handler runs once after exhaustion.
+
+Extracted the API CORS configuration into `apps/api/src/middleware/cors.ts`.
+The origin, method, header, credential, and preview policies remain unchanged.
+Successful preflight responses now include `Access-Control-Max-Age: 600`.
+
+**TDD evidence:** the first SDK regression run reported **18 pass / 2 fail**.
+Both failures showed that `TypeError: Failed to fetch` received no SDK retry.
+The first API test failed because `src/middleware/cors.ts` did not exist.
+The focused GREEN runs reported **20 pass / 0 fail** for the SDK and **3 pass /
+0 fail** for API CORS.
+
+**Final SDK gates:** SDK and API typechecks exited 0. The full SDK suite reported
+**1186 pass / 0 fail** across 89 files with 5204 assertions. The packed-install
+smoke built, packed, installed, imported, and constructed `@kortix/sdk`.
+`git diff --check` exited 0.
+
+**API suite evidence:** the focused CORS suite passed. The full API suite reached
+and passed the CORS suite. It then failed in unrelated existing tests. Examples
+include missing `getTraceHeaders` and `captureException` exports, incomplete
+maintenance mocks, and missing sandbox-reaper exports.
+
+**Real local HTTP evidence:** an allowed preflight returned 204 with
+`Access-Control-Allow-Origin: https://kortix.com`,
+`Access-Control-Allow-Credentials: true`, and
+`Access-Control-Max-Age: 600`. An unknown origin received no
+`Access-Control-Allow-Origin`. `/v1/health` returned 200.
+
+The in-app browser runtime exposed no browser. Local Chromium verification
+remains unexecuted.
+
+**Shippable to production: YES** for B16 and the published SDK surface.
+Repository PR, Deploy Dev, deployed-SHA proof, and live-dev verification remain
+part of the repository lifecycle.

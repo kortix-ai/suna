@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { isBillingEnabled } from '@/lib/config';
+import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -177,7 +178,38 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // `Request completed: … 503 …` warn log. Real 5xx server errors and genuine
   // connectivity loss (NETWORK_ERROR) still report. The message-shape backstop
   // for leak paths lives in browser-error-noise.ts (`isClientRequestTimeoutMessage`).
-  if (status >= 500 || error?.code === 'NETWORK_ERROR') {
+  //
+  // The API's server-side request-deadline 503 (`Request exceeded the <N>s server
+  // processing deadline`, from `RequestDeadlineHTTPException`) is ALSO not
+  // captured here. It is the SAME expected/retryable degradation class as the
+  // client timeout above, just observed server-side: the API's deadline net
+  // bounds a slow downstream / pool-saturated request and returns a clean 503 +
+  // Retry-After (de-noised from the API's OWN Sentry by #4524). But the 503
+  // RESPONSE crosses into the frontend as an `ApiError(status: 503)` (the SDK's
+  // `makeRequest` extracts `.message`), and WITHOUT this guard the `status >=
+  // 500` branch below would capture it to the FRONTEND Sentry (app 2346967 — a
+  // SEPARATE app from the API's 2346961). That is exactly how Better Stack
+  // FRONTEND pattern `a330bea1…` (`ApiError: Request exceeded the 25s server
+  // processing deadline`, on the `useSessionAudit` background poll) reached the
+  // frontend telemetry despite #4524's API-side classification — the two Sentry
+  // apps are independent. The `TRANSIENT_GATEWAY_STATUSES` retry (#4609) absorbs
+  // a single transient 503 on idempotent reads, but persistent saturation (the
+  // prod breadcrumbs showed 3 non-200 audit 503s) exhausts the 2-retry loop and
+  // surfaces the deadline 503 to `onError` → here. React-query retries the
+  // background poll; the saturation signal stays in per-route metrics + the
+  // structured 503 warn log. The message-shape backstop for leak paths
+  // (`<ClientErrorBoundary>` / route-error / `onunhandledrejection`) lives in
+  // browser-error-noise.ts (`isServerDeadlineNoiseMessage`). A genuine 503 with
+  // a different message (`sandbox waking up`, `HTTP 503: Service Unavailable`)
+  // still reports — only the typed deadline message the API's
+  // `RequestDeadlineHTTPException` emits is excluded.
+  const errorMessage = typeof error?.message === 'string' ? error.message : '';
+  const isServerDeadline503 =
+    status === 503 && isServerDeadlineNoiseMessage(errorMessage);
+  if (
+    (status >= 500 && !isServerDeadline503) ||
+    error?.code === 'NETWORK_ERROR'
+  ) {
     Sentry.captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {

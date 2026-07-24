@@ -7,11 +7,13 @@ import {
   isClientRequestTimeoutMessage,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isEmbedPdfTilingReactUpdateDepthNoise,
+  isEmbedPdfTilingTileDestructureNoise,
   isExpectedBillingGateMessage,
   isExpectedCompactionNoModelMessage,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
   isFirefoxReactSchedulerReentryNoise,
+  isFramelessNetworkErrorNoise,
   isInjectedAppSource,
   isInpageWalletStreamNoise,
   isKnownBrowserNoiseMessage,
@@ -20,7 +22,9 @@ import {
   isOldWebkitRegexNoiseMessage,
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
+  isPaperShaderWebGLUnsupportedNoise,
   isRuntimeNotReadyNoiseMessage,
+  isServerDeadlineNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
@@ -1135,11 +1139,13 @@ test('suppresses a client-side request-timeout unhandled rejection from the brow
   )
 })
 
-test('does NOT suppress the API server-deadline 503 message (different wording)', () => {
-  // The API's request-deadline 503 is `Request exceeded the 25s server processing
-  // deadline` — a different, server-side wording that must keep reporting if it
-  // ever reaches the frontend Sentry config (it is de-noised at the API source
-  // by #4524, not here).
+test('the client-timeout matcher does NOT match the API server-deadline 503 wording', () => {
+  // The API's request-deadline 503 is `Request exceeded the <N>s server
+  // processing deadline` — a distinct, server-side wording. The CLIENT-timeout
+  // matcher (`isClientRequestTimeoutMessage`, anchored on the SDK's
+  // `Request timed out after <N>s: ` prefix) must never match it; the
+  // server-deadline wording has its OWN dedicated matcher
+  // (`isServerDeadlineNoiseMessage`, pinned by the test block below).
   for (const value of [
     'Request exceeded the 25s server processing deadline',
     'Request exceeded the 30s server processing deadline',
@@ -1147,12 +1153,149 @@ test('does NOT suppress the API server-deadline 503 message (different wording)'
     assert.equal(
       isClientRequestTimeoutMessage(value),
       false,
-      `expected server-deadline message "${value}" to keep reporting`,
+      `expected server-deadline message "${value}" to not match the client-timeout matcher`,
+    )
+  }
+})
+
+// Reproduces Better Stack error a330bea136a7b5795a57ef5a33ab40381433132e90c34bbabdca66cc3f6d938c
+// (Kortix Frontend prod, application_id 2346967): a single
+// `ApiError: Request exceeded the 25s server processing deadline` at
+// 2026-07-23 18:41:09 UTC, release 470fe6f3c8 (v0.10.13), transaction
+// `/projects/:id/sessions/:sessionId` (co-worker session page actively polling
+// `useSessionAudit`). Mechanism `generic` (handled=true) — the SDK's
+// `makeRequest` caught the 503 response and re-surfaced it as an `ApiError`.
+// The 99 breadcrumbs were almost all 200s, except THREE
+// `GET .../sessions/<sid>/audit -> 503` — the `useSessionAudit` react-query poll
+// hit the audit endpoint while the API/gateway was transiently saturated.
+//
+// The API's `request-deadline.ts` middleware bounds every non-streaming request
+// to a 25s wall-clock deadline; when exceeded, `RequestDeadlineHTTPException`
+// returns a clean 503 + `Retry-After: 10` with the message
+// `Request exceeded the <N>s server processing deadline`. This is an EXPECTED,
+// retryable degradation — the deadline net bounding a slow downstream / a
+// pool-saturated request. PR #4524 de-noised it from the API's OWN Sentry
+// (app 2346961) by skipping `captureException` for
+// `isRequestDeadlineHTTPException(err)`. BUT the 503 RESPONSE crosses the
+// boundary into the frontend: the SDK's `makeRequest` extracts
+// `errorData.message` (the deadline string), wraps it in an `ApiError` with
+// `status: 503`, and fires `onError` → `handleApiError`, which captures it to
+// the FRONTEND Sentry (app 2346967 — a SEPARATE app from the API's). The
+// `TRANSIENT_GATEWAY_STATUSES` retry (#4609) absorbs a SINGLE transient 503 on
+// idempotent reads, but persistent saturation (the 3 non-200 audit 503s)
+// exhausts the 2-retry loop and surfaces the deadline 503 to `onError` →
+// Sentry. That is exactly how `a330bea1…` reached the frontend telemetry
+// despite #4524's API-side classification.
+//
+// This is the SERVER-side mirror of the CLIENT-timeout class (`b1db01e5…`,
+// #4531 — the SDK's 30s fetch abort). Both are the same expected/retryable
+// degradation under momentary API saturation; react-query retries background
+// polls, and the saturation signal stays visible in the per-route
+// `http_request_duration_seconds` metric + the structured
+// `Request completed: … 503 …` warn log on the API. `handleApiError`
+// (`error-handler.tsx`) skips `captureException` for `status === 503 &&`
+// `isServerDeadlineNoiseMessage(message)`; these checks are the
+// telemetry-side backstop for leak paths (ClientErrorBoundary / route-error /
+// app-error / onunhandledrejection).
+const SERVER_DEADLINE_NOISE_EVENTS = [
+  // The exact prod occurrence — the default 25s budget.
+  'Request exceeded the 25s server processing deadline',
+  // The budget is env-tunable (REQUEST_DEADLINE_MS); the seconds value is not
+  // load-bearing.
+  'Request exceeded the 30s server processing deadline',
+  // The ApiError-class-prefixed wrapper (Sentry/Better Stack often prefixes the
+  // captured error's `.message` with the class name).
+  'ApiError: Request exceeded the 25s server processing deadline',
+  // An unhandled-rejection leak path preserving the message.
+  'Unhandled promise rejection: Request exceeded the 25s server processing deadline',
+  'Unhandled promise rejection: ApiError: Request exceeded the 25s server processing deadline',
+]
+
+test('classifies every API server-deadline 503 message as expected noise', () => {
+  for (const message of SERVER_DEADLINE_NOISE_EVENTS) {
+    assert.equal(
+      isServerDeadlineNoiseMessage(message),
+      true,
+      `expected "${message}" to be classified as a server-deadline 503`,
+    )
+  }
+})
+
+test('suppresses an API server-deadline 503 Sentry event regardless of capture path', () => {
+  for (const value of SERVER_DEADLINE_NOISE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/26996-0650621935b0e261.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses an API server-deadline 503 unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Request exceeded the 25s server processing deadline',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a generic 503 message that is not the typed deadline wording', () => {
+  // A generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`) must
+  // keep reporting — only the typed `Request exceeded the <N>s server processing
+  // deadline` message the API's `RequestDeadlineHTTPException` emits is
+  // classified as noise.
+  for (const value of [
+    'HTTP 503: Service Unavailable',
+    'Service Unavailable',
+    'sandbox waking up',
+    'Bad Gateway',
+    'Request exceeded the 25s client processing deadline',
+    'Request exceeded the server processing deadline',
+    'Request exceeded the 25s server processing deadline.',
+    'A request exceeded the 25s server processing deadline',
+  ]) {
+    assert.equal(
+      isServerDeadlineNoiseMessage(value),
+      false,
+      `expected generic 503 message "${value}" to keep reporting`,
     )
     assert.equal(
       shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
       false,
-      `expected server-deadline Sentry event "${value}" to keep reporting`,
+      `expected generic 503 Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real 5xx server ApiError', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'Service maintenance in progress. Please try again later.',
+  ]) {
+    assert.equal(
+      isServerDeadlineNoiseMessage(value),
+      false,
+      `expected real server error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected real server error Sentry event "${value}" to keep reporting`,
     )
   }
 })
@@ -1955,6 +2098,246 @@ test('does NOT suppress a real app TypeError with a different null-property name
       }),
       false,
       `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate-
+// throw noise — a SIBLING of the null-context crash class above, but a DIFFERENT
+// throw. The library's OWN canonical
+//   "Paper Shaders: WebGL is not supported in this browser"
+// `Error` is thrown from the library's shader-mount constructor when WebGL is
+// unavailable (stripped-down/mobile WebView, headless renderer, WebGL disabled,
+// GPU blacklisted at context creation) — a deliberate library signal, NOT a
+// null-context `TypeError` from calling a WebGL2 method on a `null` context.
+// It escapes `<ShaderSafe>` (the library constructor runs inside a dynamic
+// import / `useEffect` that bypasses the React error boundary) and reaches
+// Sentry as an uncaught global `onunhandledrejection` — an EXPECTED
+// degradation state on WebGL-less browsers, never a product bug.
+//
+// Better Stack pattern
+// f1abf79ece48a86faf8eb32cec8bbb6bf270627f9fd5d423fb1ee43b9abcfb23
+// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// `Paper Shaders: WebGL is not supported in this browser`, 1 occurrence /
+// 0 identified users (anonymous), last 2026-07-23 17:26:32 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route `/`
+// (marketing homepage), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached a React error boundary). Browser: Chrome
+// 150.0.0.0 on Android 10 (mobile) — a stripped-down/mobile Android browser
+// without WebGL. Stack frames: 2, both minified `@paper-design/shaders`
+// chunk frames (NO first-party `apps/web/src/…` frame):
+//   - `app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno`
+//     function `?` lineno 251 colno 3276
+//   - same chunk function `new a` lineno 401 colno 1131  (call_site_function)
+//
+// The matcher anchors on the EXACT library message (the `Paper Shaders:`
+// prefix is the library's canonical marker, never emitted by first-party app
+// code) AND a NEGATIVE guard: a resolved first-party `apps/web/src/…` frame
+// means our own code threw this exact message → a real first-party regression
+// (de-minified to `apps/web/src/…`) → keep reporting. The production noise
+// pattern carries only minified `@paper-design/shaders` chunk frames, so the
+// negative guard does not fire for it. A frameless capture with this exact
+// message still classifies as noise (the message alone is specific — the
+// `Paper Shaders:` library prefix is part of the anchor).
+// ---------------------------------------------------------------------------
+
+// The exact exception value + the two production `@paper-design/shaders` chunk
+// frames from Better Stack pattern `f1abf79e…`.
+const PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE =
+  'Paper Shaders: WebGL is not supported in this browser'
+
+const PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES = [
+  {
+    filename:
+      'app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+    function: '?',
+    lineno: 251,
+    colno: 3276,
+  },
+  {
+    filename:
+      'app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+    function: 'new a',
+    lineno: 401,
+    colno: 1131,
+  },
+]
+
+test('classifies the Paper Shaders WebGL-unsupported prod event as noise (exact message + 2 chunk frames)', () => {
+  // Exact production shape: the canonical library message + the two minified
+  // `@paper-design/shaders` chunk frames. No first-party `apps/web/src/…`
+  // frame, so the negative guard does not fire.
+  assert.equal(
+    isPaperShaderWebGLUnsupportedNoise({
+      message: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+      frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the Paper Shaders WebGL-unsupported prod Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), request URL
+  // `https://kortix.com/` (the marketing homepage), the two minified
+  // `@paper-design/shaders` chunk frames.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+            stacktrace: {
+              frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies the Paper Shaders WebGL-unsupported message through all three capture-path wrapper forms', () => {
+  // The raw `exception.values[].value` has no `Error: ` prefix, but Sentry
+  // capture paths vary — pin all three forms (raw, `Error: `, and
+  // `Unhandled promise rejection: Error: `) so the matcher classifies
+  // consistently regardless of which path delivered it. Use the production
+  // chunk frames so the matcher runs in its realistic frame context.
+  const wrapperForms = [
+    PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+    `Error: ${PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE}`,
+  ]
+  for (const message of wrapperForms) {
+    assert.equal(
+      isPaperShaderWebGLUnsupportedNoise({
+        message,
+        frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be classified as Paper Shaders WebGL-unsupported noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}"`,
+    )
+  }
+})
+
+test('classifies the frameless Paper Shaders WebGL-unsupported capture as noise', () => {
+  // The message alone is specific enough (the `Paper Shaders:` library prefix
+  // is part of the anchor) that a frameless capture with this exact message
+  // still classifies as noise — the library throw never originates from
+  // first-party app code. Verify both the matcher and the Sentry gate.
+  assert.equal(
+    isPaperShaderWebGLUnsupportedNoise({
+      message: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Paper Shaders WebGL-unsupported message when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw this exact
+  // message → a real first-party regression (the `Paper Shaders:` prefix is
+  // the library's canonical marker, but a hostile/copy-pasted first-party
+  // throw could share it). The negative guard MUST preserve it so the call
+  // site can be found + fixed. This is the whole reason the matcher is
+  // frame-aware.
+  for (const frames of [
+    [{ filename: 'apps/web/src/components/ui/shader-safe.tsx', function: 'mount' }],
+    [
+      { filename: 'app:///_next/static/chunks/81107-abc.js', function: '?' },
+      { filename: 'app:///apps/web/src/features/marketing/hero.tsx', function: 'render' },
+    ],
+  ]) {
+    assert.equal(
+      isPaperShaderWebGLUnsupportedNoise({
+        message: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party Paper Shaders WebGL-unsupported throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party Paper Shaders WebGL-unsupported throw from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the Paper Shaders: prefix', () => {
+  // The `Paper Shaders:` library prefix is part of the anchor — a near-worded
+  // message that lacks it (e.g. a real first-party `throw new Error('WebGL is
+  // not supported in this browser')`, or a different library's WebGL check)
+  // must keep reporting. The matcher anchors on the EXACT full library
+  // string, so an over-match guard is in place.
+  for (const message of [
+    'WebGL is not supported in this browser',
+    'Error: WebGL is not supported in this browser',
+    'WebGL is not supported',
+    'Paper Shaders: WebGL is not supported',
+    'Paper Shaders WebGL is not supported in this browser',
+  ]) {
+    assert.equal(
+      isPaperShaderWebGLUnsupportedNoise({
+        message,
+        frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+              },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
     )
   }
 })
@@ -3259,7 +3642,229 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
 })
 
 // ---------------------------------------------------------------------------
-// Firefox-specific React scheduler re-entrancy noise (React #327
+// @embedpdf/plugin-tiling `TilingLayer` viewport-advance tile-destructure noise
+// (Better Stack patterns
+// 3e579401d40807f7f06bf57e7f3ad299846977ed05c2823d0ded45d8e89c1430 and
+// 70272e1ebef3ed66061cda5a46c7963f75d114408113ef131ac88981b4679f15, Kortix
+// Frontend prod, application_id 2346967). A SIBLING of the React #185 class
+// above (pattern 366115d4…, PR #4718) but a DIFFERENT throw from a different
+// embedpdf tiling path: under a rapid scroll/zoom burst the tiling plugin's
+// tile queue drains mid-burst, the viewport-advance path (`t5.advance` →
+// `iA.ignore` → `iA.onScroll` / `iA.onScrollChanged`, plus the
+// `IntersectionObserver` threshold callback) calls `const { tile } =
+// queue.pop()` on an `undefined` pop result, and V8 throws
+// `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` Two
+// patterns, SAME root cause, SAME user/session (`7254bee8-…`/`bd1306e9-…`), 1
+// occurrence each, 0 identified users, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route
+// `/projects/:id/sessions/:sessionId`, Chrome 150 on Windows 10. Pattern
+// `3e579401` mechanism `auto.browser.browserapierrors.addEventListener` (top
+// throw frame `HTMLDivElement.u` in chunk `66499-…`, then `c63a46fc-…` fns
+// `iA.onScroll` → `iA.ignore` → `t5.advance`); pattern `70272e1e` mechanism
+// `auto.browser.global_handlers.onerror` (top throw frame
+// `IntersectionObserver.intersection.IntersectionObserver.threshold`, then
+// `c63a46fc-…` fns `iA.onScrollChanged` → `iA.ignore` → `t5.advance`). All
+// frames are minified `@embedpdf` tiling chunks (`c63a46fc-…` / `66499-…`) — NO
+// first-party `apps/web/src/…` frame. The #4718 matcher (React #185 +
+// `onTileRendering`) does NOT catch it (different message, different anchor), so
+// this new matcher pins the EXACT prod call site: BOTH patterns' frames classify
+// as noise. Anchored on the EXACT message (the `tile` property name + the
+// `r.pop(...)` destructure target pin the call site) AND a positive viewport-
+// advance frame anchor (function name OR the `c63a46fc` tiling chunk), with a
+// first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact V8 wording from both production events (the minified tile queue is
+// `r`, so the destructure target renders as `r.pop(...)`).
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE =
+  "Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined."
+
+// Pattern 3e579401 — mechanism `auto.browser.browserapierrors.addEventListener`
+// (top throw frame `HTMLDivElement.u` in chunk `66499-…`, then the tiling chunk
+// `c63a46fc-…` viewport-advance path `iA.onScroll` → `iA.ignore` → `t5.advance`).
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401 = [
+  { filename: 'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'HTMLDivElement.u' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.onScroll' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.ignore' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.run' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.forward' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 't5.advance' },
+]
+
+// Pattern 70272e1e — mechanism `auto.browser.global_handlers.onerror` (top throw
+// frame `IntersectionObserver.intersection.IntersectionObserver.threshold`, then
+// the tiling chunk `c63a46fc-…` viewport-advance path `iA.onScrollChanged` →
+// `iA.ignore` → `t5.advance`).
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_70272E1E = [
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'IntersectionObserver.intersection.IntersectionObserver.threshold' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.onScrollChanged' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'iA.ignore' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.run' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 'ee.forward' },
+  { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno', function: 't5.advance' },
+]
+
+test('classifies both @embedpdf tiling tile-destructure prod patterns as noise', () => {
+  for (const [label, frames] of [
+    ['3e579401', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401],
+    ['70272e1e', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_70272E1E],
+  ] as const) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+        frames,
+      }),
+      true,
+      `expected pattern ${label} to classify as noise`,
+    )
+  }
+})
+
+test('suppresses both @embedpdf tiling tile-destructure Sentry events via the beforeSend gate', () => {
+  for (const [label, frames] of [
+    ['3e579401', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401],
+    ['70272e1e', EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_70272E1E],
+  ] as const) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: {
+          url: 'https://kortix.com/projects/7254bee8-0000-0000-0000-000000000000/sessions/bd1306e9-0000-0000-0000-000000000000',
+        },
+        exception: {
+          values: [
+            {
+              value: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress pattern ${label}`,
+    )
+  }
+})
+
+test('suppresses the @embedpdf tiling tile-destructure message through all three capture-path forms', () => {
+  // The message must classify as noise regardless of whether the capture path
+  // delivered it raw, with a `TypeError: ` prefix, or with a stacked
+  // `Unhandled promise rejection: TypeError: ` prefix (stripErrorWrappers peels
+  // all three before the exact match).
+  const messageVariants = [
+    EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+    `TypeError: ${EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE}`,
+    `Unhandled promise rejection: TypeError: ${EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE}`,
+  ]
+  for (const message of messageVariants) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message,
+        frames: EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401,
+      }),
+      true,
+      `expected "${message}" to classify as noise`,
+    )
+  }
+})
+
+test('does NOT suppress the @embedpdf tiling tile-destructure message with NO frames (frameless capture)', () => {
+  // No frames → can't confirm the tiling viewport-advance anchor; keep reporting
+  // so a frameless but otherwise-identical throw from app code stays observable.
+  assert.equal(
+    isEmbedPdfTilingTileDestructureNoise({
+      message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the @embedpdf tiling tile-destructure message when a first-party frame is present (a real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code is the destructure
+  // culprit → actionable; the negative guard MUST preserve it so the call site
+  // can be found + fixed. A real first-party `{ tile } = arr.pop()` regression
+  // de-minifies to `apps/web/src/…` and must never be hidden.
+  for (const frames of [
+    [{ filename: 'apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'PDFViewerInner' }],
+    [
+      { filename: 'app:///_next/static/chunks/c63a46fc-270e35c76d7636cb.js', function: 't5.advance' },
+      { filename: 'app:///apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'renderPage' },
+    ],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party tile-destructure from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party tile-destructure from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a DIFFERENT destructure message even with the tiling viewport-advance frames (over-match guard)', () => {
+  // The `tile` property name is part of the anchor, not just the `r.pop()`
+  // destructure target. A same-shape throw destructuring a DIFFERENT property
+  // from the same tiling queue is a different, actionable throw and must keep
+  // reporting — only the exact `tile`-property destructure is dropped.
+  const differentDestructureMessage =
+    "Cannot destructure property 'foo' of 'r.pop(...)' as it is undefined."
+  assert.equal(
+    isEmbedPdfTilingTileDestructureNoise({
+      message: differentDestructureMessage,
+      frames: EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: differentDestructureMessage,
+            stacktrace: { frames: EMBEDPDF_TILING_TILE_DESTRUCTURE_FRAMES_3E579401 },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the exact tile-destructure message with non-tiling frames (over-match guard)', () => {
+  // The exact message but with frames that are NOT the embedpdf tiling
+  // viewport-advance path (different third-party lib, or unattributable minified
+  // chunks) → can't confirm the tiling anchor; keep reporting.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/app.js', function: 'someCallback' }],
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingTileDestructureNoise({
+        message: EMBEDPDF_TILING_TILE_DESTRUCTURE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected exact message from ${JSON.stringify(frames)} (no tiling anchor) to keep reporting`,
+    )
+  }
+})
+
+
 // "Should not already be working.", Better Stack pattern
 // 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7,
 // Kortix Frontend prod, application_id 2346967). The React production
@@ -4101,6 +4706,197 @@ test('does NOT suppress a frameless rejection with a different message', () => {
       }),
       false,
       `expected Sentry event for frameless "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Bare lowercase `network error` rejection noise (Better Stack pattern
+// 2403c9ba5deee2af387834e95461cfb32b9b5080b21d6f307b2f09bb09e71f21, Kortix
+// Frontend prod, application_id 2346967). The canonical Axios / XMLHttpRequest
+// transport-abort message (lowercase; Axios emits this from the underlying XHR
+// `onerror`), captured as an uncaught global `onunhandledrejection` (mechanism
+// `auto.browser.global_handlers.onunhandledrejection`, `handled:false` — never
+// reached a React error boundary) with ZERO stack frames (`stacktrace.frames`
+// is an empty array, no `call_site_file`/`call_site_function`/`call_stack_hash`).
+// 1 occurrence / 0 identified users, last 2026-07-23 16:53:55 UTC, release
+// `470fe6f3…` (v0.10.13), transaction `/projects/:id/sessions/:sessionId`,
+// Chrome 150 on Generic Linux. Breadcrumbs: 88 fetches, 0 non-200 — the
+// rejection is a fire-and-forget `.then()` or a network-abort that didn't
+// surface a status. The same degraded session that hit the 25s-deadline +
+// audit 503s.
+//
+// Same family as the prior frameless browser-internal rejection noise matchers
+// — `isNonErrorUndefinedRejectionNoise` (PR #5200), `isOperationErrorPopError-
+// ScopeNoise` (PR #5237), `isFirefoxReactSchedulerReentryNoise` (PR #5185) —
+// a frameless unhandled rejection dropped by a precise exact-message matcher
+// with two negative guards preserving any first-party or resolvable frame.
+//
+// The message is GENERIC: a real first-party `new Error('network error')` /
+// `Promise.reject('network error')` would surface with the SAME message, so the
+// matcher requires BOTH the EXACT bare lowercase `network error` string
+// (case-sensitive, after `stripErrorWrappers` — the capitalized `Network Error`
+// Axios wrapper is a DIFFERENT surface and is deliberately NOT matched) AND a
+// frameless positive guard, plus two negative guards: any resolved first-party
+// `apps/web/src/…` frame → keep reporting; any resolvable frame location →
+// keep reporting. Only the FRAMELESS capture is dropped.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (lowercase, bare).
+const FRAMELESS_NETWORK_ERROR = 'network error'
+
+test('classifies the frameless bare network error noise', () => {
+  // Exact production shape: the bare lowercase `network error` message, NO
+  // frames (the rejection carried no stack).
+  assert.equal(
+    isFramelessNetworkErrorNoise({
+      message: FRAMELESS_NETWORK_ERROR,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the frameless network error Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `TypeError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), NO stacktrace
+  // frames, request URL the co-worker session page.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/66f6788a-0000-0000-0000-000000000000/sessions/d16b4555-0000-0000-0000-000000000000',
+      },
+      exception: {
+        values: [
+          {
+            value: FRAMELESS_NETWORK_ERROR,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the frameless network error noise when frames are absent entirely (no stacktrace key)', () => {
+  // Sentry omits the stacktrace key entirely when there is nothing to
+  // serialize. The gate must still drop it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/x/sessions/y' },
+      exception: {
+        values: [{ value: FRAMELESS_NETWORK_ERROR }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the network error rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw/rejected with
+  // `new Error('network error')` → actionable; the negative guard MUST preserve
+  // it so the call site can be found + fixed. This is the whole reason the
+  // matcher is frame-aware (the bare `network error` message is generic).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/workspace/index.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isFramelessNetworkErrorNoise({
+        message: FRAMELESS_NETWORK_ERROR,
+        frames,
+      }),
+      false,
+      `expected first-party network error rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: FRAMELESS_NETWORK_ERROR, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party network error rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the network error rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject(new Error('network error'))` with a stack we can trace.
+  // Keep reporting; only the frameless capture (the production noise pattern)
+  // is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/lib.js', function: 'init' }],
+  ]) {
+    assert.equal(
+      isFramelessNetworkErrorNoise({
+        message: FRAMELESS_NETWORK_ERROR,
+        frames,
+      }),
+      false,
+      `expected attributable network error rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the capitalized "Network Error" wrapper (over-match guard)', () => {
+  // The capitalized `Network Error` is Axios's OWN wrapper Error
+  // (`new Error('Network Error')`) — a DIFFERENT surface from the bare
+  // lowercase XHR-`onerror` message. It is deliberately NOT matched so a
+  // blanket-silence does not hide a real Axios rejection we may want to
+  // triage. Frameless here on purpose (to prove the message alone — not the
+  // frameless shape — is what keeps it reporting).
+  const message = 'Network Error'
+  assert.equal(
+    isFramelessNetworkErrorNoise({
+      message,
+      frames: [],
+    }),
+    false,
+    `expected capitalized "${message}" to keep reporting`,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+    }),
+    false,
+    `expected Sentry event for capitalized "${message}" to keep reporting`,
+  )
+})
+
+test('does NOT suppress a near-worded message (over-match guard)', () => {
+  // Only the EXACT bare `network error` string is noise. A near-worded message
+  // such as `network error: failed to fetch` is a different (attributable)
+  // error class and must keep reporting.
+  for (const message of [
+    'network error: failed to fetch',
+    'network error.',
+    'a network error occurred',
+    'Network error',
+    'network errors',
+  ]) {
+    assert.equal(
+      isFramelessNetworkErrorNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for near-worded "${message}" to keep reporting`,
     )
   }
 })
