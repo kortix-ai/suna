@@ -8,7 +8,7 @@ import {
   ChartLineIcon as FileChartLine,
   FileCodeIcon as FileCode,
   FileCodeIcon as FileCode2,
-  GearIcon as FileCog,
+  GearSixIcon as FileCog,
   FileIcon,
   FileImageIcon as FileImage,
   FileCodeIcon as FileJson,

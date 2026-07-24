@@ -82,7 +82,7 @@ export {
   MinusIcon as IconRemove,
   MagnifyingGlassIcon as IconSearch,
   PaperPlaneTiltIcon as IconSend,
-  GearIcon as IconSettings,
+  GearSixIcon as IconSettings,
   ArrowsDownUpIcon as IconSort,
   StarIcon as IconStar,
   SquareIcon as IconStop,

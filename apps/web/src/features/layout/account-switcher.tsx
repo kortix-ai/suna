@@ -29,7 +29,7 @@ import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import {
   CheckCircleIcon as CheckCircleSolid,
   CaretUpDownIcon as ChevronsUpDown,
-  GearIcon as CogOneSolid,
+  GearSixIcon as CogOneSolid,
   CreditCardIcon as CreditCardSolid,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';

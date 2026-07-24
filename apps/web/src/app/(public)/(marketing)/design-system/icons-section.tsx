@@ -8,7 +8,7 @@ import {
   CopyIcon,
   DotsThreeIcon,
   FolderIcon,
-  GearIcon,
+  GearSixIcon,
   LightningIcon,
   MagnifyingGlassIcon,
   PaperPlaneTiltIcon,
@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 const SAMPLE_ICONS: Icon[] = [
   PlusIcon,
   MagnifyingGlassIcon,
-  GearIcon,
+  GearSixIcon,
   TrashIcon,
   CopyIcon,
   CheckCircleIcon,

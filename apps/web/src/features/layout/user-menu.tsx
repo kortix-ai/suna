@@ -43,7 +43,7 @@ import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk/projects-client';
 import {
   BookOpenIcon as BookOpen,
-  GearIcon as CogOne,
+  GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadIcon as Download,
   HouseIcon as HomeSolid,

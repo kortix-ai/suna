@@ -41,7 +41,7 @@ import {
   ClockCounterClockwiseIcon as History,
   TrayIcon as Inbox,
   KeyIcon as KeyRound,
-  GearIcon as LuSettings,
+  GearSixIcon as LuSettings,
   UsersThreeIcon as LuUsersRound,
   MonitorIcon as Monitor,
   PlugIcon as Plug,

@@ -10,7 +10,7 @@ import {
 } from '@/hooks/admin/use-maintenance-admin';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 import { toast } from '@/lib/toast';
-import { ClockIcon as Clock, GearIcon as Settings } from '@phosphor-icons/react';
+import { ClockIcon as Clock, GearSixIcon as Settings } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { MAINTENANCE_LEVELS, MaintenanceConfigDialog, MaintenanceLevelCard } from './_components';
 

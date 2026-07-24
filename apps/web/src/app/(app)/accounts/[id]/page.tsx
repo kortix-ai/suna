@@ -116,7 +116,7 @@ import {
 } from '@kortix/sdk/projects-client';
 import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
 import {
-  GearIcon as CogOne,
+  GearSixIcon as CogOne,
   type Icon as IconMynauiType,
   MagnifyingGlassIcon as Search,
   ShieldIcon as Shield,

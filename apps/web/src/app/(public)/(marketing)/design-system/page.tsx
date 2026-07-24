@@ -20,7 +20,7 @@ import {
   DotsThreeIcon as MoreHorizontal,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
-  GearIcon as Settings,
+  GearSixIcon as Settings,
   StarIcon as Star,
   TrashIcon as Trash2,
   WarningIcon as TriangleAlert,

@@ -1,6 +1,6 @@
 'use client';
 
-import { GearIcon as Config, FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
+import { GearSixIcon as Config, FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
