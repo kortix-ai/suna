@@ -1886,3 +1886,17 @@ packed-install smoke built, packed, installed, imported, and constructed
 **Shippable to production: YES** for B18 and the published SDK surface.
 Repository delivery and live-dev verification remain part of the repository
 lifecycle.
+
+---
+
+### 2026-07-25 — session `session-history-pagination` (claim)
+
+Claimed the user-directed session-history pagination repair. The SDK will load
+complete turns across fixed-size runtime pages. The web host will preserve a
+stable visible DOM anchor instead of applying total `scrollHeight` growth.
+Existing exports and session synchronization contracts remain backward
+compatible. Work will follow RED -> GREEN -> REFACTOR and finish with the full
+SDK typecheck, test, and packed-install smoke gates, focused web tests, browser
+verification, repository merge, Deploy Dev, and live-dev proof.
+
+**Status:** IN PROGRESS.
