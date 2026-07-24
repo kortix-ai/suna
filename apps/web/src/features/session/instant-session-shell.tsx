@@ -19,8 +19,8 @@ import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { usePendingQueueStore } from '@/stores/pending-queue-store';
+import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { GridFileCard } from './grid-file-card';
 

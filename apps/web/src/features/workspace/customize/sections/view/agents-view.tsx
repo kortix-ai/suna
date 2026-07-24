@@ -21,7 +21,7 @@ import {
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useModelDefaults } from '@kortix/sdk/react';
 import { useOpenCodeProviders } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';

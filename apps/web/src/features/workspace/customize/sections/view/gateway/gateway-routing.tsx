@@ -29,7 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useModelDefaults } from '@kortix/sdk/react';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import type {
   GatewayFallbackChain,

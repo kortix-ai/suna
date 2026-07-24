@@ -89,8 +89,8 @@ import {
   formatModelString,
   formatPromptModel,
   parseModelKey,
-  useOpenCodeLocal,
-} from '@/hooks/opencode/use-opencode-local';
+  useSessionModelSelection,
+} from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   ascendingId,
@@ -130,11 +130,10 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '@kortix/sdk/internal/opencode-pending-store';
 import { useSyncStore } from '@kortix/sdk/internal/sync-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { usePendingQueueStore } from '@/stores/pending-queue-store';
+import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   useSessionComposerPrefillStore,
@@ -3552,7 +3551,7 @@ export function SessionChat({
   const executeCommand = useExecuteOpenCodeCommand();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({
+  const local = useSessionModelSelection({
     agents,
     providers,
     config,
@@ -3833,9 +3832,7 @@ export function SessionChat({
   // ---- Session status ----
   // Use sync store as primary (matches OpenCode), fall back to status store
   const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
-    Boolean(s.compactingBySession[sessionId]),
-  );
+  const isOptimisticCompacting = sessionState?.isCompacting ?? false;
   const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 

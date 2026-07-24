@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { RuntimeNotReadyError } from '../core/runtime/client';
+import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   setOpenCodeHealth,
@@ -422,6 +423,9 @@ export function useSession(
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
   const questionMap = useOpenCodePendingStore((s) => s.questions);
   const permissionMap = useOpenCodePendingStore((s) => s.permissions);
+  const isCompacting = useOpenCodeCompactionStore((state) =>
+    Boolean(state.compactingBySession[ocSessionId]),
+  );
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const questions = useMemo(
@@ -564,6 +568,7 @@ export function useSession(
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
     isBusy: sync.isBusy || !!pending,
+    isCompacting,
     isLoading: sync.isLoading,
     isError: terminal || !!startError,
     /** Whether there are open interactive prompts (questions/permissions). */

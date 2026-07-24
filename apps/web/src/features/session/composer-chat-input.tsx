@@ -8,7 +8,7 @@ import {
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { useOpenCodeConfig } from '@kortix/sdk/react';
-import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
+import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
 import {
   type Command,
   useOpenCodeAgents,
@@ -90,7 +90,7 @@ export function ComposerChatInput({
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const local = useOpenCodeLocal({
+  const local = useSessionModelSelection({
     agents,
     providers,
     config,

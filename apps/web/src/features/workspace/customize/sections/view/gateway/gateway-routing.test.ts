@@ -13,7 +13,10 @@ import {
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
 const modelDefaultsSource = readFileSync(
-  join(import.meta.dir, '../../../../../../hooks/opencode/use-model-defaults.ts'),
+  join(
+    import.meta.dir,
+    '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts',
+  ),
   'utf8',
 );
 

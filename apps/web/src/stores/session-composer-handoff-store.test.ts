@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { usePendingQueueStore } from './pending-queue-store';
+import { usePendingQueueStore } from './session-composer-handoff-store';
 
 afterEach(() => {
   usePendingQueueStore.getState().consumePendingQueue();

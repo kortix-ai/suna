@@ -31,7 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
+import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
 import { useModelStore } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';

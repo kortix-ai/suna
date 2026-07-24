@@ -22,5 +22,7 @@ describe('project session engine boundary', () => {
     expect(chatSource).toContain('enabled: !sessionState && isActiveSessionTab');
     expect(chatSource).not.toContain('const client = getClient()');
     expect(chatSource).toContain('sessionState?.runCommand');
+    expect(chatSource).not.toContain('@/stores/opencode-compaction-store');
+    expect(chatSource).toContain('sessionState?.isCompacting ?? false');
   });
 });

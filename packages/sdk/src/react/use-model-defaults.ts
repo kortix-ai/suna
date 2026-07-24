@@ -1,27 +1,21 @@
 'use client';
 
-/**
- * Server-backed model defaults across project, account, and agent scopes.
- *
- * The LLM gateway is the source of truth for concrete model defaults. This hook
- * reads and writes per-agent, project, account, and platform defaults.
- */
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import {
   clearModelDefault,
   getModelDefaults,
   type ModelDefaultsResponse,
   setModelDefault,
-} from '@kortix/sdk/projects-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+} from '../core/rest/projects-client/model-defaults';
 import {
   type ModelKey,
   modelKeyToWire,
   seedGlobalDefaultFromServer,
   setGlobalDefaultModel,
   wireToModelKey,
-} from '@kortix/sdk/react';
+} from './use-model-store';
 
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
@@ -32,7 +26,6 @@ export interface UseModelDefaults {
   projectDefault: ModelKey | undefined;
   platformDefault: ModelKey | undefined;
   freeTier: boolean;
-  /** The configured default for an agent: agent → project → account → platform. */
   resolveDefaultFor: (agentName: string | undefined) => ModelKey | undefined;
   setAccountDefault: (model: ModelKey) => Promise<void>;
   setAgentDefault: (agentName: string, model: ModelKey) => Promise<void>;
@@ -42,7 +35,21 @@ export interface UseModelDefaults {
   clearProjectDefault: () => Promise<void>;
 }
 
-export function useModelDefaults(projectId: string | null | undefined): UseModelDefaults {
+export function resolveModelDefault(
+  data: ModelDefaultsResponse | undefined,
+  agentName: string | undefined,
+): ModelKey | undefined {
+  const wire =
+    (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
+    data?.projectDefault ??
+    data?.accountDefault ??
+    (data?.freeTier ? undefined : data?.platformDefault);
+  return wire ? wireToModelKey(wire) : undefined;
+}
+
+export function useModelDefaults(
+  projectId: string | null | undefined,
+): UseModelDefaults {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['model-defaults', projectId], [projectId]);
 
@@ -53,11 +60,8 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     staleTime: 30_000,
   });
 
-  // Seed the local globalDefault cache from the server so display paths that
-  // still read it (and offline/first-paint) reflect the account default.
   useEffect(() => {
     if (!data) return;
-    // Passive seed — must NOT clear the user's explicit per-agent/per-session picks.
     seedGlobalDefaultFromServer(
       data.accountDefault ? wireToModelKey(data.accountDefault) : undefined,
     );
@@ -81,65 +85,63 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     onSuccess: invalidate,
   });
   const clearMutation = useMutation({
-    mutationFn: (params: { scope: 'account' | 'agent' | 'project'; agentName?: string }) =>
-      clearModelDefault(projectId as string, params),
+    mutationFn: (params: {
+      scope: 'account' | 'agent' | 'project';
+      agentName?: string;
+    }) => clearModelDefault(projectId as string, params),
     onSuccess: invalidate,
   });
 
-  const accountDefault = useMemo<ModelKey | undefined>(
+  const accountDefault = useMemo(
     () => (data?.accountDefault ? wireToModelKey(data.accountDefault) : undefined),
     [data?.accountDefault],
   );
   const agentDefaults = useMemo<Record<string, ModelKey>>(() => {
-    const out: Record<string, ModelKey> = {};
+    const defaults: Record<string, ModelKey> = {};
     for (const [name, wire] of Object.entries(data?.agentDefaults ?? {})) {
-      out[name] = wireToModelKey(wire);
+      defaults[name] = wireToModelKey(wire);
     }
-    return out;
+    return defaults;
   }, [data?.agentDefaults]);
-  const projectDefault = useMemo<ModelKey | undefined>(
+  const projectDefault = useMemo(
     () => (data?.projectDefault ? wireToModelKey(data.projectDefault) : undefined),
     [data?.projectDefault],
   );
-  const platformDefault = useMemo<ModelKey | undefined>(
+  const platformDefault = useMemo(
     () => (data?.platformDefault ? wireToModelKey(data.platformDefault) : undefined),
     [data?.platformDefault],
   );
-
   const resolveDefaultFor = useCallback(
-    (agentName: string | undefined): ModelKey | undefined => {
-      const wire =
-        (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
-        data?.projectDefault ??
-        data?.accountDefault ??
-        (data?.freeTier ? undefined : data?.platformDefault);
-      return wire ? wireToModelKey(wire) : undefined;
-    },
-    [
-      data?.agentDefaults,
-      data?.projectDefault,
-      data?.accountDefault,
-      data?.platformDefault,
-      data?.freeTier,
-    ],
+    (agentName: string | undefined) => resolveModelDefault(data, agentName),
+    [data],
   );
 
   const setAccountDefault = useCallback(
     async (model: ModelKey) => {
-      setGlobalDefaultModel(model); // optimistic local cache
-      await setMutation.mutateAsync({ scope: 'account', model: modelKeyToWire(model) });
+      setGlobalDefaultModel(model);
+      await setMutation.mutateAsync({
+        scope: 'account',
+        model: modelKeyToWire(model),
+      });
     },
     [setMutation],
   );
   const setAgentDefault = useCallback(
     async (agentName: string, model: ModelKey) => {
-      await setMutation.mutateAsync({ scope: 'agent', agentName, model: modelKeyToWire(model) });
+      await setMutation.mutateAsync({
+        scope: 'agent',
+        agentName,
+        model: modelKeyToWire(model),
+      });
     },
     [setMutation],
   );
   const setProjectDefault = useCallback(
     async (model: ModelKey) => {
-      await setMutation.mutateAsync({ scope: 'project', model: modelKeyToWire(model) });
+      await setMutation.mutateAsync({
+        scope: 'project',
+        model: modelKeyToWire(model),
+      });
     },
     [setMutation],
   );
@@ -165,7 +167,9 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     agentDefaults,
     projectDefault,
     platformDefault,
-    freeTier: !!data?.freeTier,
+    // Fail closed while the account policy loads. This prevents a free account
+    // from seeing managed models for one render before the server response.
+    freeTier: data ? data.freeTier : true,
     resolveDefaultFor,
     setAccountDefault,
     setAgentDefault,

@@ -1,4 +1,4 @@
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
+import { normalizeProviderList } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { GatewayCatalogModel } from '@kortix/sdk';
