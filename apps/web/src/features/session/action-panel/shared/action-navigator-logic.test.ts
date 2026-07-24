@@ -48,13 +48,12 @@ class FakeElement {
     return attr != null && this.attrs.get(attr[1]) === attr[2];
   }
 
+  // Recursive rather than a walk loop: seeding a local with `this` trips
+  // @typescript-eslint/no-this-alias, which is an error in the Next build lint
+  // even though it passes a bare `eslint <file>` run.
   closest(selector: string): FakeElement | null {
-    let el: FakeElement | null = this;
-    while (el) {
-      if (el.matches(selector)) return el;
-      el = el.parentElement;
-    }
-    return null;
+    if (this.matches(selector)) return this;
+    return this.parentElement?.closest(selector) ?? null;
   }
 }
 
