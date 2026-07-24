@@ -165,6 +165,11 @@ export interface CreateProjectRepoInput {
 export interface ProvisionProjectInput {
   account_id?: string;
   name: string;
+  /** The company this project is about, e.g. `"acme.com"`. Optional: when set,
+   *  the backend queues an enrichment run that crawls the site and writes a
+   *  company profile into project memory. A value it cannot parse is ignored
+   *  rather than failing the creation. */
+  domain?: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   starter_template?: 'general-knowledge-worker' | 'minimal';

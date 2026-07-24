@@ -13,6 +13,7 @@ export * from './sandbox';
 export * from './files';
 export * from './git-history';
 export * from './change-requests';
+export * from './enrichment';
 export * from './sessions';
 export * from './triggers';
 export * from './session-sandbox';
