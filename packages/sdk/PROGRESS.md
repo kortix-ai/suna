@@ -119,7 +119,7 @@ real output. `typecheck` is not evidence.
 
 ---
 
-## NOW — active plan: v2 structure & distribution
+## COMPLETED PLAN — v2 structure & distribution
 
 - **Plan:** `docs/superpowers/plans/2026-07-10-sdk-v2-structure-and-distribution.md`
 - **Spec:** `docs/superpowers/specs/2026-07-10-sdk-v2-structure-and-distribution-design.md`
@@ -157,6 +157,24 @@ Statuses: `NOT STARTED` · `IN PROGRESS` · `BLOCKED (reason)` · `DONE (sha)` �
 
 Also stop if the same failure survives three different fixes (use
 `superpowers:systematic-debugging`), or you are about to change what a test asserts.
+
+---
+
+## NOW — active plan: web SDK-only boundary
+
+- **Plan:** `docs/superpowers/plans/2026-07-24-web-sdk-only-boundary.md`
+- **Spec:** `docs/superpowers/specs/2026-07-24-web-sdk-only-boundary-design.md`
+
+| # | Task | Status | Session | Last touched | Commit |
+|---|---|---|---|---|---|
+| 1 | Baseline and static boundary gate | NOT STARTED | — | — | — |
+| 2 | Canonical SDK imports | NOT STARTED | — | — | — |
+| 3 | One session engine | NOT STARTED | — | — | — |
+| 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
+| 5 | Typed platform API coverage | NOT STARTED | — | — | — |
+| 6 | Remove runtime routing knowledge | NOT STARTED | — | — | — |
+| 7 | Local parity proof | NOT STARTED | — | — | — |
+| 8 | Delivery and dev proof | NOT STARTED | — | — | — |
 
 ---
 
