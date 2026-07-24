@@ -1537,3 +1537,21 @@ provider-funded candidate with no managed fallback. Free Codex reached
 **Shippable to production: YES** for B14 and the published SDK surface.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-24 — session `release-latest-main-staging` (release integration)
+
+Merged `origin/main` at `dd9f65285` into the staging release candidate. The
+merge preserves the additive `ProvisionProjectInput` repository-pool fields and
+all public surface snapshots. No SDK implementation or public name changed in
+this integration commit.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1182 pass / 2 skip / 0 fail** across 89 files with 5192
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Staging deployment,
+live session CRUD, provider execution, and the production release gate remain
+part of the parent release lifecycle.
