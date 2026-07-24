@@ -294,6 +294,25 @@ describe('writeProfileToMemory — folder layout', () => {
       '.kortix/memory/enrichment/example.com/pages/about.md',
     ]);
   });
+
+  test('two slugs that both hit the 80-character cap still get distinct paths', async () => {
+    const mem = memoryPort();
+    const longBase = 'a'.repeat(80);
+    const result = await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [
+        page(`https://example.com/${longBase}-one`, 'One'),
+        page(`https://example.com/${longBase}-two`, 'Two'),
+      ],
+    });
+
+    expect(result.pagePaths).toHaveLength(2);
+    expect(result.pagePaths[0]).not.toBe(result.pagePaths[1]);
+    expect(mem.files.get(result.pagePaths[0])).toContain('One');
+    expect(mem.files.get(result.pagePaths[1])).toContain('Two');
+  });
 });
 
 describe('writeProfileToMemory — MEMORY.md index', () => {
@@ -382,6 +401,78 @@ describe('writeProfileToMemory — MEMORY.md index', () => {
     expect(mem.files.get(MEMORY_INDEX_PATH)).not.toContain('pages/team.md');
   });
 
+  test('omitting pages/blogPosts preserves them; an explicit empty array deletes them', async () => {
+    const mem = memoryPort();
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile(),
+      provenance: PROVENANCE,
+      pages: [page('https://example.com/about', 'About body')],
+      blogPosts: [page('https://example.com/blog/launch', 'Launch body')],
+    });
+
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile({ tagline: 'omitted run' }),
+      provenance: PROVENANCE,
+    });
+
+    expect(mem.files.has('.kortix/memory/enrichment/example.com/pages/about.md')).toBe(true);
+    expect(mem.files.has('.kortix/memory/enrichment/example.com/blog/blog-launch.md')).toBe(true);
+    expect(mem.commits.at(-1)!.deletes).toEqual([]);
+    expect(mem.files.get(MEMORY_INDEX_PATH)).toContain('pages/about.md');
+    expect(mem.files.get(MEMORY_INDEX_PATH)).toContain('blog/blog-launch.md');
+
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile({ tagline: 'confirmed empty run' }),
+      provenance: PROVENANCE,
+      pages: [],
+      blogPosts: [],
+    });
+
+    expect(mem.files.has('.kortix/memory/enrichment/example.com/pages/about.md')).toBe(false);
+    expect(mem.files.has('.kortix/memory/enrichment/example.com/blog/blog-launch.md')).toBe(false);
+    expect(mem.commits.at(-1)!.deletes.sort()).toEqual(
+      [
+        '.kortix/memory/enrichment/example.com/pages/about.md',
+        '.kortix/memory/enrichment/example.com/blog/blog-launch.md',
+      ].sort(),
+    );
+    expect(mem.files.get(MEMORY_INDEX_PATH)).not.toContain('pages/about.md');
+    expect(mem.files.get(MEMORY_INDEX_PATH)).not.toContain('blog/blog-launch.md');
+  });
+
+  test('ignores a domain-shaped bullet living outside the Enriched companies section', async () => {
+    const decoyLine = '- **example.com** — a note an agent left elsewhere, not the real index block';
+    const decoyChild = '  - not a generated file, just prose';
+    const seed = [
+      '# Project Memory',
+      '',
+      decoyLine,
+      decoyChild,
+      '',
+      INDEX_HEADING,
+      '',
+      '- **example.com**',
+      '  - [profile](enrichment/example.com/profile.md)',
+      '',
+    ].join('\n');
+    const mem = memoryPort({ [MEMORY_INDEX_PATH]: seed });
+
+    await writeProfileToMemory(mem.port, {
+      domain: 'example.com',
+      profile: profile({ tagline: 'Updated tagline' }),
+      provenance: PROVENANCE,
+    });
+
+    const index = mem.files.get(MEMORY_INDEX_PATH)!;
+    expect(index).toContain(decoyLine);
+    expect(index).toContain(decoyChild);
+    expect(index).toContain('Updated tagline');
+    expect(index.match(/\[profile\]\(enrichment\/example\.com\/profile\.md\)/g)).toHaveLength(1);
+  });
+
   test('writes the whole folder plus the index in exactly one commit', async () => {
     const mem = memoryPort();
     await writeProfileToMemory(mem.port, {
@@ -435,7 +526,6 @@ describe('writeProfileToMemory — commit retries', () => {
       commitMany: async (args) => {
         attempts += 1;
         if (attempts === 1) {
-          // Another writer lands first, then our commit is rejected.
           await mem.port.commitMany({
             files: [
               {

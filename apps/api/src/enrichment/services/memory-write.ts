@@ -33,6 +33,16 @@
  * page/blog files existed under the domain's folder before but are not
  * produced by this run are deleted in the same commit — a page that vanished
  * from the site must not linger in memory forever.
+ *
+ * `pages`/`blogPosts` are each optional independently of the other, and the
+ * distinction between "omitted" and "explicitly empty" is load-bearing: a
+ * cache-hit re-enrichment (see `worker.ts`) never re-crawls, so it has no
+ * opinion on the page set and must omit the field entirely — that leaves the
+ * previously-written files and their index bullets untouched. Passing `[]`
+ * instead means "I crawled and confirmed there is nothing here," which does
+ * delete whatever was previously recorded. Collapsing the two (e.g. via `??
+ * []`) would make every cache-hit run silently wipe all previously crawled
+ * page/blog content.
  */
 import type { CompanyProfile, ProfileProvenance } from '../schemas';
 import type { PageFetchTier } from './page-fetch';
@@ -87,10 +97,6 @@ export interface WriteProfileResult {
 
 export function domainRelativeDir(domain: string): string {
   return `${ENRICHMENT_SUBDIR}/${domain}`;
-}
-
-export function domainRepoDir(domain: string): string {
-  return `${MEMORY_DIR}/${domainRelativeDir(domain)}`;
 }
 
 export function profileRelativePath(domain: string): string {
@@ -253,15 +259,24 @@ export function slugForUrl(url: string): string {
   return base || 'index';
 }
 
-/** Assigns a stable slug per item, deduping collisions with a numeric suffix. */
+/**
+ * Assigns a stable slug per item, deduping collisions with a numeric suffix.
+ * The suffix is reserved for before the base is capped rather than appended
+ * and then re-sliced — two different URLs whose base slug both already sit
+ * at `MAX_SLUG_LENGTH` would otherwise have their suffix sliced straight back
+ * off, leaving both items with the identical base slug and one file silently
+ * overwriting the other.
+ */
 function withDedupedSlugs<T extends { url: string }>(items: T[]): Array<T & { slug: string }> {
   const seen = new Map<string, number>();
   return items.map((item) => {
     const base = slugForUrl(item.url);
     const count = (seen.get(base) ?? 0) + 1;
     seen.set(base, count);
-    const slug = count === 1 ? base : `${base}-${count}`;
-    return { ...item, slug: slug.slice(0, MAX_SLUG_LENGTH) };
+    if (count === 1) return { ...item, slug: base };
+    const suffix = `-${count}`;
+    const trimmedBase = base.slice(0, Math.max(0, MAX_SLUG_LENGTH - suffix.length)).replace(/-+$/g, '');
+    return { ...item, slug: `${trimmedBase || 'index'}${suffix}` };
   });
 }
 
@@ -325,15 +340,51 @@ function domainParentPrefix(domain: string): string {
   return `- **${domain}**`;
 }
 
+/** Which generated-file category a nested bullet's link target belongs to, for reconciliation. */
+function categoryForRelativePath(domain: string, relativePath: string): 'pages' | 'blog' | 'other' {
+  const dir = domainRelativeDir(domain);
+  if (relativePath.startsWith(`${dir}/pages/`)) return 'pages';
+  if (relativePath.startsWith(`${dir}/blog/`)) return 'blog';
+  return 'other';
+}
+
 const TOP_BULLET_RE = /^- /;
 const NESTED_BULLET_RE = /^ {2}- /;
 const LINK_TARGET_RE = /\(([^)]+)\)/;
+const TOP_LEVEL_HEADING_RE = /^## /;
 
+/**
+ * Locates the `## Enriched companies` heading and the next top-level heading
+ * (or EOF), and only looks for the domain's parent bullet within that span.
+ * An unbounded whole-file search would misidentify any line elsewhere in an
+ * agent-maintained MEMORY.md that happens to start with the same
+ * `- **<domain>**` prefix — e.g. a note the agent wrote about the domain
+ * outside the index section — as the block to splice over, deleting its
+ * following indented lines as if they were stale generated files.
+ */
 function findDomainBlock(lines: string[], parentPrefix: string): { start: number; end: number } | null {
-  const start = lines.findIndex((l) => l.startsWith(parentPrefix));
+  const headingIndex = lines.findIndex((l) => l.trim() === INDEX_HEADING);
+  if (headingIndex < 0) return null;
+
+  let sectionEndIdx = lines.length;
+  for (let i = headingIndex + 1; i < lines.length; i += 1) {
+    if (TOP_LEVEL_HEADING_RE.test(lines[i])) {
+      sectionEndIdx = i;
+      break;
+    }
+  }
+
+  let start = -1;
+  for (let i = headingIndex + 1; i < sectionEndIdx; i += 1) {
+    if (lines[i].startsWith(parentPrefix)) {
+      start = i;
+      break;
+    }
+  }
   if (start < 0) return null;
+
   let end = start + 1;
-  while (end < lines.length && NESTED_BULLET_RE.test(lines[end])) end += 1;
+  while (end < sectionEndIdx && NESTED_BULLET_RE.test(lines[end])) end += 1;
   return { start, end };
 }
 
@@ -350,40 +401,57 @@ function sectionEnd(lines: string[], headingIndex: number): number {
  * for every generated file — so MEMORY.md alone lists everything available
  * for the domain. The block is matched on the domain itself (not on the
  * profile's link, since the profile is now just one of several nested
- * entries), and whatever nested paths it PREVIOUSLY listed but the new block
- * does not are returned as stale, so the caller deletes those files in the
- * same commit.
+ * entries).
+ *
+ * `preserve` names the categories (`pages`/`blog`) this run has no opinion on
+ * — the caller omitted that field entirely rather than confirming it empty —
+ * so their existing nested bullets are carried over verbatim into the new
+ * block instead of being diffed against `entries` at all. Every other
+ * previously-listed nested path that the new block does not repeat is
+ * genuinely stale and returned for the caller to delete in the same commit.
  */
 function upsertIndexBlock(
   existing: string | null,
   domain: string,
   entries: MemoryIndexEntry[],
+  preserve: ReadonlySet<'pages' | 'blog'>,
 ): { content: string; stalePaths: string[] } {
   const parentPrefix = domainParentPrefix(domain);
   const base = existing ?? '# Project Memory\n';
   const lines = base.split('\n');
-  const block = [parentPrefix, ...entries.map(nestedBulletLine)];
   const newRelPaths = new Set(entries.map((e) => e.relativePath));
 
   const found = findDomainBlock(lines, parentPrefix);
   if (found) {
     const stalePaths: string[] = [];
+    const keptLines: string[] = [];
     for (let i = found.start + 1; i < found.end; i += 1) {
       const match = lines[i].match(LINK_TARGET_RE);
-      if (match && !newRelPaths.has(match[1])) stalePaths.push(`${MEMORY_DIR}/${match[1]}`);
+      if (!match || newRelPaths.has(match[1])) continue;
+      const category = categoryForRelativePath(domain, match[1]);
+      if (category !== 'other' && preserve.has(category)) {
+        keptLines.push(lines[i]);
+      } else {
+        stalePaths.push(`${MEMORY_DIR}/${match[1]}`);
+      }
     }
+    const block = [parentPrefix, ...entries.map(nestedBulletLine), ...keptLines];
     lines.splice(found.start, found.end - found.start, ...block);
     return { content: lines.join('\n'), stalePaths };
   }
 
+  // No existing block for this domain, so there is nothing to preserve —
+  // `preserve` only ever matters when reconciling against prior nested lines.
+  const freshBlock = [parentPrefix, ...entries.map(nestedBulletLine)];
+
   const headingIndex = lines.findIndex((l) => l.trim() === INDEX_HEADING);
   if (headingIndex >= 0) {
-    lines.splice(sectionEnd(lines, headingIndex), 0, ...block);
+    lines.splice(sectionEnd(lines, headingIndex), 0, ...freshBlock);
     return { content: lines.join('\n'), stalePaths: [] };
   }
 
   const trimmed = base.replace(/\s+$/, '');
-  return { content: `${trimmed}\n\n${INDEX_HEADING}\n\n${block.join('\n')}\n`, stalePaths: [] };
+  return { content: `${trimmed}\n\n${INDEX_HEADING}\n\n${freshBlock.join('\n')}\n`, stalePaths: [] };
 }
 
 /**
@@ -398,12 +466,13 @@ async function commitDomainWithRetry(
   domain: string,
   files: Array<{ path: string; content: string }>,
   entries: MemoryIndexEntry[],
+  preserve: ReadonlySet<'pages' | 'blog'>,
   message: string,
 ): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_COMMIT_ATTEMPTS; attempt += 1) {
     const currentIndex = await port.read(MEMORY_INDEX_PATH);
-    const { content: indexContent, stalePaths } = upsertIndexBlock(currentIndex, domain, entries);
+    const { content: indexContent, stalePaths } = upsertIndexBlock(currentIndex, domain, entries, preserve);
     try {
       await port.commitMany({
         files: [...files, { path: MEMORY_INDEX_PATH, content: indexContent }],
@@ -431,18 +500,34 @@ export async function writeProfileToMemory(
     { path: profilePath, content: renderProfileMarkdown(profile, provenance) },
   ];
   const entries: MemoryIndexEntry[] = [profileEntry(domain, profile)];
+  const preserve = new Set<'pages' | 'blog'>();
 
-  const pagesBuilt = contentFiles(domain, 'pages', args.pages ?? [], provenance.crawledAt);
-  const blogBuilt = contentFiles(domain, 'blog', args.blogPosts ?? [], provenance.crawledAt);
-  files.push(...pagesBuilt.files, ...blogBuilt.files);
-  entries.push(...pagesBuilt.entries, ...blogBuilt.entries);
+  let pagePaths: string[] = [];
+  if (args.pages === undefined) {
+    preserve.add('pages');
+  } else {
+    const pagesBuilt = contentFiles(domain, 'pages', args.pages, provenance.crawledAt);
+    files.push(...pagesBuilt.files);
+    entries.push(...pagesBuilt.entries);
+    pagePaths = pagesBuilt.files.map((f) => f.path);
+  }
 
-  await commitDomainWithRetry(port, domain, files, entries, `memory: enrich ${domain}`);
+  let blogPaths: string[] = [];
+  if (args.blogPosts === undefined) {
+    preserve.add('blog');
+  } else {
+    const blogBuilt = contentFiles(domain, 'blog', args.blogPosts, provenance.crawledAt);
+    files.push(...blogBuilt.files);
+    entries.push(...blogBuilt.entries);
+    blogPaths = blogBuilt.files.map((f) => f.path);
+  }
+
+  await commitDomainWithRetry(port, domain, files, entries, preserve, `memory: enrich ${domain}`);
 
   return {
     profilePath,
     indexPath: MEMORY_INDEX_PATH,
-    pagePaths: pagesBuilt.files.map((f) => f.path),
-    blogPaths: blogBuilt.files.map((f) => f.path),
+    pagePaths,
+    blogPaths,
   };
 }
