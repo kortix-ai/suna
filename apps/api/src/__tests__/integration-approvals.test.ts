@@ -81,6 +81,44 @@ async function seedPending(): Promise<string> {
   execIds.push(row.id);
   return row.id;
 }
+
+/**
+ * Seed a resolved execution row DIRECTLY (bypassing the resolve endpoint) so the
+ * approval-wait guard can be exercised against each resolved shape a replayed
+ * execution id can point at.
+ *  - 'genuine'  — a real, still-unconsumed human approve (what POST /approvals
+ *                 writes on `approve`, before any waiter stamps consumed_at).
+ *  - 'consumed' — that same approve after a live waiter/carry-over already
+ *                 claimed it (consumed_at set): the shape a REPLAY sees.
+ *  - 'ok'/'error' — a plain terminal run row: resolved at insert, no approvedBy
+ *                 and no `decision: approve` marker.
+ */
+async function seedResolved(kind: 'genuine' | 'consumed' | 'ok' | 'error'): Promise<string> {
+  const approved = kind === 'genuine' || kind === 'consumed';
+  const resultSummary =
+    kind === 'genuine'
+      ? { decision: 'approve', decided_by: ctx!.userId }
+      : kind === 'consumed'
+        ? { decision: 'approve', decided_by: ctx!.userId, consumed_at: new Date().toISOString() }
+        : { ok: kind === 'ok' };
+  const [row] = await db
+    .insert(executorExecutions)
+    .values({
+      accountId: ctx!.accountId,
+      projectId: ctx!.projectId,
+      actionPath: 'github.repos.delete',
+      actingUserId: ctx!.userId,
+      sessionId: SESSION,
+      status: kind === 'genuine' || kind === 'consumed' ? 'ok' : kind,
+      risk: null,
+      approvedBy: approved ? ctx!.userId : null,
+      resolvedAt: new Date(),
+      resultSummary,
+    })
+    .returning({ id: executorExecutions.executionId });
+  execIds.push(row.id);
+  return row.id;
+}
 const authGet = (path: string) => app.request(path, { headers: { Authorization: `Bearer ${secret}` } });
 const authPost = (path: string, body: unknown) =>
   app.request(path, {
@@ -225,5 +263,35 @@ describe('waitForApprovalDecision (gateway pause/resume)', () => {
     const execId = await seedPending();
     const outcome = await waitForApprovalDecision(execId, 1200);
     expect(outcome).toBe('timeout');
+  });
+
+  // Security (require_approval bypass): the gate must resolve to 'approved' ONLY
+  // for a genuine, still-unconsumed human approve. Replaying a resolved execution
+  // id that is anything else — an already-consumed approval, or a plain run row —
+  // must NOT auto-authorize the sensitive call. Before the fix, any resolved
+  // non-denied row returned 'approved'.
+  test('a genuine, unconsumed approve still resolves to "approved"', async () => {
+    if (!ctx) return;
+    const execId = await seedResolved('genuine');
+    expect(await waitForApprovalDecision(execId, 1200)).toBe('approved');
+  });
+
+  test('replaying an already-consumed approve does NOT resolve to "approved"', async () => {
+    if (!ctx) return;
+    const execId = await seedResolved('consumed');
+    // The bypass would short-circuit to 'approved'; the guard keeps polling → timeout.
+    expect(await waitForApprovalDecision(execId, 1200)).toBe('timeout');
+  });
+
+  test('a plain ok run row does NOT resolve to "approved" (no approvedBy / decision)', async () => {
+    if (!ctx) return;
+    const execId = await seedResolved('ok');
+    expect(await waitForApprovalDecision(execId, 1200)).toBe('timeout');
+  });
+
+  test('a plain error run row does NOT resolve to "approved"', async () => {
+    if (!ctx) return;
+    const execId = await seedResolved('error');
+    expect(await waitForApprovalDecision(execId, 1200)).toBe('timeout');
   });
 });

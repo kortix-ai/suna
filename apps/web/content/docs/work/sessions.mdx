@@ -55,9 +55,10 @@ interactive mode.
 ## Providers
 
 Kortix runs sessions on Daytona, Platinum, or E2B Cloud. A project follows
-the platform default, or pins one provider through the SDK — see
-[SDK reference](/docs/sdk/reference). Every provider runs the same sandbox
-image.
+the platform default, or requests a provider switch through the SDK — see
+[SDK reference](/docs/sdk/reference). A switch to a different provider is
+durable: the current provider keeps serving while the target warms, then
+activates. Every provider runs the same sandbox image.
 
 For the full status enum, injected environment variables, and daemon
 endpoints, see [Runtime](/docs/work/runtime). For how a session picks its

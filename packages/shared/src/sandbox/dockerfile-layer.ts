@@ -297,8 +297,10 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
     // Daytona uploads each COPY source as a separate context object. Transfer
     // Git metadata as one visible file, then restore the canonical directory.
+    // Daytona exposes that copied context object as non-removable during RUN.
+    // Keep the credential-free archive instead of failing the image build.
     `COPY ${warmRepo.stagedGitPath} /tmp/kortix-warm-repo-git.tar`,
-    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && rm -f /tmp/kortix-warm-repo-git.tar && chown -R kortix:kortix /workspace/.git',
+    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git',
     // Verify the baked checkout is a real repo. The branch is shell-quoted via
     // `shq` (never interpolated raw), so a hostile branch name cannot inject a
     // build-time shell command — closing the latent sink in the old echo.

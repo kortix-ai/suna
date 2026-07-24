@@ -195,6 +195,8 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 | B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
 | B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`. | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input. | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector` |
+| B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback. | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account. | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement` |
+| B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing). | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1460,3 +1462,53 @@ GitHub client ID; deployed-dev OAuth remains the repository delivery gate.
 **Shippable to production: YES** for the SDK and locally verified API contract.
 Repository PR, Deploy Dev, deployed-SHA proof, and full live-dev OAuth UI
 verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-24 — session `fix-free-tier-model-entitlement` (B14 completion)
+
+Removed the synthetic `auto` model from the catalog, API routing, sandbox
+configuration, SDK defaults, web model picker, CLI, Slack, and tests. The
+platform default is the concrete managed model `glm-5.2`. Stale `auto` and
+`kortix/auto` selections are discarded by SDK storage compatibility paths and
+rejected by the gateway as `model_not_found`.
+
+Managed-model entitlement now depends only on the resolved billing tier.
+`free`, `none`, and unknown tiers are blocked in every environment. Wallet
+balance cannot grant managed-model access. Free-tier gateway authorization
+does not place an LLM wallet hold. BYOK resolves with `billingMode: none` and
+does not append a managed fallback. Codex remains provider-funded and reaches
+its credential gate before any managed-model entitlement gate.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1179 pass / 0 fail** across 89 files with 5187
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. The two public
+surface snapshot diffs contain only the additive `resolvePromptModel` export.
+
+**Cross-surface evidence:** the full web suite reported **1979 pass / 0 fail**
+across 219 files with 5521 assertions. The sandbox-agent suite reported **215
+pass / 0 fail**. The model catalog reported **64 pass / 0 fail**. The CLI
+reported **514 pass / 0 fail**. The API contract reported **35 pass / 0 fail**.
+All six affected package typechecks and focused web ESLint exited 0. Task-specific
+API suites reported **69 pass / 0 fail** when run in isolated processes.
+
+The standalone gateway reported **22 pass / 2 fail**. Both failures are
+pre-existing architecture checks: `origin/main` already contains the
+`@kortix/llm-catalog` dependency and the three flagged imports. The full API
+command did not terminate after 14 minutes and was stopped. Its task-specific
+files all pass in isolated processes.
+
+**Real local HTTP evidence:** the API startup reported `Billing: ENABLED`. A
+free account with `$100` balance received `400 plan_upgrade_required` for
+`glm-5.2`; its balance remained `$100`. Both stale Auto IDs received `400
+model_not_found`. The free catalog omitted all managed models and both Auto IDs.
+The free model-default response returned `platformDefault: glm-5.2`,
+`resolvedForCaller: null`, and `freeTier: true`. Free BYOK returned one
+provider-funded candidate with no managed fallback. Free Codex reached
+`provider_not_connected`, not the tier gate. A paid `per_seat` account received
+`200` from `glm-5.2` with one completion choice.
+
+**Shippable to production: YES** for B14 and the published SDK surface.
+Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
+remain part of the repository lifecycle.

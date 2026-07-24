@@ -1,5 +1,5 @@
 import { projectSessions, projects } from '@kortix/db';
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
@@ -128,8 +128,25 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
         inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
         ne(projectSessions.branchName, projects.defaultBranch),
+        // Exclude the two NEVER-deletable classes at the query so they can't
+        // occupy batch slots forever and starve deletable rows: a skipped row
+        // never gets a db.update, so its updatedAt stays < cutoff and it
+        // re-matches every sweep. (1) already-GC'd. (2) open-PR — mirrors
+        // hasOpenPullRequestMarker. The in-loop guards below stay as
+        // defense-in-depth for a marker written AFTER selection.
+        sql`(${projectSessions.metadata}->'branch_gc'->>'deleted_at') IS NULL`,
+        sql`NOT (
+          COALESCE(${projectSessions.metadata}->>'open_pr', 'false') = 'true'
+          OR COALESCE(${projectSessions.metadata}->>'has_open_pr', 'false') = 'true'
+          OR lower(COALESCE(${projectSessions.metadata}->'pull_request'->>'state', '')) = 'open'
+          OR lower(COALESCE(${projectSessions.metadata}->'github_pull_request'->>'state', '')) = 'open'
+          OR lower(COALESCE(${projectSessions.metadata}->'pr'->>'state', '')) = 'open'
+        )`,
       ),
     )
+    // Oldest deletable rows first — deterministic drain so the planner's scan
+    // order can't crowd them out of the batch.
+    .orderBy(asc(projectSessions.updatedAt))
     .limit(GC_BATCH_SIZE);
 
   let deleted = 0;
