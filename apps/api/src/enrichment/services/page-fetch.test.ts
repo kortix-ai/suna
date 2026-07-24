@@ -36,7 +36,6 @@ interface RouterHandlers {
   direct?: (url: string) => BoundedResponse | Promise<BoundedResponse>;
 }
 
-/** Routes a fake `boundedFetch` to the tier the literal URL identifies. */
 function router(handlers: RouterHandlers = {}) {
   const calls: Call[] = [];
   const impl = (async (
@@ -167,7 +166,6 @@ describe('fetchPages', () => {
       firecrawlApiUrl: FIRECRAWL_BASE,
     });
 
-    // One retry on the jina tier before falling through.
     expect(jinaAttempts).toBe(2);
     expect(result.pages[0].tier).toBe('firecrawl');
     expect(result.failures).toEqual([]);
