@@ -174,7 +174,7 @@ Also stop if the same failure survives three different fixes (use
 | 5 | Typed platform API coverage | DONE | `frontend-sdk-only` | 2026-07-24 | `2e1a78250` |
 | 6 | Remove runtime routing knowledge | DONE | `frontend-sdk-only` | 2026-07-24 | `0f2c545b8` |
 | 7 | Local parity proof | DONE | `frontend-sdk-only` | 2026-07-24 | `9e339c370` |
-| 8 | Delivery and dev proof | NOT STARTED | — | — | — |
+| 8 | Delivery and dev proof | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 
 ---
 
