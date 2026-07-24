@@ -11,6 +11,7 @@ import {
   Copy,
   ExternalLink,
   Globe,
+  Info,
   KeyRound,
   type LucideIcon,
   Mail,
@@ -107,6 +108,7 @@ import {
   getConnectorConfig,
   getConnectorPolicies,
   getProjectDetail,
+  listConnectionProfiles,
   listConnectors,
   listPipedreamApps,
   pipedreamConnect,
@@ -736,6 +738,45 @@ function RailItem({
   );
 }
 
+/**
+ * Read-only display of a connector's connection `profile_id` — the id a backend
+ * passes in `connector_bindings` (Kortix as a Backend) to run a session AS this
+ * connection. Surfaced nowhere else in the product, so we show + copy it here.
+ */
+function ConnectionIdField({ profileId }: { profileId: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard.writeText(profileId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="bg-muted/40 rounded-md border px-4 py-3">
+      <div className="flex items-center gap-1.5">
+        <span className="text-muted-foreground text-xs font-medium">Connection ID</span>
+        <Hint label="Use this ID in the backend (connector_bindings) to run a session as this connection — see Kortix as a Backend.">
+          <span className="inline-flex cursor-help">
+            <Info className="text-muted-foreground size-3.5" />
+          </span>
+        </Hint>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate font-mono text-xs">{profileId}</code>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          onClick={copy}
+          aria-label="Copy connection ID"
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ConnectorDetail({
   projectId,
   connector,
@@ -758,6 +799,19 @@ function ConnectorDetail({
   const isManaged = isComputer;
   const setSection = useCustomizeStore((s) => s.setSection);
   const connected = connector.secretSet;
+  // The connection's profile_id — the reference a backend (Kortix as a Backend)
+  // passes in `connector_bindings` to run a session AS this connection. It isn't
+  // surfaced anywhere else, so we expose + copy it here. Project-default profile
+  // only (the account this connector is connected as for the whole project).
+  const profilesQuery = useQuery({
+    queryKey: ['connector-profiles', projectId],
+    queryFn: () => listConnectionProfiles(projectId),
+    staleTime: 30_000,
+    enabled: connected && !isChannel && !isComputer,
+  });
+  const connectionProfile = profilesQuery.data?.profiles.find(
+    (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
+  );
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
   const [credOpen, setCredOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -906,6 +960,9 @@ function ConnectorDetail({
       </div>
 
       <div className="mt-7 space-y-5">
+        {connected && connectionProfile && !isChannel && !isComputer && (
+          <ConnectionIdField profileId={connectionProfile.profile_id} />
+        )}
         {/* Computer connectors are connected + permissioned in the Computers tab
             (device pairing, per-capability grants, audit) — point management
             there instead of the generic credential / connection / remove UI. */}
