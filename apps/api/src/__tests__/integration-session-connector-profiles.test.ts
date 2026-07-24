@@ -26,6 +26,7 @@ import { makeDbGatewayDeps } from '../executor/db-deps';
 import { finalizePipedreamProfileConnection } from '../executor/pipedream';
 import { reconcileEmailConnectionProfiles } from '../executor/sync';
 import {
+  resolveRequiredMemberConnectorProfiles,
   resolveSessionConnectorProfile,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
@@ -777,5 +778,69 @@ describe('session connector profile isolation', () => {
       .from(executorConnectionProfiles)
       .where(eq(executorConnectionProfiles.profileId, profileB.profileId));
     expect(afterFinal?.status).toBe('revoked');
+  });
+});
+
+describe('resolveRequiredMemberConnectorProfiles (require_connectors)', () => {
+  test("resolves a required connector to the acting user's OWN member profile", async () => {
+    // USER owns PROFILE_A, a member profile for the 'veyris' connector.
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
+      aliases: ['veyris'],
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.bindings).toHaveLength(1);
+      expect(res.bindings[0]).toMatchObject({
+        alias: 'veyris',
+        profileId: PROFILE_A,
+        ownerType: 'member',
+        ownerId: USER,
+      });
+    }
+  });
+
+  test('resolves DISTINCT users to their own member profiles (never each other)', async () => {
+    // OTHER_USER owns PROFILE_B for the same connector — must not get USER's.
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: OTHER_USER,
+      actingPrincipalIsServiceAccount: false,
+      aliases: ['veyris'],
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.bindings[0]?.profileId).toBe(PROFILE_B);
+  });
+
+  test('refuses with CONNECTOR_CONNECTION_REQUIRED (naming the public alias) when the user has not connected it', async () => {
+    // USER has no MEMBER profile for kortix_email (only a project-default exists).
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
+      aliases: ['email'], // canonicalizes to kortix_email; reported back as 'email'
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
+      expect(res.connector).toBe('email');
+    }
+  });
+
+  test('a service account can NEVER satisfy a personal requirement (fails closed)', async () => {
+    const res = await resolveRequiredMemberConnectorProfiles({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: SERVICE_ACCOUNT,
+      actingPrincipalIsServiceAccount: true,
+      aliases: ['veyris'],
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
   });
 });

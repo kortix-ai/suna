@@ -64,6 +64,7 @@ import {
 } from './serializers';
 import {
   parseSessionConnectorBindings,
+  resolveRequiredMemberConnectorProfiles,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
@@ -559,7 +560,14 @@ export async function createProjectSession(input: {
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
   // owner's profile), so unlike origin_ref/secrets it is NOT origin-gated.
-  const inheritUnbound = body.inherit_unbound === true;
+  let inheritUnbound = body.inherit_unbound === true;
+  // Interactive-only: connectors the ACTING USER must have connected themselves
+  // for this session (by alias). Resolved to their own member profile below; a
+  // missing one fails create with CONNECTOR_CONNECTION_REQUIRED so the UI can
+  // prompt them to connect it.
+  const requireConnectors: string[] = Array.isArray(body.require_connectors)
+    ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
+    : [];
 
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
@@ -572,6 +580,21 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
   });
+  // require_connectors is interactive-only: it means "resolve THIS user's own
+  // connection", which a backend/service-account session (no single current
+  // user) cannot satisfy — it uses connector_bindings with explicit profile ids.
+  if (requireConnectors.length > 0 && origin !== 'user') {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'require_connectors is interactive-only — a backend/service-account session has no single current user; use connector_bindings instead',
+          code: 'REQUIRE_CONNECTORS_INTERACTIVE_ONLY',
+        },
+      },
+    };
+  }
   const requestedOriginRef = normalizeString(body.origin_ref);
   // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
   // whitespace-only one), not on its trimmed value — otherwise a non-backend
@@ -753,10 +776,17 @@ export async function createProjectSession(input: {
     }
   }
 
+  // Every connector this session touches — whether the caller bound it explicitly
+  // (connector_bindings) or requires the user's own (require_connectors) — must be
+  // granted to the session's agent.
+  const grantCheckAliases = new Set<string>([
+    ...(parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : []),
+    ...requireConnectors,
+  ]);
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
-  if (parsedConnectorBindings.bindings) {
+  if (grantCheckAliases.size > 0) {
     loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
-    for (const alias of Object.keys(parsedConnectorBindings.bindings)) {
+    for (const alias of grantCheckAliases) {
       if (!agentMayUseConnector(loadedAgentGrant, alias)) {
         return {
           error: {
@@ -788,6 +818,35 @@ export async function createProjectSession(input: {
         },
       },
     };
+  }
+  // Resolve require_connectors to THE ACTING USER's own member profiles and merge
+  // them into the binding set. A missing/revoked one fails create with a
+  // structured CONNECTOR_CONNECTION_REQUIRED so the UI can prompt a connect.
+  if (requireConnectors.length > 0) {
+    const required = await resolveRequiredMemberConnectorProfiles({
+      accountId,
+      projectId,
+      actingUserId: userId,
+      actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
+      aliases: requireConnectors,
+    });
+    if (!required.ok) {
+      return {
+        error: {
+          status: 409,
+          body: { error: required.error, code: required.code, connector: required.connector },
+        },
+      };
+    }
+    // Dedupe by alias — an explicit connector_bindings entry for the same alias
+    // wins (it's already validated). Merging member bindings forces the session
+    // private (via the gate below); force inherit_unbound so binding these does
+    // not null the agent's OTHER connectors.
+    const boundAliases = new Set(validatedConnectorBindings.bindings.map((b) => b.alias));
+    for (const binding of required.bindings) {
+      if (!boundAliases.has(binding.alias)) validatedConnectorBindings.bindings.push(binding);
+    }
+    inheritUnbound = true;
   }
   if (
     visibility !== 'private' &&

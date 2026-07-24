@@ -109,6 +109,15 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
+   * Interactive-only: connectors the acting user must have connected themselves
+   * for this session (by alias, e.g. `['gmail']`). The server resolves each to
+   * the caller's OWN member profile; if one isn't connected, create fails with a
+   * structured `CONNECTOR_CONNECTION_REQUIRED` naming the connector so a UI can
+   * prompt a connect. Implies `inherit_unbound`. Rejected for backend / service-
+   * account tokens (they have no single "current user" — use `connector_bindings`).
+   */
+  require_connectors?: string[];
+  /**
    * Kortix-as-a-Backend (backend-origin callers only — a PAT / service-account
    * bearer). The wrapper's opaque end-user this session acts for; recorded on the
    * session and surfaced to the sandbox as KORTIX_ORIGIN_REF. A non-backend
