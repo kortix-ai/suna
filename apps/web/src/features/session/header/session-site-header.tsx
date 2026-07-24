@@ -36,6 +36,7 @@ import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FileDown,
+  FolderOpen,
   Globe,
   Layers,
   MoreHorizontal,
@@ -298,6 +299,21 @@ export function SessionSiteHeader({
                 className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
               >
                 <Globe className="h-4 w-4" />
+              </Button>
+            </Hint>
+
+            {/* Files, same one-tap placement as Terminal/Browser above — opens
+                the opt-in File Explorer as a detail layer (Marko's ask), never
+                a default view. */}
+            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Files">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open files"
+                onClick={() => openSessionQuickView('files', 'header')}
+                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
+              >
+                <FolderOpen className="h-4 w-4" />
               </Button>
             </Hint>
 

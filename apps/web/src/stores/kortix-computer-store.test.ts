@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, it, test } from 'bun:test';
 import { useKortixComputerStore, QUICK_VIEW_TTL_MS } from './kortix-computer-store';
 
 describe('ready chip state (W1)', () => {
@@ -255,5 +255,25 @@ describe('pendingQuickView staleness', () => {
     s.requestQuickView('terminal', 'session-a');
     s.setActiveSession('session-b'); // no-op re-activation
     expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+});
+
+describe('files quick-view destination', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  it('carries a files quick-view request through to its consumer', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('files', 's1');
+    expect(useKortixComputerStore.getState().pendingQuickView?.view).toBe('files');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBe('files');
+  });
+
+  it('clears the files request after one consume', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('files', 's1');
+    useKortixComputerStore.getState().consumeQuickView('s1');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
   });
 });

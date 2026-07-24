@@ -74,7 +74,7 @@ interface KortixComputerState {
   // action reference.
   pendingQuickView: {
     sessionId: string;
-    view: 'terminal' | 'audit' | 'browser';
+    view: 'terminal' | 'audit' | 'browser' | 'files';
     /** When the request was made — consume discards anything older than
      *  {@link QUICK_VIEW_TTL_MS}. A quick-view is a "right now" intent; a
      *  request that couldn't be consumed promptly must never replay later
@@ -136,10 +136,10 @@ interface KortixComputerState {
    *  itself, see `command-palette.tsx`'s handler comment. Also opens the panel
    *  the same way `focusToolCall` does: `isSidePanelOpen` true, the
    *  per-session map updated, and this session's own ready chip cleared. */
-  requestQuickView: (view: 'terminal' | 'audit' | 'browser', explicitSessionId?: string) => void;
+  requestQuickView: (view: 'terminal' | 'audit' | 'browser' | 'files', explicitSessionId?: string) => void;
   /** One-shot, session-scoped consume — mirrors `consumePrimaryOpen`. Returns
    *  the requested view when it belonged to `sessionId`, else null. */
-  consumeQuickView: (sessionId: string, now?: number) => 'terminal' | 'audit' | 'browser' | null;
+  consumeQuickView: (sessionId: string, now?: number) => 'terminal' | 'audit' | 'browser' | 'files' | null;
 
   // Reset all state (full reset)
   reset: () => void;
@@ -161,7 +161,7 @@ const initialState = {
   pendingPrimaryOpenSessionId: null as string | null,
   pendingQuickView: null as {
     sessionId: string;
-    view: 'terminal' | 'audit' | 'browser';
+    view: 'terminal' | 'audit' | 'browser' | 'files';
     requestedAt: number;
   } | null,
 };
@@ -349,7 +349,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         return true;
       },
 
-      requestQuickView: (view: 'terminal' | 'audit' | 'browser', explicitSessionId?: string) => {
+      requestQuickView: (view: 'terminal' | 'audit' | 'browser' | 'files', explicitSessionId?: string) => {
         // `_activeSessionId` is only maintained for TAB-system sessions
         // (session-layout gates `setActiveSession` on `isActiveTab`) — on the
         // standalone /projects/:id/sessions/:id route it stays null, which

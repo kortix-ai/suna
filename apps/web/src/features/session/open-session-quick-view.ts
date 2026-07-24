@@ -21,7 +21,7 @@ import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/sessio
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 export function openSessionQuickView(
-  view: 'terminal' | 'audit' | 'browser',
+  view: 'terminal' | 'audit' | 'browser' | 'files',
   source: 'palette' | 'header',
 ): void {
   const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
@@ -37,7 +37,12 @@ export function openSessionQuickView(
 
   if (panelMode === 'advanced') {
     if (activePanelSessionId) {
-      useSessionBrowserStore.getState().setView(activePanelSessionId, view);
+      // `SessionPanelView` calls the file explorer 'explorer'; its 'files'
+      // member is the git-changes diff view. The quick-view vocabulary uses
+      // 'files' for the explorer, so translate rather than pass through.
+      useSessionBrowserStore
+        .getState()
+        .setView(activePanelSessionId, view === 'files' ? 'explorer' : view);
     }
     useKortixComputerStore.getState().openSidePanel();
   } else {

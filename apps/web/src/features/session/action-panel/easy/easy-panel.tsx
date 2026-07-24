@@ -21,6 +21,7 @@
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
@@ -558,6 +559,31 @@ export const EasyPanel = memo(function EasyPanel({
   }, [openDetail, projectId, projectSessionId]);
 
   /**
+   * The opt-in File Explorer (Marko's ask). Never a default view and never a
+   * tab — it opens only when asked for, exactly like Terminal and Audit, so
+   * Easy keeps its one-home shape.
+   *
+   * `padded: false` — the explorer owns its own chrome (version header, tabs,
+   * toolbar) and would sit inside a second frame otherwise. The layer header
+   * stays ON, unlike a file preview: the explorer's own header names a
+   * version, not this detail, so there is no duplicate name to collapse.
+   */
+  const openFiles = useCallback(() => {
+    openDetail({
+      key: 'files',
+      title: 'Files',
+      padded: false,
+      body: (
+        <SessionFilesExplorer
+          chatSessionId={sessionId}
+          projectId={projectId}
+          projectSessionId={projectSessionId}
+        />
+      ),
+    });
+  }, [openDetail, sessionId, projectId, projectSessionId]);
+
+  /**
    * Header/palette "Open Browser": the in-panel port browser (`AppPreview`),
    * defaulting to the first running app's url when the session has one, else
    * an empty url — `AppPreview` renders its "no app yet" landing (focused
@@ -593,6 +619,8 @@ export const EasyPanel = memo(function EasyPanel({
       openAudit();
     } else if (view === 'browser') {
       openBrowser();
+    } else if (view === 'files') {
+      openFiles();
     }
   }, [
     pendingQuickView,
@@ -602,6 +630,7 @@ export const EasyPanel = memo(function EasyPanel({
     openTerminal,
     openAudit,
     openBrowser,
+    openFiles,
   ]);
 
   const goHome = closeDetail;
