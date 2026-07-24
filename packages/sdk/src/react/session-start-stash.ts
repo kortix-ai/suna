@@ -19,9 +19,19 @@ export function startStashKey(sessionId: string): string {
   return `kortix:start:${sessionId}`;
 }
 
+function sanitizeStartModel(model: StartStash['model']): StartStash['model'] {
+  if (!model) return null;
+  if (model.modelID === 'auto' || model.modelID === 'kortix/auto') return null;
+  return model;
+}
+
+function sanitizeStartStash(stash: StartStash): StartStash {
+  return { ...stash, model: sanitizeStartModel(stash.model) };
+}
+
 export function writeStartStash(sessionId: string, stash: StartStash): void {
   try {
-    sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(stash));
+    sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(sanitizeStartStash(stash)));
   } catch {}
 }
 
@@ -49,14 +59,17 @@ function parseLegacyModel(value: unknown): StartStash['model'] {
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     if (typeof obj.providerID === 'string' && typeof obj.modelID === 'string') {
-      return { providerID: obj.providerID, modelID: obj.modelID };
+      return sanitizeStartModel({ providerID: obj.providerID, modelID: obj.modelID });
     }
     return null;
   }
   if (typeof value === 'string') {
     const idx = value.indexOf('/');
     if (idx > 0 && idx < value.length - 1) {
-      return { providerID: value.slice(0, idx), modelID: value.slice(idx + 1) };
+      return sanitizeStartModel({
+        providerID: value.slice(0, idx),
+        modelID: value.slice(idx + 1),
+      });
     }
   }
   return null;
@@ -92,7 +105,7 @@ function clearLegacyStash(sessionId: string): void {
 export function readStartStash(sessionId: string): StartStash | null {
   try {
     const raw = sessionStorage.getItem(startStashKey(sessionId));
-    if (raw) return JSON.parse(raw) as StartStash;
+    if (raw) return sanitizeStartStash(JSON.parse(raw) as StartStash);
   } catch {
     // fall through to the legacy shape
   }

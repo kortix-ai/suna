@@ -108,14 +108,14 @@ describe('ApiClient', () => {
     });
 
     const route = await c.resolveRoute(principal, {
-      requestedModel: 'auto',
+      requestedModel: 'codex/gpt-5.6-sol',
       requires: { imageInput: false },
     });
 
     expect(seenPath).toBe('/internal/gateway/resolve-route');
     expect(seenBody).toEqual({
       principal,
-      input: { requestedModel: 'auto', requires: { imageInput: false } },
+      input: { requestedModel: 'codex/gpt-5.6-sol', requires: { imageInput: false } },
     });
     expect(route).toMatchObject({
       policyId: 'platform-default',

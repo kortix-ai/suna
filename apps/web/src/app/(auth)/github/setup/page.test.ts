@@ -10,6 +10,14 @@ describe('GitHub installation setup', () => {
     expect(source).toContain('github_user_token: githubUserToken');
   });
 
+  test('lists and links an existing installation without relying on the GitHub Configure redirect', () => {
+    expect(source).toContain('listLinkableGitHubInstallations');
+    expect(source).toContain('linkGitHubInstallation');
+    expect(source).toContain('Select a GitHub account');
+    expect(source).toContain('Install GitHub App');
+    expect(source).toContain("searchParams.get('account_id')");
+  });
+
   test('keeps the GitHub OAuth session separate from the Kortix session', () => {
     const popupSource = readFileSync(
       new URL('../../auth/github-connect/page.tsx', import.meta.url),

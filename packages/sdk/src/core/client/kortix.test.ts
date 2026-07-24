@@ -161,7 +161,7 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('PUT');
 
   await kortix.project('PID123').gateway.routing.preview({
-    requestedModel: 'auto',
+    requestedModel: 'codex/gpt-5.6-sol',
     imageInput: false,
   });
   expect(last().url).toContain('/projects/PID123/gateway/routing-policy/preview');
@@ -957,4 +957,120 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   await s.files.mkdir('/workspace/new-dir');
   const mkdirCall = calls.find((c) => c.url.includes('/file/mkdir'));
   expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
+});
+
+// ── ensureReady() polls a slow cold-start to ready instead of throwing on the
+// first non-ready check (a backend waiting to send its first turn must not
+// give up while the sandbox is still provisioning/starting) ─────────────────
+test('ensureReady() polls through provisioning/starting until the runtime reports ready', async () => {
+  const stages = ['provisioning', 'starting', 'ready'] as const;
+  let polls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      const stage = stages[Math.min(polls, stages.length - 1)];
+      polls += 1;
+      const ready = stage === 'ready';
+      return jsonResponse({
+        stage,
+        agent_name: 'default',
+        retriable: !ready,
+        sandbox: ready ? { external_id: 'sb-poll' } : null,
+        opencode_session_id: ready ? 'ocs-poll' : null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
+  expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.sandboxId).toBe('sb-poll');
+  expect(polls).toBeGreaterThanOrEqual(3);
+});
+
+test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes ready before the deadline', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      return jsonResponse({
+        stage: 'provisioning',
+        agent_name: 'default',
+        retriable: true,
+        sandbox: null,
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await expect(
+    k.session('PROJ', 'SESS-TIMEOUT').ensureReady({ readyTimeoutMs: 20 }),
+  ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+});
+
+test('ensureReady() treats a transient null /start result as retriable and resolves once ready', async () => {
+  let n = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      n += 1;
+      // startProjectSession returns null (not throws) for a 5xx/408/429/network
+      // blip AND the create→start 404 race — ensureReady only ever sees `null`,
+      // not the cause, so this one 503 stands in for all of them. It must poll
+      // through the null, not give up.
+      if (n <= 1) return jsonResponse({ error: 'gateway' }, 503);
+      return jsonResponse({
+        stage: 'ready',
+        agent_name: 'default',
+        retriable: false,
+        sandbox: { external_id: 'sb-transient' },
+        opencode_session_id: 'ocs-transient',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  // Small budget → the inter-poll pause (min(1000, remaining)) stays small.
+  const ready = await k.session('PROJ', 'SESS-TRANSIENT').ensureReady({ readyTimeoutMs: 300 });
+  expect(ready.opencodeSessionId).toBe('ocs-transient');
+  expect(n).toBeGreaterThanOrEqual(2);
+});
+
+test('ensureReady() caps each /start long-poll to the remaining deadline budget', async () => {
+  const waits: number[] = [];
+  let n = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      const m = url.match(/wait_ms=(\d+)/);
+      if (m) waits.push(Number(m[1]));
+      n += 1;
+      if (n === 1) {
+        return jsonResponse({
+          stage: 'provisioning',
+          agent_name: 'default',
+          retriable: true,
+          sandbox: null,
+          opencode_session_id: null,
+        });
+      }
+      return jsonResponse({
+        stage: 'ready',
+        agent_name: 'default',
+        retriable: false,
+        sandbox: { external_id: 'sb-cap' },
+        opencode_session_id: 'ocs-cap',
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await k.session('PROJ', 'SESS-CAP').ensureReady({ readyTimeoutMs: 300 });
+  expect(waits.length).toBeGreaterThan(0);
+  // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
+  expect(Math.max(...waits)).toBeLessThanOrEqual(300);
 });

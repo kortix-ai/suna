@@ -1,9 +1,9 @@
 """Non-fillable PDF annotation operations.
 
 Usage:
-    python layout.py extract <input.pdf> <output.json>
-    python layout.py preview <page_number> <fields.json> <input_image> <output_image>
-    python layout.py fill <input.pdf> <fields.json> <output.pdf>
+    uv run --with pdfplumber --with pillow --with pypdf layout.py extract <input.pdf> <output.json>
+    uv run --with pdfplumber --with pillow --with pypdf layout.py preview <page_number> <fields.json> <input_image> <output_image>
+    uv run --with pdfplumber --with pillow --with pypdf layout.py fill <input.pdf> <fields.json> <output.pdf>
 """
 
 import json

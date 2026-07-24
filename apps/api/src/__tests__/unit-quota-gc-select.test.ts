@@ -278,3 +278,35 @@ describe('selectSnapshotsToReap — ppwarm LRU budget', () => {
     expect(res.budgetUnresolved).toBe(false);
   });
 });
+
+describe('selectSnapshotsToReap — FIX-K-lite pinned-image guard', () => {
+  const ppw = (proj: string, hash: string, days: number, extra: Partial<SnapshotLike> = {}) =>
+    snap(`kortix-ppwarm-${proj}-${hash}`, { lastUsedAt: ago(days), createdAt: ago(days), ...extra });
+
+  it("never reaps a project's LIVE pinned tip even when a proj8 collision makes it look superseded", () => {
+    // Projects A and B collide on proj8 (both `c0111ab e`). A's superseded-tip
+    // selection sweeps up B's LIVE pinned tip over the org-wide list — the bug.
+    const current = ppw('c0111abe', 'aaaaaaaaaaaa', 1); // A's freshest tip (kept)
+    const aSuperseded = ppw('c0111abe', 'bbbbbbbbbbbb', 3); // A's genuinely stale tip
+    const bPinned = ppw('c0111abe', 'cccccccccccc', 3); // B's LIVE pinned image (collision)
+    const all = padToOrgSize([current, aSuperseded, bPinned], 84);
+
+    // Unguarded: both non-current tips are reaped — B's live image among them.
+    const unguarded = selectSnapshotsToReap({ all, referenced: new Set(), now: NOW });
+    expect(unguarded.doomed.map((d) => d.snapshot.name)).toContain(bPinned.name);
+
+    // Guarded: B's pinned image is excluded from the reap pool entirely.
+    const guarded = selectSnapshotsToReap({ all, referenced: new Set(), pinnedImages: new Set([bPinned.name]), now: NOW });
+    const doomed = guarded.doomed.map((d) => d.snapshot.name);
+    expect(doomed).not.toContain(bPinned.name); // LIVE pinned image survives
+    expect(doomed).toContain(aSuperseded.name); // A's genuinely superseded tip still reaped
+  });
+
+  it('protects a pinned image matched by external id (snapshot id), not just name', () => {
+    const pinnedById = ppw('c0222abe', 'dddddddddddd', 3, { id: 'ext-tpl-123' });
+    const sibling = ppw('c0222abe', 'eeeeeeeeeeee', 1);
+    const all = padToOrgSize([pinnedById, sibling], 84);
+    const guarded = selectSnapshotsToReap({ all, referenced: new Set(), pinnedImages: new Set(['ext-tpl-123']), now: NOW });
+    expect(guarded.doomed.map((d) => d.snapshot.name)).not.toContain(pinnedById.name);
+  });
+});

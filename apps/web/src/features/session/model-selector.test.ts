@@ -43,11 +43,6 @@ describe('pickerGroupId', () => {
     expect(pickerGroupId(m)).toBe('kortix');
   });
 
-  test('AUTO groups under kortix even though its own explicit provider is "kortix"', () => {
-    const m = model({ providerID: 'kortix', modelID: 'auto', provider: 'kortix' });
-    expect(pickerGroupId(m)).toBe('kortix');
-  });
-
   test('a codex/<id> model groups under its own `codex` provider, distinct from `openai`', () => {
     const m = model({ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol', provider: 'codex' });
     expect(pickerGroupId(m)).toBe('codex');

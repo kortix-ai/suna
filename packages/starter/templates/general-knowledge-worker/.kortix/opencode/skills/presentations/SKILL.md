@@ -227,11 +227,11 @@ Use this path — instead of (or in addition to) the HTML deck's `export_pptx` a
 
 | Objective | Technique | Reference |
 |-----------|-----------|-----------|
-| Extract text or data | `python -m markitdown presentation.pptx` | Also: `scripts/slides.py thumbnail` for visual grid |
+| Extract text or data | `uv run --with 'markitdown[pptx]' python -m markitdown presentation.pptx` | Also: `scripts/slides.py thumbnail` for visual grid |
 | Modify an existing file or template | Unpack to XML, edit, repack | See [PPTX-EDITING.md](PPTX-EDITING.md) |
 | Generate a deck from scratch | JavaScript with `pptxgenjs` | See [PPTX-CREATING.md](PPTX-CREATING.md) |
 
-Pre-installed sandbox packages: `markitdown[pptx]`, `Pillow`, `pptxgenjs` (Node), `react-icons` + `react` + `react-dom` + `sharp` (icon rendering), LibreOffice (`soffice`), Poppler (`pdftoppm`), `lxml`.
+LibreOffice (`soffice`) and Poppler (`pdftoppm`) are installed system tools. Use `uv run --with <package>` for Python packages. Project-local Node packages provide `pptxgenjs`, React, and Sharp.
 
 Scripts live in `skills/presentations/scripts/`: `repair.py` (fix pptxgenjs OOXML bugs), `unpack.py` / `pack.py` (unpack a `.pptx` to editable XML and repack it), `slides.py` (`clean` / `add` / `thumbnail` subcommands for slide-level XML surgery).
 
@@ -246,13 +246,13 @@ Every plain-PPTX task MUST complete ALL three QA steps below before delivering t
 **Step 1: Content QA.** Run markitdown on the output file and review the extracted text:
 
 ```bash
-python -m markitdown output.pptx
+uv run --with 'markitdown[pptx]' python -m markitdown output.pptx
 ```
 
 Check for missing content, typos, wrong order. When using templates, check for leftover placeholder text:
 
 ```bash
-python -m markitdown output.pptx | grep -iE "xxxx|lorem|ipsum|this.*(page|slide).*layout"
+uv run --with 'markitdown[pptx]' python -m markitdown output.pptx | grep -iE "xxxx|lorem|ipsum|this.*(page|slide).*layout"
 ```
 
 If grep returns results, fix them before proceeding.

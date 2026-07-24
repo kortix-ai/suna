@@ -16,8 +16,10 @@ import { and, eq, sql, inArray } from 'drizzle-orm';
 import { projectSecrets, projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
+import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
 import {
   AmbiguousSecretGrantError,
+  encryptProjectSecret,
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   writeSharedProjectSecret,
@@ -31,6 +33,13 @@ const KEY = `E2E_GMAPS_${SUFFIX}`;
 const PRIMARY = `${KEY}-primary`;
 const BACKUP = `${KEY}-backup`;
 const UNSCOPED = `E2E_UNSCOPED_${SUFFIX}`;
+// Per-user override scenario: one identifier with a shared row plus two personal
+// (ownerUserId) overrides — the mechanism behind CODEX_AUTH_JSON.
+const OWNER = crypto.randomUUID();
+const RESTARTER = crypto.randomUUID();
+const OVERRIDE_IDENT = `E2E_OVR_${SUFFIX}`;
+const OVERRIDE_KEY = `E2E_OVR_KEY_${SUFFIX}`;
+const PRINCIPAL_SESSION = `e2e-principal-${crypto.randomUUID()}`;
 
 beforeAll(async () => {
   const rows = (await db.execute(
@@ -43,14 +52,62 @@ beforeAll(async () => {
   await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: PRIMARY, name: KEY, value: 'primary-val' });
   await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: BACKUP, name: KEY, value: 'backup-val' });
   await writeSharedProjectSecret({ projectId: ctx.projectId, name: UNSCOPED, value: 'open-val' });
+
+  // One identifier with a shared value plus a distinct personal override for
+  // OWNER and for RESTARTER — so the resolved value differs by principal.
+  await writeSharedProjectSecret({
+    projectId: ctx.projectId,
+    identifier: OVERRIDE_IDENT,
+    name: OVERRIDE_KEY,
+    value: 'shared-val',
+  });
+  const now = new Date();
+  await db.insert(projectSecrets).values([
+    {
+      projectId: ctx.projectId,
+      identifier: OVERRIDE_IDENT,
+      name: OVERRIDE_KEY,
+      ownerUserId: OWNER,
+      active: true,
+      valueEnc: encryptProjectSecret(ctx.projectId, 'owner-val'),
+      scope: 'runtime',
+      updatedAt: now,
+    },
+    {
+      projectId: ctx.projectId,
+      identifier: OVERRIDE_IDENT,
+      name: OVERRIDE_KEY,
+      ownerUserId: RESTARTER,
+      active: true,
+      valueEnc: encryptProjectSecret(ctx.projectId, 'restarter-val'),
+      scope: 'runtime',
+      updatedAt: now,
+    },
+  ]);
+  // A session OWNED by OWNER — used to prove sandbox-boot resolves secrets as the
+  // owner even when some other principal provisions the run.
+  await db.insert(projectSessions).values({
+    sessionId: PRINCIPAL_SESSION,
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    branchName: `kaab-principal-${SUFFIX}`,
+    createdBy: OWNER,
+    agentName: 'default',
+  });
 });
 
 afterAll(async () => {
   if (!ctx) return;
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION_ID));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
   await db
     .delete(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, ctx.projectId), inArray(projectSecrets.identifier, [PRIMARY, BACKUP, UNSCOPED])));
+    .where(
+      and(
+        eq(projectSecrets.projectId, ctx.projectId),
+        inArray(projectSecrets.identifier, [PRIMARY, BACKUP, UNSCOPED, OVERRIDE_IDENT]),
+      ),
+    );
 });
 
 describe('listProjectSecretsSnapshotForUser — session env injection by identifier', () => {
@@ -116,7 +173,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       sessionId: SESSION_ID,
       accountId: ctx.accountId,
       projectId: ctx.projectId,
-      branchName: 'kaab-clobber-test',
+      branchName: `kaab-clobber-${SUFFIX}`,
       createdBy: USER,
       agentName: 'default',
       secretsAllowlist: [UNSCOPED],
@@ -132,6 +189,36 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     const passthroughSnap = await resolveSandboxEnvSnapshot(ctx.projectId, SESSION_ID);
     expect(passthroughSnap?.env[UNSCOPED]).toBe('open-val');
     expect(passthroughSnap?.env[KEY]).toBeDefined();
+  });
+
+  test('sandbox-boot resolves per-user overrides as the session OWNER, not the provisioner', async () => {
+    if (!ctx) return;
+    // Control: the two principals genuinely resolve DIFFERENT values for the same
+    // identifier — so an incorrect principal would be observable.
+    const asOwner = await listProjectSecretsSnapshotForUser(ctx.projectId, OWNER, [OVERRIDE_IDENT]);
+    const asRestarter = await listProjectSecretsSnapshotForUser(ctx.projectId, RESTARTER, [
+      OVERRIDE_IDENT,
+    ]);
+    expect(asOwner.env[OVERRIDE_KEY]).toBe('owner-val');
+    expect(asRestarter.env[OVERRIDE_KEY]).toBe('restarter-val');
+
+    // The full sandbox-boot builder, invoked with userId = RESTARTER (a manager
+    // restarting OWNER's session). It must resolve secrets as the session's
+    // createdBy (OWNER), not the provisioning principal — otherwise the
+    // restarter's personal secret would boot into the owner's session and then
+    // flip-flop on the first prompt's hot-push (which is keyed on createdBy).
+    // `defaultBranch` omitted → agent grant defaults to 'all' (no git/manifest).
+    const env = await buildSessionSandboxEnvVars({
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      sessionId: PRINCIPAL_SESSION,
+      userId: RESTARTER,
+      repoUrl: 'https://example.test/principal.git',
+      baseRef: 'main',
+      agentName: 'default',
+      llmGatewayEnabled: false,
+    });
+    expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
 });
 

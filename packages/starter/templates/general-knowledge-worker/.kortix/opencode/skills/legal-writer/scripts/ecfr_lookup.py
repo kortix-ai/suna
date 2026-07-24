@@ -6,18 +6,18 @@ and federal statutes. No API key required.
 
 Usage:
     # Search eCFR for regulations
-    python3 ecfr_lookup.py search "data privacy" --title 16
-    python3 ecfr_lookup.py search "employment discrimination"
+    uv run ecfr_lookup.py search "data privacy" --title 16
+    uv run ecfr_lookup.py search "employment discrimination"
 
     # Get a specific CFR section
-    python3 ecfr_lookup.py section 16 444     # 16 C.F.R. § 444
-    python3 ecfr_lookup.py section 47 73.609  # 47 C.F.R. § 73.609
+    uv run ecfr_lookup.py section 16 444     # 16 C.F.R. § 444
+    uv run ecfr_lookup.py section 47 73.609  # 47 C.F.R. § 73.609
 
     # Get CFR title structure (table of contents)
-    python3 ecfr_lookup.py toc 16             # Title 16 structure
+    uv run ecfr_lookup.py toc 16             # Title 16 structure
 
     # Search Federal Register (proposed rules, final rules)
-    python3 ecfr_lookup.py fedreg "artificial intelligence"
+    uv run ecfr_lookup.py fedreg "artificial intelligence"
 
 APIs used:
     eCFR: https://www.ecfr.gov/api/versioner/v1/

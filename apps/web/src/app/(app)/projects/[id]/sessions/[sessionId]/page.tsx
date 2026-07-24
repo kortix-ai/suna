@@ -3,12 +3,13 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
@@ -16,7 +17,7 @@ import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
+import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,
@@ -41,21 +42,6 @@ import {
 } from '@kortix/sdk/projects-client';
 import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-
-// The fullscreen deck viewer (W14's Present action), mounted ONCE at the page
-// level — never inside SessionLayout: the crossfade below keeps TWO
-// SessionLayouts mounted concurrently (InstantSessionShell's and
-// ActiveSessionChat's), and two viewer instances on the one global store would
-// each attach a capturing document keydown listener (arrow keys would advance
-// two slides per press) and double-fire every fetch. Lazy + Suspense, matching
-// SharePageWrapper — the only other place that mounts it: the wrapper renders
-// `null` until the store's `isOpen` flips, so this costs the route nothing
-// until someone actually clicks Present.
-const PresentationViewerWrapper = lazy(() =>
-  import('@/stores/presentation-viewer-store').then((mod) => ({
-    default: mod.PresentationViewerWrapper,
-  })),
-);
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -217,6 +203,14 @@ export default function ProjectSessionPage() {
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  const unmaterializedFailure =
+    !authLoading &&
+    !!user &&
+    isUnmaterializedSessionFailure({
+      phase: session.phase,
+      hasStartError: !!session.startError,
+      sandboxStatus: sandbox?.status,
+    });
   const sessionSwitchLoading = shouldShowSessionSwitchLoading(
     switchingToSessionId,
     sessionId,
@@ -224,7 +218,7 @@ export default function ProjectSessionPage() {
   );
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
-    if (session.switched || session.startError || fatal || gated) {
+    if (session.switched || session.startError || unmaterializedFailure || fatal || gated) {
       completeSessionSwitch(sessionId);
     }
   }, [
@@ -232,6 +226,7 @@ export default function ProjectSessionPage() {
     sessionId,
     session.switched,
     session.startError,
+    unmaterializedFailure,
     fatal,
     gated,
     completeSessionSwitch,
@@ -292,6 +287,30 @@ export default function ProjectSessionPage() {
       );
     }
 
+    if (unmaterializedFailure) {
+      return (
+        <InlineSessionError
+          title="Couldn't start session"
+          message="The session failed before its computer was created. Restart the session to try again."
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => restartMutation.mutate()}
+              disabled={restartMutation.isPending}
+            >
+              {restartMutation.isPending ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <RotateCcw className="size-3.5 shrink-0" />
+              )}
+              Restart session
+            </Button>
+          }
+        />
+      );
+    }
+
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
       if (sandbox?.status === 'error') {
@@ -329,9 +348,9 @@ export default function ProjectSessionPage() {
               disabled={restartMutation.isPending}
             >
               {restartMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loading className="size-3.5 shrink-0" />
               ) : (
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="size-3.5 shrink-0" />
               )}
               Restart session
             </Button>
@@ -394,16 +413,7 @@ export default function ProjectSessionPage() {
     );
   })();
 
-  return (
-    <ProjectShell projectId={projectId}>
-      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
-      {/* Outside `inner`'s dual crossfade layers — exactly one instance,
-          whichever layer (or error/loader state) is showing. */}
-      <Suspense fallback={null}>
-        <PresentationViewerWrapper />
-      </Suspense>
-    </ProjectShell>
-  );
+  return <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>;
 }
 
 function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) {
@@ -433,7 +443,7 @@ function InlineSessionError({
         <h2 className="text-foreground/90 text-sm font-medium">{title}</h2>
         <p className="text-muted-foreground/70 text-xs leading-relaxed">{message}</p>
         {detail ? (
-          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-2xl border px-2 py-1 font-mono text-xs leading-relaxed">
+          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed">
             {detail}
           </p>
         ) : null}
@@ -592,9 +602,9 @@ function ActiveSessionChat({
             disabled={restartMutation.isPending}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="size-3.5 shrink-0" />
             ) : (
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="size-3.5 shrink-0" />
             )}
             {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}
           </Button>
@@ -621,9 +631,9 @@ function ActiveSessionChat({
             disabled={restartMutation.isPending}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="size-3.5 shrink-0" />
             ) : (
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="size-3.5 shrink-0" />
             )}
             {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}
           </Button>

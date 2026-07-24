@@ -1,5 +1,5 @@
 /**
- * GitHub / git-transport backlog flows: PROJ-4, GH-5, GH-8.
+ * GitHub / git-transport backlog flows: PROJ-4, GH-4, GH-5, GH-8.
  *
  * Behaviour DERIVED from apps/api/src/projects/index.ts (spec text is treated as
  * a hint, not the contract):
@@ -29,10 +29,13 @@
  *    `token_id`; GET lists `items` (no secret); DELETE → 200 {ok:true}, unknown
  *    token → 404. ANON → 401; non-member / no-access → 404 (never 403).
  *
+ *  - GH-4  POST /v1/projects/github/installations/linkable and
+ *    POST /v1/projects/github/installations/link — the authenticated account
+ *    linking flow. Both routes require Kortix authentication. The list route
+ *    requires a GitHub user token. The link route validates installation_id
+ *    before it calls GitHub.
+ *
  * NOT AUTHORED (reported as drift — no black-box HTTP surface):
- *  - GH-4 (Supabase GitHub OAuth popup): handled entirely client-side by
- *    Supabase Auth (`signInWithOAuth`); `provider_token` is posted back to the
- *    opener window. There is no Kortix API route — nothing to exercise here.
  *  - HOSTS-1..6 (`kortix hosts ls|use|add|rm|info|current`): pure CLI-LOCAL
  *    config operations (apps/cli/src/commands/hosts.ts → api/config.ts). They
  *    read/write the local CLI config file and make NO HTTP calls — there are no
@@ -41,6 +44,50 @@
 import { flow } from "../core/flow";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
+
+// ── GH-4 — link an existing GitHub App installation ───────────────────────
+
+flow(
+  "GH-4",
+  {
+    domain: "github",
+    routes: [
+      "POST /v1/projects/github/installations/linkable",
+      "POST /v1/projects/github/installations/link",
+    ],
+  },
+  async (ctx) => {
+    await ctx.step("ANON cannot list linkable installations → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/github/installations/linkable", {});
+      r.status(401);
+    });
+
+    await ctx.step("missing github_user_token cannot list installations → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/github/installations/linkable", {});
+      r.status(400).body().has("$.error", "GitHub authorization is required to list installations");
+    });
+
+    await ctx.step("missing installation_id cannot link an installation → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/github/installations/link", {});
+      r.status(400).body().has("$.error", "installation_id is required");
+    });
+
+    await ctx.step("nonnumeric installation_id cannot link an installation → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/github/installations/link", {
+          installation_id: "not-a-github-installation-id",
+        });
+      r.status(400).body().has("$.error", "installation_id must be a GitHub installation id");
+    });
+  },
+);
 
 // ── PROJ-4 — create a new GitHub repo (no install ⇒ 409 install_url) ────────
 

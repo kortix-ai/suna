@@ -27,9 +27,41 @@ export interface SessionInfo {
   time: { created: number; updated: number };
 }
 
+interface TranscriptMessageInfo {
+  id: string;
+  role: 'user' | 'assistant';
+  agent?: string;
+  modelID?: string;
+  time?: {
+    created?: number;
+    completed?: number;
+  };
+}
+
+interface TranscriptPartState {
+  status?: string;
+  input?: unknown;
+  output?: string;
+  error?: string;
+}
+
+interface TranscriptPart {
+  id: string;
+  type: string;
+  synthetic?: boolean;
+  text?: string;
+  tool?: string;
+  state?: TranscriptPartState;
+}
+
 export interface MessageWithParts {
   info: Message;
   parts: Part[];
+}
+
+interface TranscriptMessage {
+  info: TranscriptMessageInfo;
+  parts: TranscriptPart[];
 }
 
 export const DEFAULT_TRANSCRIPT_OPTIONS: TranscriptOptions = {
@@ -59,41 +91,41 @@ function formatDuration(ms: number): string {
 // Format individual parts
 // ============================================================================
 
-function formatPart(part: Part, options: TranscriptOptions): string {
-  if (part.type === 'text' && !('synthetic' in part && part.synthetic)) {
-    return `${(part as any).text}\n\n`;
+function formatPart(part: TranscriptPart, options: TranscriptOptions): string {
+  if (part.type === 'text' && !part.synthetic) {
+    return `${part.text ?? ''}\n\n`;
   }
 
   if (part.type === 'reasoning') {
     if (options.thinking) {
-      return `> _Thinking:_\n>\n> ${((part as any).text || '').replace(/\n/g, '\n> ')}\n\n`;
+      return `> _Thinking:_\n>\n> ${(part.text ?? '').replace(/\n/g, '\n> ')}\n\n`;
     }
     return '';
   }
 
   if (part.type === 'tool') {
-    const toolPart = part as any;
-    let result = `**Tool: ${toolPart.tool}**\n`;
+    let result = `**Tool: ${part.tool ?? 'unknown'}**\n`;
 
-    if (options.toolDetails && toolPart.state?.input) {
+    if (options.toolDetails && part.state?.input) {
       try {
-        const inputStr = typeof toolPart.state.input === 'string'
-          ? toolPart.state.input
-          : JSON.stringify(toolPart.state.input, null, 2);
+        const inputStr =
+          typeof part.state.input === 'string'
+            ? part.state.input
+            : JSON.stringify(part.state.input, null, 2);
         result += `\n<details>\n<summary>Input</summary>\n\n\`\`\`json\n${inputStr}\n\`\`\`\n\n</details>\n`;
       } catch {
         // skip malformed input
       }
     }
 
-    if (options.toolDetails && toolPart.state?.status === 'completed' && toolPart.state?.output) {
-      const output = toolPart.state.output;
+    if (options.toolDetails && part.state?.status === 'completed' && part.state.output) {
+      const output = part.state.output;
       const truncated = output.length > 2000 ? output.slice(0, 2000) + '\n... (truncated)' : output;
       result += `\n<details>\n<summary>Output</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>\n`;
     }
 
-    if (options.toolDetails && toolPart.state?.status === 'error' && toolPart.state?.error) {
-      result += `\n**Error:**\n\`\`\`\n${toolPart.state.error}\n\`\`\`\n`;
+    if (options.toolDetails && part.state?.status === 'error' && part.state.error) {
+      result += `\n**Error:**\n\`\`\`\n${part.state.error}\n\`\`\`\n`;
     }
 
     result += '\n';
@@ -108,7 +140,7 @@ function formatPart(part: Part, options: TranscriptOptions): string {
 // Format a single message
 // ============================================================================
 
-function formatAssistantHeader(msg: any, includeMetadata: boolean): string {
+function formatAssistantHeader(msg: TranscriptMessageInfo, includeMetadata: boolean): string {
   if (!includeMetadata) return `## Assistant\n\n`;
 
   const agent = msg.agent ? titleCase(msg.agent) : 'Assistant';
@@ -119,14 +151,12 @@ function formatAssistantHeader(msg: any, includeMetadata: boolean): string {
   }
 
   const meta = [model, duration].filter(Boolean).join(' · ');
-  return meta
-    ? `## ${agent} (${meta})\n\n`
-    : `## ${agent}\n\n`;
+  return meta ? `## ${agent} (${meta})\n\n` : `## ${agent}\n\n`;
 }
 
 function formatMessage(
-  msg: Message,
-  parts: Part[],
+  msg: TranscriptMessageInfo,
+  parts: TranscriptPart[],
   options: TranscriptOptions,
 ): string {
   let result = '';
@@ -153,7 +183,7 @@ function formatMessage(
  */
 export function formatTranscript(
   session: SessionInfo,
-  messages: MessageWithParts[],
+  messages: TranscriptMessage[],
   options: TranscriptOptions = DEFAULT_TRANSCRIPT_OPTIONS,
 ): string {
   let transcript = `# ${session.title || 'Untitled Session'}\n\n`;

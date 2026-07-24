@@ -34,9 +34,11 @@ async function main() {
   const session = kortix.session(project.project_id, created.session_id);
 
   // 4. Ready the session. This provisions (or resumes) the real cloud
-  //    sandbox. Each ensureReady() call is one bounded long-poll — on a
-  //    cold boot it throws a typed RUNTIME_UNAVAILABLE ApiError while the
-  //    sandbox is still coming up, so retry until it resolves.
+  //    sandbox. ensureReady() polls /start (each call long-polls up to 30s)
+  //    until the runtime is ready or its deadline (~3 min) elapses, so a
+  //    cold boot just takes longer rather than throwing. The
+  //    retryUntilReady wrapper below is optional — keep it only if you want
+  //    a longer total budget than the default.
   const { opencodeSessionId } = await retryUntilReady(() => session.ensureReady());
 
   // 5. Connect the event stream before you send, so no early events are
@@ -81,7 +83,7 @@ async function main() {
   }
 }
 
-/** Retry ensureReady() while the sandbox is provisioning (cold boots take a while). */
+/** Optional outer-budget wrapper — ensureReady() already polls internally. */
 async function retryUntilReady<T>(ensure: () => Promise<T>): Promise<T> {
   const deadline = Date.now() + 300_000;
   for (;;) {

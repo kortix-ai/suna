@@ -1,7 +1,7 @@
 import { chooseEffectiveModel } from './effective';
 
 /**
- * Pure default-model decision used by the gateway's `auto` resolution:
+ * Pure default-model decision used by the gateway:
  *   per-agent default → project default → account default → undefined (→ platform).
  *
  * Thin adapter over `chooseEffectiveModel` (the single precedence definition) that

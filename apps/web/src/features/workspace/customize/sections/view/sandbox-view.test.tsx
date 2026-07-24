@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ProjectSnapshotBuild } from '@kortix/sdk/projects-client';
 
-import { BuildRow } from './sandbox-view';
+import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
 import type { SandboxProviderMode } from './sandbox-provider-coverage';
 
 const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
@@ -22,6 +22,40 @@ const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBu
   started_at: '2026-07-13T10:00:00.000Z',
   finished_at: '2026-07-13T10:05:00.000Z',
   ...overrides,
+});
+
+describe('project accelerator build presentation', () => {
+  test('identifies only ppwarm snapshots as project accelerators', () => {
+    expect(
+      isProjectAcceleratorBuild(
+        build({
+          slug: 'default-warm',
+          template_slug: 'default',
+          snapshot_name: 'kortix-ppwarm-00ead866-f5c859f984f2',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isProjectAcceleratorBuild(
+        build({
+          slug: 'worker-warm',
+          template_slug: 'worker-warm',
+          snapshot_name: 'kortix-tpl-worker',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test('labels a ppwarm build as a repository accelerator', () => {
+    const html = renderBuildRow('automatic', {
+      slug: 'default-warm',
+      template_slug: 'default',
+      snapshot_name: 'kortix-ppwarm-00ead866-f5c859f984f2',
+    });
+
+    expect(html).toContain('Repository accelerator');
+    expect(html).not.toContain('>default-warm<');
+  });
 });
 
 function renderBuildRow(providerMode: SandboxProviderMode, overrides?: Partial<ProjectSnapshotBuild>) {

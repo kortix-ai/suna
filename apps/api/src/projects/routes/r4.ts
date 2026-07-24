@@ -104,6 +104,7 @@ import {
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { metadataMerge } from '../lib/metadata-merge';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
   canonicalConnectorAlias,
@@ -122,7 +123,6 @@ import {
   specToBody,
   triggersPausedForProject,
   upsertTriggerInManifest,
-  withTriggersPaused,
 } from '../lib/triggers';
 import { listProjectSecretsSnapshot } from '../secrets';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
@@ -882,10 +882,12 @@ projectsApp.openapi(
     if (typeof paused !== 'boolean') {
       return c.json({ error: 'paused must be a boolean' }, 400);
     }
+    // FIX-J: SQL-side atomic merge of ONLY `triggers_paused` (set true / delete)
+    // so this kill-switch write can't revert a routing pin written concurrently.
     const [row] = await db
       .update(projects)
       .set({
-        metadata: withTriggersPaused(loaded.row.metadata, paused),
+        metadata: paused ? metadataMerge({ triggers_paused: true }) : metadataMerge({}, ['triggers_paused']),
         updatedAt: new Date(),
       })
       .where(eq(projects.projectId, projectId))
@@ -1330,6 +1332,16 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Connecting a Teams bot is a connector-write capability — a custom role can
+    // withhold it and a scoped agent must hold it (central fold), mirroring the
+    // Slack (r4 slack/connect) and email connect twins.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1386,6 +1398,15 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Disconnecting the Teams bot is connector-write — twin of the Slack/email
+    // disconnect gates; a custom role can withhold it, a scoped agent must hold it.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     await deleteTeamsInstall(projectId);
     void reconcileChannelConnectors(projectId);
     return c.json({ status: 'disconnected' });
@@ -1445,6 +1466,17 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Posting a consent card drives the project bot to SEND into the customer's
+    // Teams channel — a send primitive gated on connector-write like the Slack
+    // (r4 slack/file/upload) and meet/speak twins. Authz before the feature-flag
+    // check so an unauthorized caller never gets a capability-independent answer.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
@@ -2225,6 +2257,18 @@ projectsApp.openapi(
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Binding a Slack thread creates channel→session routing (inbound Slack
+      // messages drive this session) — a connector-write action, matching the
+      // Slack connect/disconnect/file-upload twins. Threads the acting token so
+      // a custom role that withholds connector.write, or a scoped agent lacking
+      // it, is denied. The sandbox-token branch above is already project-scoped.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
     }
 
     let body: {
@@ -2633,12 +2677,9 @@ projectsApp.openapi(
 );
 
 // ─── Default model preferences (account-scoped) ─────────────────────────────
-// The gateway is the source of truth for the default model: a request for the
-// synthetic `auto` resolves server-side to the per-agent default → account
-// default → platform default. These routes manage the account/agent defaults;
-// they operate on the project's OWNER account, the same account the gateway
-// principal carries, so the picker and the gateway always agree. Stored values
-// are gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
+// The gateway is the source of truth for concrete model defaults. These routes
+// manage account, project, and agent defaults. Stored values are gateway wire
+// models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
 // GET /v1/projects/:projectId/model-defaults
 projectsApp.openapi(
@@ -2682,7 +2723,8 @@ projectsApp.openapi(
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? config.LLM_GATEWAY_DEFAULT_MODEL,
+      resolvedForCaller:
+        resolved.model ?? (freeTier ? null : config.LLM_GATEWAY_DEFAULT_MODEL),
       resolvedSource: resolved.source,
       freeTier,
     });
@@ -2717,10 +2759,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (model defaults are
-    // project customization). NOTE: /{projectId}/model-defaults is ALSO defined in
-    // routes/model-defaults.ts (registered later in projects/index.ts) — both are
-    // gated here to be safe against route-registration order; dedupe is follow-up.
+    // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -2810,8 +2849,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (see PUT above; also
-    // mirrored in routes/model-defaults.ts).
+    // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
