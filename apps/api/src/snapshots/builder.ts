@@ -130,7 +130,11 @@ export async function ensureSandboxImage(
   // (no clone at boot). On a MISS, kick a fire-and-forget background bake so the
   // next session on this commit boots warm; this boot never blocks on the bake and
   // falls through to the normal cold path when no warm image exists yet.
-  if ((opts.source ?? 'session-start') === 'session-start' && template.isShared) {
+  if (
+    config.KORTIX_WARM_SNAPSHOT_ENABLED &&
+    (opts.source ?? 'session-start') === 'session-start' &&
+    template.isShared
+  ) {
     try {
       const warmTip = await resolveCommitSha(project, project.defaultBranch);
       if (warmTip) {
@@ -1044,6 +1048,8 @@ export async function kickProjectWarmPrebake(
   project: GitBackedProject,
   opts: { accountId?: string; provider?: string; projectPin?: string | null } = {},
 ): Promise<void> {
+  if (!config.KORTIX_WARM_SNAPSHOT_ENABLED) return;
+
   const providers = opts.provider
     ? [opts.provider]
     : warmPrebakeProviders({

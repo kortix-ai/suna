@@ -418,6 +418,15 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
+  // Optional per-project accelerator. When enabled, Kortix bakes the project's
+  // default-branch repository into a derivative of the shared platform image.
+  // A disabled or failed accelerator never blocks a session. Sessions boot from
+  // the shared image and clone the repository into /workspace instead.
+  //
+  // This switch controls only automatic session-miss and managed-git-push
+  // bakes. Provider transitions still prepare their target image explicitly.
+  // Default OFF keeps the session path on one shared image per provider.
+  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -954,6 +963,7 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
+  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
