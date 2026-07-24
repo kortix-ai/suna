@@ -13,6 +13,7 @@ import {
   Globe,
   Info,
   KeyRound,
+  Lock,
   type LucideIcon,
   Mail,
   MessageSquare,
@@ -112,7 +113,11 @@ import {
   listConnectors,
   listPipedreamApps,
   pipedreamConnect,
+  pipedreamConnectConnectionProfile,
   pipedreamFinalize,
+  pipedreamFinalizeConnectionProfile,
+  reconcileMemberConnectionProfile,
+  revokeConnectionProfile,
   setConnectorCredential,
   setConnectorName,
   setConnectorPolicies,
@@ -221,6 +226,54 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
     onSuccess: (res) => {
       if (!res.connected) return;
       successToast('Connected');
+      onConnected();
+    },
+    onError: (err: Error) => errorToast(err.message),
+  });
+}
+
+/**
+ * Connect the CURRENT USER's own private (member-owned) account for a Pipedream
+ * connector: mint a member profile, run the same Pipedream OAuth handshake as the
+ * shared connect, then finalize. The result is usable ONLY in this user's own
+ * private sessions and is never shared with the team. Mirrors usePipedreamConnect.
+ */
+function usePipedreamConnectMember(projectId: string, slug: string, onConnected: () => void) {
+  return useMutation({
+    mutationFn: async () => {
+      const profile = await reconcileMemberConnectionProfile(projectId, {
+        connector_alias: slug,
+        label: 'Private connection',
+      });
+      const { token, app } = await pipedreamConnectConnectionProfile(projectId, profile.profile_id);
+      if (!token || !app) throw new Error('App connect is not configured');
+      const pd = createFrontendClient({
+        externalUserId: `${projectId}:${slug}:${profile.profile_id}`,
+        tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
+      });
+      const release = withPipedreamOverlayEscape();
+      let connected = false;
+      try {
+        connected = await new Promise<boolean>((resolve, reject) => {
+          pd.connectAccount({
+            app,
+            token,
+            onSuccess: () => resolve(true),
+            onClose: (status: { successful: boolean }) => resolve(status.successful),
+            onError: (err: unknown) =>
+              reject(new Error((err as Error)?.message || 'Connection cancelled')),
+          });
+        });
+      } finally {
+        release();
+      }
+      if (!connected) return { connected: false };
+      await pipedreamFinalizeConnectionProfile(projectId, profile.profile_id);
+      return { connected: true };
+    },
+    onSuccess: (res) => {
+      if (!res.connected) return;
+      successToast('Connected privately — only you can use this');
       onConnected();
     },
     onError: (err: Error) => errorToast(err.message),
@@ -777,6 +830,75 @@ function ConnectionIdField({ profileId }: { profileId: string }) {
   );
 }
 
+/**
+ * A member's OWN private connection for a connector, shown alongside the shared
+ * (team) connection. Connect/disconnect here affects only the current user, and
+ * the connection resolves only in their own private sessions. Any project member
+ * can use it (no editor rights required — the profile is owned by their token).
+ */
+function PrivateConnectionBanner({
+  displayName,
+  connected,
+  connecting,
+  disconnecting,
+  onConnect,
+  onDisconnect,
+}: {
+  displayName: string;
+  connected: boolean;
+  connecting: boolean;
+  disconnecting: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  if (connected) {
+    return (
+      <InfoBanner
+        tone="success"
+        icon={Lock}
+        title="Connected privately — only you"
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={onDisconnect}
+            disabled={disconnecting}
+          >
+            {disconnecting ? <Loading className="size-4 shrink-0" /> : null}
+            Disconnect
+          </Button>
+        }
+      >
+        Your own {displayName} connection, usable only in your private sessions — separate from the
+        team's shared connection.
+      </InfoBanner>
+    );
+  }
+  return (
+    <InfoBanner
+      tone="neutral"
+      icon={Lock}
+      title={`Connect ${displayName} just for you`}
+      action={
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 gap-2"
+          onClick={onConnect}
+          disabled={connecting}
+        >
+          {connecting ? <Loading className="size-4 shrink-0" /> : <Lock className="h-4 w-4" />}
+          Connect for just me
+        </Button>
+      }
+    >
+      A private connection only you can use, in your own private sessions — separate from the team's
+      shared {displayName}.
+    </InfoBanner>
+  );
+}
+
 function ConnectorDetail({
   projectId,
   connector,
@@ -807,12 +929,34 @@ function ConnectorDetail({
     queryKey: ['connector-profiles', projectId],
     queryFn: () => listConnectionProfiles(projectId),
     staleTime: 30_000,
-    enabled: connected && !isChannel && !isComputer,
+    enabled: !isChannel && !isComputer,
   });
   const connectionProfile = profilesQuery.data?.profiles.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
   );
+  // The CURRENT USER's own private (member-owned) connection for this connector,
+  // if any — separate from the team's shared connection. The API scopes this
+  // list to the caller, so a member sees only their own member profile here.
+  const myPrivateProfile = profilesQuery.data?.profiles.find(
+    (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
+  );
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
+  const privateConnect = usePipedreamConnectMember(projectId, connector.slug, () => {
+    void profilesQuery.refetch();
+    onChanged();
+  });
+  const disconnectPrivate = useMutation({
+    mutationFn: async () => {
+      if (!myPrivateProfile) throw new Error('No private connection');
+      return revokeConnectionProfile(projectId, myPrivateProfile.profile_id);
+    },
+    onSuccess: () => {
+      successToast('Disconnected your private connection');
+      void profilesQuery.refetch();
+      onChanged();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to disconnect'),
+  });
   const [credOpen, setCredOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -1011,6 +1155,19 @@ function ConnectorDetail({
               ? `Authorize your ${displayName} account so the agent and your triggers can use it.`
               : `Add the credential so the agent and your triggers can use ${displayName}.`}
           </InfoBanner>
+        )}
+        {/* A member's own private connection (Pipedream OAuth apps only) — lets a
+            user bring their OWN account (e.g. their Gmail) without sharing it with
+            the team. Resolves only in that user's private sessions. */}
+        {isPipedream && !isChannel && !isComputer && (
+          <PrivateConnectionBanner
+            displayName={displayName}
+            connected={!!myPrivateProfile}
+            connecting={privateConnect.isPending}
+            disconnecting={disconnectPrivate.isPending}
+            onConnect={() => privateConnect.mutate()}
+            onDisconnect={() => disconnectPrivate.mutate()}
+          />
         )}
         {/* The sensitive toggle lives under Permissions (it IS a permission
             default), so Profile only exists when there's a connection to
