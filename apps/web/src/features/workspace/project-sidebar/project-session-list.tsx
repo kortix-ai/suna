@@ -231,11 +231,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                     router.replace(href, { scroll: false });
                     return;
                   }
-                  if (shouldBeginSessionSwitch(
-                      event,
-                      session.session_id,
-                      activeSessionId)
-                  ) {
+                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
                     beginSessionSwitch(session.session_id);
                   }
                 }}
@@ -376,13 +372,7 @@ function ProjectSessionRow({
           aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          {isSwitching ? (
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              <Loading className="size-3.5 shrink-0" />
-            </span>
-          ) : (
-            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
-          )}
+          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
 
           <span
             title={displayTitle}
@@ -474,7 +464,9 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
-                  onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+                  onSelect={() =>
+                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+                  }
                 >
                   {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
@@ -558,9 +550,7 @@ function SessionStatusDot({
       side="right"
       label={
         reviewPending ? (
-          <span className="text-xs">
-            {reviewCount} awaiting your review
-          </span>
+          <span className="text-xs">{reviewCount} awaiting your review</span>
         ) : (
           <span className="text-xs capitalize">{status}</span>
         )

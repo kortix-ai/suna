@@ -19,6 +19,10 @@ describe('SidebarEdgePeek', () => {
     expect(renderShell(false)).toContain('sidebar-edge-peek');
     expect(renderShell(true)).not.toContain('sidebar-edge-peek');
   });
+
+  test('keeps the edge hover strip above page headers', () => {
+    expect(renderShell(false)).toContain('z-60');
+  });
 });
 
 describe('Sidebar offcanvas peek styling', () => {

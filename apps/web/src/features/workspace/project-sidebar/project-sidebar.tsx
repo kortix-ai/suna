@@ -12,7 +12,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
@@ -50,15 +49,7 @@ import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  CalendarClock,
-  List,
-  Mail,
-  MessagesSquare,
-  PanelLeft,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
+import { CalendarClock, List, Mail, MessagesSquare, Webhook, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -82,7 +73,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, toggleSidebar, peek, holdPeek } = useSidebar();
+  const { state, setOpenMobile, holdPeek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -180,20 +171,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <div className="w-full min-w-0">
             <ProjectSwitcher variant="sidebar" />
           </div>
-          {!peek && (
-            <Hint label="Collapse sidebar" side="bottom">
-              <Button
-                type="button"
-                aria-label="Collapse sidebar"
-                variant="ghost"
-                size="icon"
-                onClick={toggleSidebar}
-                className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-              >
-                <PanelLeft className="cn-rtl-flip size-4" />
-              </Button>
-            </Hint>
-          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
@@ -204,7 +181,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   size="md"
-                  className="group/menu-button text-sidebar-foreground text-center border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] !text-sm font-medium [&_svg]:!size-4"
+                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] text-center !text-sm font-medium [&_svg]:!size-4"
                 >
                   <span>
                     {tI18nHardcoded.raw(
