@@ -168,7 +168,7 @@ Also stop if the same failure survives three different fixes (use
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
 | 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `4014c6113` |
-| 2 | Canonical SDK imports | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
+| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `bc81aa283` |
 | 3 | One session engine | NOT STARTED | — | — | — |
 | 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
 | 5 | Typed platform API coverage | NOT STARTED | — | — | — |
@@ -1647,3 +1647,26 @@ The focused GREEN run reported 1 pass and 0 failures. ESLint returned one
 the baseline. ESLint passed for the changed configuration, scanner, and test.
 
 **Shippable to production: NOT YET.** The baseline still contains 155 violations.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 2)
+
+Replaced frontend OpenCode compatibility imports with `@kortix/sdk` and
+`@kortix/sdk/react`. Replaced host store imports with
+`@kortix/sdk/internal/*`. Deleted 13 compatibility re-export files.
+
+The boundary baseline decreased from 155 violations to 47 violations. All 20
+deprecated SDK runtime imports are gone. The host runtime category decreased
+from 103 imports to 15 imports. The 32 host-owned Kortix API imports remain for
+Task 5.
+
+Focused web tests reported **51 pass / 0 fail**. The boundary test passed.
+ESLint checked 78 changed TypeScript files and reported 0 errors. It reported
+four existing `react-hooks/exhaustive-deps` warnings.
+
+The web typecheck reported four existing errors. None references a changed
+file. Two errors are in the OG template test. Two errors are unresolved
+generated docs-source imports.
+
+**Shippable to production: NOT YET.** Tasks 3 through 8 remain incomplete.
