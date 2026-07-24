@@ -1332,6 +1332,16 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Connecting a Teams bot is a connector-write capability — a custom role can
+    // withhold it and a scoped agent must hold it (central fold), mirroring the
+    // Slack (r4 slack/connect) and email connect twins.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1388,6 +1398,15 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Disconnecting the Teams bot is connector-write — twin of the Slack/email
+    // disconnect gates; a custom role can withhold it, a scoped agent must hold it.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     await deleteTeamsInstall(projectId);
     void reconcileChannelConnectors(projectId);
     return c.json({ status: 'disconnected' });
@@ -1447,6 +1466,17 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Posting a consent card drives the project bot to SEND into the customer's
+    // Teams channel — a send primitive gated on connector-write like the Slack
+    // (r4 slack/file/upload) and meet/speak twins. Authz before the feature-flag
+    // check so an unauthorized caller never gets a capability-independent answer.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
@@ -2227,6 +2257,18 @@ projectsApp.openapi(
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Binding a Slack thread creates channel→session routing (inbound Slack
+      // messages drive this session) — a connector-write action, matching the
+      // Slack connect/disconnect/file-upload twins. Threads the acting token so
+      // a custom role that withholds connector.write, or a scoped agent lacking
+      // it, is denied. The sandbox-token branch above is already project-scoped.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
     }
 
     let body: {
