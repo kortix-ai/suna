@@ -159,7 +159,7 @@ flow(
           { origin_ref: 'idem-user' },
           { params: { projectId: p.id }, headers: { 'Idempotency-Key': key } },
         );
-      r.status([200, 201, 202]);
+      r.status([201, 202]);
       r.body().has('$.session_id', first);
     });
     await ctx.step('same key + different secrets body → 409 IDEMPOTENCY_SECRETS_CONFLICT', async () => {

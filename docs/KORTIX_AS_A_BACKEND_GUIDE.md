@@ -122,15 +122,22 @@ header** (raw HTTP) so a retry with the same key returns the *original* session
 instead of a new one.
 
 ```bash
-curl -X POST .../sessions -H "Idempotency-Key: 9f1c…-a re-used, stable per-attempt UUID" …
+# generate a UUID ONCE per logical create; reuse it across that create's retries
+KEY=$(uuidgen)
+curl -X POST .../sessions -H "Idempotency-Key: $KEY" …
 ```
+
+The header is validated: 1–255 chars of `[A-Za-z0-9._:+/=-]` (spaces, unicode,
+or an oversized value → `400 INVALID_IDEMPOTENCY_KEY`).
 
 Rules that will bite if you ignore them:
 
 - **Use a high-entropy key** (a UUID you generate per logical create, reused
-  only across that create's retries). Keys are unique **per account**, and a
-  low-entropy key like `"1"` or a guessable channel key can be squatted — pick
-  something unguessable.
+  only across that create's retries). The key lives in a **globally** unique
+  index, and a collision with a *different* account's or project's key is
+  rejected as a conflict — so a low-entropy key like `"1"` or a guessable channel
+  key can be squatted by (or collide with) another tenant. Pick something
+  unguessable.
 - **A replay with a *different* body conflicts.** Same key + different
   `connector_bindings` / `secrets` → **`409`** (`IDEMPOTENCY_BINDING_CONFLICT` /
   `IDEMPOTENCY_SECRETS_CONFLICT`). Keep the body identical across retries.
