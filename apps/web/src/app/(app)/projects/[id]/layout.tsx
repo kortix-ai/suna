@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 
 import { LlmCatalogBootstrap } from '@/components/projects/llm-catalog-bootstrap';
 import { ProjectAccessBoundary } from '@/components/projects/project-access-boundary';
-import { SessionStreamKeeper } from '@/components/projects/session-stream-keeper';
+import { SessionCacheWarmer } from '@/components/projects/session-cache-warmer';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { createClient } from '@/lib/supabase/server';
 
 interface ProjectLayoutProps {
@@ -24,9 +25,9 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
 
   return (
     <ProjectAccessBoundary projectId={projectId}>
-      <SessionStreamKeeper projectId={projectId} />
+      <SessionCacheWarmer projectId={projectId} />
       <LlmCatalogBootstrap projectId={projectId} />
-      {children}
+      <ProjectShell projectId={projectId}>{children}</ProjectShell>
     </ProjectAccessBoundary>
   );
 }

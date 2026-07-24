@@ -3,3 +3,7 @@
 # web XLSX viewer migrates off the abandoned package.
 CVE-2023-30533
 CVE-2024-22363
+
+# The sandbox runtime intentionally grants its isolated agent root access for
+# package installation and system-level development tasks.
+AVD-DS-0002

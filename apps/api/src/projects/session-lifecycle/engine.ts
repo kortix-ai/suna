@@ -1,10 +1,12 @@
-import { executorExecutions, projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { executorExecutions, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
+import { secretsAllowlistPayloadConflicts } from '../secrets';
+import { originRefConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
 import { resolveProjectAutomationActor } from './actor';
@@ -21,6 +23,7 @@ import {
   resultFromExistingCommand,
 } from './store';
 import type { QueuedContinueSessionPayload } from './store';
+import { crossAccountIdempotencyResult } from './idempotency-guard';
 import type {
   ContinueSessionCommand,
   CreateSessionCommand,
@@ -77,6 +80,18 @@ export async function createSession(
     reason,
   });
   if (claimed.existing) {
+    // Cross-tenant guard: a colliding idempotency key that is not the caller's
+    // OWN create_session for this account+project must never return the foreign
+    // command/session — see crossAccountIdempotencyResult.
+    const crossAccount = crossAccountIdempotencyResult(
+      {
+        accountId: claimed.row.accountId,
+        projectId: claimed.row.projectId,
+        commandType: claimed.row.commandType,
+      },
+      { accountId: command.project.accountId, projectId: command.project.projectId },
+    );
+    if (crossAccount) return crossAccount;
     const existingPayload = (claimed.row.payload ?? {}) as Record<string, unknown>;
     const existingBody =
       existingPayload.body && typeof existingPayload.body === 'object'
@@ -101,6 +116,59 @@ export async function createSession(
         },
       };
     }
+    if (
+      secretsAllowlistPayloadConflicts(
+        existingBody.secrets as string[] | null | undefined,
+        command.body.secrets as string[] | null | undefined,
+      )
+    ) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different secrets allowlist',
+            code: 'IDEMPOTENCY_SECRETS_CONFLICT',
+          },
+        },
+      };
+    }
+    // Attribution/identity conflict. Within one backend account origin_ref is how
+    // a wrapper distinguishes its end-users, so replaying a key with a different
+    // origin_ref (or runtime_context) must NOT return the first end-user's
+    // session — that would land end-user B's prompts in A's conversation and
+    // misattribute usage. Refuse it, mirroring the guards above. (Cross-ACCOUNT
+    // key collision is a separate concern — see the account-scope fix.)
+    if (originRefConflicts(existingBody.origin_ref, command.body.origin_ref)) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used for a different origin_ref',
+            code: 'IDEMPOTENCY_ORIGIN_CONFLICT',
+          },
+        },
+      };
+    }
+    if (runtimeContextConflicts(existingBody.runtime_context, command.body.runtime_context)) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different runtime_context',
+            code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
+          },
+        },
+      };
+    }
     const existingResult = resultFromExistingCommand(claimed.row);
     if (existingResult.sessionId) {
       const [row] = await db
@@ -108,7 +176,28 @@ export async function createSession(
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, existingResult.sessionId))
         .limit(1);
-      if (row) existingResult.row = row;
+      if (row) {
+        // A soft-deleted session is gone — deleteSession() stamps
+        // metadata.deletedAt and leaves status 'stopped'. Handing the tombstone
+        // back as a create "success" poisons the key forever (every follow-up
+        // continueSession → no-session). Treat it as spent: 409, use a new key.
+        const rowMeta = (row.metadata ?? {}) as Record<string, unknown>;
+        if (typeof rowMeta.deletedAt === 'string') {
+          return {
+            status: 'failed',
+            commandId: claimed.row.commandId,
+            retryable: false,
+            error: {
+              status: 409,
+              body: {
+                error: 'Idempotency key maps to a deleted session — use a new key',
+                code: 'IDEMPOTENCY_KEY_SESSION_DELETED',
+              },
+            },
+          };
+        }
+        existingResult.row = row;
+      }
     }
     return existingResult;
   }
@@ -328,10 +417,16 @@ export async function drainSessionLifecycleQueue(
   input: {
   workerId?: string;
   limit?: number;
+  /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
+  availableBefore?: Date;
   } = {},
 ): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
-  const rows = await claimDueLifecycleCommands({ workerId, limit: input.limit ?? 10 });
+  const rows = await claimDueLifecycleCommands({
+    workerId,
+    limit: input.limit ?? 10,
+    availableBefore: input.availableBefore,
+  });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
   for (const row of rows) {
     if (row.commandType === 'continue_session') {
@@ -499,17 +594,40 @@ async function executeQueuedCreate(
       error: { status: 409, body: { error: 'No account owner available to own the session' } },
     };
   }
+  let requestingPrincipalType = payload.requestingPrincipalType;
+  if (requestingPrincipalType !== 'human' && requestingPrincipalType !== 'service_account') {
+    const [serviceAccount] = row.actorUserId
+      ? await db
+          .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+          .from(serviceAccounts)
+          .where(
+            and(
+              eq(serviceAccounts.serviceAccountId, row.actorUserId),
+              eq(serviceAccounts.accountId, project.accountId),
+            ),
+          )
+          .limit(1)
+      : [];
+    requestingPrincipalType = serviceAccount ? 'service_account' : 'human';
+  }
   return executeCreateSession({
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
+    requestingPrincipalType,
     body: payload.body ?? {},
     metadata: payload.metadata,
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
+    mayManageSystemConnectorProfiles: payload.mayManageSystemConnectorProfiles,
     enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
+    // Replay the origin-derivation signals captured at enqueue time so a
+    // queued backend create keeps origin 'backend' (and its origin_ref).
+    authType: payload.authType,
+    apiKeyType: payload.apiKeyType,
+    inSession: payload.inSession,
   });
 }
 
@@ -523,12 +641,17 @@ async function executeCreateSession(
   const result = await createProjectSession({
     project: command.project,
     userId: command.userId,
+    requestingPrincipalType: command.requestingPrincipalType,
     body: command.body,
     enforceAccountCap: command.enforceAccountCap,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
+    authType: command.authType,
+    apiKeyType: command.apiKeyType,
+    inSession: command.inSession,
+    mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
   });
 
   if (result.error) {

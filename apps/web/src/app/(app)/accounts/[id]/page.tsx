@@ -29,13 +29,14 @@ import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { GitHubAppSetupCard, useGitHubAppStatus } from '@/components/iam/github-app-setup-card';
+import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
+import { IdentityIntro } from '@/components/iam/identity-intro';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
-import { IdentityIntro } from '@/components/iam/identity-intro';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -93,6 +94,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
+import { isGitHubAppInstallationId } from '@/lib/github-installations';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -324,11 +326,6 @@ export default function AccountSettingsPage() {
     { allowed: canReadAudit },
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
-
-  // Lifted (rather than read only inside GitHubAppSetupCard) so the Git tab
-  // can also gate the cloud GitHubConnectionCard on it below — same query,
-  // same cache entry, so this doesn't add a second network round-trip.
-  const githubAppStatusQuery = useGitHubAppStatus(canWriteAccount === true);
 
   const prefersReducedMotion = useReducedMotion();
 
@@ -579,20 +576,8 @@ export default function AccountSettingsPage() {
 
             {activeSection === 'git' && canWriteAccount ? (
               <div className="space-y-8">
-                {/* One coherent managed-git card covering all three setup
-                    methods (manifest App, pasted App, PAT) — rendered for any
-                    admin regardless of source. The cloud per-account
-                    installations card below is a DIFFERENT thing (per-account
-                    App installs on the hosted deployment) and only makes
-                    sense when managed-git itself is env-configured (source
-                    'env'); on self-host (source 'db' | 'pat' | 'none') it
-                    would just confusingly show "No connections yet" next to
-                    the card above, so it's hidden until the status query
-                    resolves to 'env'. */}
+                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
                 <GitHubAppSetupCard canManage={canWriteAccount} />
-                {githubAppStatusQuery.data?.source === 'env' ? (
-                  <GitHubConnectionCard account={account} canManage={canWriteAccount} />
-                ) : null}
               </div>
             ) : null}
 
@@ -712,6 +697,7 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
@@ -741,38 +727,23 @@ function GitHubConnectionCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
-  async function handleConnect() {
+  function handleConnect() {
     if (!canManage) return;
     setIsConnecting(true);
-    try {
-      const result = await installationsQuery.refetch();
-      if (result.error) throw result.error;
-      const installUrl = result.data?.install_url;
-      if (!installUrl) {
-        errorToast(
-          result.data?.configured === false
-            ? 'GitHub App is not configured'
-            : 'GitHub install URL unavailable',
-        );
-        return;
-      }
-      rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
-      window.location.assign(installUrl);
-    } catch (err) {
-      errorToast((err as Error).message || 'Failed to start GitHub setup');
-    } finally {
-      setIsConnecting(false);
-    }
+    rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
+    router.push(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
   }
 
-  const installations = installationsQuery.data?.installations ?? [];
+  const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
+    isGitHubAppInstallationId(installation.installation_id),
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <span className="flex items-center gap-1">
-            <p className="text-foreground text-sm font-medium">Git providers</p>
+            <p className="text-foreground text-sm font-medium">GitHub connections</p>
             <Hint label="Kortix stores the GitHub App installation on the account, not on individual members — Git credentials are platform credentials.">
               <Button
                 type="button"
@@ -786,7 +757,7 @@ function GitHubConnectionCard({
             </Hint>
           </span>
           <p className="text-muted-foreground text-xs">
-            Connect a provider account or organization to create and import repositories.
+            Link an existing App installation or install the App for a GitHub account.
           </p>
         </div>
         <Button
@@ -799,7 +770,7 @@ function GitHubConnectionCard({
           title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
         >
           {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
-          {isConnecting ? 'Connecting' : 'Connect GitHub'}
+          {isConnecting ? 'Connecting' : 'Add account'}
         </Button>
       </div>
 
@@ -815,8 +786,7 @@ function GitHubConnectionCard({
         // Quiet contained empty state — the toolbar above already carries the
         // single "Connect GitHub" CTA.
         <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No Git provider connections yet. Connect the Kortix GitHub App to create or import
-          repositories.
+          No GitHub connections yet. Add an existing App installation or install the App.
         </div>
       ) : (
         <ul className="space-y-2">
@@ -1068,6 +1038,12 @@ function MembersCard({
     });
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Staged like removeTarget/leaveConfirmOpen above — role changes (including
+  // the hard-to-undo promote-to-Owner) go through a confirmation instead of
+  // firing on click. See roleMutation below for the actual mutate call.
+  const [pendingRole, setPendingRole] = useState<{ userId: string; role: AccountRole } | null>(
+    null,
+  );
   // Free-text search over email + user_id. Lives in component state so
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
@@ -1271,6 +1247,15 @@ function MembersCard({
       setBulkBusy(false);
     }
   }
+
+  // Looked up from the full roster (not the filtered `sorted` list) so the
+  // pending-role dialog's copy stays correct even if the search box changes
+  // while it's open.
+  const pendingRoleMember = pendingRole
+    ? members.find((m) => m.user_id === pendingRole.userId)
+    : undefined;
+  const pendingRoleLabel = pendingRole ? ROLE_LABEL[pendingRole.role] : '';
+  const pendingRoleBlurb = pendingRole ? ACCOUNT_ROLE_DESCRIPTORS[pendingRole.role].blurb : '';
 
   return (
     <div className="space-y-4">
@@ -1545,10 +1530,7 @@ function MembersCard({
                                         key={role}
                                         disabled={role === member.account_role}
                                         onSelect={() =>
-                                          roleMutation.mutate({
-                                            userId: member.user_id,
-                                            role,
-                                          })
+                                          setPendingRole({ userId: member.user_id, role })
                                         }
                                         className="gap-2"
                                       >
@@ -1630,6 +1612,30 @@ function MembersCard({
         onOpenChange={setInviteOpen}
         accountId={account.account_id}
         onInvited={invalidateMembers}
+      />
+
+      <ConfirmDialog
+        open={!!pendingRole}
+        onOpenChange={(o) => {
+          if (!o) setPendingRole(null);
+        }}
+        title="Change role"
+        description={
+          <span>
+            Change{' '}
+            <span className="text-foreground font-medium">
+              {pendingRoleMember ? memberLabel(pendingRoleMember) : ''}
+            </span>{' '}
+            to <span className="text-foreground font-medium">{pendingRoleLabel}</span>.{' '}
+            {pendingRoleBlurb}
+          </span>
+        }
+        confirmLabel="Change role"
+        onConfirm={() => {
+          if (pendingRole) roleMutation.mutate(pendingRole);
+          setPendingRole(null);
+        }}
+        isPending={roleMutation.isPending}
       />
 
       <ConfirmDialog
@@ -2000,8 +2006,13 @@ function InviteMemberModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member — can use assigned projects</SelectItem>
-                  <SelectItem value="admin">Admin — can invite members</SelectItem>
+                  <SelectItem value="member">
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.label} —{' '}
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                  </SelectItem>
+                  <SelectItem value="admin">
+                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2335,9 +2346,15 @@ function BulkSetRoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Owner — full control</SelectItem>
-                <SelectItem value="admin">Admin — everything except ownership</SelectItem>
-                <SelectItem value="member">Member — no implicit access</SelectItem>
+                <SelectItem value="owner">
+                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label} — {ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}
+                </SelectItem>
+                <SelectItem value="admin">
+                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                </SelectItem>
+                <SelectItem value="member">
+                  {ACCOUNT_ROLE_DESCRIPTORS.member.label} — {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

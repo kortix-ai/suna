@@ -142,13 +142,18 @@ variable "use_fargate_spot" {
 variable "container_insights" {
   description = "Enable CloudWatch Container Insights."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "log_retention_days" {
-  description = "CloudWatch log retention."
+  description = "CloudWatch log retention. The security baseline requires at least 365 days."
   type        = number
-  default     = 30
+  default     = 365
+
+  validation {
+    condition     = var.log_retention_days >= 365
+    error_message = "log_retention_days must be at least 365."
+  }
 }
 
 variable "alb_idle_timeout" {

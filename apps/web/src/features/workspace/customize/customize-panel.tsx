@@ -144,7 +144,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
-    enabled: !!projectId,
+    enabled: open && !!projectId,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -156,7 +156,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // API re-checks every mutation); this only decides what to show. Feed the
   // accountId we ALREADY hold from the project-detail query so the probe runs on
   // first render rather than being disabled while a separate getProject resolves.
-  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
+  const caps = useProjectCans(open ? projectId : undefined, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: detail.data?.project?.account_id,
   });
   // Treat BOTH "loading" and "errored" as not-yet-resolved — this is a VISIBILITY
@@ -200,7 +200,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // sidebar "Review" pill and the per-session row dots read (one query key, one
   // derivation), so the badge, the pill, and the dots can never drift apart.
   const reviewNeedsYou = useReviewSessionSummary(projectId, {
-    enabled: reviewEnabled,
+    enabled: open && reviewEnabled,
   }).totalNeedsYou;
 
   const groups = useMemo(

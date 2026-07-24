@@ -12,11 +12,16 @@ function readProjectsSource(): string {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, entry.name);
       if (entry.isDirectory()) walk(p);
-      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(readFileSync(p, 'utf8'));
+      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
+        out.push(readFileSync(p, 'utf8'));
     }
   };
   walk(root);
   return out.join('\n');
+}
+
+function readProjectRoute(name: string): string {
+  return readFileSync(join(import.meta.dir, '../projects/routes', name), 'utf8');
 }
 
 describe('kortix-projects SQL safety', () => {
@@ -30,5 +35,23 @@ describe('kortix-projects SQL safety', () => {
     expect(source).not.toContain("accountId.replace(/'/g");
     expect(source).not.toContain('db.execute(`');
     expect(source).not.toContain("where account_id = '");
+  });
+});
+
+describe('kortix-projects authorization safety', () => {
+  test('session inventory requires project.session.read before querying sessions', () => {
+    const source = readProjectRoute('r7.ts');
+    const routeStart = source.indexOf('// GET /v1/projects/:projectId/sessions');
+    const routeEnd = source.indexOf("path: '/{projectId}/sessions/{sessionId}'", routeStart);
+    const route = source.slice(routeStart, routeEnd);
+    const capabilityGate = route.indexOf(
+      'await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);',
+    );
+    const sessionQuery = route.indexOf('.from(projectSessions)');
+
+    expect(routeStart).toBeGreaterThanOrEqual(0);
+    expect(routeEnd).toBeGreaterThan(routeStart);
+    expect(capabilityGate).toBeGreaterThanOrEqual(0);
+    expect(sessionQuery).toBeGreaterThan(capabilityGate);
   });
 });

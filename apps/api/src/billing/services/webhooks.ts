@@ -296,6 +296,25 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       (subscription.metadata?.billing_model === 'per_seat' ||
         subscription.items.data.some((item) => perSeatPriceId && item.price?.id === perSeatPriceId));
 
+    // Orphaned-plan-sub recovery: the account's stored subscription pointer
+    // points at a *different* sub (typically a now-deleted machine sub that
+    // hijacked the row via upsertCreditAccount), while the incoming event is
+    // for the customer's still-active plan subscription. When the stored sub
+    // is dead (canceled/unpaid/expired) and the incoming one is live, adopt
+    // the incoming sub instead of dropping it as "stale" — otherwise the
+    // account is stranded on a dead pointer and the paywall blocks a paying
+    // customer forever.
+    const deadStatuses = ['canceled', 'unpaid', 'incomplete_expired'];
+    const currentSubIsDead = deadStatuses.includes(account.stripeSubscriptionStatus ?? '')
+      || account.paymentStatus === 'cancelling';
+    const incomingSubIsLive = subscription.status === 'active' || subscription.status === 'trialing';
+    const isOrphanedPlanRecovery =
+      incomingSubIsLive &&
+      currentSubIsDead &&
+      // Don't adopt a machine sub (server_type) over a dead plan pointer; only
+      // adopt a genuine plan subscription (tier_key present, non-machine).
+      !!incomingTier && incomingTier !== 'free' && !subscription.metadata?.server_type;
+
     if (isFreeUpgrade) {
       console.log(
         `[Webhook] syncSubscriptionState: detected free→${incomingTier} upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
@@ -303,6 +322,10 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       await cancelFreeSubscriptionForUpgrade(account.stripeSubscriptionId, accountId);
     } else if (isPerSeatActivation) {
       console.log(`[Webhook] syncSubscriptionState: adopting per-seat subscription ${subscription.id} superseding ${account.stripeSubscriptionId} for ${accountId}`);
+    } else if (isOrphanedPlanRecovery) {
+      console.log(
+        `[Webhook] syncSubscriptionState: adopting orphaned-plan subscription ${subscription.id} for ${accountId} (stored sub ${account.stripeSubscriptionId} is dead, status=${account.stripeSubscriptionStatus}, paymentStatus=${account.paymentStatus})`,
+      );
     } else {
       console.log(`[Webhook] syncSubscriptionState: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`);
       return;
@@ -313,6 +336,11 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   const priceId = subscription.items.data[0]?.price?.id;
   const resolvedTier = tierKey ?? getTierByPriceId(priceId ?? '')?.name ?? null;
   const billingPeriod = getBillingPeriodByPriceId(priceId ?? '') ?? (subscription.metadata?.commitment_type as any) ?? 'monthly';
+  // Grant recovery credits when the account had no sub pointer, was on a dead
+  // machine/free sub, OR is being recovered from an orphaned-plan-sub state
+  // (the stored pointer pointed at a dead sub while a live plan sub was being
+  // adopted above). In all these cases the balance is likely $0 and the
+  // customer was paywalled through no fault of their own.
   const shouldGrantRecoveryCredits =
     !!resolvedTier &&
     (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
@@ -417,8 +445,91 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       );
       return;
     }
+    // Before reverting to free, check whether the customer has *another* active
+    // subscription in Stripe (e.g. a paid plan sub that was orphaned when a
+    // machine sub hijacked the credit_accounts row). If so, re-stitch the row
+    // to that sub instead of stranding the customer on free with no credits.
+    const restored = await tryRestoreOtherActiveSubscription(accountId, subscription);
+    if (restored) return;
     await revertToFree(accountId, subscription.id);
   });
+}
+
+/**
+ * When a subscription is deleted, the customer may still have another active
+ * subscription in Stripe (the classic case: a machine/compute sub hijacked the
+ * credit_accounts.stripeSubscriptionId pointer, then got deleted, while the real
+ * paid-plan sub is still live). This queries Stripe for any other active sub
+ * on the same customer and, if found, re-syncs the row to it so the customer
+ * isn't stranded on free.
+ *
+ * Returns true if a restoration happened (row repointed), false to fall
+ * through to revertToFree.
+ */
+async function tryRestoreOtherActiveSubscription(
+  accountId: string,
+  deletedSubscription: Stripe.Subscription,
+): Promise<boolean> {
+  const customerId = typeof deletedSubscription.customer === 'string'
+    ? deletedSubscription.customer
+    : deletedSubscription.customer?.id;
+  if (!customerId) return false;
+
+  let otherSubs: Stripe.Subscription[];
+  try {
+    const stripe = getStripe();
+    const list = await stripe.subscriptions.list({
+      customer: customerId,
+      status: 'all',
+      limit: 10,
+    });
+    otherSubs = list.data.filter(
+      (s) => s.id !== deletedSubscription.id && (s.status === 'active' || s.status === 'trialing'),
+    );
+  } catch (err) {
+    console.error(`[Webhook] tryRestoreOtherActiveSubscription: failed to list subscriptions for ${accountId}:`, err);
+    return false;
+  }
+
+  if (otherSubs.length === 0) return false;
+
+  // Prefer a non-machine (plan) subscription — one without server_type
+  // metadata and with a real tier_key — over a machine sub.
+  const planSub = otherSubs.find(
+    (s) => s.metadata?.tier_key && s.metadata.tier_key !== 'free' && !s.metadata?.server_type,
+  );
+  const target = planSub ?? otherSubs[0];
+
+  console.log(
+    `[Webhook] handleSubscriptionDeleted: restoring ${accountId} to other active subscription ${target.id} (tier=${target.metadata?.tier_key ?? 'unknown'}) instead of reverting to free`,
+  );
+  // Repoint the account to the surviving subscription directly. We don't call
+  // syncSubscriptionState here because its stale-sub guard would bail (the
+  // stored stripeSubscriptionId is the deleted sub, ≠ the target sub). The
+  // target sub is already active/trialing (we filtered for that), so we
+  // resolve its tier and apply the update inline.
+  const targetTierKey = target.metadata?.tier_key;
+  const targetPriceId = target.items?.data?.[0]?.price?.id;
+  const resolvedTier = targetTierKey ?? getTierByPriceId(targetPriceId ?? '')?.name ?? null;
+  const billingPeriod = getBillingPeriodByPriceId(targetPriceId ?? '') ?? (target.metadata?.commitment_type as any) ?? 'monthly';
+
+  const updates: Record<string, any> = {
+    stripeSubscriptionId: target.id,
+    stripeSubscriptionStatus: target.status,
+    billingCycleAnchor: new Date(target.billing_cycle_anchor * 1000).toISOString(),
+    provider: 'stripe',
+    planType: billingPeriod === 'yearly_commitment' ? 'yearly' : billingPeriod,
+    commitmentType: billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : null,
+    commitmentEndDate: billingPeriod === 'yearly_commitment'
+      ? new Date(target.current_period_end * 1000).toISOString()
+      : null,
+    paymentStatus: target.cancel_at_period_end ? 'cancelling' : 'active',
+  };
+  if (resolvedTier) {
+    updates.tier = resolvedTier;
+  }
+  await updateCreditAccount(accountId, updates);
+  return true;
 }
 
 async function revertToFree(accountId: string, subscriptionId?: string) {

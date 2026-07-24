@@ -209,6 +209,56 @@ describe('renderContext + host notice', () => {
     expect(out).toContain('kortix projects use');
   });
 
+  test('breadcrumb renders the full host -> account -> project -> session path when signed in', () => {
+    writeConfig({
+      test: loggedInHost({
+        account_slug: 'kortix',
+        account_name: 'Kortix',
+        default_project: { project_id: 'proj_a', account_id: 'account_1', name: 'Alpha' },
+      }),
+    });
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    // Signed-in host row carries the ● glyph + the navigation verb.
+    expect(out).toMatch(/●\s+host/);
+    expect(out).toContain('▸ kortix hosts use');
+    // Every level is present, top-down.
+    expect(out).toContain('account');
+    expect(out).toContain('project');
+    expect(out).toContain('session');
+    // The session leaf is empty (no persisted active session) and offers a verb.
+    expect(out).toContain('open one: kortix chat');
+  });
+
+  test('breadcrumb hides lower levels + points at login when signed out of the active host', () => {
+    writeConfig({
+      test: {
+        url: 'https://api.test',
+        token: '',
+        user_id: '',
+        user_email: '',
+        account_id: '',
+        logged_in_at: '',
+      },
+    });
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    expect(out).toMatch(/○\s+host/);
+    expect(out).toContain('not logged in');
+    expect(out).toContain('→ kortix hosts login');
+    // Can't have an account/project without a signed-in host.
+    expect(out).not.toContain('account');
+    expect(out).not.toContain('session');
+  });
+
+  test('breadcrumb marks an unmet account gap as actionable', () => {
+    writeConfig({ test: loggedInHost({ account_id: '' }) });
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    expect(out).toMatch(/⚠\s+account/);
+    expect(out).toContain('→ kortix accounts use');
+  });
+
   test('subcommand host notice appends account + default project', () => {
     writeConfig({
       test: loggedInHost({

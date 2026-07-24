@@ -1,6 +1,6 @@
 /**
  * /v1/marketplace — browse the registry catalog. Read-only routes are public; installing
- * is project-scoped and lives under /v1/projects/:id/registry/* (see r10.ts).
+ * is project-scoped and lives at /v1/projects/:id/marketplace/install-session (see r10.ts).
  */
 
 import { createRoute, z } from '@hono/zod-openapi';

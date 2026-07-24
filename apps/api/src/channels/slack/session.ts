@@ -167,6 +167,7 @@ export async function createOrJoinThreadSession(input: {
     source: 'slack',
     project,
     userId,
+    requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
       agent_name: launchAgent,

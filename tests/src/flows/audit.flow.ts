@@ -197,8 +197,8 @@ flow(
 //     oversize → MAX_LIMIT 200 (never 400)
 //   - cursor pagination round-trip: page 1 → next_cursor → page 2 with no
 //     overlapping event_ids (keyset integrity)
-//   - export headers (X-Audit-Row-Count, Content-Disposition) + uppercase
-//     format normalization (CSV → csv)
+//   - export headers (X-Audit-Row-Count, Content-Disposition) + schema rejection
+//     for unsupported format casing (CSV is not csv)
 //   - webhook create input validation: missing name, oversize name (>128),
 //     malformed url, SSRF guard (https://169.254.169.254 cloud metadata)
 //   - webhook secret-once invariant: secret revealed on create, NEVER on
@@ -350,7 +350,7 @@ flow(
       if (overlap) throw new Error('cursor pagination: page 2 overlaps page 1');
     });
 
-    // ── export headers + uppercase format normalization ──────────────────
+    // ── export headers + strict format schema ─────────────────────────────
     await ctx.step('export CSV → X-Audit-Row-Count + Content-Disposition headers', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -358,13 +358,13 @@ flow(
       r.status(200).headerExists('x-audit-row-count').headerExists('content-disposition');
     });
     await ctx.step(
-      'export format=CSV (uppercase) → 200 csv (lowercase normalization)',
+      'export format=CSV (uppercase) → 400 (schema accepts lowercase csv|jsonl)',
       async () => {
         const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit/export', {
           params: { accountId: team.id },
           query: { format: 'CSV' },
         });
-        r.status(200).headerEquals('content-type', /csv/);
+        r.status(400);
       },
     );
 

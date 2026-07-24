@@ -249,10 +249,9 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
 
 /**
  * Which model this agent runs on. Sets the per-agent gateway default (scope=agent,
- * DB-backed, instant — no git commit): a session for this agent that asks for the
- * synthetic `auto` model resolves to this pick. When unset, the agent falls back
- * to the project → account → platform default. Manager-gated (the model-defaults
- * route asserts `manage`); everyone else sees the read-only resolved model.
+ * DB-backed, instant — no git commit). When unset, the agent falls back to the
+ * project → account → platform default. Manager-gated; everyone else sees the
+ * read-only resolved model.
  */
 function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
   const accessQuery = useQuery({
@@ -316,7 +315,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
         </div>
       ) : (
         <Badge variant="outline" size="sm" className="font-mono">
-          {nameOf(resolved) ?? 'Auto'}
+          {nameOf(resolved) ?? 'No model configured'}
         </Badge>
       )}
 

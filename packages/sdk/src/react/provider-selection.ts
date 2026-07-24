@@ -157,9 +157,14 @@ export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<stri
 export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
-  const models = catalog.models ?? {};
+  const models = Object.fromEntries(
+    Object.entries(catalog.models ?? {}).filter(
+      ([modelId]) => modelId !== 'auto' && modelId !== 'kortix/auto',
+    ),
+  );
+  const firstModelId = Object.keys(models)[0];
   return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    default: firstModelId ? { kortix: firstModelId } : {},
     connected: ['kortix'],
     all: [
       {

@@ -18,14 +18,13 @@ const tpl = (slug: string, extra: Partial<SandboxTemplate> = {}): SandboxTemplat
 describe('composeLocalDockerfile', () => {
   const USER = 'FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y gdal-bin\n';
 
-  test('includes the pip floor — the thing the local build exists to exercise', () => {
-    // Incident (b): the floor's `numpy>=1.26` vs a user's dpkg-owned numpy
-    // 1.26.4 → "Cannot uninstall numpy 1.26.4, RECORD file not found". If the
-    // composed text doesn't run pip, this command reproduces nothing.
+  test('includes the managed runtime floor that local builds exercise', () => {
     const out = composeLocalDockerfile(USER, { layer: true });
-    expect(out).toContain('/opt/kortix/pyfloor/bin/pip install');
-    expect(out).toContain('"numpy>=1.26"');
+    expect(out).toContain('sha256sum -c -');
+    expect(out).toContain('uv python install --default');
+    expect(out).toContain('pnpm runtime set node');
     expect(out).toContain('apt-get install');
+    expect(out).not.toContain('/opt/kortix/pyfloor');
   });
 
   test('keeps the user Dockerfile verbatim, above the layer', () => {

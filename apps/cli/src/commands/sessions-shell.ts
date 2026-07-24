@@ -1,4 +1,8 @@
-import { kortixPtyWsUrlForPort, type OpencodePty } from '../api/sandbox-proxy.ts';
+import {
+  kortixPtyWsUrlForPort,
+  openKortixPtyWebSocket,
+  type OpencodePty,
+} from '../api/sandbox-proxy.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
@@ -116,7 +120,7 @@ function createPty(resolved: ResolvedSession): Promise<OpencodePty> {
  *  WebSocket, and forward local resizes. Returns once the connection ends. */
 function runPtySession(resolved: ResolvedSession, pty: OpencodePty): Promise<number> {
   const wsUrl = kortixPtyWsUrlForPort(resolved.auth, resolved.proxyId, resolved.runtimePort, pty.id);
-  const ws = new WebSocket(wsUrl);
+  const ws = openKortixPtyWebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;

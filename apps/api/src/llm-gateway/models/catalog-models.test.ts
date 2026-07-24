@@ -16,13 +16,13 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(missing).toEqual([]);
   });
 
-  test('AUTO + managed lineup present; anonymous callers get managed-only', () => {
-    expect(full.auto).toBeDefined();
+  test('synthetic auto is absent; anonymous callers get managed-only', () => {
+    expect(full.auto).toBeUndefined();
     expect(full['claude-opus-4.8']).toBeDefined();
     expect(full['glm-5.2']).toBeDefined();
 
     const managedOnly = gatewayModelCatalog(undefined);
-    expect(managedOnly.auto).toBeDefined();
+    expect(managedOnly.auto).toBeUndefined();
     // anonymous = managed-only; with a project, BYOK + codex widen the catalog
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(managedOnly).length);
   });
@@ -62,8 +62,7 @@ describe('gatewayModelCatalog — served catalog', () => {
   test('every served model carries an explicit `provider` field', () => {
     // BYOK catalog entries brand as their real upstream provider.
     expect(full['anthropic/claude-opus-4-8']?.provider).toBe('anthropic');
-    // Managed models (and AUTO) brand as `kortix`.
-    expect(full.auto?.provider).toBe('kortix');
+    // Managed models brand as `kortix`.
     expect(full['claude-opus-4.8']?.provider).toBe('kortix');
     expect(full['glm-5.2']?.provider).toBe('kortix');
     // Codex (ChatGPT subscription) models brand as their own `codex` provider,
@@ -186,10 +185,9 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
     expect(sonnet?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'max']);
   });
 
-  test('resolves the synthetic auto model to a permissive capability record', () => {
-    const model = catalogModelForWireModel('auto');
-    expect(model?.tool_call).toBe(true);
-    expect(model?.temperature).toBe(true);
+  test('does not resolve stale synthetic auto model ids', () => {
+    expect(catalogModelForWireModel('auto')).toBeUndefined();
+    expect(catalogModelForWireModel('kortix/auto')).toBeUndefined();
   });
 
   test('returns undefined for a completely unknown wire model', () => {

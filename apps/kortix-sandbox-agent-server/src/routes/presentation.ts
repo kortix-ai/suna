@@ -107,8 +107,7 @@ export function parseScriptResult(stdout: string): ConvertOutcome | null {
   return null
 }
 
-/** Run the Python convert script the same way the skill does: `python3 <script>`
- *  on Linux (the sandbox), `uv run <script>` elsewhere (local dev / mac). */
+/** Run the Python convert script with an isolated uv environment. */
 function defaultRunConvert(
   format: PresentationFormat,
   presDir: string,
@@ -117,9 +116,11 @@ function defaultRunConvert(
 ): Promise<ConvertOutcome> {
   return new Promise((resolve) => {
     const script = FORMAT_SCRIPT[format]
-    const isLinux = process.platform === 'linux'
-    const cmd = isLinux ? 'python3' : 'uv'
-    const args = isLinux ? [script, presDir, outPath] : ['run', script, presDir, outPath]
+    const cmd = 'uv'
+    const packages = format === 'pdf'
+      ? ['playwright', 'pypdf']
+      : ['playwright', 'python-pptx']
+    const args = ['run', ...packages.flatMap((pkg) => ['--with', pkg]), script, presDir, outPath]
 
     let child: ReturnType<typeof spawn>
     try {

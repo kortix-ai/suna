@@ -55,6 +55,28 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
     expect(isSentryIgnoredError('HTTPException', 'Unauthorized')).toBe(true);
   });
 
+  // ── Regression: BS pattern 28e9a65c… — `new URL()` on a path-only
+  // `req.url` (no-Host scanner probes) throws
+  // `TypeError: "…" cannot be parsed as a URL.`. The root-cause fix
+  // (lib/request-url.ts ensureAbsoluteRequestUrl) prevents the throw on the
+  // request path; this filter is defense-in-depth so any residual edge case
+  // stops paging.
+  test('the URL-parse TypeError from path-only scanner URLs is filtered', () => {
+    expect(isSentryIgnoredError('TypeError', '"/" cannot be parsed as a URL.')).toBe(true);
+    expect(
+      isSentryIgnoredError(
+        'TypeError',
+        '"/nice%20ports%2C/Tri%6Eity.txt%2ebak" cannot be parsed as a URL.',
+      ),
+    ).toBe(true);
+    // Also covered when only the message is present (string-coerced reason).
+    expect(isSentryIgnoredError(undefined, '"/" cannot be parsed as a URL.')).toBe(true);
+  });
+
+  test('the URL-parse pattern is registered in SENTRY_IGNORE_ERRORS', () => {
+    expect(SENTRY_IGNORE_ERRORS).toContain('cannot be parsed as a URL');
+  });
+
   test('a real, actionable error with a distinct message is NOT filtered', () => {
     // Guards against an over-broad filter: a genuine code bug must still page.
     expect(isSentryIgnoredError('TypeError', "Cannot read properties of undefined (reading 'x')"))

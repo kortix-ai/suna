@@ -32,6 +32,22 @@ export class WarmRuntimeUnavailableError extends Error {
   }
 }
 
+/**
+ * Thrown by a runtime provider's {@link SandboxProvider.createFromExternalId} when
+ * the pinned template id is DEFINITIVELY gone (a 404 — the template was
+ * garbage-collected). FIX-A: this is the ONLY signal the boot path treats as
+ * license to fall back to a name-boot. A transient 5xx throws a normal
+ * (retryable) error instead, so a provider outage never silently boots a
+ * possibly-wrong template under a different (name) resolution while masking the
+ * outage. Non-retryable at the provision-retry layer (fail fast → name fallback).
+ */
+export class SandboxTemplateNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SandboxTemplateNotFoundError';
+  }
+}
+
 export interface CreateSandboxOpts {
   accountId: string;
   userId: string;
@@ -147,6 +163,19 @@ export interface SandboxProvider {
   sandboxFacingApiOrigin?(): string;
 
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
+  /**
+   * FIX-A: boot a sandbox from an EXACT provider template id (not a name). The
+   * boot path uses this to honor a project's activated
+   * `active_sandbox_external_template_id` pin, so the running sandbox is the
+   * precise warm image activation chose — the name path can drift behind a
+   * truncated template list or an idempotent-adopt that reused a name. OPTIONAL:
+   * only providers with a durable external template id implement it (Platinum;
+   * Daytona/e2b/local-docker keep the name-only default). On a DEFINITIVE
+   * not-found (404 = GC'd pin) it MUST throw {@link SandboxTemplateNotFoundError}
+   * so the caller can fall back to a name-boot; a transient 5xx throws a normal
+   * (retryable) error and MUST NOT be turned into a name fallback.
+   */
+  createFromExternalId?(externalTemplateId: string, opts: CreateSandboxOpts): Promise<ProvisionResult>;
   start(externalId: string): Promise<void>;
   stop(externalId: string): Promise<void>;
   remove(externalId: string): Promise<void>;

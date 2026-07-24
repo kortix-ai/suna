@@ -209,35 +209,33 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     );
   }
 
-  // NEVER render a blank Git tab. A 403 means the signed-in user isn't a
-  // platform admin (KORTIX_PLATFORM_ADMIN_EMAILS on self-host) — say so
-  // instead of silently hiding the only content in the pane. Any other error
-  // gets a visible, retryable state.
+  // Account GitHub App connections render independently on the Git tab. Hide
+  // this server-level operator panel from account admins who are not platform
+  // admins. Other errors remain visible and retryable.
   if (statusQuery.isError || !statusQuery.data) {
     // Robust auth-failure detection: the SDK's ApiError carries `.status`, but
     // depending on the failure path the code can sit on `.response.status` or
     // only in the message — a non-admin must NEVER see the scary generic error.
-    const err = statusQuery.error as
-      | { status?: number; response?: { status?: number }; message?: string }
-      | null;
+    const err = statusQuery.error as {
+      status?: number;
+      response?: { status?: number };
+      message?: string;
+    } | null;
     const status = err?.status ?? err?.response?.status;
     const forbidden =
       status === 403 ||
       status === 401 ||
       /\b(403|401|forbidden|unauthorized|admin access)\b/i.test(err?.message ?? '');
+    if (forbidden) return null;
     return (
       <div className="space-y-2">
         <p className="text-foreground text-sm font-medium">Managed GitHub</p>
         <p className="text-muted-foreground text-sm">
-          {forbidden
-            ? 'Only a platform admin can view or configure the GitHub connection for this server. Ask your operator to add your email to KORTIX_PLATFORM_ADMIN_EMAILS.'
-            : 'Could not load the GitHub connection status.'}
+          Could not load the GitHub connection status.
         </p>
-        {!forbidden ? (
-          <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
-            Retry
-          </Button>
-        ) : null}
+        <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
+          Retry
+        </Button>
       </div>
     );
   }

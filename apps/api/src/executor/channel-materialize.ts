@@ -29,6 +29,7 @@ function channelSpec(
   platform: ChannelPlatform,
   slug: string,
   name = channelLabel(platform),
+  baseUrl: string | null = null,
 ): ConnectorSpec {
   return {
     slug,
@@ -46,10 +47,13 @@ function channelSpec(
     url: null,
     transport: null,
     endpoint: null,
-    baseUrl: null,
+    baseUrl,
     platform,
     spec: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    // Platform-called connector — the request isn't built by executeCall's
+    // HTTP builders, so a static header table would be inert. Always empty.
+    headers: {},
     policies: [],
   };
 }
@@ -110,6 +114,7 @@ export async function synthesizeChannelConnectors(
       if (install) specs.push(channelSpec('meet', meetSlug));
     }
   }
+
 
   if (!project || !resolveExperimentalFeature(project.metadata, 'agentmail_email')) {
     return specs;

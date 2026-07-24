@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 495,
+  "count": 502,
   "routes": [
     {
       "method": "GET",
@@ -481,6 +481,10 @@
     {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/projects"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/session-limit"
     },
     {
       "method": "POST",
@@ -1267,12 +1271,24 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/activate"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/connect/finalize"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/me"
     },
     {
       "method": "PUT",
@@ -1508,6 +1524,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sandbox-provider/transition"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sandbox-templates"
     },
     {
@@ -1689,6 +1709,14 @@
     {
       "method": "DELETE",
       "path": "/v1/projects/github/installations/:installationId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/linkable"
     },
     {
       "method": "GET",

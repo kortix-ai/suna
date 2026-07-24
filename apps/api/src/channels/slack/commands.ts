@@ -520,7 +520,7 @@ async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
 
   // Effective MODEL (channel override → project/account/platform), with source.
   const gate = await channelModelContext(ctx);
-  let modelText = '`auto` · platform default';
+  let modelText = '`not configured` · platform default';
   if (gate) {
     const eff = await resolveEffectiveModel({
       userId: gate.ownerUserId,
@@ -530,7 +530,7 @@ async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
       explicit: selection?.opencodeModel ?? null,
       freeModelsOnly: gate.freeManagedOnly,
     });
-    const label = eff.model ? labelForModelRef(eff.model) : 'Auto';
+    const label = eff.model ? labelForModelRef(eff.model) : 'No model configured';
     modelText = `*${escapeMrkdwn(label)}* · ${sourceLabel(eff.source)}`;
   }
 

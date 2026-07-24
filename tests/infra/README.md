@@ -9,7 +9,7 @@ Static validation of `infra/terraform` and `infra/k8s`. Every check is OSS and
 
 | Suite | Tool | Image | Target | Output |
 |-------|------|-------|--------|--------|
-| `tflint` | tflint + AWS ruleset | `ghcr.io/terraform-linters/tflint:v0.55.1` | `infra/terraform` (recursive) | `tflint.junit.xml` |
+| `tflint` | tflint + AWS ruleset | `ghcr.io/terraform-linters/tflint:v0.64.0` | `infra/terraform` (recursive) | `tflint.junit.xml` |
 | `checkov` | checkov | `bridgecrew/checkov:3.2.334` | `infra/terraform` | `checkov.sarif`, `checkov.junit.xml` |
 | `kubeconform` | kubeconform | `ghcr.io/yannh/kubeconform:v0.6.7` | `infra/k8s` (raw, excl. `charts/`) | `kubeconform.junit.xml` |
 | `helm` | helm + kubeconform | `alpine/helm:3.16.3` + kubeconform | `infra/k8s/charts/*` rendered per env | `helm-<chart>-<env>.junit.xml` |

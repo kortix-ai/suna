@@ -78,6 +78,12 @@ export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
+/** Local copy — `lib/serializers` imports from this module, so importing back
+ *  would close a cycle for one two-line predicate. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export type GitTriggerType = 'cron' | 'webhook';
 
 export interface GitTriggerSpec {
@@ -131,6 +137,12 @@ export interface GitTriggerSpec {
    *   the last one is dead/failed), a fresh one is created and becomes the
    *   canonical session going forward. Primarily meant for recurring cron
    *   triggers that should feel like a single persistent agent run.
+   * - `'keyed'`: like `'reuse'`, but one canonical session PER `sessionKey`
+   *   value instead of one per trigger. The key is a prompt-style template
+   *   rendered against the delivery payload, so a single trigger can fan out
+   *   into a session per chat / per customer / per repository. This is what
+   *   makes a conversational webhook source (WhatsApp, SMS, email) behave like
+   *   separate threads rather than one blended transcript.
    */
   sessionMode: GitTriggerSessionMode;
   /**
@@ -139,14 +151,35 @@ export interface GitTriggerSpec {
    * `session_id` (portable) AND persisted on `project_trigger_runtime.session_id`.
    */
   pinnedSessionId: string | null;
+  /**
+   * For `sessionMode === 'keyed'` only — a `{{ body.path }}` template rendered
+   * against the webhook payload to produce the session key (e.g.
+   * `"{{ body.data.chat_jid }}"`). Null for every other mode. A fire whose key
+   * renders empty degrades to `'fresh'` rather than colliding every keyless
+   * delivery into one shared session.
+   */
+  sessionKey: string | null;
+  /**
+   * Optional payload guard: dotted paths (rooted at the same `body` / `headers`
+   * object the prompt template sees) mapped to the value they must equal for the
+   * trigger to fire. A non-matching delivery is accepted (200) and recorded, but
+   * spawns no session.
+   *
+   * The motivating case is loop-breaking: a webhook source that reports BOTH
+   * directions of a conversation would otherwise re-trigger the agent with the
+   * agent's own reply. `{ "body.data.direction": "inbound" }` ends that without
+   * having to narrow the subscription and lose every other event type.
+   */
+  filter: Record<string, string> | null;
 }
 
-export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned';
+export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
 
 export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
   'fresh',
   'reuse',
   'pinned',
+  'keyed',
 ];
 
 export interface GitTriggerParseError {
@@ -412,14 +445,27 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   // Only emit model when set so manifests on the "Default" path stay byte-stable.
   if (spec.model) entry.model = spec.model;
   entry.enabled = spec.enabled;
+  // `keyed` is written as `session_key` alone: the key implies the mode on read
+  // (see parseTriggerEntry), so emitting both would be redundant in the file a
+  // human actually reads. It also keeps the manifest valid against the
+  // `session_mode` enum in @kortix/manifest-schema, which the `kortix validate`
+  // / CR-merge gate gets to before it learns about new modes.
+  const keyedByKey = spec.sessionMode === 'keyed' && !!spec.sessionKey;
   // Only emit session_mode when it deviates from the default ('fresh') so
   // existing manifests stay byte-stable on round-trip.
-  if (spec.sessionMode !== 'fresh') {
+  if (spec.sessionMode !== 'fresh' && !keyedByKey) {
     entry.session_mode = spec.sessionMode;
   }
   // `pinned` carries the exact session id to loop.
   if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
     entry.session_id = spec.pinnedSessionId;
+  }
+  // `keyed` carries the template that derives one session per key.
+  if (keyedByKey) {
+    entry.session_key = spec.sessionKey;
+  }
+  if (spec.filter && Object.keys(spec.filter).length > 0) {
+    entry.filter = spec.filter;
   }
   if (spec.type === 'cron') {
     if (spec.runAt) {
@@ -509,14 +555,30 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
         : '';
   if (
     sessionModeRaw &&
-    sessionModeRaw !== 'fresh' &&
-    sessionModeRaw !== 'reuse' &&
-    sessionModeRaw !== 'pinned'
+    !(GIT_TRIGGER_SESSION_MODES as readonly string[]).includes(sessionModeRaw)
   ) {
-    return err(slug, `session_mode must be "fresh", "reuse", or "pinned" (got "${sessionModeRaw}")`);
+    return err(
+      slug,
+      `session_mode must be one of ${GIT_TRIGGER_SESSION_MODES.map((m) => `"${m}"`).join(', ')} (got "${sessionModeRaw}")`,
+    );
   }
-  const sessionMode: GitTriggerSessionMode =
-    sessionModeRaw === 'reuse' ? 'reuse' : sessionModeRaw === 'pinned' ? 'pinned' : 'fresh';
+  // `keyed` carries the template that derives one session per key
+  // (manifest key `session_key`). Read BEFORE resolving the mode: declaring a
+  // `session_key` is itself the opt-in, so `session_mode: keyed` is redundant
+  // noise a manifest never has to write. An EXPLICIT mode always wins, so
+  // `session_mode: fresh` + a stray key stays fresh (and drops the key below).
+  const sessionKeyRaw =
+    typeof row.session_key === 'string'
+      ? row.session_key.trim()
+      : typeof row.sessionKey === 'string'
+        ? row.sessionKey.trim()
+        : '';
+
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw
+    ? (sessionModeRaw as GitTriggerSessionMode)
+    : sessionKeyRaw
+      ? 'keyed'
+      : 'fresh';
 
   // `pinned` carries the exact session id to loop (manifest key `session_id`).
   const pinnedSessionIdRaw =
@@ -529,6 +591,36 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
     return err(slug, 'session_mode "pinned" requires a `session_id` to pin the trigger to');
   }
   const pinnedSessionId: string | null = sessionMode === 'pinned' ? pinnedSessionIdRaw : null;
+
+  // An EXPLICIT `session_mode: keyed` with no key is still an error — there is
+  // nothing to bucket sessions by. (The inferred path can't reach this: it only
+  // resolves to `keyed` when a key is present.)
+  if (sessionMode === 'keyed' && !sessionKeyRaw) {
+    return err(
+      slug,
+      'session_mode "keyed" requires a `session_key` template (e.g. "{{ body.data.chat_jid }}")',
+    );
+  }
+  const sessionKey: string | null = sessionMode === 'keyed' ? sessionKeyRaw : null;
+
+  // Optional payload guard. Values are compared as strings against the rendered
+  // path, so `true`/`1` in the manifest behave the same as in the payload.
+  let filter: Record<string, string> | null = null;
+  if (row.filter !== undefined && row.filter !== null) {
+    if (!isPlainObject(row.filter)) {
+      return err(slug, '`filter` must be a table of payload paths to expected values');
+    }
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(row.filter)) {
+      const trimmed = key.trim();
+      if (!trimmed) return err(slug, '`filter` keys must be non-empty payload paths');
+      if (value === null || typeof value === 'object') {
+        return err(slug, `\`filter.${trimmed}\` must be a string, number, or boolean`);
+      }
+      entries[trimmed] = String(value);
+    }
+    if (Object.keys(entries).length > 0) filter = entries;
+  }
 
   const path = `${filename}#triggers.${slug}`;
 
@@ -577,6 +669,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
           secretEnv: null,
           sessionMode,
           pinnedSessionId,
+          sessionKey,
+          filter,
         },
       };
     }
@@ -600,6 +694,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
         secretEnv: null,
         sessionMode,
         pinnedSessionId,
+          sessionKey,
+          filter,
       },
     };
   }
@@ -637,6 +733,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
       secretEnv,
       sessionMode,
       pinnedSessionId,
+          sessionKey,
+          filter,
     },
   };
 }

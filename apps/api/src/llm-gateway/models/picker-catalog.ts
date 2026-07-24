@@ -107,6 +107,7 @@ export function projectPickerCatalog<T>(
   const compact: Record<string, T> = {};
 
   for (const [model, entry] of Object.entries(fullCatalog)) {
+    if (model === 'auto' || model === 'kortix/auto') continue;
     const slash = model.indexOf('/');
     const managed = slash === -1;
     const provider = managed ? null : model.slice(0, slash);

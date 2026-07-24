@@ -89,8 +89,11 @@ meetWebhookApp.openapi(
       markRecapped(botId);
       void continueSession({ source: 'meet', sessionId, text: buildRecapPrompt(botId), userId: null })
         .then((outcome) => {
-          if (outcome === 'no-session' || outcome === 'failed') {
-            console.warn('[meet-webhook] recap', outcome, 'session', sessionId);
+          // Nobody retries a webhook fire — every non-delivered outcome
+          // (including 'pending', the silent runtime-never-ready drop) means
+          // the recap prompt is gone. Say so where alerting can see it.
+          if (outcome !== 'delivered') {
+            console.error('[meet-webhook] recap prompt not delivered', { outcome, sessionId });
           }
         })
         .catch((err) => console.error('[meet-webhook] recap failed', err));
@@ -138,8 +141,8 @@ function deliverTurn(args: { projectId: string; sessionId: string; botId: string
 
   void continueSession({ source: 'meet', sessionId, text: buildWakePrompt({ ...turn, botId }), userId: null })
     .then((outcome) => {
-      if (outcome === 'no-session' || outcome === 'failed') {
-        console.warn('[meet-webhook] delivery', outcome, 'session', sessionId);
+      if (outcome !== 'delivered') {
+        console.error('[meet-webhook] turn prompt not delivered', { outcome, sessionId });
       }
     })
     .catch((err) => console.error('[meet-webhook] deliver failed', err));

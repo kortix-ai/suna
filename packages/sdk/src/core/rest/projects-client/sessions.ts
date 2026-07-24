@@ -2,7 +2,7 @@
 
 import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
-import { unwrap, type ConnectorSharing } from './shared';
+import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -48,10 +48,27 @@ export interface ProjectSession {
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;
+  owner_name?: string | null;
+  owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
+  /** How the session was started — a policy class derived from the caller's
+   *  token kind, not the surface. A backend (PAT/service-account) create is
+   *  'backend'; a human web session is 'user'. See Kortix-as-a-Backend. */
+  origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
+  /** The wrapper's end-user this session acts for (backend origin only). */
+  origin_ref?: string | null;
+  /** The per-session secrets allowlist that was applied (identifiers); null = none. */
+  secrets_allowlist?: string[] | null;
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
   can_manage_sharing?: boolean;
+  /** Whether the current viewer may open/read this session. */
+  can_access?: boolean;
+  /** Exact lifecycle state of the backing runtime resource, when present. */
+  runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
+  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,8 +96,33 @@ export interface CreateProjectSessionInput {
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
   runtime_context?: SessionRuntimeContext;
-  /** Manager-authorized logical connector alias -> concrete connection profile. */
+  /** Logical connector alias -> active profile available to the caller: their
+   * own member profile, a project default, or an operator-managed profile when
+   * the caller holds the management capability. */
   connector_bindings?: SessionConnectorBindings;
+  /**
+   * When `connector_bindings` is set, binding any alias normally disables the
+   * project-default fallback for every OTHER (unbound) alias ("all-or-nothing").
+   * `inherit_unbound: true` keeps that fallback, so you can override just one
+   * connector (e.g. a user's own account) without re-binding the rest. Only ever
+   * inherits the project default — never another owner's profile.
+   */
+  inherit_unbound?: boolean;
+  /**
+   * Kortix-as-a-Backend (backend-origin callers only — a PAT / service-account
+   * bearer). The wrapper's opaque end-user this session acts for; recorded on the
+   * session and surfaced to the sandbox as KORTIX_ORIGIN_REF. A non-backend
+   * caller supplying it is rejected 403. Attribution only — pass the user's
+   * connectors via connector_bindings.
+   */
+  origin_ref?: string;
+  /**
+   * Kortix-as-a-Backend (backend-origin callers only). Narrow which project
+   * secrets (by identifier) this session's sandbox receives, from the agent's
+   * default set down to this list. `[]` = inject zero project secrets. Pure
+   * narrowing — can't widen beyond the agent's grant. Non-backend caller → 403.
+   */
+  secrets?: string[];
 }
 
 export interface ProjectOpenCodeSession {
@@ -93,8 +135,12 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
-export async function listProjectSessions(projectId: string) {
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`));
+export async function listProjectSessions(
+  projectId: string,
+  options?: { scope?: 'visible' | 'project' },
+) {
+  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
+  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
 /**

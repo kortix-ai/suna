@@ -5,6 +5,12 @@ export interface TunnelClientConfig {
   cacheTtlMs?: number;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 export class TunnelClientError extends Error {
   constructor(
     public readonly code: number,
@@ -30,7 +36,7 @@ export class TunnelClient {
   readonly cua: CuaNamespace;
 
   constructor(config: TunnelClientConfig) {
-    this.apiUrl = config.apiUrl.replace(/\/+$/, '');
+    this.apiUrl = trimTrailingSlashes(config.apiUrl);
     this.token = config.token;
     this.explicitTunnelId = config.tunnelId;
     this.cacheTtlMs = config.cacheTtlMs ?? 10_000;

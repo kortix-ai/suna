@@ -88,7 +88,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const effectiveDefault =
     modelDefaults.projectDefault ??
     modelDefaults.accountDefault ??
-    modelDefaults.platformDefault ??
+    (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
     null;
   // A role with the LLM section's READ leaf (project.read) but not project.write
   // sees the gateway read-only: logs/overview/spend stay visible, but the

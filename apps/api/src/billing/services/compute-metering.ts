@@ -33,10 +33,7 @@ import {
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { deductCredits } from './credits';
-import {
-  COMPUTE_PRICE_MARKUP,
-  isPerSeatAccount,
-} from './tiers';
+import { isPerSeatAccount } from './tiers';
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 
@@ -52,8 +49,8 @@ export interface StartComputeOpts {
 
 /**
  * Compute the cost (in USD, pre-balance-deduction) for a window.
- * Provider rate cards hold list cost plus any provider-specific discount; this
- * function applies the shared Kortix markup after selecting the owning provider.
+ * Hosted providers use one public customer rate. local-docker uses zero rates
+ * because it runs on operator-owned hardware.
  */
 export function calculateComputeCost(
   spec: SandboxSpec,
@@ -65,7 +62,7 @@ export function calculateComputeCost(
   const cpuCost = spec.cpuCores * rate.cpuPerCoreSecond * durationSeconds;
   const memCost = spec.memoryGb * rate.memoryPerGbSecond * durationSeconds;
   const diskCost = spec.diskGb * rate.diskPerGbSecond * durationSeconds;
-  return (cpuCost + memCost + diskCost) * rate.providerCostMultiplier * COMPUTE_PRICE_MARKUP;
+  return cpuCost + memCost + diskCost;
 }
 
 /**

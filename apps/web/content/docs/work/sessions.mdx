@@ -1,0 +1,67 @@
+---
+title: Sessions
+description: A session is a git branch and a sandbox where the agent works.
+---
+
+A session is one unit of agent work. Kortix cuts a git branch and provisions
+a sandbox for it. The session id, the branch name, and the sandbox id are the
+same value.
+
+## Status
+
+A session reaches one of 4 states in practice.
+
+| Status | Meaning |
+|---|---|
+| `provisioning` | Kortix cuts the branch and requests the sandbox. |
+| `running` | The sandbox is live and reachable. |
+| `stopped` | The session is paused, by you or by idle auto-stop. |
+| `failed` | Provisioning failed. |
+
+The database defines 3 more values (`queued`, `branching`, `completed`).
+Kortix does not write them for a session today.
+
+## Stop, resume, and idle auto-stop
+
+You can stop a session yourself. Resume brings back the same sandbox with the
+same filesystem: code, dependencies, and OpenCode state. Only the running
+processes and memory reset.
+
+Kortix also stops an idle session for you:
+
+- After 15 minutes idle, for a normal session.
+- After 5 minutes idle, for a session a trigger started.
+
+An open dashboard tab does not keep a session alive. A busy agent turn blocks
+the stop.
+
+## What stop and delete keep
+
+<Callout type="warn" title="Deletion is permanent">
+Deleting a session destroys its sandbox for good. Kortix keeps the session
+record and the git branch, so you can still recover pushed work. Anything not
+pushed is gone.
+</Callout>
+
+Stop and resume keep the sandbox's identity and filesystem. Delete destroys
+the sandbox. Git is the only durable record: work the agent commits and
+pushes survives; everything else does not.
+
+## Sharing a preview
+
+You can share a session's live preview with a public link, in view-only or
+interactive mode.
+
+## Providers
+
+Kortix runs sessions on Daytona, Platinum, or E2B Cloud. A project follows
+the platform default, or requests a provider switch through the SDK — see
+[SDK reference](/docs/sdk/reference). A switch to a different provider is
+durable: the current provider keeps serving while the target warms, then
+activates. Every provider runs the same sandbox image.
+
+For the full status enum, injected environment variables, and daemon
+endpoints, see [Runtime](/docs/work/runtime). For how a session picks its
+agent, see [Agents](/docs/project/agents). For sessions a schedule or webhook
+starts, see [Triggers](/docs/connect/triggers). To land session work on the
+default branch, see [Change requests](/docs/work/change-requests).

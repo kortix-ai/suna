@@ -10,10 +10,9 @@ import {
 } from './opencode-mapping';
 import type { ProjectSessionRow } from './lib/serializers';
 
-// Title-sync is best-effort enrichment that runs on every session list/read. It
-// fans out one sandbox round-trip per active sandbox (preview-link resolution +
-// an OpenCode `/session` fetch). Two hard rules keep it from taking down the
-// list endpoint or the shared sandbox provider:
+// Title-sync is best-effort enrichment for deferred post-prompt capture. It can
+// fan out one sandbox round-trip per active sandbox when an explicit maintenance
+// caller invokes the batch helper. Two hard rules protect the sandbox provider:
 //   1. BOUNDED concurrency — never fire N unbounded provider calls at once. A
 //      busy project can hold dozens of active sandboxes; an unbounded `Promise.all`
 //      burst-hammers the (org-shared) provider API and trips its rate limiter

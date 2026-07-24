@@ -9,6 +9,7 @@
  * works.) See docs/specs/executor.md §7.
  */
 import { createHmac, randomBytes } from 'node:crypto';
+import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import type { ActionBinding } from './types';
 
 export interface ExecutorAuth {
@@ -63,6 +64,53 @@ function applyAuth(
   const name = auth.name ?? 'Authorization';
   if (auth.in === 'query') query.set(name, value);
   else headers[name] = value;
+}
+
+/**
+ * The header name the connector's credential OWNS, or null when the credential
+ * doesn't land in a header (query placement, or no auth at all).
+ *
+ * Deliberately independent of whether a secret is actually resolved: the slot
+ * belongs to the credential either way, so a connector's outbound headers don't
+ * silently change shape depending on whether the credential happens to be set.
+ */
+function reservedAuthHeader(auth: ExecutorAuth): string | null {
+  if (auth.type === 'none') return null;
+  if (auth.type === 'custom') return auth.in === 'query' ? null : (auth.name ?? 'Authorization');
+  // bearer / basic / oauth1 all sign into Authorization.
+  return 'Authorization';
+}
+
+/**
+ * Merge a connector's static `headers` (kortix.yaml) into the outbound request.
+ *
+ * Call this BEFORE the credential is attached — the credential must win:
+ *   - any static header whose name matches the auth header (case-INsensitively,
+ *     since HTTP header names are case-insensitive) is DROPPED, so a static
+ *     header can neither spoof nor clobber the credential;
+ *   - anything that fails the shared validation (illegal name, CR/LF or other
+ *     control chars in the value, over-long, transport-owned) is dropped too —
+ *     the parser/CRUD layer already rejects those loudly, this is the
+ *     fail-safe backstop for a row that predates that validation.
+ * A static header REPLACES a same-named default/arg-derived header (matching
+ * case-insensitively, so the request can never carry two spellings of one
+ * header): what the author typed is what goes on the wire, Postman-style.
+ */
+export function applyConnectorHeaders(
+  headers: Record<string, string>,
+  staticHeaders: Record<string, string> | null | undefined,
+  auth: ExecutorAuth,
+): void {
+  const clean = sanitizeConnectorHeaders(staticHeaders);
+  const reserved = reservedAuthHeader(auth)?.toLowerCase() ?? null;
+  for (const [name, value] of Object.entries(clean)) {
+    const lower = name.toLowerCase();
+    if (reserved && lower === reserved) continue;
+    for (const existing of Object.keys(headers)) {
+      if (existing.toLowerCase() === lower) delete headers[existing];
+    }
+    headers[name] = value;
+  }
 }
 
 /* ─── OAuth 1.0a (RFC 5849) — HMAC-SHA1 request signing ─────────────────── */
@@ -196,6 +244,8 @@ function buildHttpRequest(opts: {
   method: string;
   pathTemplate: string;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
@@ -234,6 +284,8 @@ function buildHttpRequest(opts: {
   }
 
   const auth = opts.auth ?? NO_AUTH;
+  // Static headers first — the credential is attached after and always wins.
+  applyConnectorHeaders(headers, opts.headers, auth);
   if (auth.type === 'oauth1') {
     // Signed over method + URL + query (JSON bodies are excluded per RFC 5849
     // §3.4.1.3.1) — must run after the query is final, so not in applyAuth.
@@ -296,6 +348,8 @@ function setDefaultHeader(headers: Record<string, string>, name: string, value: 
 function buildPostmanRequest(opts: {
   binding: Extract<ActionBinding, { kind: 'postman' }>;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
 }): BuiltRequest {
@@ -305,6 +359,8 @@ function buildPostmanRequest(opts: {
     Object.entries(opts.binding.headers).map(([key, value]) => [key, renderPostmanTemplate(value, args, false)]),
   );
   const auth = opts.auth ?? NO_AUTH;
+  // Static headers override the collection's own headers, but never the auth one.
+  applyConnectorHeaders(headers, opts.headers, auth);
   if (auth.type === 'oauth1') {
     const creds = parseOauth1Secret(opts.secret ?? null);
     if (!creds) {
@@ -359,6 +415,8 @@ function buildGraphqlRequest(opts: {
   operation: 'query' | 'mutation';
   field: string;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
 }): BuiltRequest {
@@ -371,7 +429,9 @@ function buildGraphqlRequest(opts: {
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const search = new URLSearchParams();
-  applyAuth(headers, search, opts.auth ?? NO_AUTH, opts.secret ?? null);
+  const auth = opts.auth ?? NO_AUTH;
+  applyConnectorHeaders(headers, opts.headers, auth);
+  applyAuth(headers, search, auth, opts.secret ?? null);
   let url = opts.endpoint;
   const qs = search.toString();
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
@@ -382,6 +442,8 @@ function buildGraphqlRequest(opts: {
 function buildMcpRequest(opts: {
   url: string;
   auth?: ExecutorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   toolName: string;
   args?: Record<string, unknown>;
@@ -391,7 +453,9 @@ function buildMcpRequest(opts: {
     Accept: 'application/json, text/event-stream',
   };
   const query = new URLSearchParams();
-  applyAuth(headers, query, opts.auth ?? NO_AUTH, opts.secret ?? null);
+  const auth = opts.auth ?? NO_AUTH;
+  applyConnectorHeaders(headers, opts.headers, auth);
+  applyAuth(headers, query, auth, opts.secret ?? null);
   let url = opts.url;
   const qs = query.toString();
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
@@ -449,6 +513,12 @@ export async function executeCall(opts: {
   binding: ActionBinding;
   baseUrl?: string | null;
   auth?: ExecutorAuth;
+  /**
+   * The connector's static `headers:` table (kortix.yaml) — sent on every
+   * request this connector makes. Merged in BEFORE the credential, so the auth
+   * header always wins on a (case-insensitive) name collision.
+   */
+  headers?: Record<string, string> | null;
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
@@ -460,6 +530,7 @@ export async function executeCall(opts: {
     return performRequest(buildPostmanRequest({
       binding,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
     }), opts.fetchImpl);
@@ -473,6 +544,7 @@ export async function executeCall(opts: {
       method: binding.method,
       pathTemplate: binding.path,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
       paramHints: opts.paramHints,
@@ -487,6 +559,7 @@ export async function executeCall(opts: {
       method: binding.method,
       pathTemplate: binding.path,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
       paramHints: opts.paramHints,
@@ -499,6 +572,7 @@ export async function executeCall(opts: {
     const req = buildMcpRequest({
       url: opts.baseUrl,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       toolName: binding.tool,
       args: opts.args,
@@ -513,6 +587,7 @@ export async function executeCall(opts: {
       operation: binding.operation,
       field: binding.field,
       auth: opts.auth,
+      headers: opts.headers,
       secret: opts.secret,
       args: opts.args,
     });

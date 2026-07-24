@@ -60,9 +60,8 @@ export function useReviewSessionSummary(
     queryFn: () => listReviewItems(projectId),
     enabled,
     staleTime: 5_000,
-    // Slower than the open inbox's 8s poll — the sidebar only needs the count to
-    // feel live, not instant. When disabled the query never runs, so no poll.
-    refetchInterval: enabled ? 20_000 : false,
+    // Mutations invalidate this key. The background poll catches external work.
+    refetchInterval: enabled ? 60_000 : false,
     refetchOnWindowFocus: false,
     // `select` transforms per-observer without touching the shared cache entry, so
     // the Review Center view still reads the raw `{ review_items }` off the same key.

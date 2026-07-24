@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
+import { logger } from '../../lib/logger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
@@ -93,7 +94,17 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       return;
     }
     const message = (err as Error)?.message || 'Sandbox provisioning failed';
-    console.error(`[projects] Failed to allocate runtime for session ${input.sessionId}:`, err);
+    // This runs detached from any request (allocateSessionRuntime is
+    // fire-and-forget — restart/create already 202'd) — a structured error is
+    // the ONLY signal this session is now failed with no session_sandboxes row
+    // behind it, so every later proxy call will 404 'sandbox not found'.
+    logger.error('[projects] runtime allocation failed — session marked failed', {
+      session_id: input.sessionId,
+      project_id: input.projectId,
+      account_id: input.accountId,
+      provider: input.providerName,
+      error: message,
+    });
     try {
       await db
         .update(projectSessions)

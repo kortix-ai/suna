@@ -37,6 +37,12 @@ let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let manifestReadCalls = 0;
+let modelDefaults: {
+  account: string | null;
+  agents: Record<string, string>;
+  projects: Record<string, string>;
+};
 
 function setTestAuth(userId = USER_ID, userEmail = 'triggers@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -50,6 +56,7 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   name: 'Trigger Project',
+  sandboxProviderGeneration: 0,
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
@@ -74,6 +81,9 @@ function resetState() {
   activeSessionCount = 0;
   provisioningSessionCount = 0;
   secretRows = [];
+  manifestReadCalls = 0;
+  modelDefaults = { account: null, agents: {}, projects: {} };
+  projectRow.metadata = {};
   secretValues.clear();
 }
 
@@ -116,6 +126,7 @@ mock.module('../projects/git', () => ({
     return content;
   },
   readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
+    manifestReadCalls += 1;
     for (const path of candidatePaths) {
       const content = repoFiles.get(path);
       if (content !== undefined) return { path, content };
@@ -160,6 +171,12 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
@@ -209,6 +226,8 @@ mock.module('../projects/github', () => ({
     description: null,
   }),
   getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
+  verifyGitHubInstallationAdmin: async () => undefined,
+  listLinkableGitHubAppInstallations: async () => [],
   listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
@@ -369,6 +388,10 @@ const triggerDbMock: any = {
               error: null,
               createdBy: values.createdBy ?? null,
               visibility: values.visibility ?? 'private',
+              origin: values.origin ?? 'user',
+              originRef: values.originRef ?? null,
+              secretsAllowlist: values.secretsAllowlist ?? null,
+              connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
@@ -498,6 +521,12 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+const realModelPreferences = await import('../repositories/model-preferences');
+mock.module('../repositories/model-preferences', () => ({
+  ...realModelPreferences,
+  getAccountModelDefaults: async () => modelDefaults,
+}));
+
 const {
   drainSessionLifecycleQueue,
   projectsApp,
@@ -600,7 +629,7 @@ describe('git-backed triggers — CRUD', () => {
 
     // Manifest content reflects the new trigger as a `triggers:` entry.
     const written = repoFiles.get(MANIFEST_PATH)!;
-    expect(written).toContain('kortix_version: 1');
+    expect(written).toContain('kortix_version: 2');
     expect(written).toContain('triggers:');
     expect(written).toContain('slug: daily-digest');
     expect(written).toContain('name: Daily Digest');
@@ -889,7 +918,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       slug: 'daily',
       name: 'Daily',
       cron: '* * * * * *',
-      model: 'anthropic/claude-sonnet-4-6',
+      model: 'glm-5.2',
       prompt: 'Run at {{ fired_at }}',
     }));
 
@@ -904,10 +933,12 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
   });
 
-  test('manual fire without a model leaves the default resolution chain untouched', async () => {
+  test('manual fire without overrides resolves the project model and selected agent before provisioning', async () => {
+    modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
+    projectRow.metadata = { default_agent: 'asana-refresher' };
     seedManifest(cronEntry({
       slug: 'daily',
       name: 'Daily',
@@ -925,7 +956,13 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
+    expect(lastProvisionEnv?.KORTIX_AGENT_NAME).toBe('asana-refresher');
+    expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
+    expect(sessionRows.at(-1)?.metadata).toMatchObject({
+      opencode_model: 'kortix/glm-5.2',
+      opencode_model_source: 'project',
+    });
   });
 
   test('manual fire queues durably under backpressure', async () => {
@@ -1012,6 +1049,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(missing.status).toBe(401);
+    expect(manifestReadCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
 
     const wrong = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
@@ -1023,6 +1061,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(wrong.status).toBe(401);
+    expect(manifestReadCalls).toBe(1);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {

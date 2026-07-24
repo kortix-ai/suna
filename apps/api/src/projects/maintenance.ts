@@ -1,5 +1,5 @@
 import { projectSessions, projects } from '@kortix/db';
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
@@ -11,6 +11,7 @@ import {
   reapOrphanProviderBoxes,
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
+  reconcileUndeliveredPrompts,
 } from './sandbox-reaper';
 
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -127,8 +128,25 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
         inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
         ne(projectSessions.branchName, projects.defaultBranch),
+        // Exclude the two NEVER-deletable classes at the query so they can't
+        // occupy batch slots forever and starve deletable rows: a skipped row
+        // never gets a db.update, so its updatedAt stays < cutoff and it
+        // re-matches every sweep. (1) already-GC'd. (2) open-PR — mirrors
+        // hasOpenPullRequestMarker. The in-loop guards below stay as
+        // defense-in-depth for a marker written AFTER selection.
+        sql`(${projectSessions.metadata}->'branch_gc'->>'deleted_at') IS NULL`,
+        sql`NOT (
+          COALESCE(${projectSessions.metadata}->>'open_pr', 'false') = 'true'
+          OR COALESCE(${projectSessions.metadata}->>'has_open_pr', 'false') = 'true'
+          OR lower(COALESCE(${projectSessions.metadata}->'pull_request'->>'state', '')) = 'open'
+          OR lower(COALESCE(${projectSessions.metadata}->'github_pull_request'->>'state', '')) = 'open'
+          OR lower(COALESCE(${projectSessions.metadata}->'pr'->>'state', '')) = 'open'
+        )`,
       ),
     )
+    // Oldest deletable rows first — deterministic drain so the planner's scan
+    // order can't crowd them out of the batch.
+    .orderBy(asc(projectSessions.updatedAt))
     .limit(GC_BATCH_SIZE);
 
   let deleted = 0;
@@ -208,6 +226,7 @@ export async function runProjectMaintenance(): Promise<void> {
       idle,
       orphanCompute,
       stuckSessions,
+      undeliveredPrompts,
       orphanBoxes,
       branches,
       computeTick,
@@ -250,6 +269,16 @@ export async function runProjectMaintenance(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
         return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
+      }),
+      // Prompt-delivery backstop: execute queued session_lifecycle_commands the
+      // scheduler drain should have taken minutes ago (leader dead / scheduler
+      // disabled) — the other half of "queued — agent picking up" forever.
+      reconcileUndeliveredPrompts().catch((err) => {
+        console.warn(
+          '[project-maintenance] undelivered-prompt reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
@@ -307,6 +336,7 @@ export async function runProjectMaintenance(): Promise<void> {
         orphanCompute.errors ||
         stuckSessions.reconciled ||
         stuckSessions.errors ||
+        undeliveredPrompts.claimed ||
         orphanBoxes.stopped ||
         orphanBoxes.errors ||
         branches.deleted ||
@@ -321,6 +351,7 @@ export async function runProjectMaintenance(): Promise<void> {
         idle,
         orphanCompute,
         stuckSessions,
+        undeliveredPrompts,
         orphanBoxes,
         branches,
         computeTick,

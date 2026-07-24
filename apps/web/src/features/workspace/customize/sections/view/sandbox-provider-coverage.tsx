@@ -37,13 +37,13 @@ export function describeProviderCoverage(status: ProviderCoverageStatus): {
 } {
   switch (status) {
     case 'ready':
-      return { label: 'Latest', tone: 'ok' };
+      return { label: 'Ready', tone: 'ok' };
     case 'building':
       return { label: 'Building', tone: 'busy' };
     case 'failed':
       return { label: 'Failed', tone: 'fail' };
     case 'not_built':
-      return { label: 'Current image not built', tone: 'idle' };
+      return { label: 'Not ready', tone: 'idle' };
     case 'unavailable':
       return { label: 'Unavailable', tone: 'idle' };
     case 'unknown':
@@ -77,8 +77,6 @@ export function SandboxTemplateProviderCoverage({
   selectedProvider: SandboxProvider | null;
   formatObservedAt?: (observedAt: string) => string;
 }) {
-  if (providerMode !== 'pinned') return null;
-
   const availableCoverage = availableProviderCoverage(coverage);
   if (availableCoverage.length === 0) return null;
 
@@ -90,11 +88,11 @@ export function SandboxTemplateProviderCoverage({
 
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground text-xs">Provider images</span>
+      <span className="text-muted-foreground text-xs">Session runtime</span>
       {availableCoverage.map((item) => {
         const state = describeProviderCoverage(item.status);
         const provider = sandboxProviderLabel(item.provider);
-        const selected = item.provider === selectedProvider;
+        const selected = providerMode === 'pinned' && item.provider === selectedProvider;
 
         return (
           <Badge

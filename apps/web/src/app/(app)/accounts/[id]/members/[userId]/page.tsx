@@ -1,7 +1,17 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, Eye, FolderOpen, Users, X } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  Eye,
+  FolderOpen,
+  MoreHorizontal,
+  Shield,
+  ShieldOff,
+  Users,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -10,6 +20,13 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
@@ -104,9 +121,10 @@ export default function MemberDetailPage() {
     () => (membersQuery.data ?? []).find((m) => m.user_id === memberUserId),
     [membersQuery.data, memberUserId],
   );
-  // canPromoteSuperAdmin gates the bypass toggle below.
+  // canPromoteSuperAdmin gates the Grant/Revoke super-admin menu items below —
+  // it's the caller's own member.super_admin.grant permission, the same
+  // action the PATCH .../super-admin route asserts server-side.
   const canPromoteSuperAdmin = usePermission(accountId, 'member.super_admin.grant').allowed;
-  void canPromoteSuperAdmin;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -114,9 +132,9 @@ export default function MemberDetailPage() {
 
   const account = accountQuery.data;
 
-  // Note: we don't currently surface is_super_admin in listAccountMembers, so
-  // we can't show a pre-existing on/off state. Wire the column once the
-  // members endpoint includes it.
+  // listAccountMembers's AccountMember.is_super_admin is what decides Grant
+  // vs Revoke below — it's a required field on the wire (AccountMemberSchema),
+  // so `member` always carries the real current state, no extra fetch needed.
 
   const memberLabel = member?.email ?? memberUserId ?? 'Member';
 
@@ -131,25 +149,70 @@ export default function MemberDetailPage() {
           {account?.name ?? 'Account'}
         </Link>
 
-        <div className="flex min-w-0 items-center gap-3.5">
-          {membersQuery.isLoading ? (
-            <Skeleton className="size-10 rounded-full" />
-          ) : (
-            <UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />
-          )}
-          <div className="min-w-0 space-y-0.5">
+        <div className="flex min-w-0 items-center justify-between gap-3.5">
+          <div className="flex min-w-0 items-center gap-3.5">
             {membersQuery.isLoading ? (
-              <Skeleton className="h-6 w-52" />
+              <Skeleton className="size-10 rounded-full" />
             ) : (
-              <h2 className="text-foreground truncate text-xl font-medium">{memberLabel}</h2>
+              <UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />
             )}
-            {member ? (
-              <InlineMeta className="text-sm">
-                <span>{ROLE_LABEL[member.account_role] ?? member.account_role}</span>
-                <span>Joined {formatDate(member.joined_at)}</span>
-              </InlineMeta>
-            ) : null}
+            <div className="min-w-0 space-y-0.5">
+              {membersQuery.isLoading ? (
+                <Skeleton className="h-6 w-52" />
+              ) : (
+                <h2 className="text-foreground truncate text-xl font-medium">{memberLabel}</h2>
+              )}
+              {member ? (
+                <InlineMeta className="text-sm">
+                  <span>{ROLE_LABEL[member.account_role] ?? member.account_role}</span>
+                  <span>Joined {formatDate(member.joined_at)}</span>
+                </InlineMeta>
+              ) : null}
+            </div>
           </div>
+
+          {account && member ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground size-7 shrink-0"
+                  aria-label={`Actions for ${memberLabel}`}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onSelect={() => setViewAsOpen(true)} className="gap-2">
+                  <Eye className="size-3.5" />
+                  View as this member
+                </DropdownMenuItem>
+                {canPromoteSuperAdmin ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    {member.is_super_admin ? (
+                      <DropdownMenuItem
+                        onSelect={() => setRevokeConfirmOpen(true)}
+                        className="gap-2"
+                      >
+                        <ShieldOff className="size-3.5" />
+                        Revoke super-admin
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onSelect={() => setGrantConfirmOpen(true)}
+                        className="gap-2"
+                      >
+                        <Shield className="size-3.5" />
+                        Grant super-admin
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </div>
 
@@ -196,8 +259,8 @@ export default function MemberDetailPage() {
         title="Grant super-admin"
         description={
           <span>
-            Super-admin bypasses every permission check. <strong>{memberLabel}</strong> will be
-            able to do anything in this account.
+            Super-admin bypasses every permission check. <strong>{memberLabel}</strong> will be able
+            to do anything in this account.
           </span>
         }
         confirmLabel="Grant super-admin"
@@ -382,9 +445,7 @@ function MemberGroupsCard({
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <Label>
-          Groups{memberGroups.length > 0 ? ` · ${memberGroups.length}` : ''}
-        </Label>
+        <Label>Groups{memberGroups.length > 0 ? ` · ${memberGroups.length}` : ''}</Label>
         <p className="text-muted-foreground text-xs">
           Any policy attached to one of these groups also applies to this member.
         </p>

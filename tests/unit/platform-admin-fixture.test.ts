@@ -22,6 +22,7 @@ function env(overrides: Partial<Env> = {}): Env {
     capabilities: {
       daytona: false,
       managedGit: false,
+      managedGitPush: false,
       stripe: false,
       supabaseAdmin: false,
       database: true,

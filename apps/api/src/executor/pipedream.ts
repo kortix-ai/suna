@@ -11,10 +11,10 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
-import { upsertCredential } from './credentials';
-import type { PipedreamActionLike } from './types';
+import { upsertCredential, upsertProfileCredential } from './credentials';
 import type { ExecResult } from './execute';
 import { isPipedreamOAuthApp } from './pipedream-catalog';
+import type { PipedreamActionLike } from './types';
 
 export { isPipedreamOAuthApp } from './pipedream-catalog';
 
@@ -286,6 +286,32 @@ export async function finalizePipedreamConnection(opts: {
   const match = accounts.find((a) => a.app === opts.app) ?? accounts[0];
   if (!match) return { connected: false };
   await upsertCredential({ projectId: opts.projectId, connectorId: opts.connectorId, userId: opts.userId, value: match.id, kind: 'connection' });
+  return { connected: true, accountId: match.id };
+}
+
+/** Finalize a session-selectable profile using the exact external-user
+ * identity minted by the profile connect route. */
+export async function finalizePipedreamProfileConnection(opts: {
+  projectId: string;
+  slug: string;
+  app: string;
+  connectorId: string;
+  profileId: string;
+  createdBy: string | null;
+}): Promise<{ connected: boolean; accountId?: string }> {
+  const accounts = await getProvider().listAccounts(
+    externalUserId(opts.projectId, opts.slug, opts.profileId),
+  );
+  const match = accounts.find((account) => account.app === opts.app) ?? accounts[0];
+  if (!match) return { connected: false };
+  await upsertProfileCredential({
+    projectId: opts.projectId,
+    connectorId: opts.connectorId,
+    profileId: opts.profileId,
+    value: match.id,
+    kind: 'connection',
+    createdBy: opts.createdBy,
+  });
   return { connected: true, accountId: match.id };
 }
 

@@ -28,6 +28,21 @@ import { isLikelyBinary, mimeTypeFor } from '../file-mime'
 
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
 
+async function readFileSnapshot(filePath: string): Promise<{ data: Buffer; size: number }> {
+  const handle = await fs.open(filePath, 'r')
+  try {
+    const stat = await handle.stat()
+    if (stat.isDirectory()) {
+      const error = new Error('Path is a directory') as NodeJS.ErrnoException
+      error.code = 'EISDIR'
+      throw error
+    }
+    return { data: await handle.readFile(), size: stat.size }
+  } finally {
+    await handle.close()
+  }
+}
+
 /**
  * Which of `absPaths` are git-ignored. Uses `git check-ignore -z --stdin` (NUL
  * I/O so paths with spaces/newlines are safe). Returns an empty set when the
@@ -202,14 +217,13 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
-
-    let data: Buffer
+    let snapshot: { data: Buffer; size: number }
     try {
-      data = await fs.readFile(resolved)
+      snapshot = await readFileSnapshot(resolved)
     } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+      if (code === 'EISDIR') return c.json({ error: 'Path is a directory' }, 400)
       logger.warn('[files] raw read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
@@ -217,11 +231,11 @@ export function createFilesRouter(cfg: Config): Hono {
     // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
     // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
     // for the SPA shell and reject it.
-    return new Response(data, {
+    return new Response(snapshot.data, {
       status: 200,
       headers: {
         'Content-Type': mimeTypeFor(resolved, true),
-        'Content-Length': String(stat.size),
+        'Content-Length': String(snapshot.size),
         'Cache-Control': 'no-store',
       },
     })
@@ -245,33 +259,32 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
-
-    let data: Buffer
+    let snapshot: { data: Buffer; size: number }
     try {
-      data = await fs.readFile(resolved)
+      snapshot = await readFileSnapshot(resolved)
     } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+      if (code === 'EISDIR') return c.json({ error: 'Path is a directory' }, 400)
       logger.warn('[files] content read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
 
-    const binary = isLikelyBinary(data, resolved)
+    const binary = isLikelyBinary(snapshot.data, resolved)
     if (binary) {
       return c.json({
         type: 'binary',
-        content: data.toString('base64'),
+        content: snapshot.data.toString('base64'),
         encoding: 'base64',
         mimeType: mimeTypeFor(resolved, true),
-        size: stat.size,
+        size: snapshot.size,
       })
     }
     return c.json({
       type: 'text',
-      content: data.toString('utf8'),
+      content: snapshot.data.toString('utf8'),
       mimeType: mimeTypeFor(resolved, false),
-      size: stat.size,
+      size: snapshot.size,
     })
   })
 

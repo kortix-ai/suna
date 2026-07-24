@@ -18,7 +18,6 @@ describe('MINIMAL_FALLBACK_MODELS capability metadata', () => {
   // (managed models -> 'kortix', BYOK entries -> their real provider id), the
   // same field the served /v1/models catalog carries (catalog-models.ts).
   test('every fallback model carries an explicit `provider` field matching its wire id', () => {
-    expect(MINIMAL_FALLBACK_MODELS.auto?.provider).toBe('kortix')
     expect(MINIMAL_FALLBACK_MODELS['claude-opus-4.8']?.provider).toBe('kortix')
     expect(MINIMAL_FALLBACK_MODELS['glm-5.2']?.provider).toBe('kortix')
     expect(MINIMAL_FALLBACK_MODELS['openai/gpt-5.5']?.provider).toBe('openai')

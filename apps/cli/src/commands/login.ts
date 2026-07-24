@@ -16,9 +16,10 @@ import {
   setActiveAccount,
   validateHostName,
 } from '../api/config.ts';
-import type { MeResponse } from '../api/types.ts';
+import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
+import { selectFromList } from '../tui-select.ts';
 import { webDashboardUrl } from '../web-url.ts';
 
 const HELP = help`Usage: kortix login [options]
@@ -26,6 +27,9 @@ const HELP = help`Usage: kortix login [options]
 Authenticate the CLI against the Kortix cloud. Browser opens to the
 dashboard, one click authorizes this CLI, the token is sent back to a
 local callback — no copy/paste.
+
+Shortcut for the active host — same as \`kortix hosts login\`. Use
+\`kortix hosts login <name>\` to sign in to a different instance.
 
 Options:
   --host <name>     Save under a specific named host (default: active or
@@ -35,19 +39,25 @@ Options:
                     host URL or ${DEFAULT_API_BASE}).
   --token <pat>     Skip the browser flow and authenticate directly
                     with a token. Useful for CI or headless boxes.
+  --account <slug>  Pick the active account non-interactively (skips the
+                    post-login "Select your active account" prompt).
   --no-project      Skip the default-project binding step at the end.
   -h, --help        Show this help.
+
+A fresh login walks the hierarchy DOWN: host ✓ → account (auto when you
+belong to one, otherwise a prompt) → default project (prompt).
 
 Examples:
   kortix login
   kortix login --host local --api http://localhost:8008
-  kortix login --token kortix_pat_...
+  kortix login --token kortix_pat_... --account acme
 `;
 
 interface LoginFlags {
   token?: string;
   api?: string;
   host?: string;
+  account?: string;
   noProject: boolean;
   help: boolean;
 }
@@ -73,6 +83,11 @@ function parseFlags(argv: string[]): LoginFlags {
       if (!next) throw new Error('--host requires a value');
       f.host = next;
       i += 1;
+    } else if (a === '--account') {
+      const next = argv[i + 1];
+      if (!next) throw new Error('--account requires a value');
+      f.account = next;
+      i += 1;
     } else {
       throw new Error(`unknown option "${a}"`);
     }
@@ -93,8 +108,42 @@ export async function runLogin(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // Resolve which host we're logging into.
+  // Resolve which host we're logging into (top-level `login` selects it via
+  // `--host`; the active host is the default). The `hosts login <name>`
+  // subcommand resolves the target the same way and calls `performLogin`.
   const hostName = flags.host ?? activeHostName() ?? DEFAULT_HOST_NAME;
+  return performLogin({
+    hostName,
+    token: flags.token,
+    api: flags.api,
+    account: flags.account,
+    noProject: flags.noProject,
+  });
+}
+
+export interface PerformLoginOptions {
+  /** The host name to authenticate (already resolved by the caller). */
+  hostName: string;
+  /** Skip the browser flow and authenticate directly with this PAT. */
+  token?: string;
+  /** API base URL override for the host. */
+  api?: string;
+  /** Pick the active account non-interactively (slug or id). */
+  account?: string;
+  /** Skip the default-project binding step at the end. */
+  noProject: boolean;
+}
+
+/**
+ * Shared login implementation used by both the top-level `kortix login`
+ * alias and the `kortix hosts login` subcommand. The caller resolves the
+ * target host name; everything else — API base resolution, the already
+ * logged-in short-circuit, the browser/PAT flow, token verification,
+ * persistence, and the default-project binding — lives here so the two
+ * entry points can never drift.
+ */
+export async function performLogin(opts: PerformLoginOptions): Promise<number> {
+  const { hostName } = opts;
   try {
     validateHostName(hostName);
   } catch (err) {
@@ -105,11 +154,11 @@ export async function runLogin(argv: string[]): Promise<number> {
   // Pick the API base URL with this priority:
   //   --api flag → existing host's URL → KORTIX_API_URL env → default
   const existing = getHost(hostName);
-  const apiBase = flags.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+  const apiBase = opts.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
 
   // If this host already has a working token + caller didn't pass
   // --token or --api, treat that as a no-op login.
-  if (existing?.token && !flags.token && !flags.api) {
+  if (existing?.token && !opts.token && !opts.api) {
     process.stdout.write(
       `${status.info(`Already logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${existing.user_email || existing.user_id}${C.reset}`)}\n`,
     );
@@ -119,7 +168,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const token = flags.token ?? (await browserLogin(apiBase, existing?.dashboard_url));
+  const token = opts.token ?? (await browserLogin(apiBase, existing?.dashboard_url));
   if (!token) return 1;
 
   if (!token.startsWith('kortix_pat_')) {
@@ -143,7 +192,9 @@ export async function runLogin(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const primary = me.accounts[0];
+  // Persist the verified token immediately so the host is authenticated even
+  // if the account/project selection below is interrupted (Ctrl+C on the
+  // prompt still leaves you signed in).
   saveAuthForHost(
     hostName,
     {
@@ -151,30 +202,35 @@ export async function runLogin(argv: string[]): Promise<number> {
       token,
       user_id: me.user_id,
       user_email: me.email,
-      account_id: primary?.account_id ?? '',
+      account_id: '',
       logged_in_at: new Date().toISOString(),
     },
     /* makeActive */ true,
   );
-  // Persist the active account's display fields (and reconcile any default
-  // project) so the context block + `accounts ls` read correctly offline.
-  if (primary) {
-    setActiveAccount({ id: primary.account_id, slug: primary.slug, name: primary.name }, hostName);
-  }
 
   process.stdout.write(
     `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`,
   );
-  if (primary) {
+
+  // The account step of the funnel: exactly one → auto-select; several →
+  // prompt (or honor --account). Persist the active account's display fields
+  // (and reconcile any default project) so the context block + `accounts ls`
+  // read correctly offline.
+  const selected = await resolveLoginAccount(me.accounts, opts.account);
+  if (selected) {
+    setActiveAccount(
+      { id: selected.account_id, slug: selected.slug, name: selected.name },
+      hostName,
+    );
     process.stdout.write(
-      `${C.dim}  Active account: ${C.reset}${primary.name} ${C.faded}(${primary.slug})${C.reset}\n`,
+      `${C.dim}  Active account: ${C.reset}${selected.name} ${C.faded}(${selected.slug})${C.reset}\n`,
     );
   }
   process.stdout.write(`${C.dim}  Stored at ${authFileLocation()}${C.reset}\n`);
 
   // The always-bound invariant: a fresh login ends with a global default
   // project so every later command Just Works from any directory.
-  if (!flags.noProject) {
+  if (!opts.noProject) {
     const saved = loadAuthForHost(hostName);
     if (saved?.token) {
       process.stdout.write('\n');
@@ -184,6 +240,57 @@ export async function runLogin(argv: string[]): Promise<number> {
     }
   }
   return 0;
+}
+
+/**
+ * The account step of the login funnel. One login can belong to many
+ * accounts, but exactly one is active. Resolution:
+ *   - zero accounts        → null (nothing to select)
+ *   - `--account <slug>`   → match by slug/id; unknown value warns + falls
+ *                            back to the first account (login still succeeds)
+ *   - exactly one          → auto-select it (no prompt)
+ *   - several + TTY        → interactive "Select your active account" prompt
+ *                            (Ctrl+C/Esc falls back to the first account)
+ *   - several + non-TTY    → first account, with a hint to switch later
+ * Never throws and always leaves the login with an active account when the
+ * user belongs to any, matching the historical always-pick-one behavior.
+ */
+async function resolveLoginAccount(
+  accounts: AccountMembership[],
+  accountFlag: string | undefined,
+): Promise<AccountMembership | null> {
+  if (accounts.length === 0) return null;
+
+  if (accountFlag) {
+    const found = accounts.find((a) => a.slug === accountFlag || a.account_id === accountFlag);
+    if (found) return found;
+    const known = accounts.map((a) => a.slug).join(', ');
+    process.stderr.write(
+      `${status.warn(`No account "${accountFlag}" on this host — known: ${known}. Using ${accounts[0]!.name}.`)}\n`,
+    );
+    return accounts[0]!;
+  }
+
+  if (accounts.length === 1) return accounts[0]!;
+
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  if (!interactive) {
+    process.stdout.write(
+      `${C.dim}  ${accounts.length} accounts — kept ${accounts[0]!.name}. Switch with ${C.reset}${C.cyan}kortix accounts use <slug>${C.reset}${C.dim} (or pass \`--account\`).${C.reset}\n`,
+    );
+    return accounts[0]!;
+  }
+
+  const picked = await selectFromList<AccountMembership>({
+    title: 'Select your active account',
+    items: accounts.map((a) => ({
+      value: a,
+      label: a.name,
+      sublabel: `${a.slug} · ${a.role}`,
+    })),
+    initialIndex: 0,
+  });
+  return picked ?? accounts[0]!;
 }
 
 /**

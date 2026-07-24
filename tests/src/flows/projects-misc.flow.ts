@@ -390,16 +390,16 @@ flow(
 
 // PROJ-27 — model-defaults CRUD. GET reads the platform/account/project/agent
 // defaults; PUT upserts one scope (agent requires agentName); DELETE clears
-// one scope by query. Entitlement is NOT enforced here (the gateway rejects
-// an unavailable model at request time) — the handler only sanity-checks the
-// wire form: a `provider/model` string always passes (isStorableModel), the
-// synthetic `auto` id never does. Full set → read-back → clear lifecycle on
-// scope=project.
+// one scope by query. PUT rejects models that the account cannot serve. The
+// flow reads the current project picker and selects a managed model from that
+// served catalog. Full set → read-back → clear lifecycle on scope=project.
 flow(
   "PROJ-27",
   {
     domain: "projects",
+    requires: ["funded"],
     routes: [
+      "GET /v1/projects/:projectId/model-picker",
       "GET /v1/projects/:projectId/model-defaults",
       "PUT /v1/projects/:projectId/model-defaults",
       "DELETE /v1/projects/:projectId/model-defaults",
@@ -407,29 +407,45 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
+    let servableModel = "";
     await ctx.step("GET before any override → 200 with no project default", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
       r.status(200).body().exists("$.platformDefault").has("$.projectDefault", null);
     });
+    await ctx.step("GET model picker → select a served managed model", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/model-picker", { params: { projectId: p.id } });
+      r.status(200);
+      const models = r.json<any>()?.models;
+      const candidate =
+        models && typeof models === "object"
+          ? Object.keys(models).find((model) => model !== "auto" && !model.includes("/"))
+          : undefined;
+      if (!candidate) {
+        throw new Error(`model-picker returned no managed model: ${r.text()}`);
+      }
+      servableModel = candidate;
+    });
     await ctx.step("PUT scope=project sets a concrete model → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
           "/v1/projects/:projectId/model-defaults",
-          { scope: "project", model: "openai/gpt-5.5" },
+          { scope: "project", model: servableModel },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.ok", true).has("$.scope", "project").has("$.model", "openai/gpt-5.5");
+      r.status(200).body().has("$.ok", true).has("$.scope", "project").has("$.model", servableModel);
     });
     await ctx.step("GET reflects the set project default", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
-      r.status(200).body().has("$.projectDefault", "openai/gpt-5.5").has("$.resolvedForCaller", "openai/gpt-5.5");
+      r.status(200).body().has("$.projectDefault", servableModel).has("$.resolvedForCaller", servableModel);
     });
-    await ctx.step("PUT with the synthetic auto id → 400 (not a settable model)", async () => {
+    await ctx.step("PUT with the synthetic auto id → 409 (not servable)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
@@ -437,14 +453,14 @@ flow(
           { scope: "project", model: "auto" },
           { params: { projectId: p.id } },
         );
-      r.status(400);
+      r.status(409).body().has("$.code", "model_not_servable");
     });
     await ctx.step("PUT scope=agent without agentName → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
           "/v1/projects/:projectId/model-defaults",
-          { scope: "agent", model: "openai/gpt-5.5" },
+          { scope: "agent", model: servableModel },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -574,7 +590,11 @@ flow(
 // safe, real no-op write (still commits to git) that proves the success path.
 flow(
   "PROJ-30",
-  { domain: "projects", routes: ["PUT /v1/projects/:projectId/default-agent"] },
+  {
+    domain: "projects",
+    timeoutMs: 240_000,
+    routes: ["PUT /v1/projects/:projectId/default-agent"],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project({ seed: true });
     await ctx.step("set default agent to the existing 'kortix' agent → 200", async () => {
@@ -630,17 +650,27 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step("pin to the enabled 'daytona' provider → 200", async () => {
+    await ctx.step("pin to the enabled 'daytona' provider → 200 discriminated result", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
-      r.status(200).body().has("$.default_sandbox_provider", "daytona");
+      r.status(200);
+      const body = r.json<any>();
+      if (body?.kind === "project") {
+        r.body().has("$.default_sandbox_provider", "daytona");
+      } else {
+        r.body()
+          .has("$.kind", "preparation")
+          .has("$.project_id", p.id)
+          .has("$.target_provider", "daytona")
+          .has("$.immediate", false);
+      }
     });
-    await ctx.step("clear the pin (null) → 200", async () => {
+    await ctx.step("clear the pin (null) → 200 (immediate, kind:project)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch("/v1/projects/:projectId/sandbox-provider", { provider: null }, { params: { projectId: p.id } });
-      r.status(200);
+      r.status(200).body().has("$.kind", "project");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -696,6 +726,73 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// PROJ-33 — the sandbox-provider migration poll endpoint. The PATCH prepare
+// branch (switch to a non-default enabled provider) returns a kind:'preparation'
+// body but does NOT flip the active provider; the client polls THIS route until
+// the durable transition reaches a terminal status. Project-read-scoped (rejects
+// cross-project/non-member) and shaped as a PUBLIC projection — it must NEVER
+// leak the lease epoch/holder, raw provider error strings, internal image names,
+// or provider template ids. A fresh project with no transition returns
+// active_provider=null + latest=null (still 200), which is the case exercised
+// here without provisioning a real cross-provider build.
+flow(
+  "PROJ-33",
+  { domain: "projects", routes: ["GET /v1/projects/:projectId/sandbox-provider/transition"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const INTERNAL_LEAK_KEYS = [
+      "lease_epoch",
+      "lease_holder",
+      "last_error",
+      "snapshot_name",
+      "external_template_id",
+      "attempts",
+    ];
+    const assertNoLeak = (item: unknown) => {
+      if (item && typeof item === "object") {
+        for (const k of INTERNAL_LEAK_KEYS) {
+          if (k in (item as Record<string, unknown>)) {
+            throw new Error(`transition view leaked internal field '${k}'`);
+          }
+        }
+      }
+    };
+    await ctx.step("OWNER reads the public transition state → 200 public shape", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
+      r.status(200)
+        .body()
+        .has("$.active_provider", null)
+        .has("$.latest", null)
+        .exists("$.history");
+      const body = r.json<{ latest: unknown; history: unknown[] }>();
+      assertNoLeak(body.latest);
+      if (Array.isArray(body.history)) body.history.forEach(assertNoLeak);
+    });
+    await ctx.step("unknown project → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", {
+          params: { projectId: "00000000-0000-4000-a000-000000000000" },
+        });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403/404 (cross-project rejection)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
       r.status(401);
     });
   },

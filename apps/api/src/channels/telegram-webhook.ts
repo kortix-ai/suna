@@ -125,6 +125,7 @@ async function spawnAgentTurn(
     source: 'telegram',
     project,
     userId,
+    requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
       agent_name: 'default',

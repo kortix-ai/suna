@@ -5,7 +5,7 @@
  * even though the server already validates permissions.
  */
 
-import { readFile, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
+import { open, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import type { Capability, RpcHandler } from './index';
 import { validatePath, validateWritePath } from '../security/path-validator';
@@ -55,20 +55,23 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
 
     validatePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
-    const stats = await stat(path);
-    const scope = permissionFilesystemScope(params);
-    const maxFileSize = Math.min(config.maxFileSize, typeof scope.maxFileSize === 'number' ? scope.maxFileSize : config.maxFileSize);
-    if (stats.size > maxFileSize) {
-      throw new Error(`File exceeds max size (${stats.size} > ${maxFileSize})`);
+    const handle = await open(path, 'r');
+    try {
+      const stats = await handle.stat();
+      const scope = permissionFilesystemScope(params);
+      const maxFileSize = Math.min(config.maxFileSize, typeof scope.maxFileSize === 'number' ? scope.maxFileSize : config.maxFileSize);
+      if (stats.size > maxFileSize) {
+        throw new Error(`File exceeds max size (${stats.size} > ${maxFileSize})`);
+      }
+      const content = await handle.readFile({ encoding });
+      return {
+        content,
+        size: stats.size,
+        encoding,
+      };
+    } finally {
+      await handle.close();
     }
-
-    const content = await readFile(path, { encoding });
-
-    return {
-      content,
-      size: stats.size,
-      encoding,
-    };
   });
 
 

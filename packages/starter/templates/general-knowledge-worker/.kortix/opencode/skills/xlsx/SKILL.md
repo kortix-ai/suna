@@ -432,14 +432,14 @@ for row in range(data_start, data_end + 1):
 
 LibreOffice is pre-installed. Both scripts configure it automatically on first run.
 
-Use **pandas** for data analysis and bulk operations. Use **openpyxl** for formulas, formatting, and Excel-specific features. After saving, always recalculate:
+Use **pandas** for data analysis and bulk operations. Use **openpyxl** for formulas, formatting, and Excel-specific features. Run Python files with `uv run --with pandas --with openpyxl`. After saving, always recalculate:
 
 ## Recalculating Formulas
 
 openpyxl writes formulas as strings but does not evaluate them. The `skills/xlsx/scripts/recalc.py` script drives LibreOffice headless to recalculate all formulas and then scans every cell for Excel errors.
 
 ```bash
-python skills/xlsx/scripts/recalc.py <excel_file> [timeout_seconds]
+uv run --with openpyxl skills/xlsx/scripts/recalc.py <excel_file> [timeout_seconds]
 ```
 
 On success:
@@ -467,7 +467,7 @@ openpyxl cannot create pivot tables. Use `skills/xlsx/scripts/pivot_table.py`, w
 
 ```bash
 # Create a pivot table
-python skills/xlsx/scripts/pivot_table.py create output.xlsx '{
+uv run --with openpyxl skills/xlsx/scripts/pivot_table.py create output.xlsx '{
     "source_sheet": "Data",
     "target_sheet": "Revenue Pivot",
     "pivot_name": "RevPivot",
@@ -477,7 +477,7 @@ python skills/xlsx/scripts/pivot_table.py create output.xlsx '{
 }'
 
 # Delete a pivot table
-python skills/xlsx/scripts/pivot_table.py delete output.xlsx "Data" "RevPivot"
+uv run skills/xlsx/scripts/pivot_table.py delete output.xlsx "Data" "RevPivot"
 ```
 
 Config fields:

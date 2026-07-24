@@ -64,7 +64,8 @@ Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 table for the full list (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Tracked; do not depend on it yet.
+> no `response.body`. Use `createHttpSessionSyncController` for bounded history
+> synchronization. Keep the platform-specific event transport for live events.
 
 ## Quick start
 
@@ -80,6 +81,8 @@ const kortix = createKortix({
 const projects = await kortix.projects.list();
 const detail   = await kortix.project(pid).detail();
 await kortix.project(pid).secrets.upsert({ name: 'STRIPE_API_KEY', value });
+const visibleSessions = await kortix.project(pid).sessions.list();
+const projectInventory = await kortix.project(pid).sessions.list({ scope: 'project' }); // manager only
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
@@ -126,8 +129,8 @@ await kortix.project(projectId).sessions.create({
 });
 ```
 
-Do not put credentials in this map. For a white-label/backend wrapper, create a
-server-owned connection profile, store its credential through the dedicated
+Do not put credentials in this map. For a white-label/backend wrapper, create an
+operator-managed connection profile, store its credential through the dedicated
 credential endpoint, and pass only the non-secret profile id at session create:
 
 ```ts
@@ -158,11 +161,30 @@ await project.sessions.create({
 });
 ```
 
-Profiles are project/connector scoped, manager-authorized, and resolved on
-every Executor request. Revocation therefore takes effect without restarting
-the session. The credential is encrypted server-side and is never returned,
-placed in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment.
-Raw env and MCP configuration are not session-create inputs.
+For bring-your-own authorization, each logged-in member creates their own
+profile without supplying an owner id; Kortix derives ownership from the bearer
+token:
+
+```ts
+const profile = await project.connectors.profiles.reconcileMember({
+  connector_alias: 'gmail',
+  label: 'My Gmail',
+});
+await project.connectors.profiles.pipedreamConnect(profile.profile_id);
+// Complete OAuth, then:
+await project.connectors.profiles.pipedreamFinalize(profile.profile_id);
+await project.sessions.create({
+  connector_bindings: { gmail: { profile_id: profile.profile_id } },
+});
+```
+
+Member profiles are owner-only even for project managers, and sessions using
+one must remain private. Project defaults remain shared; external/agent/subject
+profiles remain operator-managed. Every profile is project/connector scoped
+and resolved on every Executor request, so revocation takes effect without a
+restart. Credentials are encrypted server-side and are never returned, placed
+in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
+and MCP configuration are not session-create inputs.
 
 `session.stream()` is a thin facade over the framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client
@@ -381,9 +403,10 @@ in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
 The framework-free core modules — `turns`, `session/url`, `session` (health),
 `projects-client`, `files`, `transcript` — have no React or DOM dependency and are
 usable from any JS host; `apps/mobile` already imports `@kortix/sdk/turns` this way.
-React Native adoption of the full client/hooks is planned but not done — mobile
-currently ships its own parallel data layer (`apps/mobile/lib/opencode/`) rather
-than `@kortix/sdk/react`.
+React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
+`createHttpSessionSyncController` for message history, status recovery, and older
+pagination. Mobile keeps its platform-specific event transport because React
+Native cannot consume the SDK's fetch-based SSE stream.
 
 ## Rules of the road
 

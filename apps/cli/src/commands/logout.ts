@@ -6,6 +6,9 @@ const HELP = help`Usage: kortix logout [options]
 
 Remove the Kortix auth token for one host.
 
+Shortcut for the active host — same as \`kortix hosts logout\`. Use
+\`kortix hosts logout <name>\` to sign out of a different instance.
+
 Options:
   --host <name>     Log out of a specific named host (default: active).
   -h, --help        Show this help.
@@ -46,7 +49,16 @@ export async function runLogout(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const target = flags.host ?? activeHostName();
+  return performLogout(flags.host);
+}
+
+/**
+ * Shared logout implementation used by both the top-level `kortix logout`
+ * alias and the `kortix hosts logout` subcommand. Clears the stored token
+ * for the named host, defaulting to the active host when omitted.
+ */
+export async function performLogout(hostName?: string): Promise<number> {
+  const target = hostName ?? activeHostName();
   if (!target) {
     process.stdout.write(`${C.dim}Not logged in. Nothing to do.${C.reset}\n`);
     return 0;

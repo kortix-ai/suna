@@ -125,7 +125,7 @@ async function runOneFlow(
 
     try {
       await withTimeout(f.fn(ctx), f.meta.timeoutMs ?? 120_000, f.id);
-      await stack.teardown();
+      await stack.teardown({ throwOnFailure: true });
       return mkResult(f, "pass", undefined, steps, performance.now() - flowStart, attempt);
     } catch (err) {
       await stack.teardown();

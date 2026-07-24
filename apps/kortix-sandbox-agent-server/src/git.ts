@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 
 import type { Config } from './config'
 import { logger } from './logger'
@@ -600,6 +600,38 @@ async function initLocalRepoAtBase(cfg: Config, dir: string, base: string): Prom
 }
 
 /**
+ * The workspace's PARENT directory is not writable by the daemon: /workspace
+ * sits directly under the root-owned `/` and the daemon runs as the
+ * unprivileged runtime user. Materialization therefore must never create a
+ * sibling of `target` or replace the `target` directory node itself (both
+ * `rename(tmp, target)` and `rm(target)` mutate dirents in the parent). All
+ * staging happens INSIDE `target`, and a finished stage is swapped in by
+ * replacing target's CONTENTS — same-filesystem renames that only need write
+ * access to `target`, which the runtime user owns.
+ */
+async function createStagePath(target: string, kind: string): Promise<string> {
+  await mkdir(target, { recursive: true })
+  return join(target, `.kortix-${kind}-${process.pid}-${Date.now()}`)
+}
+
+async function clearDirContents(dir: string, keep?: string): Promise<void> {
+  for (const entry of await readdir(dir)) {
+    if (entry === keep) continue
+    await rm(join(dir, entry), { recursive: true, force: true })
+  }
+}
+
+/** Crash-safe enough for boot: a failure mid-swap leaves a `.kortix-*` stage
+ *  dir that the next attempt's clearDirContents/createStagePath cycle wipes. */
+async function swapStageIntoTarget(stage: string, target: string): Promise<void> {
+  await clearDirContents(target, basename(stage))
+  for (const entry of await readdir(stage)) {
+    await rename(join(stage, entry), join(target, entry))
+  }
+  await rm(stage, { recursive: true, force: true })
+}
+
+/**
  * Materialize the project repository into `cfg.projectTarget` at the configured
  * branch. Ported from core/scripts/kortix-daemon clone_project_if_requested.
  */
@@ -610,7 +642,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
 
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
-  await mkdir(dirname(target), { recursive: true })
+  await mkdir(target, { recursive: true })
 
   if (await pathExists(`${target}/.git`)) {
     await configureSafeDirectory(target)
@@ -632,7 +664,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       return
     }
     logger.info('[git] baked checkout != session base; re-materializing real repo', { bakedHead, baseSha: cfg.baseSha })
-    await rm(target, { recursive: true, force: true })
+    await clearDirContents(target)
   }
   {
     const cloneCredential = await resolveCloneCredential(cfg)
@@ -655,7 +687,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       await configureRepoGitIdentity(cfg, target)
       return
     }
-    const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
+    const tmpTarget = await createStagePath(target, 'clone')
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
       repoUrl: cfg.repoUrl,
@@ -739,8 +771,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         throw new Error(`git clone failed after ${MAX_CLONE_ATTEMPTS} attempt(s): ${cloned.stderr}`)
       }
     }
-    await rm(target, { recursive: true, force: true })
-    await rename(tmpTarget, target)
+    await swapStageIntoTarget(tmpTarget, target)
     // Fresh clone already left the working tree on `base` at tip — the old
     // extra `git fetch origin base` + `git reset --hard` here was a redundant
     // network round-trip on the per-session boot hot path. Removed.
@@ -775,17 +806,15 @@ const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
  */
 export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
   if (!existsSync(SCAFFOLD_REPO_PATH)) return false
-  const tmp = join(dirname(target), `.kortix-seed-${process.pid}-${Date.now()}`)
+  const tmp = await createStagePath(target, 'seed')
   const t0 = Date.now()
   try {
-    await mkdir(dirname(target), { recursive: true })
     await rm(tmp, { recursive: true, force: true })
     const cloned = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
     if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
     if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
-    await rm(target, { recursive: true, force: true })
-    await rename(tmp, target)
+    await swapStageIntoTarget(tmp, target)
     logger.info('[git] seed scaffold materialized (zero-network)', { ms: Date.now() - t0, base })
     return true
   } catch (err) {
@@ -813,7 +842,7 @@ export async function materializeProjectSeed(cfg: Config): Promise<boolean> {
   if (!cfg.repoUrl) return false
   const t0 = Date.now()
   try {
-    await rm(cfg.projectTarget, { recursive: true, force: true })
+    await clearDirContents(cfg.projectTarget)
     // No branchName during seed capture (no session yet); baseSha=tip so a baked /workspace
     // (if any) is treated as mismatched and re-materialized to the real repo.
     await materializeRepo({ ...cfg, branchName: undefined, sessionFresh: true })
@@ -840,7 +869,7 @@ async function tryScaffoldDeltaFetch(
   cloneCredential: CloneCredential | undefined,
 ): Promise<boolean> {
   if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
-  const tmp = join(dirname(target), `.kortix-scaffold-${process.pid}-${Date.now()}`)
+  const tmp = await createStagePath(target, 'scaffold')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
@@ -859,8 +888,7 @@ async function tryScaffoldDeltaFetch(
     if (cfg.sessionFresh && cfg.baseSha && localHead === cfg.baseSha) {
       const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
       if (co.code !== 0) throw new Error(`checkout base (local): ${co.stderr}`)
-      await rm(target, { recursive: true, force: true })
-      await rename(tmp, target)
+      await swapStageIntoTarget(tmp, target)
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
@@ -872,8 +900,7 @@ async function tryScaffoldDeltaFetch(
     if (fetched.code !== 0) throw new Error(`fetch: ${fetched.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'FETCH_HEAD'])
     if (co.code !== 0) throw new Error(`checkout base: ${co.stderr}`)
-    await rm(target, { recursive: true, force: true })
-    await rename(tmp, target)
+    await swapStageIntoTarget(tmp, target)
     logger.info('[git] repo materialized via scaffold delta-fetch', { ms: Date.now() - t0, base })
     return true
   } catch (err) {

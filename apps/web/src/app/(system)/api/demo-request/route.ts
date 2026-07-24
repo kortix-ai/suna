@@ -17,7 +17,17 @@ export const revalidate = 0;
 //      frontend never needs the secret.
 // ---------------------------------------------------------------------------
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(value: string): boolean {
+  if (value.length === 0 || value.length > 254) return false;
+  for (const char of value) {
+    if (char === ' ' || char === '\t' || char === '\r' || char === '\n') return false;
+  }
+  const at = value.lastIndexOf('@');
+  if (at <= 0 || at !== value.indexOf('@') || at === value.length - 1) return false;
+  const domain = value.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
+}
 
 function anonClient() {
   // Runtime (non-NEXT_PUBLIC_) vars first — NEXT_PUBLIC_ are inlined at build
@@ -73,7 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
 
-  if (!EMAIL_RE.test(String(body.email ?? '').trim())) {
+  if (!isValidEmail(String(body.email ?? '').trim())) {
     return NextResponse.json({ error: 'Invalid email' }, { status: 400 });
   }
 

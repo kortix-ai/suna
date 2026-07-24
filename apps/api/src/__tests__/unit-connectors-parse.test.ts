@@ -541,6 +541,28 @@ connectors:
     expect(roundTrip(original)).toEqual(original);
   });
 
+  test('http + static headers survives round-trip', () => {
+    const original = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    auth:
+      type: custom
+      name: X-API-Key
+    headers:
+      Accept: application/json
+      X-Tenant-Id: acme
+      user-agent: kortix/1.0
+`).specs[0]!;
+    expect(original.headers).toEqual({
+      Accept: 'application/json',
+      'X-Tenant-Id': 'acme',
+      'user-agent': 'kortix/1.0',
+    });
+    expect(roundTrip(original)).toEqual(original);
+  });
+
   test('mcp + custom auth survives round-trip', () => {
     const original = parseAndExtract(`
 connectors:
@@ -556,6 +578,145 @@ connectors:
       secret: NOTION_MCP_TOKEN
 `).specs[0]!;
     expect(roundTrip(original)).toEqual(original);
+  });
+});
+
+describe('connectors: — static `headers:`', () => {
+  test('parsed into an ordered map, verbatim names, trimmed values', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      Accept: application/json
+      X-Tenant-Id: acme
+      X-Api-Version: 2
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.headers).toEqual({
+      Accept: 'application/json',
+      'X-Tenant-Id': 'acme',
+      'X-Api-Version': '2',
+    });
+    expect(Object.keys(specs[0]!.headers)).toEqual(['Accept', 'X-Tenant-Id', 'X-Api-Version']);
+  });
+
+  test('absent headers → {} (and nothing is emitted back into the manifest)', () => {
+    const spec = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+`).specs[0]!;
+    expect(spec.headers).toEqual({});
+    expect(connectorSpecToTomlEntry(spec).headers).toBeUndefined();
+  });
+
+  test('an invalid header name fails the whole entry', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      "X Tenant Id": acme
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('invalid header name');
+  });
+
+  test('a CR/LF-bearing value fails the whole entry (header injection)', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      X-Tenant-Id: "acme\\r\\nX-Admin: true"
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('must not contain CR or LF');
+  });
+
+  test('caps: too many headers / over-long name / over-long value', () => {
+    const many = Array.from({ length: 33 }, (_, i) => `      X-H${i}: v`).join('\n');
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+${many}
+`).errors[0]!.error,
+    ).toContain('too many headers');
+
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      ${'X'.repeat(129)}: v
+`).errors[0]!.error,
+    ).toContain('too long');
+
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      X-Big: ${'v'.repeat(2049)}
+`).errors[0]!.error,
+    ).toContain('too long');
+  });
+
+  test('transport-owned headers are rejected', () => {
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      Host: evil.example.com
+`).errors[0]!.error,
+    ).toContain('controlled by the transport');
+  });
+
+  test('platform-called providers reject `headers` (it would be inert)', () => {
+    expect(
+      parseAndExtract(`
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    headers:
+      Accept: application/json
+`).errors[0]!.error,
+    ).toContain('not supported');
+  });
+
+  test('headers change the manifest hash (a header edit must re-materialize)', () => {
+    const a = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+`).specs[0]!;
+    const b = parseAndExtract(`
+connectors:
+  - slug: acme
+    provider: http
+    base_url: https://api.acme.com
+    headers:
+      Accept: application/json
+`).specs[0]!;
+    expect(manifestHashForConnector(a)).not.toBe(manifestHashForConnector(b));
   });
 });
 

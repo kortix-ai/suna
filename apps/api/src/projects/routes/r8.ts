@@ -695,12 +695,25 @@ projectsApp.openapi(
         sessionId: cr.originSessionId,
         text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
         userId: loaded.userId,
-      }).catch((err) => {
-        console.warn('[change-requests] request-changes delivery failed', {
-          crId,
-          error: String(err),
+      })
+        .then((outcome) => {
+          // The response already told the user willDeliver=true and nothing
+          // retries this — a non-delivered outcome (incl. 'pending') means the
+          // feedback silently never reached the agent. Make it loud.
+          if (outcome !== 'delivered') {
+            console.error('[change-requests] request-changes prompt not delivered', {
+              crId,
+              sessionId: cr.originSessionId,
+              outcome,
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn('[change-requests] request-changes delivery failed', {
+            crId,
+            error: String(err),
+          });
         });
-      });
     }
 
     return c.json({ change_request: serializeChangeRequest(row), delivering: willDeliver });

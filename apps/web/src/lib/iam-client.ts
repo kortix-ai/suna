@@ -906,7 +906,7 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
 export async function probeEffectivePermission(
   accountId: string,
   userId: string,
-  args: { action: string; resourceType?: ResourceType; resourceId?: string },
+  args: PermissionProbeInput,
 ) {
   const params = new URLSearchParams();
   params.set('action', args.action);
@@ -919,11 +919,21 @@ export async function probeEffectivePermission(
   );
 }
 
-export interface PermissionProbeInput {
-  action: string;
-  resourceType?: ResourceType;
-  resourceId?: string;
-}
+type NonAccountPermissionProbeTarget = {
+  [Type in Exclude<ResourceType, 'account'>]: {
+    resourceType: Type;
+    resourceId: string;
+  };
+}[Exclude<ResourceType, 'account'>];
+
+export type PermissionProbeTarget =
+  | { resourceType: 'account'; resourceId?: never }
+  | NonAccountPermissionProbeTarget;
+
+export type PermissionProbeInput = { action: string } & (
+  | { resourceType?: never; resourceId?: never }
+  | PermissionProbeTarget
+);
 
 export interface PermissionProbeResult {
   action: string;

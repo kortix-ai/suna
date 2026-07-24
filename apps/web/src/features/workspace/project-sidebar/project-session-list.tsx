@@ -21,6 +21,8 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -31,9 +33,9 @@ import {
   shouldPollProjectSessions,
   sortSessionsByCreatedAt,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
-import { Icon } from '@/features/icon/icon';
+import { cn } from '@/lib/utils';
+import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -41,11 +43,6 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import {
-  shouldBeginSessionSwitch,
-  useSessionSwitchStore,
-} from '@/stores/session-switch-store';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -59,7 +56,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { IconType } from 'react-icons/lib';
 
@@ -105,11 +102,13 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const activeOpenCodeSessionId = searchParams.get('oc');
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
+  const cancelSessionSwitch = useSessionSwitchStore((state) => state.cancelSwitch);
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
@@ -223,18 +222,19 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
               <ProjectSessionRow
                 session={session}
                 href={href}
-                isActive={
-                  (!!isActive && !activeOpenCodeSessionId && !switchingToSessionId) ||
-                  isSwitchTarget
-                }
+                isActive={!!isActive && !activeOpenCodeSessionId}
                 isSwitching={isSwitchTarget}
                 onNavigate={(event) => {
-                  if (
-                    shouldBeginSessionSwitch(
+                  if (switchingToSessionId && session.session_id === activeSessionId) {
+                    event.preventDefault();
+                    cancelSessionSwitch();
+                    router.replace(href, { scroll: false });
+                    return;
+                  }
+                  if (shouldBeginSessionSwitch(
                       event,
                       session.session_id,
-                      activeSessionId,
-                    )
+                      activeSessionId)
                   ) {
                     beginSessionSwitch(session.session_id);
                   }
@@ -373,9 +373,16 @@ function ProjectSessionRow({
           href={href}
           onClick={onNavigate}
           aria-busy={isSwitching || undefined}
+          aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          {isSwitching ? (
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Loading className="size-3.5 shrink-0" />
+            </span>
+          ) : (
+            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          )}
 
           <span
             title={displayTitle}

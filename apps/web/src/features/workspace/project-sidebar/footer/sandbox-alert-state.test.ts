@@ -56,6 +56,19 @@ describe('selectCurrentSandboxFailure', () => {
       ),
     ).toBeNull();
   });
+
+  test('drops a failed optional project accelerator', () => {
+    const failed = build({
+      build_id: 'accelerator-failed',
+      slug: 'default-warm',
+      snapshot_name: 'kortix-ppwarm-project-hash',
+      status: 'failed',
+    });
+
+    expect(
+      selectCurrentSandboxFailure(health({ latest_build: failed, latest_failure: failed })),
+    ).toBeNull();
+  });
 });
 
 describe('resolveSandboxAlertSeverity', () => {
@@ -80,6 +93,21 @@ describe('resolveSandboxAlertSeverity', () => {
       ),
     ).toBe('building');
   });
+
+  test('does not show a blocking alert for an optional accelerator build', () => {
+    const accelerator = build({
+      build_id: 'accelerator-building',
+      slug: 'default-warm',
+      snapshot_name: 'kortix-ppwarm-project-hash',
+      status: 'building',
+    });
+
+    expect(
+      resolveSandboxAlertSeverity(
+        health({ latest_build: accelerator, building: true, ready: false }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe('currentFailedBuild', () => {
@@ -95,5 +123,17 @@ describe('currentFailedBuild', () => {
         build({ build_id: 'failed-older', status: 'failed' }),
       ]),
     ).toBeNull();
+  });
+
+  test('ignores an accelerator failure before a session-template failure', () => {
+    const accelerator = build({
+      build_id: 'accelerator-failed',
+      slug: 'default-warm',
+      snapshot_name: 'kortix-ppwarm-project-hash',
+      status: 'failed',
+    });
+    const template = build({ build_id: 'template-failed', status: 'failed' });
+
+    expect(currentFailedBuild([accelerator, template])).toBe(template);
   });
 });

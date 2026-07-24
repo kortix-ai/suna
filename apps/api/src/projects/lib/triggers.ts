@@ -11,14 +11,15 @@ import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
-  continueSession,
   createSession,
   drainSessionLifecycleQueue,
+  enqueueContinueSessionCommand,
   resolveAgentRunAttribution,
   resolveProjectAutomationActor,
   sessionBackpressureState,
 } from '../session-lifecycle';
 import {
+  GIT_TRIGGER_SESSION_MODES,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
   MANIFEST_FILENAME,
@@ -99,6 +100,23 @@ export function verifyWebhookToken(token: string | null, secret: string): boolea
   return timingSafeEqual(actual, expected);
 }
 
+// Pure payload helpers live in ./trigger-payload (no config/db imports, so they
+// stay unit-testable without booting the server env). Re-exported here because
+// this module has always been their import site.
+import {
+  renderPromptTemplate,
+  renderSessionKey,
+} from './trigger-payload';
+
+export {
+  isPlainPayloadObject,
+  renderPromptTemplate,
+  renderSessionKey,
+  templateValue,
+  triggerFilterMatches,
+  valueAtPath,
+} from './trigger-payload';
+
 export function parseWebhookJsonBody(rawBody: string): unknown {
   if (!rawBody.trim()) return {};
   try {
@@ -108,30 +126,8 @@ export function parseWebhookJsonBody(rawBody: string): unknown {
   }
 }
 
-export function valueAtPath(source: unknown, path: string[]): unknown {
-  let current = source;
-  for (const segment of path) {
-    if (!isPlainObject(current)) return undefined;
-    current = current[segment];
-  }
-  return current;
-}
 
-export function templateValue(value: unknown): string {
-  if (value === undefined || value === null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value);
-}
 
-export function renderPromptTemplate(template: string, payload: Record<string, unknown>) {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, token: string) => {
-    const [root, ...path] = token.split('.');
-    if (!root) return '';
-    const value = path.length === 0 ? payload[root] : valueAtPath(payload[root], path);
-    return templateValue(value);
-  });
-}
 
 export function webhookPayload(c: Context, rawBody: string) {
   const body = parseWebhookJsonBody(rawBody);
@@ -657,11 +653,103 @@ export async function findReusableTriggerSession(
         ne(projectSessions.status, 'failed'),
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+        // Same soft-delete guard as the keyed lookup above.
+        sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The `session_mode = "keyed"` analogue of {@link findReusableTriggerSession}:
+ * the most recent non-failed session this trigger created *for this key*. Uses
+ * the same `project_sessions.metadata` stamping trick, so keyed routing needs
+ * no extra column and no migration.
+ *
+ * The key is matched exactly and is caller-supplied data (a chat id, a customer
+ * id) — it goes through a bound parameter, never string interpolation.
+ */
+export async function findKeyedTriggerSession(
+  projectId: string,
+  slug: string,
+  sessionKey: string,
+): Promise<{ sessionId: string } | null> {
+  const [row] = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        ne(projectSessions.status, 'failed'),
+        sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
+        sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+        sql`${projectSessions.metadata} ->> 'trigger_session_key' = ${sessionKey}`,
+        // deleteSession() is a SOFT delete: it stamps metadata.deletedAt and
+        // leaves the row 'stopped'. Selecting one would bind this key to a
+        // session that can never run again — and because a keyed trigger keeps
+        // resolving to the same session, every later message for that chat
+        // would be swallowed silently rather than starting a new one.
+        sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
+      ),
+    )
+    .orderBy(desc(projectSessions.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+
+
+/**
+ * Durable prompt hand-off into an EXISTING session (`session_mode` pinned /
+ * reuse). The direct in-process continueSession() call this replaces was the
+ * silent-loss hole: 'pending' (runtime never ready inside the deadline) was
+ * TERMINAL on that path — no durable row, no retry, no error log, prompt gone,
+ * session showing "queued" forever. Enqueue a durable continue_session command
+ * instead: the scheduler's drain tick executes it with retry/backoff, and a
+ * dead-letter ships a real error AND parks the session 'failed' (see
+ * store.markCommandFailed) so the next fire self-heals via a fresh session.
+ * The immediate drain kick keeps the happy path feeling instant.
+ *
+ * Only liveness is pre-checked here (mirrors continueSession's own guards) —
+ * a missing/failed/deleted session must keep falling through to the create
+ * path exactly like the old direct call's 'no-session'/'failed' outcomes.
+ */
+async function enqueueTriggerPrompt(input: {
+  project: ProjectRow;
+  sessionId: string;
+  actor: string;
+  text: string;
+  source: 'cron' | 'webhook' | 'manual';
+  triggerSlug: string;
+  idempotencyKey?: string | null;
+}): Promise<'queued' | 'no-session' | 'failed'> {
+  const [session] = await db
+    .select({ status: projectSessions.status, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+  if (!session) return 'no-session';
+  if (session.status === 'failed') return 'failed';
+  const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
+  if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+
+  await enqueueContinueSessionCommand({
+    source: `trigger:${input.source}`,
+    projectId: input.project.projectId,
+    accountId: input.project.accountId,
+    sessionId: input.sessionId,
+    actorUserId: input.actor,
+    text: input.text,
+    triggerSlug: input.triggerSlug,
+    // Same per-due-slot key the create path uses — a fire the sweep timed out
+    // on but that actually enqueued isn't duplicated when the next tick retries.
+    idempotencyKey: input.idempotencyKey ?? null,
+  });
+  // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
+  drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+  return 'queued';
 }
 
 /**
@@ -701,20 +789,20 @@ export async function fireGitTrigger(input: {
   // is gone/unresumable we degrade gracefully: fall through to the `reuse` block
   // (the trigger's own last session), then to a brand-new session.
   if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
-    const outcome = await continueSession({
-      source: `trigger:${source}`,
+    const outcome = await enqueueTriggerPrompt({
+      project,
       sessionId: spec.pinnedSessionId,
+      actor,
       text: renderedPrompt,
-      userId: actor,
+      source,
+      triggerSlug: spec.slug,
+      idempotencyKey: input.idempotencyKey ?? null,
     });
-    if (outcome === 'delivered') {
-      return { status: 'fired', sessionId: spec.pinnedSessionId };
-    }
-    if (outcome === 'pending') {
+    if (outcome === 'queued') {
       return {
         status: 'queued',
         sessionId: spec.pinnedSessionId,
-        reason: 'pinned session resuming',
+        reason: 'prompt queued for delivery',
       };
     }
     // outcome === 'no-session' | 'failed' → pinned session is gone/unusable;
@@ -728,23 +816,48 @@ export async function fireGitTrigger(input: {
   // exists yet, or the last one is gone/failed, we fall through to createSession
   // below and that fresh session becomes the canonical one for next time. Also
   // the graceful-degradation path for a `pinned` trigger whose pin is dead.
+  // Session keying — `session_mode = "keyed"` is `reuse` bucketed by a value
+  // rendered from the payload, so one trigger drives one session PER chat /
+  // customer / repo. A key that renders empty falls through to a fresh session
+  // rather than blending every keyless delivery into a shared one.
+  const sessionKey = renderSessionKey(spec, payload);
+  if (sessionKey) {
+    const keyed = await findKeyedTriggerSession(project.projectId, spec.slug, sessionKey);
+    if (keyed) {
+      const outcome = await enqueueTriggerPrompt({
+        project,
+        sessionId: keyed.sessionId,
+        actor,
+        text: renderedPrompt,
+        source,
+        triggerSlug: spec.slug,
+        idempotencyKey: input.idempotencyKey ?? null,
+      });
+      if (outcome === 'queued') {
+        return { status: 'queued', sessionId: keyed.sessionId, reason: 'prompt queued for delivery' };
+      }
+      // Unusable session for this key → fall through and create a fresh one,
+      // which becomes the canonical session for the key going forward.
+    }
+  }
+
   if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
-      const outcome = await continueSession({
-        source: `trigger:${source}`,
+      const outcome = await enqueueTriggerPrompt({
+        project,
         sessionId: reusable.sessionId,
+        actor,
         text: renderedPrompt,
-        userId: actor,
+        source,
+        triggerSlug: spec.slug,
+        idempotencyKey: input.idempotencyKey ?? null,
       });
-      if (outcome === 'delivered') {
-        return { status: 'fired', sessionId: reusable.sessionId };
-      }
-      if (outcome === 'pending') {
-        // Runtime still spinning up (e.g. resuming an archived sandbox). The
-        // prompt will land once it's ready — treat as a successful fire so the
-        // scheduler records last_fired_at and doesn't immediately create a dupe.
-        return { status: 'queued', sessionId: reusable.sessionId, reason: 'session resuming' };
+      if (outcome === 'queued') {
+        // The prompt is durably queued (drain retries until delivered or
+        // dead-letters loudly) — treat as a successful fire so the scheduler
+        // records last_fired_at and doesn't immediately create a dupe.
+        return { status: 'queued', sessionId: reusable.sessionId, reason: 'prompt queued for delivery' };
       }
       // outcome === 'no-session' | 'failed' → canonical session is unusable;
       // fall through to create a fresh one below.
@@ -755,6 +868,7 @@ export async function fireGitTrigger(input: {
     source: `trigger:${source}`,
     project,
     userId: actor,
+    requestingPrincipalType: 'human',
     enforceAccountCap: false,
     // Trigger sessions are project automation, not the actor's personal chat —
     // make them project-visible so the whole team can find them.
@@ -774,6 +888,9 @@ export async function fireGitTrigger(input: {
         trigger_kind: 'git',
         trigger_slug: spec.slug,
         trigger_type: spec.type,
+        // Stamped so findKeyedTriggerSession can route the NEXT delivery for
+        // this key back into this session.
+        ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       },
     },
     metadata: {
@@ -781,6 +898,7 @@ export async function fireGitTrigger(input: {
       trigger_kind: 'git',
       trigger_slug: spec.slug,
       trigger_type: spec.type,
+      ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       payload_summary: summarizeTriggerPayload(payload),
     },
   });
@@ -1076,6 +1194,8 @@ export async function loadTriggersForResponse(
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
       session_id: spec.pinnedSessionId,
+      session_key: spec.sessionKey,
+      filter: spec.filter,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
@@ -1106,6 +1226,10 @@ export interface TriggerDraft {
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
+  /** For sessionMode === 'keyed' only: the template deriving one session per key. */
+  sessionKey: string | null;
+  /** Payload paths that must match for a delivery to fire. Null when unfiltered. */
+  filter: Record<string, string> | null;
 }
 
 export function parseTriggerDraft(
@@ -1138,20 +1262,54 @@ export function parseTriggerDraft(
   const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
   if (
     sessionModeRaw &&
-    sessionModeRaw !== 'fresh' &&
-    sessionModeRaw !== 'reuse' &&
-    sessionModeRaw !== 'pinned'
+    !(GIT_TRIGGER_SESSION_MODES as readonly string[]).includes(sessionModeRaw)
   ) {
-    return { error: 'session_mode must be "fresh", "reuse", or "pinned"' };
+    return {
+      error: `session_mode must be one of ${GIT_TRIGGER_SESSION_MODES.map((m) => `"${m}"`).join(', ')}`,
+    };
   }
-  const sessionMode: GitTriggerSessionMode =
-    sessionModeRaw === 'reuse' ? 'reuse' : sessionModeRaw === 'pinned' ? 'pinned' : 'fresh';
+  // Declaring a `session_key` IS the opt-in to keyed sessions — requiring both
+  // it and `session_mode: keyed` was redundant. An explicit mode still wins, so
+  // `session_mode: fresh` + a stray key stays fresh (and nulls the key below).
+  const sessionKeyRaw = normalizeString((body as any).session_key ?? (body as any).sessionKey);
+
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw
+    ? (sessionModeRaw as GitTriggerSessionMode)
+    : sessionKeyRaw
+      ? 'keyed'
+      : 'fresh';
   const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
   }
   const pinnedSessionId: string | null =
     sessionMode === 'pinned' ? (pinnedSessionIdRaw ?? null) : null;
+
+  // An EXPLICIT keyed mode with no key is still an error — nothing to bucket by.
+  if (sessionMode === 'keyed' && !sessionKeyRaw) {
+    return {
+      error: 'session_mode "keyed" requires a session_key template (e.g. "{{ body.data.chat_jid }}")',
+    };
+  }
+  const sessionKey: string | null = sessionMode === 'keyed' ? (sessionKeyRaw ?? null) : null;
+
+  const filterRaw = (body as any).filter;
+  let filter: Record<string, string> | null = null;
+  if (filterRaw !== undefined && filterRaw !== null) {
+    if (!isPlainObject(filterRaw)) {
+      return { error: 'filter must be an object mapping payload paths to expected values' };
+    }
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(filterRaw)) {
+      const trimmed = key.trim();
+      if (!trimmed) return { error: 'filter keys must be non-empty payload paths' };
+      if (value === null || typeof value === 'object') {
+        return { error: `filter.${trimmed} must be a string, number, or boolean` };
+      }
+      entries[trimmed] = String(value);
+    }
+    if (Object.keys(entries).length > 0) filter = entries;
+  }
 
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
@@ -1176,6 +1334,8 @@ export function parseTriggerDraft(
         secretEnv: null,
         sessionMode,
         pinnedSessionId,
+      sessionKey,
+      filter,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -1195,6 +1355,8 @@ export function parseTriggerDraft(
       secretEnv: null,
       sessionMode,
       pinnedSessionId,
+      sessionKey,
+      filter,
     };
   }
 
@@ -1217,6 +1379,8 @@ export function parseTriggerDraft(
     secretEnv,
     sessionMode,
     pinnedSessionId,
+    sessionKey,
+    filter,
   };
 }
 
@@ -1233,10 +1397,16 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     enabled: spec.enabled,
     prompt_template: spec.promptTemplate,
     cron: spec.cron,
+    // Carry the one-off instant too, or a PATCH that touches anything else on a
+    // `run_at` trigger would drop its schedule and fail re-validation ("cron
+    // triggers must declare a `cron` expression or a one-off `run_at`").
+    run_at: spec.runAt,
     timezone: spec.timezone,
     secret_env: spec.secretEnv,
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
+    session_key: spec.sessionKey,
+    filter: spec.filter,
   };
 }
 
@@ -1269,6 +1439,8 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
     secretEnv: draft.secretEnv,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
+    sessionKey: draft.sessionKey,
+    filter: draft.filter,
   };
 }
 

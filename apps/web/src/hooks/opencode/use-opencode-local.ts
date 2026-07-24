@@ -3,7 +3,7 @@
 /**
  * Thin web wrapper around the SDK's `useOpenCodeLocal` (packages/sdk/src/react/
  * use-opencode-local.ts). The pure agent/model/variant selection algorithm —
- * including the `auto`-model resolution (`resolveHiddenAutoModel`, `sendKey`,
+ * including concrete model resolution (`resolvePromptModel`, `sendKey`,
  * `onDefault`) and `boundAgentName` handling — lives there now and is shared
  * with any other host. This file only injects the two things that are
  * genuinely web-specific and depend on files outside the SDK's reach:
@@ -22,7 +22,7 @@ import {
   modelProviderMode,
   parseModelKey,
   resolveCurrentAgentName,
-  resolveHiddenAutoModel,
+  resolvePromptModel,
   scopedModelSelectionKey,
   useKortixRouteProjectId,
   useOpenCodeLocal as useOpenCodeLocalBase,
@@ -45,7 +45,7 @@ export {
   modelProviderMode,
   parseModelKey,
   resolveCurrentAgentName,
-  resolveHiddenAutoModel,
+  resolvePromptModel,
   scopedModelSelectionKey,
 };
 

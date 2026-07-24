@@ -6,11 +6,11 @@ import type {
 } from '@kortix/llm-gateway';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
-import { assertBillingActive } from '../billing/services/billing-gate';
 import { logger } from '../lib/logger';
 import { checkBudget } from './budgets';
 import {
   authenticatePrincipal,
+  assertLlmBillingActive,
   authorizeRequest,
   persistGatewayTrace,
   recordGatewayUsage,
@@ -119,7 +119,7 @@ export function createInternalGatewayRoutes() {
   app.post('/billing', async (c) => {
     const { accountId } = await c.req.json();
     try {
-      const result = await assertBillingActive(accountId);
+      const result = await assertLlmBillingActive(accountId);
       return c.json({ active: true, holdUsd: result?.holdUsd });
     } catch (err) {
       return c.json({

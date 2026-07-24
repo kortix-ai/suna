@@ -1,14 +1,14 @@
 'use client';
-
-import { useEffect, useRef } from 'react';
 import { FilesStoreProvider, useFilesStore } from '@/features/files';
 import { SandboxFileExplorer } from '@/features/files/sandbox-file-explorer';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import { SessionDiffViewer } from '@/features/session/session-diff-viewer';
+import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import {
   SessionVersionHeader,
   type SessionPanelMode,
 } from '@/features/session/session-version-header';
-import { SessionDiffViewer } from '@/features/session/session-diff-viewer';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import { useEffect, useRef } from 'react';
 
 /**
  * Session side-panel "Files" surface.
@@ -37,8 +37,9 @@ export function SessionFilesExplorer({
   projectId?: string;
   projectSessionId?: string;
 } = {}) {
+  const store = chatSessionId ? getSessionFilesStore(chatSessionId) : undefined;
   return (
-    <FilesStoreProvider>
+    <FilesStoreProvider store={store}>
       <SessionFilesExplorerInner
         chatSessionId={chatSessionId}
         projectId={projectId}

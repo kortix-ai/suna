@@ -100,6 +100,29 @@ test('createScopedKortix never writes to the process-global config — two scope
   expect(requests.some((r) => r.auth === 'Bearer tok-B')).toBe(true);
 });
 
+test('createScopedKortix neutralizes the ambient top-level runtime() — no process-global cross-tenant sandbox bleed', () => {
+  // The top-level runtime() resolves the PROCESS-GLOBAL "active" runtime (whatever
+  // session most recently called ensureReady()). In a multi-tenant server that is
+  // a DIFFERENT request's/end-user's sandbox — a cross-tenant leak. On a scoped
+  // client it must throw and steer to the session-scoped handle, never silently
+  // hand back a foreign sandbox's client.
+  const kortix = createScopedKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+  });
+  expect(() => kortix.runtime()).toThrow(/session\(/);
+});
+
+test('createScopedKortix leaves the rest of the facade intact (only top-level runtime() is neutralized)', () => {
+  const kortix = createScopedKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+  });
+  expect(typeof kortix.session).toBe('function');
+  expect(typeof kortix.project).toBe('function');
+  expect(typeof kortix.projects.list).toBe('function');
+});
+
 test('createScopedKortix scopes calls reached through id-bound handles minted at call time (project(id), session(pid, sid))', async () => {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const req = input as Request;

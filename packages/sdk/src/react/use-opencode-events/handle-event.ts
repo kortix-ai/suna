@@ -12,9 +12,10 @@ import {
   notifySessionError,
   notifyTaskComplete,
 } from '../../platform/ui';
-import { deleteSessionFromIDB, saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
+import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { getClient } from '../../core/runtime/client';
+import { SESSION_SYNC_PAGE_SIZE, type SessionSyncReason } from '../../core/session-sync/session-sync-controller';
 import { fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { ptyKeys } from '../use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';
@@ -41,6 +42,7 @@ export function createEventHandler(deps: {
   normalizeDiagnosticPaths: RefObject<NormalizeDiagnosticPaths>;
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
+  reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
 }) {
   const {
     queryClient,
@@ -55,6 +57,13 @@ export function createEventHandler(deps: {
     markSessionAbortedLocally,
     fetchLspDiagnosticsDebounced,
   } = deps;
+  const reconcileTail = deps.reconcileSessionTail ?? (async (sessionID: string) => {
+    const result = await client.session.messages({
+      sessionID,
+      limit: SESSION_SYNC_PAGE_SIZE,
+    });
+    if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
+  });
 
   // Helper: look up a session title from the React Query cache for notifications
   function getSessionTitle(sessionID: string): string | undefined {
@@ -178,17 +187,7 @@ export function createEventHandler(deps: {
         if (sessionID) {
           stopCompaction(sessionID);
           const client = getClient();
-          client.session
-            .messages({ sessionID })
-            .then((res) => {
-              if (res.data) {
-                useSyncStore.getState().hydrate(sessionID, res.data);
-                const s = useSyncStore.getState();
-                const msgs = s.messages[sessionID] ?? [];
-                if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
-              }
-            })
-            .catch(() => {});
+          void reconcileTail(sessionID, 'compaction');
           // Refetch the individual session to clear time.compacting
           // (targeted refetch, not full session list invalidation)
           client.session
@@ -243,10 +242,6 @@ export function createEventHandler(deps: {
             // so without this the panel shows stale diff state.
             queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
             queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
-            // Persist final session state to IDB when streaming completes
-            const s = useSyncStore.getState();
-            const msgs = s.messages[sessionID] ?? [];
-            if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
           }
         }
         break;
@@ -306,15 +301,9 @@ export function createEventHandler(deps: {
           // The error is already patched onto the message above.
           const isAbortError = looksLikeAbortError(error);
           if (!isAbortError) {
-            client.session
-              .messages({ sessionID })
-              .then((res) => {
-                if (!res.data) return;
-                useSyncStore.getState().hydrate(sessionID, res.data);
+            reconcileTail(sessionID, 'session-error')
+              .then(() => {
                 useSyncStore.getState().clearOptimisticMessages(sessionID);
-                const s = useSyncStore.getState();
-                const msgs = s.messages[sessionID] ?? [];
-                if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
               })
               .catch(() => {});
           } else {

@@ -1,3 +1,4 @@
+import { DocsMermaid } from '@/components/markdown/docs-mermaid';
 import { isInternalUrl } from '@/components/markdown/unified-markdown-utils';
 import { cn } from '@/lib/utils';
 import { Callout as FumadocsCallout } from 'fumadocs-ui/components/callout';
@@ -27,6 +28,10 @@ const inlineCodeClass =
   'rounded-sm border border-border/40 bg-muted px-1.5 py-[0.1rem] font-mono text-[0.8rem] text-foreground/95 dark:bg-card';
 
 export const docsMdxComponents = {
+  // ```mermaid fences arrive as <Mermaid chart="..."/> via remarkMdxMermaid
+  // (source.config.ts) and render as live client-side diagrams.
+  Mermaid: ({ chart }: { chart: string }) => <DocsMermaid chart={chart} />,
+
   // Fumadocs' Callout ships with shadow-md baked in — the docs surface is flat.
   Callout: ({ className, ...props }: ComponentProps<typeof FumadocsCallout>) => (
     <FumadocsCallout {...props} className={cn('shadow-none', className)} />

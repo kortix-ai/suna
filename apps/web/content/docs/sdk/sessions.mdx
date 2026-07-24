@@ -1,183 +1,333 @@
 ---
 title: Sessions
-description: The session handle — lifecycle, the session-owned runtime (health & previews), and the typed opencode runtime.
+description: Run a session, stream its events, and handle the errors it can throw.
 ---
 
-A **session** is one agent run, in its own disposable sandbox, on its own git
-branch. `kortix.session(projectId, sessionId)` binds both ids and is the single
-handle for everything a session does.
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A session is one agent run, in its own sandbox, on its own git branch.
+`kortix.session(projectId, sessionId)` returns the handle for everything a
+session does: start it, send prompts, stream events, and read status. This
+page covers the handle, the readiness handshake, streaming, and the typed
+errors an SDK call can throw.
 
 ```ts
 const s = kortix.session(projectId, sessionId);
 ```
 
-<Callout>
-  **Session-scoped, by design.** A session owns its runtime, so you ask the *session* about health
-  and previews — never a global "sandbox." The sandbox is plumbing the SDK resolves for you.
+`s` is the handle for everything a session does. The session ID, the sandbox
+ID, and the branch name are the same value. See
+[Sessions](/docs/work/sessions) for the concept.
+
+## Session lifecycle
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `s.get(opts?)` | `GET /projects/:pid/sessions/:sid` | Reads session details |
+| `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
+| `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
+| `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
+| `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
+| `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
+| `s.commit(input?)` | — | Commits the agent's work |
+
+<Callout type="warn">
+  `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session without losing it, call `s.stop()` instead.
 </Callout>
 
-## Lifecycle
+Three more read methods round out the handle:
+
+- `s.previews()` — candidate preview ports the runtime exposes.
+- `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
+- `s.audit(limit?)` — the session's audit trail of agent actions.
+- `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
+
+## Readiness is a handshake
+
+Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
+needed, waits for the runtime to boot, and returns the resolved runtime.
 
 ```ts
-await s.get(); // session detail
-await s.update({/* … */}); // rename, settings
-await s.start(); // provision + boot the runtime
-await s.restart(); // restart the same runtime in place
-await s.stop(); // stop the runtime without deleting the session
-await s.commit(); // commit the agent's work
-await s.setSharing(intent); // sharing / visibility
-await s.delete();
+const { opencodeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
 ```
 
-`restart()` preserves the session's established sandbox identity and refreshes
-the handle's cached readiness state. If the original provider object is
-unavailable, restart fails explicitly instead of attaching an empty replacement.
-`delete()` removes the runtime; `stop()` clears readiness without deleting the
-session itself.
+On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
+[Retry on a cold boot](#retry-on-a-cold-boot) for what that means and how to
+retry.
 
-### Previews & public shares
+`s.send()` and `s.abort()` call `ensureReady()` for you.
+
+## Send a prompt
 
 ```ts
-await s.previews(); // candidate preview ports the runtime exposes
-await s.publicShares.list();
-await s.publicShares.create(input);
-await s.publicShares.revoke(shareId);
+s.setModel({ providerID, modelID }); // sticky for later send() calls
+s.setAgent('build'); // sticky for later send() calls
+
+await s.send('Refactor the auth module');
+await s.send('One-off task', { model, agent }); // overrides for this call only
+await s.abort(); // stop the current run
 ```
 
-### Audit & transcript
+`send()` resolves the runtime, then prompts it. `abort()` stops the current
+run without deleting the session.
 
-```ts
-await s.audit(limit?);         // per-session audit trail of executor-gated agent actions
-await s.transcript(options?);  // compact server-side transcript (text + tool calls, no tool inputs/outputs)
-```
+## Runtime status and previews
 
-`transcript()` is callable with project-scoped session tokens, so it's the
-right read for a scoped/embedded host that only has a session token.
-
-## The runtime
-
-The session owns its runtime, so these resolve the active sandbox for you — you
-pass a port or a URL, never a sandbox id.
-
-| method                      | returns                        | what                                                                 |
-| --------------------------- | ------------------------------ | -------------------------------------------------------------------- |
-| `s.health(init?)`           | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready                         |
-| `s.previewUrl(port, path?)` | `string`                       | proxy/preview URL for a port the agent exposed                       |
-| `s.proxyUrl(url?)`          | `string \| undefined`          | rewrite a localhost URL the agent printed into a reachable proxy URL |
+| Method | Returns | Use |
+|---|---|---|
+| `s.health(init?)` | `{ status, ok, health, body }` | Check whether the runtime is alive |
+| `s.previewUrl(port, path?)` | `string` | Get a proxy URL for a port the agent exposed |
+| `s.proxyUrl(url?)` | `string \| undefined` | Rewrite a localhost URL the agent printed |
 
 ```ts
 const { ok, health } = await s.health();
-// health?.runtimeReady · health?.status · health?.version …
-
-const url = s.previewUrl(3000, '/docs'); // → the live preview URL
-const fixed = s.proxyUrl('http://localhost:8080');
+const url = s.previewUrl(3000, '/docs');
 ```
 
-`s.health()` never throws `SessionNotReadyError` — it's safe to poll before
-the session has ever resolved a runtime. `s.previewUrl()` and `s.proxyUrl()`
-do require a resolved runtime; call `s.ensureReady()` first (or `s.send()` /
-`s.abort()`, which call it internally).
+`s.health()` never throws. Call it any time, even before the session has a
+runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
+`s.ensureReady()` first, or they throw `SessionNotReadyError`. See
+[Session readiness errors](#session-readiness-errors).
 
-<Callout>
-  Stateless URL helpers — detecting localhost URLs in agent output, parsing preview URLs — live at
-  [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The session handle wraps them with
-  the sandbox context already resolved.
-</Callout>
+## Streaming
 
-## Talking to the agent
+Use `s.stream()` to receive live events in a script or server. In a React
+app, use [`useSession`](/docs/sdk/react) instead — it manages the whole
+session lifecycle for you.
 
-These are the opinionated wrappers over the runtime — the right entry points for
-a script, server, worker, or any non-React host. Each auto-provisions the
-runtime via `ensureReady()` internally, resolves the OpenCode session id for
-you, and always acts against **this handle's own** resolved runtime — never
-whatever sandbox happens to be globally "active" — so two handles on two
-different sessions never cross wires.
+A session's events come from the OpenCode runtime inside its sandbox. The
+Kortix API proxies them to you. There is no separate WebSocket endpoint. The
+transport is `fetch` with a streaming response body, read through
+`ReadableStream` and `TextDecoderStream`. The SDK handles reconnection,
+backoff, and a heartbeat check inside the event-stream layer. A dropped
+connection resumes on its own.
 
-```ts
-await s.ensureReady(); // provision/resume the runtime; idempotent
-s.setModel({ providerID, modelID }); // sticky model for subsequent send()s
-s.setAgent('build'); // sticky agent for subsequent send()s
+Stream a session:
 
-await s.send('Refactor the auth module'); // prompt the agent
-await s.send('One-off task', { model, agent }); // per-call override
-await s.abort(); // abort the current run
-```
-
-Call `s.ensureReady()` (or `send`/`abort`, which call it internally) before
-`.runtime`, `.previewUrl()`, or `.proxyUrl()` — those throw
-`SessionNotReadyError` if this handle hasn't resolved a runtime yet.
-`.health()` is the exception: it never throws and is safe to call anytime.
-
-### Streaming events — `s.stream()`
-
-For **live** message / part / event streaming from a non-React host, use
-`s.stream()` — a framework-free facade over the same primitive
-[`useSession`](/docs/sdk/react#usesessionprojectid-sessionid-options) uses
-internally. It handles connect/reconnect/backoff and a 15s heartbeat watchdog.
+1. Call `ensureReady()` first. The runtime does not exist until the sandbox
+   starts.
+2. Open the stream before you send a message, so you do not miss early
+   events.
+3. Send the message.
+4. Close the stream when you see `session.idle`.
 
 ```ts
-const handle = await s.stream({
-  onEvent: (event) => console.log(event),
-  onGapRehydrate: (gapMs) => console.log('reconnected, gap:', gapMs),
+const session = kortix.session(projectId, sessionId);
+const { opencodeSessionId } = await session.ensureReady();
+
+const stream = await session.stream({
+  onEvent: (event) => {
+    if (event.type === 'session.idle' && event.properties.sessionID === opencodeSessionId) {
+      onTurnDone();
+      stream.close();
+    }
+  },
 });
-// later
-handle.close();
+
+await session.send('Refactor the auth module');
 ```
 
-In a React app, prefer [`useSession(projectId, sessionId)`](/docs/sdk/react#usesessionprojectid-sessionid-options)
-instead — the hook that owns the whole runtime (start, SSE, readiness) and
-returns the thread, `send`, and the boot `phase`.
+Streaming needs `fetch` with a real `ReadableStream` body and
+`TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers
+all support it. React Native and Expo do not: their `fetch` has no
+`response.body`. On React Native, use `createHttpSessionSyncController` for
+bounded history and status synchronization. Use a platform-specific event
+transport for live events.
 
-### The typed runtime — `s.runtime`
+The controller loads the newest 10 messages first. `loadOlder()` follows the
+server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
+exports.
 
-`s.runtime` is the typed **OpenCode v2 client**, scoped to this session and reached
-only through the SDK — the escape hatch for anything not covered by
-`send`/`abort`/`stream`. It requires a resolved runtime (call `s.ensureReady()`
-first, or use it after `send`/`abort`/`stream` have run).
+### Event types
+
+Each event has a `type` and a `properties` object that holds its data, for
+example `event.properties.sessionID`.
+
+| `type` | When it fires |
+| --- | --- |
+| `message.updated` / `message.removed` | A message changed or was deleted. |
+| `message.part.updated` / `message.part.removed` | A part (text, tool call, file) grew or was removed. |
+| `session.status` | The session's busy state changed. |
+| `session.idle` | The turn finished. |
+| `session.error` | The turn failed. The event carries the error. |
+| `question.asked` | The agent asked for input. |
+| `question.replied` / `question.rejected` | The answer to a question arrived. |
+
+Turn raw messages and parts into renderable output with `classifyTurn`. See
+[SDK reference](/docs/sdk/reference).
+
+## Retry on a cold boot
+
+`ensureReady()` polls the session's `/start` endpoint — each call long-polls up
+to 30 s — until the runtime reaches a terminal `ready`/`failed`/`stopped` stage
+or its deadline (`readyTimeoutMs`, default ~180 s) elapses. On a warm session
+the first poll resolves `ready` immediately. On a cold boot it keeps polling
+while the sandbox reports `retriable: true`, so a slow start just takes longer
+rather than throwing. It only throws an `ApiError` with `code:
+'RUNTIME_UNAVAILABLE'` if the runtime is still not `ready` when the deadline
+expires.
+
+`ensureReady()` is idempotent, so concurrent calls for the same session share
+one `/start` request instead of sending several. The `retryUntilReady` helper
+below is now optional — `ensureReady()` already retries internally — but stays
+useful if you want a longer total budget than the default `readyTimeoutMs`.
 
 ```ts
-await s.ensureReady();
+async function retryUntilReady<T>(ensure: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + 300_000;
+  for (;;) {
+    try {
+      return await ensure();
+    } catch (error) {
+      const provisioning = error instanceof ApiError && error.code === 'RUNTIME_UNAVAILABLE';
+      if (!provisioning || Date.now() > deadline) throw error;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+}
+```
 
-// send a prompt (equivalent to s.send(), shown for the raw client)
+See [Error classes](#error-classes) for the full `ApiError` shape. In React,
+[`useSession`](/docs/sdk/react) retries `/start` for you, so you do not need
+this pattern.
+
+## Files
+
+`s.files` reads and writes the session's sandbox: `list`, `read`, `readBlob`,
+`status`, `findFiles`, `findText`, `upload`, `create`, `copy`, `remove`,
+`mkdir`, `rename`. Every call resolves the runtime first, and always targets
+this session's own sandbox. See the [SDK reference](/docs/sdk/reference) for
+the full method list.
+
+## The raw runtime
+
+`s.runtime` is the typed OpenCode client, scoped to this session. Use it only
+for calls that `send`, `abort`, and `stream` do not cover. It requires a
+resolved runtime — call `s.ensureReady()` first.
+
+```ts
+const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({
-  sessionID: (await s.ensureReady()).opencodeSessionId,
+  sessionID: opencodeSessionId,
   parts: [{ type: 'text', text: 'Refactor the auth module' }],
 });
 ```
 
-<Callout type="warn">
-  The OpenCode `sessionID` the runtime expects is **not** the Kortix `sessionId` passed to
-  `kortix.session(projectId, sessionId)` — it's resolved server-side at `/start` and cached on the
-  handle. Prefer `s.send()` / `s.abort()`, which resolve it for you; only reach for raw `s.runtime`
-  calls when you need something those wrappers don't cover.
-</Callout>
+The OpenCode `sessionID` here is not the session ID you pass to
+`kortix.session(projectId, sessionId)`. The SDK resolves it during
+`ensureReady()` and caches it on the handle.
 
-<Callout type="warn">
-  Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by the SDK, with
-  the full opencode type surface re-exported from
-  [`@kortix/sdk/opencode-client`](/docs/sdk/modules#kortix-sdk-opencode-client).
-</Callout>
+## Handling errors
 
-## Files — `s.files`
-
-`s.files` is the session-scoped equivalent of the top-level `@kortix/sdk`
-`files` export: the same 12-op workspace surface, but every call auto-provisions
-via `ensureReady()` and always targets **this handle's own** resolved runtime —
-never the module-global "active" sandbox. This fixes a cross-session bleed bug:
-a host juggling multiple open sessions that called the global `files.list()`
-could silently read/write the wrong sandbox.
+Every call through `createKortix` rejects with a typed `Error` subclass,
+never a plain object. Catch the error, check `instanceof`, and branch on
+`.status` or `.code`.
 
 ```ts
-await s.files.list(dirPath);
-await s.files.read(filePath);
-await s.files.readBlob(filePath);
-await s.files.status();
-await s.files.findFiles(query, { type: 'file', limit });
-await s.files.findText(pattern);
-await s.files.upload(file, targetPath?, filename?);
-await s.files.create(filePath);
-await s.files.copy(sourcePath, destPath);
-await s.files.remove(filePath);
-await s.files.mkdir(dirPath);
-await s.files.rename(from, to);
+import { ApiError, BillingError } from '@kortix/sdk';
+
+try {
+  await kortix.project(projectId).sessions.create();
+} catch (err) {
+  if (err instanceof BillingError) {
+    // 402 — out of credits or over a plan limit
+  } else if (err instanceof ApiError) {
+    // any other failed request — err.status, err.code, err.detail
+  } else {
+    throw err;
+  }
+}
 ```
+
+### Error classes
+
+| Class | Extends | When it throws | Key fields |
+|---|---|---|---|
+| `ApiError` | `Error` | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
+| `AuthError` | `ApiError` | `getToken` returned `null`. Kortix never sent the request | `code` is always `'NO_SESSION'` |
+| `BillingError` | `Error` | HTTP `402`. The only billing error class | `status` (`402`), `detail.message` |
+| `RequestTooLargeError` | `Error` | HTTP `431`. Usually too many files in one request | `detail.suggestion` |
+| `SessionNotReadyError` | `Error` | A runtime accessor ran before `ensureReady()` | `name` is `'SessionNotReadyError'` |
+
+`ApiError.name` is `'ApiError'` by default. Two cases override it:
+
+- `name: 'AbortError'`, `code: 'ABORTED'` — the request was cancelled, for example by navigation. This is not a failure. Ignore it.
+- `code: 'TIMEOUT'` — the request's own timeout elapsed. `url`, `endpoint`, and `timeout` show what timed out.
+
+For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string. `message` is an enumerable own property on `ApiError`, so it survives `JSON.stringify` and object spread.
+
+Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
+
+Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
+
+Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend.
+
+Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the request carried too many files. `detail.suggestion` holds a ready-to-show hint for the user.
+
+### Session readiness errors
+
+Two errors mean the session's sandbox is not ready yet. Handle each one differently.
+
+`SessionNotReadyError` throws synchronously when you call a runtime accessor — `session.previewUrl()`, `session.proxyUrl()`, or `session.runtime` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox; it never falls back to another session's sandbox.
+
+```ts
+import { SessionNotReadyError } from '@kortix/sdk';
+
+const s = kortix.session(projectId, sessionId);
+try {
+  const url = s.previewUrl(3000); // throws: not resolved yet
+} catch (err) {
+  if (err instanceof SessionNotReadyError) {
+    await s.ensureReady();
+  }
+}
+```
+
+Call `await session.ensureReady()` first, or call `send()`, which readies the session internally. `session.health()` is the one accessor that never throws this error, so you can poll it before the session boots.
+
+`RUNTIME_UNAVAILABLE` is the second error — it means `ensureReady()` itself timed out waiting for a cold boot. See [Retry on a cold boot](#retry-on-a-cold-boot) for the full pattern. In React, `useSession` retries this for you and exposes it through the `phase` value instead of throwing.
+
+### Helpers
+
+| Helper | Signature | What it does |
+|---|---|---|
+| `parseBillingError(error)` | `(error) => Error` | Wraps a `402` response into a `BillingError`. Returns other errors unchanged |
+| `isBillingError(error)` | `(error) => boolean` | Returns `error instanceof BillingError` |
+| `formatBillingErrorForUI(error)` | `(error) => BillingErrorUI \| null` | Returns `null` for non-billing errors. Otherwise returns `{ alertTitle, alertSubtitle }` for an upgrade modal |
+
+```ts
+import { formatBillingErrorForUI } from '@kortix/sdk';
+
+try {
+  await kortix.session(projectId, sessionId).start();
+} catch (err) {
+  const ui = formatBillingErrorForUI(err);
+  if (ui) showUpgradeModal(ui.alertTitle, ui.alertSubtitle);
+}
+```
+
+### In `@kortix/sdk/react`
+
+`@kortix/sdk/react` re-exports `BillingError`, `RequestTooLargeError`, `parseBillingError`, `isBillingError`, and `formatBillingErrorForUI`. It does not re-export `ApiError` or `AuthError` — import those from `@kortix/sdk`.
+
+`useSession` classifies every `send`, `answerQuestion`, `answerPermission`, and `rejectQuestion` failure into one `sendError` object, so you do not need to write `instanceof` checks by hand:
+
+```ts
+interface KortixSendError {
+  kind: 'billing' | 'runtime-not-ready' | 'runtime-error';
+  message: string;
+  billing?: BillingError; // set when kind is 'billing'
+  cause: unknown;
+}
+```
+
+```tsx
+const s = useSession(projectId, sessionId);
+
+if (s.sendError?.kind === 'billing') {
+  const ui = formatBillingErrorForUI(s.sendError.billing);
+}
+```
+
+See [React hooks](/docs/sdk/react) for the rest of `useSession`.

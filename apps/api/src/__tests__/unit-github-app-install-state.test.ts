@@ -18,6 +18,10 @@ import {
   buildGitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
 } from '../projects/github';
+import {
+  buildAccountGitHubSetupRedirect,
+  resolveGitHubInstallCallbackAction,
+} from '../platform/routes/github-app';
 // buildGitHubAppInstallState is exported from github.ts for testability (it's
 // a pure HMAC-base64url function with no side effects; the only caller is
 // buildGitHubAppInstallUrl, which feeds the token into a GitHub URL).
@@ -128,5 +132,56 @@ describe('verifyGitHubAppInstallStatePayload — TTL + happy path', () => {
     const verified = verifyGitHubAppInstallStatePayload(token);
     expect(verified?.accountId).toBe('acct-1');
     expect(verified?.nonce).toBe('nonce-abc');
+  });
+
+  test('round-trips an account-link purpose', () => {
+    const token = buildGitHubAppInstallState('acct-1', {
+      nonce: 'nonce-abc',
+      purpose: 'account_link',
+      frontendOrigin: 'http://localhost:13400',
+    });
+    const verified = verifyGitHubAppInstallStatePayload(token);
+    expect(verified?.purpose).toBe('account_link');
+    expect(verified?.frontendOrigin).toBe('http://localhost:13400');
+    expect(resolveGitHubInstallCallbackAction(verified)).toBe('link_account');
+  });
+
+  test('drops an unsafe frontend origin from signed install state', () => {
+    const token = buildGitHubAppInstallState('acct-1', {
+      nonce: 'nonce-abc',
+      purpose: 'account_link',
+      frontendOrigin: 'http://attacker.example',
+    });
+    expect(verifyGitHubAppInstallStatePayload(token)?.frontendOrigin).toBeUndefined();
+  });
+
+  test('round-trips a platform-setup purpose', () => {
+    const token = buildGitHubAppInstallState('acct-1', {
+      nonce: 'nonce-abc',
+      purpose: 'platform_setup',
+    });
+    const verified = verifyGitHubAppInstallStatePayload(token);
+    expect(verified?.purpose).toBe('platform_setup');
+    expect(resolveGitHubInstallCallbackAction(verified)).toBe('configure_managed');
+  });
+
+  test('rejects an install callback without an explicit purpose', () => {
+    const token = buildGitHubAppInstallState('acct-1', { nonce: 'nonce-abc' });
+    expect(resolveGitHubInstallCallbackAction(verifyGitHubAppInstallStatePayload(token))).toBe(
+      'reject',
+    );
+    expect(resolveGitHubInstallCallbackAction(null)).toBe('reject');
+  });
+
+  test('returns an account link to the authenticated GitHub setup page', () => {
+    expect(
+      buildAccountGitHubSetupRedirect('http://localhost:13400', {
+        state: 'signed-state',
+        installationId: '42',
+        setupAction: 'update',
+      }),
+    ).toBe(
+      'http://localhost:13400/github/setup?state=signed-state&installation_id=42&setup_action=update',
+    );
   });
 });

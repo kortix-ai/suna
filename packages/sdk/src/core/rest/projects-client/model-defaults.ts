@@ -2,17 +2,15 @@ import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
 // ── Default model preferences (account-scoped, gateway-resolved) ───────────
-// The LLM gateway is the source of truth for the default model: a request for
-// the synthetic `auto` resolves server-side to the per-agent default → account
-// default → platform default. These read/write the account+agent defaults
-// (operating on the project's owner account). Stored values are gateway wire
-// models (bare managed id, BYOK `provider/model`, or `codex/…`).
+// The LLM gateway is the source of truth for concrete model defaults. These
+// functions read and write account, project, and agent defaults. Stored values
+// are gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
 export type ModelDefaultScope = 'account' | 'agent' | 'project';
 export type ModelDefaultSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
 
 export interface ModelDefaultsResponse {
-  /** The platform-wide fallback model (what `auto` resolves to with no override). */
+  /** The platform-wide concrete fallback model. */
   platformDefault: string;
   /** Account-wide default wire model, or null when unset. */
   accountDefault: string | null;
@@ -60,4 +58,3 @@ export async function clearModelDefault(
     ),
   );
 }
-

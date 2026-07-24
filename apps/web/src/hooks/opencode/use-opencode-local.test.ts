@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { computeFreeTier } from './use-opencode-local';
 
-// The pure agent/model-selection algorithm (formatModelString, resolveHiddenAutoModel,
+// The pure agent/model-selection algorithm (formatModelString, resolvePromptModel,
 // resolveCurrentAgentName, scopedModelSelectionKey, ...) moved to the SDK —
 // see packages/sdk/src/react/use-opencode-local.test.ts. This file only owns
 // the web-specific glue: deriving `freeTier` from billing account state.

@@ -107,7 +107,7 @@ Start a local server with `pty_spawn`, then show its plain URL:
 
 ```bash
 # static site (no build step)
-python3 -m http.server 3000 --directory /workspace/project
+uv run python -m http.server 3000 --directory /workspace/project
 # app: run its dev server instead, e.g. npm run dev
 ```
 

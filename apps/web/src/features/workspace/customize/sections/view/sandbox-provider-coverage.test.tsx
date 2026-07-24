@@ -57,11 +57,11 @@ function renderProviderPresentation({
 
 describe('sandbox template provider coverage presentation', () => {
   test('uses explicit launch-readiness language for every provider state', () => {
-    expect(describeProviderCoverage('ready')).toEqual({ label: 'Latest', tone: 'ok' });
+    expect(describeProviderCoverage('ready')).toEqual({ label: 'Ready', tone: 'ok' });
     expect(describeProviderCoverage('building')).toEqual({ label: 'Building', tone: 'busy' });
     expect(describeProviderCoverage('failed')).toEqual({ label: 'Failed', tone: 'fail' });
     expect(describeProviderCoverage('not_built')).toEqual({
-      label: 'Current image not built',
+      label: 'Not ready',
       tone: 'idle',
     });
     expect(describeProviderCoverage('unavailable')).toEqual({ label: 'Unavailable', tone: 'idle' });
@@ -80,7 +80,7 @@ describe('sandbox template provider coverage presentation', () => {
     expect(sandboxProviderLabel('e2b')).toBe('E2B');
   });
 
-  test('renders automatic mode as neutral without provider names or matrix', () => {
+  test('renders automatic mode with runtime readiness for every routed provider', () => {
     const html = renderProviderPresentation({
       providerMode: 'automatic',
       selectedProvider: 'daytona',
@@ -92,12 +92,13 @@ describe('sandbox template provider coverage presentation', () => {
     });
 
     expect(html).toContain('Automatic');
-    expect(html).not.toContain('Provider images');
-    expect(html).not.toContain('Daytona');
-    expect(html).not.toContain('Platinum');
+    expect(html).toContain('Session runtime');
+    expect(html).toContain('Daytona');
+    expect(html).toContain('Platinum');
     expect(html).not.toContain('E2B');
-    expect(html).not.toContain('Latest');
-    expect(html).not.toContain('Building');
+    expect(html).toContain('Ready');
+    expect(html).toContain('Building');
+    expect(html).not.toContain('Selected');
   });
 
   test('renders pinned matrix with only available providers and their states', () => {
@@ -117,9 +118,9 @@ describe('sandbox template provider coverage presentation', () => {
       ],
     });
 
-    expect(html).toContain('Provider images');
+    expect(html).toContain('Session runtime');
     expect(html).toContain('Daytona');
-    expect(html).toContain('Latest');
+    expect(html).toContain('Ready');
     expect(html).toContain('E2B');
     expect(html).toContain('Building');
     expect(html).not.toContain('Platinum');
@@ -139,7 +140,7 @@ describe('sandbox template provider coverage presentation', () => {
 
     expect(html).toContain('Pinned provider');
     expect(html).toContain('bg-muted/50');
-    expect(html).not.toContain('Provider images');
+    expect(html).not.toContain('Session runtime');
     expect(html).not.toContain('Daytona');
     expect(html).not.toContain('Platinum');
     expect(html).not.toContain('E2B');

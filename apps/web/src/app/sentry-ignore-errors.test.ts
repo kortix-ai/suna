@@ -34,6 +34,27 @@ test('sentry.client.config anchors expected billing-gate 402 markers', async () 
   expect(source).not.toContain("'Out of credits. Top up to continue.'");
 });
 
+test('sentry.client.config anchors the expected no-compaction-model marker', async () => {
+  // Reproduces Better Stack error 9f72dd9a2cb49a81aa57be27e9b3cb2f1ef06a8ebf59ede6900267febd3f7ded
+  // (Kortix Frontend prod): the SDK's `useSummarizeOpenCodeSession` mutation
+  // throws a sentinel `NoCompactionModelError` when no model is configured
+  // anywhere — an expected, user-facing config state the host already toasts.
+  // It leaks to Sentry as an unhandled promise rejection
+  // (`void loadingToast(...)` re-throws after the toast → `onunhandledrejection`).
+  // Sentry's `ignoreErrors` list is checked before an event is sent (covers
+  // every capture path, including frameless onerror), so the anchored marker
+  // MUST live here. Anchored so a longer real mutation failure that merely
+  // mentions the wording keeps reporting.
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  expect(source).toContain(
+    '/^(?:Unhandled promise rejection: )?(?:Error: )?No model available for compaction\\. Please configure a model in settings\\.$/',
+  );
+  // Guard against reintroducing a bare string entry: Sentry treats string
+  // ignoreErrors values as contains-matches, which would hide longer real
+  // errors that merely mention the compaction wording.
+  expect(source).not.toContain("'No model available for compaction.'");
+});
+
 test('sentry.client.config ignores storage-disabled WebView null-access TypeErrors', async () => {
   const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
   // Storage-disabled in-app WebViews resolve localStorage/sessionStorage to

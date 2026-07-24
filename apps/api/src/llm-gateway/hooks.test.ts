@@ -1,4 +1,7 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+
+let accountTier = 'per_seat';
+let billingCalls = 0;
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
 // auth+billing+budget RPC (backs POST /internal/gateway/authorize). Before the
@@ -15,7 +18,7 @@ mock.module('../config', () => ({
     {
       get: (target: Record<PropertyKey, unknown>, key) => {
         if (Object.hasOwn(target, key)) return target[key];
-        if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return false;
+        if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return true;
         // Read eagerly at module scope by ../llm-gateway/routing/index.ts (a
         // transitive import of ./hooks via resolveGatewayRoute) — not
         // exercised by authorizeRequest itself, but must not blow up on import.
@@ -26,6 +29,10 @@ mock.module('../config', () => ({
       },
     },
   ),
+}));
+
+mock.module('../billing/services/entitlements', () => ({
+  getCachedAccountTier: async () => accountTier,
 }));
 
 // Real `../shared/crypto` is used as-is (pure token-shape checks, no DB) — a
@@ -66,7 +73,9 @@ let billingThrow: (() => never) | null = null;
 mock.module('../billing/services/billing-gate', () => ({
   BillingGateError: MockBillingGateError,
   assertBillingActive: async () => {
+    billingCalls += 1;
     if (billingThrow) billingThrow();
+    return { holdUsd: 0.01 };
   },
 }));
 
@@ -74,6 +83,12 @@ const { authorizeRequest } = await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
+  beforeEach(() => {
+    accountTier = 'per_seat';
+    billingCalls = 0;
+    billingThrow = null;
+  });
+
   test('insufficient_credits survives the RPC boundary', async () => {
     billingThrow = () => {
       throw new BillingGateError('insufficient_credits', 0, 'Out of credits. Top up to continue.', 'acct-1');
@@ -108,5 +123,31 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     const result = await authorizeRequest('good');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errorCode).toBe('subscription_required');
+  });
+
+  test('a free tier wallet never receives an LLM admission hold', async () => {
+    accountTier = 'free';
+
+    const result = await authorizeRequest('good');
+
+    expect(result.ok).toBe(true);
+    expect(billingCalls).toBe(0);
+    if (result.ok) {
+      expect(result.principal.freeModelsOnly).toBe(true);
+      expect(result.principal.billingHold).toBeUndefined();
+    }
+  });
+
+  test('a paid tier keeps the LLM admission hold', async () => {
+    accountTier = 'per_seat';
+
+    const result = await authorizeRequest('good');
+
+    expect(result.ok).toBe(true);
+    expect(billingCalls).toBe(1);
+    if (result.ok) {
+      expect(result.principal.freeModelsOnly).toBe(false);
+      expect(result.principal.billingHold).toEqual({ amountUsd: 0.01 });
+    }
   });
 });

@@ -5,7 +5,7 @@ and runs it. LibreOffice often hangs after completing the macro — a timeout
 is treated as success since the file has already been saved.
 
 Usage:
-    python accept_changes.py <input.docx> <output.docx>
+    uv run accept_changes.py <input.docx> <output.docx>
 """
 
 import os

@@ -32,6 +32,12 @@ const CommandPalette = lazy(() =>
   })),
 );
 
+const PresentationViewerWrapper = lazy(() =>
+  import('@/stores/presentation-viewer-store').then((mod) => ({
+    default: mod.PresentationViewerWrapper,
+  })),
+);
+
 interface ProjectShellProps {
   projectId: string;
   initialSidebarOpen?: boolean;
@@ -40,12 +46,9 @@ interface ProjectShellProps {
 
 /**
  * Read the sidebar's persisted open/collapsed state from the `sidebar_state`
- * cookie that {@link SidebarProvider} writes on every toggle. ProjectShell
- * remounts on navigation (opening a session, ⌘J, switching sessions), so
- * without re-seeding from the cookie the sidebar snaps back to its default
- * (expanded) every time. Client-only — the shell is gated behind client auth,
- * so the provider never renders during SSR and this can't cause a hydration
- * mismatch.
+ * cookie that {@link SidebarProvider} writes on every toggle. Client-only —
+ * the shell is gated behind client auth, so the provider never renders during
+ * SSR and this cannot cause a hydration mismatch.
  */
 function readSidebarOpenCookie(): boolean | undefined {
   if (typeof document === 'undefined') return undefined;
@@ -151,6 +154,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </div>
 
         <CustomizPanel projectId={projectId} />
+
+        <Suspense fallback={null}>
+          <PresentationViewerWrapper />
+        </Suspense>
 
         <ProjectOnboardingWizard projectId={projectId} />
 

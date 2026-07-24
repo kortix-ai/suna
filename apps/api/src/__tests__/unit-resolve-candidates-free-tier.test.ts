@@ -114,15 +114,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   // mock.
   bedrockByokBaseUrl: (region: string | null | undefined) =>
     `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
-}));
-
-// resolveCandidates resolves raw "auto"/"kortix/auto" via resolveGatewayRoute
-// BEFORE any BYOK/managed-model logic below runs. The real implementation
-// looks up the project's routing policy from the DB, which isn't available
-// here (config is mocked, no DATABASE_URL) — stub it to the same platform
-// default (config.LLM_GATEWAY_DEFAULT_MODEL above) the "auto" tests assert on.
-mock.module('../llm-gateway/routing', () => ({
-  resolveGatewayRoute: async () => ({ primaryModel: 'codex/gpt-5.6-sol' }),
+  stripBedrockInferenceProfilePrefix: (model: string) => model,
 }));
 
 const { resolveCandidates } = await import('../llm-gateway/resolution/resolve-candidates');
@@ -164,24 +156,23 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(1);
   });
 
-  test('resolves raw auto to the Codex GPT-5.6 Sol platform default for stale gateway callers', async () => {
+  test('rejects stale raw auto for paid accounts', async () => {
     accountTier = 'per_seat';
-    const candidates = await resolveCandidates(principal('team-auto'), 'auto');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.provider).toBe('openai-codex');
-    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
+    await expect(resolveCandidates(principal('team-auto'), 'auto')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_not_found',
+    });
     expect(accountTierCalls).toBe(0);
   });
 
-  test('does not tier-gate the Codex platform default for free accounts with ChatGPT auth', async () => {
+  test('rejects stale kortix/auto for free accounts', async () => {
     accountTier = 'free';
-    const candidates = await resolveCandidates(
-      { ...principal('free-auto'), freeModelsOnly: true },
-      'auto',
-    );
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.provider).toBe('openai-codex');
-    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
+    await expect(
+      resolveCandidates({ ...principal('free-auto'), freeModelsOnly: true }, 'kortix/auto'),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_not_found',
+    });
     expect(accountTierCalls).toBe(0);
   });
 

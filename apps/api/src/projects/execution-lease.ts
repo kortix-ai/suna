@@ -19,7 +19,10 @@ export interface ExecutionKeepAliveEndpoint {
   headers: Record<string, string>;
 }
 
-function keepAliveEndpoint(url: string, headers: Record<string, string>): ExecutionKeepAliveEndpoint {
+function keepAliveEndpoint(
+  url: string,
+  headers: Record<string, string>,
+): ExecutionKeepAliveEndpoint {
   const safeHeaders = Object.fromEntries(
     Object.entries(headers).filter(([name]) => name.toLowerCase() !== 'authorization'),
   );
@@ -70,8 +73,26 @@ export async function discoverExecutionKeepAliveEndpoint(
 ): Promise<ExecutionKeepAliveEndpoint | null> {
   const row = await loadLeaseSandbox(target);
   if (!row?.externalId) return null;
-  const endpoint = await getProvider(row.provider as ProviderName).resolveEndpoint(row.externalId);
-  return keepAliveEndpoint(endpoint.url, endpoint.headers);
+  // resolveEndpoint delegates to the provider's ingress resolution (Daytona's
+  // getPreviewLink), which can throw a `DaytonaRateLimitError` on an org-wide
+  // 429 `ThrottlerException`. This is a BEST-EFFORT discover path (the sandbox
+  // agent calls it on turn start to find its keep-alive target); an expected
+  // provider 429 must NOT bubble up to `app.onError` → Sentry → Better Stack
+  // (the recurring `ec26b248…` fingerprint). Degrade to `null` — the caller
+  // treats null as "no keep-alive endpoint yet" and the DB lease remains
+  // authoritative, exactly like `touchProvider`'s own catch below.
+  try {
+    const endpoint = await getProvider(row.provider as ProviderName).resolveEndpoint(
+      row.externalId,
+    );
+    return keepAliveEndpoint(endpoint.url, endpoint.headers);
+  } catch (err) {
+    console.warn(
+      `[execution-lease] discover keep-alive endpoint failed for sandbox ${row.externalId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
 }
 
 async function touchProvider(

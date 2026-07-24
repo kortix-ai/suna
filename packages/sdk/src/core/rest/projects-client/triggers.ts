@@ -13,6 +13,16 @@ import { unwrap } from './shared';
 
 export type ProjectTriggerType = 'cron' | 'webhook';
 
+/**
+ * How each fire uses sessions:
+ * - `fresh` (default) — a brand-new session per run.
+ * - `reuse` — always re-prompt this trigger's own long-lived session.
+ * - `pinned` — always re-prompt one specific `session_id`.
+ * - `keyed` — one session PER rendered `session_key` value, so a single
+ *   trigger fans out into a session per chat / customer / repo.
+ */
+export type ProjectTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
+
 /** Parsed trigger spec — what the listing endpoint returns. */
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
@@ -35,11 +45,24 @@ export interface ProjectTrigger {
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
   prompt_template: string;
-  /** Session strategy: 'fresh' (new session each run, default), 'reuse' (loop
-   *  this trigger's own session), or 'pinned' (loop the exact session_id). */
-  session_mode: 'fresh' | 'reuse' | 'pinned';
+  /** Session strategy — see {@link ProjectTriggerSessionMode}. */
+  session_mode: ProjectTriggerSessionMode;
   /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
   session_id: string | null;
+  /**
+   * For session_mode === 'keyed' only: the `{{ body.path }}` template rendered
+   * against each delivery to pick which session handles it. Null otherwise.
+   * Setting it is itself the opt-in — the API infers `session_mode: 'keyed'`
+   * from a non-empty key unless a different mode is sent explicitly.
+   */
+  session_key: string | null;
+  /**
+   * Payload paths (dotted, rooted at the same `body`/`headers` object the
+   * prompt template sees) mapped to the value they must equal for the trigger
+   * to fire. A non-matching delivery is accepted but spawns no session. Null
+   * when unfiltered.
+   */
+  filter: Record<string, string> | null;
   last_fired_at: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
@@ -90,14 +113,18 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
-  /**
-   * Session strategy across fires: 'fresh' (new session each run, default),
-   * 'reuse' (loop this trigger's own session), or 'pinned' (loop the exact
-   * `session_id` chosen below). Omit for the default 'fresh'.
-   */
-  session_mode?: 'fresh' | 'reuse' | 'pinned';
+  /** Session strategy across fires. Omit for the default 'fresh'. */
+  session_mode?: ProjectTriggerSessionMode;
   /** Required when session_mode === 'pinned': the session id to loop. */
   session_id?: string | null;
+  /**
+   * `{{ body.path }}` template that buckets sessions by key. Sending it is
+   * enough — the API infers `session_mode: 'keyed'` unless another mode is
+   * sent explicitly.
+   */
+  session_key?: string | null;
+  /** Payload paths mapped to the value they must equal for the trigger to fire. */
+  filter?: Record<string, string> | null;
 }
 
 export interface UpdateProjectTriggerInput {
@@ -107,11 +134,17 @@ export interface UpdateProjectTriggerInput {
   /** Wire-form model (`provider/model`). null resets to the default chain. */
   model?: string | null;
   enabled?: boolean;
-  cron?: string;
+  cron?: string | null;
+  /** ISO-8601 instant for a one-off run; null clears it back to a `cron`. */
+  run_at?: string | null;
   timezone?: string;
   secret_env?: string;
-  session_mode?: 'fresh' | 'reuse' | 'pinned';
+  session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
+  /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
+  session_key?: string | null;
+  /** null or {} clears the filter. */
+  filter?: Record<string, string> | null;
 }
 
 export async function listProjectTriggers(projectId: string) {

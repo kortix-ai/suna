@@ -2,7 +2,10 @@
 
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { clearConfigOverrides } from '../use-opencode-config';
-import { saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
+import {
+  noteSessionSyncEvent,
+  reconcileSessionTail,
+} from '../../browser/session-sync/session-sync-registry';
 import { logger } from '../../core/http/logger';
 import { getClient, resetClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
@@ -135,6 +138,7 @@ export function useOpenCodeEventStream() {
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
+      reconcileSessionTail,
     });
 
     // ---- CONSOLIDATED hydration function ----
@@ -207,16 +211,7 @@ export function useOpenCodeEventStream() {
           const status = syncState.sessionStatus[sid];
           if (status?.type !== 'busy' && status?.type !== 'retry') continue;
           if (!reserveMessageRehydrate(sid)) continue;
-          client.session
-            .messages({ sessionID: sid })
-            .then((res) => {
-              if (res.data) {
-                useSyncStore.getState().hydrate(sid, res.data);
-                const s = useSyncStore.getState();
-                const msgs = s.messages[sid] ?? [];
-                if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
-              }
-            })
+          reconcileSessionTail(sid, 'sse-gap')
             .catch(() => {})
             .finally(() => releaseMessageRehydrate(sid));
         }
@@ -232,7 +227,10 @@ export function useOpenCodeEventStream() {
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
     const handle = openEventStream({
       client,
-      onEvent: handleEvent,
+      onEvent: (event) => {
+        noteSessionSyncEvent(event);
+        handleEvent(event);
+      },
       onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
     });
 

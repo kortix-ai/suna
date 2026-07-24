@@ -28,7 +28,9 @@ mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => account,
 }));
 
-const { assertBillingActive, checkBillingActive, BillingGateError } = await import('./billing-gate');
+const { assertBillingActive, checkBillingActive, BillingGateError } = await import(
+  './billing-gate'
+);
 
 function creditAccount(overrides: Record<string, unknown> = {}) {
   return {
@@ -57,12 +59,41 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
     if (!result.ok) expect(result.reason).toBe('no_account');
   });
 
-  test('per-seat account with no active subscription and insufficient balance → "subscription_required"', async () => {
+  test('per-seat account that NEVER subscribed (no subscription row) and insufficient balance → "subscription_required"', async () => {
     billingEnabled = true;
-    account = creditAccount({ billingModel: 'per_seat', balance: '0', stripeSubscriptionStatus: 'canceled' });
+    account = creditAccount({
+      billingModel: 'per_seat',
+      balance: '0',
+      stripeSubscriptionStatus: 'canceled',
+    });
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('subscription_required');
+    if (!result.ok) {
+      expect(result.reason).toBe('subscription_required');
+      expect(result.billingModel).toBe('per_seat');
+      expect(result.hasSubscription).toBe(false);
+    }
+  });
+
+  test('per-seat Team account WITH a lapsed subscription and a drained wallet → "insufficient_credits" (top up, not "subscribe from Free")', async () => {
+    billingEnabled = true;
+    // Has a real subscription row (id set) but it lapsed to unpaid, and the
+    // wallet is deep negative — this is the exact "$-9k Team account" case. It
+    // must NOT be pitched the Free plan; it's out of credits.
+    account = creditAccount({
+      billingModel: 'per_seat',
+      balance: '-9237.85',
+      stripeSubscriptionId: 'sub_lapsed',
+      stripeSubscriptionStatus: 'unpaid',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('insufficient_credits');
+      expect(result.billingModel).toBe('per_seat');
+      expect(result.hasSubscription).toBe(true);
+      expect(result.balance).toBe(-9237.85);
+    }
   });
 
   test('legacy (non-per-seat) account with an exhausted balance → "insufficient_credits", NOT subscription_required', async () => {
@@ -104,9 +135,15 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
     } catch (err) {
       creditsErr = err;
     }
-    expect((creditsErr as InstanceType<typeof BillingGateError>).reason).toBe('insufficient_credits');
+    expect((creditsErr as InstanceType<typeof BillingGateError>).reason).toBe(
+      'insufficient_credits',
+    );
 
-    account = creditAccount({ billingModel: 'per_seat', balance: '0', stripeSubscriptionStatus: 'canceled' });
+    account = creditAccount({
+      billingModel: 'per_seat',
+      balance: '0',
+      stripeSubscriptionStatus: 'canceled',
+    });
     let subErr: unknown;
     try {
       await assertBillingActive('acct-1');
@@ -129,6 +166,26 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
       const gateError = err as InstanceType<typeof BillingGateError>;
       const body = await gateError.res!.clone().json();
       expect(body.code).toBe('insufficient_credits');
+    }
+  });
+
+  test('the 402 body carries billing_model + has_subscription so the client can route to top-up vs subscribe', async () => {
+    billingEnabled = true;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      balance: '-9237.85',
+      stripeSubscriptionId: 'sub_lapsed',
+      stripeSubscriptionStatus: 'unpaid',
+    });
+    try {
+      await assertBillingActive('acct-1');
+      throw new Error('expected assertBillingActive to throw');
+    } catch (err) {
+      const gateError = err as InstanceType<typeof BillingGateError>;
+      const body = await gateError.res!.clone().json();
+      expect(body.code).toBe('insufficient_credits');
+      expect(body.billing_model).toBe('per_seat');
+      expect(body.has_subscription).toBe(true);
     }
   });
 });

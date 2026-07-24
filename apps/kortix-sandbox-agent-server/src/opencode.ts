@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import { access, constants, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -9,6 +10,7 @@ import { LLM_PROXY_PLACEHOLDER_KEY, EXECUTOR_PROXY_PLACEHOLDER_KEY } from './llm
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
+import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 
 const READY_POLL_MS = 100
@@ -22,13 +24,45 @@ const READY_TIMEOUT_MS = 20_000
 // drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
 const READY_LIVENESS_MS = 5_000
 
-export const OPENCODE_HOME = '/opt/kortix/home'
+export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
 const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
-const OPENCODE_CACHE_HOME = `${OPENCODE_HOME}/.cache`
 const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
+
+/** True when OpenCode uses the single synthetic `kortix` LLM provider. */
+export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    env.KORTIX_LLM_PROXY_URL ||
+    (env.KORTIX_LLM_BASE_URL && env.KORTIX_LLM_API_KEY),
+  )
+}
+
+/** Convert a gateway wire model into OpenCode's `provider/model` string. */
+export function toKortixOpencodeModelRef(ref: string): string {
+  const trimmed = ref.trim()
+  return trimmed.startsWith('kortix/') ? trimmed : `kortix/${trimmed}`
+}
+
+/** Route every configured model through the only provider enabled in gateway mode. */
+function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
+  for (const key of ['model', 'small_model'] as const) {
+    if (typeof config[key] === 'string' && config[key].trim()) {
+      config[key] = toKortixOpencodeModelRef(config[key])
+    }
+  }
+
+  const agents = config.agent
+  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return
+  for (const value of Object.values(agents)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const agent = value as Record<string, unknown>
+    if (typeof agent.model === 'string' && agent.model.trim()) {
+      agent.model = toKortixOpencodeModelRef(agent.model)
+    }
+  }
+}
 
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has four
@@ -71,7 +105,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
 
   // Direct mode needs both token+url; proxy mode needs only the proxy URL.
   const hasExecutorMcp = executorMcpEnabled && (executorProxyMode || (!!executorToken && !!apiUrl))
-  const hasLlmGateway = proxyMode || (!!llmBaseUrl && !!llmApiKey)
+  const hasLlmGateway = hasKortixLlmGateway(env)
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #3 keys off it.
@@ -146,31 +180,38 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
         ? (out.provider as Record<string, unknown>)
         : {}
+    const kortixProvider = await buildKortixProvider({
+      // In proxy mode opencode talks to the localhost proxy with a placeholder
+      // key; the proxy injects the real per-session token upstream. In direct
+      // mode (cold/Daytona) it's the real gateway base + key, as before.
+      baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
+      apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
+      // Catalog is org-stable, so prefer the baked file — the full model catalog
+      // ships in every image at BAKED_LLM_CATALOG_PATH. Defaulting to it means a
+      // COLD boot (Daytona + Platinum) reads the file and SKIPS the ~2.2s gateway
+      // /models fetch that otherwise gates opencode's port bind on the critical
+      // path — matching how the warm seed (KORTIX_LLM_CATALOG_FILE) already
+      // behaves. Missing/empty file → readCatalogFile returns null → the fetch
+      // (step 2) still runs as the fallback, so this only ever removes latency.
+      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      fetchBaseURL: llmBaseUrl,
+      fetchApiKey: llmApiKey,
+    })
     out.provider = {
       ...provider,
-      kortix: await buildKortixProvider({
-        // In proxy mode opencode talks to the localhost proxy with a placeholder
-        // key; the proxy injects the real per-session token upstream. In direct
-        // mode (cold/Daytona) it's the real gateway base + key, as before.
-        baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
-        apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-        // Catalog is org-stable, so prefer the baked file — the full model catalog
-        // ships in every image at BAKED_LLM_CATALOG_PATH. Defaulting to it means a
-        // COLD boot (Daytona + Platinum) reads the file and SKIPS the ~2.2s gateway
-        // /models fetch that otherwise gates opencode's port bind on the critical
-        // path — matching how the warm seed (KORTIX_LLM_CATALOG_FILE) already
-        // behaves. Missing/empty file → readCatalogFile returns null → the fetch
-        // (step 2) still runs as the fallback, so this only ever removes latency.
-        catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
-        fetchBaseURL: llmBaseUrl,
-        fetchApiKey: llmApiKey,
-      }),
+      kortix: kortixProvider,
     }
+    normalizeGatewayModelRefs(out)
+    const resolvedSessionModel = env.KORTIX_OPENCODE_MODEL?.trim()
+    const availableGatewayModel = Object.keys(
+      (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
+    )[0]
+    const fallbackModel = resolvedSessionModel || availableGatewayModel
     if (!('model' in out) || typeof out.model !== 'string') {
-      out.model = DEFAULT_KORTIX_MODEL
+      if (fallbackModel) out.model = toKortixOpencodeModelRef(fallbackModel)
     }
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
-      out.small_model = DEFAULT_KORTIX_MODEL
+      if (fallbackModel) out.small_model = toKortixOpencodeModelRef(fallbackModel)
     }
     // Gateway mode allowlists providers so leaked provider keys cannot open
     // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
@@ -369,11 +410,6 @@ export async function refreshGatewayCatalogFile(opts: {
   return { changed, catalogFile: opts.targetCatalogFile }
 }
 
-// New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
-// images → a vision model) — not a single pinned model. Used for both the main
-// model and the cheap `small_model`.
-const DEFAULT_KORTIX_MODEL = 'kortix/auto'
-
 // One `reasoning_options` entry (models.dev's shape, mirrored — see
 // @kortix/llm-catalog's CatalogReasoningOption). Present iff the model
 // exposes a tunable reasoning-effort knob; this is the PRIORITY field the
@@ -432,17 +468,6 @@ type KortixGatewayModel = {
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  // AUTO — the default model; present so the baked default never dangles when this
-  // fallback is used (gateway + baked catalog both unreachable at boot).
-  auto: {
-    name: 'Auto',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
   'claude-opus-4.8': {
     name: 'Claude Opus 4.8',
     provider: 'kortix',
@@ -461,8 +486,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
-  // Managed default (AUTO's text target + the explicit default a fresh session
-  // opts into). Bare id = Kortix-managed; text-only, so no attachment.
+  // Managed default for fresh sessions. Bare id = Kortix-managed.
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',
@@ -726,13 +750,9 @@ export function createOpencodeSupervisor(
       })
     }
     const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
-    const env: NodeJS.ProcessEnv = {
+    const env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
-      HOME: OPENCODE_HOME,
-      XDG_DATA_HOME: OPENCODE_DATA_HOME,
-      XDG_CONFIG_HOME: OPENCODE_CONFIG_HOME,
-      XDG_CACHE_HOME: OPENCODE_CACHE_HOME,
       OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
       // Every non-interactive shell opencode spawns (`bash -c`) sources this,
       // so live project secrets reach the agent's commands without any
@@ -741,7 +761,7 @@ export function createOpencodeSupervisor(
       BASH_ENV: AGENT_ENV_SH,
       PORT: undefined,
       APP_PORT: undefined,
-    }
+    })
 
     materializeOpencodeAuth(env)
 

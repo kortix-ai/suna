@@ -110,6 +110,9 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
     // gateway, but never render a native (bypass) provider even if one slips in.
     if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
+      // Old sandboxes can carry a baked catalog from before the synthetic model
+      // was removed. Never expose or send those stale entries.
+      if (modelID === 'auto' || modelID === 'kortix/auto') continue;
       // Narrow `model` itself (not a copy) so the loose-shape-only fields
       // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
       let capabilities: FlatModel['capabilities'];

@@ -10,6 +10,7 @@ import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 
@@ -23,7 +24,12 @@ const PUSH_TOKEN = 'scoped-push-token-789';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
+let insertedGitConnection: any | null;
 let grantedProjectRole: any | null;
+let createdRepositoryBranch:
+  | { branch: string; baseRef?: string; hasGitAuthToken: boolean }
+  | null;
+let repositoryBranchError: Error | null;
 let updatedProjectSets: any[];
 let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
@@ -135,7 +141,14 @@ mockIamMembershipSyncNoop();
 mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
-  createRemoteSessionBranch: async () => undefined,
+  createRemoteSessionBranch: async (project: any, branch: string, baseRef?: string) => {
+    if (repositoryBranchError) throw repositoryBranchError;
+    createdRepositoryBranch = {
+      branch,
+      baseRef,
+      hasGitAuthToken: typeof project?.gitAuthToken === 'string',
+    };
+  },
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
@@ -178,6 +191,12 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
@@ -307,6 +326,9 @@ mock.module('../shared/db', () => ({
             grantedProjectRole = values;
             return Promise.resolve([]);
           }
+          if (table === projectGitConnections) {
+            insertedGitConnection = values;
+          }
           return {
             returning: async () => {
               if (table !== projects) return [];
@@ -361,6 +383,9 @@ describe('POST /v1/projects/provision (managed git)', () => {
   beforeEach(() => {
     setTestAuth();
     insertedProject = null;
+    insertedGitConnection = null;
+    createdRepositoryBranch = null;
+    repositoryBranchError = null;
     updatedProjectSets = [];
     grantedProjectRole = null;
     seedFilePaths = [];
@@ -422,6 +447,105 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
+  });
+
+  test('reuses one managed repository without transferring upstream deletion ownership', async () => {
+    managedPat = 'server-managed-pat';
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Isolated Flow Project',
+        repository_source_project_id: PROJECT_ID,
+        default_branch: 'ke2e-run-1',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.project_id).toBe(PROJECT_ID);
+    expect(body.default_branch).toBe('ke2e-run-1');
+    expect(body.push_token).toBeNull();
+    expect(body.git_username).toBeNull();
+    expect(backendCalls).toEqual([]);
+    expect(createdRepositoryBranch).toEqual({
+      branch: 'ke2e-run-1',
+      baseRef: 'main',
+      hasGitAuthToken: true,
+    });
+    expect(insertedProject).toMatchObject({
+      accountId: ACCOUNT_ID,
+      name: 'Isolated Flow Project',
+      repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+      defaultBranch: 'ke2e-run-1',
+      manifestPath: 'kortix.yaml',
+      status: 'active',
+      metadata: {
+        git: {
+          provider: 'github',
+          managed: false,
+          auth: { method: 'managed_shared', installation_id: INSTALL_ID },
+          owner: REPO_OWNER,
+          name: 'existing-managed',
+        },
+        repository_source_project_id: PROJECT_ID,
+      },
+    });
+    expect(insertedGitConnection).toMatchObject({
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      provider: 'github',
+      repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+      managed: false,
+      repoOwner: REPO_OWNER,
+      repoName: 'existing-managed',
+      externalRepoId: EXTERNAL_REPO_ID,
+      defaultBranch: 'ke2e-run-1',
+      authMethod: 'managed_shared',
+      installationId: INSTALL_ID,
+      metadata: {
+        shared_repository_owner_project_id: PROJECT_ID,
+      },
+    });
+  });
+
+  test('rejects repository reuse without a distinct isolated branch', async () => {
+    const res = await createApp().request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Unsafe Shared Main',
+        repository_source_project_id: PROJECT_ID,
+        default_branch: 'main',
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(createdRepositoryBranch).toBeNull();
+    expect(insertedProject).toBeNull();
+  });
+
+  test('does not register a derived project when isolated branch creation fails', async () => {
+    managedPat = 'server-managed-pat';
+    repositoryBranchError = new Error('upstream branch rejected');
+    const res = await createApp().request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Branch Failure',
+        repository_source_project_id: PROJECT_ID,
+        default_branch: 'ke2e-run-failed',
+      }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream branch rejected' });
+    expect(insertedProject).toBeNull();
+    expect(insertedGitConnection).toBeNull();
   });
 
   test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
@@ -520,7 +644,11 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // never applied (see llm-gateway/resolution/default-model.ts). Provision
     // must now stamp the mirror at creation time.
     expect(updatedProjectSets).toHaveLength(1);
-    expect(updatedProjectSets[0]).toMatchObject({ metadata: { default_agent: 'kortix' } });
+    const metadataQuery = new PgDialect().sqlToQuery(updatedProjectSets[0].metadata);
+    expect(metadataQuery.sql).toContain('coalesce');
+    expect(JSON.parse(String(metadataQuery.params[0]))).toEqual({
+      default_agent: 'kortix',
+    });
   });
 
   test('returns 503 when managed git is not configured', async () => {

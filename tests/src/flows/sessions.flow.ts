@@ -11,7 +11,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 120_000,
+    timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
@@ -55,7 +55,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 120_000,
+    timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId'],
   },
   async (ctx) => {
@@ -85,7 +85,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 120_000,
+    timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
@@ -109,7 +109,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 120_000,
+    timeoutMs: 300_000,
     routes: ['DELETE /v1/projects/:projectId/sessions/:sessionId'],
   },
   async (ctx) => {
@@ -157,7 +157,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 90_000,
+    timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
@@ -318,7 +318,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 90_000,
+    timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
@@ -434,7 +434,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 90_000,
+    timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/audit'],
   },
   async (ctx) => {
@@ -521,7 +521,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 90_000,
+    timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
@@ -631,7 +631,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    timeoutMs: 90_000,
+    timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/previews'],
   },
   async (ctx) => {

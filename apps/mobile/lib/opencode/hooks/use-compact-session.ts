@@ -14,6 +14,26 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import { useCompactionStore } from '@/stores/compaction-store';
 
+/**
+ * `NoCompactionModelError` — the EXPECTED, user-facing configuration state
+ * surfaced when every model-resolution fallback tier fails (no config default,
+ * no assistant message in the thread, no connected provider/model). The toast
+ * already tells the user to configure a model; it must never page Better Stack.
+ *
+ * Mirrors the SDK's `packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`
+ * sentinel class (mobile doesn't import the SDK react barrel, so this is a
+ * local copy with the same `name` + message so the telemetry gate matches it
+ * on either surface).
+ */
+export class NoCompactionModelError extends Error {
+  constructor(
+    message = 'No model available for compaction. Please configure a model in settings.',
+  ) {
+    super(message);
+    this.name = 'NoCompactionModelError';
+  }
+}
+
 interface CompactParams {
   sandboxUrl: string;
   sessionId: string;
@@ -80,7 +100,7 @@ async function resolveModel(sandboxUrl: string, sessionId: string): Promise<{ pr
     log.log(`[Compact] Provider model resolution failed: ${e}`);
   }
 
-  throw new Error('No model available for compaction. Please configure a model in settings.');
+  throw new NoCompactionModelError();
 }
 
 export function useCompactSession() {

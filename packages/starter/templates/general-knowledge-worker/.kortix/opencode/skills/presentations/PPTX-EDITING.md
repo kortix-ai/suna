@@ -4,21 +4,21 @@
 
 **Inspect a template:**
 ```bash
-python skills/presentations/scripts/slides.py thumbnail template.pptx   # → thumbnails.jpg (labeled grid)
-python -m markitdown template.pptx                              # → placeholder text
+uv run --with lxml --with pillow skills/presentations/scripts/slides.py thumbnail template.pptx   # → thumbnails.jpg (labeled grid)
+uv run --with 'markitdown[pptx]' python -m markitdown template.pptx                              # → placeholder text
 ```
 
 **Unpack / repack:**
 ```bash
-python skills/presentations/scripts/unpack.py input.pptx unpacked/      # extract + pretty-print XML + normalize smart quotes
-python skills/presentations/scripts/slides.py clean unpacked/            # delete orphaned slides, media, rels, content types
-python skills/presentations/scripts/pack.py unpacked/ output.pptx        # minify XML + compress
+uv run --with lxml skills/presentations/scripts/unpack.py input.pptx unpacked/      # extract + pretty-print XML + normalize smart quotes
+uv run --with lxml --with pillow skills/presentations/scripts/slides.py clean unpacked/            # delete orphaned slides, media, rels, content types
+uv run --with lxml skills/presentations/scripts/pack.py unpacked/ output.pptx        # minify XML + compress
 ```
 
 **Clone / add slides:**
 ```bash
-python skills/presentations/scripts/slides.py add unpacked/ slide3.xml       # clone existing slide
-python skills/presentations/scripts/slides.py add unpacked/ slideLayout4.xml  # instantiate from layout
+uv run --with lxml --with pillow skills/presentations/scripts/slides.py add unpacked/ slide3.xml       # clone existing slide
+uv run --with lxml --with pillow skills/presentations/scripts/slides.py add unpacked/ slideLayout4.xml  # instantiate from layout
 ```
 Prints a `<p:sldId>` element to insert into `<p:sldIdLst>`.
 
@@ -33,7 +33,7 @@ Prints a `<p:sldId>` element to insert into `<p:sldIdLst>`.
 **Phase 4 — Finalize.** Run `slides.py clean`, then `pack.py`.
 
 **Phase 5 — QA (mandatory).** Every edit MUST complete all three QA steps from SKILL.md before delivering:
-1. Content QA — `python -m markitdown output.pptx`
+1. Content QA — `uv run --with 'markitdown[pptx]' python -m markitdown output.pptx`
 2. Visual QA — convert to images (`soffice` + `pdftoppm`), then start a background review session to inspect
 3. Fix-and-verify — fix the review-session findings, re-convert, re-check
 

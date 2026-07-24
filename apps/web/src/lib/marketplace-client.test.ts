@@ -1,34 +1,32 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { backendApi } from '@/lib/api-client';
+import { listMarketplaceItems } from './marketplace-client';
 
 const backendGetCalls: string[] = [];
 let backendGetResponse: unknown = { items: [] };
-
-mock.module('@/lib/api-client', () => ({
-  backendApi: {
-    get: async (path: string) => {
-      backendGetCalls.push(path);
-      return { success: true, data: backendGetResponse };
-    },
-  },
-}));
+const originalBackendGet = backendApi.get;
 
 describe('listMarketplaceItems', () => {
   beforeEach(() => {
     backendGetCalls.length = 0;
     backendGetResponse = { items: [] };
+    backendApi.get = (async (path: string) => {
+      backendGetCalls.push(path);
+      return { success: true, data: backendGetResponse };
+    }) as typeof backendApi.get;
+  });
+
+  afterAll(() => {
+    backendApi.get = originalBackendGet;
   });
 
   test('omits limit/offset from the query string when not passed', async () => {
-    const { listMarketplaceItems } = await import('./marketplace-client');
-
     await listMarketplaceItems({ query: 'pdf' });
 
     expect(backendGetCalls[0]).toBe('/marketplace/items?query=pdf');
   });
 
   test('includes limit/offset in the query string when passed', async () => {
-    const { listMarketplaceItems } = await import('./marketplace-client');
-
     await listMarketplaceItems({ query: 'pdf', limit: 30, offset: 60 });
 
     expect(backendGetCalls[0]).toBe('/marketplace/items?query=pdf&limit=30&offset=60');
@@ -36,8 +34,6 @@ describe('listMarketplaceItems', () => {
 
   test('defaults total to items.length and hasMore to false when the server omits them', async () => {
     backendGetResponse = { items: [{ id: 'a' }, { id: 'b' }] };
-    const { listMarketplaceItems } = await import('./marketplace-client');
-
     const page = await listMarketplaceItems();
 
     expect(page.total).toBe(2);
@@ -46,8 +42,6 @@ describe('listMarketplaceItems', () => {
 
   test('passes through server-reported total and hasMore', async () => {
     backendGetResponse = { items: [{ id: 'a' }], total: 45, hasMore: true };
-    const { listMarketplaceItems } = await import('./marketplace-client');
-
     const page = await listMarketplaceItems({ limit: 1, offset: 0 });
 
     expect(page.total).toBe(45);

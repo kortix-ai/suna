@@ -93,3 +93,9 @@ export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
+
+// The expected "no compaction model configured" configuration state thrown by
+// `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback
+// tier fails. Re-exported here so hosts + the telemetry noise gate can
+// `instanceof`-match it without reaching into the hook's internal path.
+export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';

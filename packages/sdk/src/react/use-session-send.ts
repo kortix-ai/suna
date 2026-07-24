@@ -37,6 +37,7 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useState } from 'react';
 import { getClient } from '../core/runtime/client';
+import { SESSION_SYNC_PAGE_SIZE } from '../core/session-sync/session-sync-controller';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import type { MessageError } from '../browser/stores/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
@@ -109,7 +110,7 @@ export function abandonOptimisticSend(sessionId: string, messageId: string): voi
 /** The minimal slice of `OpencodeClient` the recovery rehydrate needs. */
 export interface OpenCodeMessagesClient {
   session: {
-    messages: (args: { sessionID: string }) => Promise<{ data?: unknown }>;
+    messages: (args: { sessionID: string; limit?: number }) => Promise<{ data?: unknown }>;
   };
 }
 
@@ -161,7 +162,7 @@ export function recoverFromSendFailure(
   }
 
   client.session
-    .messages({ sessionID: sessionId })
+    .messages({ sessionID: sessionId, limit: SESSION_SYNC_PAGE_SIZE })
     .then((res) => {
       if (res?.data) {
         // hydrate() already drops superseded optimistic messages AND bridges

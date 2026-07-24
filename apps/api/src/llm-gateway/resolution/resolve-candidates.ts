@@ -11,7 +11,6 @@ import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex'
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
-import { resolveGatewayRoute } from '../routing';
 import {
   bedrockByokBaseUrl,
   codexDescriptor,
@@ -77,21 +76,7 @@ export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
 ): Promise<UpstreamDescriptor[]> {
-  // The gateway normally applies the API-owned route plan before calling this hook.
-  // Keep the same fallback here so a stale standalone gateway that asks the API
-  // to resolve raw "auto" still gets a concrete upstream instead of 400ing — and
-  // resolve it against the same account/agent default the control plane used.
-  // Free-tier principals cannot use managed Kortix models, so stale AUTO below
-  // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel =
-    model === 'auto' || model === 'kortix/auto'
-      ? (
-          await resolveGatewayRoute(principal, {
-            requestedModel: model,
-            requires: { imageInput: false },
-          })
-        ).primaryModel
-      : model;
+  const effectiveModel = model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {

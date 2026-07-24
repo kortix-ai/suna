@@ -1,0 +1,105 @@
+---
+title: Connectors
+description: How connectors give agents scoped access to external tools.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+A connector links your project to an external tool or service, such as Gmail, Stripe, a database, or any HTTP API. The agent calls it as a tool. Kortix brokers every call, so the sandbox never holds the connector's credential. The dashboard may label this area **Connections** — it is the same feature.
+
+You declare most connectors in the project manifest, `kortix.yaml`. See the [manifest reference](/docs/project/manifest) for every field. Kortix declares channel and computer connectors for you, when you connect a chat platform or a machine.
+
+## Providers
+
+A connector uses one provider type:
+
+- **pipedream** — one-click OAuth for supported SaaS apps, when the deployment has Pipedream configured.
+- **openapi**, **postman**, **graphql**, **http** — a direct connector to an API.
+- **mcp** — a remote MCP server, reached over HTTP or SSE.
+- **channel** — a chat platform connection. See [Slack & channels](/docs/connect/slack).
+- **computer** — a tunnel to a machine you connect. See [Computers](/docs/connect/computers).
+
+## Authentication and policy
+
+A connector authenticates one of two ways:
+
+- **OAuth** — through Pipedream, or through a channel install. Kortix stores only the resulting token. You do not edit the manifest.
+- **API key or token** — you declare the connector in `kortix.yaml` and enter the credential yourself, or reference it from a project [secret](/docs/project/secrets) (legacy).
+
+Kortix never gives a connector's credential to the sandbox. It stores the credential encrypted and resolves it server-side, at call time. The agent requests the action. Kortix attaches the credential, calls the external API, and returns the result.
+
+By default, a connector action runs without approval. Set `policy.default_mode: risk` in the manifest to require approval for write and destructive actions. Mark a connector `sensitive: true` to require approval for every action on it, including reads.
+
+## Connect with OAuth
+
+<Steps>
+<Step>
+### Open the project's Connectors page
+
+From the dashboard, open the project's Connectors page and search for the app.
+</Step>
+<Step>
+### Connect the app
+
+Click **Connect** and complete the OAuth flow. Kortix stores only the connected-account ID, never the credential itself.
+</Step>
+</Steps>
+
+This path creates the connector for you. Skip the next section.
+
+## Connect with an API key
+
+<Steps>
+<Step>
+### Declare the connector in `kortix.yaml`
+
+```yaml
+connectors:
+  - slug: stripe
+    name: Stripe API
+    provider: openapi
+    spec: "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
+    auth:
+      type: bearer
+```
+
+`provider` is one of `openapi`, `graphql`, `postman`, `http`, or `mcp`. `auth.type` is `bearer`, `basic`, `custom`, `oauth1`, or `none`.
+</Step>
+<Step>
+### Merge the change request
+
+Merge the change request. Kortix reads the manifest only from the default branch, so the connector does not exist until you merge.
+</Step>
+<Step>
+### Set the credential
+
+Open the connector on the project's Connectors page and enter the credential value. Kortix stores it encrypted and never writes it to the manifest.
+</Step>
+</Steps>
+
+## Grant an agent access
+
+An agent cannot use a connected tool until you grant it access. Add the slug to the agent's `connectors` field in `kortix.yaml`:
+
+```yaml
+agents:
+  kortix:
+    connectors: all
+  release-bot:
+    connectors: [stripe]
+```
+
+Omit `connectors` on an agent, and it gets `none` — a v2 manifest denies access by default. Merge the change before it takes effect.
+
+## Use it in a session
+
+Inside a session, the agent reaches connectors through the `kortix executor` CLI, never with raw credentials:
+
+```
+kortix executor connectors
+kortix executor call stripe <action> '<json-args>'
+```
+
+`connectors` lists what the session can call. `call` runs one action. The Kortix Executor Gateway resolves the credential, checks the agent's grant, runs the call, and audits it.
+
+Slack and Microsoft Teams connect from the dashboard the same way as OAuth apps. Connecting Slack writes a `channel` connector to `kortix.yaml` for you. See [Slack & channels](/docs/connect/slack).

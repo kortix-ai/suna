@@ -15,24 +15,35 @@ function sourceFiles(root: string): string[] {
   return files;
 }
 
-describe('gateway catalog boundary', () => {
-  test('core and standalone gateway have no llm-catalog package dependency', () => {
-    for (const root of [appRoot, coreRoot]) {
-      const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
-        dependencies?: Record<string, string>;
-        devDependencies?: Record<string, string>;
-      };
-      expect(pkg.dependencies?.['@kortix/llm-catalog']).toBeUndefined();
-      expect(pkg.devDependencies?.['@kortix/llm-catalog']).toBeUndefined();
-    }
+describe('gateway catalog dependency boundary', () => {
+  test('standalone gateway delegates catalog access to the core gateway', () => {
+    const pkg = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies?.['@kortix/llm-catalog']).toBeUndefined();
+    expect(pkg.devDependencies?.['@kortix/llm-catalog']).toBeUndefined();
   });
 
-  test('core and standalone source never import the product catalog', () => {
-    const offenders = [join(appRoot, 'src'), join(coreRoot, 'src')]
-      .flatMap(sourceFiles)
+  test('catalog access stays inside the core AI SDK transport', () => {
+    const appImports = sourceFiles(join(appRoot, 'src'))
       .filter((file) => /(?:from\s*|import\s*)[('"`]@kortix\/llm-catalog/.test(
         readFileSync(file, 'utf8'),
       ));
-    expect(offenders).toEqual([]);
+    expect(appImports).toEqual([]);
+
+    const corePkg = JSON.parse(readFileSync(join(coreRoot, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(corePkg.dependencies?.['@kortix/llm-catalog']).toBe('workspace:*');
+
+    const coreImports = sourceFiles(join(coreRoot, 'src'))
+      .filter((file) => /(?:from\s*|import\s*)[('"`]@kortix\/llm-catalog/.test(
+        readFileSync(file, 'utf8'),
+      ));
+    expect(coreImports.length).toBeGreaterThan(0);
+    expect(coreImports.every((file) =>
+      file.startsWith(join(coreRoot, 'src', 'transports', 'ai-sdk')),
+    )).toBe(true);
   });
 });

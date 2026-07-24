@@ -2,7 +2,7 @@
 """Annotate a PDF with review issues.
 
 Usage:
-    python annotate_pdf.py input.pdf output.pdf
+    uv run --with pymupdf annotate_pdf.py input.pdf output.pdf
 
 Reads issues from document_review_state.json in the working directory.
 Uses fitz (PyMuPDF) to highlight text and add collapsed

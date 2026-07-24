@@ -7,7 +7,6 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 
-const TOP_UP_LABEL = 'Top up';
 const MANAGE_PLAN_LABEL = 'Manage plan';
 
 export interface ApiError extends Error {
@@ -217,44 +216,27 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const v2AccountId: string | undefined =
     typeof v2Detail?.account_id === 'string' ? v2Detail.account_id : undefined;
 
-  // No active plan → pitch the one central Team plan subscribe modal.
+  // Billing block on a user action (session start, send, purchase). One modal
+  // handles both shapes and picks the right view off the 402's billing_model +
+  // has_subscription: a genuinely-free/no-plan account gets the subscribe pitch;
+  // a paying Team account whose wallet ran dry gets the top-up view (packages +
+  // custom amount + auto-top-up) — never the wrong "you're on Free" pitch.
   if (
     isBillingEnabled() &&
     v2Status === 402 &&
-    (v2Code === 'subscription_required' || v2Code === 'no_account')
+    (v2Code === 'subscription_required' ||
+      v2Code === 'no_account' ||
+      v2Code === 'insufficient_credits')
   ) {
     useUpgradeDialogStore.getState().openUpgradeDialog({
       reason: v2Code,
       message: v2Message ?? '',
       balance: v2Balance,
       accountId: v2AccountId,
+      billingModel: typeof v2Detail?.billing_model === 'string' ? v2Detail.billing_model : undefined,
+      hasSubscription:
+        typeof v2Detail?.has_subscription === 'boolean' ? v2Detail.has_subscription : undefined,
     });
-    return;
-  }
-
-  // Already on a plan but the wallet ran dry. Don't pitch a subscription —
-  // they're subscribed and can still CRUD sessions; only metered LLM/compute
-  // spend is affected. Nudge a top-up instead of blocking with the modal.
-  if (isBillingEnabled() && v2Status === 402 && v2Code === 'insufficient_credits') {
-    const title = 'Out of credits';
-    if (!shouldSuppressDuplicate(v2Status, title)) {
-      warningToast(title, {
-        description: 'Top up your wallet or turn on auto-refill to keep using compute and LLMs.',
-        duration: 6000,
-        button: (
-          <Button
-            size="sm"
-            onClick={() =>
-              useAccountSettingsModalStore
-                .getState()
-                .openAccountSettings({ tab: 'billing', highlight: 'credits' })
-            }
-          >
-            {TOP_UP_LABEL}
-          </Button>
-        ),
-      });
-    }
     return;
   }
 

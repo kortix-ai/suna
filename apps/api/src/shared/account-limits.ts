@@ -36,9 +36,14 @@ function tierMultiplier(tier: string | null | undefined) {
   return legacyMultipliers[name] ?? (name !== 'free' && name !== 'none' ? 1 : 0);
 }
 
-async function resolveAccountLimitInfo(accountId: string): Promise<AccountLimitInfo> {
-  const cached = accountLimitCache.get(accountId);
-  if (cached && Date.now() < cached.expiresAt) return cached;
+async function resolveAccountLimitInfo(
+  accountId: string,
+  options: { useCache?: boolean } = {},
+): Promise<AccountLimitInfo> {
+  if (options.useCache !== false) {
+    const cached = accountLimitCache.get(accountId);
+    if (cached && Date.now() < cached.expiresAt) return cached;
+  }
 
   try {
     const subscription = await getSubscriptionInfo(accountId);
@@ -136,15 +141,15 @@ export type AccountSessionLimit = {
  *      override, e.g. enterprise deals or our own dogfood account) → wins over
  *      the tier in both directions;
  *   3. the plan tier's TierConfig.concurrentSessionLimit.
- * Backed by the same 60s cache as resolveAccountTier; operator changes are
- * visible immediately after clearAccountLimitCache() (the admin tier route
- * already clears it).
+ * This path bypasses the process-local tier cache. Session requests can reach
+ * different API tasks, so local cache invalidation cannot make an operator
+ * override consistent across the deployment.
  */
 export async function resolveAccountSessionLimit(accountId: string): Promise<AccountSessionLimit> {
   if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
     return { tier: null, limit: Number.MAX_SAFE_INTEGER, source: 'billing_disabled' };
   }
-  const { tier, sessionOverride } = await resolveAccountLimitInfo(accountId);
+  const { tier, sessionOverride } = await resolveAccountLimitInfo(accountId, { useCache: false });
   if (sessionOverride !== null) {
     return { tier, limit: sessionOverride, source: 'account_override' };
   }

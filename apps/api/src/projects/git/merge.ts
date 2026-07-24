@@ -79,7 +79,18 @@ export async function resolveBranchAheadState(
     const mergeBase = await getMergeBase(project, baseRef, headRef);
     return { ahead: mergeBase !== headSha, baseSha, headSha };
   };
-  const cached = await resolve();
+  let cached: BranchAheadState;
+  try {
+    cached = await resolve();
+  } catch {
+    // A session branch can be pushed while another caller owns the project's
+    // mirror-refresh lock. That refresh can finish before the push reaches the
+    // remote, which leaves the warm mirror without the new ref. Re-fetch once
+    // after the first lookup fails. Persistent missing refs and auth failures
+    // still fail on the second lookup.
+    await refreshMirror(project, true);
+    return resolve();
+  }
   if (cached.ahead) return cached;
   await refreshMirror(project, true);
   return resolve();

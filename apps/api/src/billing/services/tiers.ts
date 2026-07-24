@@ -9,9 +9,6 @@ export const CREDITS_PER_DOLLAR = 100;
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
 export const MACHINE_CREDIT_BONUS = 5;
 
-/** Markup applied to managed VPS prices for additional instances. */
-export const COMPUTE_PRICE_MARKUP = 1.2;
-
 /**
  * Margin multiplier applied to the live models.dev cost on every LLM gateway
  * call. 1.2 = 20% profit (default). Override per-environment with
@@ -55,13 +52,9 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.yaml's
-// `sandbox:` block). The constants below are Daytona's PUBLISHED LIST rates (kept as
-// list so they're easy to re-sync from the pricing page). Our ACTUAL cost is
-// list × the volume discount Daytona gives us (DAYTONA_DISCOUNT). The debit
-// emitter charges:
-//     cost = spec × list_rate × DAYTONA_DISCOUNT × COMPUTE_PRICE_MARKUP
-// i.e. we pass the discount through (cheaper for users) and keep a margin on top.
+// Per-second customer pricing for the reserved sandbox spec in kortix.yaml.
+// These rates apply to every hosted provider. Each rate is 1.2× Daytona's
+// published list rate.
 // Daytona list (https://www.daytona.io/pricing, as of 2026-06):
 //   vCPU  $0.0504 / core-hour → 0.000014   per core-second
 //   RAM   $0.0162 / GiB-hour  → 0.0000045  per GB-second
@@ -69,13 +62,9 @@ export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 // We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
 // is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
 // would under-bill.
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.000014;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000045;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.00000003;
-/** Volume discount Daytona gives us off list (≈50%) → our real cost = list ×
- *  this. Applied before the markup so users are billed on our actual (discounted)
- *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
-export const DAYTONA_DISCOUNT = 0.5;
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.0000168;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000054;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.000000036;
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 
@@ -593,46 +582,23 @@ export function isPaidTier(tierName: string): boolean {
  * entitled to premium models as per-seat teams (the gateway meters every account
  * the same way), and gating on `isPerSeatAccount` wrongly locked them out.
  *
- * Pure function of tier config only — deliberately environment-agnostic (see
- * unit-tier-model-entitlement.test.ts, which locks this in as an invariant).
- * Callers that need a dev/preview QA exemption from the paywall should go
- * through `accountIsFreeTierForModels` below, not inline this.
+ * Pure function of tier config only. Environment and wallet balance cannot
+ * grant managed-model entitlement.
  */
 export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
 }
 
 /**
- * Whether an account (given its resolved billing tier) should be treated as
- * free-tier for MANAGED-MODEL access — i.e. blocked from every premium Kortix
- * model and left with BYOK/Codex only. Same as `!tierGrantsAllModels(tier)`
- * everywhere EXCEPT dev/preview, which never enforce this particular paywall.
+ * Whether a resolved billing tier is blocked from Kortix-managed models.
  *
- * Why: every dev/preview signup — including every fresh PR-preview test/QA
- * account — defaults to tier 'free' (`models: []`), so without this exemption
- * it can never get a managed-model candidate. `auto` (the session default)
- * resolves to `glm-5.2`, the gateway's resolveCandidates returns `[]`, and
- * every agent turn 400s "No upstream configured for model glm-5.2" — confirmed
- * against the dev DB on 2026-07-05: gateway_request_logs shows exactly this for
- * a same-day free-tier signup, while OTHER dev accounts with a paid tier
- * succeed against the SAME openrouter/bedrock upstreams in the same window.
- * The upstream config is fine; only entitlement is missing. Prod keeps the
- * real paywall; staging keeps it too (staging is where the free-tier paywall
- * itself gets verified against Stripe test mode). dev + preview are internal
- * engineering/QA surfaces, not customer-facing, so paywalling them only breaks
- * testing, for no revenue-protection benefit.
- *
- * `env` defaults to the real deployed `INTERNAL_KORTIX_ENV` — it's a parameter
- * (not a direct `config` read) purely so tests can exercise every environment
- * branch deterministically in-process, without module-mocking `../config`
- * (which risks leaking a stubbed config into unrelated test files sharing the
- * same bun test process).
+ * The environment argument remains for source compatibility. It has no effect.
+ * `free`, `none`, and unknown tiers are blocked in every environment.
  */
 export function accountIsFreeTierForModels(
   tierName: string,
-  env: string = config.INTERNAL_KORTIX_ENV,
+  _env: string = config.INTERNAL_KORTIX_ENV,
 ): boolean {
-  if (env === 'dev' || env === 'preview') return false;
   return !tierGrantsAllModels(tierName);
 }
 

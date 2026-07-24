@@ -320,10 +320,7 @@
         "おはよう！何を作る？",
         "おはようございます！準備はOK？"
       ],
-      "afternoon": [
-        "こんにちは！何かお手伝いしましょうか？",
-        "調子はどう？何をする？"
-      ],
+      "afternoon": ["こんにちは！何かお手伝いしましょうか？", "調子はどう？何をする？"],
       "evening": [
         "こんばんは！夜遅くまでお疲れ様！",
         "こんばんは！今夜は何に取り組む？",
@@ -7000,9 +6997,9 @@
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": "をクリックし、既に使用しているエージェントをデプロイします。",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "内部エージェントを導入する",
     "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "シンプルな座席ごとの料金設定。使用した分だけ支払います。",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "すべての座席には完全なプラットフォームに加えて、毎月のクレジット枠が付与されます。モデルの料金のみを支払い、実際に実行されるエージェントを計算します。トークンは必要ありません。",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "クレジットがあらゆるものに力を与える",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "モデルとエージェント コンピューターのバランスは 1 つだけで済みます。トークンの計算や突然の請求は必要ありません。",
+    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "各シートには、プラットフォーム全体と Agent Computer の実行時間に使える月次クレジットが含まれます。独自の API キーを使用するか ChatGPT を接続してモデルにアクセスできます。マネージドモデルも利用でき、トークン使用量に応じてクレジットを消費します。",
+    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "コンピューターに支払い、モデルは自分で選ぶ。",
+    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Kortix クレジットは主に Agent Computer の実行時間に使います。独自の API キーまたは ChatGPT サブスクリプションを使用すると、モデル料金はプロバイダーに直接支払えます。任意のマネージドモデルは、トークン使用量に応じて Team クレジットを消費します。",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "構築を開始する",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "チームを始めましょう",
     "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "1 シートにつき 40 ドル、各シートに 20 ドルの使用クレジットが付きます。自動日割り計算でいつでもキャンセル可能。Enterprise についてはお問い合わせください。",

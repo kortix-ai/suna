@@ -1,0 +1,219 @@
+---
+title: Runtime & sandbox
+description: Sandbox lifecycle, injected environment, token families, and the image a session boots from.
+---
+
+A session runs in an isolated sandbox on Daytona, Platinum, or E2B Cloud, built from a layered image. This page is the reference for the sandbox lifecycle, the environment Kortix injects at boot, the token families, and the sandbox image itself. For the session concept, see [Sessions](/docs/work/sessions).
+
+## Sandbox lifecycle
+
+A session row carries a `status`. The enum defines `queued`, `branching`, `provisioning`, `running`, `stopped`, `failed`, `completed`, but Kortix only writes 4 of them.
+
+| Status | Set when |
+| --- | --- |
+| `provisioning` | At session create. Kortix creates the session branch and requests the sandbox. |
+| `running` | Once the sandbox is live and reachable. |
+| `stopped` | On explicit stop, or by the idle sweep that hibernates inactive sandboxes. |
+| `failed` | If provisioning fails. |
+
+`queued`, `branching`, and `completed` exist in the enum but stay dead in the session flow. Do not treat them as live states.
+
+The sandbox itself carries a separate `status` in its own row, with its own enum.
+
+| Status | Set when |
+| --- | --- |
+| `provisioning` | The provider boots the sandbox. |
+| `active` | The provider confirms the sandbox is live. |
+| `stopped` | Explicit stop, idle auto-stop, or mid-restart. |
+| `error` | The provider reports a boot or runtime failure. |
+| `archived` | Terminal. You deleted the session and the provider destroyed the sandbox, not paused it. |
+
+Kortix enforces a concurrent-session limit per account. Exceeding your tier's limit returns `429`.
+
+### Active-turn protection
+
+While an OpenCode turn is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease blocks the idle reaper. Each renewal also touches the provider, so the provider's own inactivity timer cannot hibernate the sandbox mid-run. `session.idle` and `session.error` release the lease.
+
+An open dashboard tab, preview, SSE connection, or health poll does not create a lease. A passive tab cannot keep an idle sandbox alive.
+
+### Branch model
+
+- The session branch is named after the session id (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` carry the same value.
+- Kortix cuts the branch from `base_ref`, which defaults to the project's default branch, at session-create time.
+- Triggers create their session branch the same way an interactive session does.
+- Nothing writes the default branch directly. Only a merged [change request](/docs/work/change-requests) does.
+
+## Layout inside the sandbox
+
+```
+/workspace                       ← WORKDIR. The project repo is cloned here.
+/workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
+/usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
+/usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
+/opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
+```
+
+OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store never lands among your repo files.
+
+## Injected environment
+
+Kortix injects these variables at boot, alongside your project's [secrets](/docs/project/secrets), which arrive as plain environment variables.
+
+| Variable | What |
+| --- | --- |
+| `KORTIX_PROJECT_ID` | UUID of this project. |
+| `KORTIX_SESSION_ID` | UUID of this session. Also the branch name. |
+| `KORTIX_BRANCH_NAME` | Same value as `KORTIX_SESSION_ID`. |
+| `KORTIX_REPO_URL` | Clone URL for the project repo. |
+| `KORTIX_DEFAULT_BRANCH` | The project's default branch. |
+| `KORTIX_BASE_REF` | The ref this session branched from. |
+| `KORTIX_SERVICE_PORT` | `8000` — the daemon's external port. |
+| `KORTIX_API_URL` | The platform API base (`.../v1`). |
+| `KORTIX_AGENT_NAME` | The agent the session was created with. |
+| `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
+| `KORTIX_INITIAL_PROMPT` | The first prompt, when a trigger spawned the session. |
+| `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
+| `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
+| `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
+| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to create the OpenCode root on cold boot. |
+| `KORTIX_LLM_API_KEY`, `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key and base URL. Injected only on plans that use Kortix's managed model access. |
+| `KORTIX_SANDBOX_TOKEN`, `KORTIX_TOKEN`, `KORTIX_CLI_TOKEN`, `KORTIX_EXECUTOR_TOKEN` | The token family. See below. |
+
+Kortix does not inject `KORTIX_WORKSPACE`. The image bakes in `/workspace` and no per-session step sets it. Kortix does not inject a git token either — the daemon fetches a short-lived clone credential when it needs one; see [Pushing from a session](#pushing-from-a-session) below. Kortix rejects a user secret named with the `KORTIX_*` prefix, because it reserves that prefix for platform variables.
+
+## Token families
+
+Kortix has two token vocabularies: external tokens you create yourself, and env vars Kortix injects inside a sandbox. This is the canonical reference for both.
+
+### External tokens
+
+A personal access token (PAT, prefixed `kortix_pat_`) or a service account (prefixed `kortix_sa_`) authenticates calls to the Kortix API, the SDK, and the CLI from outside a sandbox. See [Authentication](/docs/sdk/auth) for PAT scope, service-account setup, and how to choose between them.
+
+### In-sandbox tokens
+
+Four tokens can appear in a sandbox. They carry two different identities.
+
+| Variable | Identity | Used for |
+| --- | --- | --- |
+| `KORTIX_SANDBOX_TOKEN` | The sandbox's own service key. | Signs the daemon's control-surface requests (the `X-Kortix-User-Context` header) and authenticates sandbox-identity routes: clone-credential, turn-stream, execution leases, turn-question. |
+| `KORTIX_TOKEN` | Back-compat alias for `KORTIX_SANDBOX_TOKEN`. | Same value, same use, kept for daemons built before the rename. Do not depend on it — a future release drops this alias and repurposes `KORTIX_TOKEN` to mean the session token instead. |
+| `KORTIX_CLI_TOKEN` | A project-scoped [personal access token](/docs/sdk/auth) (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
+| `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT as `KORTIX_CLI_TOKEN`. | Backs the `kortix-executor` MCP gateway. |
+
+`KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` or `KORTIX_EXECUTOR_TOKEN` for any call that should act as the launching user.
+
+## Pushing from a session
+
+The daemon fetches a short-lived clone credential from `GET /v1/projects/:id/git/clone-credential`, authenticated with `KORTIX_SANDBOX_TOKEN`. No static git token sits in the environment. With that credential, `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/work/change-requests).
+
+## The agent runtime
+
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+
+## The daemon control surface
+
+The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_SANDBOX_TOKEN`.
+
+| Path | Purpose |
+| --- | --- |
+| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
+| `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
+| `POST /kortix/abort` | Abort the current run. |
+| `POST /kortix/env` | Update the runtime environment. |
+| `/kortix/pty` | Backs the in-dashboard terminal. |
+| `/proxy/{port}/*` | Reverse-proxy to another port inside the sandbox. The daemon's own port is blocked. |
+| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096`. Returns `503` while OpenCode boots. |
+
+Run `/kortix/refresh` to apply an out-of-band change, such as a manifest edit committed from a parallel session, without re-provisioning the sandbox.
+
+## The sandbox image
+
+Every sandbox boots from an image built in two layers. Your Dockerfile defines the base environment. The Kortix runtime layer is added on top, so the dashboard can connect to the sandbox.
+
+```
+┌─────────────────────────────────────────┐
+│  Kortix runtime layer (added on top)    │  ← opencode + kortix-agent + entrypoint
+├─────────────────────────────────────────┤
+│  Your Dockerfile                        │  ← .kortix/Dockerfile
+└─────────────────────────────────────────┘
+```
+
+If your project has no Dockerfile, Kortix builds sessions from a bare `ubuntu:24.04` image plus the runtime layer below.
+
+### Declare a template
+
+Reference your Dockerfile as a named template under `sandbox.templates` in `kortix.yaml`.
+
+```yaml
+sandbox:
+  templates:
+    - slug: dev
+      name: Dev box
+      dockerfile: .kortix/Dockerfile
+  default: dev
+```
+
+Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must stay inside the repository. Set `default` to the template slug your sessions should use; omit it to use the platform default image. Older projects on `kortix.toml` follow the same fields — see [legacy `kortix.toml`](/docs/project/legacy-toml). Full field list: [manifest reference](/docs/project/manifest).
+
+### What the runtime layer adds
+
+Kortix appends this layer on top of your Dockerfile's final stage.
+
+- A system package floor with `git`, `curl`, `build-essential`, `ffmpeg`, and `tmux`.
+- pnpm-managed Node.js and npm, plus uv-managed Python 3.
+- A document-tools floor: LibreOffice, Pandoc, and OCR tools.
+- An exact uv-managed Python version exposed as `python` and `python3`. Use `uv run --with <package>` for third-party dependencies.
+- `opencode-ai`, the `bun` runtime, and `agent-browser` with a baked Chromium build.
+- The `kortix-agent` daemon, the `kortix` CLI, and the entrypoint script.
+- `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`, and the entrypoint that starts the daemon.
+
+Everything you install in your own Dockerfile stays on `PATH`. Kortix does not remove or relocate it.
+
+### Constraints
+
+| Rule | Why |
+| --- | --- |
+| Don't set `ENTRYPOINT` or `CMD`. | Kortix overrides both to start the daemon. |
+| Don't claim port `8000`. | Reserved for the daemon's reverse proxy. Run dev servers on other ports. |
+| `FROM` a Debian or Ubuntu base. | The runtime layer runs `apt-get`. Alpine, Fedora, and Arch fail the build. |
+| Don't run `apt-get clean` without `rm -rf /var/lib/apt/lists/*`. | The runtime layer re-runs `apt-get update`; a broken cache breaks the build. |
+| Don't bake credentials into the image. | Declare the name in `env:` and set the value as a project secret. Kortix injects it at session start. |
+
+### Hardware spec
+
+`cpu`, `memory`, and `disk` on a template entry set the sandbox size. All three are optional; an omitted field uses the platform default: 2 vCPU, 4 GiB memory, 20 GiB disk.
+
+```yaml
+sandbox:
+  templates:
+    - slug: big
+      image: ubuntu:24.04
+      cpu: 4
+      memory: 8
+      disk: 50
+```
+
+`cpu` takes 1–32 cores, `memory` takes 1–128 GiB, and `disk` takes 1–500 GiB. Kortix clamps any value above these limits down to the limit. Kortix does not support GPUs; a `gpu` key on a template produces a warning, not an error.
+
+The spec is part of the template's snapshot, not a per-session setting. Changing it rebuilds the snapshot and applies to the next session. The current session keeps its already-booted spec.
+
+The default spec costs about $0.10 per hour on Daytona, the default sandbox provider. The same spec on Platinum or E2B costs about twice as much, because the Daytona rate includes a volume discount the other providers don't. Kortix meters this cost only for Team accounts; free and self-hosted plans aren't billed for it.
+
+### Ports and preview URLs
+
+The daemon listens on port `8000` and proxies any other port your app uses inside the sandbox. Only port `8000` itself is blocked from the proxy.
+
+The dashboard reaches a sandbox port two ways:
+
+- **Path-based**: `https://<api-host>/v1/p/<sandbox-id>/<port>/...`. This is the default form and the only one that supports WebSocket upgrades.
+- **Subdomain-based**: `https://p<port>-<sandbox-id>.<api-host>/...`. Use this form for apps that need root-relative paths or cookies, such as a Next.js or Vite dev server. WebSocket upgrades don't work on this form yet.
+
+The preview proxy strips `X-Frame-Options` and any `frame-ancestors` policy. A session can embed your app's preview in an iframe without any config on your side.
+
+A session's preview can also be shared through a public link, in view-only or interactive mode. Public share links block ports `22`, `4096`, `8000`, and the static file-share port.
+
+### Snapshot rebuilds
+
+Kortix content-addresses each snapshot: it hashes your Dockerfile's bytes, the hardware spec, and the platform's own runtime version. An unchanged hash reuses the existing snapshot. A changed hash triggers a rebuild, shown as "preparing image" on the first session that needs it; later sessions reuse that build.
+
+Editing the Dockerfile inside a session takes effect on the next session, not the current one. The edit reaches `main` only once its [change request](/docs/work/change-requests) merges.

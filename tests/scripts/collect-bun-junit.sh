@@ -22,7 +22,7 @@ while IFS= read -r pkg; do
   find "$dir" -path '*/node_modules' -prune -o -name '*.test.ts' -print -quit | grep -q . || continue
   slug="$(echo "${dir#"$ROOT"/}" | tr '/' '_')"
   echo "▶ bun test: ${dir#"$ROOT"/}"
-  ( cd "$dir" && bun test --reporter=junit --reporter-outfile="$OUT/${slug}.xml" ) || status=1
+  ( cd "$dir" && bun test --isolate --reporter=junit --reporter-outfile="$OUT/${slug}.xml" ) || status=1
 done < <(find "$ROOT/packages" "$ROOT/apps" -maxdepth 2 -name package.json -not -path '*/node_modules/*' 2>/dev/null)
 
 count="$(find "$OUT" -name '*.xml' 2>/dev/null | wc -l | tr -d ' ')"

@@ -11,7 +11,21 @@ already ships.
 The CLI lets a user do **everything they can do in the dashboard**, but
 from a terminal or a local coding agent. Concretely:
 
-- **Auth** — `kortix login`, `kortix logout`, `kortix whoami`.
+The mental model is a four-level hierarchy you drill DOWN:
+**Host → Account → Project → Session**. You sign into a *host* (a Kortix
+instance — auth lives here), pick an *account* (workspace) within it, pick a
+*project* within that account, and open *sessions* in the project. Exactly one
+host/account/project is "active" at a time; `use` is the verb that moves the
+active pointer at every level (`hosts use`, `accounts use`, `projects use`;
+sessions are the ephemeral leaf, addressed by id). Every command acts on the
+current (host, account, project) unless overridden by `--host` or a directory
+`link.json`. The bare `kortix` screen renders this path as a breadcrumb with
+each unmet level made actionable.
+
+- **Auth (per host)** — sign in with `kortix hosts login [<name>]`,
+  sign out with `kortix hosts logout`, inspect with `kortix hosts whoami`.
+  `kortix login`/`logout`/`whoami` are thin shortcuts that act on the
+  active host.
 - **Projects** — list, show, link a local checkout to a remote project,
   open the dashboard.
 - **Secrets** — list, set, unset env vars for a project.

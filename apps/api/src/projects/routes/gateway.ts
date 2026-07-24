@@ -1057,7 +1057,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       projectId: ctx.projectId,
       defaultModel: effectiveDefault,
     },
-    { requestedModel: 'auto', requires: { imageInput: false } },
+    { requestedModel: effectiveDefault, requires: { imageInput: false } },
   );
   return {
     version: 1 as const,

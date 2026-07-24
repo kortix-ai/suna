@@ -9,6 +9,11 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
+  /** The wrapper's opaque end-user this backend session acts for (Kortix-as-a-
+   *  Backend). Surfaced to the sandbox as KORTIX_ORIGIN_REF so the agent knows
+   *  WHO it's acting for — attribution only, never an auth principal. Null/absent
+   *  for non-backend sessions → no key emitted. */
+  originRef?: string | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -25,6 +30,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
+    ...(input.originRef ? { KORTIX_ORIGIN_REF: input.originRef } : {}),
     KORTIX_API_URL: input.apiUrl,
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
@@ -37,9 +43,8 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
-    // model overrides (KORTIX_OPENCODE_MODEL above, or an explicit model on a
-    // prompt request) still win over whatever default model this bakes in —
-    // this only sets the manifest agent's/DEFAULT agent's fallback.
+    // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
+    // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? { KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig }
       : {}),

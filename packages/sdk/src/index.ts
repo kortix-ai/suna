@@ -351,6 +351,11 @@ export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/runtime/client';
 export * from './core/session';
+export {
+  createHttpSessionSyncController,
+  loadHttpSessionHistory,
+  type SessionSyncMessage,
+} from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
 export * from './core/turns';

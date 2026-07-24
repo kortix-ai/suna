@@ -408,7 +408,10 @@ prompt = "x"
 `));
     const { specs, errors } = extractTriggers(parsed);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/session_mode must be "fresh", "reuse", or "pinned"/);
+    expect(errors[0]!.error).toMatch(/session_mode must be one of/);
+    // The message enumerates the live mode list, so adding a mode can't leave
+    // this assertion silently pinned to a stale set.
+    expect(errors[0]!.error).toContain('"keyed"');
   });
 
   test('session_mode = "reuse" round-trips through serialize', () => {
@@ -445,6 +448,149 @@ prompt = "x"
     const reuse = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'reuse-one')!);
     expect(fresh.session_mode).toBeUndefined();
     expect(reuse.session_mode).toBe('reuse');
+  });
+});
+
+/**
+ * `session_key` alone IS the opt-in to keyed sessions — writing both
+ * `session_mode = "keyed"` and `session_key = "…"` was redundant ceremony. An
+ * explicit `session_mode` still wins over the inference, so an existing
+ * manifest can never change meaning behind the author's back.
+ */
+describe('[[triggers]] — session_key implies keyed', () => {
+  test('a session_key with no session_mode infers keyed', () => {
+    const { specs, errors } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "whatsapp"
+type = "webhook"
+secret_env = "WAG_WEBHOOK_SECRET"
+session_key = "{{ body.data.chat_jid }}"
+prompt = "{{ body.data.text }}"
+`)));
+    expect(errors).toEqual([]);
+    expect(specs[0]!.sessionMode).toBe('keyed');
+    expect(specs[0]!.sessionKey).toBe('{{ body.data.chat_jid }}');
+  });
+
+  test('the sessionKey alias infers keyed too', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "aliased"
+type = "cron"
+cron = "* * * * * *"
+sessionKey = "{{ cron.timezone }}"
+prompt = "x"
+`)));
+    expect(specs[0]!.sessionMode).toBe('keyed');
+    expect(specs[0]!.sessionKey).toBe('{{ cron.timezone }}');
+  });
+
+  test('an explicit session_mode = "keyed" with a key still parses', () => {
+    const { specs, errors } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "explicit-keyed"
+type = "cron"
+cron = "* * * * * *"
+session_mode = "keyed"
+session_key = "{{ body.customer_id }}"
+prompt = "x"
+`)));
+    expect(errors).toEqual([]);
+    expect(specs[0]!.sessionMode).toBe('keyed');
+  });
+
+  test('an explicit session_mode = "keyed" with NO key is still an error', () => {
+    const { specs, errors } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "keyless"
+type = "cron"
+cron = "* * * * * *"
+session_mode = "keyed"
+prompt = "x"
+`)));
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/requires a `session_key`/);
+  });
+
+  test('an explicit non-keyed mode wins over a stray session_key, which is dropped', () => {
+    const { specs, errors } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "explicit-fresh"
+type = "cron"
+cron = "* * * * * *"
+session_mode = "fresh"
+session_key = "{{ body.data.chat_jid }}"
+prompt = "x"
+
+[[triggers]]
+slug = "explicit-reuse"
+type = "cron"
+cron = "* * * * * *"
+session_mode = "reuse"
+session_key = "{{ body.data.chat_jid }}"
+prompt = "x"
+`)));
+    expect(errors).toEqual([]);
+    const fresh = specs.find((s) => s.slug === 'explicit-fresh')!;
+    const reuse = specs.find((s) => s.slug === 'explicit-reuse')!;
+    expect(fresh.sessionMode).toBe('fresh');
+    expect(fresh.sessionKey).toBeNull();
+    expect(reuse.sessionMode).toBe('reuse');
+    expect(reuse.sessionKey).toBeNull();
+  });
+
+  test('a keyed trigger writes session_key ALONE and re-reads as keyed', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "rt-keyed"
+type = "webhook"
+secret_env = "WAG_WEBHOOK_SECRET"
+session_key = "{{ body.data.chat_jid }}"
+prompt = "x"
+`)));
+    const entry = triggerSpecToTomlEntry(specs[0]!);
+    expect(entry.session_key).toBe('{{ body.data.chat_jid }}');
+    // The key implies the mode, so writing both would be redundant in the file
+    // a human reads — and `session_mode: "keyed"` would fail the manifest-schema
+    // enum that `kortix validate` / the CR-merge gate applies.
+    expect(entry.session_mode).toBeUndefined();
+    // Genuine round-trip: what we wrote must parse back to the same mode+key.
+    const rewritten = [
+      '[[triggers]]',
+      ...Object.entries(entry)
+        .filter(([, v]) => v !== undefined && typeof v !== 'object')
+        .map(([k, v]) => `${k} = ${JSON.stringify(v)}`),
+    ].join('\n');
+    const reparsed = extractTriggers(parseManifestString(manifestWith(rewritten))).specs[0]!;
+    expect(reparsed.sessionMode).toBe('keyed');
+    expect(reparsed.sessionKey).toBe('{{ body.data.chat_jid }}');
+  });
+
+  test('an EXPLICIT session_mode = "keyed" is still written through verbatim', () => {
+    // Only the inferred form is compacted; a caller that pins the mode keeps it.
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "rt-explicit"
+type = "webhook"
+secret_env = "WAG_WEBHOOK_SECRET"
+session_mode = "keyed"
+session_key = "{{ body.data.chat_jid }}"
+prompt = "x"
+`)));
+    expect(specs[0]!.sessionMode).toBe('keyed');
+    expect(specs[0]!.sessionKey).toBe('{{ body.data.chat_jid }}');
+  });
+
+  test('no session_key and no session_mode is still plain fresh', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "plain"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+`)));
+    expect(specs[0]!.sessionMode).toBe('fresh');
+    expect(specs[0]!.sessionKey).toBeNull();
   });
 });
 

@@ -17,6 +17,7 @@ terraform {
 }
 
 resource "aws_acm_certificate" "this" {
+  #checkov:skip=CKV2_AWS_71:The shared *.kortix.com certificate is required for short-lived staging and preview hostnames; DNS validation and Cloudflare origin restrictions control issuance and access.
   domain_name               = var.domain_name
   subject_alternative_names = var.subject_alternative_names
   validation_method         = "DNS"

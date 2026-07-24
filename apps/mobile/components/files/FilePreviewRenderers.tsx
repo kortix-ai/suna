@@ -13,7 +13,7 @@ import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { autoLinkUrls } from '@agentpress/shared';
+import { autoLinkUrls } from '@kortix/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
 
@@ -1364,4 +1364,3 @@ export function FilePreview({
       return <TextPreview content={content} />;
   }
 }
-

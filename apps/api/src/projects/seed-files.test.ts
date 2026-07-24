@@ -65,4 +65,41 @@ describe("buildProjectSeedFilesFromItem", () => {
       seed.files.find((file) => file.path === "kortix.yaml")?.content,
     ).toContain('name: "Company OS"');
   });
+
+  test('seeds the SEO Department project with bundled agents, skills, schedules, and memory', async () => {
+    const { files, baseFiles } = await buildProjectSeedFilesFromItem({
+      id: 'kortix-projects:seo-department',
+      projectName: 'Acme SEO',
+      repoFullName: 'acme/seo',
+      extraMarketplaceItems: [],
+      now: '2026-07-21T00:00:00.000Z',
+    });
+    const paths = new Set(files.map((f) => f.path));
+    const basePaths = new Set(baseFiles.map((f) => f.path));
+    const manifest = files.find((f) => f.path === 'kortix.yaml')?.content ?? '';
+
+    expect(basePaths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/seo-director.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/technical-seo.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/content-strategist.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/serp-analyst.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/seo-repo-watchdog.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/seo-operating-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/technical-seo-audit/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/seo-repo-monitoring/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/content-seo-workflow/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/memory/SEO.md')).toBe(true);
+    expect(paths.has('install.md')).toBe(true);
+    expect(manifest).toContain('name: "Acme SEO"');
+    expect(manifest).toContain('default_agent: seo-director');
+    expect(manifest).toContain('daily-serp-watch');
+    expect(manifest).toContain('repo-seo-watch');
+    expect(manifest).toContain('daily-repo-seo-sweep');
+    expect(manifest).toContain('weekly-technical-audit');
+    expect(manifest).toContain('weekly-content-refresh');
+    expect(manifest).toContain('monthly-seo-growth-report');
+    expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBe('seo-director');
+  });
 });

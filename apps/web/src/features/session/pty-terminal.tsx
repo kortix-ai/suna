@@ -9,7 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import type { Pty } from '@kortix/sdk/opencode-client';
-import { classifyPtyClose } from './pty-connection';
+import { classifyPtyClose, shouldExpirePtyConnect } from './pty-connection';
 
 // ============================================================================
 // Theme
@@ -46,6 +46,7 @@ const terminalTheme: ITheme = {
 // ============================================================================
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+const PTY_CONNECT_TIMEOUT_MS = 15_000;
 
 export interface PtyTerminalHandle {
   focus: () => void;
@@ -131,6 +132,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   const connectionIdRef = useRef<number>(0);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const disposedRef = useRef(false);
   const hadErrorRef = useRef(false);
@@ -139,7 +141,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   const suppressReportsUntilRef = useRef(0);
 
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  const updatePty = useUpdatePty({ onError: () => {} });
+  const updatePty = useUpdatePty({ serverUrl, onError: () => {} });
 
   const updateStatus = useCallback((s: ConnectionStatus) => {
     setStatus(s);
@@ -171,6 +173,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
     }
     if (wsRef.current) {
       wsRef.current.onopen = null;
@@ -298,11 +304,40 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+      const connectStartedAt = Date.now();
+
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = setTimeout(() => {
+        if (
+          connectionIdRef.current !== myConnectionId ||
+          disposedRef.current ||
+          ws.readyState !== WebSocket.CONNECTING ||
+          !shouldExpirePtyConnect(connectStartedAt, Date.now(), PTY_CONNECT_TIMEOUT_MS)
+        ) {
+          return;
+        }
+
+        connectTimeoutRef.current = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        try {
+          ws.close();
+        } catch {
+          // The reconnect below replaces sockets that reject close while opening.
+        }
+        if (wsRef.current === ws) wsRef.current = null;
+        term.writeln('\r\n\x1b[31mTerminal connection timed out.\x1b[0m');
+        scheduleReconnect('connection timeout');
+      }, PTY_CONNECT_TIMEOUT_MS);
 
       ws.onopen = () => {
         if (connectionIdRef.current !== myConnectionId || disposedRef.current) {
           ws.close();
           return;
+        }
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
         }
         console.log('[PtyTerminal] WebSocket connected');
         reconnectAttemptsRef.current = 0;
@@ -344,6 +379,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       ws.onclose = (event) => {
         if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
         console.log('[PtyTerminal] WebSocket closed:', event.code, event.reason);
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
         wsRef.current = null;
 
         const action = classifyPtyClose({

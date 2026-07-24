@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
+import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
 
 export interface MeetVoice {
   id: string;
@@ -75,14 +76,13 @@ export function deriveWakeWord(botName: string): string {
 }
 
 async function mergeMeetMetadata(projectId: string, patch: Record<string, unknown>): Promise<void> {
-  const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  const meta = ((row?.metadata as Record<string, any> | null) ?? {}) as Record<string, any>;
-  const meet = { ...((meta.meet as Record<string, any> | undefined) ?? {}), ...patch };
-  await db.update(projects).set({ metadata: { ...meta, meet } }).where(eq(projects.projectId, projectId));
+  // FIX-J: `meet` is a NESTED object — re-read + merge the CURRENT `meet` sub-object
+  // in-SQL so concurrent `meet` writes don't lose each other's fields, and no
+  // top-level key (the routing pin included) is ever reverted by this write.
+  await db
+    .update(projects)
+    .set({ metadata: metadataMergeSubtree('meet', patch), updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId));
 }
 
 export const SILENT_MP3_B64 =

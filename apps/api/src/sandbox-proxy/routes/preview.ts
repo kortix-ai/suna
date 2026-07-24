@@ -23,6 +23,7 @@ import {
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
+import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -298,6 +299,29 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
+// A prompt-delivery POST is the ONE mutating, non-idempotent call on this proxy
+// (POST /session/:id/prompt_async|message on the daemon port). opencode has no
+// idempotency of its own, so re-POSTing the same body enqueues the user's
+// message a second time (the 3x-queued bug). This is exactly the set the
+// env-sync-before-prompt gate already recognises, so delegate to it.
+function isPromptDelivery(method: string, port: number, path: string): boolean {
+  return shouldSyncProjectEnvBeforeProxy(port, method, path);
+}
+
+// True only when a fetch failure PROVES nothing reached the box: the upstream
+// actively refused the connection (nothing was ever accepted). Any other thrown
+// error — timeout, abort, connection reset mid-flight — is ambiguous: the
+// sandbox may already have received and accepted the prompt, so a re-send would
+// duplicate it. Used to gate the one safe prompt-delivery retry in the catch.
+function isConnectionRefusedError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; cause?: { code?: unknown }; message?: unknown };
+  const codes = [e.code, e.cause?.code].filter((c): c is string => typeof c === 'string');
+  if (codes.some((c) => c === 'ECONNREFUSED')) return true;
+  const message = typeof e.message === 'string' ? e.message : '';
+  return /econnrefused|connection refused|failed to connect|unable to connect/i.test(message);
+}
+
 function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): string | null {
   if (!body) return null;
   const contentType = incomingHeaders.get('content-type') ?? '';
@@ -514,6 +538,25 @@ export async function forwardToSandbox(
     }
   }
   const serviceKey = record.serviceKey;
+
+  // Dedupe prompt delivery up-front. Prompt POSTs are the only mutating,
+  // non-idempotent calls here, and the CLI mints one Idempotency-Key per logical
+  // prompt. Claim a stable key (the inbound Idempotency-Key, else a content hash
+  // of sandbox+session+body) BEFORE the retry loop so a duplicate inbound prompt
+  // — a client resend, or the other proxy edge (subdomain.ts also calls this) —
+  // short-circuits to a 200 no-op instead of re-POSTing and enqueueing the user's
+  // message twice. First claim within the TTL proceeds; a repeat is deduped.
+  if (isPromptDelivery(method, port, remainingPath)) {
+    const dedupeKey = promptDeliveryKey({
+      idempotencyKey: incomingHeaders.get('idempotency-key'),
+      sandboxId,
+      sessionId: record.sessionId,
+      body,
+    });
+    if (!claimPromptDelivery(dedupeKey)) {
+      return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
+    }
+  }
 
   // 2. Forward with auto-wake retry.
   const MAX_RETRIES = 3;
@@ -749,7 +792,13 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status === 502 || upstream.status === 503) {
-        if (attempt < MAX_RETRIES) {
+        // A prompt-delivery POST is NEVER retried on a 5xx: an upstream 502 can
+        // mean the sandbox already accepted the message (the gateway just dropped
+        // the response), so re-POSTing would enqueue it twice. Pass the upstream
+        // response straight through to the passthrough below. GET/idempotent
+        // requests retry as before.
+        const promptDelivery = isPromptDelivery(method, port, remainingPath);
+        if (!promptDelivery && attempt < MAX_RETRIES) {
           // Port not ready yet — sandbox is booting (container running, port down).
           console.warn(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
@@ -761,7 +810,7 @@ export async function forwardToSandbox(
         // Retries exhausted and the port still isn't answering. Show the friendly
         // "port unreachable" page to browsers instead of the upstream's bare 5xx;
         // programmatic clients still get the real status + JSON via passthrough.
-        if (isBrowserNavigation(incomingHeaders)) {
+        if (!promptDelivery && isBrowserNavigation(incomingHeaders)) {
           void markSandboxUsed(sandboxId);
           return portUnreachableResponse({
             port,
@@ -832,6 +881,21 @@ export async function forwardToSandbox(
         isLongTurnCompletionRequest({ method, path: remainingPath })
       ) {
         sawLongTurnTimeout = true;
+        break;
+      }
+
+      // A prompt-delivery POST must NOT be blindly retried on an ambiguous
+      // failure: a timeout / abort / connection reset can mean the sandbox
+      // already received and accepted the message, so re-POSTing would enqueue
+      // it twice. Only retry when the error PROVES nothing reached the box (the
+      // upstream refused the connection). Any other error stops here and returns
+      // the friendly unreachable response below. (The Daytona "no IP / no runner"
+      // 400 branch — a rejection before opencode — retries in the response path
+      // above, which is safe.)
+      if (
+        isPromptDelivery(method, port, remainingPath) &&
+        !isConnectionRefusedError(err)
+      ) {
         break;
       }
 

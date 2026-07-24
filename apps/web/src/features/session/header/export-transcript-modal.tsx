@@ -23,7 +23,10 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
+import {
+  loadSessionTranscriptMessages,
+  useSessionSync,
+} from '@/hooks/opencode/use-session-sync';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -31,7 +34,7 @@ import {
   type TranscriptOptions,
 } from '@kortix/sdk';
 import { Check, Copy, Download } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
 // Export Modal
@@ -53,7 +56,33 @@ export function ExportTranscriptModal({
   const [copied, setCopied] = useState(false);
 
   const { data: session } = useOpenCodeSession(sessionId);
-  const { messages, isLoading: isLoadingMessages } = useSessionSync(sessionId);
+  const { messages: visibleMessages } = useSessionSync(sessionId);
+  const [messages, setMessages] = useState(visibleMessages);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const visibleMessagesRef = useRef(visibleMessages);
+  visibleMessagesRef.current = visibleMessages;
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setIsLoadingMessages(true);
+    void loadSessionTranscriptMessages(sessionId)
+      .then((history) => {
+        if (!cancelled) setMessages(history);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMessages(visibleMessagesRef.current);
+          errorToast('Failed to load complete transcript');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMessages(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sessionId]);
 
   const transcript = useMemo(() => {
     if (!session || messages.length === 0) return '';

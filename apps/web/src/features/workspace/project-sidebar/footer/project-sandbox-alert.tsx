@@ -64,12 +64,12 @@ export function useSandboxHealth(projectId: string) {
   return useQuery<ProjectSandboxHealth>({
     queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
     queryFn: () => getProjectSandboxHealth(projectId),
-    staleTime: 8_000,
+    staleTime: 30_000,
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return 15_000;
+      if (!data) return 30_000;
       if (data.building || selectCurrentSandboxFailure(data)) return 8_000;
-      return 30_000;
+      return 120_000;
     },
     refetchOnWindowFocus: true,
   });

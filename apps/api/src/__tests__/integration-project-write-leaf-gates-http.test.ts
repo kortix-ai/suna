@@ -165,6 +165,24 @@ const CASES: WCase[] = [
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
+    // Teams disconnect — twin of email installation DELETE; no feature-flag
+    // pre-gate, so the connector-write assert is directly exercised. (Teams
+    // CONNECT uses the identical assert but sits behind teamsChannelEnabled(),
+    // untestable here without the flag; DELETE covers the same code pattern.)
+    name: 'teams installation DELETE (connector.write)',
+    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
+    path: () => `/v1/projects/${PROJECT}/channels/teams/installation`,
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+  },
+  {
+    // Binding a Slack thread wires inbound channel→session routing — a
+    // connector-write action; empty body reaches the gate before validation.
+    name: 'slack bind-thread (connector.write)',
+    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/channels/slack/bind-thread`, body: {},
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+  },
+  {
     name: 'channel binding PATCH (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/channels/bindings/${sid()}`, body: {},
