@@ -16,6 +16,10 @@ import {
   tunnelStatusEnum,
   platformRoleEnum,
   changeRequestStatusEnum,
+  enrichmentJobStatusEnum,
+  enrichmentJobs,
+  enrichmentProfiles,
+  enrichmentPageCache,
   accounts,
   accountMembers,
   projects,
@@ -385,6 +389,72 @@ describe('kortixApiKeys table', () => {
       (i) => i.config.name === 'idx_kortix_api_keys_public_key',
     );
     expect(unique?.config.unique).toBe(true);
+  });
+});
+
+describe('enrichment tables', () => {
+  test('enrichment_job_status enum has the queue lifecycle values', () => {
+    expect(enrichmentJobStatusEnum.enumName).toBe('enrichment_job_status');
+    expect(enrichmentJobStatusEnum.enumValues).toEqual([
+      'queued',
+      'running',
+      'succeeded',
+      'failed',
+      'dead_lettered',
+    ]);
+  });
+
+  test('enrichment_jobs maps into the kortix schema with the queue columns', () => {
+    const cfg = getTableConfig(enrichmentJobs);
+    expect(cfg.name).toBe('enrichment_jobs');
+    expect(cfg.schema).toBe('kortix');
+    expect(primaryColumn(enrichmentJobs)).toBe('job_id');
+    for (const col of [
+      'account_id',
+      'project_id',
+      'domain',
+      'idempotency_key',
+      'status',
+      'error_code',
+      'attempts',
+      'available_at',
+      'locked_by',
+      'locked_until',
+      'payload',
+      'result',
+      'finished_at',
+    ]) {
+      expect(columnNames(enrichmentJobs)).toContain(col);
+    }
+  });
+
+  test('enrichment_jobs has a partial unique index on the live idempotency key', () => {
+    const cfg = getTableConfig(enrichmentJobs);
+    const unique = cfg.indexes.find(
+      (i) => i.config.name === 'idx_enrichment_jobs_active_idempotency',
+    );
+    expect(unique?.config.unique).toBe(true);
+    expect(unique?.config.where).toBeDefined();
+  });
+
+  test('enrichment_jobs indexes the due-scan pair', () => {
+    expect(indexNames(enrichmentJobs)).toContain('idx_enrichment_jobs_due');
+  });
+
+  test('enrichment_profiles is keyed by normalized domain', () => {
+    const cfg = getTableConfig(enrichmentProfiles);
+    expect(cfg.name).toBe('enrichment_profiles');
+    expect(cfg.schema).toBe('kortix');
+    expect(primaryColumn(enrichmentProfiles)).toBe('domain');
+    const profile = cfg.columns.find((c) => c.name === 'profile');
+    expect(profile?.notNull).toBe(true);
+  });
+
+  test('enrichment_page_cache is keyed by url hash and indexes fetched_at', () => {
+    const cfg = getTableConfig(enrichmentPageCache);
+    expect(cfg.name).toBe('enrichment_page_cache');
+    expect(primaryColumn(enrichmentPageCache)).toBe('url_hash');
+    expect(indexNames(enrichmentPageCache)).toContain('idx_enrichment_page_cache_fetched');
   });
 });
 

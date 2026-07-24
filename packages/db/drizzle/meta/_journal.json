@@ -71,6 +71,13 @@
       "when": 1784829248655,
       "tag": "20260723175408_add_provider_transitions_lease_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784897042055,
+      "tag": "20260724124402_enrichment_tables",
+      "breakpoints": true
     }
   ]
 }

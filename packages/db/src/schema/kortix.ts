@@ -54,6 +54,14 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ['queued', 'running', 'succeeded', 'failed', 'dead_lettered'],
 );
 
+export const enrichmentJobStatusEnum = kortixSchema.enum('enrichment_job_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'dead_lettered',
+]);
+
 // Lifecycle of a durable sandbox-provider migration (prepare → verify →
 // activate). The active provider is NOT flipped until the target's per-project
 // ppwarm image is built + verified; see apps/api/src/projects/provider-transition/*.
@@ -888,6 +896,73 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
   ],
+);
+
+// Durable queue for domain-enrichment jobs (crawl → extract → memory write),
+// drained by a leader-elected worker. Same claim/lease/backoff shape as
+// session_lifecycle_commands.
+export const enrichmentJobs = kortixSchema.table(
+  'enrichment_jobs',
+  {
+    jobId: uuid('job_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    // Normalized apex form (lowercase, no scheme/www) — the pipeline's identity.
+    domain: text('domain').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    status: enrichmentJobStatusEnum('status').default('queued').notNull(),
+    errorCode: varchar('error_code', { length: 32 }),
+    lastError: text('last_error'),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    payload: jsonb('payload').default({}).notNull().$type<Record<string, unknown>>(),
+    result: jsonb('result').default({}).notNull().$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (table) => [
+    // Partial: only ONE live (queued/running) job per project+domain; terminal
+    // rows keep their key so history survives without blocking resubmission.
+    uniqueIndex('idx_enrichment_jobs_active_idempotency')
+      .on(table.idempotencyKey)
+      .where(sql`${table.status} in ('queued', 'running')`),
+    index('idx_enrichment_jobs_due').on(table.status, table.availableAt),
+    index('idx_enrichment_jobs_project').on(table.projectId),
+    index('idx_enrichment_jobs_account').on(table.accountId),
+    index('idx_enrichment_jobs_locked').on(table.lockedUntil),
+  ],
+);
+
+// Cross-request cache of extracted company profiles, keyed by normalized
+// domain. Global (public-web data, not tenant-scoped); freshness is evaluated
+// against KORTIX_ENRICHMENT_PROFILE_TTL_DAYS at read time, not stored here.
+export const enrichmentProfiles = kortixSchema.table('enrichment_profiles', {
+  domain: text('domain').primaryKey(),
+  profile: jsonb('profile').notNull().$type<Record<string, unknown>>(),
+  crawlStatus: varchar('crawl_status', { length: 16 }).default('complete').notNull(),
+  model: text('model'),
+  crawledAt: timestamp('crawled_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Per-URL Jina Reader markdown cache. Doubles as the preserved raw crawl when
+// extraction fails, so a job can be re-run without re-fetching.
+export const enrichmentPageCache = kortixSchema.table(
+  'enrichment_page_cache',
+  {
+    urlHash: text('url_hash').primaryKey(),
+    url: text('url').notNull(),
+    markdown: text('markdown').notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_enrichment_page_cache_fetched').on(table.fetchedAt)],
 );
 
 // Workspace ↔ project membership: every project that connected a given Slack
