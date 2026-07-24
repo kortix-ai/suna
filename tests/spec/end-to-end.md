@@ -673,3 +673,17 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-11` `POST /executor/webhook/pipedream` → public; bad/unsigned payload → rejected.
 `CONN-12` `GET /executor/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
 `DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).
+
+---
+
+## 27. Kortix as a Backend (KaaB) — session-create override contract
+
+Origin is DERIVED from the caller's token kind, never the request body: an account PAT / service-account / user-apiKey ⇒ `origin: backend`; a human web JWT ⇒ `origin: user`; the in-sandbox key and agent-scoped tokens are never backend. Only a backend caller may set the by-reference overrides `origin_ref` and `secrets`. See `docs/KORTIX_AS_A_BACKEND_GUIDE.md`.
+
+`KAAB-1` backend PAT `POST /projects/:id/sessions {origin_ref, runtime_context}` → 201; response echoes `origin:"backend"` (derived, not from the body) + `origin_ref`. Overrides omitted = byte-identical to a normal session.
+`KAAB-2` non-backend (user JWT) setting `origin_ref` OR `secrets` → **403 `origin_override_forbidden`** (the field is refused before shape is even considered).
+`KAAB-3` backend `secrets=[unknown]` → **404 `SECRET_IDENTIFIER_NOT_FOUND`**; `secrets=[]` → 201 with `secrets_allowlist:[]` (inject zero project secrets). Narrowing only — never widens beyond the agent's grant.
+`KAAB-4` backend `opencode_model` that isn't servable (retired / not entitled / typo) → **400 `INVALID_SESSION_MODEL`** at create, not a dead turn at prompt time; a bare managed id is normalized to the `kortix/<id>` opencode ref.
+`KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
+`KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
+`KAAB-7` backend idempotency IDENTITY guard: same key + a different `origin_ref` (or `runtime_context`) → **409 `IDEMPOTENCY_ORIGIN_CONFLICT`** / `IDEMPOTENCY_CONTEXT_CONFLICT` — within one backend account a wrapper's end-users must never collide on a shared key (cross-end-user session/attribution bleed); a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`** (a clean rejection, not an uncaught btree-overflow 500).

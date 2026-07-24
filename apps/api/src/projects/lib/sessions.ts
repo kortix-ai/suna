@@ -7,9 +7,13 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type SandboxProviderName, config } from '../../config';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -647,6 +651,48 @@ export async function createProjectSession(input: {
     }
   }
 
+  // Model: normalize + fail-fast at create. An unservable / retired / typo'd
+  // model pin was previously stored verbatim and only failed at prompt time (a
+  // dead turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
+  // daemon's default because opencode addresses managed models as `kortix/<id>`.
+  // Validate against the same servability resolver the gateway uses, and store
+  // the OPENCODE ref form. Runs BEFORE the billing hold so a bad model never
+  // costs a credit reservation. Mirrors the channel-model gate
+  // (routes/channel-bindings.ts) and the plan's §4.7 fail-fast.
+  let opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  if (opencodeModel) {
+    if (/\s/.test(opencodeModel)) {
+      return {
+        error: {
+          status: 400,
+          body: { error: `"${opencodeModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
+        },
+      };
+    }
+    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
+      : false;
+    const servable = await isModelServableForAccount({
+      userId,
+      accountId,
+      projectId,
+      freeModelsOnly,
+      model: opencodeModel,
+    });
+    if (!servable) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Model "${opencodeModel}" is not available for this account`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+        },
+      };
+    }
+    opencodeModel = toOpencodeModelRef(opencodeModel);
+  }
+
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
   // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
@@ -843,7 +889,6 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
