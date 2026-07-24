@@ -5,6 +5,7 @@ import {
   isAndroidWebViewNativeBridgePostEventNoise,
   isAndroidWebViewNativeBridgePostMessageNoise,
   isClientRequestTimeoutMessage,
+  isConnectionClosedNoise,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isEmbedPdfTilingReactUpdateDepthNoise,
   isExpectedBillingGateMessage,
@@ -4101,6 +4102,229 @@ test('does NOT suppress a frameless rejection with a different message', () => {
       }),
       false,
       `expected Sentry event for frameless "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Transient WebSocket / Server-Sent-Events (SSE) transport-close noise (Better
+// Stack pattern
+// ecac86df82aca61f579836c1b813a0ed02cabd4a480b581db2f1ba5f4e20ab86, Kortix
+// Frontend prod, application_id 2346967). `Connection closed.` is the canonical
+// transport-close message a client-side WebSocket/SSE library throws when the
+// server closes a background realtime connection (deploy / restart / idle-
+// timeout recycle / session end / load-balancer upstream recycle). 1 occurrence
+// / 0 identified users, last 2026-07-23 16:44:09 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
+// `/dashboard`, URL `https://kortix.com/dashboard`, mechanism
+// `auto.browser.global_handlers.onerror` (`handled:false` — UNCAUGHT, never
+// reached a React error boundary), Chrome 150 / Windows 10. The single stack
+// frame is the minified main co-worker runtime chunk
+// `app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_…` function `t`
+// (lineno 15, colno 73840, in_app) — NO first-party `apps/web/src/…` frame.
+// ZERO breadcrumbs (no fetches, no UI clicks) — a sparse capture consistent
+// with a background transport teardown fired before any user activity was
+// recorded. The connection closing during a deploy/idle-recycle is EXPECTED, not
+// a product bug. Same transient-transport class as the gateway-502 retry
+// (#4609) and the frameless browser-internal rejections (#5200 / #5237 /
+// #5185), but a WebSocket/SSE close on the `/dashboard` realtime surface.
+//
+// The orchestrator's sweep ledger has a HISTORICAL skip-list note about
+// `Connection closed (transient SSE)` (pattern `6c28b5b4…`, ~2026-07-15) with NO
+// code matcher — this codifies that decision into a real, tested gate.
+//
+// `Connection closed.` is generic enough that a real first-party
+// `throw new Error('Connection closed.')` regression would surface with the
+// SAME wording, so the matcher anchors on the EXACT message (case-sensitive,
+// WITH the trailing period) and carries a NEGATIVE guard preserving any
+// resolved first-party `apps/web/src/…` frame.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (the library's canonical
+// close string, trailing period included).
+const CONNECTION_CLOSED = 'Connection closed.'
+
+// The single production stack frame: the minified main co-worker runtime chunk
+// `66499` function `t` (a `?dpl=dpl_…` Vercel deploy-hash URL). Sentry's
+// sourcemap resolution did NOT rewrite this to a first-party `apps/web/src/…`
+// path, so the negative guard does not fire for it.
+const CONNECTION_CLOSED_PROD_FRAMES = [
+  {
+    filename:
+      'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+    function: 't',
+    lineno: 15,
+    colno: 73840,
+    in_app: true,
+  },
+]
+
+test('classifies the production Connection closed. transport noise (exact prod frame)', () => {
+  // Exact production shape: the canonical message + the single minified `66499`
+  // chunk `t` frame. The chunk frame is NOT a first-party `apps/web/src/…`
+  // frame, so the negative guard does not fire.
+  assert.equal(
+    isConnectionClosedNoise({
+      message: CONNECTION_CLOSED,
+      frames: CONNECTION_CLOSED_PROD_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/dashboard' },
+      exception: {
+        values: [
+          {
+            value: CONNECTION_CLOSED,
+            stacktrace: { frames: CONNECTION_CLOSED_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Connection closed. noise through all three capture-path wrappers', () => {
+  // The matcher strips the canonical `Error: ` / `Unhandled promise rejection:
+  // ` / `Unhandled promise rejection: Error: ` wrappers before anchoring, so
+  // the SAME underlying message classifies as noise regardless of which capture
+  // path delivered it (window.onerror, onunhandledrejection, Sentry exception).
+  for (const message of [
+    CONNECTION_CLOSED,
+    `Error: ${CONNECTION_CLOSED}`,
+    `Unhandled promise rejection: ${CONNECTION_CLOSED}`,
+    `Unhandled promise rejection: Error: ${CONNECTION_CLOSED}`,
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({
+        message,
+        frames: CONNECTION_CLOSED_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: CONNECTION_CLOSED_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the frameless Connection closed. variant as noise (message alone is specific)', () => {
+  // A frameless capture with this exact message still classifies as noise — the
+  // message is the library's canonical close string and is specific enough
+  // (no frameless-positive guard required, unlike the bare-`undefined`
+  // rejection class).
+  assert.equal(
+    isConnectionClosedNoise({
+      message: CONNECTION_CLOSED,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/dashboard' },
+      exception: {
+        values: [{ value: CONNECTION_CLOSED, stacktrace: { frames: [] } }],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/dashboard' },
+      exception: {
+        values: [{ value: CONNECTION_CLOSED }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Connection closed. throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own websocket/SSE handling
+  // threw `Connection closed.` → actionable regression; the negative guard
+  // MUST preserve it so the call site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/dashboard/realtime-socket.ts', function: 'onClose' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/realtime/sse.ts', function: 'stream' },
+    ],
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({
+        message: CONNECTION_CLOSED,
+        frames,
+      }),
+      false,
+      `expected first-party Connection closed. throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: CONNECTION_CLOSED, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party Connection closed. throw from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the trailing period (over-match guard)', () => {
+  // The trailing `.` is part of the anchor — a different message `Connection
+  // closed` (no period) must keep reporting so the matcher does not over-match.
+  for (const message of ['Connection closed', 'Connection closed!', 'Connection Closed.']) {
+    assert.equal(
+      isConnectionClosedNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the "Connection closed by server." wording (over-match guard)', () => {
+  // Only the EXACT library close string is noise; a different library's
+  // `Connection closed by server.` keeps reporting.
+  for (const message of [
+    'Connection closed by server.',
+    'Connection closed by peer.',
+    'WebSocket connection closed.',
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
     )
   }
 })
