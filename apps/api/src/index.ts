@@ -68,6 +68,7 @@ import {
   stopLeaderElection,
   runsSingletonWorkers,
 } from './shared/leader-election';
+import { enrichmentApp } from './enrichment';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -753,6 +754,7 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
+app.route('/v1/enrichment', enrichmentApp); // /v1/enrichment — domain → company profile in project memory
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -1197,6 +1199,11 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // Domain enrichment: crawl + extract + write a company profile into project
+  // memory. Leader-only, which is also what makes the worker's process-local
+  // outbound rate limiter effectively deployment-wide.
+  const { startEnrichmentWorker } = await import('./enrichment');
+  startEnrichmentWorker();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -1207,6 +1214,8 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
+  const { stopEnrichmentWorker } = await import('./enrichment');
+  stopEnrichmentWorker();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
