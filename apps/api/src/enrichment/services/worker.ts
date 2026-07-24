@@ -35,8 +35,8 @@ import { extractProfile } from './extract';
 import { withGatewayChat } from './gateway-chat';
 import { fetchPages } from './jina-fetch';
 import { canonicalOrigin } from './normalize';
-import { assertSafeUrl } from './safe-fetch';
-import { writeProfileToMemory } from './memory-write';
+import { assertSafeUrl, boundedFetch } from './safe-fetch';
+import { writeProfileToMemory, type MemoryPort } from './memory-write';
 import { selectUrls, type UrlTier } from './url-filter';
 
 const MAX_ATTEMPTS = 3;
@@ -68,15 +68,44 @@ export interface JobResult {
 }
 
 /**
+ * The three things a test must not really do: reach the network, call a model,
+ * and push a git commit. They are injectable so tests can substitute them
+ * directly. The alternative — `mock.module` on `node:dns`, the gateway and the
+ * git layer — is process-wide in this suite and collides with the unit tests
+ * that exercise those same modules for real.
+ */
+export interface EnrichmentJobDeps {
+  assertUrl: typeof assertSafeUrl;
+  fetchImpl: typeof boundedFetch;
+  runChat: typeof withGatewayChat;
+  memoryPortFor: (projectId: string) => Promise<MemoryPort>;
+}
+
+const defaultDeps: EnrichmentJobDeps = {
+  assertUrl: assertSafeUrl,
+  fetchImpl: boundedFetch,
+  runChat: withGatewayChat,
+  memoryPortFor: async (projectId) => {
+    const project = await loadProject(projectId);
+    if (!project) throw new EnrichmentError('internal_error', `project ${projectId} not found`);
+    return createProjectMemoryPort(project);
+  },
+};
+
+/**
  * Run one job to completion, or throw. Exported so the integration test can
  * drive a single job without waiting on the interval.
  */
-export async function runEnrichmentJob(job: EnrichmentJobRow): Promise<JobResult> {
+export async function runEnrichmentJob(
+  job: EnrichmentJobRow,
+  overrides: Partial<EnrichmentJobDeps> = {},
+): Promise<JobResult> {
+  const deps: EnrichmentJobDeps = { ...defaultDeps, ...overrides };
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), config.KORTIX_ENRICHMENT_JOB_TIMEOUT_MS);
 
   try {
-    return await executePipeline(job, controller.signal);
+    return await executePipeline(job, controller.signal, deps);
   } catch (err) {
     // Whatever surfaced, the deadline firing is the real cause and the one the
     // caller needs in order to decide about a retry.
@@ -92,6 +121,7 @@ export async function runEnrichmentJob(job: EnrichmentJobRow): Promise<JobResult
 async function executePipeline(
   job: EnrichmentJobRow,
   signal: AbortSignal,
+  deps: EnrichmentJobDeps,
 ): Promise<JobResult> {
   const domain = job.domain;
   const origin = canonicalOrigin(domain);
@@ -101,7 +131,7 @@ async function executePipeline(
   // The guard runs before anything else touches the network, and its rejection
   // means the input was never enrichable — not that we should try again later.
   try {
-    await assertSafeUrl(origin);
+    await deps.assertUrl(origin);
   } catch (err) {
     throw new EnrichmentError(
       'invalid_domain',
@@ -116,7 +146,7 @@ async function executePipeline(
   if (cached) {
     // Another org already paid for this crawl. The profile still has to be
     // written into THIS project's memory, which is the part that is per-tenant.
-    const memoryPath = await writeToMemory(job, cached.profile, {
+    const memoryPath = await writeToMemory(deps, job, cached.profile, {
       domain,
       crawledAt: cached.crawledAt.toISOString(),
       crawlStatus: cached.crawlStatus,
@@ -132,7 +162,7 @@ async function executePipeline(
     };
   }
 
-  const discovery = await discover(origin, { signal });
+  const discovery = await discover(origin, { signal, fetchImpl: deps.fetchImpl });
   const ranked = selectUrls(discovery.urls, origin);
   const tierByUrl = new Map<string, UrlTier>(ranked.map((r) => [r.url, r.tier]));
 
@@ -143,6 +173,8 @@ async function executePipeline(
       rpm: config.KORTIX_ENRICHMENT_JINA_RPM,
       signal,
       cache: { get: getCachedPages, put: putCachedPage },
+      fetchImpl: deps.fetchImpl,
+      assertUrl: deps.assertUrl,
     },
   );
 
@@ -171,7 +203,7 @@ async function executePipeline(
     discovery.signals,
   );
 
-  const { profile } = await withGatewayChat(
+  const { profile } = await deps.runChat(
     {
       accountId: job.accountId,
       userId: job.createdBy ?? job.accountId,
@@ -182,7 +214,7 @@ async function executePipeline(
 
   await upsertProfile({ domain, profile, crawlStatus, model });
 
-  const memoryPath = await writeToMemory(job, profile, {
+  const memoryPath = await writeToMemory(deps, job, profile, {
     domain,
     crawledAt: new Date().toISOString(),
     crawlStatus,
@@ -200,13 +232,12 @@ async function executePipeline(
 }
 
 async function writeToMemory(
+  deps: EnrichmentJobDeps,
   job: EnrichmentJobRow,
   profile: CompanyProfile,
   provenance: { domain: string; crawledAt: string; crawlStatus: CrawlStatus; model: string },
 ): Promise<string> {
-  const project = await loadProject(job.projectId);
-  if (!project) throw new EnrichmentError('invalid_domain', `project ${job.projectId} not found`);
-  const port = createProjectMemoryPort(project);
+  const port = await deps.memoryPortFor(job.projectId);
   const { profilePath } = await writeProfileToMemory(port, {
     domain: provenance.domain,
     profile,

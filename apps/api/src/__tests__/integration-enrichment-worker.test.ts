@@ -12,42 +12,17 @@
  * Skips itself when the local Postgres has no project to attach to, so it
  * degrades to a no-op rather than a false failure on a bare checkout.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-
-mock.module('node:dns/promises', () => ({
-  lookup: async () => [{ address: '93.184.216.34', family: 4 }],
-}));
+import { claimDueJobs, completeJob, enqueueJob } from '../enrichment/repositories/jobs';
+import { getProfile } from '../enrichment/repositories/profiles';
+import type { BoundedResponse } from '../enrichment/services/safe-fetch';
+import { runEnrichmentJob, type EnrichmentJobDeps } from '../enrichment/services/worker';
 
 const memoryWrites: Array<{ path: string; content: string }> = [];
-mock.module('../enrichment/repositories/memory-port', () => ({
-  loadProject: async (projectId: string) => ({ projectId, defaultBranch: 'main' }),
-  createProjectMemoryPort: () => ({
-    read: async (path: string) =>
-      memoryWrites.filter((w) => w.path === path).at(-1)?.content ?? null,
-    commit: async (path: string, content: string) => {
-      memoryWrites.push({ path, content });
-    },
-  }),
-}));
-
 let extractionResponse = '';
 let gatewayCalls = 0;
-mock.module('../enrichment/services/gateway-chat', () => ({
-  withGatewayChat: async (
-    _principal: unknown,
-    fn: (chat: () => Promise<string>) => Promise<unknown>,
-  ) =>
-    fn(async () => {
-      gatewayCalls += 1;
-      return extractionResponse;
-    }),
-}));
-
-const { runEnrichmentJob } = await import('../enrichment/services/worker');
-const { claimDueJobs, enqueueJob, completeJob } = await import('../enrichment/repositories/jobs');
-const { getProfile } = await import('../enrichment/repositories/profiles');
 
 const DOMAIN = 'integration-example.com';
 const ORIGIN = `https://${DOMAIN}`;
@@ -88,24 +63,55 @@ const SITE: Record<string, () => Response> = {
   [`${ORIGIN}/team`]: () => page('<html><body><h1>Team</h1></body></html>'),
 };
 
-const realFetch = globalThis.fetch;
 let fetchLog: string[] = [];
 
-function installFetch() {
-  globalThis.fetch = (async (input: string | URL) => {
-    const url = String(input);
-    fetchLog.push(url);
-    if (url.startsWith('https://r.jina.ai/')) {
-      const target = url.slice('https://r.jina.ai/'.length);
-      return new Response(`# Page\n\nMarkdown for ${target}`, {
-        status: 200,
-        headers: { 'content-type': 'text/plain' },
-      });
-    }
-    const handler = SITE[url];
-    if (handler) return handler();
-    return new Response('not found', { status: 404 });
-  }) as unknown as typeof fetch;
+async function toBounded(url: string, res: Response): Promise<BoundedResponse> {
+  return {
+    url,
+    status: res.status,
+    ok: res.status >= 200 && res.status < 300,
+    contentType: res.headers.get('content-type'),
+    body: await res.text(),
+    truncated: false,
+  };
+}
+
+/**
+ * The network, the model and git, supplied directly. Nothing is mock.module'd:
+ * that is process-wide here and would collide with the unit tests that
+ * exercise the egress guard and the gateway for real.
+ */
+function testDeps(): Partial<EnrichmentJobDeps> {
+  return {
+    assertUrl: (async (url: string) => new URL(url)) as never,
+    fetchImpl: (async (url: string) => {
+      fetchLog.push(url);
+      if (url.startsWith('https://r.jina.ai/')) {
+        const target = url.slice('https://r.jina.ai/'.length);
+        return toBounded(
+          url,
+          new Response(`# Page\n\nMarkdown for ${target}`, {
+            status: 200,
+            headers: { 'content-type': 'text/plain' },
+          }),
+        );
+      }
+      const handler = SITE[url];
+      return toBounded(url, handler ? handler() : new Response('not found', { status: 404 }));
+    }) as never,
+    runChat: (async (_principal: unknown, fn: (chat: unknown) => Promise<unknown>) =>
+      fn(async () => {
+        gatewayCalls += 1;
+        return extractionResponse;
+      })) as never,
+    memoryPortFor: async () => ({
+      read: async (path: string) =>
+        memoryWrites.filter((w) => w.path === path).at(-1)?.content ?? null,
+      commit: async (path: string, content: string) => {
+        memoryWrites.push({ path, content });
+      },
+    }),
+  };
 }
 
 let ctx: { projectId: string; accountId: string } | null = null;
@@ -132,7 +138,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  globalThis.fetch = realFetch;
   for (const id of jobIds) {
     await db.execute(sql`delete from kortix.enrichment_jobs where job_id = ${id}`);
   }
@@ -141,7 +146,6 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  installFetch();
   fetchLog = [];
   gatewayCalls = 0;
   memoryWrites.length = 0;
@@ -161,7 +165,7 @@ describe('enrichment worker (integration)', () => {
     expect(claimed?.jobId).toBe(job.jobId);
     expect(claimed.status).toBe('running');
 
-    const result = await runEnrichmentJob(claimed);
+    const result = await runEnrichmentJob(claimed, testDeps());
 
     expect(result.domain).toBe(DOMAIN);
     expect(result.cacheHit).toBe(false);
@@ -182,7 +186,7 @@ describe('enrichment worker (integration)', () => {
     if (!ctx) return;
     const job = await seedJob();
     const [claimed] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    const result = await runEnrichmentJob(claimed);
+    const result = await runEnrichmentJob(claimed, testDeps());
     await completeJob(job.jobId, { ...result });
 
     const rows = (await db.execute(
@@ -213,7 +217,7 @@ describe('enrichment worker (integration)', () => {
     if (!ctx) return;
     const first = await seedJob();
     const [claimedFirst] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    await runEnrichmentJob(claimedFirst);
+    await runEnrichmentJob(claimedFirst, testDeps());
     await completeJob(first.jobId, {});
 
     fetchLog = [];
@@ -222,7 +226,7 @@ describe('enrichment worker (integration)', () => {
 
     const second = await seedJob();
     const [claimedSecond] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    const result = await runEnrichmentJob(claimedSecond);
+    const result = await runEnrichmentJob(claimedSecond, testDeps());
 
     expect(result.cacheHit).toBe(true);
     expect(gatewayCalls).toBe(0);
@@ -237,13 +241,13 @@ describe('enrichment worker (integration)', () => {
     if (!ctx) return;
     const first = await seedJob();
     const [claimedFirst] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    await runEnrichmentJob(claimedFirst);
+    await runEnrichmentJob(claimedFirst, testDeps());
     await completeJob(first.jobId, {});
 
     gatewayCalls = 0;
     await seedJob(true);
     const [claimedSecond] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    const result = await runEnrichmentJob(claimedSecond);
+    const result = await runEnrichmentJob(claimedSecond, testDeps());
 
     expect(result.cacheHit).toBe(false);
     expect(gatewayCalls).toBeGreaterThan(0);
@@ -253,7 +257,7 @@ describe('enrichment worker (integration)', () => {
     if (!ctx) return;
     const first = await seedJob();
     const [claimedFirst] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    await runEnrichmentJob(claimedFirst);
+    await runEnrichmentJob(claimedFirst, testDeps());
     await completeJob(first.jobId, {});
 
     const cached = (await db.execute(
@@ -264,7 +268,7 @@ describe('enrichment worker (integration)', () => {
     fetchLog = [];
     await seedJob(true);
     const [claimedSecond] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
-    await runEnrichmentJob(claimedSecond);
+    await runEnrichmentJob(claimedSecond, testDeps());
 
     expect(fetchLog.some((u) => u.startsWith('https://r.jina.ai/'))).toBe(false);
   });
@@ -275,7 +279,7 @@ describe('enrichment worker (integration)', () => {
     await seedJob();
     const [claimed] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
 
-    await expect(runEnrichmentJob(claimed)).rejects.toThrow();
+    await expect(runEnrichmentJob(claimed, testDeps())).rejects.toThrow();
 
     expect(await getProfile(DOMAIN)).toBeNull();
     expect(memoryWrites).toHaveLength(0);

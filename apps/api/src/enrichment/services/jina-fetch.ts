@@ -46,6 +46,8 @@ export interface FetchPagesOptions {
   signal?: AbortSignal;
   cache?: PageCachePort;
   fetchImpl?: typeof boundedFetch;
+  /** The final egress check before a URL leaves the process. */
+  assertUrl?: typeof assertSafeUrl;
   /** Injected in tests to keep rate-limit behaviour deterministic. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -124,7 +126,7 @@ async function fetchOne(
   // The target is re-validated even though discovery already checked it: DNS
   // can change between the two, and this is the last point before the URL
   // leaves our process.
-  await assertSafeUrl(url);
+  await (opts.assertUrl ?? assertSafeUrl)(url);
 
   const headers: Record<string, string> = { accept: 'text/plain' };
   if (opts.apiKey) headers.authorization = `Bearer ${opts.apiKey}`;
