@@ -52,7 +52,7 @@ const usage = (over: Record<string, unknown> = {}) => ({
   inputTokens: 100,
   outputTokens: 50,
   totalTokens: 150,
-  inputTokenDetails: { cacheReadTokens: 20 },
+  inputTokenDetails: { cacheReadTokens: 20, cacheWriteTokens: 10 },
   outputTokenDetails: { reasoningTokens: 10 },
   ...over,
 });
@@ -60,6 +60,14 @@ const usage = (over: Record<string, unknown> = {}) => ({
 const CTX = { model: 'openai/gpt-5.6', provider: 'openai' };
 
 describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
+  it('maps cache-write usage when the provider reports no cache reads', () => {
+    const mapped = mapUsage(
+      usage({ inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 10 } }) as any,
+    );
+
+    expect(mapped.prompt_tokens_details).toEqual({ cache_write_tokens: 10 });
+  });
+
   it('streams text as OpenAI chat.completion.chunk deltas + usage + [DONE]', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(
@@ -89,6 +97,8 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     expect((usageChunk as any).usage.prompt_tokens).toBe(100);
     expect((usageChunk as any).usage.completion_tokens).toBe(50);
     expect((usageChunk as any).usage.prompt_tokens_details.cached_tokens).toBe(20);
+    expect((usageChunk as any).usage.prompt_tokens_details.cache_write_tokens).toBe(10);
+    expect(extractUsageFromSseBuffer(sse)?.cacheWriteTokens).toBe(10);
   });
 
   it('streams tool calls as incremental OpenAI tool_calls deltas', async () => {
