@@ -19,12 +19,12 @@ import {
   Pencil,
   Plug,
   Plus,
-  X,
   RefreshCw,
   Search,
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -33,9 +33,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
-import { isConnectorsEnabled } from '@/lib/config';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -91,22 +88,25 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
+import { isConnectorsEnabled } from '@/lib/config';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
   type ConnectorAction,
-  type ConnectorConfig,
   type ConnectorAuthDiscovery,
+  type ConnectorConfig,
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   createConnector,
-  discoverConnectorAuth,
   deleteConnector,
+  discoverConnectorAuth,
   getConnectStatus,
   getConnectorConfig,
   getConnectorPolicies,
-  getProject,
+  getProjectDetail,
   listConnectors,
   listPipedreamApps,
   pipedreamConnect,
@@ -117,7 +117,6 @@ import {
   setConnectorSensitive,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
-import { Icon } from '@/features/icon/icon';
 import { DiscoverCatalogue } from './discover-catalogue';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -248,13 +247,13 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
-    queryFn: () => getProject(projectId),
-    staleTime: 10_000,
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 60_000,
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
-  const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
-  const discoverEnabled = projectQuery.data?.experimental?.connectors_api_discover === true;
+  const emailChannelEnabled = projectQuery.data?.project?.experimental?.agentmail_email === true;
+  const discoverEnabled = projectQuery.data?.project?.experimental?.connectors_api_discover === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
   // mutating control (rename/remove/reconnect/credentials/permissions/channels/
@@ -340,7 +339,6 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     <div className="flex min-h-0 flex-1">
       {connectors.length > 0 && (
         <ConnectorRail
-          projectId={projectId}
           connectors={connectors}
           selection={selection}
           onSelect={select}
@@ -469,7 +467,6 @@ function SaveBar({
 }
 
 function ConnectorRail({
-  projectId,
   connectors,
   selection,
   onSelect,
@@ -477,7 +474,6 @@ function ConnectorRail({
   syncing,
   canWrite = false,
 }: {
-  projectId: string;
   connectors: AdminConnector[];
   selection: Selection;
   onSelect: (s: Selection) => void;
@@ -551,7 +547,7 @@ function ConnectorRail({
             {ready.map((c) => (
               <RailItem
                 key={c.slug}
-                leading={<ConnectorAppIcon projectId={projectId} connector={c} size="sm" />}
+                leading={<ConnectorAppIcon connector={c} size="sm" />}
                 title={c.name || c.slug}
                 subtitle={`${c.actions.length} ${c.actions.length === 1 ? 'tool' : 'tools'}`}
                 dot={statusDot(c)}
@@ -569,7 +565,7 @@ function ConnectorRail({
             {needsSetup.map((c) => (
               <RailItem
                 key={c.slug}
-                leading={<ConnectorAppIcon projectId={projectId} connector={c} size="sm" />}
+                leading={<ConnectorAppIcon connector={c} size="sm" />}
                 title={c.name || c.slug}
                 subtitle={tI18nHardcoded.raw(
                   'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleNot1feeff2e',
@@ -628,24 +624,15 @@ function appIconTileClass(size: 'sm' | 'lg'): string {
 }
 
 function ConnectorAppIcon({
-  projectId,
   connector,
   size = 'lg',
 }: {
-  projectId: string;
   connector: AdminConnector;
   size?: 'sm' | 'lg';
 }) {
-  const enabled = connector.provider === 'pipedream' && !!projectId && !!connector.slug;
-  const appQuery = useQuery({
-    queryKey: ['pipedream-app-icon', projectId, connector.slug],
-    queryFn: () => listPipedreamApps(projectId, connector.slug),
-    enabled,
-    staleTime: 24 * 60 * 60 * 1000,
-  });
-  const imgSrc = appQuery.data?.apps.find((a) => a.slug === connector.slug)?.imgSrc ?? null;
+  const imgSrc = connector.iconUrl ?? null;
 
-  if (enabled && imgSrc) {
+  if (imgSrc) {
     return (
       <span
         className={cn(
@@ -808,7 +795,7 @@ function ConnectorDetail({
     <div className="mx-auto w-full max-w-3xl px-6 py-7">
       {/* Header */}
       <div className="flex items-start gap-3.5">
-        <ConnectorAppIcon projectId={projectId} connector={connector} size="lg" />
+        <ConnectorAppIcon connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
           {editingName && canWrite ? (
             <form

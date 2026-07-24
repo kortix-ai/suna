@@ -29,6 +29,8 @@ describe('GitHub account connection surfaces', () => {
 
   test('keeps the GitHub App install action visible during repository import', () => {
     expect(projectModalSource).toContain('aria-label="Connect another GitHub account"');
+    expect(projectModalSource).toContain('router.push(`/github/setup?account_id=');
+    expect(projectModalSource).not.toContain('window.location.assign(freshInstallUrl)');
   });
 
   test('presents the three repository sources as one visible decision', () => {

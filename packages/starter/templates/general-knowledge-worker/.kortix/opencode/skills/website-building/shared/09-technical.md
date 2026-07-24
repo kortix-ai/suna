@@ -38,7 +38,7 @@ Use commands appropriate to the project:
 
 ```bash
 # static site
-python3 -m http.server 3000
+uv run python -m http.server 3000
 
 # Vite / React / app server
 npm install

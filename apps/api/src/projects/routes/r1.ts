@@ -10,6 +10,8 @@ import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBa
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import {
   getGitHubAppInstallation,
+  listLinkableGitHubAppInstallations,
+  type GitHubAppInstallation,
   verifyGitHubAppInstallStatePayload,
   verifyGitHubInstallationAdmin,
 } from '../github';
@@ -875,6 +877,193 @@ projectsApp.openapi(
 },
 );
 
+async function upsertAccountGitHubInstallation(
+  accountId: string,
+  installationId: string,
+  installation: GitHubAppInstallation,
+) {
+  const ownerLogin = normalizeString(installation.account?.login);
+  if (!ownerLogin) {
+    throw new Error('GitHub installation did not include an owner account');
+  }
+
+  const ownerType =
+    normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization';
+  const now = new Date();
+  const [row] = await db
+    .insert(accountGithubInstallations)
+    .values({
+      accountId,
+      installationId,
+      ownerLogin,
+      ownerType,
+      repositorySelection: installation.repository_selection ?? null,
+      permissions: installation.permissions ?? {},
+      metadata: {
+        html_url: installation.html_url ?? null,
+      },
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
+      set: {
+        ownerLogin,
+        ownerType,
+        repositorySelection: installation.repository_selection ?? null,
+        permissions: installation.permissions ?? {},
+        metadata: {
+          html_url: installation.html_url ?? null,
+        },
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  if (!row) throw new Error('Failed to save the GitHub installation');
+  return row;
+}
+
+// POST /v1/projects/github/installations/linkable
+// The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
+// that route to GitHub App user tokens. Kortix lists this App's installations
+// with the App JWT, then filters them with the authorized user's identity and
+// active organization-admin memberships.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/installations/linkable',
+    tags: ['github'],
+    summary: 'POST /github/installations/linkable',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Linkable GitHub App installations'),
+      ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+    const body = await readBody(c);
+    const scope = await resolveProjectAccount(c, body);
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'GitHub authorization is required to list installations' }, 400);
+    }
+
+    let linkable;
+    try {
+      linkable = await listLinkableGitHubAppInstallations(githubUserToken);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to list GitHub App installations',
+        },
+        502,
+      );
+    }
+
+    const linkedRows = await listAccountGitHubInstallations(scope.accountId);
+    const linkedIds = new Set(linkedRows.map((row) => row.installationId));
+    const installUrl = await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
+
+    return c.json({
+      account_id: scope.accountId,
+      github_login: linkable.githubLogin,
+      configured: Boolean(installUrl),
+      install_url: installUrl,
+      installations: linkable.installations.map((installation) => ({
+        installation_id: String(installation.id),
+        owner_login: installation.account?.login ?? null,
+        owner_type: installation.account?.type ?? installation.target_type ?? null,
+        repository_selection: installation.repository_selection ?? null,
+        permissions: installation.permissions ?? {},
+        installation_url: installation.html_url ?? null,
+        linked: linkedIds.has(String(installation.id)),
+      })),
+    });
+  },
+);
+
+// POST /v1/projects/github/installations/link
+// This same-origin path links an existing App installation without a GitHub
+// install callback. The API verifies the installation against the App JWT and
+// verifies the authorized GitHub user again before it writes the account row.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/installations/link',
+    tags: ['github'],
+    summary: 'POST /github/installations/link',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Linked GitHub App installation'),
+      ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+    const body = await readBody(c);
+    const scope = await resolveProjectAccount(c, body);
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const installationId = normalizeString(body.installation_id ?? body.installationId);
+    if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
+    if (!/^[0-9]+$/.test(installationId)) {
+      return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
+    }
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
+    }
+
+    let installation: GitHubAppInstallation;
+    try {
+      installation = await getGitHubAppInstallation(installationId);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to verify GitHub App installation',
+        },
+        502,
+      );
+    }
+
+    try {
+      await verifyGitHubInstallationAdmin(githubUserToken, installation);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'GitHub administrator verification failed',
+        },
+        403,
+      );
+    }
+
+    try {
+      const row = await upsertAccountGitHubInstallation(
+        scope.accountId,
+        installationId,
+        installation,
+      );
+      return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to save the GitHub installation',
+        },
+        502,
+      );
+    }
+  },
+);
+
 // POST /v1/projects/github/installation
 // Called after GitHub redirects back with installation_id + signed state.
 // We fetch installation metadata with the app JWT instead of trusting client
@@ -946,42 +1135,21 @@ projectsApp.openapi(
     return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
   }
 
-  const ownerLogin = normalizeString(installation.account?.login);
-  if (!ownerLogin) {
-    return c.json({ error: 'GitHub installation did not include an owner account' }, 502);
-  }
-
-  const now = new Date();
-  const [row] = await db
-    .insert(accountGithubInstallations)
-    .values({
-      accountId: scope.accountId,
+  try {
+    const row = await upsertAccountGitHubInstallation(
+      scope.accountId,
       installationId,
-      ownerLogin,
-      ownerType: normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization',
-      repositorySelection: installation.repository_selection ?? null,
-      permissions: installation.permissions ?? {},
-      metadata: {
-        html_url: installation.html_url ?? null,
+      installation,
+    );
+    return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+  } catch (error) {
+    return c.json(
+      {
+        error: (error as Error).message || 'Failed to save the GitHub installation',
       },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
-      set: {
-        ownerLogin,
-        ownerType: normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization',
-        repositorySelection: installation.repository_selection ?? null,
-        permissions: installation.permissions ?? {},
-        metadata: {
-          html_url: installation.html_url ?? null,
-        },
-        updatedAt: now,
-      },
-    })
-    .returning();
-
-  return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+      502,
+    );
+  }
 },
 );
 

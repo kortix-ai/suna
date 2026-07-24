@@ -49,6 +49,10 @@ const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
   || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
+const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -393,11 +397,15 @@ export async function stageBuildContext(
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
   const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
+  const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
+  const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+  await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
+  await assertExists(MACHINE_DOC_SRC_PATH, 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
   // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
   // dist binary — an edited src/ with a stale dist/ ships old code under a
@@ -422,6 +430,8 @@ export async function stageBuildContext(
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+  await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
+  await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
   await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
   // This package is copied as source and imported directly by the in-sandbox
   // channel CLIs. Its local node_modules is neither used nor portable: pnpm
@@ -481,9 +491,11 @@ export async function stageBuildContext(
     agentBinaryPath: 'kortix-agent.gz',
     cliBinaryPath: 'kortix.gz',
     entrypointScriptPath: 'kortix-entrypoint',
+    machineDocPath: 'MACHINE.md',
     slackCliPath: 'kortix-slack-cli',
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
+    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     catalogPath: 'kortix-llm-catalog.json',
     isSharedDefault,
     warmRepo: warmRepoBake,
@@ -525,7 +537,10 @@ export async function stageWarmFromBaseContext(
   warmRepo: WarmRepoContext,
 ): Promise<StagedContext> {
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
+  const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
+  await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-warm-'));
+  await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
   let opencodeConfigPath: string | undefined;
   if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
     await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
@@ -544,6 +559,7 @@ export async function stageWarmFromBaseContext(
     baseImageRef,
     warmRepo: { stagedPath, branch: warmRepo.branch },
     opencodeConfigPath,
+    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
   });
 
   await guardBuildahPortable(composed);
@@ -600,7 +616,13 @@ async function assertContextComplete(
   dockerfileName: string,
   warmRepoStagedPath?: string,
 ): Promise<void> {
-  const required = ['scaffold.git', 'kortix-agent.gz', dockerfileName];
+  const required = [
+    'scaffold.git',
+    'kortix-agent.gz',
+    'kortix-opencode-warmup',
+    'MACHINE.md',
+    dockerfileName,
+  ];
   // A per-project warm bake COPYs the staged checkout — verify it (and its
   // baked .git) actually landed, so a staging miss fails HERE rather than as an
   // opaque remote "Path does not exist" mid-build.

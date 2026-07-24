@@ -14,7 +14,22 @@
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
+import {
+  AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  BUN_VERSION,
+  NODE_VERSION,
+  NPM_VERSION,
+  OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PNPM_VERSION,
+  PYTHON_VERSION,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
+  UV_VERSION,
+} from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
@@ -43,6 +58,10 @@ const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src')
 const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
+const OPENCODE_WARMUP_PATH = process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
+const MACHINE_DOC_PATH = process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
@@ -183,7 +202,16 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // layer. Chromium's content hash is now stable across agent-source churn — it is
 // fetched at most once per pinned Playwright/agent-browser version and
 // cache-reused for every base rebuild after.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v29';
+// v30: run the toolchain and daemon as `kortix`, restore the runtime environment
+// when a provider discards image USER/ENV, extract OpenCode cache warming, and
+// bake the platform machine guide at /MACHINE.md.
+// v31: replace remote installer-script execution with versioned release
+// artifacts whose amd64 and arm64 SHA-256 digests live in the runtime manifest.
+// Pin Bun and include every artifact digest in the runtime fingerprint.
+// v32: accept uv's release target metadata in `uv --version`. uv 0.11.30 emits
+// `uv 0.11.30 (x86_64-unknown-linux-gnu)`, so v31's exact comparison failed
+// every cold image build. The version bump invalidates any cached v31 image.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v32';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -874,6 +902,8 @@ const AGENT_RUNTIME_ARTIFACTS = [
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
+  { label: 'kortix-opencode-warmup', path: OPENCODE_WARMUP_PATH },
+  { label: 'kortix-machine-doc', path: MACHINE_DOC_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   // Only the in-sandbox `kortix executor` closure (NOT the whole apps/cli/src) —
@@ -891,8 +921,19 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
-const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
-const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
+const runtimeIntegrityKey = () =>
+  [
+    PNPM_SHA256_AMD64,
+    PNPM_SHA256_ARM64,
+    UV_SHA256_AMD64,
+    UV_SHA256_ARM64,
+    BUN_SHA256_AMD64,
+    BUN_SHA256_ARM64,
+  ].join(':');
+const runtimeVersionKey = () =>
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
+const sandboxVersionStr = () =>
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

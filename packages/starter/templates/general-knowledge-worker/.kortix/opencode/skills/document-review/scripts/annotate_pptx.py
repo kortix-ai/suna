@@ -2,7 +2,7 @@
 """Annotate a PPTX with review issues as classic comments.
 
 Usage:
-    python annotate_pptx.py input.pptx output.pptx
+    uv run annotate_pptx.py input.pptx output.pptx
 
 Reads issues from document_review_state.json in the working directory.
 Adds comments via XML manipulation (commentAuthors.xml +

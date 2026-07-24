@@ -121,11 +121,28 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         return { messages: { ...state.messages, [sessionId]: messages } };
       }
 
+      const incomingHasRealUserMessage = messages.some(
+        (message) => message.info.role === 'user' && !optimisticIds.has(message.info.id),
+      );
+      const messagesById = new Map(messages.map((message) => [message.info.id, message]));
+      for (const message of existing) {
+        const isSupersededOptimisticUser =
+          incomingHasRealUserMessage &&
+          message.info.role === 'user' &&
+          optimisticIds.has(message.info.id);
+        if (!messagesById.has(message.info.id) && !isSupersededOptimisticUser) {
+          messagesById.set(message.info.id, message);
+        }
+      }
+      const mergedMessages = [...messagesById.values()].sort((a, b) =>
+        a.info.id.localeCompare(b.info.id),
+      );
+
       // Reconcile: for text/reasoning parts that are currently being
       // streamed, the SSE-accumulated version may have MORE content
       // than the REST snapshot. Prefer the longer version to avoid
       // clobbering in-progress streaming text.
-      const reconciled = messages.map((incomingMsg) => {
+      const reconciled = mergedMessages.map((incomingMsg) => {
         const existingMsg = existing.find(
           (m) => m.info.id === incomingMsg.info.id,
         );

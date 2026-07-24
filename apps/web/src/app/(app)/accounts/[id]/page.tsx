@@ -696,6 +696,7 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
@@ -725,28 +726,11 @@ function GitHubConnectionCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
-  async function handleConnect() {
+  function handleConnect() {
     if (!canManage) return;
     setIsConnecting(true);
-    try {
-      const result = await installationsQuery.refetch();
-      if (result.error) throw result.error;
-      const installUrl = result.data?.install_url;
-      if (!installUrl) {
-        errorToast(
-          result.data?.configured === false
-            ? 'GitHub App is not configured'
-            : 'GitHub install URL unavailable',
-        );
-        return;
-      }
-      rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
-      window.location.assign(installUrl);
-    } catch (err) {
-      errorToast((err as Error).message || 'Failed to start GitHub setup');
-    } finally {
-      setIsConnecting(false);
-    }
+    rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
+    router.push(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
   }
 
   const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>

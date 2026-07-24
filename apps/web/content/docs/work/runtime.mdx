@@ -159,9 +159,10 @@ Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must 
 
 Kortix appends this layer on top of your Dockerfile's final stage.
 
-- A system package floor: `git`, `curl`, `build-essential`, `ffmpeg`, `tmux`, Node.js, npm, and a Python 3 toolchain.
+- A system package floor with `git`, `curl`, `build-essential`, `ffmpeg`, and `tmux`.
+- pnpm-managed Node.js and npm, plus uv-managed Python 3.
 - A document-tools floor: LibreOffice, Pandoc, and OCR tools.
-- A Python package floor for data, PDF, and office-file work (`numpy`, `pandas`, `pypdf`, `python-docx`, `python-pptx`, `pillow`, `playwright`, and more). Kortix installs this floor into its own virtual environment at `/opt/kortix/pyfloor`, not into the system Python. Code that calls `/usr/bin/python3` directly bypasses the floor. Where your Dockerfile installs a conflicting version through `apt`, the floor's version still wins for anything that runs the plain `python3` command.
+- An exact uv-managed Python version exposed as `python` and `python3`. Use `uv run --with <package>` for third-party dependencies.
 - `opencode-ai`, the `bun` runtime, and `agent-browser` with a baked Chromium build.
 - The `kortix-agent` daemon, the `kortix` CLI, and the entrypoint script.
 - `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`, and the entrypoint that starts the daemon.

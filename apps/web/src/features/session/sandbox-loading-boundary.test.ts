@@ -26,7 +26,8 @@ describe('session navigation loading boundaries', () => {
   test('the project shell cannot be replaced by a route-wide sandbox fallback', () => {
     expect(projectLayoutSource).not.toContain('SandboxLoadingBoundary');
     expect(projectLayoutSource).toContain('<ProjectAccessBoundary projectId={projectId}>');
-    expect(projectLayoutSource).toContain('<SessionStreamKeeper projectId={projectId} />');
+    expect(projectLayoutSource).toContain('<SessionCacheWarmer projectId={projectId} />');
+    expect(projectLayoutSource).toContain('<ProjectShell projectId={projectId}>');
   });
 
   test('first project access still keeps its intentional full-page loader', () => {
@@ -40,10 +41,11 @@ describe('session navigation loading boundaries', () => {
     expect(projectAccessSource).not.toContain('getProjectDetail(projectId');
   });
 
-  test('the access boundary cannot collide with the project members query', () => {
+  test('project home does not start the members query before Customize opens', () => {
     expect(projectAccessSource).toContain("queryKey: ['project-access-boundary', projectId]");
     expect(projectAccessSource).not.toContain("queryKey: ['project-access', projectId]");
-    expect(projectHomeSource).toContain("queryKey: ['project-access', projectId]");
-    expect(projectHomeSource).toContain('access.data?.members?.length ?? 0');
+    expect(projectHomeSource).not.toContain("queryKey: ['project-access', projectId]");
+    expect(projectHomeSource).not.toContain('listProjectAccess(projectId');
+    expect(projectHomeSource).toContain('const PROJECT_SETUP_TILES');
   });
 });

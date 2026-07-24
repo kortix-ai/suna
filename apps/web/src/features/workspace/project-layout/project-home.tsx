@@ -30,11 +30,8 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   getProjectDetail,
-  listConnectors,
-  listProjectAccess,
   listProjectAccessRequests,
   listProjectSandboxes,
-  listProjectTriggers,
   type SandboxTemplate,
 } from '@kortix/sdk/projects-client';
 import { chalkColors } from '@kortix/shared';
@@ -235,7 +232,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections projectId={projectId} />
+        <ProjectHomeSections />
       </div>
     </div>
   );
@@ -371,90 +368,57 @@ type SetupTile = {
   icon: LucideIcon | IconMynauiType | IconType;
   title: string;
   desc: string;
-  count: number | null;
   section: CustomizeSection;
 };
 
-/** The "set up your project" entries shown as the quiet pill row. */
-function useProjectSetupTiles(projectId: string): SetupTile[] {
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    ...Q,
-  });
-  const connectors = useQuery({
-    queryKey: ['project-connectors', projectId],
-    queryFn: () => listConnectors(projectId),
-    ...Q,
-  });
-  const triggers = useQuery({
-    queryKey: ['project-triggers', projectId],
-    queryFn: () => listProjectTriggers(projectId),
-    ...Q,
-  });
-  const access = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    ...Q,
-  });
+/** Static navigation does not fetch counts before the user opens Customize. */
+const PROJECT_SETUP_TILES: SetupTile[] = [
+  {
+    icon: HiOutlineViewGrid,
+    title: 'Integrations',
+    desc: 'Connect tools your agent can act in.',
+    section: 'connectors',
+  },
+  {
+    icon: CalendarClock,
+    title: 'Scheduled tasks',
+    desc: 'Run work on a schedule or from an event.',
+    section: 'schedules',
+  },
+  {
+    icon: SparklesSolid,
+    title: 'Skills',
+    desc: 'Repeatable workflows your agent reuses.',
+    section: 'skills',
+  },
+  {
+    icon: Icon.Slack,
+    title: 'Slack',
+    desc: 'Run this project right from chat.',
+    section: 'channels',
+  },
+  {
+    icon: UsersGroupSolid,
+    title: 'Your team',
+    desc: 'Invite people to run and review work.',
+    section: 'members',
+  },
+  {
+    icon: Icon.Kortix,
+    title: 'Agent',
+    desc: 'Shape how your agent thinks and acts.',
+    section: 'agents',
+  },
+];
 
-  const memberCount = access.data?.members?.length ?? 0;
-
-  return [
-    {
-      icon: HiOutlineViewGrid,
-      title: 'Integrations',
-      desc: 'Connect tools your agent can act in.',
-      count: connectors.data?.connectors.length ?? 0,
-      section: 'connectors',
-    },
-    {
-      icon: CalendarClock,
-      title: 'Scheduled tasks',
-      desc: 'Run work on a schedule or from an event.',
-      count: triggers.data?.triggers.length ?? 0,
-      section: 'schedules',
-    },
-    {
-      icon: SparklesSolid,
-      title: 'Skills',
-      desc: 'Repeatable workflows your agent reuses.',
-      count: detail.data?.config?.skills.length ?? 0,
-      section: 'skills',
-    },
-    {
-      icon: Icon.Slack,
-      title: 'Slack',
-      desc: 'Run this project right from chat.',
-      count: null,
-      section: 'channels',
-    },
-    {
-      icon: UsersGroupSolid,
-      title: 'Your team',
-      desc: 'Invite people to run and review work.',
-      count: memberCount > 1 ? memberCount : 0,
-      section: 'members',
-    },
-    {
-      icon: Icon.Kortix,
-      title: 'Agent',
-      desc: 'Shape how your agent thinks and acts.',
-      count: null,
-      section: 'agents',
-    },
-  ];
-}
-
-function ProjectHomeSections({ projectId }: { projectId: string }) {
+function ProjectHomeSections() {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const tiles = useProjectSetupTiles(projectId);
+  const tiles = PROJECT_SETUP_TILES;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
-        const { icon: TileIcon, title, desc, count, section } = tile;
-        const isSet = (count ?? 0) > 0;
+        const { icon: TileIcon, title, desc, section } = tile;
 
         return (
           <Hint key={section} label={desc} side="top">
@@ -466,9 +430,6 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
               {title}
-              {isSet ? (
-                <span className="text-muted-foreground text-sm tabular-nums">{count}</span>
-              ) : null}
             </Button>
           </Hint>
         );
