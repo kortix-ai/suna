@@ -66,19 +66,14 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>
-            {cancelLabel}
-          </AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
               onConfirm();
             }}
             disabled={isPending}
-            className={cn(
-              buttonVariants({ variant: confirmVariant }),
-              'gap-1.5',
-            )}
+            className={cn(buttonVariants({ variant: confirmVariant, size: 'sm' }), 'gap-1.5')}
           >
             {confirmIcon}
             {isPending ? `${confirmLabel}…` : confirmLabel}
