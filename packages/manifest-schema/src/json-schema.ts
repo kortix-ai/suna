@@ -520,6 +520,9 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     properties: {
       enabled: { type: 'boolean' },
       connectors: grantSetSchema(),
+      // A concrete subset of `connectors` that must resolve to the launching
+      // user's OWN connection (a list of aliases — never 'all'/'none').
+      connectors_personal: { type: 'array', items: NON_EMPTY_STRING },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
       kortix_cli: kortixCliGrantSetSchema(2),

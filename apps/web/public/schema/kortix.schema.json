@@ -902,6 +902,13 @@
                     }
                   ]
                 },
+                "connectors_personal": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
                 "secrets": {
                   "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
                   "oneOf": [
