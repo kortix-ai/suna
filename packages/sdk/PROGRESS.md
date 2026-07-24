@@ -168,7 +168,7 @@ Also stop if the same failure survives three different fixes (use
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
 | 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `4014c6113` |
-| 2 | Canonical SDK imports | NOT STARTED | — | — | — |
+| 2 | Canonical SDK imports | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 | 3 | One session engine | NOT STARTED | — | — | — |
 | 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
 | 5 | Typed platform API coverage | NOT STARTED | — | — | — |
