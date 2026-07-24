@@ -320,10 +320,7 @@
         "Sveglia! Cosa costruiamo oggi?",
         "Buongiorno! Pronti a spaccare?"
       ],
-      "afternoon": [
-        "Buon pomeriggio! Come posso aiutare?",
-        "Come va? Cosa c'è da fare?"
-      ],
+      "afternoon": ["Buon pomeriggio! Come posso aiutare?", "Come va? Cosa c'è da fare?"],
       "evening": [
         "Buonasera! Lavoro notturno?",
         "Ciao! Su cosa lavoriamo stasera?",
@@ -7000,9 +6997,9 @@
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": "e distribuisci l'agente che già usi.",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "Distribuire agenti interni",
     "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "Tariffe semplici per posto. Paga per quello che usi.",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Ogni posto riceve la piattaforma completa più un credito mensile. Paga solo per i modelli e calcola i tuoi agenti effettivamente eseguiti, senza token m",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "I crediti alimentano tutto",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Un semplice equilibrio per modelli e Agent Computer: niente calcoli simbolici, niente fatture a sorpresa.",
+    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Ogni postazione include la piattaforma completa e crediti mensili per il runtime di Agent Computer. Usa la tua chiave API o collega ChatGPT per accedere ai modelli. I modelli gestiti restano disponibili e consumano crediti in base all’uso dei token.",
+    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Paga per il computer. Usa il tuo modello.",
+    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "I crediti Kortix sono destinati principalmente al runtime di Agent Computer. Usa la tua chiave API o il tuo abbonamento ChatGPT per mantenere la fatturazione del modello presso il tuo provider. I modelli gestiti opzionali consumano crediti Team in base all’uso dei token.",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "Inizia a costruire",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "Fai iniziare la tua squadra",
     "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "$ 40 per posto, con $ 20 di crediti di utilizzo ciascuno. Ripartizione automatica proporzionale, annullamento in qualsiasi momento oppure parlaci di Enterprise.",
