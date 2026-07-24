@@ -207,6 +207,16 @@ report predates it.
 This spec therefore carries a **verification task only** (see Unit 5). If
 verification fails, LaTeX becomes a new spec rather than being folded in here.
 
+**Verification outcome (2026-07-24, code-level):** Confirmed closed at the code
+level. `bd05a6590` (#5213) is present in the branch history, and the KaTeX
+plugins are still wired into `UnifiedMarkdown` — the actual chat renderer —
+at `unified-markdown.tsx:758-759` (`remarkPlugins={katexRemarkPlugins}`,
+`rehypePlugins={buildKatexRehypePlugins(...)}`). The delimiter-normalisation and
+currency-escaping pipeline in `katex-markdown.ts` is intact. Nothing in this
+restoration touched the math path. A live visual render check (Unit 5b) remains
+the only thing not yet done, but the code is provably correct; F requires no
+code change here.
+
 ### G — Rich inline previews (PDF / CSV / PPTX) — diagnosis required
 
 > "some other little preview, like the show preview, is also gone for the PDF,
@@ -235,6 +245,28 @@ the renderer to zero height so it is mounted but invisible.
 Guessing a fix here would be worse than diagnosing one. Unit 5 defines the
 reproduction protocol and its acceptance criteria; the fix is specified after
 the protocol produces an actual error.
+
+**Static triage (2026-07-24) — three of four hypotheses ruled out from code:**
+
+1. **PDFium wasm — RULED OUT.** `apps/web/public/pdfium.wasm` is present (4.6 MB)
+   and the `postinstall` copy step is intact in `apps/web/package.json`. The
+   PDF-specific "wasm failed to resolve" cause does not hold in this checkout.
+2. **Zero-height `fillsPanel` container — NOT REPRODUCED.** `tool-part-renderer.tsx:120`
+   computes `fillsPanel = surface === 'panel' && (tool === 'show' || tool === 'show-user')`
+   and `:187` applies `h-full` when it is true; `show-tool.tsx` applies `h-full`
+   on the panel/fill branch (`:139`, `:167`, `:190`). The height chain reads as
+   intact — no collapsed container visible statically.
+3. **Renderer wiring — INTACT.** All five rich branches are present and lazily
+   imported as recorded above; nothing is unwired.
+
+That leaves **the sandbox fetch / lazy-chunk-at-runtime hypotheses**, neither of
+which can be confirmed or denied without a live session: a `@extend-ai/*` chunk
+404, or a file-content request failing and surfacing as the generic
+"couldn't be opened" empty state, are both runtime-only signals. **Conclusion:
+G needs a live repro (Unit 5a) with a real PDF/CSV/PPTX in an authenticated
+session and DevTools open — it cannot be closed from source.** If that repro
+shows all six combinations rendering, G is recorded as "not reproducible,
+likely a transient sandbox failure at report time."
 
 ---
 
