@@ -165,6 +165,13 @@ export interface CreateProjectRepoInput {
 export interface ProvisionProjectInput {
   account_id?: string;
   name: string;
+  /**
+   * Reuse the connected managed repository owned by this project.
+   * The API creates `default_branch` with server-managed credentials.
+   */
+  repository_source_project_id?: string;
+  /** The new isolated branch used by a repository-derived project. */
+  default_branch?: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   starter_template?: 'general-knowledge-worker' | 'minimal';
@@ -352,7 +359,7 @@ export async function createProjectRepo(input: CreateProjectRepoInput) {
 export async function provisionProject(input: ProvisionProjectInput) {
   return unwrap(
     await backendApi.post<KortixProject>('/projects/provision', {
-      seed_starter: true,
+      ...(input.repository_source_project_id ? {} : { seed_starter: true }),
       ...input,
     }),
   );
@@ -572,7 +579,10 @@ export async function provisionProjectWithToken(
         Authorization: `Bearer ${opts.accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ seed_starter: true, ...input }),
+      body: JSON.stringify({
+        ...(input.repository_source_project_id ? {} : { seed_starter: true }),
+        ...input,
+      }),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000),
     });
     if (res.ok) {

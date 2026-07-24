@@ -540,6 +540,31 @@ claim is closed.
 
 ---
 
+### 2026-07-24 — session `release-v0.10.14-quality-gate-repair` (completion)
+
+The release collector now runs each Bun package with `--isolate`. This removes
+cross-package mock state that caused false failures in `core/files/client.test.ts`
+and `node/server.test.ts`.
+
+The SDK also exposes the additive `repository_source_project_id` and
+`default_branch` fields on `ProvisionProjectInput`. Both provision functions
+default `seed_starter` only when they create a new managed repository.
+
+**TDD evidence:** the initial typecheck failed with `TS2353` because
+`repository_source_project_id` was absent. The focused GREEN run reported
+**7 pass / 0 fail** with 17 assertions.
+
+**Final SDK gates:** `pnpm typecheck` exited 0; the full suite reported
+**1178 pass / 0 fail** across 89 files with 5187 assertions; and
+`pnpm smoke:install` built, packed, installed, imported, and constructed
+`@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. The parent release still
+requires the complete release collector, staging deployment, staging ke2e, and
+production deployment proof.
+
+---
+
 ### 2026-07-23 — session `session-sync-latency` (local completion)
 
 Completed bounded session synchronization and persistent project navigation in

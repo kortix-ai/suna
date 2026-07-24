@@ -65,18 +65,16 @@ export interface TeamFixture {
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
 export interface Fixtures {
   /**
-   * Create a fresh run-scoped project (default: OWNER's personal account).
-   * `seed: true` seeds the starter (initial commit on the default branch) so a
-   * sandbox can materialize the repo — REQUIRED for any flow that boots a
-   * session/sandbox. Unseeded projects (the default) are an empty repo, fine for
-   * metadata/boundary flows and much cheaper.
+   * Create a fresh run-scoped project record and an isolated repository branch.
+   * The run owns one seeded managed repository. The API creates a distinct
+   * branch for each project with server-managed credentials. Session flows can
+   * boot without creating one GitHub repository per flow. `seed` remains
+   * accepted for flow compatibility.
    */
   project(opts?: { name?: string; accountId?: string; seed?: boolean }): Promise<CreatedProject>;
   /**
-   * A single shared, READ-ONLY project provisioned once per run and reused — use
-   * this in flows that only READ a project (never mutate its manifest/name/state),
-   * so the suite doesn't create one real GitHub repo per flow (avoids GitHub's
-   * secondary rate limit). Mutating flows must use project() for isolation.
+   * The pool owner project. Use it only for read-only flows. Mutating flows use
+   * project(), which creates an isolated project record and branch.
    */
   sharedProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
