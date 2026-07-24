@@ -110,8 +110,10 @@ import {
   getConnectorConfig,
   getConnectorPolicies,
   getProjectDetail,
+  listAllConnectionProfiles,
   listConnectionProfiles,
   listConnectors,
+  listProjectAccess,
   listPipedreamApps,
   pipedreamConnect,
   pipedreamConnectConnectionProfile,
@@ -912,6 +914,85 @@ function PrivateConnectionBanner({
   );
 }
 
+function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {
+  if (status === 'active') {
+    return (
+      <Badge variant="outline" size="sm" className="text-emerald-600">
+        Connected
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" size="sm" className="text-muted-foreground">
+      {status === 'revoked' ? 'Disconnected' : 'Error'}
+    </Badge>
+  );
+}
+
+/**
+ * Owner/admin read-only roster: which project members have connected their OWN
+ * account for this connector, and its status. Manage-gated at the API; never
+ * shows credentials (only existence + status + owner). Read-only.
+ */
+function ConnectionRoster({
+  projectId,
+  connectorSlug,
+  displayName,
+}: {
+  projectId: string;
+  connectorSlug: string;
+  displayName: string;
+}) {
+  const profilesQuery = useQuery({
+    queryKey: ['connector-profiles-all', projectId],
+    queryFn: () => listAllConnectionProfiles(projectId),
+    staleTime: 30_000,
+  });
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 60_000,
+  });
+  const emailByUser = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of accessQuery.data?.members ?? []) {
+      if (member.email) map.set(member.user_id, member.email);
+    }
+    return map;
+  }, [accessQuery.data]);
+  const rows = (profilesQuery.data?.profiles ?? []).filter(
+    (p) => p.connector_alias === connectorSlug && p.owner_type === 'member',
+  );
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div className="text-muted-foreground border-b px-4 py-2.5 text-xs font-medium">
+        Team members' own {displayName} connections
+      </div>
+      {profilesQuery.isLoading ? (
+        <div className="text-muted-foreground px-4 py-3 text-sm">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-muted-foreground px-4 py-3 text-sm">
+          No team member has connected their own {displayName} yet.
+        </div>
+      ) : (
+        <ul className="divide-y">
+          {rows.map((profile) => (
+            <li
+              key={profile.profile_id}
+              className="flex items-center justify-between gap-3 px-4 py-2.5"
+            >
+              <span className="min-w-0 truncate text-sm">
+                {emailByUser.get(profile.owner_id ?? '') ?? profile.owner_id ?? 'Unknown member'}
+              </span>
+              <RosterStatusBadge status={profile.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ConnectorDetail({
   projectId,
   connector,
@@ -975,6 +1056,8 @@ function ConnectorDetail({
   // uses, so binding just this one doesn't null the rest. The session is private by
   // default, which is required for a member-owned binding to resolve.
   const newSession = useNewProjectSession(projectId);
+  const canManageProfiles =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE).allowed === true;
   const startPrivateSession = () => {
     if (!myPrivateProfile) return;
     newSession({
@@ -1195,6 +1278,13 @@ function ConnectorDetail({
             onConnect={() => privateConnect.mutate()}
             onDisconnect={() => disconnectPrivate.mutate()}
             onStartSession={startPrivateSession}
+          />
+        )}
+        {isPipedream && !isChannel && !isComputer && canManageProfiles && (
+          <ConnectionRoster
+            projectId={projectId}
+            connectorSlug={connector.slug}
+            displayName={displayName}
           />
         )}
         {/* The sensitive toggle lives under Permissions (it IS a permission

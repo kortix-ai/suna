@@ -112,6 +112,19 @@ export async function listConnectionProfiles(projectId: string) {
   );
 }
 
+/**
+ * Owner/admin read-only roster: EVERY member's connection profile for the
+ * project (who has connected which account + status), not just the caller's own.
+ * Requires the connector-profiles manage capability; never returns credentials.
+ */
+export async function listAllConnectionProfiles(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ profiles: ConnectionProfile[] }>(
+      `/projects/${projectId}/connector-profiles/all`,
+    ),
+  );
+}
+
 export async function reconcileConnectionProfile(
   projectId: string,
   input: ReconcileConnectionProfileInput,
