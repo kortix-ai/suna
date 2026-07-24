@@ -2,6 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { Progress } from '@/components/ui/progress';
+import { ProgressRing } from '@/components/ui/progress-ring';
 import {
   Stepper,
   StepperIndicator,
@@ -21,6 +23,7 @@ import { formatDuration } from '@kortix/sdk/turns';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
@@ -30,8 +33,19 @@ import { useEffect, useRef, useState } from 'react';
  * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
  * server-side behind POST /sessions/:id/start; this just reports the real stage.
  *
- * Visual: super-minimal, perfectly centered. A single kortix-green pulse, the
- * heading, a clean stepped checklist (no connector rails), and one quiet hint.
+ * Visual: a single left-aligned block, centered on screen. Two orthogonal
+ * signals, because "which step" and "how far along" are different questions and
+ * a checklist alone only answers the first — a 20s boot with a stationary
+ * spinner reads as wedged. So: a determinate rail carries PROGRESS, the
+ * checklist carries IDENTITY. Every state change is blur-bridged (see
+ * {@link MORPH}) so nothing hard-cuts.
+ *
+ * Motion hierarchy — one job each, no two elements saying the same thing:
+ * - brand dot     → ambient "app is alive" (opacity-only pulse; never `animate-ping`,
+ *                   which scales 2× and dominates a screen this quiet)
+ * - rail / ring   → how far along the boot is (determinate, informational)
+ * - spinning ring → which step is in flight
+ * - label shimmer → which row is the live one
  */
 const LOADER_DELAY_MS = 100;
 /**
@@ -50,30 +64,64 @@ const SLOW_AFTER_MS = 15_000;
  */
 const STUCK_AFTER_MS = 45_000;
 
+/**
+ * The blur-bridged crossfade used for every state swap in this loader (step
+ * label, ring → check, footer copy). Blur is the load-bearing property: without
+ * it a crossfade reads as two objects overlapping, which is exactly why the old
+ * hard-cut swap felt like the label teleported. Blur blends the two states so
+ * the eye perceives ONE thing changing. `bounce: 0` keeps it buttery, never
+ * playful — this is status reporting, not celebration.
+ */
+const MORPH = { type: 'spring', duration: 0.3, bounce: 0 } as const;
+
+/**
+ * The `compact` variant's message swap — deliberately plainer than {@link MORPH}.
+ *
+ * It runs sequentially (`mode="wait"`): the old message is fully gone before the
+ * new one arrives. With no overlap there are no "two objects" to blend, so the
+ * blur bridge earns nothing and is dropped — as are the spring and the layout
+ * animation, which resizes the container by scale-correcting its transform and
+ * visibly distorts the text while it settles. What's left is two properties,
+ * one easing, and a 4px drift. Exit runs at two-thirds of enter so the swap
+ * clears briskly and settles gently.
+ */
+const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
+const MESSAGE_IN = { duration: 0.24, ease: EASE_OUT };
+const MESSAGE_OUT = { duration: 0.16, ease: EASE_OUT };
+
 interface Step {
+  /** Row label in the checklist, and the headline in the compact variant. */
   label: string;
+  /** The compact variant's supporting line. Says what the step actually does. */
   description: string;
 }
 
 /**
  * How the boot steps are laid out:
- * - `default`  — the full four-step vertical checklist (side-panel resume loader
- *                + inline thread checklist). Every step is visible; earlier ones
- *                tick to a green check as the boot advances.
- * - `switcher` — a single line showing ONLY the current step. When a step
- *                completes it swaps straight to the next with no transition, so
- *                the right-side action panel reads as one quiet status message
- *                advancing ("Provisioning…" → "Preparing…" → …) rather than a
- *                four-row list. The swap is intentionally instant: a crossfade
- *                between two one-liners reads as two objects, not one advancing.
+ * - `stepper` — the full vertical checklist with a progress rail (full-screen
+ *               resume loader + side action panel). Every step is visible;
+ *               earlier ones morph to a green check as the boot advances.
+ * - `compact` — spinner + headline + description, and nothing else. One message
+ *               at a time, swapped as the boot advances. For surfaces that want
+ *               a plain status card rather than a checklist.
+ * - `inline`  — a single line showing ONLY the current step, led by a
+ *               determinate ring instead of a rail (there is no room for one in
+ *               a chat thread). Used under the assistant logomark.
  */
-type BootStepVariant = 'default' | 'stepper';
+type BootStepVariant = 'stepper' | 'compact' | 'inline';
 
-const STEPS: Step[] = [
-  { label: 'Provisioning your computer', description: 'Allocating a secure sandbox' },
-  { label: 'Preparing your workspace', description: 'Cloning your project files' },
-  { label: 'Starting the agent', description: 'Booting the runtime and tools' },
-  { label: 'Connecting', description: 'Linking up your session' },
+/**
+ * Copy is deliberately parallel — four gerund headlines, so the checklist reads
+ * as one list rather than four unrelated sentences — and the descriptions map
+ * 1:1 onto what the backend is really doing at that stage (see activeStep).
+ * The tone warms as the wait lengthens: the last description is the only one
+ * that reassures, because that's the point where people start to wonder.
+ */
+export const STEPS: Step[] = [
+  { label: 'Reserving your computer', description: 'Finding you a secure, isolated machine.' },
+  { label: 'Loading your workspace', description: 'Copying your project files into place.' },
+  { label: 'Waking the agent', description: 'Starting the runtime and loading your tools.' },
+  { label: 'Connecting', description: 'Linking you to your session. Almost there.' },
 ];
 
 /**
@@ -81,10 +129,22 @@ const STEPS: Step[] = [
  * we've been in it. The index is the floor we KNOW we're at — earlier steps are
  * genuinely complete, later ones haven't started.
  */
-function activeStep(stage: SessionStartStage, msInStage: number): number {
+export function activeStep(stage: SessionStartStage, msInStage: number): number {
   if (stage === 'provisioning') return 0;
   if (stage === 'starting') return msInStage >= STARTING_SUBSTEP_MS ? 2 : 1;
   return 3; // ready → the FE active-server switch + health poll ("connecting")
+}
+
+/**
+ * Overall boot completion, as a percentage, for the rail and the inline ring.
+ * Deliberately sits at the MIDPOINT of the active step (12.5 / 37.5 / 62.5 /
+ * 87.5 for four steps): we have no sub-step telemetry, so any other placement
+ * would be a claim we can't back. The midpoint also means the bar is never at 0
+ * (reads as dead on arrival) and never at 100 (reads as a lie while we're still
+ * connecting) — and each advance is a visible, earned jump.
+ */
+export function bootProgressPct(active: number): number {
+  return ((Math.min(active, STEPS.length - 1) + 0.5) / STEPS.length) * 100;
 }
 
 /**
@@ -115,9 +175,10 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
 
 /**
  * The dotted-ring glyph in two states: `spinning` (kortix-green, rotating, with
- * a solid center — the in-progress step) and idle (muted, static). Shared by the
- * default checklist's active/pending rows and the switcher's single row so the
- * in-progress indicator is pixel-identical across both variants.
+ * a solid center) and idle (muted, static). Colour and the centre dot CROSSFADE
+ * rather than snap, so a pending row waking up is a settle, not a pop. Shared by
+ * the checklist's active/pending rows so the in-progress indicator is
+ * pixel-identical wherever it appears.
  */
 function StepRing({ spinning }: { spinning: boolean }) {
   return (
@@ -126,10 +187,11 @@ function StepRing({ spinning }: { spinning: boolean }) {
       viewBox="0 0 16 16"
       width="16"
       strokeLinejoin="round"
-      style={{ color: spinning ? 'var(--kortix-green)' : 'var(--muted-foreground)' }}
       className={cn(
-        'relative flex shrink-0 items-center justify-center',
-        spinning && 'animate-spin',
+        'relative flex shrink-0 items-center justify-center transition-colors duration-300',
+        spinning
+          ? 'text-kortix-green animate-spin motion-reduce:animate-none'
+          : 'text-muted-foreground/60',
       )}
       aria-hidden
     >
@@ -142,22 +204,150 @@ function StepRing({ spinning }: { spinning: boolean }) {
         strokeWidth="1.5"
         strokeDasharray="3 3.4"
       />
-      {spinning ? <circle cx="8" cy="8" r="4" fill="currentColor" /> : null}
+      <circle
+        cx="8"
+        cy="8"
+        r="4"
+        fill="currentColor"
+        className={cn('transition-opacity duration-300', spinning ? 'opacity-100' : 'opacity-0')}
+      />
     </svg>
   );
 }
 
-/** The in-progress step's label, with the kortix shimmer sweeping across it. */
+/**
+ * The in-progress step's label. The kortix shimmer marks WHICH row is live —
+ * under reduced motion that job falls back to colour alone, since a looping
+ * sweep is exactly the kind of ambient movement to drop.
+ */
 function StepLabelShimmer({ label }: { label: string }) {
+  const reduce = useReducedMotion();
+  const className = 'text-[13px] leading-none font-medium tracking-tight';
+
+  if (reduce) return <span className={cn(className, 'text-foreground')}>{label}</span>;
+
   return (
-    <TextShimmer
-      as="span"
-      duration={1.8}
-      spread={1.25}
-      className="text-[13px] leading-none font-medium tracking-tight"
-    >
+    <TextShimmer as="span" duration={2.2} spread={1.25} className={className}>
       {label}
     </TextShimmer>
+  );
+}
+
+/**
+ * A step label that swaps in place as the boot advances, blur-bridged so it
+ * reads as one line ADVANCING rather than two lines trading places. `popLayout`
+ * keeps the outgoing label out of layout flow so the row never reflows
+ * mid-swap; `initial={false}` keeps the first paint static.
+ */
+function AdvancingStepLabel({ label }: { label: string }) {
+  const reduce = useReducedMotion();
+  return (
+    // `layout` is load-bearing, not decoration: the labels differ in length by
+    // ~14 characters ("Provisioning your computer" → "Connecting"), and
+    // popLayout pulls the outgoing one out of flow — so without it the trailing
+    // elapsed timer would snap sideways the instant a step advances. Resizing
+    // the container in step with the crossfade keeps the whole row one object.
+    <motion.span layout transition={MORPH} className="relative flex h-4 items-center">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={label}
+          initial={{ opacity: 0, y: reduce ? 0 : 6, filter: 'blur(4px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, y: reduce ? 0 : -6, filter: 'blur(4px)' }}
+          transition={MORPH}
+          className="flex items-center whitespace-nowrap"
+        >
+          <StepLabelShimmer label={label} />
+        </motion.span>
+      </AnimatePresence>
+    </motion.span>
+  );
+}
+
+/**
+ * A checklist row's status glyph: the pending/active ring morphing into a green
+ * check on completion. This is the single most meaningful moment in the whole
+ * loader — a step genuinely finishing — so it gets the design system's icon-swap
+ * treatment (scale 0.25 → 1, blur 4px → 0) instead of one icon replacing
+ * another mid-frame. Both glyphs share one fixed box so they overlap and the
+ * blur can bridge them.
+ */
+function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
+  return (
+    <span className="relative flex size-3.5 items-center justify-center">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={done ? 'done' : 'pending'}
+          initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+          animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+          exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+          transition={MORPH}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          {done ? (
+            <CheckCircleSolid
+              className="text-kortix-green bg-background size-3.5"
+              strokeWidth={2.5}
+            />
+          ) : (
+            <StepRing spinning={current} />
+          )}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/**
+ * The `compact` layout: a spinner, a headline, and a line of supporting copy —
+ * nothing else. No rail, no checklist, no footer hint. Progress is carried
+ * entirely by the copy, which is why the four steps needed real descriptions
+ * rather than the checklist's bare labels.
+ *
+ * The spinner is deliberately OUTSIDE the AnimatePresence: it is the one
+ * constant ("still working"), so it must never restart mid-boot. Only the
+ * message swaps, and it swaps as a single block — headline and description
+ * belong to one another, so animating them separately would read as two
+ * unrelated things changing at once.
+ *
+ * The swap itself is deliberately plain — see {@link MESSAGE_IN}. This state
+ * changes maybe four times in a boot, and the spinner already carries all the
+ * liveness the screen needs; anything more elaborate here is decoration
+ * competing with the one element whose job is to move.
+ */
+function BootCompactMessage({ active }: { active: number }) {
+  const reduce = useReducedMotion();
+  const step = STEPS[Math.min(active, STEPS.length - 1)];
+  return (
+    <div className="flex items-start gap-2.5">
+      {/* mt-1 optically centres the 20px spinner on the headline's 28px line
+          box — geometric top-alignment sits it visibly high against a bold cap. */}
+      {/* `spokes` to match the reference: beside a headline the ticking wheel
+          reads as steady activity, where the orbit arc's sweeping head pulls
+          the eye off the words. */}
+      <Loading variant="spokes" className="text-muted-foreground mt-2 size-5 shrink-0" />
+      {/* Height is RESERVED, not animated. `mode="wait"` leaves a beat with no
+          message mounted, and without a floor the centred block would collapse
+          and rebound on every step — the one jump an animated container was
+          papering over. 13 = headline line-box (7) + gap (1) + description (5).
+          aria-live lives here, on the node that persists, so the swap is
+          actually announced; on the message itself it unmounts before it can be. */}
+      <div className="min-h-13 min-w-0 flex-1" aria-live="polite">
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={step.label}
+            initial={{ opacity: 0, y: reduce ? 0 : 4 }}
+            animate={{ opacity: 1, y: 0, transition: MESSAGE_IN }}
+            exit={{ opacity: 0, y: reduce ? 0 : -4, transition: MESSAGE_OUT }}
+          >
+            <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">
+              {step.label}
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm text-pretty">{step.description}</p>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
@@ -166,24 +356,26 @@ function StepLabelShimmer({ label }: { label: string }) {
  * and the inline thread checklist so they can never visually drift. Pure: the
  * caller owns the clock (see {@link useBootProgress}) and passes the active index.
  *
- * `variant` picks the layout (see {@link BootStepVariant}): the default renders
- * the whole four-row checklist; `switcher` renders just the current step's row,
- * swapping instantly to the next as the boot advances.
+ * `variant` picks the layout (see {@link BootStepVariant}).
  */
-function BootStepList({
-  active,
-  variant = 'default',
-}: {
-  active: number;
-  variant?: BootStepVariant;
-}) {
-  if (variant === 'default') {
-    // Only ever the CURRENT step. `active` never exceeds the last index (see
-    // activeStep), but clamp defensively so the row is always resolvable.
+function BootStepList({ active, variant }: { active: number; variant: BootStepVariant }) {
+  const reduce = useReducedMotion();
+
+  if (variant === 'inline') {
+    // Only ever the CURRENT step, led by a determinate ring: in a chat thread
+    // there's no room for a rail, but the user still deserves to know how far
+    // along the boot is. `active` never exceeds the last index (see activeStep),
+    // but clamp defensively so the row is always resolvable.
     const step = STEPS[Math.min(active, STEPS.length - 1)];
     return (
-      <div className="flex h-4 min-w-0 items-center">
-        <StepLabelShimmer key={step.label} label={step.label} />
+      <div className="flex min-w-0 items-center gap-2">
+        <ProgressRing
+          className="size-3.5 shrink-0"
+          value={bootProgressPct(active)}
+          progressClassName="text-kortix-green transition-[stroke-dashoffset] duration-700 ease-in-out"
+          trackClassName="text-foreground/10"
+        />
+        <AdvancingStepLabel label={step.label} />
       </div>
     );
   }
@@ -200,21 +392,22 @@ function BootStepList({
         const done = i < active;
         const current = i === active;
         return (
-          <div key={step.label} className="flex items-start gap-2.5">
+          <motion.div
+            key={step.label}
+            className="flex items-start gap-2.5"
+            initial={{ opacity: 0, y: reduce ? 0 : 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            // Staggered first paint so the list assembles instead of slamming in
+            // as one block. Decorative only — 40ms apart, nothing waits on it.
+            transition={{ delay: i * 0.04, duration: 0.25, ease: [0, 0, 0.2, 1] }}
+          >
             <StepperItem
               step={i}
               className="items-center"
               aria-current={current ? 'step' : undefined}
             >
               <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-none text-current">
-                {done ? (
-                  <CheckCircleSolid
-                    className="text-kortix-green bg-background size-3.5"
-                    strokeWidth={2.5}
-                  />
-                ) : (
-                  <StepRing spinning={current} />
-                )}
+                <StepGlyph done={done} current={current} />
               </StepperIndicator>
               <StepperSeparator className="bg-border group-data-[state=completed]/step:bg-kortix-green/40 m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-3" />
             </StepperItem>
@@ -222,15 +415,99 @@ function BootStepList({
               {current ? (
                 <StepLabelShimmer label={step.label} />
               ) : (
-                <StepperTitle className="text-muted-foreground/50 text-[13px] leading-none tracking-tight transition-colors duration-500">
+                <StepperTitle
+                  className={cn(
+                    'text-[13px] leading-none tracking-tight transition-colors duration-500',
+                    // Completed steps stay legible; steps that haven't started
+                    // recede. The old flat /50 made "done" and "not yet" look
+                    // identical, which is half the reason the list read as inert.
+                    done ? 'text-muted-foreground' : 'text-muted-foreground/45',
+                  )}
+                >
                   {step.label}
                 </StepperTitle>
               )}
             </div>
-          </div>
+          </motion.div>
         );
       })}
     </Stepper>
+  );
+}
+
+/**
+ * The footer hint, crossfaded on the cold-start copy swap. Same blur bridge as
+ * everything else — at 15s the sentence changes under the user's eyes, and a
+ * hard cut there looks like a glitch rather than an update.
+ */
+function BootHint({ slow }: { slow: boolean }) {
+  const copy = slow
+    ? 'A cold start can take a little longer.'
+    : 'This usually takes a few seconds.';
+  return (
+    <span className="relative flex min-h-4 items-center">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={copy}
+          initial={{ opacity: 0, filter: 'blur(3px)' }}
+          animate={{ opacity: 1, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, filter: 'blur(3px)' }}
+          transition={MORPH}
+          className="text-muted-foreground text-[11px] leading-relaxed"
+        >
+          {copy}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/**
+ * The stalled-boot escape hatch, shown once STUCK_AFTER_MS has passed. Kept in
+ * EVERY variant — including `compact`, which is otherwise just the message —
+ * because a wedged sandbox raises no server-side signal, so this is the only way
+ * out short of a browser refresh. It stays invisible for the first 45 seconds,
+ * so it costs the compact layout nothing visually.
+ *
+ * Rises in rather than popping: it appears under a block that has been
+ * perfectly still, and a snap there reads as a layout break rather than an offer.
+ */
+function RestartFallback({
+  show,
+  pending,
+  onRestart,
+}: {
+  show: boolean;
+  pending: boolean;
+  onRestart: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {show ? (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+        >
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            // className="h-7 gap-1.5 rounded-full px-3 text-[11px] transition-transform active:scale-[0.97]"
+            disabled={pending}
+            onClick={onRestart}
+          >
+            {pending ? (
+              <Loading className="size-3 shrink-0 text-current" />
+            ) : (
+              <RotateCcw className="h-3 w-3 shrink-0" />
+            )}
+            {pending ? 'Restarting…' : 'Taking too long? Restart session'}
+          </Button>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }
 
@@ -245,10 +522,10 @@ export function SessionStartingLoader({
    *  embeddings of this loader don't have a project session id in scope. */
   projectId,
   sessionId,
-  /** Checklist layout. The full-screen resume loader keeps the default
-   *  four-step stepper; the side action panel passes `switcher` so it shows a
-   *  single status line advancing one step at a time. */
-  variant = 'stepper',
+  /** Layout. Defaults to the full stepper + progress rail; pass `compact` for
+   *  the spinner + headline + description card, or `inline` for the single
+   *  advancing line used inside a chat thread. */
+  variant = 'compact',
 }: {
   stage?: SessionStartStage;
   delayMs?: number;
@@ -292,51 +569,75 @@ export function SessionStartingLoader({
     },
   });
 
+  // The compact layout is the message and nothing else — no rail, no checklist,
+  // no footer hint — so it gets its own composition rather than hiding three
+  // quarters of the stepper's.
+  if (variant === 'compact') {
+    return (
+      <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-8">
+        <div
+          className={cn(
+            'flex max-w-sm flex-col items-start gap-5 transition-opacity duration-500',
+            show ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          <BootCompactMessage active={active} />
+          <RestartFallback
+            show={stuck && canRestart}
+            pending={restartMutation.isPending}
+            onRestart={() => restartMutation.mutate()}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-8">
       <div
         className={cn(
-          'flex flex-col items-center gap-9 transition-opacity duration-500',
+          // Left-aligned inside a centered fixed-width block: a rail needs a
+          // definite length, and a centered heading over a left-aligned list is
+          // what made the old layout read as three unrelated floating pieces.
+          'flex w-60 flex-col items-start gap-6 transition-opacity duration-500',
           show ? 'opacity-100' : 'opacity-0',
         )}
       >
-        {/* Brand heartbeat + heading, grouped. */}
-        <div className="flex flex-col items-center gap-4">
-          <span className="relative flex h-2.5 w-2.5" aria-hidden>
-            <span className="bg-kortix-green/40 absolute inline-flex h-full w-full animate-ping rounded-full" />
-            <span className="bg-kortix-green relative inline-flex h-2.5 w-2.5 rounded-full" />
-          </span>
-          <h2 className="text-foreground text-[13px] font-medium tracking-tight">
-            {tI18nHardcoded.raw(
-              'autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a',
-            )}
-          </h2>
+        {/* Brand dot + heading + rail: one group, because they answer one
+            question together ("we're starting, and this is how far"). */}
+        <div className="flex w-full flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span
+              className="bg-kortix-green size-2 shrink-0 animate-pulse rounded-full motion-reduce:animate-none"
+              aria-hidden
+            />
+            <h2 className="text-foreground text-[13px] font-medium tracking-tight">
+              {tI18nHardcoded.raw(
+                'autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a',
+              )}
+            </h2>
+          </div>
+          <Progress
+            value={bootProgressPct(active)}
+            className="bg-border/70 h-[3px] w-full"
+            // Longer + ease-in-out than the primitive's default: this is an
+            // on-screen move between two known points, not an enter, so it
+            // should accelerate and settle rather than snap.
+            indicatorClassName="bg-kortix-green duration-700 ease-in-out"
+            aria-label="Session startup progress"
+          />
         </div>
 
-        {/* Auto-width so the checklist is a centered block under the heading. */}
         <BootStepList active={active} variant={variant} />
 
-        <p className="text-muted-foreground text-center text-[11px] leading-relaxed">
-          {slow ? 'A cold start can take a little longer.' : 'This usually takes a few seconds.'}
-        </p>
-
-        {stuck && canRestart ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 rounded-full px-3 text-[11px]"
-            disabled={restartMutation.isPending}
-            onClick={() => restartMutation.mutate()}
-          >
-            {restartMutation.isPending ? (
-              <Loading className="size-3 shrink-0 text-current" />
-            ) : (
-              <RotateCcw className="h-3 w-3" />
-            )}
-            {restartMutation.isPending ? 'Restarting…' : 'Taking too long? Restart session'}
-          </Button>
-        ) : null}
+        <div className="flex w-full flex-col items-start gap-4">
+          <BootHint slow={slow} />
+          <RestartFallback
+            show={stuck && canRestart}
+            pending={restartMutation.isPending}
+            onRestart={() => restartMutation.mutate()}
+          />
+        </div>
       </div>
     </div>
   );
@@ -365,7 +666,7 @@ export function SessionBootChecklistInline({
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <div aria-label="Starting your Kortix Session">
-        <BootStepList active={active} />
+        <BootStepList active={active} variant="inline" />
       </div>
       {elapsed ? (
         <span className="text-muted-foreground text-[13px] tabular-nums">· {elapsed}</span>
