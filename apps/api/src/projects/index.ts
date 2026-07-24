@@ -72,4 +72,5 @@ export {
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
+  commitRepoFile,
 } from './lib/triggers';
