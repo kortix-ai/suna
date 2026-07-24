@@ -91,6 +91,23 @@ describe('resolveAccountSessionLimit — tier vs per-account override', () => {
     expect(resolved.source).toBe('tier');
   });
 
+  test('session limit reads a changed override without process-local cache invalidation', async () => {
+    currentTier = 'per_seat';
+    const accountId = nextAccount();
+
+    expect((await resolveAccountSessionLimit(accountId)).limit).toBe(
+      getTier('per_seat').concurrentSessionLimit,
+    );
+
+    currentOverride = 1;
+
+    expect(await resolveAccountSessionLimit(accountId)).toEqual({
+      tier: 'per_seat',
+      limit: 1,
+      source: 'account_override',
+    });
+  });
+
   test('billing disabled → effectively unlimited, override irrelevant', async () => {
     billingEnabled = false;
     currentOverride = 5;
