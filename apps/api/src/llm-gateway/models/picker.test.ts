@@ -98,7 +98,6 @@ describe('projectPickerCatalog', () => {
         'openai/gpt-a',
       ]),
     ).toEqual({
-      auto: full.auto,
       'glm-5.2': full['glm-5.2'],
       'anthropic/claude-a': full['anthropic/claude-a'],
       'anthropic/claude-b': full['anthropic/claude-b'],
@@ -107,7 +106,7 @@ describe('projectPickerCatalog', () => {
     });
   });
 
-  test('does not expose disconnected provider catalogs', () => {
+  test('does not expose stale auto or disconnected provider catalogs', () => {
     const full = {
       auto: { name: 'Auto' },
       'anthropic/claude-a': { name: 'Claude A' },
@@ -115,6 +114,6 @@ describe('projectPickerCatalog', () => {
       'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol' },
     };
 
-    expect(Object.keys(projectPickerCatalog(full, new Set(), []))).toEqual(['auto']);
+    expect(Object.keys(projectPickerCatalog(full, new Set(), []))).toEqual([]);
   });
 });

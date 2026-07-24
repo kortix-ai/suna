@@ -35,6 +35,7 @@ import { IdentityIntro } from '@/components/iam/identity-intro';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
@@ -696,6 +697,7 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
@@ -725,28 +727,11 @@ function GitHubConnectionCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
-  async function handleConnect() {
+  function handleConnect() {
     if (!canManage) return;
     setIsConnecting(true);
-    try {
-      const result = await installationsQuery.refetch();
-      if (result.error) throw result.error;
-      const installUrl = result.data?.install_url;
-      if (!installUrl) {
-        errorToast(
-          result.data?.configured === false
-            ? 'GitHub App is not configured'
-            : 'GitHub install URL unavailable',
-        );
-        return;
-      }
-      rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
-      window.location.assign(installUrl);
-    } catch (err) {
-      errorToast((err as Error).message || 'Failed to start GitHub setup');
-    } finally {
-      setIsConnecting(false);
-    }
+    rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
+    router.push(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
   }
 
   const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
@@ -1053,6 +1038,12 @@ function MembersCard({
     });
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Staged like removeTarget/leaveConfirmOpen above — role changes (including
+  // the hard-to-undo promote-to-Owner) go through a confirmation instead of
+  // firing on click. See roleMutation below for the actual mutate call.
+  const [pendingRole, setPendingRole] = useState<{ userId: string; role: AccountRole } | null>(
+    null,
+  );
   // Free-text search over email + user_id. Lives in component state so
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
@@ -1256,6 +1247,15 @@ function MembersCard({
       setBulkBusy(false);
     }
   }
+
+  // Looked up from the full roster (not the filtered `sorted` list) so the
+  // pending-role dialog's copy stays correct even if the search box changes
+  // while it's open.
+  const pendingRoleMember = pendingRole
+    ? members.find((m) => m.user_id === pendingRole.userId)
+    : undefined;
+  const pendingRoleLabel = pendingRole ? ROLE_LABEL[pendingRole.role] : '';
+  const pendingRoleBlurb = pendingRole ? ACCOUNT_ROLE_DESCRIPTORS[pendingRole.role].blurb : '';
 
   return (
     <div className="space-y-4">
@@ -1530,10 +1530,7 @@ function MembersCard({
                                         key={role}
                                         disabled={role === member.account_role}
                                         onSelect={() =>
-                                          roleMutation.mutate({
-                                            userId: member.user_id,
-                                            role,
-                                          })
+                                          setPendingRole({ userId: member.user_id, role })
                                         }
                                         className="gap-2"
                                       >
@@ -1615,6 +1612,30 @@ function MembersCard({
         onOpenChange={setInviteOpen}
         accountId={account.account_id}
         onInvited={invalidateMembers}
+      />
+
+      <ConfirmDialog
+        open={!!pendingRole}
+        onOpenChange={(o) => {
+          if (!o) setPendingRole(null);
+        }}
+        title="Change role"
+        description={
+          <span>
+            Change{' '}
+            <span className="text-foreground font-medium">
+              {pendingRoleMember ? memberLabel(pendingRoleMember) : ''}
+            </span>{' '}
+            to <span className="text-foreground font-medium">{pendingRoleLabel}</span>.{' '}
+            {pendingRoleBlurb}
+          </span>
+        }
+        confirmLabel="Change role"
+        onConfirm={() => {
+          if (pendingRole) roleMutation.mutate(pendingRole);
+          setPendingRole(null);
+        }}
+        isPending={roleMutation.isPending}
       />
 
       <ConfirmDialog
@@ -1985,8 +2006,13 @@ function InviteMemberModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member — can use assigned projects</SelectItem>
-                  <SelectItem value="admin">Admin — can invite members</SelectItem>
+                  <SelectItem value="member">
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.label} —{' '}
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                  </SelectItem>
+                  <SelectItem value="admin">
+                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2320,9 +2346,15 @@ function BulkSetRoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Owner — full control</SelectItem>
-                <SelectItem value="admin">Admin — everything except ownership</SelectItem>
-                <SelectItem value="member">Member — no implicit access</SelectItem>
+                <SelectItem value="owner">
+                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label} — {ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}
+                </SelectItem>
+                <SelectItem value="admin">
+                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                </SelectItem>
+                <SelectItem value="member">
+                  {ACCOUNT_ROLE_DESCRIPTORS.member.label} — {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

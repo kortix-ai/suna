@@ -127,10 +127,11 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     expect(models['claude-sonnet-4.6']).toBeDefined()
   }, 20_000) // full backoff (~15.5s) before the minimal-catalog fallback
 
-  test('sets default model to kortix/* when none in pre-existing config', async () => {
+  test('sets a concrete default model when none exists in pre-existing config', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
-    expect(config.model).toMatch(/^kortix\//)
+    expect(config.model).toBe('kortix/glm-5.2')
+    expect(config.small_model).toBe('kortix/glm-5.2')
   })
 
   test('routes a user-set default model through the Kortix provider', async () => {

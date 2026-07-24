@@ -200,6 +200,7 @@ mock.module('../providers', () => ({
     resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
   }},
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {},
+  SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
 }));
 
 mock.module('./runtime-settings', () => ({

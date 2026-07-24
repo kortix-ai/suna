@@ -182,8 +182,13 @@ jobs:
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
               LLM_GATEWAY_BASE_URL: $gateway,
-              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum,e2b",
-              KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
+              KORTIX_WARM_SNAPSHOT_ENABLED: "false",
+              # The staging Supabase database permits 60 connections. ECS can
+              # run 3 API tasks and EKS can run 4 API pods at the same time.
+              # Four app connections plus one leader connection per process
+              # leaves 12 slots for Supabase services, migrations, and QA.
+              DB_POOL_MAX: "4"
             }')"
 
           if [ "$staging_secret_exists" = true ]; then

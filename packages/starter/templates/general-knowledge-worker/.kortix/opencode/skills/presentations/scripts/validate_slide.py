@@ -1,6 +1,6 @@
 """Validate a presentation slide's dimensions via Playwright.
 
-Usage: uv run validate_slide.py <slide_html_path>
+Usage: uv run --with playwright validate_slide.py <slide_html_path>
 
 Renders the HTML at 1920x1080 and measures actual content height.
 Outputs JSON with pass/fail and measurements.
@@ -18,11 +18,17 @@ from playwright.async_api import async_playwright
 def find_chromium() -> str | None:
     """Auto-detect Chromium executable path for the current platform."""
     # 1. Explicit env var override
-    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or os.environ.get(
+        "AGENT_BROWSER_EXECUTABLE_PATH"
+    )
     if env_path and os.path.isfile(env_path):
         return env_path
     # 2. System chromium (Linux sandbox / Alpine)
-    for p in ("/usr/bin/chromium-browser", "/usr/bin/chromium"):
+    for p in (
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/home/kortix/.local/bin/chromium",
+    ):
         if os.path.isfile(p):
             return p
     # 3. Let Playwright use its own bundled chromium (macOS after `playwright install`)

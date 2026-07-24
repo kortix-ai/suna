@@ -92,6 +92,14 @@ export interface GitHubAppInstallation {
   html_url?: string;
 }
 
+interface GitHubOrganizationMembership {
+  state?: string;
+  role?: string;
+  organization?: {
+    login?: string;
+  };
+}
+
 export interface CreateRepoInput {
   name: string;
   isPrivate?: boolean;
@@ -364,6 +372,24 @@ async function ghFetch<T>(
   return res.json() as Promise<T>;
 }
 
+async function ghFetchAllPages<T>(
+  path: string,
+  auth: Pick<GitHubAuthContext, 'token'>,
+): Promise<T[]> {
+  const items: T[] = [];
+  const separator = path.includes('?') ? '&' : '?';
+  for (let page = 1; page <= 100; page += 1) {
+    const pageItems = await ghFetch<T[]>(
+      `${path}${separator}per_page=100&page=${page}`,
+      { method: 'GET' },
+      auth,
+    );
+    items.push(...pageItems);
+    if (pageItems.length < 100) return items;
+  }
+  throw new Error('GitHub returned more than 10,000 records');
+}
+
 export async function getGitHubAppInstallation(installationId: string): Promise<GitHubAppInstallation> {
   const id = installationId.trim();
   if (!id) throw new Error('installation_id is required');
@@ -372,6 +398,54 @@ export async function getGitHubAppInstallation(installationId: string): Promise<
     { method: 'GET' },
     { token: createGitHubAppJwt() },
   );
+}
+
+export async function listLinkableGitHubAppInstallations(
+  userToken: string,
+): Promise<{ githubLogin: string; installations: GitHubAppInstallation[] }> {
+  const token = userToken.trim();
+  if (!token) throw new Error('GitHub authorization is required to list installations');
+
+  let user: { login?: string };
+  try {
+    user = await ghFetch<{ login?: string }>('/user', { method: 'GET' }, { token });
+  } catch {
+    throw new Error('GitHub user authorization is invalid or expired');
+  }
+
+  const githubLogin = user.login?.trim();
+  if (!githubLogin) throw new Error('GitHub did not return the authorized user login');
+
+  const appInstallations = await ghFetchAllPages<GitHubAppInstallation>('/app/installations', {
+    token: createGitHubAppJwt(),
+  });
+
+  let memberships: GitHubOrganizationMembership[] = [];
+  try {
+    memberships = await ghFetchAllPages<GitHubOrganizationMembership>(
+      '/user/memberships/orgs?state=active',
+      { token },
+    );
+  } catch (error) {
+    if (!(error instanceof GitHubApiError) || error.status !== 403) throw error;
+  }
+
+  const adminOrganizations = new Set(
+    memberships
+      .filter((membership) => membership.state === 'active' && membership.role === 'admin')
+      .map((membership) => membership.organization?.login?.trim().toLowerCase())
+      .filter((login): login is string => Boolean(login)),
+  );
+  const normalizedLogin = githubLogin.toLowerCase();
+  const installations = appInstallations.filter((installation) => {
+    const ownerLogin = installation.account?.login?.trim().toLowerCase();
+    if (!ownerLogin) return false;
+    const ownerType = installation.account?.type ?? installation.target_type;
+    if (ownerType === 'User') return ownerLogin === normalizedLogin;
+    return adminOrganizations.has(ownerLogin);
+  });
+
+  return { githubLogin, installations };
 }
 
 export async function verifyGitHubInstallationAdmin(

@@ -12,6 +12,7 @@ describe('create session command payload', () => {
         accountId: crypto.randomUUID(),
         name: 'Queue principal test',
         status: 'active',
+        sandboxProviderGeneration: 0,
         repoUrl: 'https://example.test/queue-principal.git',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',

@@ -166,7 +166,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
             },
           },
         );
-        await this.waitForActive(input.snapshotName);
+        await this.waitForActive(input.snapshotName, tap);
         invalidateSnapshotState(input.snapshotName);
         return;
       } catch (err) {
@@ -270,10 +270,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     return (await listDaytonaSnapshots()).map((snapshot) => ({ name: snapshot.name }));
   }
 
-  private async waitForActive(name: string): Promise<void> {
+  private async waitForActive(name: string, tap?: BuildLogTap): Promise<void> {
     const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
     let lastState = 'unknown';
     while (Date.now() < deadline) {
+      // Renew the caller's lease before each poll (outside the try/catch so a
+      // lost-ownership throw stops the wait, not swallowed as a lookup blip).
+      await tap?.heartbeat?.();
       try {
         // Bounded so one hung poll can't defeat this loop's own deadline
         // check — see deleteSnapshot()'s comment above for why.
@@ -282,9 +285,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
           SNAPSHOT_STATE_TIMEOUT_MS,
           `Daytona snapshot.get(${name})`,
         );
-        lastState = String((snap as { state?: string } | null)?.state ?? 'missing').toLowerCase();
-        if (lastState === 'active') return;
-        if (lastState === 'error' || lastState === 'build_failed') {
+        const rawState = (snap as { state?: string } | null)?.state;
+        lastState = String(rawState ?? 'missing').toLowerCase();
+        const state = normalizeExistingProviderState(rawState);
+        if (state === 'active') return;
+        if (state === 'build_failed') {
           throw new Error(`Snapshot ${name} is ${lastState}`);
         }
       } catch (err) {
@@ -315,9 +320,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
           SNAPSHOT_STATE_TIMEOUT_MS,
           `Daytona snapshot.get(${name})`,
         );
-        const state = (snap as { state?: string } | null | undefined)?.state;
+        const state = normalizeExistingProviderState(
+          (snap as { state?: string } | null | undefined)?.state,
+        );
         if (state === 'active') return 'active';
-        if (state === 'error' || state === 'build_failed') {
+        if (state === 'build_failed') {
           await withTimeout(
             getDaytona().snapshot.delete(snap as never),
             SNAPSHOT_STATE_TIMEOUT_MS,
@@ -379,6 +386,7 @@ function isTransientDaytonaError(err: unknown): boolean {
     m.includes('not read from or written to') ||
     m.includes('socket hang up') ||
     (m.includes('snapshot with name') && m.includes('not found')) ||
+    (m.includes('snapshot with name') && m.includes('already exists')) ||
     m.includes('timeout') ||
     m.includes('timed out') ||
     m.includes('econnreset') ||

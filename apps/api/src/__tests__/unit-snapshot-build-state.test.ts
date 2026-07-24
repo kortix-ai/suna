@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { currentFailedSnapshotBuild } from '../snapshots/build-state';
+import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../snapshots/build-state';
 
 describe('currentFailedSnapshotBuild', () => {
   test('returns the newest build when it failed', () => {
@@ -27,5 +27,28 @@ describe('currentFailedSnapshotBuild', () => {
         { id: 'failed-older', status: 'failed' as const },
       ]),
     ).toBeNull();
+  });
+});
+
+describe('sessionTemplateBuilds', () => {
+  test('excludes optional per-project accelerator builds', () => {
+    const template = { id: 'template', slug: 'default', status: 'ready' as const };
+    const accelerator = {
+      id: 'accelerator',
+      slug: 'default-warm',
+      status: 'failed' as const,
+    };
+
+    expect(sessionTemplateBuilds([accelerator, template])).toEqual([template]);
+  });
+
+  test('keeps a custom template whose declared slug contains warm text', () => {
+    const template = {
+      id: 'template',
+      slug: 'warm-worker',
+      status: 'failed' as const,
+    };
+
+    expect(sessionTemplateBuilds([template])).toEqual([template]);
   });
 });

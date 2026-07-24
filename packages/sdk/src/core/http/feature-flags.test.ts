@@ -7,7 +7,6 @@ const ENV_KEYS = [
   'NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING',
   'NEXT_PUBLIC_ENABLE_DINO_GAME',
   'NEXT_PUBLIC_ENABLE_PROJECTS',
-  'NEXT_PUBLIC_ENABLE_AUTO_MODEL',
 ] as const;
 
 const originalEnv: Record<string, string | undefined> = {};
@@ -29,7 +28,7 @@ describe('featureFlags defaults', () => {
     expect(featureFlags.disableMobileAdvertising).toBe(false);
     expect(featureFlags.enableDinoGame).toBe(false);
     expect(featureFlags.enableProjects).toBe(false);
-    expect(typeof featureFlags.enableAutoModel).toBe('boolean');
+    expect(featureFlags.enableAutoModel).toBe(false);
   });
 });
 

@@ -44,3 +44,13 @@ regexes = [
   '''95788432-f5df-4ffe-af9e-0ed4e03cf96e''',
   '''b4a01f33-d46c-4a96-8a1d-0a265e48978f''',
 ]
+
+[[allowlists]]
+description = "Historical false-positive: an earlier commit in this branch used a fake ghp_-shaped sentinel in the warm-repo credential-removal test (since replaced with a non-secret marker). gitleaks scans PR history, so this scoped allowlist keeps that one old commit from tripping the scan. Not a real token."
+condition = "AND"
+paths = [
+  '''apps/api/src/snapshots/warm-repo-credential\.test\.ts$''',
+]
+regexes = [
+  '''ghp_PHASE1CredentialSentinel0+''',
+]
