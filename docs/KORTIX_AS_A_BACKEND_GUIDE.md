@@ -170,8 +170,10 @@ both mintable with your API key:
      auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer ' },
    });
    ```
-   (`provider: 'pipedream'` is the exception — it needs an interactive OAuth
-   connect flow and can't be minted headlessly.)
+   (`provider: 'pipedream'` — the OAuth-app path used for Gmail, Slack, Notion,
+   etc. — is registered the same way, but **authorized** differently: there is no
+   static token to store, so the end-user consents in their browser once. It's
+   still per-end-user and fully API-driven — see *"OAuth apps"* just below.)
 
 2. **A per-end-user connection profile** — the independent, by-reference layer.
    Use **`owner_type: 'external'`** so the profile belongs to *your app's user*,
@@ -190,16 +192,53 @@ both mintable with your API key:
    All of these are gated by `project.connector.write` (editor-tier and up) — a
    dashboard API key rides that automatically.
 
+   **OAuth apps (Gmail, Slack, Notion — `provider: 'pipedream'`).** There's no
+   static token to paste; the end-user authorizes in their browser **once**, and
+   Kortix stores the connection by reference. Still per-end-user and fully
+   API-driven — only the consent click is interactive (that's OAuth, not a Kortix
+   limitation):
+   ```ts
+   // 1. mint this user's own external profile (non-default → connectable)
+   const profile = await kortix.project(projectId).connectors.profiles.reconcile({
+     connector_alias: 'gmail', owner_type: 'external',
+     owner_id: 'your-app-user-123', label: 'Gmail for user 123',
+   });
+   // 2. get a connect link scoped to THIS user; send them to it
+   const { connectUrl } = await kortix.project(projectId)
+     .connectors.profiles.pipedreamConnect(profile.profile_id, {
+       success_redirect_uri: 'https://yourapp.com/connected',
+       error_redirect_uri: 'https://yourapp.com/connect-failed',
+     });
+   // → open connectUrl in the user's browser; they consent to Google/Slack/…
+   // 3. after they return, finalize (binds their authorized account to the profile)
+   await kortix.project(projectId).connectors.profiles.pipedreamFinalize(profile.profile_id);
+   // → then bind by reference exactly like the static case:
+   //   connector_bindings: { gmail: { profile_id: profile.profile_id } }
+   ```
+   Under the hood these are `POST …/connector-profiles/{profile_id}/connect` and
+   `…/connect/finalize` — call them from any language, not just the SDK.
+
+   > **Never `updateCredential` an OAuth (`pipedream`) profile.** It will store and
+   > "activate" any string, but at run time that value is used as a **Pipedream
+   > account id**, not a raw OAuth token — a pasted Google token silently fails on
+   > the first tool call. Use `pipedreamConnect` + `pipedreamFinalize`; the OAuth
+   > tokens live in Pipedream's custody, never in Kortix as a raw provider token.
+
 > **All-or-nothing binding:** if a session's `connector_bindings` sets *any*
 > alias, every *unbound* alias resolves to null for that session. Bind every
-> connector the agent needs in the one call.
+> connector the agent needs in the one call — **or** pass **`inherit_unbound: true`**
+> to keep the project-default fallback for the unbound aliases, so you can override
+> just one connector (e.g. one end-user's own account) without re-binding the rest.
+> `inherit_unbound` only ever inherits the project *default* — never another
+> user's profile — so it is safe for any caller.
 
 > **Revoked mid-session fails closed.** If an end-user disconnects their account
 > (the profile goes `revoked`) while a session is live, the broker returns
 > **null** for that connector — it never falls back to a shared project default.
 > The agent's call to that connector fails; your wrapper should detect it and
-> prompt the user to reconnect (re-run the profile `updateCredential` +
-> `activate` steps, which mint a fresh active profile).
+> prompt the user to reconnect — re-run the profile's connect steps
+> (`updateCredential` + `activate` for a static connector, or `pipedreamConnect` +
+> `pipedreamFinalize` for an OAuth app), which mint a fresh active profile.
 
 A complete, runnable version of this whole flow — create connector → mint the
 per-user profile → start a backend session → **stream the answer** — lives at

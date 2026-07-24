@@ -555,6 +555,12 @@ export async function createProjectSession(input: {
     };
   }
 
+  // `inherit_unbound` is a benign binding modifier: when this session binds any
+  // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
+  // failing closed. It can only ever inherit the project default (never another
+  // owner's profile), so unlike origin_ref/secrets it is NOT origin-gated.
+  const inheritUnbound = body.inherit_unbound === true;
+
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
   // override fields the caller may set. `origin_ref` (the wrapper end-user this
@@ -965,6 +971,7 @@ export async function createProjectSession(input: {
         origin,
         originRef,
         secretsAllowlist,
+        connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
         updatedAt: new Date(),
       })
