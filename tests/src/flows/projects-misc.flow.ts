@@ -757,7 +757,11 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.active_provider").exists("$.history");
+      r.status(200)
+        .body()
+        .has("$.active_provider", null)
+        .has("$.latest", null)
+        .exists("$.history");
       const body = r.json<{ latest: unknown; history: unknown[] }>();
       assertNoLeak(body.latest);
       if (Array.isArray(body.history)) body.history.forEach(assertNoLeak);
