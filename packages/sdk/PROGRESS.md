@@ -1512,3 +1512,34 @@ provider-funded candidate with no managed fallback. Free Codex reached
 **Shippable to production: YES** for B14 and the published SDK surface.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-24 — enrichment client (domain → company profile)
+
+**Added** the enrichment surface: `enrichDomain`, `getEnrichmentJob`,
+`isEnrichmentJobFinished`, plus `EnrichmentJob` / `EnrichDomainInput` /
+`EnrichmentJobStatus` / `EnrichmentErrorCode`. Also an optional `domain` on
+`ProvisionProjectInput` and `CreateProjectRepoInput`, so creating a project with
+a company domain queues enrichment in one round trip.
+
+Why it exists: `apps/web` needed to reach `/v1/enrichment/*` for the create-project
+modal and the onboarding wizard, and hosts must not raw-`fetch` the Kortix API.
+Without this the entire backend pipeline had no reachable entry point in the product.
+
+Both public-surface snapshots re-recorded. **The diff is additive only** — seven
+new names, nothing renamed or removed — so no alias or major was required.
+
+**Verified**
+
+```
+pnpm --filter @kortix/sdk typecheck      → exit 0
+pnpm --filter @kortix/sdk test           → 1191 pass, 2 skip, 0 fail, 5244 assertions, 90 files
+pnpm --filter @kortix/sdk run smoke:install → OK: imports and constructs from a packed tarball
+```
+
+**Unverified:** the IIFE/CDN bundle was not loaded in a real browser, and no live
+call was made against a running API — the new functions are covered by mocked-fetch
+unit tests only.
+
+**Shippable to production: YES** for the SDK surface itself.

@@ -22,6 +22,8 @@ import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
 import { runProviderActions } from '../../snapshots/provider-actions';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
+import { enqueueJob } from '../../enrichment/repositories/jobs';
+import { idempotencyKey, normalizeDomain } from '../../enrichment/services/normalize';
 
 function templateProviderObservation(metadata: unknown) {
   const selectedProvider = resolveConfiguredProjectProviderPin(
@@ -338,6 +340,31 @@ projectsApp.openapi(
     },
     { accountId: scope.accountId, source: 'project-create' },
   );
+
+  // Same optional company domain as the provision route: a value we cannot
+  // parse is dropped rather than failing a project that already exists, and
+  // the enqueue is fire-and-forget because the crawl takes minutes.
+  const rawDomain = normalizeString(body.domain);
+  if (rawDomain) {
+    try {
+      const domain = normalizeDomain(rawDomain);
+      void enqueueJob({
+        accountId: scope.accountId,
+        projectId: row.projectId,
+        createdBy: scope.userId,
+        domain,
+        idempotencyKey: idempotencyKey(row.projectId, domain),
+        force: false,
+      }).catch((err) =>
+        console.warn('[projects/create-repo] failed to queue domain enrichment', {
+          projectId: row.projectId,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    } catch {
+      // Unusable domain — the project stands, enrichment simply does not run.
+    }
+  }
 
 
   return c.json(serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }), 201);

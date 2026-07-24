@@ -160,6 +160,9 @@ export interface CreateProjectRepoInput {
   starter_template?: 'general-knowledge-worker' | 'minimal';
   /** Clone a `registry:project` item into the new GitHub repository. */
   source_item_id?: string;
+  /** The company this project is about — queues enrichment, see
+   *  {@link ProvisionProjectInput.domain}. */
+  domain?: string;
 }
 
 export interface ProvisionProjectInput {
