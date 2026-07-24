@@ -21,7 +21,9 @@ export interface SSEStream {
 }
 
 export function buildTunnelEventStreamUrl(apiUrl: string): string {
-  return `${apiUrl.replace(/\/+$/, '')}/tunnel/permission-requests/stream`;
+  let trimmed = apiUrl;
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
+  return `${trimmed}/tunnel/permission-requests/stream`;
 }
 
 export function createSSEStream(options: SSEStreamOptions): SSEStream {

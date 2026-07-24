@@ -1,5 +1,5 @@
 import { backendApi } from '../core/http/api-client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export interface UserSummary {
   id: string;

@@ -30,7 +30,8 @@ export class HostBoundaryError extends Error {
 }
 
 function apiBase(backendUrl: string): string {
-  const trimmed = backendUrl.replace(/\/+$/, '');
+  let trimmed = backendUrl;
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
   return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
@@ -368,7 +369,7 @@ export function buildPublicTemplateUrl(
   if (!UUID_PATTERN.test(shareId)) return null;
   return new URL(
     `templates/public/${shareId.toLowerCase()}`,
-    `${apiBase(backendUrl).replace(/\/+$/, '')}/`,
+    `${apiBase(backendUrl)}/`,
   );
 }
 

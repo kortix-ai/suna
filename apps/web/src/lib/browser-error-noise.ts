@@ -636,7 +636,7 @@ const TRONLINK_PROXY_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /'set' on proxy: trap returned falsish for property 'tronlinkParams'/,
   // SpiderMonkey (Firefox): different engine, same TronLink property.
   /proxy set handler returned false for property 'tronlinkParams'/,
-]
+];
 
 function isTronLinkInjectedSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);

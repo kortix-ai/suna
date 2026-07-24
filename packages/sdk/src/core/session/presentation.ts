@@ -1,7 +1,9 @@
 export type RuntimePresentationFormat = 'pdf' | 'pptx';
 
 function trimTrailingSlashes(value: string): string {
-  return value.replace(/\/+$/, '');
+  let trimmed = value;
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
+  return trimmed;
 }
 
 export function buildPresentationTemplatePdfUrl(
