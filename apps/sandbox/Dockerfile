@@ -120,7 +120,7 @@ RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-vers
     && echo "${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \
     && rm /tmp/uv.tar.gz \
-    && test "$(uv --version)" = "uv ${UV_VERSION}" \
+    && uv --version | grep -Eq "^uv ${UV_VERSION}( |$)" \
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default "$PYTHON_VERSION" \
     && python -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'; print('managed python:', sys.version)" \
     && python3 -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'"
