@@ -16,7 +16,7 @@ import {
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { accountTokensApi } from '@/lib/api/account-tokens';
+import { createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
 
 /**
@@ -98,7 +98,7 @@ function CliAuthorizeInner() {
     try {
       const name = label ? `CLI · ${label}` : `CLI · ${new Date().toLocaleString()}`;
       const minted = await withTimeout(
-        accountTokensApi.create({ name }),
+        createAccountToken({ name }),
         MINT_TIMEOUT_MS,
         'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
       );
@@ -116,7 +116,7 @@ function CliAuthorizeInner() {
       } catch (err) {
         // Best-effort cleanup: revoke the just-minted PAT so we don't
         // leave a dead token in the DB after a failed delivery.
-        accountTokensApi.revoke(minted.token_id).catch(() => {});
+        revokeAccountToken(minted.token_id).catch(() => {});
         if ((err as Error).name === 'AbortError') {
           throw new Error(
             `Timed out delivering the API key to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
@@ -138,7 +138,7 @@ function CliAuthorizeInner() {
           /* ignore */
         }
         // Same cleanup if the CLI rejected the token (state mismatch, etc.)
-        accountTokensApi.revoke(minted.token_id).catch(() => {});
+        revokeAccountToken(minted.token_id).catch(() => {});
         throw new Error(`CLI callback rejected the token: ${detail}`);
       }
 

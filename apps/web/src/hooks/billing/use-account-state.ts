@@ -17,16 +17,52 @@ import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  AccountState,
-  billingApi,
-  CancelSubscriptionRequest,
-  CreateCheckoutSessionRequest,
-  CreatePortalSessionRequest,
-  PurchaseCreditsRequest,
-  ScheduleDowngradeRequest,
-  TokenUsage,
-} from '@/lib/api/billing';
+  cancelScheduledChange,
+  cancelSubscription,
+  claimPerSeatBilling,
+  createCheckoutSession,
+  createPerSeatCheckout,
+  createPortalSession,
+  getAccountState,
+  getBillingUsageHistory,
+  purchaseCredits,
+  reactivateSubscription,
+  scheduleDowngrade,
+  syncSubscription,
+  type AccountState,
+} from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
+
+export type { AccountState };
+
+export interface CreateCheckoutSessionRequest {
+  tier_key: string;
+  success_url: string;
+  cancel_url: string;
+  commitment_type?: string;
+  locale?: string;
+  server_type?: string;
+  location?: string;
+}
+
+export interface CreatePortalSessionRequest {
+  return_url: string;
+}
+
+export interface PurchaseCreditsRequest {
+  amount: number;
+  success_url: string;
+  cancel_url: string;
+}
+
+export interface CancelSubscriptionRequest {
+  feedback?: string;
+}
+
+export interface ScheduleDowngradeRequest {
+  target_tier_key: string;
+  commitment_type?: string;
+}
 
 // =============================================================================
 // QUERY KEYS - Single key for all billing state
@@ -102,7 +138,7 @@ export function invalidateAccountState(
         if (shouldSkipCache) {
           // For skipCache, we need to bypass the cached queryFn
           // Use setQueryData with fresh data
-          const freshData = await billingApi.getAccountState(true, accountId);
+          const freshData = await getAccountState({ skipCache: true, accountId });
           queryClient.setQueryData(accountStateKeys.state(accountId), freshData);
         } else {
           // Normal refetch - React Query handles deduplication
@@ -157,7 +193,7 @@ export function useAccountState(options?: UseAccountStateOptions) {
 
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
-    queryFn: () => billingApi.getAccountState(options?.skipCache ?? false, accountId),
+    queryFn: () => getAccountState({ skipCache: options?.skipCache ?? false, accountId }),
     enabled,
     staleTime: options?.staleTime ?? 1000 * 60 * 2,
     gcTime: 1000 * 60 * 15,
@@ -193,7 +229,7 @@ export function useAccountStateWithStreaming(isStreaming: boolean = false) {
   const accountId = useBillingAccountId();
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
-    queryFn: () => billingApi.getAccountState(false, accountId),
+    queryFn: () => getAccountState({ accountId }),
     staleTime: 1000 * 60 * 5, // 5 minutes during streaming
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
@@ -214,7 +250,16 @@ export function useCreateCheckoutSession() {
 
   return useMutation({
     mutationFn: (request: CreateCheckoutSessionRequest) =>
-      billingApi.createCheckoutSession(request, accountId),
+      createCheckoutSession({
+        accountId,
+        tierKey: request.tier_key,
+        successUrl: request.success_url,
+        cancelUrl: request.cancel_url,
+        commitmentType: request.commitment_type,
+        locale: request.locale,
+        serverType: request.server_type,
+        location: request.location,
+      }),
     onSuccess: (data) => {
       // Invalidate and refetch on upgrade/update - checkout redirects user anyway
       if (data.status === 'upgraded' || data.status === 'updated') {
@@ -236,7 +281,12 @@ export function useCreatePerSeatCheckout() {
 
   return useMutation({
     mutationFn: (args: { success_url: string; cancel_url: string; locale?: string }) =>
-      billingApi.createPerSeatCheckout(args, accountId),
+      createPerSeatCheckout({
+        accountId,
+        successUrl: args.success_url,
+        cancelUrl: args.cancel_url,
+        locale: args.locale,
+      }),
     onSuccess: async (data) => {
       if (data.status === 'subscription_created') {
         // Direct sub creation (Stripe found a saved payment method on the customer
@@ -278,7 +328,7 @@ export function useClaimPerSeat() {
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
   return useMutation({
-    mutationFn: () => billingApi.claimPerSeat(accountId),
+    mutationFn: () => claimPerSeatBilling(accountId),
     onSuccess: async (data) => {
       await invalidateAccountState(queryClient, true, true, accountId);
       if (data.status === 'migrated') {
@@ -316,7 +366,7 @@ export function useCreatePortalSession() {
   const accountId = useBillingAccountId();
   return useMutation({
     mutationFn: (params: CreatePortalSessionRequest) =>
-      billingApi.createPortalSession(params, accountId),
+      createPortalSession(params.return_url, accountId),
     onSuccess: (data) => {
       const portalUrl = data?.portal_url || (data as any)?.url;
       if (portalUrl) {
@@ -337,7 +387,7 @@ export function useCancelSubscription() {
 
   return useMutation({
     mutationFn: (request?: CancelSubscriptionRequest) =>
-      billingApi.cancelSubscription(request, accountId),
+      cancelSubscription(request?.feedback, accountId),
     onSuccess: (response) => {
       invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
       if (response.success) {
@@ -357,7 +407,7 @@ export function useReactivateSubscription() {
   const accountId = useBillingAccountId();
 
   return useMutation({
-    mutationFn: () => billingApi.reactivateSubscription(accountId),
+    mutationFn: () => reactivateSubscription(accountId),
     onSuccess: (response) => {
       invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
       if (response.success) {
@@ -377,24 +427,18 @@ export function usePurchaseCredits() {
   const accountId = useBillingAccountId();
 
   return useMutation({
-    mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request, accountId),
+    mutationFn: (request: PurchaseCreditsRequest) =>
+      purchaseCredits({
+        accountId,
+        amount: request.amount,
+        successUrl: request.success_url,
+        cancelUrl: request.cancel_url,
+      }),
     onSuccess: (data) => {
       // Will redirect to checkout - invalidation happens on return via backend
       if (data.checkout_url) {
         window.location.href = data.checkout_url;
       }
-    },
-  });
-}
-
-export function useDeductTokenUsage() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (usage: TokenUsage) => billingApi.deductTokenUsage(usage),
-    onSuccess: () => {
-      // Backend invalidates cache - we just need to refetch
-      invalidateAccountState(queryClient);
     },
   });
 }
@@ -405,7 +449,7 @@ export function useScheduleDowngrade() {
 
   return useMutation({
     mutationFn: (request: ScheduleDowngradeRequest) =>
-      billingApi.scheduleDowngrade(request, accountId),
+      scheduleDowngrade(request.target_tier_key, request.commitment_type, accountId),
     onSuccess: (response) => {
       invalidateAccountState(queryClient, true, false, accountId); // Refetch to show scheduled change
       if (response.success) {
@@ -425,7 +469,7 @@ export function useCancelScheduledChange() {
   const accountId = useBillingAccountId();
 
   return useMutation({
-    mutationFn: () => billingApi.cancelScheduledChange(accountId),
+    mutationFn: () => cancelScheduledChange(accountId),
     onSuccess: (response) => {
       invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
       if (response.success) {
@@ -445,7 +489,7 @@ export function useSyncSubscription() {
   const accountId = useBillingAccountId();
 
   return useMutation({
-    mutationFn: () => billingApi.syncSubscription(accountId),
+    mutationFn: () => syncSubscription(accountId),
     onSuccess: () => {
       invalidateAccountState(queryClient, false, false, accountId);
       successToast('Subscription synced successfully');
@@ -463,7 +507,7 @@ export function useSyncSubscription() {
 export function useUsageHistory(days = 30) {
   return useQuery({
     queryKey: accountStateKeys.usageHistory(days),
-    queryFn: () => billingApi.getUsageHistory(days),
+    queryFn: () => getBillingUsageHistory(days),
     staleTime: 1000 * 60 * 10, // 10 minutes
   });
 }

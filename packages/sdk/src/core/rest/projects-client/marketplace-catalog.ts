@@ -18,8 +18,10 @@ export interface MarketplaceCatalogItem {
 
 export interface MarketplaceCatalogStatus {
   loading?: boolean;
-  pending?: string[];
-  sources?: string[];
+  pending?: number | string[];
+  sources?: unknown[];
+  total?: number;
+  hasMore?: boolean;
 }
 
 export interface MarketplaceItemsResponse extends MarketplaceCatalogStatus {
@@ -30,6 +32,8 @@ export interface ListMarketplaceItemsOptions {
   query?: string;
   type?: string;
   source?: string;
+  limit?: number;
+  offset?: number;
 }
 
 /** Browse the public registry catalog (no auth required). */
@@ -40,6 +44,8 @@ export async function listMarketplaceCatalogItems(
   if (options?.query) params.set('query', options.query);
   if (options?.type) params.set('type', options.type);
   if (options?.source) params.set('source', options.source);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  if (options?.offset !== undefined) params.set('offset', String(options.offset));
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(await backendApi.get<MarketplaceItemsResponse>(`/marketplace/items${query}`));
 }
@@ -141,5 +147,18 @@ export async function removeMarketplaceSource(id: string): Promise<{ ok: boolean
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/marketplace/sources/${encodeURIComponent(id)}`),
     'Failed to remove marketplace source',
+  );
+}
+
+export async function createMarketplaceInstallSession(
+  projectId: string,
+  itemId: string,
+): Promise<{ session_id: string }> {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${encodeURIComponent(projectId)}/marketplace/install-session`,
+      { id: itemId },
+    ),
+    'Failed to start marketplace install session',
   );
 }

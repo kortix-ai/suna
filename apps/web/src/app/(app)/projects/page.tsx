@@ -23,7 +23,7 @@ import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import { billingApi } from '@/lib/api/billing';
+import { syncSubscription } from '@kortix/sdk';
 import { fireConfetti } from '@/lib/confetti';
 import { isBillingEnabled } from '@/lib/config';
 import {
@@ -130,7 +130,7 @@ export default function ProjectsPage() {
     let cancelled = false;
     (async () => {
       try {
-        await billingApi.syncSubscription();
+        await syncSubscription();
         if (cancelled) return;
         await invalidateAccountState(queryClient);
         fireConfetti();

@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useServerTypes } from '@/hooks/instance/use-server-types';
-import { createCheckoutSession } from '@/lib/api/billing';
+import { createCheckoutSession } from '@kortix/sdk';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -105,11 +105,11 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
         : `${window.location.origin}${resolvedReturnUrl}`;
       const sep = base.includes('?') ? '&' : '?';
       const response = await createCheckoutSession({
-        tier_key: 'pro',
-        success_url: `${base}${sep}location=${encodeURIComponent(location)}`,
-        cancel_url: window.location.href,
-        commitment_type: 'monthly',
-        ...(selected ? { server_type: selected } : {}),
+        tierKey: 'pro',
+        successUrl: `${base}${sep}location=${encodeURIComponent(location)}`,
+        cancelUrl: window.location.href,
+        commitmentType: 'monthly',
+        ...(selected ? { serverType: selected } : {}),
         location,
       });
       if (response.url || response.checkout_url) {

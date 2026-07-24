@@ -71,7 +71,7 @@ const eslintConfig = [
               message: 'Runtime behavior belongs in @kortix/sdk, not apps/web.',
             },
             {
-              group: ['@/lib/api', '@/lib/api/*', '@/lib/auth-token'],
+              group: ['@/lib/api', '@/lib/api/*', '@/lib/api-client', '**/api-client'],
               message: 'Kortix API access belongs in @kortix/sdk.',
             },
           ],

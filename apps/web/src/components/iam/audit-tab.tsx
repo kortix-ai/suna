@@ -37,7 +37,7 @@ import {
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
+import { listAuditEvents, type IamAuditEvent } from '@/lib/iam-client';
 import { listAccountMembers } from '@kortix/sdk/projects-client';
 import {
   formatResourcePill,
@@ -182,7 +182,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
     return map;
   }, [membersQuery.data]);
 
-  const allEvents: AuditEvent[] = useMemo(
+  const allEvents: IamAuditEvent[] = useMemo(
     () => (query.data?.pages ?? []).flatMap((p) => p.events),
     [query.data],
   );
@@ -302,7 +302,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
-function AuditRow({ event, actorEmail }: { event: AuditEvent; actorEmail: string | null }) {
+function AuditRow({ event, actorEmail }: { event: IamAuditEvent; actorEmail: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const hasDiff = event.before !== null || event.after !== null;

@@ -36,7 +36,8 @@ const FORBIDDEN_IMPORTS = [
     match: (source) =>
       source === '@/lib/api' ||
       source.startsWith('@/lib/api/') ||
-      source === '@/lib/auth-token',
+      source === '@/lib/api-client' ||
+      source.endsWith('/api-client'),
   },
 ];
 
@@ -88,6 +89,17 @@ export function scanSdkBoundary(sourceRoot) {
         if (kind) {
           violations.push({ file, line: lineOf(sourceFile, node), kind, source });
         }
+      }
+      if (
+        ts.isIdentifier(node) &&
+        (node.text === 'backendApi' || node.text === 'authenticatedFetch')
+      ) {
+        violations.push({
+          file,
+          line: lineOf(sourceFile, node),
+          kind: 'host-kortix-api',
+          source: node.text,
+        });
       }
       ts.forEachChild(node, visit);
     };

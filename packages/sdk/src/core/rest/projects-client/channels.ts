@@ -3,6 +3,31 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
+export interface ChatIdentityBindResult {
+  ok: boolean;
+  workspaceName: string | null;
+  hasAccess: boolean;
+  resumed: boolean;
+}
+
+async function bindChatIdentity(
+  service: 'slack' | 'teams',
+  token: string,
+): Promise<ChatIdentityBindResult> {
+  return unwrap(
+    await backendApi.post<ChatIdentityBindResult>(`/channels/${service}/identity/bind`, { token }),
+    'Failed to connect your account',
+  );
+}
+
+export function bindSlackIdentity(token: string): Promise<ChatIdentityBindResult> {
+  return bindChatIdentity('slack', token);
+}
+
+export function bindTeamsIdentity(token: string): Promise<ChatIdentityBindResult> {
+  return bindChatIdentity('teams', token);
+}
+
 export interface SlackInstallation {
   workspaceId: string;
   workspaceName: string | null;

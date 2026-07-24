@@ -1,7 +1,6 @@
-import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
-import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
+import { convertPresentationToGoogleSlides, getGoogleAuthUrl } from '@kortix/sdk';
 
 export enum DownloadFormat {
   PDF = 'pdf',
@@ -206,14 +205,7 @@ export const handleGoogleAuth = async (presentationPath: string, sandboxUrl: str
     );
 
     // Pass the current URL to the backend so it can be included in the OAuth state
-    const currentUrl = encodeURIComponent(window.location.href);
-    const response = await backendApi.get(`/google/auth-url?return_url=${currentUrl}`);
-
-    if (!response.success) {
-      throw new Error(response.error?.message || 'Failed to get auth URL');
-    }
-
-    const { auth_url } = response.data;
+    const { auth_url } = await getGoogleAuthUrl(window.location.href);
 
     if (auth_url) {
       window.location.href = auth_url;
@@ -231,31 +223,7 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
   }
 
   try {
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    // Use proper backend API client with authentication and extended timeout for PPTX generation
-    const response = await backendApi.post(
-      '/presentation-tools/convert-and-upload-to-slides',
-      {
-        presentation_path: presentationPath,
-        sandbox_url: sandboxUrl,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${session!.access_token}`,
-        },
-        timeout: 180000, // 3 minutes timeout for PPTX generation (longer than backend's 2 minute timeout)
-      },
-    );
-
-    if (!response.success) {
-      throw new Error('Failed to upload to Google Slides');
-    }
-
-    const result = response.data;
+    const result = await convertPresentationToGoogleSlides(presentationPath, sandboxUrl);
 
     if (!result.success && !result.is_api_enabled) {
       toast.info('Redirecting to Google authentication...', {

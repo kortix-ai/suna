@@ -3,6 +3,8 @@ import { configureKortix } from '../../http/config';
 import {
   connectEmail,
   connectSlack,
+  bindSlackIdentity,
+  bindTeamsIdentity,
   disconnectEmail,
   disconnectSlack,
   getEmailInstallation,
@@ -61,6 +63,20 @@ test('connectSlack posts bot token + signing secret', async () => {
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ bot_token: 'xoxb', signing_secret: 'sig' });
   expect(result.workspaceId).toBe('W1');
+});
+
+test('chat identity binding stays behind typed SDK methods', async () => {
+  nextResponse = {
+    status: 200,
+    body: { ok: true, workspaceName: 'Acme', hasAccess: true, resumed: false },
+  };
+  await bindSlackIdentity('slack-token');
+  expect(last().url).toContain('/channels/slack/identity/bind');
+  expect(last().body).toEqual({ token: 'slack-token' });
+
+  await bindTeamsIdentity('teams-token');
+  expect(last().url).toContain('/channels/teams/identity/bind');
+  expect(last().body).toEqual({ token: 'teams-token' });
 });
 
 test('getSlackMode falls back to a safe default on failure', async () => {
