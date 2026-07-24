@@ -137,3 +137,67 @@ House conventions: co-located `*.test.ts` (bun:test, `mock.module` + `globalThis
 ## 10. Out of scope (v1)
 
 Change-request-based memory writes; scheduled re-enrichment / change monitoring; RSS/feed ingestion; content-hash re-crawl gating; agent-callable enrichment tool; anti-bot evasion (blocked sites degrade to `blocked`/partial honestly); cross-tenant cache policy controls (cache is global; revisit if a deployment mode needs isolation).
+
+---
+
+## 11. Depth v2 (2026-07-24 → 25)
+
+v1 shipped and produced correct-but-thin profiles. Two root causes, and a
+depth upgrade addressing both. Full plan:
+[`docs/superpowers/plans/2026-07-24-enrichment-depth-v2.md`](../plans/2026-07-24-enrichment-depth-v2.md).
+
+**What was wrong**
+
+- **One vendor's outage produced nothing.** Every page fetch went to Jina
+  Reader; when its balance hit zero (`402`) the pipeline read zero pages and
+  built the profile from homepage `<title>`/meta alone. `pagesFetched: 0` on
+  every run.
+- **Outbound social links never reached the model.** Discovery kept only
+  same-origin links and discarded page bodies after harvesting JSON-LD/OG, so a
+  site's X / GitHub / LinkedIn / Peerlist links were thrown away before
+  extraction. This was the user-visible complaint that triggered the upgrade.
+- **A personal site was forced through a company schema**, so a portfolio
+  produced one line.
+- **One prompt over 40 truncated pages** meant each page was cut to 15k chars
+  and blog posts were reduced to titles — shallow by construction.
+
+**What changed**
+
+1. **Fetch chain** (`services/page-fetch.ts`, replaces `jina-fetch.ts`): Jina →
+   Firecrawl → direct fetch (`cheerio` + `turndown`), first success wins,
+   falling through on `401/402/429`/empty. `direct` is free and reads any
+   server-rendered site, so no single vendor can empty the pipeline. The serving
+   tier per page is recorded in `result.fetchTiers`. New dep: `turndown`.
+2. **Deterministic link harvesting** (`services/links.ts`): every outbound link
+   is classified against a platform table (X, GitHub, LinkedIn, Peerlist,
+   Bluesky, npm, Product Hunt, `mailto:`, `tel:`, and more) and written into the
+   profile after validation, so the model can neither miss nor invent them.
+3. **Subject-aware schema** (`schemas.ts`): `subjectType` of
+   `company | person | product | unknown`, with company fields (pricing tiers,
+   case studies, FAQ, integrations, tech stack) and person fields (roles,
+   projects, writing, skills, speaking). `sources` stays required.
+4. **Two-pass extraction** (`services/page-summary.ts` map + `extract.ts`
+   reduce): each page over ~4k chars is summarized on its own, then one call
+   synthesizes the summaries. All 40 pages contribute at full fidelity; a failed
+   map call degrades one page to an excerpt rather than failing the job.
+5. **Memory as a folder** (`services/memory-write.ts`):
+   `.kortix/memory/enrichment/<domain>/` with `profile.md` + `pages/<slug>.md` +
+   `blog/<slug>.md`, one atomic `commitMultipleFilesToBranch` commit, stale
+   files deleted in the same commit, and a `MEMORY.md` block listing **every**
+   file (not just the profile — the user's explicit request).
+6. **Worker wiring + budgets** (`services/worker.ts`): up to 40 site pages and
+   20 blog posts fetched in full. `result` gains `blogPostsFetched` and
+   `fetchTiers`.
+
+**Bugs caught in review and fixed before merge** (the reconciliation contract is
+subtle):
+
+- `mergeHarvestedSignals` compared raw URLs, so a model-returned social with a
+  trailing slash duplicated the harvested one — both sides now normalize.
+- The memory writer read `pages ?? []`, which would have deleted every
+  previously-saved page/blog file on a cache-hit re-run that passed no pages.
+  `undefined` now means "skip reconciliation", `[]` means "confirmed empty".
+- The worker's cache-hit path re-introduced the same class of bug: it returned a
+  concrete empty `blogPosts: []` whenever the model cited no blog URLs, deleting
+  live blog files on a normal re-enrichment. Each category now yields `undefined`
+  when it recovered nothing.
