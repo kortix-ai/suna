@@ -20,7 +20,6 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   buildHtmlStaticUrl,
   ServicePreviewViewport,
-  SHOW_BORDER_STYLES,
   SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowCarouselItem,
@@ -89,7 +88,6 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   const activePath = isCarousel ? currentItem?.path || '' : path;
   const activeTitle = isCarousel ? currentItem?.title || '' : title;
 
-  const borderStyle = SHOW_BORDER_STYLES[theme] || SHOW_BORDER_STYLES.default;
   const activeHasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
 
   const activeIsHtmlFilePath =
@@ -199,7 +197,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
       <div
         className={cn(
           'overflow-hidden',
-          fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
+          fill ? 'flex h-full flex-col' : cn('border-border rounded-md border'),
         )}
       >
         {isWebsitePreview && (
