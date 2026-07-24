@@ -41,6 +41,7 @@ import {
   Globe,
   Layers,
   MoreHorizontal,
+  PanelLeft,
   PanelRight,
   RotateCcw,
   Square,
@@ -76,15 +77,13 @@ export function SessionSiteHeader({
   // window's left edge, where the macOS traffic lights and the shell's
   // "Open sidebar" toggle (fixed at x 72–100) live — indent the leading
   // buttons past both and drop them onto the same center line (y≈26).
-  const { state: sidebarState } = useSidebar();
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
   const [desktopShell] = useState<'macos' | 'other' | null>(() =>
     isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
   );
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
-  // Web with the sidebar hidden: the shell drops a sidebar toggle onto this
-  // row's left end (see ProjectSheelLayout), so indent the leading buttons
-  // past it. Below md the shell's opener is always there instead.
-  const webSidebarHidden = desktopShell === null && sidebarState === 'collapsed';
+  const sidebarToggleLabel =
+    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -135,13 +134,7 @@ export function SessionSiteHeader({
 
   return (
     <>
-      {/* No divider line. The row itself stays transparent (the welcome
-          wallpaper reads through it), and the fade lives in the strip below:
-          it overlays the top of the message list, so content scrolling up
-          dissolves into the page instead of hitting a hard rule. Gradient has
-          to sit over the content — painting it inside the row would just fade
-          background into the identical background behind it, i.e. invisible. */}
-      <div className="after:from-background relative z-50 w-full after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:to-transparent">
+      <div className="relative z-50 w-full">
         {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
             line (children h-[28px] → center y≈26, matching the traffic lights
             and the shell's Open-sidebar toggle), and indent the leading side
@@ -154,12 +147,26 @@ export function SessionSiteHeader({
               'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
               // Below md the shell floats an always-on sheet opener at this
               // row's left end (see ProjectSheelLayout) — indent past it.
-              'max-md:ml-[34px]',
+              // 'max-md:ml-[34px]',
               sidebarHidden && 'h-[28px]',
               sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
-              webSidebarHidden && 'md:ml-[34px]',
             )}
           >
+            {desktopShell === null && (
+              <Button
+                type="button"
+                aria-label={sidebarToggleLabel}
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+                onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+                className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+              >
+                <PanelLeft className="cn-rtl-flip size-4" />
+              </Button>
+            )}
+
             {isProjectSession && (
               <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
                 <Link href={`/projects/${projectId}`}>
