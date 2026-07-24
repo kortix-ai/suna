@@ -39,12 +39,18 @@ export function ShareFileButton({
   if (!shareContext || !path) return null;
 
   return (
+    // PublicShareLinkButton's defaults (16px icon, no press feedback, Radix's
+    // default tooltip offset) are tuned for the standalone /files modal, not
+    // this row — the toolbar's uniformity contract requires every icon button
+    // here to match its siblings exactly, so override all three.
     <PublicShareLinkButton
       projectId={shareContext.projectId}
       sessionId={shareContext.sessionId}
       input={{ file: { label: fileName, path }, mode: 'view' }}
       tooltip="Copy a public view-only link"
-      className="text-muted-foreground hover:text-foreground size-7"
+      className="text-muted-foreground hover:text-foreground size-7 active:scale-[0.96]"
+      iconClassName="size-3.5"
+      tooltipSideOffset={10}
     />
   );
 }
