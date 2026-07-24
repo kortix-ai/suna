@@ -79,7 +79,7 @@ const OPT_SHAPES: Array<{ label: string; opts: Omit<BuildLayeredDockerfileOpts, 
       opencodeConfigPath: 'kortix-opencode-config',
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
       },
     },

@@ -83,7 +83,7 @@ const CASES: Array<{ label: string; opts: BuildLayeredDockerfileOpts }> = [
       ...COMMON,
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
       },
     },
@@ -189,7 +189,7 @@ describe('Chromium sits on deterministic parents (cache order is load-bearing)',
       opencodeWarmupScriptPath: 'kortix-opencode-warmup',
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
       },
     });
@@ -214,7 +214,7 @@ describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () =
       ...COMMON,
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
       },
     });
@@ -224,7 +224,7 @@ describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () =
     expect(warm).not.toContain('git clone');
     expect(warm).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
     expect(warm).toContain(
-      'COPY --chown=kortix:kortix kortix-warm-repo-git/ /workspace/.git/',
+      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
     );
   });
 
@@ -237,7 +237,7 @@ describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () =
       ...COMMON,
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: evil,
       },
     });
@@ -346,7 +346,7 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     warmRepo: {
       stagedPath: 'kortix-warm-repo',
-      stagedGitPath: 'kortix-warm-repo-git',
+      stagedGitPath: 'kortix-warm-repo-git.tar',
       branch: 'main',
     },
   };
@@ -376,10 +376,12 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
     // MY credential-free COPY of the sanitized staged checkout …
     expect(rendered).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
-    // Provider uploaders can omit nested dot-directories. Git metadata uses a
-    // visible build-context path and lands at the canonical runtime path.
+    // Provider uploaders transfer the visible archive as one context object.
     expect(rendered).toContain(
-      'COPY --chown=kortix:kortix kortix-warm-repo-git/ /workspace/.git/',
+      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
+    );
+    expect(rendered).toContain(
+      'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
     );
     // … and MAIN's opencode instance re-warm via the cache-only warm-up script,
     // which for a per-project warm keeps the baked /workspace checkout.
