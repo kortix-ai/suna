@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { resolveOpencodeModel } from '../main'
+import { buildInitialPromptBody, resolveOpencodeModel } from '../main'
 
 const ORIGINAL_MODEL = process.env.KORTIX_OPENCODE_MODEL
 const ORIGINAL_LLM_BASE_URL = process.env.KORTIX_LLM_BASE_URL
 const ORIGINAL_LLM_API_KEY = process.env.KORTIX_LLM_API_KEY
 const ORIGINAL_LLM_PROXY_URL = process.env.KORTIX_LLM_PROXY_URL
+const ORIGINAL_AGENT = process.env.KORTIX_AGENT_NAME
 
 afterEach(() => {
   if (ORIGINAL_MODEL === undefined) delete process.env.KORTIX_OPENCODE_MODEL
@@ -16,6 +17,8 @@ afterEach(() => {
   else process.env.KORTIX_LLM_API_KEY = ORIGINAL_LLM_API_KEY
   if (ORIGINAL_LLM_PROXY_URL === undefined) delete process.env.KORTIX_LLM_PROXY_URL
   else process.env.KORTIX_LLM_PROXY_URL = ORIGINAL_LLM_PROXY_URL
+  if (ORIGINAL_AGENT === undefined) delete process.env.KORTIX_AGENT_NAME
+  else process.env.KORTIX_AGENT_NAME = ORIGINAL_AGENT
 })
 
 describe('resolveOpencodeModel', () => {
@@ -112,5 +115,31 @@ describe('resolveOpencodeModel', () => {
     } finally {
       delete process.env.KORTIX_COMPILED_AGENT_CONFIG
     }
+  })
+})
+
+describe('buildInitialPromptBody', () => {
+  test('applies the session model and concrete selected agent to an automated first turn', () => {
+    process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
+    process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6'
+    process.env.KORTIX_AGENT_NAME = 'asana-refresher'
+
+    expect(buildInitialPromptBody('Refresh the Asana snapshot.')).toEqual({
+      parts: [{ type: 'text', text: 'Refresh the Asana snapshot.' }],
+      model: {
+        providerID: 'kortix',
+        modelID: 'anthropic/claude-sonnet-4-6',
+      },
+      agent: 'asana-refresher',
+    })
+  })
+
+  test('omits the legacy default agent sentinel', () => {
+    delete process.env.KORTIX_OPENCODE_MODEL
+    process.env.KORTIX_AGENT_NAME = 'default'
+
+    expect(buildInitialPromptBody('Run.')).toEqual({
+      parts: [{ type: 'text', text: 'Run.' }],
+    })
   })
 })

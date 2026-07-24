@@ -815,16 +815,12 @@ async function maybeCreateInitialOpencodeSession(
       ])
       if (timer) clearTimeout(timer)
     }
-    const model = resolveOpencodeModel()
     const promptRes = await fetch(
       `${baseUrl}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(workspace)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parts: [{ type: 'text', text: prompt }],
-          ...(model ? { model } : {}),
-        }),
+        body: JSON.stringify(buildInitialPromptBody(prompt)),
         signal: AbortSignal.timeout(15_000),
       },
     )
@@ -1392,7 +1388,7 @@ async function isRootOpencodeSession(
   }
 }
 
-/** Per-session model override from KORTIX_OPENCODE_MODEL.
+/** Concrete session model from KORTIX_OPENCODE_MODEL.
  *
  * Gateway mode exposes one OpenCode provider (`kortix`). Its model ids are the
  * complete gateway wire refs, including nested refs such as
@@ -1415,6 +1411,22 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
   const providerID = raw.slice(0, slash)
   const modelID = raw.slice(slash + 1)
   return { providerID, modelID }
+}
+
+/** Build the first-turn request from the session-bound runtime environment. */
+export function buildInitialPromptBody(prompt: string): {
+  parts: Array<{ type: 'text'; text: string }>
+  model?: { providerID: string; modelID: string }
+  agent?: string
+} {
+  const model = resolveOpencodeModel()
+  const agentName = (process.env.KORTIX_AGENT_NAME ?? '').trim()
+  const agent = agentName && agentName !== 'default' ? agentName : undefined
+  return {
+    parts: [{ type: 'text', text: prompt }],
+    ...(model ? { model } : {}),
+    ...(agent ? { agent } : {}),
+  }
 }
 
 /** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT

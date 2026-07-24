@@ -307,6 +307,7 @@ mock.module('../projects/github', () => ({
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
   verifyGitHubInstallationAdmin: async () => undefined,
+  listLinkableGitHubAppInstallations: async () => [],
   createRepo: async () => {
     throw new Error('not used');
   },
