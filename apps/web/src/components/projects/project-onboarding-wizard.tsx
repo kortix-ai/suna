@@ -32,7 +32,7 @@
  * to be generated for these strings before this ships beyond local testing.
  */
 
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ArrowRight,
@@ -56,6 +56,9 @@ import { Input } from '@/components/ui/input';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { normalizeCompanyDomain } from '@/lib/company-domain';
+import { enrichDomain } from '@kortix/sdk/projects-client';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
 import { flattenModels } from '@/features/session/session-chat-input';
@@ -93,7 +96,7 @@ const CustomConnectorForm = lazy(() =>
   })),
 );
 
-type StepId = 'welcome' | 'tools' | 'slack' | 'model' | 'done';
+type StepId = 'welcome' | 'domain' | 'tools' | 'slack' | 'model' | 'done';
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +122,10 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   // Pipedream configured (default true), so this is a no-op there.
   const connectorsEnabled = isConnectorsEnabled();
   const steps = useMemo<StepId[]>(
-    () => (connectorsEnabled ? ['welcome', 'tools', 'slack', 'model', 'done'] : ['welcome', 'slack', 'model', 'done']),
+    () =>
+      connectorsEnabled
+        ? ['welcome', 'domain', 'tools', 'slack', 'model', 'done']
+        : ['welcome', 'domain', 'slack', 'model', 'done'],
     [connectorsEnabled],
   );
   const stepId = steps[index] ?? 'welcome';
@@ -224,6 +230,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                     onContinue={next}
                   />
                 )}
+                {stepId === 'domain' && <DomainStep projectId={projectId} />}
                 {stepId === 'tools' && (
                   <ToolsStep
                     projectId={projectId}
@@ -302,6 +309,23 @@ function StepPrimaryAction({
           </Button>
         )}
         <Button size="sm" className="gap-1.5" onClick={onNext} disabled={!slackConnected}>
+          Continue
+          <ArrowRight className="size-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  // Never gated on the job succeeding: the worker is disabled by default, so a
+  // queued job can legitimately sit forever. Submitting is the whole
+  // interaction; the profile arrives in memory whenever it arrives.
+  if (stepId === 'domain') {
+    return (
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onNext}>
+          Skip
+        </Button>
+        <Button size="sm" className="gap-1.5" onClick={onNext}>
           Continue
           <ArrowRight className="size-4" />
         </Button>
@@ -406,7 +430,92 @@ function WelcomeStep({
   );
 }
 
-// ─── Step 2: Connect your tools ────────────────────────────────────────────────
+// ─── Step 2: Company domain ───────────────────────────────────────────────────
+
+/**
+ * Asks for the company this project is about and kicks off enrichment.
+ *
+ * Deliberately fire-and-forget. The crawl and extraction take minutes, and the
+ * worker is off by default in self-host, so waiting for a result here would
+ * either stall onboarding or show a spinner that never resolves. We submit,
+ * confirm we submitted, and let the profile land in memory on its own.
+ */
+function DomainStep({ projectId }: { projectId: string }) {
+  const [value, setValue] = useState('');
+  const [submitted, setSubmitted] = useState<string | null>(null);
+
+  const normalized = normalizeCompanyDomain(value);
+  const showError = value.trim().length > 0 && normalized === null;
+
+  const submit = useMutation({
+    mutationFn: (domain: string) => enrichDomain({ projectId, domain }),
+    onSuccess: (_job, domain) => {
+      setSubmitted(domain);
+      successToast(`Reading ${domain} — the profile will appear in this project's memory.`);
+    },
+    onError: (error: Error) => {
+      errorToast(error.message || 'Could not start enrichment');
+    },
+  });
+
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className="space-y-2">
+        <h2 className="text-2xl font-semibold tracking-tight">What company is this for?</h2>
+        <p className="text-muted-foreground mx-auto max-w-md text-sm">
+          Enter a website and we&apos;ll read it, then save what we learn — the product, the
+          team, pricing — into this project&apos;s memory, so every agent starts with the
+          context.
+        </p>
+      </div>
+
+      <div className="w-full max-w-sm space-y-2 text-left">
+        <Input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="acme.com"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="url"
+          disabled={submit.isPending}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && normalized && !submit.isPending) {
+              submit.mutate(normalized);
+            }
+          }}
+        />
+        {showError ? (
+          <p className="text-destructive text-xs">Enter a domain like acme.com</p>
+        ) : (
+          <p className="text-muted-foreground text-xs">Optional — you can add this later.</p>
+        )}
+
+        <Button
+          className="w-full gap-1.5"
+          disabled={!normalized || submit.isPending || submitted === normalized}
+          onClick={() => normalized && submit.mutate(normalized)}
+        >
+          {submit.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Starting
+            </>
+          ) : submitted === normalized ? (
+            <>
+              <Check className="size-4" />
+              Started
+            </>
+          ) : (
+            'Read this company'
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 3: Connect your tools ────────────────────────────────────────────────
 
 function ToolsStep({
   projectId,
