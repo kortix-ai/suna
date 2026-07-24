@@ -33,7 +33,7 @@ import type { ConsolidatePage } from './consolidate';
 import { discover } from './discovery';
 import { extractProfileFromPages } from './extract';
 import { withGatewayChat } from './gateway-chat';
-import { fetchPages, type FetchedPage } from './page-fetch';
+import { fetchPages, type FetchedPage, type FetchPagesOptions } from './page-fetch';
 import { canonicalOrigin } from './normalize';
 import { assertSafeUrl, boundedFetch } from './safe-fetch';
 import { writeProfileToMemory, type MemoryPageContent, type MemoryPort } from './memory-write';
@@ -98,6 +98,16 @@ export interface EnrichmentJobDeps {
   fetchImpl: typeof boundedFetch;
   runChat: typeof withGatewayChat;
   memoryPortFor: (projectId: string) => Promise<MemoryPort>;
+  /**
+   * Rate-limit knobs threaded straight into `fetchPages`'s options. The RPM
+   * limiter it drives is a process-global singleton with a real `setTimeout`
+   * sleep, so a test that wants to avoid paying for that wall-clock wait
+   * (rather than masking it with a longer suite timeout) overrides `rpm`/
+   * `now`/`sleep` here instead of reaching into `page-fetch` directly. Absent
+   * (the production default), `fetchPages` gets the real clock and the
+   * configured RPM.
+   */
+  fetchOverrides?: Pick<FetchPagesOptions, 'rpm' | 'now' | 'sleep'>;
 }
 
 const defaultDeps: EnrichmentJobDeps = {
@@ -165,9 +175,12 @@ async function executePipeline(
   if (cached) {
     // Another org already paid for this crawl. The profile still has to be
     // written into THIS project's memory, which is the part that is
-    // per-tenant — including the page/blog content, not just the profile, so
-    // this project's memory folder is not left thinner than one that crawled
-    // the domain itself.
+    // per-tenant — including whatever page/blog content is still recoverable
+    // from the per-URL cache, not just the profile. There is no fresh crawl on
+    // this path, so recovery is necessarily partial; the guarantee this holds
+    // to is narrower than "as rich as a fresh crawl" — it never deletes a
+    // page/blog file this project already has unless there is actual evidence
+    // (a recovered page in that same category) to reconcile against.
     const { pages, blogPosts } = await recoverCachedPages(cached.profile);
     const memoryPath = await writeToMemory(
       deps,
@@ -216,6 +229,7 @@ async function executePipeline(
       cache: { get: getCachedPages, put: putCachedPage },
       fetchImpl: deps.fetchImpl,
       assertUrl: deps.assertUrl,
+      ...deps.fetchOverrides,
     },
   );
 
@@ -301,13 +315,20 @@ function countFetchTiers(pages: FetchedPage[]): FetchTierCounts {
  * fresh page list to draw from — only a DB read against the per-URL page
  * cache, keyed by the URLs the cached profile itself cites (`sources` plus
  * each `blogPosts` entry's `url`). Any of those whose markdown has since been
- * pruned from the cache is silently absent from the result; if none remain at
- * all, `{}` is returned so the caller passes `undefined` for both `pages` and
- * `blogPosts` to `writeProfileToMemory` — leaving whatever page/blog files
- * this project already has untouched rather than deleting them for lack of
- * evidence they are actually gone. `classifyUrl` (the same per-URL classifier
- * `selectUrls` uses) decides the pages/blog split here, since there is no
- * fresh `selectUrls` ranking to read a tier off on this path.
+ * pruned from the cache is silently absent from the result. `classifyUrl` (the
+ * same per-URL classifier `selectUrls` uses) decides the pages/blog split
+ * here, since there is no fresh `selectUrls` ranking to read a tier off on
+ * this path.
+ *
+ * `pages` and `blogPosts` are decided independently, each defaulting to
+ * `undefined` unless recovery actually produced an entry in that category.
+ * The model citing zero blog URLs this round (a normal citation gap, not
+ * confirmation the blog is gone) must not read the same as a fresh crawl that
+ * confirmed there are no blog posts — `writeProfileToMemory` treats `[]` as
+ * the latter and deletes every previously-written file in that category. A
+ * shared "did anything come back at all" flag would still make that mistake
+ * whenever the other category recovered something, so each category's
+ * concrete-vs-undefined call is made on its own evidence only.
  */
 async function recoverCachedPages(
   profile: CompanyProfile,
@@ -324,7 +345,10 @@ async function recoverCachedPages(
     const bucket = classifyUrl(url).tier === 'blog' ? blogPosts : pages;
     bucket.push({ url, markdown, tier: 'cache' });
   }
-  return { pages, blogPosts };
+  return {
+    pages: pages.length > 0 ? pages : undefined,
+    blogPosts: blogPosts.length > 0 ? blogPosts : undefined,
+  };
 }
 
 async function writeToMemory(

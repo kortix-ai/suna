@@ -12,7 +12,7 @@
  * Skips itself when the local Postgres has no project to attach to, so it
  * degrades to a no-op rather than a false failure on a bare checkout.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { claimDueJobs, completeJob, enqueueJob } from '../enrichment/repositories/jobs';
@@ -20,7 +20,11 @@ import { getProfile } from '../enrichment/repositories/profiles';
 import type { BoundedResponse } from '../enrichment/services/safe-fetch';
 import { runEnrichmentJob, type EnrichmentJobDeps } from '../enrichment/services/worker';
 
-setDefaultTimeout(30_000);
+const NO_SLEEP_FETCH: EnrichmentJobDeps['fetchOverrides'] = {
+  rpm: 100_000,
+  now: () => 0,
+  sleep: async () => {},
+};
 
 const memoryWrites: Array<{ path: string; content: string }> = [];
 let extractionResponse = '';
@@ -41,6 +45,20 @@ const VALID_PROFILE = JSON.stringify({
   contact: { email: null, phone: null, address: null },
   sectionSources: [{ section: 'team', urls: [`${ORIGIN}/team`] }],
   sources: [`${ORIGIN}/`, `${ORIGIN}/about`],
+});
+
+const PROFILE_CITING_EVERY_SITE_PAGE_BUT_NO_BLOG = JSON.stringify({
+  name: 'Integration Example Inc',
+  tagline: 'Testing end to end',
+  description: 'A company used by the enrichment integration test.',
+  products: [{ name: 'Widget', description: 'A widget', url: `${ORIGIN}/product` }],
+  team: [{ name: 'Ada Lovelace', role: 'CEO', link: null }],
+  socials: [],
+  pricingSummary: 'Free and paid tiers.',
+  blogPosts: [],
+  contact: { email: null, phone: null, address: null },
+  sectionSources: [{ section: 'team', urls: [`${ORIGIN}/team`] }],
+  sources: [`${ORIGIN}/`, `${ORIGIN}/about`, `${ORIGIN}/team`],
 });
 
 function page(body: string): Response {
@@ -87,6 +105,7 @@ async function toBounded(url: string, res: Response): Promise<BoundedResponse> {
  */
 function testDeps(): Partial<EnrichmentJobDeps> {
   return {
+    fetchOverrides: NO_SLEEP_FETCH,
     assertUrl: (async (url: string) => new URL(url)) as never,
     fetchImpl: (async (url: string) => {
       fetchLog.push(url);
@@ -307,6 +326,29 @@ describe('enrichment worker (integration)', () => {
       memoryWrites.some((w) => w.path === `.kortix/memory/enrichment/${DOMAIN}/pages/stale.md`),
     ).toBe(true);
     expect(memoryWrites.at(-1)!.content).toContain(`enrichment/${DOMAIN}/pages/stale.md`);
+  });
+
+  test('a cache-hit re-enrichment whose model cited every page but no blog post leaves the blog files alone', async () => {
+    if (!ctx) return;
+    extractionResponse = PROFILE_CITING_EVERY_SITE_PAGE_BUT_NO_BLOG;
+    const first = await seedJob();
+    const [claimedFirst] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
+    await runEnrichmentJob(claimedFirst, testDeps());
+    await completeJob(first.jobId, {});
+
+    const blogPath = `.kortix/memory/enrichment/${DOMAIN}/blog/blog-launch.md`;
+    const teamPath = `.kortix/memory/enrichment/${DOMAIN}/pages/team.md`;
+    expect(memoryWrites.some((w) => w.path === blogPath)).toBe(true);
+    expect(memoryWrites.some((w) => w.path === teamPath)).toBe(true);
+
+    const second = await seedJob();
+    const [claimedSecond] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
+    const result = await runEnrichmentJob(claimedSecond, testDeps());
+
+    expect(result.cacheHit).toBe(true);
+    expect(memoryWrites.some((w) => w.path === blogPath)).toBe(true);
+    expect(memoryWrites.some((w) => w.path === teamPath)).toBe(true);
+    expect(memoryWrites.at(-1)!.content).toContain(`enrichment/${DOMAIN}/blog/blog-launch.md`);
   });
 
   test('force bypasses the cache', async () => {
