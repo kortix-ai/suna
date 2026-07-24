@@ -29,6 +29,9 @@ export interface BoundedFetchOptions {
   timeoutMs?: number;
   maxBytes?: number;
   headers?: Record<string, string>;
+  /** Defaults to GET. Firecrawl's scrape endpoint needs POST with a JSON body. */
+  method?: string;
+  body?: string;
   /** The job-level signal; aborting it cancels the transfer mid-body. */
   signal?: AbortSignal;
 }
@@ -124,6 +127,8 @@ export async function boundedFetch(
 
   try {
     const res = await safeEgressFetch(rawUrl, {
+      method: opts.method,
+      body: opts.body,
       headers: opts.headers,
       signal: timeoutController.signal,
       redirect: 'manual',

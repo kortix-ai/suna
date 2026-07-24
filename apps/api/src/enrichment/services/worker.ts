@@ -33,7 +33,7 @@ import { consolidate } from './consolidate';
 import { discover } from './discovery';
 import { extractProfile } from './extract';
 import { withGatewayChat } from './gateway-chat';
-import { fetchPages } from './jina-fetch';
+import { fetchPages } from './page-fetch';
 import { canonicalOrigin } from './normalize';
 import { assertSafeUrl, boundedFetch } from './safe-fetch';
 import { writeProfileToMemory, type MemoryPort } from './memory-write';
@@ -169,7 +169,9 @@ async function executePipeline(
   const fetched = await fetchPages(
     ranked.map((r) => r.url),
     {
-      apiKey: config.JINA_API_KEY || undefined,
+      jinaApiKey: config.JINA_API_KEY || undefined,
+      firecrawlApiKey: config.FIRECRAWL_API_KEY || undefined,
+      firecrawlApiUrl: config.FIRECRAWL_API_URL,
       rpm: config.KORTIX_ENRICHMENT_JINA_RPM,
       signal,
       cache: { get: getCachedPages, put: putCachedPage },

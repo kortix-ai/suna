@@ -150,6 +150,16 @@ describe('boundedFetch', () => {
     expect(fetchCalls[0].init?.headers).toMatchObject({ authorization: 'Bearer k' });
   });
 
+  test('passes method and body through for a POST request', async () => {
+    await boundedFetch('https://example.com/', {
+      method: 'POST',
+      body: '{"url":"https://example.com/"}',
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(fetchCalls[0].init?.method).toBe('POST');
+    expect(fetchCalls[0].init?.body).toBe('{"url":"https://example.com/"}');
+  });
+
   test('keeps redirect handling manual so the guard sees every hop', async () => {
     await boundedFetch('https://example.com/');
     expect(fetchCalls[0].init?.redirect).toBe('manual');
