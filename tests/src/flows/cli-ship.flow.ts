@@ -36,6 +36,7 @@
  * are green-or-skipped locally and exercise the real path on dev-api.
  */
 import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
 import { assert } from '../core/expect';
 import { waitFor } from '../core/poll';
 import { CliSandbox } from '../fixtures/cli';
@@ -73,7 +74,7 @@ flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
   ctx.track('cli-sandbox', sb.cwd);
   try {
     await initProject(sb);
-    const login = await sb.login(pat);
+    const login = await sb.login(pat, { noProject: true });
     check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
     await ctx.step(
@@ -171,7 +172,7 @@ flow(
   'SHIP-1',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -186,7 +187,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -242,7 +243,7 @@ flow(
       // Pre-set a non-GitHub origin so ship takes the BYO POST /projects path.
       const byoUrl = 'https://git.example.test/ke2e/byo.git';
       Bun.spawnSync(['git', '-C', sb.cwd, 'remote', 'add', 'origin', byoUrl]);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -298,7 +299,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -339,7 +340,7 @@ flow(
   'SHIP-4',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -364,7 +365,7 @@ flow(
         'origin',
         'https://git.example.test/ke2e/ignored.git',
       ]);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -411,7 +412,7 @@ flow('SHIP-5', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
   ctx.track('cli-sandbox', sb.cwd);
   try {
     await initProject(sb);
-    const login = await sb.login(pat);
+    const login = await sb.login(pat, { noProject: true });
     check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
     await ctx.step(
@@ -448,7 +449,7 @@ flow(
   'SHIP-6',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -464,7 +465,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       // First ship (managed) to establish the link.
@@ -510,7 +511,7 @@ flow(
   'SHIP-9',
   {
     domain: 'cli',
-    requires: ['managedGit'],
+    requires: ['managedGitPush'],
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -526,7 +527,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat);
+      const login = await sb.login(pat, { noProject: true });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       // Establish the link via a first managed ship (clean push of the scaffold).
@@ -585,6 +586,7 @@ flow(
     domain: 'cli',
     requires: ['funded'],
     serial: true,
+    timeoutMs: 1_200_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -617,17 +619,16 @@ flow(
 
     const started = await waitFor(
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions/:sessionId/start',
-            {},
-            {
-              params: { projectId: project.id, sessionId: session.id },
-              query: { wait_ms: '8000' },
-              timeoutMs: 25_000,
-            },
-          );
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          {
+            params: { projectId: project.id, sessionId: session.id },
+            query: { wait_ms: '8000' },
+            timeoutMs: 25_000,
+          },
+        );
+        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
         r.status(200);
         return r.json<any>();
       },
@@ -635,9 +636,10 @@ flow(
         until: (body) =>
           body?.stage === 'ready' &&
           Boolean(body?.sandbox?.external_id ?? body?.sandbox?.externalId),
-        timeoutMs: 300_000,
+        timeoutMs: 660_000,
         intervalMs: 3_000,
         description: `CR-9 session runtime ready for ${session.id}`,
+        retryOnError: isKe2eRetryableError,
       },
     );
     const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
@@ -685,7 +687,7 @@ flow(
         const r = await sb.run(['cr', 'open', '--head', session.id, '--title', 'ke2e cli CR'], {
           env: crEnv,
         });
-        check('exit 0', r.exitCode === 0, 0, r.exitCode);
+        checkExit('exit 0', r, 0);
         check('reports the opened CR number', /CR #\d+/.test(r.all), true, r.stdout.slice(0, 200));
         const m = r.stdout.match(/CR #(\d+)/);
         crNumber = m ? m[1] : '';

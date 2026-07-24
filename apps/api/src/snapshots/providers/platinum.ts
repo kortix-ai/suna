@@ -27,15 +27,30 @@ import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
+  BuildSnapshotResult,
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
 import { shortLivedObservation } from '../observation-cache';
+import {
+  assertSafePresignedUploadUrl,
+  parseUploadHostAllowlist,
+  sanitizeUrlForLog,
+} from './upload-url-guard';
+import {
+  classifyPlatinumPollError,
+  isTerminalPollError,
+  retryAfterMsFromError,
+} from './platinum-poll-classify';
+import { config } from '../../config';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
 const MB_PER_GB = 1024;
 const BUILD_ATTEMPTS = 3;
+const UPLOAD_ATTEMPTS = 3;
+const UPLOAD_MIN_TIMEOUT_MS = 10 * 60_000;
+const UPLOAD_TIMEOUT_MS_PER_GIB = 60_000;
 // Platinum's POST /v1/templates/from-build hard-caps size_mb at this value (see
 // platinum apps/api/src/api/templates.ts ORG_MAX_SIZE_MB + the from-build zod).
 // The build ext4 is a FLOOR Platinum grows-to-fit, so clamping the build ceiling
@@ -74,6 +89,9 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
     m.includes('timeout') || m.includes('timed out') || m.includes('econnreset') ||
     m.includes('econnrefused') || m.includes('network') || m.includes('gateway') ||
     m.includes(' 502') || m.includes(' 503') || m.includes(' 504') ||
+    // Rate limiting is transient by definition — failing the build on a 429
+    // re-queues the whole bake later, generating more traffic, not less.
+    m.includes(' 429') || m.includes('too many requests') ||
     m.includes('last state: missing')
   );
 }
@@ -84,15 +102,337 @@ interface PlatinumTemplate {
   state?: string;
 }
 
-async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
-  const list = await observeTemplates();
-  return list.find((t) => t.name === name) ?? null;
+/**
+ * FIX-C: the template LIST endpoint (GET /v1/templates) is paginated (≤50 rows,
+ * created_at DESC — see the module header). Reading only the first page turned an
+ * older-but-live template on a >50-template org into a FALSE ABSENT → a needless
+ * rebuild. We now walk every page and, critically, a page-fetch error OR the hard
+ * page cap surfaces as PlatinumTemplateListingError (a listing FAILURE), NEVER as
+ * absent: a `null` from findTemplateByName means "definitively not in the full
+ * list", not "the listing errored". Callers that treat absent as "needs rebuild"
+ * therefore never see a failed listing as a missing template.
+ */
+export class PlatinumTemplateListingError extends Error {
+  constructor(message: string) {
+    super(`platinum template listing failed: ${message}`);
+    this.name = 'PlatinumTemplateListingError';
+  }
+}
+
+/** Page size we request; the server default is also 50 (see module header). */
+const TEMPLATES_PAGE_SIZE = 50;
+/** Hard page cap so an API bug (an ignored/broken cursor) can NEVER spin forever.
+ *  Hitting it with full, still-advancing pages is a listing FAILURE (throw), not
+ *  an exhausted/absent list. */
+const TEMPLATES_MAX_PAGES = 40; // 40 * 50 = 2000 templates
+
+async function fetchTemplatePage(offset: number): Promise<PlatinumTemplate[]> {
+  const rows = await platinumJson<PlatinumTemplate[]>(
+    `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}`,
+  );
+  if (!Array.isArray(rows)) {
+    throw new PlatinumTemplateListingError(`expected an array page, got ${typeof rows}`);
+  }
+  return rows;
+}
+
+/**
+ * Walk /v1/templates pages (offset-paginated). `onPage` may return a non-undefined
+ * value to EARLY-EXIT (name-scoped callers stop the moment the sought template
+ * appears — most are recent → page 1). Pagination stops when a page is short/empty
+ * (last page) OR adds no new template ids — a defensive cursor-loop guard: a server
+ * that ignored `offset` would otherwise repeat page 0 forever, so we stop and
+ * degrade to the first-page view rather than spin. A page-fetch error re-throws an
+ * auth failure verbatim (401/403 stays classifiable) and wraps anything else as
+ * PlatinumTemplateListingError; exceeding the hard page cap with full, distinct
+ * pages likewise throws — never a silent truncation, never "absent".
+ */
+async function paginateTemplates<R>(
+  onPage: (page: PlatinumTemplate[], all: PlatinumTemplate[]) => R | undefined,
+): Promise<{ early: R | undefined; all: PlatinumTemplate[] }> {
+  const all: PlatinumTemplate[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
+    let rows: PlatinumTemplate[];
+    try {
+      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE);
+    } catch (err) {
+      // Preserve the 401/403 signature end to end (getSnapshotState rethrows it;
+      // the transition classifier recognizes it as permanent). Everything else is
+      // a listing FAILURE, surfaced as such — never swallowed into "absent".
+      if (isPlatinumAuthFailure(err) || err instanceof PlatinumTemplateListingError) throw err;
+      throw new PlatinumTemplateListingError(err instanceof Error ? err.message : String(err));
+    }
+    let newInPage = 0;
+    for (const t of rows) {
+      const key = typeof t.id === 'string' && t.id ? t.id : `name:${t.name ?? ''}`;
+      if (!seen.has(key)) { seen.add(key); all.push(t); newInPage += 1; }
+    }
+    const early = onPage(rows, all);
+    if (early !== undefined) return { early, all };
+    if (rows.length < TEMPLATES_PAGE_SIZE) return { early: undefined, all }; // last page
+    if (newInPage === 0) return { early: undefined, all }; // offset ignored → stop, don't spin
+  }
+  throw new PlatinumTemplateListingError(
+    `exceeded ${TEMPLATES_MAX_PAGES} pages (> ${TEMPLATES_MAX_PAGES * TEMPLATES_PAGE_SIZE} templates) without exhausting the list`,
+  );
+}
+
+/** Full paginated template list. Throws PlatinumTemplateListingError on a page
+ *  error / cap-hit — a partial or failed listing is NEVER returned as a shorter
+ *  (falsely-complete) list. */
+async function fetchAllTemplates(): Promise<PlatinumTemplate[]> {
+  const { all } = await paginateTemplates(() => undefined);
+  return all;
 }
 
 const observeTemplates = shortLivedObservation(
-  () => platinumJson<PlatinumTemplate[]>('/v1/templates'),
+  () => fetchAllTemplates(),
   process.env.NODE_ENV === 'test' ? 0 : 2_000,
 );
+
+/**
+ * Resolve a template by NAME across the FULL paginated list, early-exiting the
+ * moment it appears. A `null` return means "walked the whole list, definitively
+ * absent"; a listing FAILURE throws PlatinumTemplateListingError (or the raw
+ * 401/403) — callers must NOT treat that as absent.
+ */
+export async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
+  const { early } = await paginateTemplates<PlatinumTemplate>((page) => page.find((t) => t.name === name));
+  return early ?? null;
+}
+
+/**
+ * Direct GET /v1/templates/:id lookup — the PRIMARY signal `waitForActive`
+ * polls once `from-build`/`from-patch` has handed back an id. Unlike the
+ * name-list (`GET /v1/templates`, limit=50 created_at DESC — see the module
+ * header), this reads the exact row Platinum just created, so it can never
+ * miss it behind pagination. A 404 here is expected for a brief window right
+ * after registration (the row can lag its own id becoming visible) — treat it
+ * as "not ready yet", same as any other not-yet-ready state, and let the
+ * caller's deadline (not this single lookup) decide when to give up.
+ */
+async function findTemplateById(id: string): Promise<PlatinumTemplate | null> {
+  try {
+    return await platinumJson<PlatinumTemplate>(`/v1/templates/${id}`);
+  } catch (err) {
+    if (/ -> 404(?:\s|$)/.test(err instanceof Error ? err.message : String(err))) return null;
+    throw err;
+  }
+}
+
+const POLL_BACKOFF_BASE_MS = 2_000;
+const POLL_BACKOFF_MAX_MS = 30_000;
+
+/** Exponential backoff with full jitter for transient poll errors. */
+function pollBackoffMs(streak: number): number {
+  const ceil = Math.min(POLL_BACKOFF_MAX_MS, POLL_BACKOFF_BASE_MS * 2 ** Math.max(0, streak - 1));
+  return Math.floor(Math.random() * ceil);
+}
+
+/**
+ * Long-poll a just-registered template to `ready`. PRIMARY (and, per PHASE 2,
+ * the ONLY) signal is `GET /v1/templates/:id` — a non-empty id from
+ * `from-build`/`from-patch` is REQUIRED; the truncated name-list fallback is
+ * gone (an idempotent-adopt can hand back an OLD row, and the list truncates at
+ * 50, so a `ready` template can be absent from the page — a false "missing").
+ *
+ * Poll-error handling is classified (PHASE 2): 401/403 and TLS/cert failures
+ * fail immediately (permanent); 404 is "not visible yet" (healthy, keep
+ * polling); 429/5xx/DNS/socket/timeout are transient and retried with
+ * exponential backoff + jitter (Retry-After honored on 429) WITHOUT counting
+ * against anything — a long healthy `building` is not a failed attempt. Only an
+ * explicit provider `failed` state, or the overall deadline, is terminal.
+ *
+ * When an id is polled, the resolved row's NAME is verified against `name`
+ * (defense against an idempotent-adopt returning a different template).
+ * Standalone (not a class method) so it's directly unit-testable.
+ */
+export async function waitForActive(name: string, tap?: BuildLogTap, id?: string): Promise<void> {
+  const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
+  let last = 'unknown';
+  let transientStreak = 0;
+  while (Date.now() < deadline) {
+    // Renew the caller's lease (if any) BEFORE polling. Placed OUTSIDE the poll
+    // try/catch so a heartbeat that reports lost ownership (throws) STOPS the
+    // wait rather than being swallowed as a transient poll error. The callback
+    // itself swallows transient DB blips (see the drive's heartbeat wrapper), so
+    // a throw here is an authoritative "you no longer own this" — the build we're
+    // waiting on is now another owner's to finish.
+    await tap?.heartbeat?.();
+    let tpl: PlatinumTemplate | null;
+    try {
+      // findTemplateById returns null ONLY on an explicit 404 (not-visible-yet);
+      // every other transport/HTTP error propagates here to be classified.
+      tpl = id ? await findTemplateById(id) : await findTemplateByName(name);
+      transientStreak = 0;
+    } catch (err) {
+      const cls = classifyPlatinumPollError(err);
+      if (isTerminalPollError(cls)) {
+        // 401/403 (dead key) or TLS/cert failure — fail NOW, preserving the
+        // original classified message so the transition core marks it permanent.
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+      transientStreak += 1;
+      const backoff = cls === 'rate-limited'
+        ? (retryAfterMsFromError(err) ?? pollBackoffMs(transientStreak))
+        : pollBackoffMs(transientStreak);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      tap?.onLine?.(`template ${name}: transient poll error (${cls}) — retrying`);
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(backoff, remaining))));
+      continue;
+    }
+    // A resolved-by-id row whose name doesn't match is an adopt mismatch, not
+    // our build — fail closed rather than trust a wrong template.
+    if (id && tpl && tpl.name && tpl.name !== name) {
+      throw new Error(
+        `Platinum template id ${id} resolved to name "${tpl.name}", expected "${name}" — refusing to trust a mismatched template`,
+      );
+    }
+    const state = (tpl?.state ?? 'missing').toLowerCase();
+    if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
+    if (state === 'ready') return;
+    if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
+    // building / pending / missing(=not-visible-yet) → healthy waiting.
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  throw new Error(`Platinum template ${name} did not become ready (last state: ${last})`);
+}
+
+/** Assert a provider-returned external template id is present and non-empty —
+ *  PHASE 2 EXACT ID: never fall back to the truncated name list. */
+export function requireExternalTemplateId(id: unknown, context: string): string {
+  if (typeof id !== 'string' || id.trim() === '') {
+    throw new Error(
+      `Platinum ${context} did not return a template id — refusing to fall back to name-list polling`,
+    );
+  }
+  return id;
+}
+
+/**
+ * True iff `err` is a genuine auth/authorization failure from `platinumJson`
+ * (`platinum <method> <path> -> 401 …` / `-> 403 …`) — a dead/revoked API key,
+ * never a transient provider hiccup. Distinguishing this HERE (at the HTTP
+ * layer) matters because `getSnapshotState` below used to swallow EVERY
+ * lookup error into the generic `'unknown'` state, which the provider-
+ * migration workflow's `interpretImageReadiness` correctly treats as
+ * `'indeterminate'` (never "missing" — good) but which then gets reported to
+ * `isPermanentTransitionError` as a plain, message-less
+ * "provider state indeterminate" error — losing the 401/403 entirely, so a
+ * dead key was misclassified as transient and retried for ~5 backed-off
+ * attempts before dead-lettering with the WRONG error class (`exhausted`
+ * instead of `auth_terminal`). Rethrowing ONLY this narrow, unambiguous class
+ * preserves the original `platinumJson` message (which the transition core's
+ * `isPermanentTransitionError` already recognizes via ' 401'/' 403') so an
+ * auth failure fails FAST and CORRECTLY classified; every other lookup error
+ * (network blip, 5xx, timeout) keeps the existing 'unknown' behavior so
+ * session-boot and template-cache callers are unaffected.
+ */
+function isPlatinumAuthFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /-> (401|403)\b/.test(err.message);
+}
+
+/** 408 (S3 idle-timeout), our own AbortSignal timeout, and 5xx are transient
+ *  — worth a fresh presign + retry. Anything else (400/401/403/404/...) is a
+ *  real error and must NOT be retried. */
+function isRetryableUploadError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
+  const status = Number(err.message.match(/-> (\d{3})\b/)?.[1]);
+  return status === 408 || status >= 500;
+}
+
+/**
+ * Presigned-PUT build-context uploader, hardened against Scaleway S3's idle
+ * timeout on large (100s-of-MB) contexts: a mid-transfer stall used to trip a
+ * bare 408 with no retry, forcing a full re-upload (or failing the build
+ * outright) further up in `isRetryablePlatinumBuildError`'s BUILD_ATTEMPTS
+ * loop. Two things fix that here instead: (1) a per-attempt timeout scaled to
+ * file size, so a genuinely-large upload isn't cut off before it could ever
+ * finish; (2) on a transient failure (408 / timeout / 5xx), RE-PRESIGN for a
+ * fresh `upload_url` + `context_s3_key` rather than retrying the same
+ * (possibly already-consumed) presigned URL. The returned `context_s3_key` is
+ * whichever attempt actually succeeded — callers MUST register that key, not
+ * the one from their original presign call, or they'll upload to key A and
+ * tell `from-build`/`from-patch` to look for key B.
+ *
+ * `presignFn()` itself is called INSIDE the try/catch (not before it): a
+ * transient failure of the presign call (e.g. a 500/timeout from Platinum's
+ * own `/v1/templates/from-build/presign`) is a real-world possibility, same
+ * transport as the PUT, and must go through the same isRetryableUploadError
+ * decision + retry loop — not bypass it and fail the whole upload on attempt 1.
+ */
+/**
+ * Guard options for the presigned upload URL, derived from deployment env:
+ *  - local-dev (`INTERNAL_KORTIX_ENV=dev`) allows http + loopback (MinIO),
+ *  - `KORTIX_PLATINUM_UPLOAD_HOST_ALLOWLIST` pins the object-storage origin(s).
+ * Exported so the uploader default and tests share one source of truth.
+ */
+export function uploadUrlGuardOptsFromEnv(): { allowLocal: boolean; allowedHosts: string[] } {
+  return {
+    allowLocal: config.INTERNAL_KORTIX_ENV === 'dev',
+    allowedHosts: parseUploadHostAllowlist(process.env.KORTIX_PLATINUM_UPLOAD_HOST_ALLOWLIST),
+  };
+}
+
+export async function uploadWithRetry(
+  presignFn: () => Promise<{ upload_url: string; context_s3_key: string }>,
+  tarPath: string,
+  guardOpts: { allowLocal: boolean; allowedHosts: string[] } = uploadUrlGuardOptsFromEnv(),
+): Promise<string> {
+  const sizeBytes = Bun.file(tarPath).size;
+  const timeoutMs = Math.max(UPLOAD_MIN_TIMEOUT_MS, Math.ceil((sizeBytes / 1024 ** 3) * UPLOAD_TIMEOUT_MS_PER_GIB));
+  for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt++) {
+    try {
+      const { upload_url, context_s3_key } = await presignFn();
+      // PHASE 2: validate the presigned URL BEFORE streaming the context —
+      // https-only outside local-dev, no loopback/link-local/private/multicast
+      // SSRF targets, and origin-pinned when an allowlist is configured. An
+      // invalid URL is NOT retryable (a fresh presign returns the same origin).
+      let safeUrl: URL;
+      try {
+        safeUrl = assertSafePresignedUploadUrl(upload_url, guardOpts);
+      } catch (guardErr) {
+        // Wrap as a terminal (non-retryable) error — the sanitized message
+        // never carries the presign signature.
+        throw new UploadUrlRejectedError(guardErr instanceof Error ? guardErr.message : String(guardErr));
+      }
+      const put = await fetch(safeUrl, {
+        method: 'PUT',
+        body: Bun.file(tarPath),
+        signal: AbortSignal.timeout(timeoutMs),
+        // Refuse a 30x bounce of the signed PUT to a different origin.
+        redirect: 'error',
+      });
+      if (put.ok) return context_s3_key;
+      // Log only the sanitized URL (query/signature stripped).
+      throw new Error(
+        `build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)} (${sanitizeUrlForLog(upload_url)})`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!isRetryableUploadError(err) || attempt === UPLOAD_ATTEMPTS) {
+        throw new Error(`build-context upload failed after ${attempt}/${UPLOAD_ATTEMPTS} attempt(s): ${msg}`);
+      }
+      console.warn(`[snapshots] platinum build-context upload attempt ${attempt}/${UPLOAD_ATTEMPTS} failed — re-presigning + retrying: ${msg.slice(0, 160)}`);
+      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+    }
+  }
+  // Unreachable: the loop above always returns or throws by UPLOAD_ATTEMPTS.
+  throw new Error('build-context upload failed');
+}
+
+/** A presigned upload URL that failed the security guard — terminal, never
+ *  retried (a re-presign returns the same rejected origin/scheme). */
+export class UploadUrlRejectedError extends Error {
+  constructor(message: string) {
+    super(`presigned upload URL rejected: ${message}`);
+    this.name = 'UploadUrlRejectedError';
+  }
+}
 
 class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
@@ -101,7 +441,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     return isPlatinumConfigured();
   }
 
-  async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<void> {
+  async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
     if (!input.image && !input.userDockerfile) {
       throw new Error('PlatinumAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
@@ -110,9 +450,12 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
       observeTemplates.invalidate();
       try {
-        await this.buildOnce(input, userDockerfile, tap);
+        // Return the EXACT external template id the build proved
+        // (requireExternalTemplateId inside buildOnce) — threaded to the caller
+        // so the transition runner pins THAT id, never a name-list re-derivation.
+        const result = await this.buildOnce(input, userDockerfile, tap);
         observeTemplates.invalidate();
-        return;
+        return result;
       } catch (err) {
         observeTemplates.invalidate();
         lastErr = err;
@@ -130,7 +473,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   /** One build attempt: stage a FRESH context, ship it, register, wait active.
    *  Re-staged per attempt by buildSnapshot so a context disturbed between
    *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
-  private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<void> {
+  private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
     const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
@@ -143,21 +486,24 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // presigned PUT (phase 1 + 2), then register the build (phase 3). The
       // build itself still happens server-side on Platinum (podman build).
       console.info(`[snapshots] ${input.snapshotName}: presign + upload build context to Platinum (slug="${input.slug}")`);
-      const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
-        '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
-      );
       // STREAM the upload — Bun.file() sends the tarball in chunks, so a
       // 100s-of-MB context uploads in constant memory. The previous
       // new Uint8Array(await readFile()) buffered the ENTIRE tarball (twice) in
       // RAM and OOMKilled the 512Mi api pod (exit 137), 502-ing every session
       // whose request hit the crashing replica. Daytona never buffers — its SDK
       // streams the context — so this brings the Platinum path to parity.
-      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(tarPath) });
-      if (!put.ok) throw new Error(`build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
+      // uploadWithRetry re-presigns + retries on a transient S3 408/timeout/5xx
+      // (see its doc comment) — context_s3_key below is whichever attempt won.
+      const context_s3_key = await uploadWithRetry(
+        () => platinumJson<{ upload_url: string; context_s3_key: string }>(
+          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+        ),
+        tarPath,
+      );
 
       const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
 
-      await platinumJson<PlatinumTemplate>('/v1/templates/from-build', {
+      const registered = await platinumJson<PlatinumTemplate>('/v1/templates/from-build', {
         method: 'POST',
         body: JSON.stringify({
           name: input.snapshotName,
@@ -175,7 +521,13 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
         }),
       });
-      await this.waitForActive(input.snapshotName, tap);
+      // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
+      // poll THAT id (never the truncated name list) — see waitForActive.
+      const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
+      await waitForActive(input.snapshotName, tap, externalId);
+      // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
+      // runner) — no name-list re-derivation downstream.
+      return { externalTemplateId: externalId };
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       await rm(tarPath, { force: true }).catch(() => {});
@@ -190,21 +542,23 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    * uses this ONLY when the user image is unchanged AND the predecessor is active
    * on Platinum — otherwise it falls back to a normal buildSnapshot.
    */
-  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<void> {
+  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<BuildSnapshotResult> {
     observeTemplates.invalidate();
     const { gzPath, cleanup } = await stageAgentBinaryGz();
     try {
-      const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
-        '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+      // uploadWithRetry — streamed + retried on transient S3 failure; see buildOnce.
+      const context_s3_key = await uploadWithRetry(
+        () => platinumJson<{ upload_url: string; context_s3_key: string }>(
+          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+        ),
+        gzPath,
       );
-      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(gzPath) }); // streamed — see buildOnce
-      if (!put.ok) throw new Error(`agent-swap upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
       // Platinum's GENERAL file-patch primitive: patch our one changed file (the
       // kortix-agent binary) into the predecessor's rootfs — no rebuild. The guest
       // path is OURS to specify (Platinum is file-agnostic); /usr/local/bin/kortix-agent
       // is where our runtime layer (dockerfile-layer.ts) installs it. mode 0100755 =
       // executable (debugfs `write` lands 0644 otherwise).
-      await platinumJson<PlatinumTemplate>('/v1/templates/from-patch', {
+      const patched = await platinumJson<PlatinumTemplate>('/v1/templates/from-patch', {
         method: 'POST',
         body: JSON.stringify({
           name: newSnapshotName,
@@ -212,7 +566,12 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           files: [{ s3_key: context_s3_key, guest_path: '/usr/local/bin/kortix-agent', mode: 0o100755 }],
         }),
       });
-      await this.waitForActive(newSnapshotName);
+      // PHASE 2 EXACT ID: from-patch MUST return a non-empty id — poll it, never
+      // the name list.
+      const externalId = requireExternalTemplateId(patched?.id, `from-patch for ${newSnapshotName}`);
+      await waitForActive(newSnapshotName, undefined, externalId);
+      // FIX-B: return the exact patched-template id (same contract as buildSnapshot).
+      return { externalTemplateId: externalId };
     } finally {
       observeTemplates.invalidate();
       await cleanup();
@@ -224,7 +583,52 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     try {
       const template = await findTemplateByName(snapshotName);
       return template ? normalizeExistingProviderState(template.state) : 'missing';
+    } catch (err) {
+      // See isPlatinumAuthFailure's doc comment: a dead/revoked key must
+      // propagate so callers (the provider-migration workflow) classify it as
+      // PERMANENT, not silently degrade to 'unknown' → indeterminate → retry.
+      if (isPlatinumAuthFailure(err)) throw err;
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Resolve the EXACT Platinum template id backing a built snapshot name — the
+   * durable "external_template_id" a provider-migration transition tracks (spec:
+   * track by the id Platinum returns, not a truncated name listing). Best-effort
+   * audit provenance: the AUTHORITATIVE readiness signal remains
+   * getSnapshotState; a null here just means the id couldn't be resolved right
+   * now (never a failure). Once #5207's by-id build wait lands, the build itself
+   * already polls this id internally — this method only persists it for the
+   * transition record + reconciler re-verification.
+   */
+  async getSnapshotExternalId(snapshotName: string): Promise<string | null> {
+    if (!isPlatinumConfigured()) return null;
+    try {
+      const template = await findTemplateByName(snapshotName);
+      return template?.id ?? null;
     } catch {
+      return null;
+    }
+  }
+
+  /**
+   * PHASE 2 EXACT ID: verify readiness by the durable EXTERNAL template id (what
+   * a transition persisted), not the name. `GET /v1/templates/:id` reads the
+   * exact row Platinum created, so it can never miss it behind the 50-row
+   * name-list pagination. A 404 = the id is gone → 'missing'. An auth failure
+   * propagates (same rationale as getSnapshotState) so a dead key is classified
+   * permanent rather than degraded to 'unknown'. Used by the reconciler to
+   * re-verify an activated transition against its recorded id.
+   */
+  async getSnapshotStateByExternalId(externalId: string): Promise<ProviderState> {
+    if (!isPlatinumConfigured()) return 'missing';
+    if (!externalId || externalId.trim() === '') return 'missing';
+    try {
+      const template = await findTemplateById(externalId);
+      return template ? normalizeExistingProviderState(template.state) : 'missing';
+    } catch (err) {
+      if (isPlatinumAuthFailure(err)) throw err;
       return 'unknown';
     }
   }
@@ -249,24 +653,14 @@ class PlatinumAdapter implements SandboxProviderAdapter {
 
   async listSnapshots(): Promise<Array<{ name: string }>> {
     if (!isPlatinumConfigured()) return [];
-    return (await platinumJson<PlatinumTemplate[]>('/v1/templates'))
+    // FIX-C: walk the FULL paginated list — the reaper needs every superseded
+    // ppwarm image, not just the first 50 (created_at DESC), or an older tip past
+    // page 1 lingers forever. A listing FAILURE throws (never returns a truncated
+    // list the caller would mistake for "these are all the templates").
+    return (await fetchAllTemplates())
       .map((template) => template.name)
       .filter((name): name is string => !!name)
       .map((name) => ({ name }));
-  }
-
-  private async waitForActive(name: string, tap?: BuildLogTap): Promise<void> {
-    const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
-    let last = 'unknown';
-    while (Date.now() < deadline) {
-      const tpl = await findTemplateByName(name).catch(() => null);
-      const state = (tpl?.state ?? 'missing').toLowerCase();
-      if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
-      if (state === 'ready') return;
-      if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
-      await new Promise((r) => setTimeout(r, POLL_MS));
-    }
-    throw new Error(`Platinum template ${name} did not become ready (last state: ${last})`);
   }
 }
 

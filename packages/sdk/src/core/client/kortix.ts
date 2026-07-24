@@ -251,8 +251,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkRepository: P.linkRepository,
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
+    listLinkableInstallations: P.listLinkableGitHubInstallations,
     listRepositories: P.listGitHubRepositories,
     listRepositoryBranches: P.listGitHubRepositoryBranches,
+    linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
   };
@@ -396,6 +398,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           list: () => P.listConnectionProfiles(projectId),
           reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
             P.reconcileConnectionProfile(projectId, ...a),
+          reconcileMember: (
+            ...a: DropFirst<Parameters<typeof P.reconcileMemberConnectionProfile>>
+          ) => P.reconcileMemberConnectionProfile(projectId, ...a),
           updateCredential: (
             ...a: DropFirst<Parameters<typeof P.updateConnectionProfileCredential>>
           ) => P.updateConnectionProfileCredential(projectId, ...a),
@@ -403,6 +408,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.revokeConnectionProfile(projectId, ...a),
           activate: (...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>) =>
             P.activateConnectionProfile(projectId, ...a),
+          pipedreamConnect: (
+            ...a: DropFirst<Parameters<typeof P.pipedreamConnectConnectionProfile>>
+          ) => P.pipedreamConnectConnectionProfile(projectId, ...a),
+          pipedreamFinalize: (
+            ...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnectionProfile>>
+          ) => P.pipedreamFinalizeConnectionProfile(projectId, ...a),
         },
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
@@ -491,7 +502,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       sessions: {
-        list: () => P.listProjectSessions(projectId),
+        list: (options?: Parameters<typeof P.listProjectSessions>[1]) =>
+          P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
       },
@@ -666,9 +678,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * cache the resolved runtime for THIS handle. Also points the app's shared
      * "current runtime" store there, for React hosts that still read it.
      */
-    async function ensureReady(): Promise<SessionRuntimeEntry> {
+    async function ensureReady(opts?: { readyTimeoutMs?: number }): Promise<SessionRuntimeEntry> {
       const cached = tryResolveReady();
       if (cached) return cached;
+      const readyTimeoutMs = opts?.readyTimeoutMs ?? 180_000;
 
       // Dedup concurrent starts for this (projectId, sessionId) — see
       // `inFlightSessionStarts`'s doc comment. If another call (this handle or
@@ -682,7 +695,43 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       }
 
       const startPromise = (async (): Promise<SessionRuntimeEntry> => {
-        const started = await P.startProjectSession(projectId, sessionId, 30_000);
+        // Poll /start (each call long-polls up to 30s) until the runtime is
+        // ready. `/start` returns `retriable: true` while the sandbox is still
+        // provisioning/starting — a cold start can outlast a single long-poll —
+        // so keep polling until it's ready, hits a terminal stage, or the
+        // deadline. A single check would spuriously throw RUNTIME_UNAVAILABLE
+        // on a slow boot, which is exactly what a backend waiting to send the
+        // first turn must not do.
+        const deadline = Date.now() + readyTimeoutMs;
+        // Cap each server long-poll (and the inter-poll pause) to the time left
+        // so the total honors readyTimeoutMs — a fixed 30s wait would overshoot
+        // the deadline by up to ~30s on the final iteration.
+        const remainingMs = () => Math.max(0, deadline - Date.now());
+        let started = await P.startProjectSession(
+          projectId,
+          sessionId,
+          Math.min(30_000, remainingMs()),
+        );
+        // Keep polling while the runtime is still coming up. A `null` result is
+        // a TRANSIENT tick, not a terminal state: startProjectSession returns
+        // null for a 5xx/408/429/network blip AND the create→start 404 race
+        // (row not yet visible on the read path) — the exact cases a backend
+        // hits calling ensureReady() right after create(). Only a resolved
+        // provisioning/starting+retriable result or the deadline keeps/ends the
+        // loop; ready/failed/stopped fall through to the guard below.
+        while (
+          Date.now() < deadline &&
+          (started == null ||
+            ((started.stage === 'provisioning' || started.stage === 'starting') &&
+              started.retriable))
+        ) {
+          await new Promise((r) => setTimeout(r, Math.min(1_000, remainingMs())));
+          started = await P.startProjectSession(
+            projectId,
+            sessionId,
+            Math.min(30_000, remainingMs()),
+          );
+        }
         if (
           !started ||
           started.stage !== 'ready' ||

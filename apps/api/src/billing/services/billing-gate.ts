@@ -1,14 +1,11 @@
-import { HTTPException } from "hono/http-exception";
-import { config } from "../../config";
-import { getCreditAccount } from "../repositories/credit-accounts";
-import { deductCredits } from "./credits";
-import { ensureFreeTierAccountReady } from "./free-tier";
-import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from "./tiers";
+import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
+import { getCreditAccount } from '../repositories/credit-accounts';
+import { deductCredits } from './credits';
+import { ensureFreeTierAccountReady } from './free-tier';
+import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
 
-type BillingGateReason =
-  | "subscription_required"
-  | "insufficient_credits"
-  | "no_account";
+type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
 
 export interface BillingGateOk {
   ok: true;
@@ -27,6 +24,13 @@ export interface BillingGateBlocked {
   reason: BillingGateReason;
   balance: number;
   message: string;
+  // The account's billing model + whether it has a subscription row at all.
+  // Carried on the 402 so the client can tell a genuinely-free/no-plan account
+  // ("subscribe" pitch) apart from a paying Team account whose wallet ran dry
+  // ("top up" pitch) — the same `subscription_required` reason otherwise
+  // mislabels a per-seat Team account as Free. See web global-upgrade-modal.
+  billingModel: BillingModel;
+  hasSubscription: boolean;
 }
 
 /**
@@ -40,7 +44,13 @@ export interface BillingGateBlocked {
  * read the real cause synchronously, no body parsing required.
  */
 export class BillingGateError extends HTTPException {
-  constructor(readonly reason: BillingGateReason, readonly balance: number, message: string, accountId: string) {
+  constructor(
+    readonly reason: BillingGateReason,
+    readonly balance: number,
+    message: string,
+    accountId: string,
+    extra?: { billingModel?: BillingModel; hasSubscription?: boolean },
+  ) {
     super(402, {
       message,
       res: new Response(
@@ -48,11 +58,14 @@ export class BillingGateError extends HTTPException {
           error: message,
           code: reason,
           balance,
+          // Distinguish "no plan → subscribe" from "Team wallet drained → top up".
+          billing_model: extra?.billingModel ?? 'legacy',
+          has_subscription: extra?.hasSubscription ?? false,
           // The blocked account — so the upgrade dialog scopes to it instead of
           // the caller's primary account (see web error-handler → openUpgradeDialog).
           account_id: accountId,
         }),
-        { status: 402, headers: { "content-type": "application/json" } },
+        { status: 402, headers: { 'content-type': 'application/json' } },
       ),
     });
   }
@@ -74,29 +87,50 @@ export async function checkBillingActive(
   if (!account) {
     return {
       ok: false,
-      reason: "no_account",
+      reason: 'no_account',
       balance: 0,
-      message: "No credit account found. Complete account setup first.",
+      message: 'No credit account found. Complete account setup first.',
+      billingModel: 'legacy',
+      hasSubscription: false,
     };
   }
 
   const balance = Number(account.balance ?? 0);
+  const billingModel: BillingModel = isPerSeatAccount(account.billingModel) ? 'per_seat' : 'legacy';
+  // Any subscription row at all — used to distinguish a paying-but-lapsed Team
+  // account (top up) from one that never subscribed (subscribe to activate).
+  const hasSubscription = !!account.stripeSubscriptionId;
   const hasActiveSub =
-    !!account.stripeSubscriptionId &&
-    account.stripeSubscriptionStatus !== "canceled" &&
-    account.stripeSubscriptionStatus !== "unpaid";
+    hasSubscription &&
+    account.stripeSubscriptionStatus !== 'canceled' &&
+    account.stripeSubscriptionStatus !== 'unpaid';
 
   if (isPerSeatAccount(account.billingModel)) {
     // An active subscription isn't wallet-gated at all — no hold to take.
     if (hasActiveSub) return { ok: true };
     if (balance >= MINIMUM_CREDIT_FOR_RUN) return { ok: true };
-    return {
-      ok: false,
-      reason: "subscription_required",
-      balance,
-      message:
-        "Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.",
-    };
+    // A Team account that HAS a (now-lapsed) subscription and a drained wallet
+    // isn't a "subscribe from Free" case — it's out of credits. Surface it as
+    // insufficient_credits so the client shows top-up, not the Free-plan pitch.
+    // Only a per-seat account that never subscribed gets the subscribe CTA.
+    return hasSubscription
+      ? {
+          ok: false,
+          reason: 'insufficient_credits',
+          balance,
+          message: 'Your team wallet is out of credits. Top up to keep your agents running.',
+          billingModel,
+          hasSubscription,
+        }
+      : {
+          ok: false,
+          reason: 'subscription_required',
+          balance,
+          message:
+            'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
+          billingModel,
+          hasSubscription,
+        };
   }
 
   // Pure-wallet path: this used to be a read-only `balance >= floor` check,
@@ -125,14 +159,21 @@ export async function checkBillingActive(
   // an overdrawn account). See RELIABILITY-BACKLOG item 2 / PR description
   // for the full reservation system this is a pragmatic slice of.
   try {
-    await deductCredits(accountId, MINIMUM_CREDIT_FOR_RUN, "LLM gateway admission hold", "llm_debit");
+    await deductCredits(
+      accountId,
+      MINIMUM_CREDIT_FOR_RUN,
+      'LLM gateway admission hold',
+      'llm_debit',
+    );
     return { ok: true, holdUsd: MINIMUM_CREDIT_FOR_RUN };
   } catch {
     return {
       ok: false,
-      reason: "insufficient_credits",
+      reason: 'insufficient_credits',
       balance,
-      message: "Out of credits. Top up to continue.",
+      message: 'Out of credits. Top up to continue.',
+      billingModel,
+      hasSubscription,
     };
   }
 }
@@ -140,5 +181,8 @@ export async function checkBillingActive(
 export async function assertBillingActive(accountId: string): Promise<BillingGateOk> {
   const result = await checkBillingActive(accountId);
   if (result.ok) return result;
-  throw new BillingGateError(result.reason, result.balance, result.message, accountId);
+  throw new BillingGateError(result.reason, result.balance, result.message, accountId, {
+    billingModel: result.billingModel,
+    hasSubscription: result.hasSubscription,
+  });
 }

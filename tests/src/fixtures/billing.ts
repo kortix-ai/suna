@@ -7,7 +7,7 @@
  *
  *   create-inline-checkout → (Stripe) confirm PaymentIntent w/ pm_card_visa → confirm-inline-checkout
  */
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import type { Client } from "../core/client";
 import type { Env } from "../core/env";
 import { log } from "../core/log";
@@ -114,9 +114,9 @@ const FUNDING_CREDITS_USD = 50;
 async function forgeCreditPurchaseWebhook(env: Env, accountId: string): Promise<void> {
   if (!env.stripeWebhookSecret) throw new Error("KE2E_STRIPE_WEBHOOK_SECRET required to sign the funding webhook");
 
-  const sessionId = `cs_ke2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const sessionId = `cs_ke2e_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 6)}`;
   const event = {
-    id: `evt_ke2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `evt_ke2e_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 6)}`,
     object: "event",
     api_version: "2024-06-20",
     created: Math.floor(Date.now() / 1000),

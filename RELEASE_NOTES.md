@@ -1,24 +1,13 @@
-Codex models fixed, gateway hardening, and a Git-first project flow
+Session provisioning, sandbox runtime, and release reliability
 
-## LLM gateway
-- **ChatGPT / Codex models work again.** Fixed the ChatGPT-subscription (`codex/*`) 400s end to end: restored the required `store: false`, stopped sending the unsupported `max_output_tokens`, and started surfacing the real upstream error detail instead of a bare "Bad Request".
-- **Anthropic extended thinking** now uses `adaptive` + effort (not the deprecated `enabled` + budget tokens), so non-AUTO reasoning effort no longer 400s on newer Claude models.
-- Reworked provider mapping into per-provider adapters typed against each SDK's own option types, with models.dev-driven capability gating — wrong wire shapes are now compile errors.
-
-## Models & providers
-- Model picker labels BYOK groups by their real provider (e.g. **Amazon Bedrock**, not "Kortix").
-- Model show/hide visibility is now consistent across the picker and settings.
-
-## Projects & Git
-- Git-provider-first project creation and management; new projects default to managed repositories.
-- Removed an unbuilt "Repository synchronization" placeholder from Git settings.
-
-## Marketplace
-- Fixed marketplace item pages returning 500 (they now render correctly, and a missing item 404s).
-
-## Identity (SCIM/IAM)
-- Okta group-push renames (`PUT /Groups`) now work; protection for IdP-synced groups; status-first Identity tab with last-sync activity and per-provider cadence.
-
-## CLI & docs
-- Avoids 502s on long chat turns; clearer "vision fallback" model labeling; dev CLI installer surfaced in Git settings.
-- New "Developing with Kortix" guide covering local instances and the CLI workflow.
+- Use shared Daytona and Platinum runtime images for normal session boots.
+- Disable automatic per-project commit-specific warm image builds.
+- Fix snapshot collision recovery, warm archive handling, and repository Git metadata.
+- Preserve sandbox URLs and reset readiness clocks across session restarts.
+- Add responsive Cmd+J loading feedback and clearer runtime versus accelerator status.
+- Remove the missing MACHINE.md failure and legacy migration eligibility request noise.
+- Refactor release session fixtures to reuse managed repositories, bound SESS-2 to one session, and enforce teardown.
+- Retry transient runtime-readiness failures without leaving failed sessions.
+- Enforce account concurrent-session overrides consistently across API tasks.
+- Correct compute pricing calculations and billing copy.
+- Promote verified staging source d4f665abe258513bb1f48a6606f59c48dbfac835; staging RUN-8 and SESS-2 passed 2/2.

@@ -82,7 +82,7 @@ function freshWorld(): World {
 const detectedBearer: ConnectorAuthDiscovery = {
   status: 'detected',
   recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
-  candidates: [], warnings: [], totalRequests: 12,
+  candidates: [], warnings: [], totalRequests: 12, title: null,
 };
 
 function credKey(connectorId: string, userId: string | null) {
@@ -161,7 +161,7 @@ const deps: ExecutorRouterDeps = {
     const u = c.req.header('x-test-reader') ?? c.req.header('x-test-admin');
     return u ? { accountId: ACCOUNT, userId: u } : null;
   },
-  listConnectors: async (_projectId, viewerUserId): Promise<AdminConnectorView[]> =>
+  listConnectors: async (): Promise<AdminConnectorView[]> =>
     [...world.connectors.values()].map((conn) => ({
       slug: conn.slug,
       name: conn.slug,

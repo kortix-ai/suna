@@ -7,6 +7,7 @@ import {
   executorConnectors,
   projectSessionConnectorBindings,
   projectSessions,
+  serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -15,6 +16,8 @@ export interface ValidatedSessionConnectorBinding {
   alias: string;
   profileId: string;
   connectorId: string;
+  ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  ownerId: string | null;
 }
 
 export interface ResolvedSessionConnectorProfile {
@@ -147,6 +150,9 @@ export function parseSessionConnectorBindings(
 export async function validateSessionConnectorBindings(input: {
   accountId: string;
   projectId: string;
+  actingUserId: string;
+  actingPrincipalIsServiceAccount: boolean;
+  mayManageSystemProfiles: boolean;
   bindings: SessionConnectorBindings | undefined;
 }): Promise<
   | { ok: true; bindings: ValidatedSessionConnectorBinding[] }
@@ -161,6 +167,9 @@ export async function validateSessionConnectorBindings(input: {
       .select({
         profileId: executorConnectionProfiles.profileId,
         connectorId: executorConnectionProfiles.connectorId,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
+        isDefault: executorConnectionProfiles.isDefault,
         status: executorConnectionProfiles.status,
         connectorEnabled: executorConnectors.enabled,
       })
@@ -190,6 +199,22 @@ export async function validateSessionConnectorBindings(input: {
         code: 'CONNECTOR_PROFILE_NOT_FOUND',
       };
     }
+    const mayUseProfile =
+      (row.ownerType === 'member' &&
+        row.ownerId === input.actingUserId &&
+        !input.actingPrincipalIsServiceAccount) ||
+      (row.ownerType === 'project' && row.isDefault) ||
+      (row.ownerType !== 'member' && row.ownerType !== 'project' && input.mayManageSystemProfiles);
+    if (!mayUseProfile) {
+      // Deliberately match the cross-project response. A profile id is not an
+      // authority, and callers must not be able to probe another member's
+      // connected identities (including when the caller is a project manager).
+      return {
+        ok: false,
+        error: `Connector profile is not available for alias "${alias}" in this project`,
+        code: 'CONNECTOR_PROFILE_NOT_FOUND',
+      };
+    }
     if (row.status !== 'active') {
       return {
         ok: false,
@@ -204,7 +229,13 @@ export async function validateSessionConnectorBindings(input: {
         code: 'CONNECTOR_PROFILE_INACTIVE',
       };
     }
-    validated.push({ alias, profileId: row.profileId, connectorId: row.connectorId });
+    validated.push({
+      alias,
+      profileId: row.profileId,
+      connectorId: row.connectorId,
+      ownerType: row.ownerType,
+      ownerId: row.ownerId,
+    });
   }
   return { ok: true, bindings: validated };
 }
@@ -231,6 +262,36 @@ export async function persistSessionConnectorBindings(input: {
   );
 }
 
+export function sessionConnectorBindingsRequirePrivateVisibility(
+  bindings: readonly ValidatedSessionConnectorBinding[],
+): boolean {
+  return bindings.some((binding) => binding.ownerType === 'member');
+}
+
+export async function sessionHasMemberConnectorBinding(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+}): Promise<boolean> {
+  const [row] = await db
+    .select({ profileId: projectSessionConnectorBindings.profileId })
+    .from(projectSessionConnectorBindings)
+    .innerJoin(
+      executorConnectionProfiles,
+      eq(executorConnectionProfiles.profileId, projectSessionConnectorBindings.profileId),
+    )
+    .where(
+      and(
+        eq(projectSessionConnectorBindings.sessionId, input.sessionId),
+        eq(projectSessionConnectorBindings.accountId, input.accountId),
+        eq(projectSessionConnectorBindings.projectId, input.projectId),
+        eq(executorConnectionProfiles.ownerType, 'member'),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 /**
  * Resolve the effective profile on every Executor request. A present but
  * revoked/error binding never falls through to a project default.
@@ -243,8 +304,21 @@ export async function resolveSessionConnectorProfile(input: {
 }): Promise<ResolvedSessionConnectorProfile | null> {
   if (input.sessionId) {
     const [session] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({
+        sessionId: projectSessions.sessionId,
+        createdBy: projectSessions.createdBy,
+        visibility: projectSessions.visibility,
+        inheritUnbound: projectSessions.connectorBindingsInheritUnbound,
+        createdByServiceAccountId: serviceAccounts.serviceAccountId,
+      })
       .from(projectSessions)
+      .leftJoin(
+        serviceAccounts,
+        and(
+          eq(serviceAccounts.serviceAccountId, projectSessions.createdBy),
+          eq(serviceAccounts.accountId, projectSessions.accountId),
+        ),
+      )
       .where(
         and(
           eq(projectSessions.sessionId, input.sessionId),
@@ -262,6 +336,8 @@ export async function resolveSessionConnectorProfile(input: {
         status: executorConnectionProfiles.status,
         isDefault: executorConnectionProfiles.isDefault,
         metadata: executorConnectionProfiles.metadata,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
         source: projectSessionConnectorBindings.source,
       })
       .from(projectSessionConnectorBindings)
@@ -279,8 +355,20 @@ export async function resolveSessionConnectorProfile(input: {
       )
       .limit(1);
     if (bound) {
+      if (
+        bound.ownerType === 'member' &&
+        (session.createdByServiceAccountId !== null ||
+          bound.ownerId !== session.createdBy ||
+          session.visibility !== 'private')
+      ) {
+        return null;
+      }
       return {
-        ...bound,
+        profileId: bound.profileId,
+        connectorId: bound.connectorId,
+        status: bound.status,
+        isDefault: bound.isDefault,
+        source: bound.source,
         alias: input.alias,
         metadata: bound.metadata ?? {},
       };
@@ -289,18 +377,36 @@ export async function resolveSessionConnectorProfile(input: {
     // Once a session opts into durable profile selection, every connector must
     // be selected explicitly. Falling back for an unbound alias would let a
     // partially bound session inherit an unrelated project-wide credential.
-    const [anyBinding] = await db
-      .select({ sessionId: projectSessionConnectorBindings.sessionId })
-      .from(projectSessionConnectorBindings)
-      .where(
-        and(
-          eq(projectSessionConnectorBindings.sessionId, input.sessionId),
-          eq(projectSessionConnectorBindings.accountId, input.accountId),
-          eq(projectSessionConnectorBindings.projectId, input.projectId),
-        ),
-      )
-      .limit(1);
-    if (!mayUseLegacyDefaultProfile(Boolean(anyBinding))) return null;
+    //
+    // Only a caller-REQUESTED binding (`source: 'request'`) counts as opting in.
+    // A `source: 'default'` row is auto-wired by the platform — today only
+    // `ensureEmailSessionBinding` mints one when an inbound email lands on a
+    // session — and must NOT trip the all-or-nothing gate: otherwise auto-binding
+    // the email inbox would silently disable the project-default fallback for
+    // every OTHER connector (slack, meet, …) on that session, which the caller
+    // never chose. The auto email binding still resolves via its own bound row
+    // above; this gate governs only the UNBOUND aliases.
+    //
+    // A session created with `inherit_unbound` opts OUT of all-or-nothing: an
+    // unbound alias keeps falling through to the project default below. Safe
+    // because the fallback query only ever returns the project's `isDefault`
+    // profile for this exact account+project+alias — never another owner's or a
+    // member/external profile — so it can neither escalate nor cross a tenant.
+    if (!session.inheritUnbound) {
+      const [anyBinding] = await db
+        .select({ sessionId: projectSessionConnectorBindings.sessionId })
+        .from(projectSessionConnectorBindings)
+        .where(
+          and(
+            eq(projectSessionConnectorBindings.sessionId, input.sessionId),
+            eq(projectSessionConnectorBindings.accountId, input.accountId),
+            eq(projectSessionConnectorBindings.projectId, input.projectId),
+            eq(projectSessionConnectorBindings.source, 'request'),
+          ),
+        )
+        .limit(1);
+      if (!mayUseLegacyDefaultProfile(Boolean(anyBinding))) return null;
+    }
   }
 
   const [fallback] = await db

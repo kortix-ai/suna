@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { randomUUID } from 'node:crypto';
 
 import { ApiError } from '../api/client.ts';
 import {
@@ -671,11 +672,17 @@ async function sendAndPrint(
 ): Promise<number> {
   // In --json mode keep stdout pure JSON (no "…thinking" spinner).
   if (!json) process.stdout.write(`${C.dim}…thinking${C.reset}\r`);
+  // One stable idempotency key per logical prompt: if the server proxy retries a
+  // 502/timeout on the delivery POST, it dedupes on this key instead of enqueueing
+  // the same user message again. The CLI itself never retries.
+  const idempotencyKey = randomUUID();
   try {
     const reply = await resolved.oc.sendPrompt(
       ocSessionId,
       [{ type: 'text', text }],
       extra,
+      undefined,
+      idempotencyKey,
     );
     if (json) {
       emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
@@ -852,29 +859,51 @@ async function fetchSessionActivity(
       ocId = list[0]?.id ?? null;
     }
     if (!ocId) return null;
-    const msgs = await oc.listMessages(ocId, 2);
-    const last = msgs[msgs.length - 1];
-    if (!last) return { working: false, summary: 'no messages yet' };
-    return deriveActivity(last);
+    // Fetch a small recent window (not just the last message): an assistant turn
+    // can start — or dispatch a subagent batch that leaves a user-role message
+    // newest — after the user's prompt, and classifying off ONLY the last message
+    // then mislabels a busy session as "queued".
+    const msgs = await oc.listMessages(ocId, 6);
+    if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
+    return deriveActivity(msgs, s.status);
   } catch {
     // Sandbox still warming / proxy hiccup — treat as unknown, not fatal.
     return null;
   }
 }
 
-/** Turn the latest message into a compact "what's it doing" summary. */
-function deriveActivity(m: OpencodeMessageWithParts): SessionActivity {
-  const info = m.info as OpencodeMessageWithParts['info'] & {
+/**
+ * Turn a session's recent messages + Kortix status into a compact "what's it
+ * doing" summary. Reads the whole recent window (not just the newest message) so
+ * an in-flight assistant turn is never missed, and honours the lifecycle status
+ * so a still-booting box isn't reported as an idle/queued agent.
+ */
+export function deriveActivity(
+  messages: OpencodeMessageWithParts[],
+  status: ProjectSession['status'],
+): SessionActivity {
+  // Lifecycle states before the agent can run describe the BOX, not a turn.
+  if (status === 'provisioning' || status === 'branching') {
+    return { working: true, summary: 'provisioning…' };
+  }
+  if (status === 'queued') {
+    return { working: true, summary: 'booting…' };
+  }
+
+  const last = messages[messages.length - 1];
+  if (!last) return { working: false, summary: 'no messages yet' };
+  const lastInfo = last.info as OpencodeMessageWithParts['info'] & {
     time?: { created?: number; completed?: number };
   };
-  const at = info.time?.created ? new Date(info.time.created).toISOString() : undefined;
-  if (info.role === 'user') {
-    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
-  }
+  const at = lastInfo.time?.created ? new Date(lastInfo.time.created).toISOString() : undefined;
+
+  // A running/pending tool ANYWHERE in the window means the agent is actively
+  // working — even when the newest message is a (subagent) user-role prompt.
   let runningTool: string | undefined;
   let lastTool: string | undefined;
-  for (const p of m.parts) {
-    if (p.type === 'tool') {
+  for (const msg of messages) {
+    for (const p of msg.parts) {
+      if (p.type !== 'tool') continue;
       lastTool = (p as { tool?: string }).tool;
       const st = (p as { state?: { status?: string } }).state?.status;
       if (st === 'running' || st === 'pending') runningTool = (p as { tool?: string }).tool;
@@ -883,11 +912,36 @@ function deriveActivity(m: OpencodeMessageWithParts): SessionActivity {
   if (runningTool) {
     return { working: true, tool: runningTool, summary: `running ${runningTool}…`, last_role: 'assistant', last_at: at };
   }
-  const completed = info.time?.completed;
-  if (!completed) {
-    return { working: true, summary: 'thinking…', last_role: 'assistant', last_at: at };
+
+  // The most-recent assistant turn: if it hasn't completed (and didn't error) the
+  // agent is still generating — report "working", not "queued", even if a later
+  // user-role message is technically newest.
+  let latestAssistant:
+    | (OpencodeMessageWithParts['info'] & { time?: { completed?: number }; error?: unknown })
+    | undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const info = messages[i]!.info;
+    if (info.role === 'assistant') {
+      latestAssistant = info as OpencodeMessageWithParts['info'] & {
+        time?: { completed?: number };
+        error?: unknown;
+      };
+      break;
+    }
   }
-  const text = m.parts
+  if (latestAssistant && latestAssistant.time?.completed == null && !latestAssistant.error) {
+    return { working: true, summary: 'working…', last_role: 'assistant', last_at: at };
+  }
+
+  // Newest message is the user's and no assistant turn has started — genuinely
+  // queued, waiting for the agent to pick it up.
+  if (lastInfo.role === 'user') {
+    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
+  }
+
+  // Otherwise the last assistant turn is done — summarize its reply.
+  const completed = lastInfo.time?.completed;
+  const text = last.parts
     .filter(
       (p) =>
         p.type === 'text' &&
@@ -902,7 +956,7 @@ function deriveActivity(m: OpencodeMessageWithParts): SessionActivity {
     working: false,
     summary: text ? truncate(text, 64) : lastTool ? `idle (last: ${lastTool})` : 'idle',
     last_role: 'assistant',
-    last_at: new Date(completed).toISOString(),
+    last_at: completed ? new Date(completed).toISOString() : at,
   };
 }
 

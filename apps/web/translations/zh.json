@@ -320,15 +320,8 @@
         "早安！今天想做什么？",
         "早上好！准备好大干一场了吗？"
       ],
-      "afternoon": [
-        "下午好！需要什么帮助？",
-        "下午好！接下来做什么？"
-      ],
-      "evening": [
-        "晚上好！还在加班吗？",
-        "晚上好！今晚在做什么？",
-        "晚上好！开始吧。"
-      ],
+      "afternoon": ["下午好！需要什么帮助？", "下午好！接下来做什么？"],
+      "evening": ["晚上好！还在加班吗？", "晚上好！今晚在做什么？", "晚上好！开始吧。"],
       "random": [
         "欢迎回来！",
         "嘿！Kortix能为你做什么？",
@@ -7000,9 +6993,9 @@
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": "，然后部署您已使用的代理。",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "部署内部代理",
     "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "简单的按座位定价。按使用量付费。",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "每个座位都享有完整的平台以及每月的信用额度。只需为模型付费并计算实际运行的代理 - 无需代币",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "积分驱动一切",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "模型和代理计算机的一种简单平衡——没有象征性的数学，没有意外的账单。",
+    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "每个席位都包含完整平台和用于 Agent Computer 运行时间的每月额度。你可以使用自己的 API 密钥或连接 ChatGPT 来访问模型。托管模型仍可使用，并根据 token 用量消耗额度。",
+    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "为计算机付费。使用你自己的模型。",
+    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Kortix 额度主要用于 Agent Computer 运行时间。使用自己的 API 密钥或 ChatGPT 订阅，可由模型提供商直接计费。可选托管模型会根据 token 用量消耗 Team 额度。",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "开始建造",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "让你的团队开始",
     "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "每个座位 40 美元，每个座位有 20 美元的使用积分。自动按比例分配，随时取消 - 或者与我们讨论 Enterprise。",

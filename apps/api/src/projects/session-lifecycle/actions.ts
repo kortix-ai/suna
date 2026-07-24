@@ -1,5 +1,6 @@
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
+import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
@@ -17,6 +18,7 @@ import {
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
+import { prepareInPlaceRestartMetadata } from './readiness-clocks';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -262,16 +264,20 @@ export async function restartSession(input: {
       };
     }
 
+    const restartStartedAt = new Date();
     await db
       .update(sessionSandboxes)
-      .set({ status: 'provisioning', updatedAt: new Date() })
+      .set({
+        status: 'provisioning',
+        metadata: prepareInPlaceRestartMetadata(existingSandbox.metadata, restartStartedAt),
+        updatedAt: restartStartedAt,
+      })
       .where(eq(sessionSandboxes.sandboxId, sessionId));
     await db
       .update(projectSessions)
       .set({
         status: 'provisioning',
         error: null,
-        sandboxUrl: null,
         updatedAt: new Date(),
       })
       .where(eq(projectSessions.sessionId, sessionId));
@@ -322,7 +328,14 @@ export async function restartSession(input: {
           .set({ status: 'running', updatedAt: new Date() })
           .where(eq(projectSessions.sessionId, sessionId));
       } catch (err) {
-        console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
+        // Detached from the request (the 202 already went out) — a structured
+        // error is the only trace the reboot died and the session was parked.
+        logger.error('[projects] restart-in-place failed — session parked stopped', {
+          session_id: sessionId,
+          project_id: projectId,
+          external_id: externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         if (isMissingRuntimeError(err)) {
           const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
           if (!claim) return;

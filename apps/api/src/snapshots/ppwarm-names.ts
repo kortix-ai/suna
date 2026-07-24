@@ -10,6 +10,19 @@ import { createHash } from 'node:crypto';
 export const PPWARM_PREFIX = 'kortix-ppwarm-';
 
 /**
+ * A ppwarm image (re)built within this window is protected from supersession
+ * reaping — by the on-bake reaper AND the quota GC's superseded-tip rule. Two
+ * concurrently-live code versions (a rolling deploy; dev's ECS+EKS split-brain)
+ * compute DIFFERENT base identities, so each considers the other's current warm
+ * image "superseded" and deletes it on every bake — an infinite full-rebuild
+ * loop (observed live 2026-07-22). A freshly-built image is by definition some
+ * live runtime's current tip; leave it alone and reap it once it has actually
+ * gone stale. Kept short so a hot project's genuinely superseded tips still
+ * reclaim fast enough for the Daytona org snapshot quota.
+ */
+export const PPWARM_REAP_PROTECT_MS = 45 * 60 * 1000;
+
+/**
  * Suffix that distinguishes the warm bake's BUILD-LOG row from the template it
  * layers on top of. `project_snapshot_builds.metadata.slug` records
  * `<template>-warm` for a warm bake, but no such template exists in
@@ -74,4 +87,15 @@ export function perProjectWarmImageName(projectId: string, tip: string, baseSnap
 export function ppwarmReapTargets(projectId: string, currentName: string, allNames: string[]): string[] {
   const prefix = `${PPWARM_PREFIX}${proj8(projectId)}-`;
   return allNames.filter((n) => n.startsWith(prefix) && n !== currentName && !n.includes('__deleted'));
+}
+
+/**
+ * FIX-K-lite guard: drop any reap target that is the ACTIVE pinned image (by name)
+ * of SOME project. proj8 is only the first 8 hex of the projectId, so the
+ * prefix-scoped {@link ppwarmReapTargets} can collide with another project whose id
+ * shares those 8 hex; cross-checking against the live pins makes such a collision
+ * harmless (worst case, a superseded tip is kept one extra cycle).
+ */
+export function excludePinnedTargets(targets: string[], pinnedImages: ReadonlySet<string>): string[] {
+  return targets.filter((name) => !pinnedImages.has(name));
 }

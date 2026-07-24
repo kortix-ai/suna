@@ -1,4 +1,8 @@
 import type { Auth } from './auth.ts';
+import { secureRemoteBase } from './config.ts';
+
+// Re-exported for callers/tests that reach it via the client module.
+export { secureRemoteBase };
 
 export class ApiError extends Error {
   status: number;
@@ -30,7 +34,8 @@ export interface ClientOptions {
 }
 
 function joinUrl(base: string, path: string): string {
-  let b = base.endsWith('/') ? base.slice(0, -1) : base;
+  let b = secureRemoteBase(base);
+  b = b.endsWith('/') ? b.slice(0, -1) : b;
   // The base may or may not already carry the `/v1` mount. Host login stores a
   // bare origin (`https://api.kortix.com`); a session sandbox injects
   // `KORTIX_API_URL` *with* the suffix (`https://<tunnel>/v1`). Strip a trailing

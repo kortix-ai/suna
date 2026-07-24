@@ -13,14 +13,15 @@
  * table for UI display + "Fix with agent."
  */
 
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
+import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
-import { perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { PPWARM_REAP_PROTECT_MS, excludePinnedTargets, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { collectPinnedImageRefs } from './pinned-images';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -129,7 +130,11 @@ export async function ensureSandboxImage(
   // (no clone at boot). On a MISS, kick a fire-and-forget background bake so the
   // next session on this commit boots warm; this boot never blocks on the bake and
   // falls through to the normal cold path when no warm image exists yet.
-  if ((opts.source ?? 'session-start') === 'session-start' && template.isShared) {
+  if (
+    config.KORTIX_WARM_SNAPSHOT_ENABLED &&
+    (opts.source ?? 'session-start') === 'session-start' &&
+    template.isShared
+  ) {
     try {
       const warmTip = await resolveCommitSha(project, project.defaultBranch);
       if (warmTip) {
@@ -423,10 +428,27 @@ async function runInlineBuild(
     // snapshot. Delete it so old runtime fingerprints don't accumulate — this
     // was leaking a full ~8 GB rootfs template per agent-source change (7 stale
     // copies = 56 GB observed before this fix).
+    //
+    // EXCEPT when the predecessor itself was built (or is building) recently:
+    // that means another live code version — an overlapping rolling deploy, or
+    // dev's ECS/EKS split — computed a DIFFERENT identity and is actively
+    // serving it. Deleting it makes that version's sessions miss, rebuild, and
+    // (symmetrically) delete OURS — an infinite mutual-destruction loop of full
+    // image builds (observed live 2026-07-22: the shared default rebuilt 4× in
+    // 6 minutes). A genuinely superseded identity stops being rebuilt, ages out
+    // of the window, and is pruned by the next drift build or the quota GC.
     if (prevSnapshot && prevSnapshot !== identity.snapshotName) {
-      await provider
-        .deleteSnapshot(prevSnapshot)
-        .catch((e) => console.warn(`[snapshots] prune predecessor ${prevSnapshot} failed: ${e?.message ?? e}`));
+      const recent = await recentlyBuiltSnapshotNames([prevSnapshot], PREDECESSOR_PRUNE_PROTECT_MS);
+      if (recent.has(prevSnapshot)) {
+        console.log(
+          `[snapshots] keeping predecessor ${prevSnapshot}: it was built recently, so another ` +
+          `live replica/code version likely still serves it; it is pruned once it stops being rebuilt`,
+        );
+      } else {
+        await provider
+          .deleteSnapshot(prevSnapshot)
+          .catch((e) => console.warn(`[snapshots] prune predecessor ${prevSnapshot} failed: ${e?.message ?? e}`));
+      }
     }
     return {
       snapshotName: identity.snapshotName,
@@ -749,7 +771,11 @@ async function openBuildLog(args: {
         snapshotName: args.snapshotName,
         contentHash: args.contentHash,
         status: 'building',
-        metadata: { source: args.source, slug: args.slug, provider: args.provider },
+        // FIX-K-lite forward hygiene: record the FULL projectId as first-class
+        // snapshot build metadata (alongside the projectId column), so a warm
+        // image's owning project is recoverable beyond the lossy 8-hex proj8 in
+        // its name. Forward-only — legacy warm images churn out on the next commit.
+        metadata: { source: args.source, slug: args.slug, provider: args.provider, projectId: args.projectId },
       })
       .returning({ buildId: projectSnapshotBuilds.buildId });
     return row?.buildId ?? null;
@@ -782,6 +808,52 @@ async function closeBuildLogFailed(buildId: string, message: string): Promise<vo
     .catch((err) =>
       console.warn('[snapshots] failed to close build log (failed):', err instanceof Error ? err.message : err),
     );
+}
+
+/**
+ * How long a freshly-built PREDECESSOR identity is protected from the
+ * supersession prune in {@link runInlineBuild}. Long: a stale-but-live code
+ * version (dev's split-brain ran for days) keeps re-building its identity, so
+ * every prune within the window would re-arm the mutual-destruction loop, and a
+ * kept default costs only provider storage (Daytona's quota GC ranks defaults
+ * by freshness; Platinum templates are CAS-chunked).
+ */
+const PREDECESSOR_PRUNE_PROTECT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Of `snapshotNames`, the ones with a successful build finished — or a build
+ * started — within `withinMs`, per this environment's build log. Used as the
+ * "another live runtime still serves this" signal before pruning superseded
+ * snapshots. Fail-open (empty set) on a DB error: the callers' deletes then
+ * behave exactly as before this guard existed.
+ */
+async function recentlyBuiltSnapshotNames(
+  snapshotNames: string[],
+  withinMs: number,
+): Promise<Set<string>> {
+  if (snapshotNames.length === 0) return new Set();
+  try {
+    const cutoff = new Date(Date.now() - withinMs);
+    const rows = await db
+      .select({ snapshotName: projectSnapshotBuilds.snapshotName })
+      .from(projectSnapshotBuilds)
+      .where(
+        and(
+          inArray(projectSnapshotBuilds.snapshotName, snapshotNames),
+          or(
+            and(eq(projectSnapshotBuilds.status, 'ready'), gt(projectSnapshotBuilds.finishedAt, cutoff)),
+            and(eq(projectSnapshotBuilds.status, 'building'), gt(projectSnapshotBuilds.startedAt, cutoff)),
+          ),
+        ),
+      );
+    return new Set(rows.map((row) => row.snapshotName));
+  } catch (err) {
+    console.warn(
+      '[snapshots] recent-build lookup failed (skipping prune protection):',
+      err instanceof Error ? err.message : err,
+    );
+    return new Set();
+  }
 }
 
 /**
@@ -825,10 +897,92 @@ function kickBackgroundRebuild(
 }
 
 /**
+ * Minimum spacing between warm-bake STARTS per (project, provider). The warm
+ * image is a pure boot-latency cache, yet every default-branch push (and every
+ * session-start warm miss) used to kick a full multi-minute image bake, per
+ * enabled provider, with no pacing. A busy project pushing every few minutes
+ * baked continuously — observed live 2026-07-22: one prod project baked a new
+ * warm image every 3-8 minutes, ×2 providers, 227 builds/24h, which also
+ * rate-limited the whole Daytona org (429 ThrottlerException). Skipping a kick
+ * only delays warmth: the next kick after the window bakes the CURRENT tip.
+ */
+const WARM_BAKE_COOLDOWN_MS = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_WARM_BAKE_COOLDOWN_MS || '', 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 10 * 60 * 1000;
+})();
+const warmBakeLastKickAt = new Map<string, number>();
+
+/**
+ * True — and the kick is recorded — when a warm bake for (project, provider)
+ * is allowed to start now; false while a prior kick is inside the cooldown.
+ * Pure given injected `now`/`registry` (exported for tests).
+ */
+export function warmBakeCooldownGate(
+  projectId: string,
+  provider: string,
+  opts: { now?: number; cooldownMs?: number; registry?: Map<string, number> } = {},
+): boolean {
+  const now = opts.now ?? Date.now();
+  const cooldownMs = opts.cooldownMs ?? WARM_BAKE_COOLDOWN_MS;
+  const registry = opts.registry ?? warmBakeLastKickAt;
+  const key = `${projectId}:${provider}`;
+  const last = registry.get(key);
+  if (last !== undefined && now - last < cooldownMs) return false;
+  registry.set(key, now);
+  return true;
+}
+
+/**
+ * Warm bakes currently running, keyed by (project, provider) — a hot project
+ * whose tip moves mid-bake must NOT start a second concurrent bake for the new
+ * tip (the name-keyed inflight set can't see that: new tip = new name).
+ */
+const inflightWarmBakesByProject = new Set<string>();
+
+/**
+ * Cluster-wide cooldown: the in-memory gate above is per-replica (the api runs
+ * several pods under an HPA), so a burst spread across N replicas could still
+ * start N bakes per window. The build log is shared, so a warm-bake row STARTED
+ * by ANY replica within the window is visible here. Best-effort: rows exist
+ * only for account-attributed bakes, and any DB error fails open to the local
+ * gate — this narrows the cross-replica window, it does not have to be perfect
+ * (same-name races are still collapsed by provider-truth 'building' checks).
+ */
+async function warmBakeRecentlyStartedCluster(
+  projectId: string,
+  provider: string,
+  withinMs: number,
+): Promise<boolean> {
+  try {
+    const cutoff = new Date(Date.now() - withinMs);
+    const rows = await db
+      .select({ metadata: projectSnapshotBuilds.metadata })
+      .from(projectSnapshotBuilds)
+      .where(
+        and(
+          eq(projectSnapshotBuilds.projectId, projectId),
+          gt(projectSnapshotBuilds.startedAt, cutoff),
+        ),
+      )
+      .orderBy(desc(projectSnapshotBuilds.startedAt))
+      .limit(25);
+    const warmSlug = warmBuildSlug(DEFAULT_SANDBOX_SLUG);
+    return rows.some((row) => {
+      const meta = (row.metadata ?? {}) as Record<string, unknown>;
+      return meta.slug === warmSlug && meta.provider === provider;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fire-and-forget per-project warm bake, off the session hot path. Deduped by the
  * target warm snapshot name (via the same inflight set) so a burst of sessions on
- * the same (project, tip) kicks exactly one bake. Best-effort: a failure just means
- * the next session retries; sessions keep booting cold until the bake lands.
+ * the same (project, tip) kicks exactly one bake, single-flighted per
+ * (project, provider), and paced by {@link warmBakeCooldownGate}. Best-effort: a
+ * skipped or failed kick just means the next session/push retries; sessions keep
+ * booting cold until a bake lands.
  */
 function kickBackgroundWarmBuild(
   project: GitBackedProject,
@@ -836,19 +990,35 @@ function kickBackgroundWarmBuild(
 ): void {
   const key = backgroundBuildKey(opts.provider, opts.snapshotName);
   if (inflightBackgroundBuilds.has(key)) return;
+  const projectKey = `${project.projectId}:${opts.provider}`;
+  if (inflightWarmBakesByProject.has(projectKey)) return;
+  if (!warmBakeCooldownGate(project.projectId, opts.provider)) return;
   inflightBackgroundBuilds.add(key);
-  void ensurePerProjectWarmImage(project, {
-    accountId: opts.accountId,
-    provider: opts.provider,
-    source: 'background',
-  })
+  inflightWarmBakesByProject.add(projectKey);
+  void (async () => {
+    if (await warmBakeRecentlyStartedCluster(project.projectId, opts.provider, WARM_BAKE_COOLDOWN_MS)) {
+      console.log(
+        `[snapshots] warm bake for ${project.projectId.slice(0, 8)} (${opts.provider}) skipped: ` +
+        `another replica started one inside the cooldown window`,
+      );
+      return;
+    }
+    await ensurePerProjectWarmImage(project, {
+      accountId: opts.accountId,
+      provider: opts.provider,
+      source: 'background',
+    });
+  })()
     .catch((err) =>
       console.warn(
         `[snapshots] background warm bake of ${opts.snapshotName} failed for ${project.projectId}:`,
         err instanceof Error ? err.message : err,
       ),
     )
-    .finally(() => inflightBackgroundBuilds.delete(key));
+    .finally(() => {
+      inflightBackgroundBuilds.delete(key);
+      inflightWarmBakesByProject.delete(projectKey);
+    });
 }
 
 /**
@@ -878,6 +1048,8 @@ export async function kickProjectWarmPrebake(
   project: GitBackedProject,
   opts: { accountId?: string; provider?: string; projectPin?: string | null } = {},
 ): Promise<void> {
+  if (!config.KORTIX_WARM_SNAPSHOT_ENABLED) return;
+
   const providers = opts.provider
     ? [opts.provider]
     : warmPrebakeProviders({
@@ -1089,6 +1261,13 @@ export interface PerProjectWarmResult {
   tip: string;
   built: boolean;
   provider: string;
+  /**
+   * FIX-B: the EXACT external template id the provider build produced (Platinum),
+   * threaded straight from `buildSnapshot` so the transition runner pins the id
+   * the build PROVED instead of a name-list re-derivation. Absent when no fresh
+   * build ran (idempotent reuse) or for providers with no external-id concept.
+   */
+  externalTemplateId?: string;
 }
 
 /**
@@ -1105,7 +1284,14 @@ export interface PerProjectWarmResult {
  */
 export async function ensurePerProjectWarmImage(
   project: GitBackedProject,
-  opts: { accountId?: string; provider?: string; source?: SnapshotBuildSource } = {},
+  opts: {
+    accountId?: string;
+    provider?: string;
+    source?: SnapshotBuildSource;
+    /** Lease-renewal hook, forwarded into the provider's build-wait poll loop so
+     *  a long build never lets the caller's lease TTL lapse. */
+    heartbeat?: () => void | Promise<void>;
+  } = {},
 ): Promise<PerProjectWarmResult> {
   if (!project.repoUrl) throw new SnapshotBuildError('project has no repo url — cannot bake per-project warm image');
   const buildProvider = opts.provider ?? config.getDefaultProvider();
@@ -1146,7 +1332,11 @@ export async function ensurePerProjectWarmImage(
     );
   }
 
-  const warmRepo = await resolveWarmRepoContext(project);
+  // Pin the warm bake to the EXACT tip the cache key (`snapshotName`) is keyed on,
+  // so the staged checkout can never drift to a newer branch tip mid-bake and
+  // poison the content-addressed image (SHA_X name ⇒ SHA_X content).
+  const warmRepo = await resolveWarmRepoContext(project, tip);
+  const buildTap: BuildLogTap | undefined = opts.heartbeat ? { heartbeat: opts.heartbeat } : undefined;
 
   // FAST PATH: FROM the already-built shared default image instead of
   // recomposing + rebuilding the full ~15-layer toolchain (apt/pip/opencode/
@@ -1192,9 +1382,10 @@ export async function ensurePerProjectWarmImage(
       isShared: false,
       warmRepo,
     };
+    let buildResult: BuildSnapshotResult | void;
     if (baseImageRef) {
       try {
-        await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef });
+        buildResult = await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef }, buildTap);
       } catch (fastPathErr) {
         // Never let a fast-path failure (a stale/unpullable base ref, a
         // provider-side hiccup building FROM it, …) take down session boot —
@@ -1205,14 +1396,15 @@ export async function ensurePerProjectWarmImage(
           `[snapshots] per-project warm: FROM-base fast path failed for ${snapshotName} ` +
           `(base=${baseImageRef}) — falling back to full rebuild: ${msg.slice(0, 200)}`,
         );
-        await provider.buildSnapshot(fullRebuildInput);
+        buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
       }
     } else {
-      await provider.buildSnapshot(fullRebuildInput);
+      buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
     }
     if (buildId) await closeBuildLogReady(buildId);
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
-    return { snapshotName, tip, built: true, provider: buildProvider };
+    // FIX-B: carry the build-proven external template id up to the transition runner.
+    return { snapshotName, tip, built: true, provider: buildProvider, externalTemplateId: buildResult?.externalTemplateId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (buildId) await closeBuildLogFailed(buildId, message);
@@ -1257,7 +1449,7 @@ export async function resolveWarmBaseImageRef(
  * a short-lived git-host credential embedded ONLY in a one-shot RUN; origin is
  * reset to the Kortix proxy so the daemon re-auths per session at runtime.
  */
-async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRepoContext> {
+async function resolveWarmRepoContext(project: GitBackedProject, tip: string): Promise<WarmRepoContext> {
   const { projects } = await import('@kortix/db');
   const { resolveProjectUpstream } = await import('../projects/lib/git');
   const { proxyGitUrl } = await import('../projects/lib/sessions');
@@ -1272,6 +1464,9 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
     cloneUrl: upstream.url,
     cloneHeaders: upstream.headers ?? {},
     branch: project.defaultBranch,
+    // Pin to the EXACT tip the snapshot name is keyed on (not just the branch),
+    // so the staged checkout is byte-identical to the cache key.
+    tip,
     originUrl: proxyGitUrl(project.projectId),
   };
 }
@@ -1291,7 +1486,32 @@ async function reapOldPerProjectWarm(projectId: string, currentName: string, bui
   try {
     const provider = getSandboxProvider(buildProvider);
     const names = (await provider.listSnapshots()).map((snapshot) => snapshot.name);
-    for (const name of ppwarmReapTargets(projectId, currentName, names)) {
+    const rawTargets = ppwarmReapTargets(projectId, currentName, names);
+    if (rawTargets.length === 0) return;
+    // FIX-K-lite: proj8 is only the first 8 hex of the projectId, so this prefix-
+    // scoped selection over an ORG-WIDE list could pick another project's LIVE
+    // pinned image on a proj8 collision. Cross-check against the active pins of
+    // EVERY project and never delete one — a collision then just skips a reap.
+    const pinned = await collectPinnedImageRefs();
+    const targets = excludePinnedTargets(rawTargets, pinned);
+    for (const name of rawTargets) {
+      if (pinned.has(name)) {
+        console.log(`[snapshots] per-project warm: keeping ${name} (it is another project's ACTIVE pinned image)`);
+      }
+    }
+    if (targets.length === 0) return;
+    // A "superseded" name built minutes ago is very likely another live code
+    // version's CURRENT warm image (different runtime fingerprint → different
+    // base identity → different warm name for the SAME project+tip). Deleting
+    // it makes that runtime re-bake — and its reap symmetrically deletes OURS:
+    // an infinite loop of full image builds. Freshly-built names are skipped;
+    // once a name stops being rebuilt it ages out and is reaped normally.
+    const recent = await recentlyBuiltSnapshotNames(targets, PPWARM_REAP_PROTECT_MS);
+    for (const name of targets) {
+      if (recent.has(name)) {
+        console.log(`[snapshots] per-project warm: keeping ${name} (built recently — likely a live runtime's current tip)`);
+        continue;
+      }
       await provider.deleteSnapshot(name);
       console.log(`[snapshots] per-project warm: reaped superseded ${name}`);
     }

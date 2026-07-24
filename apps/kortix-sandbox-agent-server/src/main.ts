@@ -15,6 +15,7 @@ import {
 import { logger } from './logger'
 import {
   createOpencodeSupervisor,
+  hasKortixLlmGateway,
   OPENCODE_HOME,
   refreshGatewayCatalogFile,
   waitForOpencodeReady,
@@ -814,16 +815,12 @@ async function maybeCreateInitialOpencodeSession(
       ])
       if (timer) clearTimeout(timer)
     }
-    const model = resolveOpencodeModel()
     const promptRes = await fetch(
       `${baseUrl}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(workspace)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parts: [{ type: 'text', text: prompt }],
-          ...(model ? { model } : {}),
-        }),
+        body: JSON.stringify(buildInitialPromptBody(prompt)),
         signal: AbortSignal.timeout(15_000),
       },
     )
@@ -1391,18 +1388,45 @@ async function isRootOpencodeSession(
   }
 }
 
-/** Per-session model override from KORTIX_OPENCODE_MODEL. Most models use
- *  provider/model form and are returned in OpenCode's `{ providerID, modelID }`
- *  shape. Bare legacy Zen ids are normalized onto the OpenCode provider so old
- *  queued boot prompts keep using the schema accepted by `prompt_async`. */
+/** Concrete session model from KORTIX_OPENCODE_MODEL.
+ *
+ * Gateway mode exposes one OpenCode provider (`kortix`). Its model ids are the
+ * complete gateway wire refs, including nested refs such as
+ * `codex/gpt-5.6-sol` and `anthropic/claude-sonnet-4-6`. Gateway overrides must
+ * therefore keep the complete wire ref as `modelID` instead of treating its
+ * first segment as an OpenCode provider.
+ *
+ * Gateway-disabled sessions keep the native `provider/model` split. Bare
+ * legacy Zen ids remain normalized onto the native OpenCode provider. */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
+  if (!raw) return undefined
+  if (hasKortixLlmGateway(process.env)) {
+    const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+    return modelID ? { providerID: 'kortix', modelID } : undefined
+  }
   if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
   const slash = raw.indexOf('/')
   if (slash <= 0 || slash === raw.length - 1) return undefined
   const providerID = raw.slice(0, slash)
   const modelID = raw.slice(slash + 1)
   return { providerID, modelID }
+}
+
+/** Build the first-turn request from the session-bound runtime environment. */
+export function buildInitialPromptBody(prompt: string): {
+  parts: Array<{ type: 'text'; text: string }>
+  model?: { providerID: string; modelID: string }
+  agent?: string
+} {
+  const model = resolveOpencodeModel()
+  const agentName = (process.env.KORTIX_AGENT_NAME ?? '').trim()
+  const agent = agentName && agentName !== 'default' ? agentName : undefined
+  return {
+    parts: [{ type: 'text', text: prompt }],
+    ...(model ? { model } : {}),
+    ...(agent ? { agent } : {}),
+  }
 }
 
 /** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT

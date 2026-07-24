@@ -570,80 +570,8 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
   MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
-// ─── AUTO: managed model selection ──────────────────────────────────────────
-// The catalog advertises a synthetic `auto` model presented to users as
-// "automatically picks the cheapest, most efficient model for the task." When a
-// request asks for it, the gateway resolves it to a concrete managed model and
-// bills it as the resolved model.
-//
-// AUTO resolves to Codex GPT-5.6 Sol. The gateway's finite model-fallback policy
-// then falls back to managed GLM 5.2 if Codex cannot serve the turn.
-//
-// AUTO is currently HIDDEN from the picker (see AUTO_MODEL_ENABLED): every session
-// explicitly opts into a concrete model. The resolution path below stays fully
-// intact — the sandbox still defaults `small_model`/headless sessions to `auto`,
-// and a stale gateway caller asking for raw `auto` still resolves — so re-exposing
-// the toggle is a one-line flip.
-export const AUTO_MODEL_ID = 'auto';
-
-// Whether AUTO is exposed in the model picker. Off for now: we want an explicit
-// opt-in on which model to use, and will bring AUTO back later. The web app reads
-// this through `featureFlags.enableAutoModel`, which can override it per-deploy via
-// NEXT_PUBLIC_ENABLE_AUTO_MODEL. The server keeps serving + resolving `auto`
-// regardless, so this only gates the UI.
-export const AUTO_MODEL_ENABLED = false;
-
-// The single "what to choose for auto" knob: a gateway wire model. It may be a
-// managed bare id (`glm-5.2`) or a provider-qualified id (`codex/gpt-5.6-sol`).
-export const AUTO_DEFAULT_MODEL_ID = 'codex/gpt-5.6-sol';
-
-const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID;
-const AUTO_VISION_MODEL = 'claude-sonnet-4.6'; // when the request has image content
-
-function requestHasImage(body: Record<string, unknown>): boolean {
-  const messages = Array.isArray(body.messages) ? body.messages : [];
-  for (const message of messages) {
-    const content = (message as { content?: unknown }).content;
-    if (
-      Array.isArray(content) &&
-      content.some(
-        (part) =>
-          !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'image_url',
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Map a requested model to a concrete managed model when (and only when) it is
- * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
- * the caller treats as "use the requested model as-is"). Pure + dependency-free
- * so both the in-process mount and the standalone gateway can call it locally.
- *
- * `opts.defaultModel` is the account/agent-configured default for the calling
- * principal (a concrete wire model, never `auto`). It takes precedence over the
- * platform text default, so `auto` resolves to what the account actually wants.
- * The vision override still applies: if the chosen target is a managed text-only
- * model and the request carries an image, swap to a vision-capable model so
- * attachments aren't silently dropped. A vision-capable or BYOK default is kept.
- */
-export function pickAutoModel(
-  model: string,
-  body: Record<string, unknown>,
-  opts?: { defaultModel?: string | null },
-): string | null {
-  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
-  const target = opts?.defaultModel || AUTO_TARGET_MODEL;
-  if (requestHasImage(body)) {
-    const bareId = target.startsWith('kortix/') ? target.slice('kortix/'.length) : target;
-    const managed = getManagedModel(bareId);
-    if (managed && !managed.vision) return AUTO_VISION_MODEL;
-  }
-  return target;
-}
+/** Concrete Kortix-managed default used when no account or project default exists. */
+export const PLATFORM_DEFAULT_MODEL_ID = 'glm-5.2';
 
 function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
   const byId = new Map<string, CatalogModel>();
@@ -703,16 +631,6 @@ export function catalogModelForWireModel(
       tool_call: true,
       temperature: true,
       limit: managed.limit,
-    };
-  }
-  if (wireModel === AUTO_MODEL_ID || wireModel === `kortix/${AUTO_MODEL_ID}`) {
-    return {
-      id: AUTO_MODEL_ID,
-      name: 'Auto',
-      reasoning: false,
-      tool_call: true,
-      temperature: true,
-      limit: { context: 1_000_000, output: 128_000 },
     };
   }
   return undefined;

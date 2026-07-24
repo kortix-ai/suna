@@ -362,9 +362,9 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
-    // the href is only a non-palette fallback and points at the project root
-    // (the session-list page was removed in favour of the composer landing).
-    href: '/projects/{projectId}',
+    // the href is the routed fallback for surfaces that consume this registry
+    // without the palette's nested picker.
+    href: '/projects/{projectId}/sessions',
     requiresProject: true,
     keywords: 'sessions runs threads project conversations open',
   },

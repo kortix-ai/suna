@@ -30,7 +30,12 @@ mock.module('../shared/db', () => ({
         }),
         innerJoin: () => ({
           where: () => ({
-            limit: async () => branchCandidates,
+            // The sweep now orders oldest-first (forward-progress guarantee) and
+            // excludes never-deletable rows in SQL; this mock ignores predicates
+            // and returns the fixtures, so orderBy is a passthrough here.
+            orderBy: () => ({
+              limit: async () => branchCandidates,
+            }),
           }),
         }),
       }),

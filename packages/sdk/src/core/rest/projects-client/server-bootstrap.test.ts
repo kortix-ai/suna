@@ -1,6 +1,10 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { fetchAccountsWithToken } from './accounts';
-import { fetchProjectsForAccountWithToken, provisionProjectWithToken } from './projects';
+import {
+  fetchProjectsForAccountWithToken,
+  provisionProjectWithToken,
+  type ProvisionProjectInput,
+} from './projects';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -65,6 +69,25 @@ test('provisionProjectWithToken posts seed_starter + returns the created project
   expect(last().body).toEqual({ account_id: 'acc-1', name: 'My First Project', seed_starter: true });
   expect(result.ok).toBe(true);
   expect(result.ok && result.project.project_id).toBe('p2');
+});
+
+test('provisionProjectWithToken supports a server-managed repository branch', async () => {
+  nextResponse = { status: 201, body: { project_id: 'p-derived', name: 'Derived Project' } };
+  const input: ProvisionProjectInput = {
+    account_id: 'acc-1',
+    name: 'Derived Project',
+    repository_source_project_id: 'p-source',
+    default_branch: 'ke2e-run-1',
+  };
+
+  const result = await provisionProjectWithToken(
+    { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
+    input,
+  );
+
+  expect(last().body).toEqual(input);
+  expect(result.ok).toBe(true);
+  expect(result.ok && result.project.project_id).toBe('p-derived');
 });
 
 test('provisionProjectWithToken reports project_limit_reached distinctly from other 403s', async () => {

@@ -236,6 +236,12 @@ mock.module("../snapshots/builder", () => ({
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 

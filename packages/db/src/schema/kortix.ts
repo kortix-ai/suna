@@ -54,6 +54,28 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ['queued', 'running', 'succeeded', 'failed', 'dead_lettered'],
 );
 
+// Lifecycle of a durable sandbox-provider migration (prepare → verify →
+// activate). The active provider is NOT flipped until the target's per-project
+// ppwarm image is built + verified; see apps/api/src/projects/provider-transition/*.
+//   pending     — recorded; source provider still active for new sessions
+//   building    — the target ppwarm image is being (re)built
+//   ready       — image built + present on the target provider
+//   activating  — passed re-verification; flipping the active pin (CAS)
+//   activated   — pin flipped; new sessions use the prepared image
+//   failed      — prep failed; source provider remains active (retryable)
+//   superseded  — a newer transition/intent replaced this one
+//   cancelled   — the user switched back / cancelled before activation
+export const providerTransitionStatusEnum = kortixSchema.enum('provider_transition_status', [
+  'pending',
+  'building',
+  'ready',
+  'activating',
+  'activated',
+  'failed',
+  'superseded',
+  'cancelled',
+]);
+
 // `member` is the floor project role (renamed from `user`, see the
 // project_role_member_rename migration). `user` and the older `viewer` are
 // DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
@@ -266,6 +288,13 @@ export const projects = kortixSchema.table(
     manifestPath: text('manifest_path').default('kortix.yaml').notNull(),
     status: projectStatusEnum('status').default('active').notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    // Monotonic CAS token for sandbox-provider switching. Reserved (bumped) on
+    // THIS row at switch-REQUEST time and stamped onto the new provider_transitions
+    // row; a later switch/cancel bumps it again. Activation is a conditional
+    // UPDATE predicated on this value still equalling the transition's stamped
+    // generation — so an older transition settling late can never overwrite newer
+    // intent. See apps/api/src/projects/provider-transition/*.
+    sandboxProviderGeneration: integer('sandbox_provider_generation').default(0).notNull(),
     lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -505,6 +534,18 @@ export const projectSessionVisibilityEnum = kortixSchema.enum('project_session_v
   'restricted',
 ]);
 
+// How a session was started, as a POLICY CLASS (distinct from the surface it
+// came from, which lives in metadata.source). Derived from the caller's token
+// kind + invocation source at create time — NEVER from the request body — and
+// used to gate which override fields the caller may set (see session-origin.ts).
+export const projectSessionOriginEnum = kortixSchema.enum('project_session_origin', [
+  'user',
+  'trigger',
+  'schedule',
+  'backend',
+  'system',
+]);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -527,6 +568,28 @@ export const projectSessions = kortixSchema.table(
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
+    // Policy class this session was created under (default 'user'). `originRef`
+    // is the backend wrapper's opaque end-user handle — set ONLY for
+    // backend-origin sessions (a service account or API key/PAT); null for
+    // everything else.
+    origin: projectSessionOriginEnum('origin').default('user').notNull(),
+    originRef: text('origin_ref'),
+    // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
+    // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
+    // at create; immutable afterward. Semantics are pure NARROWING — the injected
+    // env is (today's agent-grant set) ∩ (this allowlist), enforced at BOTH boot
+    // and hot-push. null = no restriction (byte-identical to pre-KaaB behavior).
+    secretsAllowlist: jsonb('secrets_allowlist').$type<string[]>(),
+    // When a session sets `connector_bindings`, binding ANY alias normally
+    // suppresses the project-default fallback for every OTHER (unbound) alias —
+    // "all-or-nothing" (see resolveSessionConnectorProfile). This opts the session
+    // out: unbound aliases keep resolving to the project DEFAULT profile, so a
+    // caller can override just one connector (e.g. a user's own Gmail) without
+    // re-binding the rest. Only ever inherits the project default — never another
+    // owner's profile — so it is safe for any origin. Set at create, immutable after.
+    connectorBindingsInheritUnbound: boolean('connector_bindings_inherit_unbound')
+      .default(false)
+      .notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1299,6 +1362,92 @@ export const projectSnapshotBuilds = kortixSchema.table(
   ],
 );
 
+// Durable prepare → verify → activate record for switching a project's active
+// sandbox provider (primary use: Daytona → Platinum). One row per switch
+// request; survives API restarts (a worker resumes non-terminal rows). The
+// active provider (projects.metadata.default_sandbox_provider) is only flipped
+// once `snapshot_name` is built + verified on `target_provider`. `generation`
+// is the monotonically-increasing CAS token: activation only wins if this
+// transition's generation is the latest recorded for the project, so an older
+// transition settling late can never overwrite newer intent.
+export const providerTransitions = kortixSchema.table(
+  'provider_transitions',
+  {
+    transitionId: uuid('transition_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // Provider the project was on when the switch was requested (audit; the
+    // rollback target on a failed prep).
+    sourceProvider: sandboxProviderEnum('source_provider').notNull(),
+    targetProvider: sandboxProviderEnum('target_provider').notNull(),
+    // Monotonic per-project CAS token, reserved on the project row at
+    // switch-REQUEST time. NULL for a PREBUILD row: a prebuild builds the image
+    // but carries no switch-INTENT, so it never bumps projects.sandbox_provider_generation
+    // and can never activate — it cannot starve a real user switch. An on-demand
+    // switch that adopts a ready prebuild stamps it with a freshly-reserved
+    // generation (+ mode=switch). Multiple NULLs coexist under the unique index.
+    generation: integer('generation'),
+    // 'switch' (user intent → auto-activates when ready) | 'prebuild' (image
+    // only, invisible to routing until adopted). Kept in a column (not metadata)
+    // so the reconciler filters on it cheaply.
+    mode: varchar('mode', { length: 16 }).default('switch').notNull(),
+    status: providerTransitionStatusEnum('status').default('pending').notNull(),
+    // Resolved prep identity — the exact thing we build + verify before flipping.
+    commitSha: text('commit_sha'),
+    baseRuntimeIdentity: text('base_runtime_identity'),
+    snapshotName: text('snapshot_name'),
+    // Exact provider-side template/build id (Platinum returns one) — tracked so
+    // readiness is checked by id, not a truncated name listing.
+    externalTemplateId: text('external_template_id'),
+    attempts: integer('attempts').default(0).notNull(),
+    lastError: text('last_error'),
+    // Explicit persisted failure class (auth_terminal | vanished | transient |
+    // none) so a resumed drive on another instance retries/dead-letters exactly
+    // like the one that failed — never re-derived from an in-memory guess.
+    errorClass: varchar('error_class', { length: 32 }),
+    // Persisted backoff gate (DB now()). A retryable failure sets this to
+    // now()+backoff; the resume worker skips a row until it passes. Survives
+    // restarts so backoff is not lost with process memory.
+    nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+    // Lease heartbeat for the resume worker (stale ⇒ re-drivable). Mirrors
+    // suna_account_migrations.heartbeat_at.
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    // Monotonic lease-fencing token. acquireLease bumps COALESCE(lease_epoch,0)+1
+    // on every ownership take; every drive-time state write + the activation CAS
+    // is predicated on the caller's acquired epoch, so a zombie drive whose lease
+    // TTL expired (a 30-40 min build outruns the 10-min TTL) is fenced out — its
+    // writes match 0 rows and it ceases instead of clobbering the fresh owner.
+    leaseEpoch: bigint('lease_epoch', { mode: 'number' }).default(0).notNull(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_provider_transitions_project_recent').on(table.projectId, table.requestedAt.desc()),
+    index('idx_provider_transitions_status').on(table.status),
+    index('idx_provider_transitions_resume').on(table.status, table.nextRetryAt, table.heartbeatAt),
+    // Atomic generation allocation guard: one transition per (project,
+    // generation). The request path reserves the generation on the project row
+    // under a row lock; this unique index is the backstop that makes a
+    // double-allocation a hard error rather than silent CAS corruption.
+    unique('uq_provider_transitions_project_generation').on(table.projectId, table.generation),
+    // Dedup key: at most one LIVE transition per exact prep identity, so repeated
+    // switch calls collapse onto one build. Covers live statuses ONLY —
+    // failed/superseded/cancelled rows must never block a fresh switch.
+    uniqueIndex('uq_provider_transitions_live_identity')
+      .on(table.projectId, table.targetProvider, table.commitSha, table.baseRuntimeIdentity)
+      .where(sql`status in ('pending','building','ready','activating')`),
+  ],
+);
+
 export const sandboxes = kortixSchema.table(
   'sandboxes',
   {
@@ -1816,6 +1965,15 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+    // Standalone index on occurred_at so the admin ops dashboard's account-
+    // agnostic "audit events in the last 24h" count
+    // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
+    // sequential scan. The composite indices above all have a different
+    // leading column, so they can't serve a `WHERE occurred_at >= …` with no
+    // account/actor/resource filter — the scan was exceeding statement_timeout
+    // on the growing audit_events table and 500-ing /ops/overview (Better Stack
+    // error 4ba74f8c17f3e48e13c07511fb802ec55ba07294237c0985f3df792729e8f4d8).
+    index('idx_audit_events_occurred_at').on(table.occurredAt),
   ],
 );
 

@@ -4,13 +4,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef } from 'react';
 
+import { errorToast, loadingToast } from '@/components/ui/toast';
 import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { toast } from '@/lib/toast';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { createProjectSession } from '@kortix/sdk/projects-client';
+import { type SessionConnectorBindings, createProjectSession } from '@kortix/sdk/projects-client';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
@@ -51,7 +51,17 @@ export function useNewProjectSession(projectId: string | undefined) {
       // match the agent the composer sends on the first prompt — the API proxy
       // rejects any prompt whose `agent` differs from the session's bound agent
       // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      create?: { sandbox_slug?: string; agent_name?: string };
+      // `connector_bindings` binds specific connection profiles for this session
+      // (e.g. a member's own private connection); `inherit_unbound` keeps the
+      // project-default fallback for every OTHER connector so binding one doesn't
+      // null the rest. A member-owned binding also requires the session to be
+      // private — which is already the create default.
+      create?: {
+        sandbox_slug?: string;
+        agent_name?: string;
+        connector_bindings?: SessionConnectorBindings;
+        inherit_unbound?: boolean;
+      };
     }) => {
       if (!projectId || creatingRef.current) {
         opts?.onError?.();
@@ -78,7 +88,11 @@ export function useNewProjectSession(projectId: string | undefined) {
       // Warm the route bundle while the create POST is in flight.
       router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
 
-      createProjectSession(projectId, { session_id: sessionId, ...opts?.create })
+      loadingToast(
+        'Starting session…',
+        createProjectSession(projectId, { session_id: sessionId, ...opts?.create }),
+        { success: 'Session started' },
+      )
         .then(() => {
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);
@@ -92,7 +106,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
           } else if (action === 'toast') {
-            toast.error(err instanceof Error ? err.message : 'Failed to start session');
+            errorToast(err instanceof Error ? err.message : 'Failed to start session');
           }
           // 'silent': the global 429 handler already surfaced the session cap.
           opts?.onError?.();

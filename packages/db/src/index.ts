@@ -59,6 +59,8 @@ export {
   projectSessionPublicShares,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
+  providerTransitions,
+  providerTransitionStatusEnum,
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,

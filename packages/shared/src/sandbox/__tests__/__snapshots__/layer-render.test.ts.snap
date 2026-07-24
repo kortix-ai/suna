@@ -15,148 +15,124 @@ WORKDIR /workspace
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
-RUN base_py="$(command -v python3 || true)" \\
-    && apt-get update \\
+RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
-        python3 python3-dev python3-pip python3-venv \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
         texlive-latex-extra texlive-latex-recommended \\
-    && rm -rf /var/lib/apt/lists/* \\
-    && "\${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\
-    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PATH=/opt/kortix/pyfloor/bin:$PATH
+RUN useradd --create-home --shell /bin/bash --user-group kortix \\
+    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\
+    && chmod 0440 /etc/sudoers.d/kortix \\
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
+        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
+USER kortix
 
-# Starter skill Python package floor (document/data/PDF/presentation helpers).
-# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned
-# package no matter what the resolver picks.
-RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\
-        "beautifulsoup4>=4.12" \\
-        "lxml>=5" \\
-        "markdownify>=0.13" \\
-        "markitdown[pptx]>=0.1.0" \\
-        "matplotlib>=3.8" \\
-        "numpy>=1.26" \\
-        "openpyxl>=3.1" \\
-        "pandas>=2.2" \\
-        "pdf2docx>=0.5" \\
-        "pdf2image>=1.17" \\
-        "pdfplumber>=0.11" \\
-        "pillow>=10" \\
-        "playwright>=1.58" \\
-        "plotly>=5.22" \\
-        "pymupdf>=1.24" \\
-        "pypdf>=4" \\
-        "pypdfium2>=4.30" \\
-        "pytesseract>=0.3" \\
-        "python-docx>=1.1" \\
-        "python-pptx>=1.0" \\
-        "reportlab>=4.2" \\
-        "requests>=2.32" \\
-        "scikit-learn>=1.4" \\
-        "scipy>=1.12" \\
-        "seaborn>=0.13" \\
-        "youtube-transcript-api>=0.6" \\
-    && /opt/kortix/pyfloor/bin/python -c 'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")'
+RUN case "$(uname -m)" in \\
+      x86_64) uv_arch=x86_64; uv_sha=04bc7d180d6138bf6dc08387acf507a823f397a98fea55da36b0ccc7fbce3b68 ;; \\
+      aarch64|arm64) uv_arch=aarch64; uv_sha=8c11d90f5f66d232930cf8ae3a085c39877690d409e10878234802b028b20e2a ;; \\
+      *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \\
+         "https://github.com/astral-sh/uv/releases/download/0.11.30/uv-\${uv_arch}-unknown-linux-gnu.tar.gz" \\
+    && echo "\${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\
+    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\
+    && rm /tmp/uv.tar.gz \\
+    && uv --version | grep -Eq '^uv 0.11.30( |$)' \\
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
+    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
+    && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
+
+ENV SHELL=/bin/bash
+RUN case "$(uname -m)" in \\
+      x86_64) pnpm_arch=x64; pnpm_sha=0c1373b6390f6b89ff8b896d3647c9826577ddc49173a2f732da69b36569f9e0 ;; \\
+      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=361e385867146972d0635a41a1871cb44c9c23f65acce78a5f1ca1d44ac0afcd ;; \\
+      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\
+         "https://github.com/pnpm/pnpm/releases/download/v11.15.1/pnpm-linux-\${pnpm_arch}.tar.gz" \\
+    && echo "\${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\
+    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\
+    && rm /tmp/pnpm.tar.gz \\
+    && test "$(pnpm --version)" = "11.15.1" \\
+    && pnpm runtime set node 22.23.1 -g \\
+    && test "$(node --version)" = "v22.23.1" \\
+    && pnpm add -g "npm@12.0.1" \\
+    && test "$(npm --version)" = "12.0.1"
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
+    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
-RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
+RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && agent-browser --version \\
     && for pw_try in 1 2 3 4 5; do \\
-        HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium && break; \\
+        pnpm dlx playwright@1.60.0 install --with-deps chromium && break; \\
         echo "playwright chromium install attempt $pw_try failed, retrying..."; \\
         sleep $((pw_try*10)); \\
     done \\
-    && rm -rf /var/lib/apt/lists/* \\
+    && sudo rm -rf /var/lib/apt/lists/* \\
     && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
     && test -n "$pw_chrome" \\
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
-    && /usr/local/bin/chromium --version \\
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\
+    && mkdir -p /home/kortix/.agent-browser/browsers \\
+    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\
+    && chromium --version \\
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN npm install -g --no-audit --no-fund "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache; \\
-    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-bake.log 2>&1 & oc_pid=$!; \\
-    for i in $(seq 1 180); do \\
-        curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    sleep 3; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    echo "=== migration-bake: opencode data dir ==="; ls -laR "$XDG_DATA_HOME/opencode" 2>/dev/null | head -40; \\
-    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\
-    rm -f /tmp/oc-bake.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
-RUN curl -fsSL https://bun.com/install | bash \\
-    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\
-    && bun --version
+RUN case "$(uname -m)" in \\
+      x86_64) bun_arch=x64; bun_sha=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f ;; \\
+      aarch64|arm64) bun_arch=aarch64; bun_sha=a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b ;; \\
+      *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \\
+         "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-\${bun_arch}.zip" \\
+    && echo "\${bun_sha}  /tmp/bun.zip" | sha256sum -c - \\
+    && unzip -q /tmp/bun.zip -d /tmp/bun \\
+    && install -m 0755 "/tmp/bun/bun-linux-\${bun_arch}/bun" /home/kortix/.bun/bin/bun \\
+    && ln -sf bun /home/kortix/.bun/bin/bunx \\
+    && rm -rf /tmp/bun /tmp/bun.zip \\
+    && test "$(bun --version)" = "1.3.14"
 
-RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\
+RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
-    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install
+    && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
-    && HOME=/opt/kortix/home bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
+    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
     && rm -rf /tmp/opencode-deps-bundle-check \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
-COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
+    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
     && rm -rf /tmp/opencode-tools-bundle-check \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache \\
-        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\
-    mkdir -p /workspace/.kortix; \\
-    staged_starter_config=0; \\
-    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\
-    rm -rf /workspace/.kortix/opencode/node_modules; \\
-    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\
-    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\
-    cd /workspace; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\
-    ready=0; \\
-    for i in $(seq 1 300); do \\
-        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\
-        case "$code" in 200|204|301|302) ready=1; break;; esac; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    echo "=== instance-warm: ready=$ready ==="; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    find /workspace -mindepth 1 -delete 2>/dev/null; \\
-    rm -rf /opt/kortix/warm-config; \\
-    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
-    rm -f /tmp/oc-warm.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance wipe; rm -f /tmp/kortix-opencode-warmup
 
+USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
+COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
@@ -164,13 +140,15 @@ COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
     && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
+    && bash -n /usr/local/bin/kortix-entrypoint \\
     && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
-    && kortix --version
+    && kortix --version \\
+    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
 
 ENV KORTIX_WORKSPACE=/workspace
-RUN mkdir -p /workspace /opt/kortix/home /ephemeral/kortix-master/opencode
+USER kortix
 WORKDIR /workspace
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
@@ -191,148 +169,124 @@ RUN mkdir -p /workspace/data && echo seed > /workspace/data/basemap.tif
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
-RUN base_py="$(command -v python3 || true)" \\
-    && apt-get update \\
+RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
-        python3 python3-dev python3-pip python3-venv \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
         texlive-latex-extra texlive-latex-recommended \\
-    && rm -rf /var/lib/apt/lists/* \\
-    && "\${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\
-    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PATH=/opt/kortix/pyfloor/bin:$PATH
+RUN useradd --create-home --shell /bin/bash --user-group kortix \\
+    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\
+    && chmod 0440 /etc/sudoers.d/kortix \\
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
+        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
+USER kortix
 
-# Starter skill Python package floor (document/data/PDF/presentation helpers).
-# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned
-# package no matter what the resolver picks.
-RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\
-        "beautifulsoup4>=4.12" \\
-        "lxml>=5" \\
-        "markdownify>=0.13" \\
-        "markitdown[pptx]>=0.1.0" \\
-        "matplotlib>=3.8" \\
-        "numpy>=1.26" \\
-        "openpyxl>=3.1" \\
-        "pandas>=2.2" \\
-        "pdf2docx>=0.5" \\
-        "pdf2image>=1.17" \\
-        "pdfplumber>=0.11" \\
-        "pillow>=10" \\
-        "playwright>=1.58" \\
-        "plotly>=5.22" \\
-        "pymupdf>=1.24" \\
-        "pypdf>=4" \\
-        "pypdfium2>=4.30" \\
-        "pytesseract>=0.3" \\
-        "python-docx>=1.1" \\
-        "python-pptx>=1.0" \\
-        "reportlab>=4.2" \\
-        "requests>=2.32" \\
-        "scikit-learn>=1.4" \\
-        "scipy>=1.12" \\
-        "seaborn>=0.13" \\
-        "youtube-transcript-api>=0.6" \\
-    && /opt/kortix/pyfloor/bin/python -c 'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")'
+RUN case "$(uname -m)" in \\
+      x86_64) uv_arch=x86_64; uv_sha=04bc7d180d6138bf6dc08387acf507a823f397a98fea55da36b0ccc7fbce3b68 ;; \\
+      aarch64|arm64) uv_arch=aarch64; uv_sha=8c11d90f5f66d232930cf8ae3a085c39877690d409e10878234802b028b20e2a ;; \\
+      *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \\
+         "https://github.com/astral-sh/uv/releases/download/0.11.30/uv-\${uv_arch}-unknown-linux-gnu.tar.gz" \\
+    && echo "\${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\
+    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\
+    && rm /tmp/uv.tar.gz \\
+    && uv --version | grep -Eq '^uv 0.11.30( |$)' \\
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
+    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
+    && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
+
+ENV SHELL=/bin/bash
+RUN case "$(uname -m)" in \\
+      x86_64) pnpm_arch=x64; pnpm_sha=0c1373b6390f6b89ff8b896d3647c9826577ddc49173a2f732da69b36569f9e0 ;; \\
+      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=361e385867146972d0635a41a1871cb44c9c23f65acce78a5f1ca1d44ac0afcd ;; \\
+      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\
+         "https://github.com/pnpm/pnpm/releases/download/v11.15.1/pnpm-linux-\${pnpm_arch}.tar.gz" \\
+    && echo "\${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\
+    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\
+    && rm /tmp/pnpm.tar.gz \\
+    && test "$(pnpm --version)" = "11.15.1" \\
+    && pnpm runtime set node 22.23.1 -g \\
+    && test "$(node --version)" = "v22.23.1" \\
+    && pnpm add -g "npm@12.0.1" \\
+    && test "$(npm --version)" = "12.0.1"
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
+    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
-RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
+RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && agent-browser --version \\
     && for pw_try in 1 2 3 4 5; do \\
-        HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium && break; \\
+        pnpm dlx playwright@1.60.0 install --with-deps chromium && break; \\
         echo "playwright chromium install attempt $pw_try failed, retrying..."; \\
         sleep $((pw_try*10)); \\
     done \\
-    && rm -rf /var/lib/apt/lists/* \\
+    && sudo rm -rf /var/lib/apt/lists/* \\
     && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
     && test -n "$pw_chrome" \\
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
-    && /usr/local/bin/chromium --version \\
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\
+    && mkdir -p /home/kortix/.agent-browser/browsers \\
+    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\
+    && chromium --version \\
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN npm install -g --no-audit --no-fund "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache; \\
-    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-bake.log 2>&1 & oc_pid=$!; \\
-    for i in $(seq 1 180); do \\
-        curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    sleep 3; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    echo "=== migration-bake: opencode data dir ==="; ls -laR "$XDG_DATA_HOME/opencode" 2>/dev/null | head -40; \\
-    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\
-    rm -f /tmp/oc-bake.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
-RUN curl -fsSL https://bun.com/install | bash \\
-    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\
-    && bun --version
+RUN case "$(uname -m)" in \\
+      x86_64) bun_arch=x64; bun_sha=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f ;; \\
+      aarch64|arm64) bun_arch=aarch64; bun_sha=a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b ;; \\
+      *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \\
+         "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-\${bun_arch}.zip" \\
+    && echo "\${bun_sha}  /tmp/bun.zip" | sha256sum -c - \\
+    && unzip -q /tmp/bun.zip -d /tmp/bun \\
+    && install -m 0755 "/tmp/bun/bun-linux-\${bun_arch}/bun" /home/kortix/.bun/bin/bun \\
+    && ln -sf bun /home/kortix/.bun/bin/bunx \\
+    && rm -rf /tmp/bun /tmp/bun.zip \\
+    && test "$(bun --version)" = "1.3.14"
 
-RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\
+RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
-    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install
+    && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
-    && HOME=/opt/kortix/home bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
+    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
     && rm -rf /tmp/opencode-deps-bundle-check \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
-COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
+    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
     && rm -rf /tmp/opencode-tools-bundle-check \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache \\
-        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\
-    mkdir -p /workspace/.kortix; \\
-    staged_starter_config=0; \\
-    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\
-    rm -rf /workspace/.kortix/opencode/node_modules; \\
-    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\
-    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\
-    cd /workspace; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\
-    ready=0; \\
-    for i in $(seq 1 300); do \\
-        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\
-        case "$code" in 200|204|301|302) ready=1; break;; esac; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    echo "=== instance-warm: ready=$ready ==="; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\
-    rm -rf /opt/kortix/warm-config; \\
-    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
-    rm -f /tmp/oc-warm.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance targeted; rm -f /tmp/kortix-opencode-warmup
 
+USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
+COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
@@ -340,13 +294,15 @@ COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
     && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
+    && bash -n /usr/local/bin/kortix-entrypoint \\
     && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
-    && kortix --version
+    && kortix --version \\
+    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
 
 ENV KORTIX_WORKSPACE=/workspace
-RUN mkdir -p /workspace /opt/kortix/home /ephemeral/kortix-master/opencode
+USER kortix
 WORKDIR /workspace
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
@@ -368,159 +324,137 @@ WORKDIR /workspace
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
-RUN base_py="$(command -v python3 || true)" \\
-    && apt-get update \\
+RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
-        python3 python3-dev python3-pip python3-venv \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
         texlive-latex-extra texlive-latex-recommended \\
-    && rm -rf /var/lib/apt/lists/* \\
-    && "\${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\
-    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PATH=/opt/kortix/pyfloor/bin:$PATH
+RUN useradd --create-home --shell /bin/bash --user-group kortix \\
+    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\
+    && chmod 0440 /etc/sudoers.d/kortix \\
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
+        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
+ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
+USER kortix
 
-# Starter skill Python package floor (document/data/PDF/presentation helpers).
-# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned
-# package no matter what the resolver picks.
-RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\
-        "beautifulsoup4>=4.12" \\
-        "lxml>=5" \\
-        "markdownify>=0.13" \\
-        "markitdown[pptx]>=0.1.0" \\
-        "matplotlib>=3.8" \\
-        "numpy>=1.26" \\
-        "openpyxl>=3.1" \\
-        "pandas>=2.2" \\
-        "pdf2docx>=0.5" \\
-        "pdf2image>=1.17" \\
-        "pdfplumber>=0.11" \\
-        "pillow>=10" \\
-        "playwright>=1.58" \\
-        "plotly>=5.22" \\
-        "pymupdf>=1.24" \\
-        "pypdf>=4" \\
-        "pypdfium2>=4.30" \\
-        "pytesseract>=0.3" \\
-        "python-docx>=1.1" \\
-        "python-pptx>=1.0" \\
-        "reportlab>=4.2" \\
-        "requests>=2.32" \\
-        "scikit-learn>=1.4" \\
-        "scipy>=1.12" \\
-        "seaborn>=0.13" \\
-        "youtube-transcript-api>=0.6" \\
-    && /opt/kortix/pyfloor/bin/python -c 'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")'
+RUN case "$(uname -m)" in \\
+      x86_64) uv_arch=x86_64; uv_sha=04bc7d180d6138bf6dc08387acf507a823f397a98fea55da36b0ccc7fbce3b68 ;; \\
+      aarch64|arm64) uv_arch=aarch64; uv_sha=8c11d90f5f66d232930cf8ae3a085c39877690d409e10878234802b028b20e2a ;; \\
+      *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \\
+         "https://github.com/astral-sh/uv/releases/download/0.11.30/uv-\${uv_arch}-unknown-linux-gnu.tar.gz" \\
+    && echo "\${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\
+    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\
+    && rm /tmp/uv.tar.gz \\
+    && uv --version | grep -Eq '^uv 0.11.30( |$)' \\
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
+    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
+    && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
+
+ENV SHELL=/bin/bash
+RUN case "$(uname -m)" in \\
+      x86_64) pnpm_arch=x64; pnpm_sha=0c1373b6390f6b89ff8b896d3647c9826577ddc49173a2f732da69b36569f9e0 ;; \\
+      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=361e385867146972d0635a41a1871cb44c9c23f65acce78a5f1ca1d44ac0afcd ;; \\
+      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\
+         "https://github.com/pnpm/pnpm/releases/download/v11.15.1/pnpm-linux-\${pnpm_arch}.tar.gz" \\
+    && echo "\${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\
+    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\
+    && rm /tmp/pnpm.tar.gz \\
+    && test "$(pnpm --version)" = "11.15.1" \\
+    && pnpm runtime set node 22.23.1 -g \\
+    && test "$(node --version)" = "v22.23.1" \\
+    && pnpm add -g "npm@12.0.1" \\
+    && test "$(npm --version)" = "12.0.1"
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
+    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
-RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
+RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && agent-browser --version \\
     && for pw_try in 1 2 3 4 5; do \\
-        HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium && break; \\
+        pnpm dlx playwright@1.60.0 install --with-deps chromium && break; \\
         echo "playwright chromium install attempt $pw_try failed, retrying..."; \\
         sleep $((pw_try*10)); \\
     done \\
-    && rm -rf /var/lib/apt/lists/* \\
+    && sudo rm -rf /var/lib/apt/lists/* \\
     && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
     && test -n "$pw_chrome" \\
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
-    && /usr/local/bin/chromium --version \\
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\
+    && mkdir -p /home/kortix/.agent-browser/browsers \\
+    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\
+    && chromium --version \\
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN npm install -g --no-audit --no-fund "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache; \\
-    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-bake.log 2>&1 & oc_pid=$!; \\
-    for i in $(seq 1 180); do \\
-        curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    sleep 3; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    echo "=== migration-bake: opencode data dir ==="; ls -laR "$XDG_DATA_HOME/opencode" 2>/dev/null | head -40; \\
-    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\
-    rm -f /tmp/oc-bake.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
-RUN curl -fsSL https://bun.com/install | bash \\
-    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\
-    && bun --version
+RUN case "$(uname -m)" in \\
+      x86_64) bun_arch=x64; bun_sha=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f ;; \\
+      aarch64|arm64) bun_arch=aarch64; bun_sha=a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b ;; \\
+      *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \\
+         "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-\${bun_arch}.zip" \\
+    && echo "\${bun_sha}  /tmp/bun.zip" | sha256sum -c - \\
+    && unzip -q /tmp/bun.zip -d /tmp/bun \\
+    && install -m 0755 "/tmp/bun/bun-linux-\${bun_arch}/bun" /home/kortix/.bun/bin/bun \\
+    && ln -sf bun /home/kortix/.bun/bin/bunx \\
+    && rm -rf /tmp/bun /tmp/bun.zip \\
+    && test "$(bun --version)" = "1.3.14"
 
-RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\
+RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
-    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install
+    && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
-    && HOME=/opt/kortix/home bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
+    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\
     && rm -rf /tmp/opencode-deps-bundle-check \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
 
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
-RUN cd / \\
-    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\
-    && git -c http.extraHeader='Authorization: Bearer redacted' clone --depth 1 --branch 'main' 'https://git.example.com/acme/app.git' /tmp/kortix-warm-repo \\
-    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\
-    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\
-    && rm -rf /tmp/kortix-warm-repo \\
-    && git -C /workspace remote set-url origin 'https://kortix.example.com/v1/git/proj.git' \\
-    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on main"
+# The repo was cloned with the git-host credential, origin-reset to the
+# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
+# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# bytes — no git credential ever enters the Dockerfile, build args, image
+# history, or build logs. See PHASE 1 provider-migration hardening.
+RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
+COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
+RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
+RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
-COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
+    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
     && rm -rf /tmp/opencode-tools-bundle-check \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache \\
-        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\
-    mkdir -p /workspace/.kortix; \\
-    staged_starter_config=0; \\
-    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\
-    rm -rf /workspace/.kortix/opencode/node_modules; \\
-    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\
-    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\
-    cd /workspace; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\
-    ready=0; \\
-    for i in $(seq 1 300); do \\
-        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\
-        case "$code" in 200|204|301|302) ready=1; break;; esac; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    echo "=== instance-warm: ready=$ready ==="; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    echo "warm-repo: keeping baked /workspace checkout"; \\
-    rm -rf /opt/kortix/warm-config; \\
-    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
-    rm -f /tmp/oc-warm.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup
 
+USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
+COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
@@ -528,13 +462,15 @@ COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
     && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
+    && bash -n /usr/local/bin/kortix-entrypoint \\
     && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
-    && kortix --version
+    && kortix --version \\
+    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
 
 ENV KORTIX_WORKSPACE=/workspace
-RUN mkdir -p /workspace /opt/kortix/home /ephemeral/kortix-master/opencode
+USER kortix
 WORKDIR /workspace
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
@@ -552,53 +488,30 @@ exports[`buildPerProjectWarmFromBaseDockerfile (FROM-base fast path) golden 1`] 
 # build-cache hit. Do not add toolchain RUNs here — they belong in
 # kortixToolchainLayer, which this stage deliberately skips.
 
-USER root
+USER kortix
 
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
-RUN cd / \\
-    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\
-    && git -c http.extraHeader='Authorization: Bearer redacted' clone --depth 1 --branch 'main' 'https://git.example.com/acme/app.git' /tmp/kortix-warm-repo \\
-    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\
-    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\
-    && rm -rf /tmp/kortix-warm-repo \\
-    && git -C /workspace remote set-url origin 'https://kortix.example.com/v1/git/proj.git' \\
-    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on main"
+# The repo was cloned with the git-host credential, origin-reset to the
+# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
+# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# bytes — no git credential ever enters the Dockerfile, build args, image
+# history, or build logs. See PHASE 1 provider-migration hardening.
+RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
+COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
+RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
+RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
-COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
+    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
     && rm -rf /tmp/opencode-tools-bundle-check \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
-RUN set +e; \\
-    export HOME=/opt/kortix/home \\
-        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
-        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
-        XDG_CACHE_HOME=/opt/kortix/home/.cache \\
-        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\
-    mkdir -p /workspace/.kortix; \\
-    staged_starter_config=0; \\
-    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\
-    rm -rf /workspace/.kortix/opencode/node_modules; \\
-    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\
-    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\
-    cd /workspace; \\
-    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\
-    ready=0; \\
-    for i in $(seq 1 300); do \\
-        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\
-        case "$code" in 200|204|301|302) ready=1; break;; esac; \\
-        kill -0 "$oc_pid" 2>/dev/null || break; \\
-        sleep 1; \\
-    done; \\
-    echo "=== instance-warm: ready=$ready ==="; \\
-    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
-    echo "warm-repo: keeping baked /workspace checkout"; \\
-    rm -rf /opt/kortix/warm-config; \\
-    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
-    rm -f /tmp/oc-warm.log; true
+COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup
 
 "
 `;

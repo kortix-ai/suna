@@ -79,6 +79,14 @@ export const QUOTA_GC_PPWARM_MAX_IDLE_MS = 14 * 24 * 60 * 60 * 1000;
  */
 export const QUOTA_GC_PPWARM_EVICT_PROTECT_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * A "superseded" ppwarm tip created/used this recently is likely another live
+ * runtime's CURRENT tip (mixed code versions → mixed base identities). Mirrors
+ * PPWARM_REAP_PROTECT_MS in ppwarm-names.ts (kept as a local constant because
+ * this module deliberately imports nothing).
+ */
+export const QUOTA_GC_PPWARM_FRESH_PROTECT_MS = 45 * 60 * 1000;
+
 /** Max deletions per sweep pass — keeps each pass cheap and observable. */
 export const QUOTA_GC_MAX_PER_PASS = 15;
 
@@ -115,6 +123,14 @@ export interface SelectInput {
   all: SnapshotLike[];
   /** Names any local `sandbox_templates` row still points at. Never reaped. */
   referenced: ReadonlySet<string>;
+  /**
+   * FIX-K-lite: image identifiers (ppwarm NAME or provider external id) that are
+   * the ACTIVE routing pin of SOME project. Never reaped — a proj8 prefix
+   * collision must not let one project's superseded-tip selection delete another
+   * project's LIVE pinned image. Injected by the IO layer (it reads the projects
+   * table); defaults to empty so pure-unit callers keep the prior behavior.
+   */
+  pinnedImages?: ReadonlySet<string>;
   now: number;
 }
 
@@ -172,6 +188,7 @@ function byFreshestFirst(a: SnapshotLike, b: SnapshotLike): number {
  */
 export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   const { all, referenced, now } = input;
+  const pinned = input.pinnedImages ?? new Set<string>();
 
   const orgTotal = all.length;
   const managed = all.filter((s) => isManaged(s.name));
@@ -187,8 +204,12 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   };
   if (!underPressure) return result;
 
-  // Reapable universe: ours, not referenced by a local template row, not mid-build.
-  const pool = managed.filter((s) => !referenced.has(s.name) && !IN_FLIGHT_STATES.has(s.state));
+  // Reapable universe: ours, not referenced by a local template row, not mid-build,
+  // and NEVER a live pinned image of any project (FIX-K-lite: guards a proj8
+  // collision from deleting another project's active cache; matched by name OR id).
+  const pool = managed.filter(
+    (s) => !referenced.has(s.name) && !IN_FLIGHT_STATES.has(s.state) && !pinned.has(s.name) && !pinned.has(s.id),
+  );
 
   const candidates: ReapCandidate[] = [];
   const claimed = new Set<string>();
@@ -220,7 +241,16 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   for (const [proj8, group] of byProj) {
     if (group.length < 2) continue;
     const [, ...superseded] = [...group].sort(byFreshestFirst);
-    for (const s of superseded) claim(s, `superseded ppwarm tip for project ${proj8}`);
+    for (const s of superseded) {
+      // A "superseded" tip that was created/used minutes ago is very likely
+      // another live runtime's CURRENT tip (two code versions → two base
+      // identities → two live warm names for the same project). Deleting it
+      // triggers an immediate full re-bake — churn, not reclamation. See
+      // PPWARM_REAP_PROTECT_MS (ppwarm-names.ts) for the incident writeup.
+      const t = lastTouch(s);
+      if (Number.isFinite(t) && now - t < QUOTA_GC_PPWARM_FRESH_PROTECT_MS) continue;
+      claim(s, `superseded ppwarm tip for project ${proj8}`);
+    }
   }
 
   // 3. ppwarm tips nobody has booted in a long time. We cannot see other envs' DBs,

@@ -36,6 +36,7 @@ function SearchPicker({
   emptyLabel,
   icon,
   onValueChange,
+  onSearchChange,
 }: {
   value: string;
   options: PickerOption[];
@@ -47,6 +48,7 @@ function SearchPicker({
   emptyLabel: string;
   icon: ReactNode;
   onValueChange: (value: string) => void;
+  onSearchChange?: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -57,8 +59,11 @@ function SearchPicker({
     : options;
 
   useEffect(() => {
-    if (!open) setSearch('');
-  }, [open]);
+    if (!open) {
+      setSearch('');
+      onSearchChange?.('');
+    }
+  }, [onSearchChange, open]);
 
   return (
     <Popover open={open} onOpenChange={setOpen} modal={false}>
@@ -95,7 +100,10 @@ function SearchPicker({
             </InputGroupSearchIcon>
             <InputGroupSearchInput
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                onSearchChange?.(event.target.value);
+              }}
               placeholder={searchPlaceholder}
               autoCapitalize="none"
               autoCorrect="off"
@@ -162,12 +170,14 @@ export function RepositoryPicker({
   loading,
   disabled,
   onValueChange,
+  onSearchChange,
 }: {
   value: string;
   repos: GitHubRepository[];
   loading: boolean;
   disabled: boolean;
   onValueChange: (value: string) => void;
+  onSearchChange?: (value: string) => void;
 }) {
   const options = useMemo(
     () =>
@@ -195,6 +205,7 @@ export function RepositoryPicker({
       emptyLabel="No repositories found"
       icon={<Icon.Github className="size-4" />}
       onValueChange={onValueChange}
+      onSearchChange={onSearchChange}
     />
   );
 }

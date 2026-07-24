@@ -10,6 +10,7 @@ import {
   projects,
   sessionToolApprovals,
 } from '@kortix/db';
+import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 /**
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
@@ -46,8 +47,9 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
-import { SLACK_CHANNEL_CONNECTOR_SLUG, connectorListNeedsResync } from './channels';
+import { buildAdminConnectorViews } from './connector-list';
 import {
+  connectorIdsWithSharedCredentials,
   credentialExists,
   deleteCredential,
   profileCredentialExists,
@@ -74,6 +76,7 @@ import { graphToken } from '../channels/teams-auth';
 import {
   browsePipedreamApps,
   finalizePipedreamConnection,
+  finalizePipedreamProfileConnection,
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
@@ -88,7 +91,8 @@ import type {
   ExecutorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { syncProjectConnectors } from './sync';
+import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
+import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -124,14 +128,38 @@ export async function waitForApprovalDecision(
   }
   while (Date.now() < deadline) {
     const [row] = await db
-      .select({ status: executorExecutions.status, resolvedAt: executorExecutions.resolvedAt })
+      .select({
+        status: executorExecutions.status,
+        resolvedAt: executorExecutions.resolvedAt,
+        approvedBy: executorExecutions.approvedBy,
+        resultSummary: executorExecutions.resultSummary,
+      })
       .from(executorExecutions)
       .where(and(...conds))
       .limit(1);
     // No row under the expected binding → the supplied id belongs to a different
     // session/connector/action (or doesn't exist). Never wait on it.
     if (!row) return 'mismatch';
-    if (row.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
+    if (row.resolvedAt) {
+      if (row.status === 'denied') return 'denied';
+      // Only a GENUINE, still-UNCONSUMED human approve authorizes the call —
+      // mirror consumeApprovedExecution's guard exactly. A resolved row that is
+      // NOT that (a plain ok/error run row, which never has approvedBy, or an
+      // already-consumed approval being REPLAYED, which has consumed_at stamped)
+      // must never resolve to 'approved' — treating any resolved non-denied row
+      // as approved is the require_approval bypass (replay a resolved execution
+      // id to auto-authorize a sensitive call). The legit FIRST waiter still
+      // passes: the gateway stamps consumed_at only AFTER this returns 'approved'
+      // (gateway.ts markApprovalConsumed), so consumed_at is still null in-band;
+      // only LATER replays see it set and are rejected here.
+      const rs: Record<string, unknown> = row.resultSummary ?? {};
+      if (row.approvedBy != null && rs.decision === 'approve' && rs.consumed_at == null) {
+        return 'approved';
+      }
+      // Resolved but not a genuine, unconsumed approve. Don't authorize: the
+      // bound row can't flip to genuine, so keep polling until it hits 'timeout'
+      // (the gateway then leaves the call paused, exactly as if never approved).
+    }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return 'timeout';
@@ -276,6 +304,16 @@ function authOf(row: ConnectorRow): { auth: ExecutorAuth; hasAuth: boolean } {
   return { auth, hasAuth };
 }
 
+/**
+ * The connector's static request headers (kortix.yaml `headers:`, persisted
+ * into `config` by the materializer). Sanitized on the way out — a row written
+ * before the header rules existed can never inject an illegal header.
+ */
+function headersOf(row: ConnectorRow): Record<string, string> {
+  const cfg = (row.config ?? {}) as Record<string, any>;
+  return sanitizeConnectorHeaders(cfg.headers);
+}
+
 function baseUrlOf(row: ConnectorRow): string | null {
   const cfg = (row.config ?? {}) as Record<string, any>;
   switch (row.providerType) {
@@ -394,6 +432,7 @@ function toGatewayConnector(
     platform: channelPlatform(row.config),
     baseUrl: baseUrlOf(row),
     auth,
+    headers: headersOf(row),
     hasAuth,
     // `per_user` was removed 2026-07-05; every row is `shared` (DB-enforced by
     // a CHECK constraint), so this is a defensive cast, not a live branch.
@@ -800,67 +839,73 @@ async function resolveReader(
   return resolveProjectUserWith(c, projectId, 'project.connector.read');
 }
 
-/** Admin list — sharing + credential mode + whether the shared credential is set.
- *  `viewerUserId` is vestigial (kept for interface stability): it only mattered
- *  for `per_user` connectors, removed 2026-07-05 — every connector now checks
- *  the one shared credential regardless of who's viewing. */
-async function listConnectors(
-  projectId: string,
-  viewerUserId: string,
-): Promise<AdminConnectorView[]> {
-  const fetchRows = () =>
-    db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
-  let rows = await fetchRows();
-  // Only consult the install-store when it could change the decision: an empty
-  // set reconciles regardless, and a present Slack connector needs no heal — so
-  // healthy projects never pay for loadSlackInstall here.
-  const slackInstalled =
-    rows.length > 0 && !rows.some((r) => r.slug === SLACK_CHANNEL_CONNECTOR_SLUG)
-      ? (await loadSlackInstall(projectId).catch(() => null)) != null
-      : false;
-  if (connectorListNeedsResync({ presentSlugs: rows.map((r) => r.slug), slackInstalled })) {
-    const [project] = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1);
-    if (project) {
-      await syncProjectConnectors(projectId, project.accountId);
-      rows = await fetchRows();
-    }
-  }
-  const conns = hideSupersededSlack(rows);
-  const out: AdminConnectorView[] = [];
-  for (const row of conns) {
+/** Admin list — sharing + credential mode + whether the shared credential is set. */
+async function listConnectors(projectId: string): Promise<AdminConnectorView[]> {
+  const conns = hideSupersededSlack(
+    await db
+      .select()
+      .from(executorConnectors)
+      .where(eq(executorConnectors.projectId, projectId)),
+  );
+  if (conns.length === 0) return [];
+
+  const credentialRows = conns.filter((row) => {
     const { hasAuth } = authOf(row);
-    let secretSet = !hasAuth;
-    if (hasAuth) {
-      secretSet = await connectorConnected(row, null);
-    }
-    const actions = await db
+    return hasAuth && row.providerType !== 'channel';
+  });
+  const channelRows = conns.filter((row) => {
+    const { hasAuth } = authOf(row);
+    return hasAuth && row.providerType === 'channel';
+  });
+  const [actions, credentialConnectorIds, connectedChannelSlugs] = await Promise.all([
+    db
       .select()
       .from(executorConnectorActions)
-      .where(eq(executorConnectorActions.connectorId, row.connectorId));
-    out.push({
+      .where(inArray(executorConnectorActions.connectorId, conns.map((row) => row.connectorId))),
+    connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
+    Promise.all(
+      channelRows.map(async (row) => [
+        row.slug,
+        await connectorConnected(row, null),
+      ] as const),
+    ).then(
+      (entries) =>
+        new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
+    ),
+  ]);
+  const actionsByConnector = new Map<string, typeof actions>();
+  for (const action of actions) {
+    const current = actionsByConnector.get(action.connectorId) ?? [];
+    current.push(action);
+    actionsByConnector.set(action.connectorId, current);
+  }
+
+  const connectedSlugs = new Set(connectedChannelSlugs);
+  for (const row of credentialRows) {
+    if (credentialConnectorIds.has(row.connectorId)) connectedSlugs.add(row.slug);
+  }
+  const candidates = conns.map((row) => {
+    const { hasAuth } = authOf(row);
+    const config = row.config as { icon_url?: unknown; sensitive?: unknown } | null;
+    return {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
       platform: channelPlatform(row.config),
+      iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
       status: row.status,
-      credentialMode: 'shared',
-      sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
-      actions: actions.map((a) => ({
+      sensitive: config?.sensitive === true,
+      actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
         path: a.path,
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
         inputSchema: a.inputSchema ?? null,
       })),
-      authSecret: hasAuth ? 'credential' : null,
-      secretSet,
-    });
-  }
-  return out;
+      requiresAuth: hasAuth,
+    };
+  });
+  return buildAdminConnectorViews(candidates, connectedSlugs);
 }
 
 /**
@@ -922,6 +967,7 @@ async function getConnectorConfig(
     baseUrl: baseUrlOf(row),
     spec: cfg.spec ?? null,
     auth: { type: auth.type, in: auth.in, name: auth.name, prefix: auth.prefix },
+    headers: headersOf(row),
   };
 }
 
@@ -1002,16 +1048,40 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         if (!verifyWebhookSig(extUserId, sig)) return false;
-        const [projectId, slug, userId] = extUserId.split(':');
+        const [projectId, slug, identityId] = extUserId.split(':');
         if (!projectId || !slug) return false;
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return false;
+        if (identityId) {
+          const [profile] = await db
+            .select({ profileId: executorConnectionProfiles.profileId })
+            .from(executorConnectionProfiles)
+            .where(
+              and(
+                eq(executorConnectionProfiles.profileId, identityId),
+                eq(executorConnectionProfiles.projectId, projectId),
+                eq(executorConnectionProfiles.connectorId, conn.connectorId),
+              ),
+            )
+            .limit(1);
+          if (profile) {
+            await finalizePipedreamProfileConnection({
+              projectId,
+              slug,
+              app: conn.app,
+              connectorId: conn.connectorId,
+              profileId: profile.profileId,
+              createdBy: null,
+            });
+            return true;
+          }
+        }
         await finalizePipedreamConnection({
           projectId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
-          userId: userId ?? null,
+          userId: identityId ?? null,
         });
         return true;
       }
@@ -1019,6 +1089,9 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
     : undefined,
+  discoverConnectorAuth: discoverDraftConnectorAuth,
+  listDiscoverIntegrations: (input) => listIntegrationCatalog(input),
+  getDiscoverIntegration: (id) => getIntegrationCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

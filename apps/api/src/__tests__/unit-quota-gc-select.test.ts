@@ -154,6 +154,26 @@ describe('selectSnapshotsToReap — safety invariants', () => {
     expect(reaped).not.toContain('kortix-ppwarm-ffffffff-solo');
   });
 
+  // Two concurrently-live code versions produce two live warm names for the SAME
+  // project (different base identities). The freshly-built "superseded" one is
+  // very likely the other runtime's CURRENT tip — deleting it triggers an
+  // immediate full re-bake (churn), and symmetric reaps loop forever.
+  it('spares a freshly-built "superseded" ppwarm tip (mixed-version protection)', () => {
+    const minutes = (n: number) => new Date(NOW - n * 60_000).toISOString();
+    const all = padToOrgSize(
+      [
+        snap('kortix-ppwarm-0945686d-current', { lastUsedAt: minutes(1) }),
+        snap('kortix-ppwarm-0945686d-otherver', { lastUsedAt: minutes(10), createdAt: minutes(10) }),
+        snap('kortix-ppwarm-0945686d-trulyold', { lastUsedAt: ago(2) }),
+      ],
+      UNDER_TARGET,
+    );
+    const reaped = names(run(all));
+    expect(reaped).not.toContain('kortix-ppwarm-0945686d-current');
+    expect(reaped).not.toContain('kortix-ppwarm-0945686d-otherver');
+    expect(reaped).toContain('kortix-ppwarm-0945686d-trulyold');
+  });
+
   // One Daytona org, many databases: a ppwarm tip we can't attribute may belong to
   // another environment. Idle time is the ONLY cross-env-safe liveness signal.
   it('reaps a long-idle ppwarm tip but spares a recently used one', () => {
@@ -256,5 +276,37 @@ describe('selectSnapshotsToReap — ppwarm LRU budget', () => {
   it('does not flag budgetUnresolved once target is reachable', () => {
     const res = run(liveOrg(69, 30));
     expect(res.budgetUnresolved).toBe(false);
+  });
+});
+
+describe('selectSnapshotsToReap — FIX-K-lite pinned-image guard', () => {
+  const ppw = (proj: string, hash: string, days: number, extra: Partial<SnapshotLike> = {}) =>
+    snap(`kortix-ppwarm-${proj}-${hash}`, { lastUsedAt: ago(days), createdAt: ago(days), ...extra });
+
+  it("never reaps a project's LIVE pinned tip even when a proj8 collision makes it look superseded", () => {
+    // Projects A and B collide on proj8 (both `c0111ab e`). A's superseded-tip
+    // selection sweeps up B's LIVE pinned tip over the org-wide list — the bug.
+    const current = ppw('c0111abe', 'aaaaaaaaaaaa', 1); // A's freshest tip (kept)
+    const aSuperseded = ppw('c0111abe', 'bbbbbbbbbbbb', 3); // A's genuinely stale tip
+    const bPinned = ppw('c0111abe', 'cccccccccccc', 3); // B's LIVE pinned image (collision)
+    const all = padToOrgSize([current, aSuperseded, bPinned], 84);
+
+    // Unguarded: both non-current tips are reaped — B's live image among them.
+    const unguarded = selectSnapshotsToReap({ all, referenced: new Set(), now: NOW });
+    expect(unguarded.doomed.map((d) => d.snapshot.name)).toContain(bPinned.name);
+
+    // Guarded: B's pinned image is excluded from the reap pool entirely.
+    const guarded = selectSnapshotsToReap({ all, referenced: new Set(), pinnedImages: new Set([bPinned.name]), now: NOW });
+    const doomed = guarded.doomed.map((d) => d.snapshot.name);
+    expect(doomed).not.toContain(bPinned.name); // LIVE pinned image survives
+    expect(doomed).toContain(aSuperseded.name); // A's genuinely superseded tip still reaped
+  });
+
+  it('protects a pinned image matched by external id (snapshot id), not just name', () => {
+    const pinnedById = ppw('c0222abe', 'dddddddddddd', 3, { id: 'ext-tpl-123' });
+    const sibling = ppw('c0222abe', 'eeeeeeeeeeee', 1);
+    const all = padToOrgSize([pinnedById, sibling], 84);
+    const guarded = selectSnapshotsToReap({ all, referenced: new Set(), pinnedImages: new Set(['ext-tpl-123']), now: NOW });
+    expect(guarded.doomed.map((d) => d.snapshot.name)).not.toContain(pinnedById.name);
   });
 });

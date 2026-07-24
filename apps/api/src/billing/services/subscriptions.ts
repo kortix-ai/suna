@@ -168,17 +168,45 @@ export async function createCheckoutSession(params: {
       });
 
       if (subscription.status === 'active' || subscription.status === 'trialing') {
-        await upsertCreditAccount(accountId, {
+        // A machine/compute subscription must NOT clobber the account's existing
+        // paid-plan subscription pointer. Previously this upsert unconditionally
+        // set stripeSubscriptionId to the new machine sub, which hijacked the row:
+        // when the machine sub was later canceled, handleSubscriptionDeleted
+        // reverted the whole row to free — stranding a paying plan customer
+        // behind the paywall with a dead pointer. Now, only overwrite the plan
+        // pointer when the account has no existing (non-dead) plan subscription.
+        const isMachineSub = !!serverType;
+        const existingPlanIsLive =
+          account?.stripeSubscriptionId &&
+          account.stripeSubscriptionId !== subscription.id &&
+          account.stripeSubscriptionStatus !== 'canceled' &&
+          account.stripeSubscriptionStatus !== 'unpaid' &&
+          account.stripeSubscriptionStatus !== 'incomplete_expired';
+
+        const accountUpdate: Record<string, any> = {
           tier: tierKey,
           provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
           stripeSubscriptionStatus: subscription.status,
           paymentStatus: 'active',
           // Auto-topup on by default: charge $5 when balance drops below $1
           autoTopupEnabled: true,
           autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
           autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
-        });
+        };
+
+        if (isMachineSub && existingPlanIsLive) {
+          // Machine sub created on an account that already has a live plan
+          // subscription: do NOT overwrite the plan sub pointer. Keep the
+          // existing stripeSubscriptionId so the plan sub remains the source
+          // of truth for billing/tier.
+          console.log(
+            `[Billing] Machine sub ${subscription.id} created for ${accountId} but preserving existing live plan sub ${account?.stripeSubscriptionId}`,
+          );
+        } else {
+          accountUpdate.stripeSubscriptionId = subscription.id;
+        }
+
+        await upsertCreditAccount(accountId, accountUpdate);
 
         await upsertCustomer({
           accountId,

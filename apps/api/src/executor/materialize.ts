@@ -18,8 +18,17 @@ export interface DesiredPolicy {
 }
 
 /** Provider-specific config blob stored on the connector row. */
-export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | null): Record<string, unknown> {
-  const auth = { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix };
+export function connectorConfig(
+  spec: ConnectorSpec,
+  openapiServer?: string | null,
+  iconUrl?: string | null,
+): Record<string, unknown> {
+  const auth = {
+    type: spec.auth.type,
+    in: spec.auth.in,
+    name: spec.auth.name,
+    prefix: spec.auth.prefix,
+  };
   const base: Record<string, unknown> = (() => {
     switch (spec.provider) {
       case 'pipedream':
@@ -58,6 +67,12 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
   // Sensitive gates the connector's reads too — carried in config so the gateway
   // loader (toGatewayConnector) reads it back when resolving policy.
   if (spec.sensitive) base.sensitive = true;
+  if (iconUrl) base.icon_url = iconUrl;
+  // Static request headers, carried alongside `auth` so the gateway loader can
+  // hand them to executeCall. Omitted when empty (keeps existing config blobs
+  // byte-identical for connectors that declare none). Never secrets — plaintext
+  // in git AND here, same as `baseUrl`; the auth header always wins on collision.
+  if (Object.keys(spec.headers).length > 0) base.headers = { ...spec.headers };
   return base;
 }
 

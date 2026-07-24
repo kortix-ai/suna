@@ -65,15 +65,14 @@ export function createGatewayRouteResolver(
   const catalogModelFor = options.catalogModelFor ?? (() => undefined);
 
   return async (principal, input) => {
-    const isAuto = input.requestedModel === 'auto' || input.requestedModel === 'kortix/auto';
     const projectPolicy = principal.projectId && options.getProjectPolicy
       ? await options.getProjectPolicy(principal.projectId)
       : null;
-    let primaryModel = isAuto
-      ? principal.defaultModel || options.defaultModel
-      : input.requestedModel;
+    const concreteDefault = principal.defaultModel || options.defaultModel;
+    const isDefaultRequest = input.requestedModel === concreteDefault;
+    let primaryModel = input.requestedModel;
 
-    if (isAuto && input.requires.imageInput && !options.supportsImage(primaryModel)) {
+    if (isDefaultRequest && input.requires.imageInput && !options.supportsImage(primaryModel)) {
       primaryModel = projectPolicy?.visionModel || options.visionModel;
     }
 
@@ -97,7 +96,7 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isAuto && projectPolicy?.defaultFallback) {
+    if (isDefaultRequest && projectPolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,
@@ -111,7 +110,7 @@ export function createGatewayRouteResolver(
     const policy = fallbackPolicies.route(primaryModel);
     if (!policy) {
       return {
-        policyId: isAuto ? 'auto' : 'direct',
+        policyId: 'direct',
         primaryModel,
         fallbackModels: [],
         fallbackOn: 'transient',

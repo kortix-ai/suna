@@ -205,7 +205,7 @@ cd <project-name>
 npm run build
 ```
 
-Then preview the built app locally with a real command such as `python3 -m http.server 3000` from the output directory, or use the repo's actual deployment command if one exists.
+Then preview the built app locally with a real command such as `uv run python -m http.server 3000` from the output directory, or use the repo's actual deployment command if one exists.
 
 **Apps with backend (most webapp projects):**
 

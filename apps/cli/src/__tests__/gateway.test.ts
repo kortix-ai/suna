@@ -57,7 +57,7 @@ function routingDoc() {
     version: 1,
     project: routingProject,
     effective: {
-      defaultModel: routingProject.defaultModel ?? 'kortix/auto',
+      defaultModel: routingProject.defaultModel ?? 'glm-5.2',
       defaultModelSource: routingProject.defaultModel ? 'project' : 'platform',
       visionModel: routingProject.visionModel ?? 'claude-sonnet-4.6',
       defaultFallback: routingProject.defaultFallback ?? { models: [], fallbackOn: 'transient' },
@@ -217,7 +217,7 @@ describe('kortix gateway command', () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(['gateway', 'routing', '--json', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).effective.defaultModel).toBe('kortix/auto');
+    expect(JSON.parse(r.stdout).effective.defaultModel).toBe('glm-5.2');
     expect(requests).toEqual([
       { method: 'GET', path: `/v1/projects/${PROJECT}/gateway/routing-policy` },
     ]);

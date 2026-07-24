@@ -51,14 +51,6 @@ export default function Layout({ children }: { children: ReactNode }) {
         }}
         links={[
           {
-            text: 'Home',
-            url: '/',
-          },
-          {
-            text: 'Changelog',
-            url: '/changelog',
-          },
-          {
             type: 'icon',
             text: 'GitHub',
             label: 'GitHub',

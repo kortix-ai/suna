@@ -44,6 +44,7 @@ import {
   githubAppSlug,
   isGithubAppConfigured,
   signGitHubAppJwt,
+  type GitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
 } from '../../projects/github';
 import type { AppEnv } from '../../types';
@@ -263,6 +264,26 @@ function accountRedirect(accountId: string | null, status: string, reason?: stri
   return `${base || ''}/?${qs}`;
 }
 
+export function resolveGitHubInstallCallbackAction(
+  state: GitHubAppInstallState | null,
+): 'link_account' | 'configure_managed' | 'reject' {
+  if (state?.purpose === 'account_link') return 'link_account';
+  if (state?.purpose === 'platform_setup') return 'configure_managed';
+  return 'reject';
+}
+
+export function buildAccountGitHubSetupRedirect(
+  baseUrl: string,
+  input: { state: string; installationId: string; setupAction?: string },
+): string {
+  const params = new URLSearchParams({
+    state: input.state,
+    installation_id: input.installationId,
+  });
+  if (input.setupAction) params.set('setup_action', input.setupAction);
+  return `${baseUrl.replace(/\/+$/, '')}/github/setup?${params.toString()}`;
+}
+
 // ─── POST /manifest-start ─────────────────────────────────────────────────────
 
 githubAppSetupRouter.openapi(
@@ -373,7 +394,11 @@ githubAppSetupRouter.openapi(
         patOwner: undefined,
       });
 
-      const installUrl = buildGitHubAppInstallUrl(parsedState.accountId, parsedState.nonce);
+      const installUrl = buildGitHubAppInstallUrl(
+        parsedState.accountId,
+        parsedState.nonce,
+        'platform_setup',
+      );
       if (!installUrl) {
         return c.redirect(accountRedirect(accountId, 'error', 'install_url_unavailable'), 302);
       }
@@ -391,14 +416,11 @@ githubAppSetupRouter.openapi(
 // ─── GET /install-callback ────────────────────────────────────────────────────
 // PUBLIC by necessity (GitHub → browser redirect after the operator picks
 // repos on the App's install page). Correlated back to the initiating account
-// via the SAME signed install-state mechanism the rest of the codebase already
-// uses for App installs (buildGitHubAppInstallUrl / verifyGitHubAppInstallStatePayload
-// in projects/github.ts) — manifest-callback attaches it when it builds the
-// install URL, and GitHub round-trips a `state` query param appended to
-// `apps/<slug>/installations/new` back onto the setup_url callback. Storing
-// creds here only ever overwrites the single self-host app config (no
-// per-user data), so even a state-less hit just (re)confirms the one App this
-// instance already created.
+// via the signed install-state mechanism in projects/github.ts. The state
+// purpose separates platform setup from account linking. Platform setup
+// updates the managed installation. Account linking returns to the
+// authenticated frontend callback, which consumes the stored nonce and writes
+// account_github_installations. Missing or legacy purpose values fail closed.
 
 githubAppSetupRouter.openapi(
   createRoute({
@@ -423,9 +445,13 @@ githubAppSetupRouter.openapi(
     const state = verifyGitHubAppInstallStatePayload(query.state);
     const accountId = state?.accountId ?? null;
     const installationId = query.installation_id;
+    const action = resolveGitHubInstallCallbackAction(state);
 
     if (!installationId) {
       return c.redirect(accountRedirect(accountId, 'error', 'missing_installation_id'), 302);
+    }
+    if (action === 'reject' || !query.state) {
+      return c.redirect(accountRedirect(accountId, 'error', 'invalid_state'), 302);
     }
 
     try {
@@ -451,6 +477,17 @@ githubAppSetupRouter.openapi(
       // owner needs /user/repos, not /orgs/{owner}/repos, or every managed
       // git operation 404s).
       const ownerType = resolveInstallationOwnerType(installation.account?.type);
+
+      if (action === 'link_account') {
+        return c.redirect(
+          buildAccountGitHubSetupRedirect(state?.frontendOrigin ?? frontendUrl(), {
+            state: query.state,
+            installationId,
+            setupAction: query.setup_action,
+          }),
+          302,
+        );
+      }
 
       await updateManagedGithubAppConfig({ owner, ownerType, installationId });
       // A fresh install just replaced whatever installationId (if any) was

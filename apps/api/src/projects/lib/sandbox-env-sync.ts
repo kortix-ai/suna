@@ -7,7 +7,11 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { getProvider, type ProviderName } from '../../platform/providers';
-import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
+import {
+  intersectSecretGrants,
+  listProjectSecretsSnapshotForUser,
+  projectSecretsRevision,
+} from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
@@ -44,7 +48,11 @@ async function resolveOwnerRawEnv(
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy, agentName: projectSessions.agentName })
+    .select({
+      createdBy: projectSessions.createdBy,
+      agentName: projectSessions.agentName,
+      secretsAllowlist: projectSessions.secretsAllowlist,
+    })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
@@ -77,7 +85,12 @@ async function resolveOwnerRawEnv(
     grantEnv = grant?.env;
   }
 
-  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnv)).env;
+  // THE CLOBBER FIX: apply the SAME per-session secrets narrowing as boot
+  // (buildSessionSandboxEnvVars). Without this, the first prompt's env sync (and
+  // every secret-CRUD fan-out) would re-push the full agent-grant set into a
+  // narrowed sandbox, silently widening it back. null allowlist → passthrough.
+  const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
+  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnvForSession)).env;
 }
 
 export async function resolveSandboxEnvSnapshot(

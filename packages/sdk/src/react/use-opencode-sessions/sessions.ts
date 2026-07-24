@@ -9,6 +9,8 @@ import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } from './shared';
+import { NoCompactionModelError } from './no-compaction-model-error';
+import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 
 // ============================================================================
 // Session Hooks
@@ -251,7 +253,10 @@ export function useSummarizeOpenCodeSession() {
       // 2. Try to get model from the session's latest assistant message
       if (!providerID || !modelID) {
         try {
-          const msgs = await client.session.messages({ sessionID: params.sessionId });
+          const msgs = await client.session.messages({
+            sessionID: params.sessionId,
+            limit: SESSION_SYNC_PAGE_SIZE,
+          });
           const allMsgs = (msgs.data ?? []) as Array<{ info: { role: string; providerID?: string; modelID?: string } }>;
           for (let i = allMsgs.length - 1; i >= 0; i--) {
             const m = allMsgs[i].info;
@@ -298,7 +303,12 @@ export function useSummarizeOpenCodeSession() {
       }
 
       if (!providerID || !modelID) {
-        throw new Error('No model available for compaction. Please configure a model in settings.');
+        // Expected user-facing config state (no model configured anywhere):
+        // the host toast already tells the user to configure a model. Throw a
+        // sentinel-marked class so the Sentry telemetry gate can drop it
+        // across every capture path instead of paging Better Stack for an
+        // expected configuration outcome. See `NoCompactionModelError`.
+        throw new NoCompactionModelError();
       }
 
       const result = await client.session.summarize({
