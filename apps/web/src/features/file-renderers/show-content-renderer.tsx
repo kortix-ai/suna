@@ -55,12 +55,14 @@ import {
 } from 'lucide-react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
-import { getShowFileCategory, resolveShowType } from './show-type-utils';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
-const PdfRenderer = lazy(() => import('./pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })));
+const PdfRenderer = lazy(() =>
+  import('./pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
+);
 const CsvRenderer = lazy(() =>
   import('./csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
 );
@@ -77,17 +79,17 @@ const PptxRenderer = lazy(() =>
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
 
 export {
-  SHOW_IMAGE_EXT_RE,
-  SHOW_VIDEO_EXT_RE,
-  SHOW_AUDIO_EXT_RE,
-  SHOW_PDF_EXT_RE,
-  SHOW_CSV_EXT_RE,
-  SHOW_XLSX_EXT_RE,
-  SHOW_DOCX_EXT_RE,
-  SHOW_PPTX_EXT_RE,
-  SHOW_HTML_EXT_RE,
   getShowFileCategory,
   resolveShowType,
+  SHOW_AUDIO_EXT_RE,
+  SHOW_CSV_EXT_RE,
+  SHOW_DOCX_EXT_RE,
+  SHOW_HTML_EXT_RE,
+  SHOW_IMAGE_EXT_RE,
+  SHOW_PDF_EXT_RE,
+  SHOW_PPTX_EXT_RE,
+  SHOW_VIDEO_EXT_RE,
+  SHOW_XLSX_EXT_RE,
 } from './show-type-utils';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -598,11 +600,15 @@ export function ShowContentRenderer({
   // FileContentRenderer handles text/code detection, syntax highlighting,
   // and binary fallbacks. Works great for text files via SDK text-read.
   // ═════════════════════════════════════════════════════════════════════════
-  if (effectiveType === 'file' && path && sandboxPath) {
+  // Deliberately NOT gated on `effectiveType === 'file'` — see
+  // `shouldRenderFromSandboxFile`. Every rich viewer above has already had its
+  // turn, so from here a path with no inline content means the bytes on disk
+  // are the only thing there is to show, whatever the agent labelled it.
+  if (shouldRenderFromSandboxFile(sandboxPath, content)) {
     return (
       <div className={mediaH}>
         <FileContentRenderer
-          filePath={sandboxPath}
+          filePath={sandboxPath!}
           showHeader={false}
           className="h-full"
           errorFallback={fileErrorFallback}

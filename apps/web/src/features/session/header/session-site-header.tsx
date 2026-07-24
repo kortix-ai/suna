@@ -3,12 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
@@ -20,6 +20,7 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -189,12 +190,20 @@ export function SessionSiteHeader({
                     aria-label={tHardcodedUi.raw(
                       'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
                     )}
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                   >
                     <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
 
+              {/* Four unrelated jobs live in here — naming the session, running
+                  it, taking the transcript away, and destroying it. Separators
+                  are what make that scannable; without them it reads as one
+                  undifferentiated wall. The conditionals are arranged so a
+                  separator can never lead, trail, or double up: within
+                  `isProjectSession` the first two groups always have at least
+                  Rename and Restart, and the transcript group is unconditional. */}
               <DropdownMenuContent align="end" className="w-52">
                 {isProjectSession && (
                   <>
@@ -218,6 +227,9 @@ export function SessionSiteHeader({
                         )}
                       </DropdownMenuItem>
                     )}
+
+                    <DropdownMenuSeparator />
+
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={restartMutation.isPending}
@@ -236,6 +248,8 @@ export function SessionSiteHeader({
                         Stop
                       </DropdownMenuItem>
                     )}
+
+                    <DropdownMenuSeparator />
                   </>
                 )}
 
@@ -254,18 +268,21 @@ export function SessionSiteHeader({
                 </DropdownMenuItem>
 
                 {isProjectSession && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onClick={() => setDeleteOpen(true)}
-                    variant="destructive"
-                  >
-                    <TrashSolid />
-                    Delete
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => setDeleteOpen(true)}
+                      variant="destructive"
+                    >
+                      <TrashSolid />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
 
             <SessionChangesIndicator sessionId={sessionId} />
 
