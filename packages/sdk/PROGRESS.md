@@ -171,7 +171,7 @@ Also stop if the same failure survives three different fixes (use
 | 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `9409701e3` |
 | 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `c4cf6b453` |
 | 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `b88df4a55` |
-| 5 | Typed platform API coverage | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
+| 5 | Typed platform API coverage | DONE | `frontend-sdk-only` | 2026-07-24 | `2e1a78250` |
 | 6 | Remove runtime routing knowledge | NOT STARTED | — | — | — |
 | 7 | Local parity proof | NOT STARTED | — | — | — |
 | 8 | Delivery and dev proof | NOT STARTED | — | — | — |
@@ -1726,3 +1726,25 @@ four unrelated existing errors. ESLint reported 0 errors and two existing hook
 warnings.
 
 **Shippable to production: NOT YET.** Tasks 5 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 5)
+
+Moved every frontend Kortix API transport into `@kortix/sdk`. Deleted
+`apps/web/src/lib/api-client.ts` and nine host API wrapper modules. Moved the
+IAM client and portable React Query modules into the SDK.
+
+The corrected boundary inventory found 40 forbidden imports after adding
+`@/lib/api-client` enforcement. The final baseline contains 0 violations.
+The scanner also rejects the `backendApi` and `authenticatedFetch` identifiers.
+
+**TDD evidence:** five focused SDK files first failed on missing exports.
+The GREEN SDK run reported **48 pass / 0 fail**. The web boundary and public
+marketplace run reported **5 pass / 0 fail**. The SDK typecheck exited 0.
+ESLint reported 0 errors.
+
+The public runtime and type snapshots contain additions only. They contain no
+removed or renamed exports.
+
+**Shippable to production: NOT YET.** Tasks 6 through 8 remain incomplete.
