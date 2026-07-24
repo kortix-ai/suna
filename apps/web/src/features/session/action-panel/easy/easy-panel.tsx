@@ -411,6 +411,11 @@ export const EasyPanel = memo(function EasyPanel({
             path={output.path}
             name={displayName}
             fileName={output.name}
+            shareContext={
+              projectId && projectSessionId
+                ? { projectId, sessionId: projectSessionId }
+                : undefined
+            }
             onClose={closeDetail}
             onAskForChanges={askForChanges}
             onPresent={present}
@@ -419,7 +424,7 @@ export const EasyPanel = memo(function EasyPanel({
       });
       setPanelSplit(split);
     },
-    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit],
+    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit, projectId, projectSessionId],
   );
 
   const outcome = useMemo(

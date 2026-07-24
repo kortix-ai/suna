@@ -28,20 +28,12 @@ import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import {
-  Check,
-  Copy,
-  FileWarning,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  Presentation,
-} from 'lucide-react';
+import { Check, Copy, FileWarning, MessageSquarePlus, Presentation } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
+import { PanelWidthButton, ShareFileButton, type ShareContext } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -67,6 +59,7 @@ function PreviewShell({
   name,
   fileName = name,
   path,
+  shareContext,
   onClose,
   onAskForChanges,
   onPresent,
@@ -81,6 +74,8 @@ function PreviewShell({
    *  separate display title. */
   fileName?: string;
   path: string;
+  /** Forwarded to the toolbar's share control. See `FilePreview`. */
+  shareContext?: ShareContext;
   onClose: () => void;
   /** Seeds the composer with a starter line about this file and closes the
    *  detail (W12). Omitted entirely (not disabled) where there's no session
@@ -96,8 +91,6 @@ function PreviewShell({
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   return (
@@ -139,26 +132,9 @@ function PreviewShell({
           )}
           {isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
           {actions}
+          <ShareFileButton shareContext={shareContext} path={path} fileName={fileName} />
           <DownloadButton path={path} fileName={fileName} />
-          {/* The store flip is a no-op on mobile — the drawer never reads
-              `isExpanded` — so the control was dead weight there. */}
-          {!isMobile && (
-            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleExpanded}
-                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-                className="size-7 active:scale-[0.96]"
-              >
-                {isExpanded ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </Button>
-            </Hint>
-          )}
+          <PanelWidthButton isMobile={isMobile} />
           <CloseButton onClose={onClose} />
         </span>
       </div>
@@ -252,6 +228,7 @@ export function FilePreview({
   path,
   name,
   fileName = name,
+  shareContext,
   onClose,
   onAskForChanges,
   onPresent,
@@ -265,6 +242,8 @@ export function FilePreview({
    *  detection — all of which need the real extension, not a human title that
    *  may carry none. Defaults to `name` for callers with no separate title. */
   fileName?: string;
+  /** Forwarded to the toolbar's share control. See `PreviewShell`. */
+  shareContext?: ShareContext;
   /** The detail layer's header is suppressed for files — the viewer's toolbar
    *  owns the name and the close, so there is one bar instead of two. */
   onClose: () => void;
@@ -294,6 +273,7 @@ export function FilePreview({
         name={name}
         fileName={fileName}
         path={path}
+        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -311,6 +291,7 @@ export function FilePreview({
         name={name}
         fileName={fileName}
         path={path}
+        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -328,6 +309,7 @@ export function FilePreview({
         name={name}
         fileName={fileName}
         path={path}
+        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -354,6 +336,7 @@ export function FilePreview({
         name={name}
         fileName={fileName}
         path={path}
+        shareContext={shareContext}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
         onPresent={onPresent}
@@ -383,6 +366,7 @@ export function FilePreview({
       content={data.content}
       fileName={fileName}
       path={path}
+      shareContext={shareContext}
       onClose={onClose}
       onAskForChanges={onAskForChanges}
     />

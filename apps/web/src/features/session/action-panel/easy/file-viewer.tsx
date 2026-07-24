@@ -34,19 +34,10 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import {
-  Code2,
-  Download,
-  ExternalLink,
-  Eye,
-  Loader2,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-} from 'lucide-react';
+import { Code2, Download, ExternalLink, Eye, Loader2, MessageSquarePlus } from 'lucide-react';
 import { useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
+import { PanelWidthButton, ShareFileButton, type ShareContext } from './viewer-actions';
 
 type View = 'preview' | 'source';
 
@@ -184,6 +175,7 @@ export function FileViewer({
   content,
   fileName,
   path,
+  shareContext,
   onClose,
   onAskForChanges,
   className,
@@ -192,6 +184,8 @@ export function FileViewer({
   fileName: string;
   /** Sandbox path — needed to download the real bytes. */
   path?: string;
+  /** Forwarded to the toolbar's share control. See `PreviewShell`. */
+  shareContext?: ShareContext;
   onClose?: () => void;
   /** Seeds the composer with a starter line about this file and closes the
    *  detail (W12). Omitted entirely (not disabled) where there's no session
@@ -203,8 +197,6 @@ export function FileViewer({
   const markdown = isMarkdown(fileName);
   const [view, setView] = useState<View>('preview');
 
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   return (
@@ -262,26 +254,9 @@ export function FileViewer({
           )}
           <CopyButton code={content} />
           {path && isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
+          <ShareFileButton shareContext={shareContext} path={path} fileName={fileName} />
           {path && <DownloadButton path={path} fileName={fileName} />}
-          {/* The store flip is a no-op on mobile — the drawer never reads
-              `isExpanded` — so the control was dead weight there. */}
-          {!isMobile && (
-            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleExpanded}
-                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-                className="size-7 active:scale-[0.96]"
-              >
-                {isExpanded ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </Button>
-            </Hint>
-          )}
+          <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
         </span>
       </div>
