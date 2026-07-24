@@ -308,6 +308,7 @@ export async function resolveSessionConnectorProfile(input: {
         sessionId: projectSessions.sessionId,
         createdBy: projectSessions.createdBy,
         visibility: projectSessions.visibility,
+        inheritUnbound: projectSessions.connectorBindingsInheritUnbound,
         createdByServiceAccountId: serviceAccounts.serviceAccountId,
       })
       .from(projectSessions)
@@ -385,19 +386,27 @@ export async function resolveSessionConnectorProfile(input: {
     // every OTHER connector (slack, meet, …) on that session, which the caller
     // never chose. The auto email binding still resolves via its own bound row
     // above; this gate governs only the UNBOUND aliases.
-    const [anyBinding] = await db
-      .select({ sessionId: projectSessionConnectorBindings.sessionId })
-      .from(projectSessionConnectorBindings)
-      .where(
-        and(
-          eq(projectSessionConnectorBindings.sessionId, input.sessionId),
-          eq(projectSessionConnectorBindings.accountId, input.accountId),
-          eq(projectSessionConnectorBindings.projectId, input.projectId),
-          eq(projectSessionConnectorBindings.source, 'request'),
-        ),
-      )
-      .limit(1);
-    if (!mayUseLegacyDefaultProfile(Boolean(anyBinding))) return null;
+    //
+    // A session created with `inherit_unbound` opts OUT of all-or-nothing: an
+    // unbound alias keeps falling through to the project default below. Safe
+    // because the fallback query only ever returns the project's `isDefault`
+    // profile for this exact account+project+alias — never another owner's or a
+    // member/external profile — so it can neither escalate nor cross a tenant.
+    if (!session.inheritUnbound) {
+      const [anyBinding] = await db
+        .select({ sessionId: projectSessionConnectorBindings.sessionId })
+        .from(projectSessionConnectorBindings)
+        .where(
+          and(
+            eq(projectSessionConnectorBindings.sessionId, input.sessionId),
+            eq(projectSessionConnectorBindings.accountId, input.accountId),
+            eq(projectSessionConnectorBindings.projectId, input.projectId),
+            eq(projectSessionConnectorBindings.source, 'request'),
+          ),
+        )
+        .limit(1);
+      if (!mayUseLegacyDefaultProfile(Boolean(anyBinding))) return null;
+    }
   }
 
   const [fallback] = await db

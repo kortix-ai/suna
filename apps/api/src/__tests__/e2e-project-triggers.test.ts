@@ -382,6 +382,7 @@ const triggerDbMock: any = {
               origin: values.origin ?? 'user',
               originRef: values.originRef ?? null,
               secretsAllowlist: values.secretsAllowlist ?? null,
+              connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,

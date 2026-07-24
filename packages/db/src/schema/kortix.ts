@@ -580,6 +580,16 @@ export const projectSessions = kortixSchema.table(
     // env is (today's agent-grant set) ∩ (this allowlist), enforced at BOTH boot
     // and hot-push. null = no restriction (byte-identical to pre-KaaB behavior).
     secretsAllowlist: jsonb('secrets_allowlist').$type<string[]>(),
+    // When a session sets `connector_bindings`, binding ANY alias normally
+    // suppresses the project-default fallback for every OTHER (unbound) alias —
+    // "all-or-nothing" (see resolveSessionConnectorProfile). This opts the session
+    // out: unbound aliases keep resolving to the project DEFAULT profile, so a
+    // caller can override just one connector (e.g. a user's own Gmail) without
+    // re-binding the rest. Only ever inherits the project default — never another
+    // owner's profile — so it is safe for any origin. Set at create, immutable after.
+    connectorBindingsInheritUnbound: boolean('connector_bindings_inherit_unbound')
+      .default(false)
+      .notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

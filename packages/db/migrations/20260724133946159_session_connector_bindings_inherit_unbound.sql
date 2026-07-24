@@ -1,0 +1,1 @@
+ALTER TABLE "kortix"."project_sessions" ADD COLUMN "connector_bindings_inherit_unbound" boolean DEFAULT false NOT NULL;
