@@ -31,5 +31,9 @@ describe('compute pricing estimates', () => {
     const tenSeats = estimateTeamCompute(10);
     expect(tenSeats.monthlyCredits).toBe(25_000);
     expect(tenSeats.runtimeHours).toBeCloseTo(1241.8534, 4);
+
+    const hundredSeats = estimateTeamCompute(100);
+    expect(hundredSeats.monthlyCredits).toBe(250_000);
+    expect(hundredSeats.runtimeHours).toBeCloseTo(12_418.5344, 4);
   });
 });
