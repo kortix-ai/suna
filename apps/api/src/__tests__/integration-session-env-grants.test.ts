@@ -90,7 +90,7 @@ beforeAll(async () => {
     sessionId: PRINCIPAL_SESSION,
     accountId: ctx.accountId,
     projectId: ctx.projectId,
-    branchName: 'kaab-principal-test',
+    branchName: `kaab-principal-${SUFFIX}`,
     createdBy: OWNER,
     agentName: 'default',
   });
@@ -173,7 +173,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       sessionId: SESSION_ID,
       accountId: ctx.accountId,
       projectId: ctx.projectId,
-      branchName: 'kaab-clobber-test',
+      branchName: `kaab-clobber-${SUFFIX}`,
       createdBy: USER,
       agentName: 'default',
       secretsAllowlist: [UNSCOPED],
