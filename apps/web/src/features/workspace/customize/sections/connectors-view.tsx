@@ -90,6 +90,7 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -843,6 +844,7 @@ function PrivateConnectionBanner({
   disconnecting,
   onConnect,
   onDisconnect,
+  onStartSession,
 }: {
   displayName: string;
   connected: boolean;
@@ -850,6 +852,7 @@ function PrivateConnectionBanner({
   disconnecting: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  onStartSession: () => void;
 }) {
   if (connected) {
     return (
@@ -858,16 +861,15 @@ function PrivateConnectionBanner({
         icon={Lock}
         title="Connected privately — only you"
         action={
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0"
-            onClick={onDisconnect}
-            disabled={disconnecting}
-          >
-            {disconnecting ? <Loading className="size-4 shrink-0" /> : null}
-            Disconnect
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button size="sm" onClick={onStartSession}>
+              Use in a new session
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onDisconnect} disabled={disconnecting}>
+              {disconnecting ? <Loading className="size-4 shrink-0" /> : null}
+              Disconnect
+            </Button>
+          </div>
         }
       >
         Your own {displayName} connection, usable only in your private sessions — separate from the
@@ -957,6 +959,20 @@ function ConnectorDetail({
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to disconnect'),
   });
+  // Start a new session that uses this member's OWN connection for this connector.
+  // `inherit_unbound` keeps the project default for every OTHER connector the agent
+  // uses, so binding just this one doesn't null the rest. The session is private by
+  // default, which is required for a member-owned binding to resolve.
+  const newSession = useNewProjectSession(projectId);
+  const startPrivateSession = () => {
+    if (!myPrivateProfile) return;
+    newSession({
+      create: {
+        connector_bindings: { [connector.slug]: { profile_id: myPrivateProfile.profile_id } },
+        inherit_unbound: true,
+      },
+    });
+  };
   const [credOpen, setCredOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -1167,6 +1183,7 @@ function ConnectorDetail({
             disconnecting={disconnectPrivate.isPending}
             onConnect={() => privateConnect.mutate()}
             onDisconnect={() => disconnectPrivate.mutate()}
+            onStartSession={startPrivateSession}
           />
         )}
         {/* The sensitive toggle lives under Permissions (it IS a permission
