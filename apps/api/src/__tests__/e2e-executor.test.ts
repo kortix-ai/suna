@@ -161,7 +161,7 @@ const deps: ExecutorRouterDeps = {
     const u = c.req.header('x-test-reader') ?? c.req.header('x-test-admin');
     return u ? { accountId: ACCOUNT, userId: u } : null;
   },
-  listConnectors: async (_projectId, viewerUserId): Promise<AdminConnectorView[]> =>
+  listConnectors: async (): Promise<AdminConnectorView[]> =>
     [...world.connectors.values()].map((conn) => ({
       slug: conn.slug,
       name: conn.slug,

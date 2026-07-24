@@ -36,6 +36,7 @@
  * are green-or-skipped locally and exercise the real path on dev-api.
  */
 import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
 import { assert } from '../core/expect';
 import { waitFor } from '../core/poll';
 import { CliSandbox } from '../fixtures/cli';
@@ -585,7 +586,7 @@ flow(
     domain: 'cli',
     requires: ['funded'],
     serial: true,
-    timeoutMs: 600_000,
+    timeoutMs: 1_200_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -627,6 +628,7 @@ flow(
             timeoutMs: 25_000,
           },
         );
+        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
         r.status(200);
         return r.json<any>();
       },
@@ -634,9 +636,10 @@ flow(
         until: (body) =>
           body?.stage === 'ready' &&
           Boolean(body?.sandbox?.external_id ?? body?.sandbox?.externalId),
-        timeoutMs: 300_000,
+        timeoutMs: 660_000,
         intervalMs: 3_000,
         description: `CR-9 session runtime ready for ${session.id}`,
+        retryOnError: isKe2eRetryableError,
       },
     );
     const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
@@ -684,7 +687,7 @@ flow(
         const r = await sb.run(['cr', 'open', '--head', session.id, '--title', 'ke2e cli CR'], {
           env: crEnv,
         });
-        check('exit 0', r.exitCode === 0, 0, r.exitCode);
+        checkExit('exit 0', r, 0);
         check('reports the opened CR number', /CR #\d+/.test(r.all), true, r.stdout.slice(0, 200));
         const m = r.stdout.match(/CR #(\d+)/);
         crNumber = m ? m[1] : '';

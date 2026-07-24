@@ -21,7 +21,7 @@ Use a real backend only when the site or app actually needs persistence, server-
 
 ```bash
 # Python / FastAPI
-python api_server.py
+uv run api_server.py
 
 # Node / Express
 node server.js

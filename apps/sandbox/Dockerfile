@@ -3,9 +3,8 @@
 # Kortix sandbox image — the base Daytona snapshot for every project
 # session. Bakes:
 #   - git + ca-certificates + curl  (project repo materialization)
-#   - ripgrep                       (daemon /find text search; Node fallback
-#                                    covers images built before this was added)
-#   - Python + common document/data packages used by starter skills
+#   - uv + uv-managed Python       (Python tools resolve dependencies per command)
+#   - pnpm + Node.js + npm         (pinned runtime toolchain)
 #   - opencode CLI                  (the supervised child process)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
@@ -31,7 +30,7 @@
 
 # ─── Stage 1: build the agent binary ────────────────────────────────────
 
-FROM oven/bun:1-debian AS builder
+FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS builder
 
 ARG TARGETARCH
 
@@ -56,7 +55,7 @@ RUN case "${TARGETARCH:-}" in \
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
 # can resolve the `@kortix/*` names to their source, then compile.
 
-FROM oven/bun:1-debian AS cli-builder
+FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS cli-builder
 
 ARG TARGETARCH
 
@@ -81,139 +80,126 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 
 # ─── Stage 3: runtime ───────────────────────────────────────────────────
 
-FROM oven/bun:1-debian
+FROM ubuntu:24.04
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        build-essential \
-        ffmpeg \
-        fonts-dejavu \
-        fonts-liberation \
-        fonts-noto \
-        fonts-noto-cjk \
-        git \
-        latexmk \
-        libreoffice \
-        nodejs \
-        npm \
-        pandoc \
-        pkg-config \
-        poppler-utils \
-        python3 \
-        python3-dev \
-        python3-pip \
-        python3-venv \
-        qpdf \
-        ripgrep \
-        texlive-bibtex-extra \
-        texlive-fonts-recommended \
-        texlive-latex-base \
-        texlive-latex-extra \
-        texlive-latex-recommended \
-        tesseract-ocr \
-        unzip \
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \
+        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \
+        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \
+        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \
+        texlive-latex-extra texlive-latex-recommended \
     && rm -rf /var/lib/apt/lists/*
 
-# Python libraries referenced by the starter marketplace skills. Ubuntu marks
-# system Python as externally managed, so use --break-system-packages
-# intentionally: these packages are part of the immutable sandbox image, not a
-# user-managed workstation install.
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
-        "beautifulsoup4>=4.12" \
-        "lxml>=5" \
-        "markdownify>=0.13" \
-        "markitdown[pptx]>=0.1.0" \
-        "matplotlib>=3.8" \
-        "numpy>=1.26" \
-        "openpyxl>=3.1" \
-        "pandas>=2.2" \
-        "pdf2docx>=0.5" \
-        "pdf2image>=1.17" \
-        "pdfplumber>=0.11" \
-        "pillow>=10" \
-        "playwright>=1.58" \
-        "plotly>=5.22" \
-        "pymupdf>=1.24" \
-        "pypdf>=4" \
-        "pypdfium2>=4.30" \
-        "pytesseract>=0.3" \
-        "python-docx>=1.1" \
-        "python-pptx>=1.0" \
-        "reportlab>=4.2" \
-        "requests>=2.32" \
-        "scikit-learn>=1.4" \
-        "scipy>=1.12" \
-        "seaborn>=0.13" \
-        "youtube-transcript-api>=0.6" \
-    && python3 - <<'PY'
-import importlib
-mods = [
-  "bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl",
-  "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright",
-  "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx",
-  "reportlab", "requests", "sklearn", "scipy", "seaborn",
-  "youtube_transcript_api",
-]
-for mod in mods:
-    importlib.import_module(mod)
-print("starter Python package floor OK")
-PY
+RUN useradd --create-home --shell /bin/bash --user-group kortix \
+    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/kortix \
+    && chmod 0440 /etc/sudoers.d/kortix \
+    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
+        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
+    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix
 
-# OpenCode is distributed as an npm package. Install globally so it ends
-# up on PATH as `opencode` — the daemon will auto-detect it (or prefer
-# /usr/local/bin/opencode-kortix if a patched build is present).
+ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
+USER kortix
+
 COPY packages/shared/src/runtime-versions.json /tmp/kortix-runtime-versions.json
+RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && PYTHON_VERSION="$(sed -n 's/.*"python": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && UV_SHA256_AMD64="$(sed -n 's/.*"uvSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && UV_SHA256_ARM64="$(sed -n 's/.*"uvSha256Arm64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
+    && test -n "$UV_VERSION" \
+    && test -n "$PYTHON_VERSION" \
+    && case "$(uname -m)" in \
+         x86_64) uv_arch=x86_64; uv_sha="$UV_SHA256_AMD64" ;; \
+         aarch64|arm64) uv_arch=aarch64; uv_sha="$UV_SHA256_ARM64" ;; \
+         *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \
+         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && echo "${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \
+    && rm /tmp/uv.tar.gz \
+    && uv --version | grep -Eq "^uv ${UV_VERSION}( |$)" \
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default "$PYTHON_VERSION" \
+    && python -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'; print('managed python:', sys.version)" \
+    && python3 -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'"
+
+ENV SHELL=/bin/bash
+RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
+    && NODE_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['node'])")" \
+    && NPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['npm'])")" \
+    && PNPM_SHA256_AMD64="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpmSha256Amd64'])")" \
+    && PNPM_SHA256_ARM64="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpmSha256Arm64'])")" \
+    && case "$(uname -m)" in \
+         x86_64) pnpm_arch=x64; pnpm_sha="$PNPM_SHA256_AMD64" ;; \
+         aarch64|arm64) pnpm_arch=arm64; pnpm_sha="$PNPM_SHA256_ARM64" ;; \
+         *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \
+         "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-${pnpm_arch}.tar.gz" \
+    && echo "${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \
+    && rm /tmp/pnpm.tar.gz \
+    && test "$(pnpm --version)" = "$PNPM_VERSION" \
+    && pnpm runtime set node "$NODE_VERSION" -g \
+    && test "$(node --version)" = "v${NODE_VERSION}" \
+    && pnpm add -g "npm@${NPM_VERSION}" \
+    && test "$(npm --version)" = "$NPM_VERSION"
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
+    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
+    && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
+    && pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}" \
+    && agent-browser --version \
+    && for pw_try in 1 2 3 4 5; do \
+        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \
+        echo "playwright chromium install attempt $pw_try failed, retrying..."; \
+        sleep $((pw_try*10)); \
+    done \
+    && sudo rm -rf /var/lib/apt/lists/* \
+    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \
+    && test -n "$pw_chrome" \
+    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \
+    && mkdir -p /home/kortix/.agent-browser/browsers \
+    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \
+    && chromium --version \
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
-    && npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
+    && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version
 
-# Pre-warm Bun's package cache with the OpenCode tool dependencies. The tools in
-# .kortix/opencode/tools/ (web_search, image_search, scrape_webpage) import these,
-# and OpenCode runs `bun install` in the cloned config dir at boot. Warming the
-# cache at the runtime HOME path (HOME=/opt/kortix/home) makes that boot-time
-# install offline + fast — no per-boot download.
-# Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
-RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \
-    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > /tmp/oc-deps/package.json \
-    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install --cwd /tmp/oc-deps \
-    && rm -rf /tmp/oc-deps
+RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
+    && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
+    && BUN_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Arm64)")" \
+    && case "$(uname -m)" in \
+         x86_64) bun_arch=x64; bun_sha="$BUN_SHA256_AMD64" ;; \
+         aarch64|arm64) bun_arch=aarch64; bun_sha="$BUN_SHA256_ARM64" ;; \
+         *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \
+         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${bun_arch}.zip" \
+    && echo "${bun_sha}  /tmp/bun.zip" | sha256sum -c - \
+    && unzip -q /tmp/bun.zip -d /tmp/bun \
+    && install -m 0755 "/tmp/bun/bun-linux-${bun_arch}/bun" /home/kortix/.bun/bin/bun \
+    && ln -sf bun /home/kortix/.bun/bin/bunx \
+    && rm -rf /tmp/bun /tmp/bun.zip \
+    && test "$(bun --version)" = "$BUN_VERSION"
 
-# agent-browser (Vercel agent-browser): browser-automation CLI for the agent.
-# Chrome for Testing (what `agent-browser install` fetches) has no linux-arm64
-# build, so we source Chromium from Playwright instead — it ships both
-# linux-x64 and linux-arm64 builds and installs the OS libs via --with-deps.
-# We wire agent-browser to it TWO independent ways so it works out of the box
-# with no runtime download: (1) AGENT_BROWSER_EXECUTABLE_PATH → a stable
-# /usr/local/bin/chromium symlink, and (2) a symlink into agent-browser's OWN
-# browser cache (chrome-linux64) that its auto-detect finds even if the env var
-# is ever ignored again (vercel-labs/agent-browser#422). The build FAILS LOUDLY
-# if Chromium didn't wire up. HOME pins the cache to the runtime HOME so the
-# agent finds it at runtime. Keep PLAYWRIGHT_VERSION in sync with
-# packages/shared/src/runtime-versions.json.
-# --no-sandbox: container runs as root and Chromium refuses its own sandbox there.
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \
-    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
-RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
-    && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
-    && npm install -g --no-audit --no-fund "agent-browser@${AGENT_BROWSER_VERSION}" \
-    && agent-browser --version \
-    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \
-    && test -n "$pw_chrome" \
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \
-    && /usr/local/bin/chromium --version \
-    # Match the resolved PATH, not the browser name ("Chromium" on arm64 vs
-    # "Google Chrome for Testing" on x64). Reads the detection line, not the
-    # launch verdict, so it's safe under cross-arch QEMU builds.
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+RUN mkdir -p /opt/kortix/opencode-config-deps \
+    && cd /opt/kortix/opencode-config-deps \
+    && OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > package.json \
+    && bun install \
+    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
+    && rm -rf /tmp/opencode-deps-bundle-check
 
+USER root
 COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
@@ -224,13 +210,15 @@ COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 # (see injected-skills.ts) so no project ever goes stale on Kortix internals.
 COPY --from=cli-builder /cli/managed-skills /opt/kortix/managed-skills
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
+COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Keep the repo-relative layout under /opt/kortix so agent CLIs can import
 # shared workspace packages the same way they do in local tests.
 COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY packages/executor-sdk/ /opt/kortix/packages/executor-sdk/
 RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
-    && kortix --version
+    && kortix --version \
+    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
 
 # Platform-owned secret delivery. The daemon writes live project secrets to
 # /dev/shm/kortix/agent-env.sh (tmpfs — never on the persisted disk); these
@@ -245,6 +233,7 @@ RUN printf '%s\n' '[ -r /dev/shm/kortix/agent-env.sh ] && . /dev/shm/kortix/agen
       >> /etc/bash.bashrc
 
 ENV KORTIX_WORKSPACE=/workspace
+USER kortix
 WORKDIR /workspace
 
 EXPOSE 8000

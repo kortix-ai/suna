@@ -51,6 +51,10 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
+import {
+  applySandboxProviderResult,
+  pollSandboxProviderTransition,
+} from './sandbox-provider-result';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -435,25 +439,41 @@ function SandboxProviderRow({
   const queryClient = useQueryClient();
   const available = project.available_sandbox_providers ?? [];
   const current = project.default_sandbox_provider ?? null;
+  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
   const mutation = useMutation({
     mutationFn: (next: SandboxProviderName | null) =>
       updateProjectSandboxProvider(project.project_id, next),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.setQueryData<ProjectDetail | undefined>(
-        ['project-detail', project.project_id],
-        (c) => (c ? { ...c, project: updated } : c),
-      );
-      queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    onSuccess: (result, next) => {
+      // FIX-L: the PATCH returns EITHER the updated project (immediate) OR a
+      // preparation object (the prepare branch — a switch to a different enabled
+      // provider). Write the project cache ONLY for the immediate result; a
+      // preparation is a transition, not a project, and must not clobber the
+      // cached project shape.
+      const kind = applySandboxProviderResult(queryClient, project.project_id, result);
+      if (kind === 'preparation') {
+        successToast(`Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`);
+        // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
+        // and refresh the project once it settles so the now-active provider shows.
+        void pollSandboxProviderTransition(project.project_id, {
+          onSettled: (state) => {
+            queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
+            queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            const status = state?.latest?.status;
+            if (status === 'activated') {
+              successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
+            } else if (status === 'failed') {
+              errorToast(state?.latest?.label || 'Sandbox provider switch failed');
+            }
+          },
+        });
+      }
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update sandbox provider'),
   });
 
   if (available.length === 0) return null;
-
-  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3">

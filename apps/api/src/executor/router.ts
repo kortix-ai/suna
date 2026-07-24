@@ -48,6 +48,7 @@ const CatalogConnectorSchema = z
     name: z.string(),
     provider: z.string(),
     platform: z.string().nullable().optional(),
+    iconUrl: z.string().nullable().optional(),
     status: z.string(),
     actions: z.array(CatalogActionSchema),
   })
@@ -109,6 +110,7 @@ export interface CatalogConnector {
   provider: string;
   /** Channel provider only: native platform backing this profile. */
   platform?: string | null;
+  iconUrl?: string | null;
   status: string;
   actions: CatalogAction[];
 }
@@ -171,7 +173,7 @@ export interface ExecutorRouterDeps {
     c: Context,
     projectId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
-  listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
+  listConnectors(projectId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
@@ -624,7 +626,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ? await deps.resolveReader(c, projectId)
         : await deps.resolveAdmin(c, projectId);
       if (!reader) return c.json({ error: 'forbidden' }, 403);
-      return c.json({ connectors: await deps.listConnectors(projectId, reader.userId) });
+      return c.json({ connectors: await deps.listConnectors(projectId) });
     },
   );
 

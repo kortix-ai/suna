@@ -23,7 +23,19 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  BUN_VERSION,
+  NODE_VERSION,
+  NPM_VERSION,
   PLAYWRIGHT_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PNPM_VERSION,
+  PYTHON_VERSION,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
+  UV_VERSION,
 } from '../runtime-versions';
 
 /**
@@ -51,6 +63,15 @@ import {
  * This is fed into `buildLayeredDockerfile` like any other user Dockerfile.
  * Exposed so the snapshot identity hash treats it as a stable input.
  */
+/**
+ * The `kortix` user's toolchain directories — everything the runtime resolves
+ * from PATH (opencode via pnpm-global, pnpm itself, uv-managed Python, bun). Shared
+ * between the toolchain layer's `ENV PATH` and the staged entrypoint script.
+ * Some providers discard `ENV` at boot, so the entrypoint restores this value.
+ */
+export const KORTIX_USER_PATH_DIRS =
+  '/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin';
+
 export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '# syntax=docker/dockerfile:1.7',
   '# Kortix platform default sandbox base.',
@@ -65,9 +86,9 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
 /**
  * Inputs for the toolchain half of the layer — everything that installs into
  * the image from the NETWORK (apt, pip, npm, bun, Playwright) plus the
- * build-time opencode warm-ups. It stages NO artifacts, so it renders against
- * an empty build context: a caller that only wants the toolchain floor (the
- * CLI's local sandbox) can build it without producing a single staged file.
+ * build-time opencode warm-ups. The warm-up script is optional: without it this
+ * renders against an empty build context for the CLI's local sandbox; snapshot
+ * builders stage it to enable the cache-only warm-up steps.
  */
 export interface KortixToolchainLayerOpts {
   /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
@@ -78,6 +99,8 @@ export interface KortixToolchainLayerOpts {
    * `AGENT_BROWSER_VERSION` so the pin is centralized and fingerprinted.
    */
   agentBrowserVersion?: string;
+  /** Build-context path to the cache-only OpenCode warm-up script. */
+  opencodeWarmupScriptPath?: string;
   /**
    * Path (in the build context) to the canonical starter `.kortix/opencode`
    * config tree (pty plugin + standard tools + skills). When provided, the
@@ -132,28 +155,42 @@ export interface KortixToolchainLayerOpts {
 }
 
 /**
- * Build-time git-clone inputs for a per-project COLD warm bake. Shared between
- * `kortixToolchainLayer` (the full monolithic build) and
+ * Render-time inputs for baking a per-project COLD warm repo checkout into the
+ * image. Shared between `kortixToolchainLayer` (the full monolithic build) and
  * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) so both
- * render the identical clone RUN — see `buildWarmRepoCloneLines`.
+ * render the identical COPY step — see `buildWarmRepoCopyLines`.
+ *
+ * SECURITY (PHASE 1): this shape carries NO credentials. The repo is cloned
+ * with the git-host credential, origin-reset to the Kortix proxy, and scrubbed
+ * of all auth material API-side in Suna (`stageWarmRepoCheckout`,
+ * build-context.ts) BEFORE the Dockerfile is rendered. The rendered image only
+ * `COPY`s the already-sanitized plain bytes at `stagedPath`, so a git auth
+ * header never enters the Dockerfile text, the build args, the OCI image
+ * history, the provider build logs, or any abandoned build-context object.
+ *
+ * The previous design embedded `git -c http.extraHeader=<Authorization: …>`
+ * directly in a `RUN` — that credential leaked into the uploaded build context,
+ * the image history, the build logs, and abandoned retry objects, and deleting
+ * the temp clone dir did NOT remove any of those copies.
  */
 export interface WarmRepoConfig {
-  /** Upstream URL to clone from at BUILD time (real git host or proxy). */
-  cloneUrl: string;
   /**
-   * Auth headers for the build-time clone, passed via `git -c
-   * http.extraHeader` inside a RUN that deletes the script in the same
-   * invocation — nothing credential-shaped survives into the image layer.
+   * Path (relative to the build context root) to the pre-staged,
+   * credential-free repo checkout produced API-side. The image `COPY`s these
+   * bytes verbatim into /workspace — nothing here is secret.
    */
-  cloneHeaders: Record<string, string>;
-  /** Branch to check out (the default branch tip is baked). */
+  stagedPath: string;
+  /**
+   * Visible build-context path to a tar archive of the checkout's `.git`
+   * directory. Provider uploaders transfer this as one regular file.
+   */
+  stagedGitPath: string;
+  /**
+   * Branch that was checked out (the default-branch tip). Diagnostic only —
+   * shell-quoted on render (never interpolated raw), so a hostile branch name
+   * cannot inject a build-time shell command.
+   */
   branch: string;
-  /**
-   * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
-   * the daemon's per-session credential helper re-auths pushes/fetches at
-   * runtime (the build credential is never persisted).
-   */
-  originUrl: string;
 }
 
 /**
@@ -180,6 +217,8 @@ export interface KortixArtifactLayerOpts {
   cliBinaryPath: string;
   /** Path the snapshot builder will reference for the entrypoint script. */
   entrypointScriptPath: string;
+  /** Path to the platform-managed machine guide, copied to `/MACHINE.md`. */
+  machineDocPath: string;
   /**
    * Path the snapshot builder will reference for the slack-cli source tree
    * (apps/sandbox/slack-cli). The layer COPYs it into
@@ -214,7 +253,7 @@ export interface BuildLayeredDockerfileOpts
 
 /**
  * The network-install half of the Kortix runtime layer: the apt floor, the
- * starter Python package floor, opencode + its baked config deps, bun, the
+ * uv-managed Python, opencode + its baked config deps, bun, the
  * build-time opencode warm-ups (incl. the optional per-project repo bake), and
  * agent-browser + its Playwright Chromium.
  *
@@ -225,42 +264,45 @@ export interface BuildLayeredDockerfileOpts
 const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
 /**
- * The per-project COLD warm clone RUN: clones `warmRepo` into /workspace at
- * BUILD time. The auth header goes through `git -c http.extraHeader` (never
- * written to git config) and the whole step is one RUN, so no credential-shaped
- * bytes persist. origin is reset to the Kortix proxy so the daemon re-auths per
- * session at runtime.
+ * The per-project COLD warm bake step: `COPY` the credential-free repo checkout
+ * that Suna already cloned, origin-reset, and scrubbed API-side
+ * (`stageWarmRepoCheckout`) into /workspace. NO auth material is present — this
+ * is the PHASE 1 fix for the credential leak that the old in-Dockerfile clone
+ * caused (the git auth header used to be embedded in a `RUN` that shipped to
+ * object storage, baked into OCI history, and printed to build logs).
  *
  * Shared verbatim between `kortixToolchainLayer` (the monolithic build) and
  * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) — the two
- * MUST render byte-identical clone text so the baked checkout is the same
- * either way. Returns `[]` when there's no repo to bake (the shared,
+ * MUST render byte-identical steps so the baked checkout is the same either
+ * way. Returns `[]` when there's no repo to bake (the shared,
  * project-independent default image).
  */
-function buildWarmRepoCloneLines(warmRepo: WarmRepoConfig | undefined): string[] {
+function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] {
   if (!warmRepo) return [];
   return [
     '',
     '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
-    // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
-    // small; the daemon fast-paths the baked .git and deepens on demand.
-    // NOTE: an earlier layer sets `WORKDIR /workspace` (either this image's own
-    // toolchain layer, or — on the FROM-base fast path — the inherited base
-    // image), so the build shell's CWD IS /workspace. We must NOT `rm -rf
-    // /workspace` (that orphans the CWD inode → git dies with "Unable to read
-    // current working directory"). Instead `cd /`, clone into a scratch dir,
-    // then move the contents into the (emptied) /workspace so the CWD inode
-    // stays valid.
-    `RUN cd / \\`,
-    `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
-    `    && git ${Object.entries(warmRepo.cloneHeaders)
-      .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
-      .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
-    `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
-    `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
-    `    && rm -rf /tmp/kortix-warm-repo \\`,
-    `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
-    `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
+    '# The repo was cloned with the git-host credential, origin-reset to the',
+    '# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before',
+    '# this Dockerfile was rendered. This image only COPYs the sanitized plain',
+    '# bytes — no git credential ever enters the Dockerfile, build args, image',
+    '# history, or build logs. See PHASE 1 provider-migration hardening.',
+    // Empty whatever an earlier layer left in /workspace, then COPY the baked
+    // checkout. `cd /` first so the build shell CWD isn't an inode we delete
+    // (WORKDIR is /workspace); `-mindepth 1` keeps the /workspace dir itself.
+    'RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
+    // `--chown=kortix:kortix` so the baked checkout lands owned by the non-root
+    // runtime user (COPY defaults to uid/gid 0). opencode + the daemon run as
+    // `kortix` and must be able to write /workspace and its `.git` at runtime.
+    `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
+    // Daytona uploads each COPY source as a separate context object. Transfer
+    // Git metadata as one visible file, then restore the canonical directory.
+    `COPY ${warmRepo.stagedGitPath} /tmp/kortix-warm-repo-git.tar`,
+    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && rm -f /tmp/kortix-warm-repo-git.tar && chown -R kortix:kortix /workspace/.git',
+    // Verify the baked checkout is a real repo. The branch is shell-quoted via
+    // `shq` (never interpolated raw), so a hostile branch name cannot inject a
+    // build-time shell command — closing the latent sink in the old echo.
+    `RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" ${shq(warmRepo.branch)}`,
     '',
   ];
 }
@@ -279,7 +321,7 @@ function buildWarmRepoCloneLines(warmRepo: WarmRepoConfig | undefined): string[]
  * already baked at /workspace and we KEEP it — the daemon boots off the baked
  * checkout with NO clone. For a CUSTOM template we remove only the config we
  * staged: /workspace is the user's. Either way the warmed caches under
- * /opt/kortix/home persist in the image layer. Measured: cold first-instance
+ * the `kortix` user's home persist in the image layer. Measured: cold first-instance
  * 6–60s → ~2–4s after this bake. Requires opencode + bun + the baked config
  * deps to already be present in the image (either from the toolchain layer
  * above, or inherited via FROM on the fast path), so it must come after them.
@@ -292,13 +334,15 @@ function buildWarmRepoCloneLines(warmRepo: WarmRepoConfig | undefined): string[]
  */
 function buildOpencodeInstanceWarmupLines(opts: {
   opencodeConfigPath?: string;
+  opencodeWarmupScriptPath?: string;
   warmRepo?: WarmRepoConfig;
   isSharedDefault?: boolean;
 }): string[] {
-  const { opencodeConfigPath, warmRepo, isSharedDefault } = opts;
-  if (!opencodeConfigPath) return [];
+  const { opencodeConfigPath, opencodeWarmupScriptPath, warmRepo, isSharedDefault } = opts;
+  if (!opencodeConfigPath || !opencodeWarmupScriptPath) return [];
+  const cleanup = warmRepo ? 'keep' : isSharedDefault ? 'wipe' : 'targeted';
   return [
-    `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+    `COPY --chown=kortix:kortix ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
     // Same "does it actually bundle" check as the opencode-config-deps
     // verification above, but exercised against the REAL starter tool
     // files (web_search / scrape_webpage / image_search / memory / show)
@@ -313,41 +357,18 @@ function buildOpencodeInstanceWarmupLines(opts: {
     'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
     '    && rm -rf node_modules \\',
     '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
-    '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
+    '    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
     '    && rm -rf /tmp/opencode-tools-bundle-check \\',
     '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
     '',
-    'RUN set +e; \\',
-    '    export HOME=/opt/kortix/home \\',
-    '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
-    '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
-    '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
-    '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
-    '    mkdir -p /workspace/.kortix; \\',
+    `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
     // Stage the canonical starter opencode config so the instance warm-up
     // has the pty plugin + tools to load. For a per-project warm the baked
     // repo may already ship its own .kortix/opencode — keep it (its config
     // is what the session actually resolves at runtime) and only fall back
     // to the staged starter when the repo has none.
-    // `staged_starter_config` records whether the starter config in
-    // /workspace is OURS (we copied it) or the image's own — it decides what
-    // the non-shared cleanup below is allowed to delete.
-    '    staged_starter_config=0; \\',
-    '    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\',
-    '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
-    '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
-    '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
-    '    cd /workspace; \\',
-    '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
-    '    ready=0; \\',
-    '    for i in $(seq 1 300); do \\',
-    `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
-    '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
-    '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
-    '        sleep 1; \\',
-    '    done; \\',
-    '    echo "=== instance-warm: ready=$ready ==="; \\',
-    '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+    // The warm-up script records whether the starter config in /workspace is
+    // ours and limits cleanup accordingly.
     // Three cases, and only one of them may delete indiscriminately:
     //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
     //    the daemon boots off it with no clone.
@@ -359,14 +380,7 @@ function buildOpencodeInstanceWarmupLines(opts: {
     //    the starter config we staged (and the .kortix dir if that leaves it
     //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
     //    purpose; a user's own /workspace/.kortix survives untouched.
-    warmRepo
-      ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
-      : isSharedDefault
-        ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
-        : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\',
-    '    rm -rf /opt/kortix/warm-config; \\',
-    '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
-    '    rm -f /tmp/oc-warm.log; true',
+    `RUN bash /tmp/kortix-opencode-warmup instance ${cleanup}; rm -f /tmp/kortix-opencode-warmup`,
     '',
   ];
 }
@@ -375,12 +389,13 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
   const {
     opencodeVersion,
     agentBrowserVersion = DEFAULT_AGENT_BROWSER_VERSION,
+    opencodeWarmupScriptPath,
     opencodeConfigPath,
     isSharedDefault,
     warmRepo,
   } = opts;
 
-  const warmRepoClone = buildWarmRepoCloneLines(warmRepo);
+  const warmRepoClone = buildWarmRepoCopyLines(warmRepo);
 
   return [
     '',
@@ -391,11 +406,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'USER root',
     // tmux: lets the agent run long-running processes (dev servers for preview)
     // in a detached session that survives the agent\'s bash tool call.
-    // python3 + pip + office/PDF/data packages: the starter marketplace skills
-    // assume these are present (xlsx/openpyxl, visualization/pandas,
-    // pdf/docx/pptx/presentations, LaTeX paper creation). Bake them into every
-    // layered image so custom sandbox Dockerfiles get the same runtime floor as
-    // the platform default image.
+    // Office, PDF, OCR, and LaTeX tools support the starter marketplace skills.
+    // Bake them into every layered image so custom sandbox Dockerfiles get the
+    // same system tool floor as the platform default image.
     // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a
     // snapshot-restored VM keeps its snapshot-baked IP until the
     // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
@@ -410,138 +423,76 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // the agent's own `apt-get install` in a session has no TTY either, and a
     // debconf prompt there is an unrecoverable hang, not a question anyone answers.
     'ENV DEBIAN_FRONTEND=noninteractive',
-    // `base_py` MUST be resolved BEFORE the apt floor runs — see the venv step at
-    // the end of this RUN for why. It is a shell var, so it cannot cross a RUN
-    // boundary; that is the only reason the venv is created here rather than in
-    // its own step.
-    'RUN base_py="$(command -v python3 || true)" \\',
-    '    && apt-get update \\',
+    'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
+    '        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
-    '        python3 python3-dev python3-pip python3-venv \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
-    '    && rm -rf /var/lib/apt/lists/* \\',
-    // ─── The Python floor lives in a venv, NOT in the system interpreter ───────
-    // History: the floor used to be `pip install --break-system-packages` straight
-    // into the system interpreter. That made it fight dpkg for ownership of any
-    // package the USER's Dockerfile had pulled in via apt. Real incident: a project
-    // apt-installed `gdal-bin` → `python3-gdal` → `python3-numpy` (dpkg-owned
-    // 1.26.4); our floor's `numpy>=1.26` resolved to 2.x, pip tried to UNINSTALL the
-    // dpkg-owned copy and hard-failed the whole snapshot build with "Cannot
-    // uninstall numpy 1.26.4, RECORD file not found. Hint: The package was installed
-    // by debian." The user's image was correct — our layer broke it. numpy was just
-    // the member that got hit: numpy/scipy/pandas/scikit-learn/lxml/pillow/
-    // matplotlib/requests ALL have dpkg counterparts, so ANY dpkg-owned package in
-    // the floor's dependency closure was the same landmine.
-    //
-    // A venv kills the whole class: pip inside it can NEVER uninstall a dpkg-owned
-    // package (worst case it installs a newer copy INTO the venv, shadowing it), and
-    // `--system-site-packages` keeps the user's OWN installs (apt python3-* AND
-    // their `pip install` into dist-packages, e.g. geopandas/fiona next to that
-    // gdal) importable from the floor's interpreter.
-    //
-    // WHICH interpreter the venv is built from is load-bearing. `/opt/kortix/pyfloor
-    // /bin` goes on the front of PATH below, so the venv's python3 SHADOWS whatever
-    // python3 the user's image shipped. That is intended on a bare Debian base (the
-    // interpreter is ours either way) — but on e.g. `python:3.12-slim` the apt floor
-    // above ALSO drops Debian's own python3 at /usr/bin/python3 (whatever the base's
-    // suite pins — 3.13.5 as of writing), and building the venv from THAT would
-    // shadow the image's 3.12 with a different minor: today's harmless bloat becomes
-    // tomorrow's breakage. So we build from `base_py` — the python3 that was
-    // on PATH BEFORE our apt ran. If the user's image had one, the floor IS their
-    // interpreter (+ our packages) and the shadow is semantically a no-op; if it had
-    // none, `base_py` is empty and we fall back to the python3 our apt just
-    // installed. Note this is strictly better than "skip apt python3 when one
-    // exists": a base that apt-installed a bare `python3` with no `python3-venv`
-    // would then have no venv module at all — here our apt supplies it for that very
-    // interpreter.
-    '    && "${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\',
-    `    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'`,
+    '    && rm -rf /var/lib/apt/lists/*',
     '',
-    // Put the floor ahead of the system interpreter for every later build step AND
-    // for the agent at runtime. `$PATH` expansion in ENV is REQUIRED to work under
-    // BOTH builders — BuildKit (Daytona) and buildah's classic imagebuilder
-    // (Platinum, which ignores `# syntax` and rejects RUN heredocs; see the
-    // portability guard in build-context.ts). Verified empirically against
-    // buildah bud (isolation=oci AND =chroot) and BuildKit: both expand it from the
-    // base image's config env, yielding
-    // `/opt/kortix/pyfloor/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`.
-    // Do NOT "simplify" this to a hardcoded absolute PATH: that would stomp any PATH
-    // the user's Dockerfile set (cargo, nvm, conda) — the exact bug class this
-    // change is here to remove.
-    //
-    // CAVEAT 1: anything that spells `/usr/bin/python3` (or `/usr/local/bin/python3`)
-    // explicitly bypasses the floor and sees only the system site-packages. PATH is
-    // the contract; absolute interpreter paths opt out of it.
-    //
-    // CAVEAT 2 (the flip side, and a real one): the venv's site-packages precedes
-    // the system's, so where the floor and the user's apt packages disagree on a
-    // version, the FLOOR wins for `python3`. Verified on the gdal image above: the
-    // floor's python gets numpy 2.x, so `from osgeo import gdal` works but
-    // `osgeo.gdal_array` — a dpkg C extension compiled against numpy 1.x — raises
-    // "numpy.core.multiarray failed to import" under it. `/usr/bin/python3` keeps
-    // the user's coherent numpy-1.x stack and runs that workload fine, so the
-    // escape hatch is real and one line. This is strictly better than the status
-    // quo it replaces, which was: the build hard-fails and there is NO image at
-    // all. We are trading "nothing works" for "both interpreters work, each for
-    // its own stack".
-    'ENV PATH=/opt/kortix/pyfloor/bin:$PATH',
+    'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
+    "    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\",
+    '    && chmod 0440 /etc/sudoers.d/kortix \\',
+    '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
+    '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
+    '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    'ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\',
+    `    PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
+    'USER kortix',
     '',
-    '# Starter skill Python package floor (document/data/PDF/presentation helpers).',
-    '# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned',
-    '# package no matter what the resolver picks.',
-    'RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\',
-    '        "beautifulsoup4>=4.12" \\',
-    '        "lxml>=5" \\',
-    '        "markdownify>=0.13" \\',
-    '        "markitdown[pptx]>=0.1.0" \\',
-    '        "matplotlib>=3.8" \\',
-    '        "numpy>=1.26" \\',
-    '        "openpyxl>=3.1" \\',
-    '        "pandas>=2.2" \\',
-    '        "pdf2docx>=0.5" \\',
-    '        "pdf2image>=1.17" \\',
-    '        "pdfplumber>=0.11" \\',
-    '        "pillow>=10" \\',
-    '        "playwright>=1.58" \\',
-    '        "plotly>=5.22" \\',
-    '        "pymupdf>=1.24" \\',
-    '        "pypdf>=4" \\',
-    '        "pypdfium2>=4.30" \\',
-    '        "pytesseract>=0.3" \\',
-    '        "python-docx>=1.1" \\',
-    '        "python-pptx>=1.0" \\',
-    '        "reportlab>=4.2" \\',
-    '        "requests>=2.32" \\',
-    '        "scikit-learn>=1.4" \\',
-    '        "scipy>=1.12" \\',
-    '        "seaborn>=0.13" \\',
-    '        "youtube-transcript-api>=0.6" \\',
-    // Verify the import floor with a `python3 -c` ONE-LINER, NOT a RUN heredoc.
-    // Platinum builds with buildah's classic imagebuilder, which does not support
-    // Dockerfile RUN heredocs (and ignores `# syntax=docker/dockerfile:1.7`): it
-    // parses the heredoc body's first line ("import importlib") as a Dockerfile
-    // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
-    // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
-    // equivalent (still fails the layer if any module is missing) and portable.
-    '    && /opt/kortix/pyfloor/bin/python -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
+    // Install one exact managed Python and expose it as python/python3. Agents
+    // use `uv run --with` for dependencies instead of sharing a global venv.
+    `RUN case "$(uname -m)" in \\`,
+    `      x86_64) uv_arch=x86_64; uv_sha=${UV_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) uv_arch=aarch64; uv_sha=${UV_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported uv architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/uv.tar.gz \\',
+    `         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-\${uv_arch}-unknown-linux-gnu.tar.gz" \\`,
+    '    && echo "${uv_sha}  /tmp/uv.tar.gz" | sha256sum -c - \\',
+    '    && tar -xzf /tmp/uv.tar.gz --strip-components=1 -C /home/kortix/.local/bin \\',
+    '    && rm /tmp/uv.tar.gz \\',
+    `    && uv --version | grep -Eq '^uv ${UV_VERSION}( |$)' \\`,
+    `    && UV_PYTHON_DOWNLOADS=automatic uv python install --default ${PYTHON_VERSION} \\`,
+    `    && python -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')}); print("managed python:", sys.version)' \\`,
+    `    && python3 -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')})'`,
+    '',
+    // Install pnpm's versioned standalone release artifact after verifying the
+    // repository-controlled checksum. pnpm then owns the JavaScript runtime
+    // floor: Node comes from `pnpm runtime`, while npm and global CLIs live in
+    // pnpm's isolated global package store.
+    'ENV SHELL=/bin/bash',
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\',
+    `         "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz" \\`,
+    '    && echo "${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\',
+    '    && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\',
+    '    && rm /tmp/pnpm.tar.gz \\',
+    `    && test "$(pnpm --version)" = "${PNPM_VERSION}" \\`,
+    `    && pnpm runtime set node ${NODE_VERSION} -g \\`,
+    `    && test "$(node --version)" = "v${NODE_VERSION}" \\`,
+    `    && pnpm add -g "npm@${NPM_VERSION}" \\`,
+    `    && test "$(npm --version)" = "${NPM_VERSION}"`,
     '',
     // agent-browser (Vercel) — the browser-automation CLI the agent-browser
     // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
     // bake a real Chromium into the image and wire agent-browser to it TWO
     // independent ways:
-    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable /usr/local/bin/chromium
+    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable user-local chromium
     //      symlink (the documented API; verified working on agent-browser 0.27.0).
     //   2. a symlink into agent-browser's OWN browser cache (chrome-linux64),
     //      which its auto-detect finds even if the env var is ever ignored again
     //      — it WAS, historically (vercel-labs/agent-browser#422). Belt + braces.
     // PLAYWRIGHT_BROWSERS_PATH is set BEFORE the install so Chromium lands in
-    // /opt/pw-browsers (a stable system path the symlinks resolve against). HOME
-    // is pinned to the runtime HOME (/opt/kortix/home, see opencode.ts) so the
-    // cache symlink lands where the agent looks at runtime. The build FAILS LOUDLY
+    // /opt/pw-browsers (a stable system path the symlinks resolve against). The
+    // build runs as the same `kortix` user as runtime, so the cache symlink lands
+    // under its normal home. The build FAILS LOUDLY
     // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
     // every sandbox ships a working browser; we never install one on the session
     // hot path.
@@ -571,7 +522,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // agent-browser version and cache-reused for every rebuild after. The retry
     // loop + 30-min timeout below are the SAFETY NET for that one cold fetch.
     'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
-    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \\',
     '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
     // Playwright's browser download defaults to a 30s socket timeout
     // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
@@ -582,7 +533,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // the retry loop below is the second line of defense for a transient failure
     // within that window.
     '    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000',
-    `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
+    `RUN pnpm add -g --allow-build=agent-browser "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version \\',
     // Retry the Chromium download a handful of times with backoff before giving
     // up — a transient CDN/network blip must not fail the whole image build. The
@@ -590,25 +541,25 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // below still hard-fails the build if every attempt came up empty, so a total
     // failure never ships a browser-less image.
     '    && for pw_try in 1 2 3 4 5; do \\',
-    `        HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
+    `        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
     '        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\',
     '        sleep $((pw_try*10)); \\',
     '    done \\',
-    '    && rm -rf /var/lib/apt/lists/* \\',
+    '    && sudo rm -rf /var/lib/apt/lists/* \\',
     `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
     '    && test -n "$pw_chrome" \\',
-    '    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\',
-    '    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\',
-    '    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\',
-    '    && /usr/local/bin/chromium --version \\',
+    '    && ln -sf "$pw_chrome" /home/kortix/.local/bin/chromium \\',
+    '    && mkdir -p /home/kortix/.agent-browser/browsers \\',
+    '    && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\',
+    '    && chromium --version \\',
     // Assert agent-browser RESOLVES the browser via its env-independent cache —
     // match the resolved path (deterministic), not the browser NAME (which is
     // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
     // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
     // detection line, not the launch verdict, so the gate is emulation-safe.
-    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
+    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
     '',
-    `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
+    `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version',
     '',
@@ -619,35 +570,34 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // before opencode replies to /session; on a restored warm snapshot that
     // window is exactly what surfaces as the FE's "sandbox not ready" 503s.
     // opencode's db
-    // lives in a BAKED path (XDG_DATA_HOME=/opt/kortix/home/.local/share), so we
+    // lives in the baked `kortix` home, so we
     // run opencode here once to complete the migration and bake the migrated db
     // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
     // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
     // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). Best
     // effort: if opencode can't serve at build time it just falls back to the
     // old boot-time migration — never fail the whole image build over a warm-up.
-    'RUN set +e; \\',
-    '    export HOME=/opt/kortix/home \\',
-    '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
-    '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
-    '        XDG_CACHE_HOME=/opt/kortix/home/.cache; \\',
-    '    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; \\',
-    '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-bake.log 2>&1 & oc_pid=$!; \\',
-    '    for i in $(seq 1 180); do \\',
-    '        curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; \\',
-    '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
-    '        sleep 1; \\',
-    '    done; \\',
-    '    sleep 3; \\',
-    '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
-    '    echo "=== migration-bake: opencode data dir ==="; ls -laR "$XDG_DATA_HOME/opencode" 2>/dev/null | head -40; \\',
-    '    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\',
-    '    rm -f /tmp/oc-bake.log; true',
+    ...(opencodeWarmupScriptPath ? [
+      `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
+      'RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup',
+    ] : []),
     '',
-    // bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
-    'RUN curl -fsSL https://bun.com/install | bash \\',
-    '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
-    '    && bun --version',
+    // Bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
+    // Download one versioned release artifact and verify its checksum before
+    // extracting it. The public installer script is not part of the trust path.
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) bun_arch=x64; bun_sha=${BUN_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) bun_arch=aarch64; bun_sha=${BUN_SHA256_ARM64} ;; \\`,
+    `      *) echo "unsupported Bun architecture: $(uname -m)" >&2; exit 1 ;; \\`,
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/bun.zip \\',
+    `         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-\${bun_arch}.zip" \\`,
+    '    && echo "${bun_sha}  /tmp/bun.zip" | sha256sum -c - \\',
+    '    && unzip -q /tmp/bun.zip -d /tmp/bun \\',
+    '    && install -m 0755 "/tmp/bun/bun-linux-${bun_arch}/bun" /home/kortix/.bun/bin/bun \\',
+    '    && ln -sf bun /home/kortix/.bun/bin/bunx \\',
+    '    && rm -rf /tmp/bun /tmp/bun.zip \\',
+    `    && test "$(bun --version)" = "${BUN_VERSION}"`,
     '',
     // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
     // into a stable baked location. The cloned config dir's plugin + tools import
@@ -658,7 +608,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // network (a 1.5–6s — sometimes minutes — stall on the session hot path). The
     // daemon's ensureOpencodeConfigDeps() links this baked node_modules + bun.lock
     // into the resolved config dir before opencode starts, making the boot install a
-    // verified OFFLINE no-op. The same caches warm Bun at HOME=/opt/kortix/home.
+    // verified OFFLINE no-op. The same user-local caches warm Bun.
     //
     // CRITICAL — @opencode-ai/plugin is pinned to the OPENCODE BINARY version
     // (`opencodeVersion`), NOT the version declared in the project/starter
@@ -675,10 +625,10 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the
     // verification RUN step right below, added after that incident).
-    'RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\',
+    'RUN mkdir -p /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
     `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\`,
-    '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
+    '    && bun install',
     '',
     // Verify the baked tree is actually usable by OpenCode's own runtime
     // bundler (Bun, invoked live by ToolRegistry the first time a session
@@ -692,7 +642,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // intentionally NOT `set +e`: an unbundlable dependency tree must fail
     // the image build, unlike the best-effort warm-up steps below.
     'RUN cd /opt/kortix/opencode-config-deps \\',
-    '    && HOME=/opt/kortix/home bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\',
+    '    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\',
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
@@ -705,7 +655,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // comment for why the order matters (this step's RUN text is never
     // cache-stable, so nothing cache-sensitive may sit downstream of it).
     ...warmRepoClone,
-    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, warmRepo, isSharedDefault }),
+    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, opencodeWarmupScriptPath, warmRepo, isSharedDefault }),
     // The staged-artifact tail lives in `kortixArtifactLayer`. The split is
     // here — everything above installs from the network into an empty build
     // context; everything below COPYs bytes the caller had to stage first.
@@ -726,15 +676,18 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     agentBinaryPath,
     cliBinaryPath,
     entrypointScriptPath,
+    machineDocPath,
     slackCliPath,
     executorSdkPath,
     catalogPath,
   } = opts;
 
   return [
+    'USER root',
     `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
+    `COPY ${machineDocPath} /MACHINE.md`,
     // Keep the repo-relative layout so CLIs can import shared packages.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
     `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
@@ -748,17 +701,19 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     'RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\',
     '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
     '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
+    '    && bash -n /usr/local/bin/kortix-entrypoint \\',
     '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
     '        /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\',
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
-    '    && kortix --version',
+    '    && kortix --version \\',
+    '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
     '',
     // The daemon clones the project workspace at boot using KORTIX_PROJECT_AUTO_CLONE
     // — nothing project-specific is baked into the image. /workspace is created
     // empty here; the daemon's materializeRepo path fills it.
     'ENV KORTIX_WORKSPACE=/workspace',
-    'RUN mkdir -p /workspace /opt/kortix/home /ephemeral/kortix-master/opencode',
+    'USER kortix',
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',
@@ -802,6 +757,8 @@ export interface PerProjectWarmFromBaseOpts {
   warmRepo: WarmRepoConfig;
   /** Same meaning as {@link KortixToolchainLayerOpts.opencodeConfigPath}. */
   opencodeConfigPath?: string;
+  /** Build-context path to the cache-only OpenCode warm-up script. */
+  opencodeWarmupScriptPath?: string;
 }
 
 /**
@@ -823,9 +780,10 @@ export interface PerProjectWarmFromBaseOpts {
  * toolchain) is INHERITED, not re-executed, so there is no download to miss.
  *
  * Only adds the two per-project-specific steps on top of the base — the
- * warm-repo clone and the opencode instance re-warm against the real project
- * — using the EXACT SAME line-builders as the monolithic path
- * (`buildWarmRepoCloneLines` / `buildOpencodeInstanceWarmupLines`), so the
+ * warm-repo COPY (credential-free, sanitized checkout staged API-side) and the
+ * opencode instance re-warm against the real project — using the EXACT SAME
+ * line-builders as the monolithic path
+ * (`buildWarmRepoCopyLines` / `buildOpencodeInstanceWarmupLines`), so the
  * resulting /workspace content is equivalent to what the full rebuild would
  * have produced. Everything else — WORKDIR, ENV, ENTRYPOINT, EXPOSE, the
  * baked agent/CLI binaries — is inherited from the base image, since Docker
@@ -833,7 +791,7 @@ export interface PerProjectWarmFromBaseOpts {
  * (and must not) re-declare them.
  */
 export function buildPerProjectWarmFromBaseDockerfile(opts: PerProjectWarmFromBaseOpts): string {
-  const { baseImageRef, warmRepo, opencodeConfigPath } = opts;
+  const { baseImageRef, warmRepo, opencodeConfigPath, opencodeWarmupScriptPath } = opts;
   return [
     `FROM ${baseImageRef}`,
     '',
@@ -845,9 +803,14 @@ export function buildPerProjectWarmFromBaseDockerfile(opts: PerProjectWarmFromBa
     '# build-cache hit. Do not add toolchain RUNs here — they belong in',
     '# kortixToolchainLayer, which this stage deliberately skips.',
     '',
-    'USER root',
-    ...buildWarmRepoCloneLines(warmRepo),
-    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, warmRepo, isSharedDefault: false }),
+    // Run as the base image's non-root runtime user (`kortix`): /workspace is
+    // kortix-owned in the base, and the opencode instance re-warm below resolves
+    // its baked caches from HOME=/home/kortix. The warm-repo step is MY
+    // credential-free COPY (buildWarmRepoCopyLines) — NOT the old credentialed
+    // clone — so no git auth header is ever rendered into this FROM-base stage.
+    'USER kortix',
+    ...buildWarmRepoCopyLines(warmRepo),
+    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, opencodeWarmupScriptPath, warmRepo, isSharedDefault: false }),
   ].join('\n') + '\n';
 }
 

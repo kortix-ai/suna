@@ -104,6 +104,7 @@ import {
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { metadataMerge } from '../lib/metadata-merge';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
   canonicalConnectorAlias,
@@ -122,7 +123,6 @@ import {
   specToBody,
   triggersPausedForProject,
   upsertTriggerInManifest,
-  withTriggersPaused,
 } from '../lib/triggers';
 import { listProjectSecretsSnapshot } from '../secrets';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
@@ -882,10 +882,12 @@ projectsApp.openapi(
     if (typeof paused !== 'boolean') {
       return c.json({ error: 'paused must be a boolean' }, 400);
     }
+    // FIX-J: SQL-side atomic merge of ONLY `triggers_paused` (set true / delete)
+    // so this kill-switch write can't revert a routing pin written concurrently.
     const [row] = await db
       .update(projects)
       .set({
-        metadata: withTriggersPaused(loaded.row.metadata, paused),
+        metadata: paused ? metadataMerge({ triggers_paused: true }) : metadataMerge({}, ['triggers_paused']),
         updatedAt: new Date(),
       })
       .where(eq(projects.projectId, projectId))
