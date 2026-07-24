@@ -616,6 +616,183 @@ flow(
   },
 );
 
+// INV-6 — invite accept lifecycle: first accept → 200 {already_accepted:false};
+// RE-accept by the same addressee → 200 {already_accepted:true} (the idempotent
+// self-healing path — acceptance is re-runnable so a bootstrap grant that was
+// never written gets repaired on re-click, per apps/api/src/accounts/invites.ts
+// lines 307-354). The describe endpoint then reflects accepted_at. This is the
+// state-machine edge case INV-3/4 could NOT cover (no addressee principal).
+flow(
+  'INV-6',
+  {
+    domain: 'projects',
+    serial: true,
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'POST /v1/account-invites/:inviteId/accept',
+      'GET /v1/account-invites/:inviteId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    // An email with NO existing Kortix user → POST .../members creates a pending
+    // invite (members.ts:269) rather than adding the user immediately.
+    const inviteEmail = `${ctx.fixtures.name('inv6')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteId = '';
+    await ctx.step('create a pending account invite (new email, no user)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/accounts/:accountId/members',
+          { email: inviteEmail, role: 'member' },
+          { params: { accountId: team.id } },
+        );
+      r.status(201).body().has('$.status', 'pending').exists('$.invite_id');
+      inviteId = r.json<any>().invite_id;
+    });
+    // NOW mint the matching identity so the flow can act as the addressee —
+    // the accept/decline handlers reject any caller whose email != invite.email.
+    const addressee = await ctx.fixtures.userWithEmail(inviteEmail, { label: 'INV6-ADDRESSEE' });
+
+    await ctx.step('first accept as the addressee → 200 {already_accepted:false}', async () => {
+      const r = await ctx.client
+        .as(addressee)
+        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+      r.status(200)
+        .body()
+        .has('$.account_id', team.id)
+        .has('$.account_role', 'member')
+        .has('$.already_accepted', false)
+        .exists('$.bootstrap_grants_applied');
+    });
+    await ctx.step('re-accept (idempotent self-heal) → 200 {already_accepted:true}', async () => {
+      // The handler deliberately keeps an already-accepted invite redeemable so
+      // re-entry can repair a grant that was never written (invites.ts:307-312).
+      const r = await ctx.client
+        .as(addressee)
+        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+      r.status(200).body().has('$.already_accepted', true);
+    });
+    await ctx.step('describe as the addressee reflects the accepted state', async () => {
+      const r = await ctx.client
+        .as(addressee)
+        .get('/v1/account-invites/:inviteId', { params: { inviteId } });
+      r.status(200)
+        .body()
+        .has('$.email_matches_caller', true)
+        .has('$.expired', false)
+        .exists('$.accepted_at');
+    });
+    await ctx.step(
+      'a NONMEMBER stranger describing the accepted invite is still redacted',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .get('/v1/account-invites/:inviteId', { params: { inviteId } });
+        r.status(200).body().has('$.email_matches_caller', false).has('$.email', null);
+      },
+    );
+  },
+);
+
+// INV-7 — decline state machine: an already-accepted invite CANNOT be declined
+// → 409 (invites.ts:393-394); declining a PENDING invite (then describing /
+// accepting it) → the row is deleted outright, so a later decline/accept is a
+// 404 (invites.ts:401, 391). Proves the exact status a client depends on, not
+// just "not 2xx".
+flow(
+  'INV-7',
+  {
+    domain: 'projects',
+    serial: true,
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'POST /v1/account-invites/:inviteId/accept',
+      'POST /v1/account-invites/:inviteId/decline',
+      'GET /v1/account-invites/:inviteId',
+    ],
+  },
+  async (ctx) => {
+    // ── (a) decline an already-accepted invite → 409 ──────────────────────
+    const teamA = await ctx.fixtures.team();
+    const emailA = `${ctx.fixtures.name('inv7a')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteA = '';
+    await ctx.step('create a pending invite A (new email, no user)', async () => {
+      const cr = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/accounts/:accountId/members',
+          { email: emailA, role: 'member' },
+          { params: { accountId: teamA.id } },
+        );
+      cr.status(201).body().has('$.status', 'pending');
+      inviteA = cr.json<any>().invite_id;
+    });
+    // Mint the matching identity AFTER the invite exists, so the members route
+    // took the "no user yet" pending-invite branch rather than the immediate-add.
+    const addresseeA = await ctx.fixtures.userWithEmail(emailA, { label: 'INV7-A' });
+    await ctx.step('accept invite A as the addressee → 200 {already_accepted:false}', async () => {
+      const ar = await ctx.client
+        .as(addresseeA)
+        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId: inviteA } });
+      ar.status(200).body().has('$.already_accepted', false);
+    });
+    await ctx.step('decline the already-accepted invite → 409', async () => {
+      // The addressee accepted; a decline now must be refused with 409, not 200
+      // (declining would silently strip a membership the user already has).
+      const r = await ctx.client
+        .as(addresseeA)
+        .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId: inviteA } });
+      r.status(409);
+    });
+
+    // ── (b) decline a PENDING invite deletes the row → subsequent 404 ──────
+    const teamB = await ctx.fixtures.team();
+    const emailB = `${ctx.fixtures.name('inv7b')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteB = '';
+    await ctx.step('create a pending invite B (new email)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/accounts/:accountId/members',
+          { email: emailB, role: 'member' },
+          { params: { accountId: teamB.id } },
+        );
+      r.status(201);
+      inviteB = r.json<any>().invite_id;
+    });
+    const addresseeB = await ctx.fixtures.userWithEmail(emailB, { label: 'INV7-B' });
+    await ctx.step('decline the pending invite as the addressee → 200 {ok:true}', async () => {
+      const r = await ctx.client
+        .as(addresseeB)
+        .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId: inviteB } });
+      r.status(200).body().has('$.ok', true);
+    });
+    await ctx.step('describe the declined (deleted) invite → 404', async () => {
+      const r = await ctx.client
+        .as(addresseeB)
+        .get('/v1/account-invites/:inviteId', { params: { inviteId: inviteB } });
+      r.status(404);
+    });
+    await ctx.step('accept the declined (deleted) invite → 404 (not 200/410)', async () => {
+      // The row is gone, so there's nothing to accept OR to 410-expire — 404.
+      const r = await ctx.client
+        .as(addresseeB)
+        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId: inviteB } });
+      r.status(404);
+    });
+    await ctx.step(
+      'decline the declined (deleted) invite again → 404 (idempotent delete)',
+      async () => {
+        const r = await ctx.client
+          .as(addresseeB)
+          .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId: inviteB } });
+        r.status(404);
+      },
+    );
+  },
+);
+
 // PACC-2 — project email invite. A brand-new email (no Kortix account yet)
 // creates an account invitation carrying a bootstrap project grant → 201
 // {status:"invited"}. Validation (missing email / bad role → 400) and the

@@ -87,6 +87,12 @@ export interface Fixtures {
   team(opts?: { name?: string; enterprise?: boolean }): Promise<TeamFixture>;
   /** Create an isolated user with only its personal account (auto-torn-down). */
   user(opts?: { label?: string }): Promise<Principal>;
+  /**
+   * Create an isolated user with a SPECIFIC email (auto-torn-down). Use this to
+   * become the addressee of a previously-created account/project invite — the
+   * accept/decline handlers reject callers whose email doesn't match the invite.
+   */
+  userWithEmail(email: string, opts?: { label?: string }): Promise<Principal>;
   /** A unique run-scoped name with the e2e-<runId>- prefix. */
   name(slug: string): string;
 }
