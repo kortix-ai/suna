@@ -1,7 +1,7 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
-import { currentFailedSnapshotBuild } from '../../snapshots/build-state';
+import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -547,8 +547,9 @@ async function buildSandboxHealth(
   }
   const primary = templates[0] ?? null;
   const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
-  const latest = builds[0] ?? null;
-  const latestFailure = currentFailedSnapshotBuild(builds);
+  const templateBuilds = sessionTemplateBuilds(builds);
+  const latest = templateBuilds[0] ?? null;
+  const latestFailure = currentFailedSnapshotBuild(templateBuilds);
   const isBuilding =
     (latest && latest.status === 'building') ||
     primary?.providerState === 'building';
@@ -731,7 +732,8 @@ projectsApp.openapi(
   const userId = c.get('userId') as string;
 
   const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
-  const failed = currentFailedSnapshotBuild(builds);
+  const templateBuilds = sessionTemplateBuilds(builds);
+  const failed = currentFailedSnapshotBuild(templateBuilds);
   if (!failed) {
     return c.json({ error: 'No current failed snapshot build to fix.' }, 409);
   }
@@ -756,7 +758,7 @@ projectsApp.openapi(
     );
   }
 
-  const hostBuild = builds.find((b) => b.status === 'ready');
+  const hostBuild = templateBuilds.find((b) => b.status === 'ready');
   if (!hostBuild) {
     return c.json(
       {

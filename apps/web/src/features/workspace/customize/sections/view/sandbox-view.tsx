@@ -163,6 +163,10 @@ function formatBuildDuration(startedAt: string, finishedAt: string | null): stri
   return `${hours}h`;
 }
 
+export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
+  return build.snapshot_name.startsWith('kortix-ppwarm-');
+}
+
 export function BuildRow({
   build,
   providerMode,
@@ -177,6 +181,7 @@ export function BuildRow({
   const sourceLabel = build.source ? BUILD_SOURCE_LABEL[build.source] : null;
   const timestamp = formatRelative(build.finished_at ?? build.started_at);
   const hasErrorDetails = build.status === 'failed' && !!build.error;
+  const accelerator = isProjectAcceleratorBuild(build);
 
   const row = (
     <>
@@ -187,7 +192,9 @@ export function BuildRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground truncate text-sm font-medium">{build.slug}</span>
+          <span className="text-foreground truncate text-sm font-medium">
+            {accelerator ? 'Repository accelerator' : build.slug}
+          </span>
           <Badge variant={status.badgeVariant} size="xs">
             {status.label}
           </Badge>
@@ -557,8 +564,10 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const providerMode: SandboxProviderMode =
     data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
   const selectedProvider = data?.selected_provider ?? null;
-  const latestFailure = currentFailedBuild(builds);
-  const latestReady = builds.find((b) => b.status === 'ready') ?? null;
+  const templateBuilds = builds.filter((build) => !isProjectAcceleratorBuild(build));
+  const acceleratorBuilds = builds.filter(isProjectAcceleratorBuild);
+  const latestFailure = currentFailedBuild(templateBuilds);
+  const latestReady = templateBuilds.find((b) => b.status === 'ready') ?? null;
   const canFixWithAgent = !!latestFailure && latestFailure.fixable_by_agent && !!latestReady;
   const isFullyEmpty = templates.length === 0 && builds.length === 0;
 
@@ -700,13 +709,9 @@ export function SandboxView({ projectId }: { projectId: string }) {
                 ) : null}
 
                 <div className="space-y-2">
-                  <Label>
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsSandboxSnapshotCardJsxTextRecentBuildscde18d4a',
-                    )}
-                  </Label>
+                  <Label>Session template builds</Label>
 
-                  {builds.length === 0 ? (
+                  {templateBuilds.length === 0 ? (
                     <div className="border-border rounded-md border">
                       <InlinePanelEmpty
                         message={tI18nHardcoded.raw(
@@ -716,12 +721,33 @@ export function SandboxView({ projectId }: { projectId: string }) {
                     </div>
                   ) : (
                     <ul className="space-y-2">
-                      {builds.slice(0, 10).map((b) => (
+                      {templateBuilds.slice(0, 10).map((b) => (
                         <BuildRow key={b.build_id} build={b} providerMode={providerMode} />
                       ))}
                     </ul>
                   )}
                 </div>
+
+                {acceleratorBuilds.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label>Project accelerator</Label>
+                    <InfoBanner
+                      tone="neutral"
+                      icon={SparklesSolid}
+                      title="Optional repository acceleration"
+                    >
+                      A project accelerator preloads this repository for a later session. A missing
+                      or failed accelerator never blocks a session. Kortix uses the shared session
+                      runtime and clones the repository into{' '}
+                      <code className="font-mono">/workspace</code>.
+                    </InfoBanner>
+                    <ul className="space-y-2">
+                      {acceleratorBuilds.slice(0, 5).map((b) => (
+                        <BuildRow key={b.build_id} build={b} providerMode={providerMode} />
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </>
             )}
           </div>

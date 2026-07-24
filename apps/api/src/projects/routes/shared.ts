@@ -21,6 +21,11 @@ import {
   retireUnmaterializedRuntime,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
+import {
+  hasRuntimeReadinessClock,
+  RUNTIME_READINESS_CLOCK_KEYS,
+  staleOpencodeReadyReason,
+} from '../session-lifecycle/readiness-clocks';
 
 /**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
@@ -437,29 +442,6 @@ function staleRuntimeWakeReason(
   return null;
 }
 
-function staleOpencodeReadyReason(
-  row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
-  nowMs = Date.now(),
-): string | null {
-  if (reason !== 'not_ready' && reason !== 'unreachable') return null;
-  const metadata = sandboxMetadata(row);
-  const readyWaitStartedAtMs = parseTimestampMs(metadata.opencodeReadyWaitStartedAt);
-  if (readyWaitStartedAtMs && nowMs - readyWaitStartedAtMs > STALE_OPENCODE_READY_MS) {
-    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
-  }
-
-  const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
-  if (
-    !readyWaitStartedAtMs &&
-    initSucceededAtMs &&
-    nowMs - initSucceededAtMs > STALE_OPENCODE_READY_MS
-  ) {
-    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
-  }
-  return null;
-}
-
 function removedRuntimeStillInGrace(
   row: typeof sessionSandboxes.$inferSelect,
   nowMs = Date.now(),
@@ -513,6 +495,30 @@ async function markOpencodeReadyWaitStarted(
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
+  }
+}
+
+async function clearRuntimeReadinessClocks(
+  row: typeof sessionSandboxes.$inferSelect,
+): Promise<void> {
+  const metadata = sandboxMetadata(row);
+  if (!hasRuntimeReadinessClock(metadata)) return;
+  try {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
+          - ${RUNTIME_READINESS_CLOCK_KEYS[0]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[1]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[2]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[3]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[4]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[5]}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+  } catch (err) {
+    console.warn(`[start] failed to clear readiness clocks for ${row.sandboxId}:`, err);
   }
 }
 
@@ -907,7 +913,12 @@ export async function openSession(args: {
   });
   const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   if (booting) {
-    const staleBoot = staleOpencodeReadyReason(row, ensured.reason);
+    const staleBoot = staleOpencodeReadyReason(
+      sandboxMetadata(row),
+      ensured.reason,
+      Date.now(),
+      STALE_OPENCODE_READY_MS,
+    );
     if (staleBoot) {
       return preserveEstablishedRuntimeOnOpen(
         loaded,
@@ -919,6 +930,8 @@ export async function openSession(args: {
       );
     }
     await markOpencodeReadyWaitStarted(row, ensured.reason);
+  } else {
+    await clearRuntimeReadinessClocks(row);
   }
   return {
     stage: booting ? 'starting' : 'ready',

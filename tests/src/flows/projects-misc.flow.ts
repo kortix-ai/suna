@@ -650,17 +650,18 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step("pin to the enabled 'daytona' provider → 200", async () => {
+    await ctx.step("pin to the enabled 'daytona' provider → 200 (immediate, kind:project)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
-      r.status(200).body().has("$.default_sandbox_provider", "daytona");
+      // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
+      r.status(200).body().has("$.kind", "project").has("$.default_sandbox_provider", "daytona");
     });
-    await ctx.step("clear the pin (null) → 200", async () => {
+    await ctx.step("clear the pin (null) → 200 (immediate, kind:project)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch("/v1/projects/:projectId/sandbox-provider", { provider: null }, { params: { projectId: p.id } });
-      r.status(200);
+      r.status(200).body().has("$.kind", "project");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -716,6 +717,69 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// PROJ-33 — the sandbox-provider migration poll endpoint. The PATCH prepare
+// branch (switch to a non-default enabled provider) returns a kind:'preparation'
+// body but does NOT flip the active provider; the client polls THIS route until
+// the durable transition reaches a terminal status. Project-read-scoped (rejects
+// cross-project/non-member) and shaped as a PUBLIC projection — it must NEVER
+// leak the lease epoch/holder, raw provider error strings, internal image names,
+// or provider template ids. A fresh project with no transition returns
+// active_provider=null + latest=null (still 200), which is the case exercised
+// here without provisioning a real cross-provider build.
+flow(
+  "PROJ-33",
+  { domain: "projects", routes: ["GET /v1/projects/:projectId/sandbox-provider/transition"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const INTERNAL_LEAK_KEYS = [
+      "lease_epoch",
+      "lease_holder",
+      "last_error",
+      "snapshot_name",
+      "external_template_id",
+      "attempts",
+    ];
+    const assertNoLeak = (item: unknown) => {
+      if (item && typeof item === "object") {
+        for (const k of INTERNAL_LEAK_KEYS) {
+          if (k in (item as Record<string, unknown>)) {
+            throw new Error(`transition view leaked internal field '${k}'`);
+          }
+        }
+      }
+    };
+    await ctx.step("OWNER reads the public transition state → 200 public shape", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.active_provider").exists("$.history");
+      const body = r.json<{ latest: unknown; history: unknown[] }>();
+      assertNoLeak(body.latest);
+      if (Array.isArray(body.history)) body.history.forEach(assertNoLeak);
+    });
+    await ctx.step("unknown project → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", {
+          params: { projectId: "00000000-0000-4000-a000-000000000000" },
+        });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403/404 (cross-project rejection)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
       r.status(401);
     });
   },

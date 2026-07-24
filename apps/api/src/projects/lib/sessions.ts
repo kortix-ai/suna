@@ -249,10 +249,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  // Resolved AS the launching user so their own CODEX_AUTH_JSON override (if
-  // any) wins; every OTHER secret is project-wide (secret sharing was retired —
-  // authorization is centralized on the running agent's `secrets` grant, applied
-  // below by identifier).
+  // Resolved AS the session's OWNER (createdBy, read below) so their own
+  // CODEX_AUTH_JSON override (if any) wins — consistently, whether this run is
+  // provisioned by the owner (create) or by a manager/admin (restart/open); see
+  // secretsPrincipalUserId below. Every OTHER secret is project-wide (secret
+  // sharing was retired — authorization is centralized on the running agent's
+  // `secrets` grant, applied below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
@@ -299,6 +301,7 @@ export async function buildSessionSandboxEnvVars(input: {
     .select({
       secretsAllowlist: projectSessions.secretsAllowlist,
       originRef: projectSessions.originRef,
+      createdBy: projectSessions.createdBy,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
@@ -308,11 +311,26 @@ export async function buildSessionSandboxEnvVars(input: {
     sessionKaabRow?.secretsAllowlist ?? null,
   );
 
+  // The secrets principal is the session's OWNER (`createdBy`), read here by
+  // sessionId — NOT `input.userId`, which is whoever is provisioning this run.
+  // On create those coincide, but restart/open/ensure-runtime provision on
+  // behalf of any project manager/admin, and a per-user secret override (today
+  // CODEX_AUTH_JSON) resolves per principal (`listResolvedProjectSecrets`). If a
+  // manager restarted another member's session we'd inject the MANAGER's personal
+  // secret at boot, which the first prompt's hot-push (`resolveOwnerRawEnv`, keyed
+  // on `createdBy`) would then clobber back — a cross-principal bleed + flip-flop.
+  // Deriving the principal from `createdBy` here unifies all three provisioning
+  // paths with hot-push and the admin provider-migrate path. Falls back to
+  // `input.userId` only if the row somehow isn't found (create races its own row
+  // in some callers). The agent grant — not the human — remains the authority on
+  // WHICH identifiers are eligible; this only picks the per-user override owner.
+  const secretsPrincipalUserId = sessionKaabRow?.createdBy ?? input.userId;
+
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
-      input.userId,
+      secretsPrincipalUserId,
       grantEnvForSession,
     );
   } catch (err) {

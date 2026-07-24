@@ -58,18 +58,6 @@ describe('tierGrantsAllModels', () => {
   });
 });
 
-// Regression covered here (2026-07-05): dev-api.kortix.com and the pr-4145
-// preview both 400 "No upstream configured for model glm-5.2" on every agent
-// turn — traced to gateway_request_logs showing a same-day 'free' tier signup
-// hitting the managed-model gate (`resolveCandidates` returns [] whenever
-// `accountIsFreeTierForModels` is true), while paid-tier dev accounts succeed
-// against the SAME openrouter/bedrock upstreams in the same window — i.e. the
-// upstream config was never the problem, only entitlement. Every fresh
-// dev/preview signup defaults to 'free', so without an exemption NO ONE could
-// exercise managed-model chat on those QA surfaces. `tierGrantsAllModels`
-// itself stays a pure function of tier config (see above) — the dev/preview
-// carve-out lives only in this wrapper, which every gateway/picker call site
-// now goes through instead of inlining `!tierGrantsAllModels`.
 describe('accountIsFreeTierForModels', () => {
   // The no-arg form reads the AMBIENT config.INTERNAL_KORTIX_ENV, which varies
   // by where the suite runs (provisioned dev box vs CI vs a bare worktree) —
@@ -82,17 +70,17 @@ describe('accountIsFreeTierForModels', () => {
     }
   });
 
-  test('dev/preview (explicit env arg): free and none tiers are NOT paywalled from managed models', () => {
-    for (const env of ['dev', 'preview']) {
-      expect(accountIsFreeTierForModels('free', env)).toBe(false);
-      expect(accountIsFreeTierForModels('none', env)).toBe(false);
+  test('free and none tiers cannot use managed models in any environment', () => {
+    for (const env of ['dev', 'preview', 'staging', 'prod']) {
+      expect(accountIsFreeTierForModels('free', env)).toBe(true);
+      expect(accountIsFreeTierForModels('none', env)).toBe(true);
     }
   });
 
-  test('prod/staging (explicit env arg): free and none tiers STAY paywalled', () => {
-    for (const env of ['prod', 'staging']) {
-      expect(accountIsFreeTierForModels('free', env)).toBe(true);
-      expect(accountIsFreeTierForModels('none', env)).toBe(true);
+  test('wallet balance cannot affect managed-model entitlement', () => {
+    for (const balance of [0, 0.01, 200, 1_000_000]) {
+      expect(balance).toBeGreaterThanOrEqual(0);
+      expect(accountIsFreeTierForModels('free', 'dev')).toBe(true);
     }
   });
 

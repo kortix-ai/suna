@@ -32,8 +32,7 @@ export function shouldShowSessionSwitchLoading(
   renderedSessionId: string,
   targetReady: boolean,
 ): boolean {
-  if (!targetSessionId) return false;
-  return targetSessionId !== renderedSessionId || !targetReady;
+  return targetSessionId === renderedSessionId && !targetReady;
 }
 
 interface SessionSwitchState {
@@ -51,8 +50,6 @@ export const useSessionSwitchStore = create<SessionSwitchState>((set) => ({
   targetSessionId: null,
   beginSwitch: (sessionId) => set({ targetSessionId: sessionId }),
   completeSwitch: (sessionId) =>
-    set((state) =>
-      state.targetSessionId === sessionId ? { targetSessionId: null } : state,
-    ),
+    set((state) => (state.targetSessionId === sessionId ? { targetSessionId: null } : state)),
   cancelSwitch: () => set({ targetSessionId: null }),
 }));

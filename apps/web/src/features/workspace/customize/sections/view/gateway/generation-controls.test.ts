@@ -41,10 +41,8 @@ describe('catalogModelForGateway — client-side capability lookup', () => {
     expect(model?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'max']);
   });
 
-  test('resolves the synthetic auto model', () => {
-    const model = catalogModelForGateway('auto');
-    expect(model?.tool_call).toBe(true);
-    expect(model?.temperature).toBe(true);
+  test('does not resolve the removed synthetic auto model', () => {
+    expect(catalogModelForGateway('auto')).toBeUndefined();
   });
 
   test('returns undefined for an unknown wire model', () => {

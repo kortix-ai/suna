@@ -51,6 +51,7 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   name: 'Trigger Project',
+  sandboxProviderGeneration: 0,
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
@@ -163,6 +164,12 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 

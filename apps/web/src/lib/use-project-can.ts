@@ -18,11 +18,26 @@
  * the cache expires (consistent with usePermission).
  */
 
-import { getProject } from '@kortix/sdk/projects-client';
+import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
 import { usePermission, usePermissions, type UsePermissionResult } from '@/lib/use-permission';
-import type { PermissionProbeInput } from '@/lib/iam-client';
+import { getProject } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+
+export function projectPermissionTarget(
+  projectId: string | undefined,
+): Extract<PermissionProbeTarget, { resourceType: 'project' }> | undefined {
+  if (!projectId) return undefined;
+  return { resourceType: 'project', resourceId: projectId };
+}
+
+export function projectPermissionProbes(
+  projectId: string | undefined,
+  actions: readonly string[],
+): PermissionProbeInput[] {
+  const target = projectPermissionTarget(projectId);
+  return target ? actions.map((action) => ({ action, ...target })) : [];
+}
 
 /**
  * Resolve the owning account id. Callers that already hold it (e.g. a screen
@@ -43,7 +58,7 @@ function useProjectAccountId(
     enabled: !!projectId && !accountIdHint,
     staleTime: 60_000,
   });
-  return accountIdHint ?? data?.account_id;
+  return projectId ? (accountIdHint ?? data?.account_id) : undefined;
 }
 
 /**
@@ -54,7 +69,10 @@ function useProjectAccountId(
  * the unresolved window as loading keeps the hide-by-default / optimistic-while-
  * loading contract intact.
  */
-function pendingWhileUnresolved(result: UsePermissionResult, resolved: boolean): UsePermissionResult {
+function pendingWhileUnresolved(
+  result: UsePermissionResult,
+  resolved: boolean,
+): UsePermissionResult {
   return resolved ? result : { allowed: false, reason: null, isLoading: true, isError: false };
 }
 
@@ -66,8 +84,10 @@ export function useProjectCan(
   options?: { accountId?: string },
 ): UsePermissionResult {
   const accountId = useProjectAccountId(projectId, options?.accountId);
-  const result = usePermission(accountId, action, { resourceType: 'project', resourceId: projectId });
-  return pendingWhileUnresolved(result, !!accountId);
+  const target = projectPermissionTarget(projectId);
+  const resolved = !!accountId && !!target;
+  const result = usePermission(resolved ? accountId : undefined, action, target);
+  return pendingWhileUnresolved(result, resolved);
 }
 
 /**
@@ -85,12 +105,12 @@ export function useProjectCans(
   options?: { accountId?: string },
 ): Record<string, UsePermissionResult> {
   const accountId = useProjectAccountId(projectId, options?.accountId);
-  const resolved = !!accountId;
+  const resolved = !!accountId && !!projectId;
   const probes = useMemo<PermissionProbeInput[]>(
-    () => actions.map((action) => ({ action, resourceType: 'project' as const, resourceId: projectId })),
+    () => projectPermissionProbes(projectId, actions),
     [actions, projectId],
   );
-  const results = usePermissions(accountId, probes);
+  const results = usePermissions(resolved ? accountId : undefined, probes);
   return useMemo(() => {
     const map: Record<string, UsePermissionResult> = {};
     actions.forEach((action, i) => {

@@ -27,7 +27,7 @@ Find the skill directory via `glob("**/legal-writer/")`.
 ```
 1. WRITE section content
 2. GENERATE: build/update the DOCX via the docx skill
-3. VERIFY:   python3 verify-legal.py legal/{slug}/
+3. VERIFY:   uv run --with python-docx verify-legal.py legal/{slug}/
 4. If FAIL → FIX → go to 2
 5. If PASS → move to next section
 ```
@@ -117,7 +117,7 @@ Write the JSON file with document type, parties, jurisdiction, and any constrain
 
 ### 1d. Generate initial DOCX
 
-Load the `docx` skill. Use `python-docx` to create the document with:
+Load the `docx` skill. Run document-generation scripts with `uv run --with python-docx`. Create the document with:
 - Proper heading styles (Heading 1, 2, 3 for section structure)
 - 12pt font (Times New Roman or similar serif for court filings)
 - 1-inch margins (adjust per jurisdiction — see court rules)
@@ -129,7 +129,7 @@ Load the `docx` skill. Use `python-docx` to create the document with:
 ### 1e. VERIFY: First green state
 
 ```bash
-python3 verify-legal.py legal/$SLUG/
+uv run --with python-docx verify-legal.py legal/$SLUG/
 ```
 
 The scaffolded document should exist and have correct structure. Placeholders are expected at this stage (they'll be flagged as warnings, not failures, unless `--strict`).
@@ -143,13 +143,13 @@ For litigation documents (memos, briefs, complaints) and regulatory documents, r
 ```bash
 SKILL_DIR="..."  # from glob
 # Search for relevant cases
-python3 "$SKILL_DIR/scripts/courtlistener.py" search "search terms" --after 2015 --limit 10
+uv run "$SKILL_DIR/scripts/courtlistener.py" search "search terms" --after 2015 --limit 10
 
 # Get specific opinion details
-python3 "$SKILL_DIR/scripts/courtlistener.py" opinion 12345
+uv run "$SKILL_DIR/scripts/courtlistener.py" opinion 12345
 
 # Format as Bluebook citation
-python3 "$SKILL_DIR/scripts/courtlistener.py" bluebook 12345
+uv run "$SKILL_DIR/scripts/courtlistener.py" bluebook 12345
 ```
 
 Save results to `research/cases.json`. Extract key holdings for use in the document.
@@ -160,13 +160,13 @@ Save results to `research/cases.json`. Extract key holdings for use in the docum
 
 ```bash
 # Search regulations
-python3 "$SKILL_DIR/scripts/ecfr_lookup.py" search "employment discrimination" --title 29
+uv run "$SKILL_DIR/scripts/ecfr_lookup.py" search "employment discrimination" --title 29
 
 # Get specific CFR section
-python3 "$SKILL_DIR/scripts/ecfr_lookup.py" section 16 444.1
+uv run "$SKILL_DIR/scripts/ecfr_lookup.py" section 16 444.1
 
 # Search Federal Register for recent rules
-python3 "$SKILL_DIR/scripts/ecfr_lookup.py" fedreg "data privacy"
+uv run "$SKILL_DIR/scripts/ecfr_lookup.py" fedreg "data privacy"
 ```
 
 No API key required.
@@ -200,7 +200,7 @@ For non-litigation documents (contracts, ToS), formal citations are generally no
 1. READ all previously written sections for context
 2. WRITE the section following document-type conventions
 3. REGENERATE the DOCX (update via python-docx)
-4. VERIFY: python3 verify-legal.py legal/{slug}/
+4. VERIFY: uv run --with python-docx verify-legal.py legal/{slug}/
 5. If errors → FIX → go to 3
 6. SELF-REFLECT:
    - Is every legal assertion supported by authority? (litigation docs)
@@ -338,7 +338,7 @@ Re-read the entire document and check:
 ### 4b. Strict Verification
 
 ```bash
-python3 "$SKILL_DIR/scripts/verify-legal.py" "legal/$SLUG/" --strict
+uv run --with python-docx "$SKILL_DIR/scripts/verify-legal.py" "legal/$SLUG/" --strict
 ```
 
 All checks must pass:
@@ -359,12 +359,10 @@ All checks must pass:
 The deliverable is `legal/{slug}/document.docx`. If the user needs PDF, convert:
 
 ```bash
-# If libreoffice is available:
-libreoffice --headless --convert-to pdf "legal/$SLUG/document.docx" --outdir "legal/$SLUG/"
-
-# Or use python-docx2pdf:
-pip install docx2pdf && python3 -c "from docx2pdf import convert; convert('legal/$SLUG/document.docx')"
+soffice --headless --convert-to pdf --outdir "legal/$SLUG" "legal/$SLUG/document.docx"
 ```
+
+Never use `docx2pdf` — it drives Microsoft Word via COM and hard-fails on Linux (`NotImplementedError`). Use `soffice` for any Office→PDF conversion.
 
 ## DOCX Formatting Standards
 

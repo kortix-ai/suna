@@ -16,19 +16,18 @@ It ships to npm in lockstep with the platform release version, so a given
 import {
   CATALOG,
   MANAGED_MODELS,
-  AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
+  PLATFORM_DEFAULT_MODEL_ID,
   getManagedModel,
   isManagedModelId,
-  pickAutoModel,
 } from '@kortix/llm-catalog';
 ```
 
 - `CATALOG` — bundled provider/model snapshot used until the API refreshes from its configured catalog URL.
 - `MANAGED_MODELS` / `getManagedModel` / `isManagedModelId` — the managed model set.
-- `AUTO_MODEL_ID`, `DEFAULT_MANAGED_MODEL_IDS`, `MANAGED_FLAGSHIP_MODEL_ID` — defaults.
-- `pickAutoModel(...)` — compatibility helper for SDK/client code; runtime routing is control-plane-owned.
+- `DEFAULT_MANAGED_MODEL_IDS`, `MANAGED_FLAGSHIP_MODEL_ID` — managed-model defaults.
+- `PLATFORM_DEFAULT_MODEL_ID` — the concrete platform fallback model.
 
 ## License
 

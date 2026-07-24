@@ -70,6 +70,7 @@ let lastProvisionInput: {
 const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
+  sandboxProviderGeneration: 0,
   name: 'Contract Project',
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
   defaultBranch: 'main',
@@ -271,6 +272,12 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => 'a'.repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: 'kortix-ppwarm-test',
+    tip: 'a'.repeat(40),
+    built: false,
+    provider: 'daytona',
+  }),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 

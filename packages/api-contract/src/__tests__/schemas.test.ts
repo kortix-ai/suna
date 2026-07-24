@@ -457,7 +457,7 @@ describe('SessionCreateInputSchema runtime_context', () => {
       agentName: 'veyris',
       sandboxSlug: 'default',
       initialPrompt: 'hello',
-      opencodeModel: 'kortix/auto',
+      opencodeModel: 'kortix/glm-5.2',
       sessionId: '11111111-1111-4111-a111-111111111111',
       branchAlreadyCreated: true,
       }).success,
@@ -511,6 +511,27 @@ describe('session connector profile contracts', () => {
     ).toBe(false);
     expect(
       UpdateConnectionProfileCredentialInputSchema.safeParse({ value: 'x'.repeat(65537) }).success,
+    ).toBe(false);
+  });
+});
+
+describe('SessionCreateInputSchema backend overrides (origin_ref + secrets bounds)', () => {
+  test('origin_ref: trims, accepts a normal handle, rejects >256 chars and whitespace-only', () => {
+    expect(SessionCreateInputSchema.safeParse({ origin_ref: 'tenant-42' }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ origin_ref: 'x'.repeat(257) }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ origin_ref: '   ' }).success).toBe(false);
+    expect(SessionCreateInputSchema.parse({ origin_ref: '  tenant-7  ' }).origin_ref).toBe('tenant-7');
+  });
+
+  test('secrets: accepts an identifier list and [] (narrow to zero), rejects an over-long list', () => {
+    expect(SessionCreateInputSchema.safeParse({ secrets: ['GMAIL_TOKEN', 'STRIPE_KEY'] }).success).toBe(
+      true,
+    );
+    expect(SessionCreateInputSchema.safeParse({ secrets: [] }).success).toBe(true);
+    expect(
+      SessionCreateInputSchema.safeParse({
+        secrets: Array.from({ length: 129 }, (_, i) => `S${i}`),
+      }).success,
     ).toBe(false);
   });
 });

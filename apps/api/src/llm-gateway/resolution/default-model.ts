@@ -1,5 +1,4 @@
 import { type AuthedPrincipal, GatewayResolutionError } from '@kortix/llm-gateway';
-import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import { connectedByokPickerModels } from '../models/picker-catalog';
 import { listProjectSecretsSnapshot } from '../../projects/secrets';
 import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
@@ -20,8 +19,7 @@ import { resolveCandidates } from './resolve-candidates';
 
 // Resolves the account/agent/project-configured default model for a gateway
 // principal, once at authentication (in withResolvedTier). The result is attached
-// to the principal as `defaultModel` and consumed by `pickAutoModel` to turn a
-// request for the synthetic `auto` into the model the account actually wants.
+// to the principal as `defaultModel` for concrete default-route matching.
 //
 // Resolution order (most-specific wins): per-agent default → project default →
 // account default → undefined (the caller then falls back to the platform
@@ -180,7 +178,7 @@ export async function isModelServableForAccount(params: {
   freeModelsOnly: boolean;
   model: string;
 }): Promise<boolean> {
-  if (params.model === AUTO_MODEL_ID || params.model === `kortix/${AUTO_MODEL_ID}`) return false;
+  if (params.model === 'auto' || params.model === 'kortix/auto') return false;
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
   // gateway resolves the bare id, so normalize before probing candidates.
   const wire = toWireModel(params.model);

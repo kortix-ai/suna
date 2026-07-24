@@ -55,6 +55,13 @@ flow(
         .del("/v1/projects/:projectId/secrets/:name", { params: { projectId: p.id, name: "TO_DELETE" } });
       r.status(200);
     });
+
+    await ctx.step("system KORTIX_* secret cannot be deleted → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/secrets/:name", { params: { projectId: p.id, name: "KORTIX_TOKEN" } });
+      r.status(403);
+    });
   },
 );
 

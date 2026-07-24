@@ -195,7 +195,8 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 | B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
 | B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`. | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input. | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector` |
-| B14 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing). | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green |
+| B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback. | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account. | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement` |
+| B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing). | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -538,6 +539,73 @@ full SDK typecheck, test, and packed-install smoke gates are required before thi
 claim is closed.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-23 — session `session-sync-latency` (local completion)
+
+Completed bounded session synchronization and persistent project navigation in
+`session-sync-latency`. Initial and background history reads request 10 messages.
+Older history uses cursor pagination. One active session owns the SSE stream.
+Inactive running sessions receive one bounded tail prefetch. The 20-entry
+controller registry owns and evicts prefetch state.
+
+The shared project layout now owns `ProjectShell`. Session navigation keeps the
+committed route visible until the target renders. The current session remains
+selected during a pending switch. File selections, Customize state, onboarding,
+and the presentation dialog persist across project routes. Session file stores
+are bounded to 20 entries.
+
+Connector reads no longer synchronize or write. The list path loads actions,
+credential state, and channel state in parallel. Shared credential discovery is
+one batched query. Explicit synchronization materializes connector icons.
+
+The final maintainability review deleted the background SSE fan-out, removed
+passive project-home reads, moved prefetch state into the bounded registry, and
+removed a second mobile transcript compatibility cast. `formatTranscript`
+accepts a narrow structural input while the exported `MessageWithParts` contract
+remains unchanged. No changed file crosses from below 1,000 lines to above 1,000
+lines.
+
+**TDD evidence:** the new mobile transcript-shape test first failed SDK
+typecheck with `TS2322`. The focused GREEN run reported **9 pass / 0 fail** with
+16 assertions. The mobile older-page hydration test first returned only the
+older page. Its GREEN run reported **1 pass / 0 fail**.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0. The full
+suite reported **1171 pass / 0 fail** with 5170 assertions across 88 files.
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed the package successfully.
+
+**Other local gates:** API typecheck exited 0. Focused API tests reported **38
+pass / 0 fail**. Focused web tests reported **22 pass / 0 fail**. The focused
+mobile test reported **1 pass / 0 fail**. Changed-file web ESLint reported 0
+errors and one pre-existing hook warning. Terraform formatting and validation
+passed. Mobile typecheck still reports 56 baseline errors; none reference the
+changed mobile files.
+
+**Runtime evidence:** the authenticated connector list returned `200` twice in
+10 ms and 5 ms. Legacy and default-profile credentials both returned
+`secretSet: true`. Connector, action, and credential row counts did not change.
+The real cloud session smoke reported **21 pass / 0 fail**. Project provisioning
+took 4 seconds. The sandbox reached `ready` 18 seconds after session creation.
+OpenCode and `kortix.yaml` returned `200`. Cleanup returned `200`.
+
+**Infrastructure evidence:** `dev-api.kortix.com` returns
+`x-backend: ecs-fargate`. ECS runs three tasks at its current three-task ceiling.
+The 24-hour target-response maximum was 47.132 seconds. The API logged 1,904
+target `5xx` responses. Stale background `/global/event` requests retried missing
+sandboxes four times and consumed about 7 seconds each. This branch deletes that
+fan-out and raises the ECS fallback maximum from 3 to 6.
+
+**Unverified:** the browser runtime returned an empty browser list. Required DOM
+and network assertions for persistent navigation, cached rendering, bounded
+prefetch, cursor pagination, transcript export, and dialog persistence could not
+run. The shared local migration ledger also has one pending concurrent migration
+that precedes an applied migration. The shared ledger was not mutated.
+
+**Shippable to production: NOT YET.** Browser DOM and network verification
+remains required.
 
 ---
 
@@ -1343,3 +1411,104 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. API typecheck, focused API
 authorization tests, focused web tests, and focused web lint also pass.
 Repository merge, Deploy Dev, and live-dev verification remain pending.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (claim)
+
+Claimed the additive existing-GitHub-App installation discovery contract. The
+SDK will request installations that the authorized GitHub user can link to one
+Kortix account. The API will verify personal ownership or active organization
+admin access before it returns or saves an installation. Existing install and
+save contracts remain backward compatible.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-23 — session `github-existing-installation-link` (completion)
+
+Completed the additive existing-installation discovery and link surface. The SDK
+exposes typed list and link functions. The API lists this GitHub App's
+installations with the App JWT, then filters them against the authorized GitHub
+user and active organization-admin memberships. The link route re-fetches the
+selected installation with the App JWT and repeats the GitHub authorization check
+before the database write. No exported name was removed or renamed.
+
+**TDD and focused evidence:** the GitHub SDK client reported **5 pass / 0 fail**;
+the GitHub App API suite reported **9 pass / 0 fail** with 30 assertions; and the
+web GitHub setup and connection regressions passed inside the full web suite.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+suite reported **1158 pass / 0 fail** across 86 files with 5110 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Cross-surface evidence:** API typecheck exited 0; the full web suite reported
+**1952 pass / 0 fail** across 212 files with 5455 assertions; focused web ESLint
+exited 0; and `git diff --check` exited 0. The full web typecheck reports only the
+two existing `origin/main` errors in `template-url.test.ts`.
+
+**Real local proof:** authenticated `POST
+/v1/projects/github/installations/linkable` returned 200 for GitHub login
+`markokraemer` and three verified installations. Authenticated `POST
+/v1/projects/github/installations/link` returned 200 for personal installation
+`148404669`. The account installation read-back returned the same owner and
+installation. Chromium rendered the same-origin `Link a GitHub account` page and
+opened GitHub OAuth in a popup with `read:user read:org`. The local OAuth callback
+cannot complete because the local Supabase container has the literal placeholder
+GitHub client ID; deployed-dev OAuth remains the repository delivery gate.
+
+**Shippable to production: YES** for the SDK and locally verified API contract.
+Repository PR, Deploy Dev, deployed-SHA proof, and full live-dev OAuth UI
+verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-24 — session `fix-free-tier-model-entitlement` (B14 completion)
+
+Removed the synthetic `auto` model from the catalog, API routing, sandbox
+configuration, SDK defaults, web model picker, CLI, Slack, and tests. The
+platform default is the concrete managed model `glm-5.2`. Stale `auto` and
+`kortix/auto` selections are discarded by SDK storage compatibility paths and
+rejected by the gateway as `model_not_found`.
+
+Managed-model entitlement now depends only on the resolved billing tier.
+`free`, `none`, and unknown tiers are blocked in every environment. Wallet
+balance cannot grant managed-model access. Free-tier gateway authorization
+does not place an LLM wallet hold. BYOK resolves with `billingMode: none` and
+does not append a managed fallback. Codex remains provider-funded and reaches
+its credential gate before any managed-model entitlement gate.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1179 pass / 0 fail** across 89 files with 5187
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. The two public
+surface snapshot diffs contain only the additive `resolvePromptModel` export.
+
+**Cross-surface evidence:** the full web suite reported **1979 pass / 0 fail**
+across 219 files with 5521 assertions. The sandbox-agent suite reported **215
+pass / 0 fail**. The model catalog reported **64 pass / 0 fail**. The CLI
+reported **514 pass / 0 fail**. The API contract reported **35 pass / 0 fail**.
+All six affected package typechecks and focused web ESLint exited 0. Task-specific
+API suites reported **69 pass / 0 fail** when run in isolated processes.
+
+The standalone gateway reported **22 pass / 2 fail**. Both failures are
+pre-existing architecture checks: `origin/main` already contains the
+`@kortix/llm-catalog` dependency and the three flagged imports. The full API
+command did not terminate after 14 minutes and was stopped. Its task-specific
+files all pass in isolated processes.
+
+**Real local HTTP evidence:** the API startup reported `Billing: ENABLED`. A
+free account with `$100` balance received `400 plan_upgrade_required` for
+`glm-5.2`; its balance remained `$100`. Both stale Auto IDs received `400
+model_not_found`. The free catalog omitted all managed models and both Auto IDs.
+The free model-default response returned `platformDefault: glm-5.2`,
+`resolvedForCaller: null`, and `freeTier: true`. Free BYOK returned one
+provider-funded candidate with no managed fallback. Free Codex reached
+`provider_not_connected`, not the tier gate. A paid `per_seat` account received
+`200` from `glm-5.2` with one completion choice.
+
+**Shippable to production: YES** for B14 and the published SDK surface.
+Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
+remain part of the repository lifecycle.
