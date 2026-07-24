@@ -172,8 +172,8 @@ Also stop if the same failure survives three different fixes (use
 | 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `c4cf6b453` |
 | 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `b88df4a55` |
 | 5 | Typed platform API coverage | DONE | `frontend-sdk-only` | 2026-07-24 | `2e1a78250` |
-| 6 | Remove runtime routing knowledge | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
-| 7 | Local parity proof | NOT STARTED | — | — | — |
+| 6 | Remove runtime routing knowledge | DONE | `frontend-sdk-only` | 2026-07-24 | `0f2c545b8` |
+| 7 | Local parity proof | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 | 8 | Delivery and dev proof | NOT STARTED | — | — | — |
 
 ---
@@ -1748,3 +1748,40 @@ The public runtime and type snapshots contain additions only. They contain no
 removed or renamed exports.
 
 **Shippable to production: NOT YET.** Tasks 6 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 6)
+
+Moved runtime routing, runtime actions, SSE transport, preview authentication,
+presentation conversion, PTY commands, and explicit host-boundary transport
+into `@kortix/sdk`.
+
+Added runtime-neutral SDK aliases without removing existing public exports.
+Renamed the remaining frontend files that contained `opencode`. The web source
+tree now contains no file path with that term.
+
+Expanded the AST boundary and ESLint gates. They reject OpenCode imports,
+deprecated runtime SDK subpaths, SDK internal subpaths, legacy runtime stores,
+runtime proxy paths, OpenCode REST paths, and raw Kortix backend routes.
+The boundary baseline contains 0 violations.
+
+The runtime snapshot added 145 names and removed 0 names. The type snapshot
+added 167 names and removed 0 names.
+
+**Verification:**
+
+- SDK typecheck: exit 0.
+- SDK suite: **1206 pass / 0 fail / 2 skip** across 98 files.
+- SDK packed-install smoke: pass.
+- Web suite: **2043 pass / 0 fail** across 224 files.
+- Web boundary test: **1 pass / 0 fail**.
+- Changed-file ESLint: 0 errors and 22 existing warnings.
+- Web typecheck: four existing errors only. Two are in the OG template test.
+  Two are unresolved generated docs-source imports.
+- White-label typecheck: exit 0.
+- White-label fresh build: exit 0.
+- White-label E2E: **44 pass / 0 fail / 3 live-upstream skips**.
+
+**Shippable to production: NOT YET.** Task 7 local parity proof and Task 8
+delivery and dev proof remain incomplete.
