@@ -7,9 +7,19 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type SandboxProviderName, config } from '../../config';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import {
+  isModelServableForAccount,
+  resolveEffectiveModel,
+} from '../../llm-gateway/resolution/default-model';
+import {
+  type ModelSource,
+  toOpencodeModelRef,
+} from '../../llm-gateway/resolution/effective';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -249,10 +259,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  // Resolved AS the launching user so their own CODEX_AUTH_JSON override (if
-  // any) wins; every OTHER secret is project-wide (secret sharing was retired —
-  // authorization is centralized on the running agent's `secrets` grant, applied
-  // below by identifier).
+  // Resolved AS the session's OWNER (createdBy, read below) so their own
+  // CODEX_AUTH_JSON override (if any) wins — consistently, whether this run is
+  // provisioned by the owner (create) or by a manager/admin (restart/open); see
+  // secretsPrincipalUserId below. Every OTHER secret is project-wide (secret
+  // sharing was retired — authorization is centralized on the running agent's
+  // `secrets` grant, applied below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
@@ -299,6 +311,7 @@ export async function buildSessionSandboxEnvVars(input: {
     .select({
       secretsAllowlist: projectSessions.secretsAllowlist,
       originRef: projectSessions.originRef,
+      createdBy: projectSessions.createdBy,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
@@ -308,11 +321,26 @@ export async function buildSessionSandboxEnvVars(input: {
     sessionKaabRow?.secretsAllowlist ?? null,
   );
 
+  // The secrets principal is the session's OWNER (`createdBy`), read here by
+  // sessionId — NOT `input.userId`, which is whoever is provisioning this run.
+  // On create those coincide, but restart/open/ensure-runtime provision on
+  // behalf of any project manager/admin, and a per-user secret override (today
+  // CODEX_AUTH_JSON) resolves per principal (`listResolvedProjectSecrets`). If a
+  // manager restarted another member's session we'd inject the MANAGER's personal
+  // secret at boot, which the first prompt's hot-push (`resolveOwnerRawEnv`, keyed
+  // on `createdBy`) would then clobber back — a cross-principal bleed + flip-flop.
+  // Deriving the principal from `createdBy` here unifies all three provisioning
+  // paths with hot-push and the admin provider-migrate path. Falls back to
+  // `input.userId` only if the row somehow isn't found (create races its own row
+  // in some callers). The agent grant — not the human — remains the authority on
+  // WHICH identifiers are eligible; this only picks the per-user override owner.
+  const secretsPrincipalUserId = sessionKaabRow?.createdBy ?? input.userId;
+
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
-      input.userId,
+      secretsPrincipalUserId,
       grantEnvForSession,
     );
   } catch (err) {
@@ -392,8 +420,9 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
-      // Per-session model override (e.g. Slack turns pin a specific model).
-      // The sandbox agent reads this and sets it on every opencode prompt call.
+      // Concrete session model after explicit → agent → project → account →
+      // platform resolution. The sandbox uses it for the first OpenCode turn
+      // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       // Backend-vouched end-user (KaaB) → KORTIX_ORIGIN_REF in the sandbox.
       originRef: sessionKaabRow?.originRef ?? null,
@@ -526,6 +555,12 @@ export async function createProjectSession(input: {
     };
   }
 
+  // `inherit_unbound` is a benign binding modifier: when this session binds any
+  // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
+  // failing closed. It can only ever inherit the project default (never another
+  // owner's profile), so unlike origin_ref/secrets it is NOT origin-gated.
+  const inheritUnbound = body.inherit_unbound === true;
+
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
   // override fields the caller may set. `origin_ref` (the wrapper end-user this
@@ -630,16 +665,94 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  // Explicit request wins; otherwise fall back to the project's default agent
-  // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
-  // `[opencode] default_agent` — synced to project metadata, or a UI/Slack
-  // override), so EVERY session — UI, triggers, channels — inherits the
-  // project's chosen agent without each caller passing one. Unset → 'default'.
+  // The literal "default" is a non-binding legacy sentinel. It must not block
+  // the configured project default. This rule applies to every caller,
+  // including older triggers and channel adapters that still send the sentinel.
+  const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const agentName =
-    normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
+    (requestedAgent && requestedAgent !== 'default' ? requestedAgent : null) ??
+    projectDefaultAgent ??
+    'default';
+
+  const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+    ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
+    : false;
+  const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
+
+  // Model: normalize + fail-fast at create. An unservable / retired / typo'd
+  // model pin was previously stored verbatim and only failed at prompt time (a
+  // dead turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
+  // daemon's default because opencode addresses managed models as `kortix/<id>`.
+  // Validate against the same servability resolver the gateway uses, and store
+  // the OPENCODE ref form. Runs BEFORE the billing hold so a bad model never
+  // costs a credit reservation. Mirrors the channel-model gate
+  // (routes/channel-bindings.ts) and the plan's §4.7 fail-fast.
+  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  let opencodeModel: string | null = null;
+  let opencodeModelSource: ModelSource | null = null;
+  if (requestedModel) {
+    if (/\s/.test(requestedModel)) {
+      return {
+        error: {
+          status: 400,
+          body: { error: `"${requestedModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
+        },
+      };
+    }
+    const servable = await isModelServableForAccount({
+      userId,
+      accountId,
+      projectId,
+      freeModelsOnly,
+      model: requestedModel,
+    });
+    if (!servable) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Model "${requestedModel}" is not available for this account`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+        },
+      };
+    }
+    opencodeModel = toOpencodeModelRef(requestedModel);
+    opencodeModelSource = 'explicit';
+  } else if (llmGatewayEnabled) {
+    try {
+      const resolved = await resolveEffectiveModel({
+        userId,
+        accountId,
+        projectId,
+        agentName,
+        explicit: null,
+        freeModelsOnly,
+      });
+      const concreteModel =
+        resolved.model ??
+        (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+      if (concreteModel) {
+        opencodeModel = toOpencodeModelRef(concreteModel);
+        opencodeModelSource = resolved.model ? resolved.source : 'platform';
+      }
+    } catch (error) {
+      console.error('[projects] Failed to resolve the session default model:', error);
+      return {
+        error: {
+          status: 503,
+          body: {
+            error: 'The session default model could not be resolved',
+            code: 'SESSION_MODEL_RESOLUTION_FAILED',
+          },
+        },
+      };
+    }
+  }
+
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
   if (parsedConnectorBindings.bindings) {
     loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
@@ -825,7 +938,6 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
@@ -833,6 +945,7 @@ export async function createProjectSession(input: {
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
+    ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     ...(input.metadata ?? {}),
   };
 
@@ -858,6 +971,7 @@ export async function createProjectSession(input: {
         origin,
         originRef,
         secretsAllowlist,
+        connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
         updatedAt: new Date(),
       })
@@ -948,7 +1062,7 @@ export async function createProjectSession(input: {
           agentName,
           initialPrompt,
           opencodeModel,
-          llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
+          llmGatewayEnabled,
           freshSession: true,
           baseSha,
           defaultBranch: project.defaultBranch,

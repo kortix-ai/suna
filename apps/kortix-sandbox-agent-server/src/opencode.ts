@@ -180,32 +180,38 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
         ? (out.provider as Record<string, unknown>)
         : {}
+    const kortixProvider = await buildKortixProvider({
+      // In proxy mode opencode talks to the localhost proxy with a placeholder
+      // key; the proxy injects the real per-session token upstream. In direct
+      // mode (cold/Daytona) it's the real gateway base + key, as before.
+      baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
+      apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
+      // Catalog is org-stable, so prefer the baked file — the full model catalog
+      // ships in every image at BAKED_LLM_CATALOG_PATH. Defaulting to it means a
+      // COLD boot (Daytona + Platinum) reads the file and SKIPS the ~2.2s gateway
+      // /models fetch that otherwise gates opencode's port bind on the critical
+      // path — matching how the warm seed (KORTIX_LLM_CATALOG_FILE) already
+      // behaves. Missing/empty file → readCatalogFile returns null → the fetch
+      // (step 2) still runs as the fallback, so this only ever removes latency.
+      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      fetchBaseURL: llmBaseUrl,
+      fetchApiKey: llmApiKey,
+    })
     out.provider = {
       ...provider,
-      kortix: await buildKortixProvider({
-        // In proxy mode opencode talks to the localhost proxy with a placeholder
-        // key; the proxy injects the real per-session token upstream. In direct
-        // mode (cold/Daytona) it's the real gateway base + key, as before.
-        baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
-        apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-        // Catalog is org-stable, so prefer the baked file — the full model catalog
-        // ships in every image at BAKED_LLM_CATALOG_PATH. Defaulting to it means a
-        // COLD boot (Daytona + Platinum) reads the file and SKIPS the ~2.2s gateway
-        // /models fetch that otherwise gates opencode's port bind on the critical
-        // path — matching how the warm seed (KORTIX_LLM_CATALOG_FILE) already
-        // behaves. Missing/empty file → readCatalogFile returns null → the fetch
-        // (step 2) still runs as the fallback, so this only ever removes latency.
-        catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
-        fetchBaseURL: llmBaseUrl,
-        fetchApiKey: llmApiKey,
-      }),
+      kortix: kortixProvider,
     }
     normalizeGatewayModelRefs(out)
+    const resolvedSessionModel = env.KORTIX_OPENCODE_MODEL?.trim()
+    const availableGatewayModel = Object.keys(
+      (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
+    )[0]
+    const fallbackModel = resolvedSessionModel || availableGatewayModel
     if (!('model' in out) || typeof out.model !== 'string') {
-      out.model = DEFAULT_KORTIX_MODEL
+      if (fallbackModel) out.model = toKortixOpencodeModelRef(fallbackModel)
     }
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
-      out.small_model = DEFAULT_KORTIX_MODEL
+      if (fallbackModel) out.small_model = toKortixOpencodeModelRef(fallbackModel)
     }
     // Gateway mode allowlists providers so leaked provider keys cannot open
     // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
@@ -404,11 +410,6 @@ export async function refreshGatewayCatalogFile(opts: {
   return { changed, catalogFile: opts.targetCatalogFile }
 }
 
-// New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
-// images → a vision model) — not a single pinned model. Used for both the main
-// model and the cheap `small_model`.
-const DEFAULT_KORTIX_MODEL = 'kortix/auto'
-
 // One `reasoning_options` entry (models.dev's shape, mirrored — see
 // @kortix/llm-catalog's CatalogReasoningOption). Present iff the model
 // exposes a tunable reasoning-effort knob; this is the PRIORITY field the
@@ -467,17 +468,6 @@ type KortixGatewayModel = {
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  // AUTO — the default model; present so the baked default never dangles when this
-  // fallback is used (gateway + baked catalog both unreachable at boot).
-  auto: {
-    name: 'Auto',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
   'claude-opus-4.8': {
     name: 'Claude Opus 4.8',
     provider: 'kortix',
@@ -496,8 +486,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
-  // Managed default (AUTO's text target + the explicit default a fresh session
-  // opts into). Bare id = Kortix-managed; text-only, so no attachment.
+  // Managed default for fresh sessions. Bare id = Kortix-managed.
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',

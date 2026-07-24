@@ -337,6 +337,13 @@ export const SessionCreateInputSchema = z
     metadata: JsonObjectSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
     connector_bindings: SessionConnectorBindingsSchema.optional(),
+    // When `connector_bindings` is set, binding any alias normally disables the
+    // project-default fallback for every OTHER (unbound) alias ("all-or-nothing").
+    // `inherit_unbound: true` keeps that fallback, so a caller can override just one
+    // connector (e.g. a user's own account) without re-binding the rest. Only ever
+    // inherits the project DEFAULT profile — never another owner's — so it is not
+    // origin-gated (any caller may set it).
+    inherit_unbound: z.boolean().optional(),
     // Backend-only: the wrapper's opaque end-user handle this session acts for.
     // Accepted only from a backend-origin caller (an account API key / PAT or a
     // service-account bearer); any other origin supplying it is rejected 403

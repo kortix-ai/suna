@@ -58,6 +58,7 @@ function sessionRow(
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    connectorBindingsInheritUnbound: false,
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,

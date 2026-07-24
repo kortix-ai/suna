@@ -4,7 +4,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers } from '@kortix/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
@@ -98,12 +98,24 @@ async function addGroupMembersOrDeferInvites(
       continue;
     }
     if (action !== 'park') continue;
-    const existing = inv.bootstrapGrants ?? [];
-    if (existing.some((g) => 'group_id' in g && g.group_id === groupId)) continue;
+    // Atomic append. The previous read-modify-write wrote the WHOLE array back
+    // from a stale snapshot, so two concurrent parks of DIFFERENT groups onto
+    // the same invite clobbered each other (last write wins). `||` concatenates
+    // against the row's CURRENT committed value at write time, so both land; the
+    // `@>` guard in the WHERE preserves the old same-group idempotency (a
+    // duplicate park is a no-op UPDATE instead of appending twice).
+    const grantJson = sql`jsonb_build_array(jsonb_build_object('group_id', ${groupId}::text))`;
     await db
       .update(accountInvitations)
-      .set({ bootstrapGrants: [...existing, { group_id: groupId }] })
-      .where(eq(accountInvitations.inviteId, inv.inviteId));
+      .set({
+        bootstrapGrants: sql`COALESCE(${accountInvitations.bootstrapGrants}, '[]'::jsonb) || ${grantJson}`,
+      })
+      .where(
+        and(
+          eq(accountInvitations.inviteId, inv.inviteId),
+          sql`NOT (COALESCE(${accountInvitations.bootstrapGrants}, '[]'::jsonb) @> ${grantJson})`,
+        ),
+      );
   }
 }
 

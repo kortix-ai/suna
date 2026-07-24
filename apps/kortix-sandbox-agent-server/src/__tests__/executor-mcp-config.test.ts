@@ -7,6 +7,7 @@ const ENV = { KORTIX_EXECUTOR_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kor
 const GATEWAY_CATALOG = {
   'anthropic/claude-opus-4.8': { name: 'Claude Opus 4.8', provider: 'anthropic', reasoning: true, tool_call: true, attachment: true, temperature: true },
   'anthropic/claude-sonnet-4.6': { name: 'Claude Sonnet 4.6', reasoning: true, tool_call: true, attachment: true },
+  'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol', reasoning: true, tool_call: true },
   'deepseek/deepseek-v4-flash': { name: 'DeepSeek V4 Flash', reasoning: true, tool_call: true },
   'x-ai/grok-4.3': { name: 'Grok 4.3', tool_call: true },
   'minimax/minimax-m3': { name: 'Minimax M3', tool_call: true },
@@ -127,10 +128,21 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     expect(models['claude-sonnet-4.6']).toBeDefined()
   }, 20_000) // full backoff (~15.5s) before the minimal-catalog fallback
 
-  test('sets default model to kortix/* when none in pre-existing config', async () => {
+  test('uses the resolved session model as the OpenCode default', async () => {
+    stubGatewayModels(GATEWAY_CATALOG)
+    const config = JSON.parse((await buildOpencodeConfigContent({
+      ...GATEWAY_ENV,
+      KORTIX_OPENCODE_MODEL: 'codex/gpt-5.6-sol',
+    }))!)
+    expect(config.model).toBe('kortix/codex/gpt-5.6-sol')
+    expect(config.small_model).toBe('kortix/codex/gpt-5.6-sol')
+  })
+
+  test('uses an available gateway model for legacy sessions without a resolved model', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
-    expect(config.model).toMatch(/^kortix\//)
+    expect(config.model).toBe('kortix/anthropic/claude-opus-4.8')
+    expect(config.small_model).toBe('kortix/anthropic/claude-opus-4.8')
   })
 
   test('routes a user-set default model through the Kortix provider', async () => {

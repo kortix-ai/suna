@@ -10,6 +10,7 @@ export interface KortixFeatureFlagOverrides {
   disableMobileAdvertising?: boolean;
   enableDinoGame?: boolean;
   enableProjects?: boolean;
+  /** @deprecated The Auto model was removed. This override has no effect. */
   enableAutoModel?: boolean;
 }
 

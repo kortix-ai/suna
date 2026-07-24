@@ -1,5 +1,3 @@
-import { AUTO_MODEL_ENABLED } from '@kortix/llm-catalog';
-
 import { platformConfig } from './config';
 import { safeEnv } from './env';
 
@@ -43,6 +41,7 @@ export interface FeatureFlags {
   disableMobileAdvertising: boolean;
   enableDinoGame: boolean;
   enableProjects: boolean;
+  /** @deprecated The Auto model was removed. This value is always false. */
   enableAutoModel: boolean;
 }
 
@@ -97,23 +96,9 @@ export const featureFlags: FeatureFlags = {
       false,
     );
   },
-  /**
-   * Expose the AUTO model (the gateway's smart router) in the model picker.
-   *
-   * Default: AUTO_MODEL_ENABLED (false). While off, the picker hides the "Auto"
-   * toggle entirely and every session opts into an explicit model — GLM 5.2 by
-   * default (see AUTO_DEFAULT_MODEL_ID in @kortix/llm-catalog). The gateway
-   * still resolves `auto` server-side, so this only controls the UI: flip it
-   * (via NEXT_PUBLIC_ENABLE_AUTO_MODEL=true or
-   * configureKortix({ featureFlags: { enableAutoModel: true } })) to bring the
-   * toggle back later.
-   */
+  /** @deprecated The Auto model was removed. This getter remains ABI-compatible. */
   get enableAutoModel(): boolean {
-    return resolveFlag(
-      platformConfig().featureFlags?.enableAutoModel,
-      'NEXT_PUBLIC_ENABLE_AUTO_MODEL',
-      AUTO_MODEL_ENABLED,
-    );
+    return false;
   },
 };
 
