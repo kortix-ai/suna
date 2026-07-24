@@ -173,7 +173,7 @@ Also stop if the same failure survives three different fixes (use
 | 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `b88df4a55` |
 | 5 | Typed platform API coverage | DONE | `frontend-sdk-only` | 2026-07-24 | `2e1a78250` |
 | 6 | Remove runtime routing knowledge | DONE | `frontend-sdk-only` | 2026-07-24 | `0f2c545b8` |
-| 7 | Local parity proof | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
+| 7 | Local parity proof | DONE | `frontend-sdk-only` | 2026-07-24 | `9e339c370` |
 | 8 | Delivery and dev proof | NOT STARTED | — | — | — |
 
 ---
@@ -1785,3 +1785,35 @@ added 167 names and removed 0 names.
 
 **Shippable to production: NOT YET.** Task 7 local parity proof and Task 8
 delivery and dev proof remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 7)
+
+Added a real browser regression for the SDK-only session path. The test creates
+a confirmed user, provisions a project and Platinum session, sends one prompt,
+observes the SDK runtime request, opens Files, and deletes all created resources.
+
+Updated the shared browser login helper for the email-first password flow.
+Added the SDK boundary test and frontend ESLint to the pull-request CI job.
+
+**Verification:**
+
+- SDK typecheck: exit 0.
+- SDK suite: **1206 pass / 0 fail / 2 skip** across 98 files.
+- SDK packed-install smoke: pass.
+- Web suite: **2043 pass / 0 fail** across 224 files.
+- Web SDK boundary plus full source ESLint: **1 pass / 0 fail**, ESLint exit 0.
+- White-label typecheck and fresh build: exit 0.
+- White-label E2E: **44 pass / 0 fail / 3 live-upstream skips**.
+- Managed session HTTP smoke: **25 pass / 0 fail** with a visible `PONG`.
+- PTY smoke: pass, including WebSocket attach and replay.
+- File transport smoke: **26 pass / 1 optional agent-read failure**.
+- SDK-only Chromium session: **1 pass** in 1.0 minutes. It observed one
+  `prompt_async`, visible `PONG`, no failed Kortix responses, and `kortix.yaml`.
+- Tests TypeScript check and `git diff --check`: exit 0.
+
+The generic auth spec failed because its default local user credentials were
+absent. The SDK-only regression creates and deletes its own confirmed user.
+
+**Shippable to production: NOT YET.** Task 8 delivery and dev proof remains.
