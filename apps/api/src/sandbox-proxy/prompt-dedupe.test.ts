@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { __resetPromptDedupe, claimPromptDelivery, promptDeliveryKey } from './prompt-dedupe';
+import {
+  __resetPromptDedupe,
+  claimPromptDelivery,
+  promptDeliveryKey,
+  releasePromptDelivery,
+} from './prompt-dedupe';
 
 beforeEach(() => __resetPromptDedupe());
 
@@ -49,5 +54,30 @@ describe('claimPromptDelivery', () => {
     expect(claimPromptDelivery('bulk-4999', 1_000)).toBe(false);
     // …but the oldest were evicted, so they read as fresh again.
     expect(claimPromptDelivery('bulk-0', 1_000)).toBe(true);
+  });
+});
+
+describe('releasePromptDelivery', () => {
+  test('a released claim is immediately reclaimable (retry can re-deliver)', () => {
+    // Delivery is claimed, then PROVES undelivered → released. The client's retry
+    // with the same key must be able to deliver, not short-circuit as a duplicate.
+    expect(claimPromptDelivery('k1', 1_000)).toBe(true);
+    expect(claimPromptDelivery('k1', 1_000)).toBe(false); // held → would drop the retry
+    releasePromptDelivery('k1');
+    expect(claimPromptDelivery('k1', 1_000)).toBe(true); // reclaimable → retry delivers
+  });
+
+  test('releasing only clears the named key, not other in-flight claims', () => {
+    expect(claimPromptDelivery('k1', 1_000)).toBe(true);
+    expect(claimPromptDelivery('k2', 1_000)).toBe(true);
+    releasePromptDelivery('k1');
+    // k2's claim survives — an unrelated delivery is not disturbed.
+    expect(claimPromptDelivery('k2', 1_000)).toBe(false);
+    expect(claimPromptDelivery('k1', 1_000)).toBe(true);
+  });
+
+  test('releasing an unknown or already-evicted key is a harmless no-op', () => {
+    expect(() => releasePromptDelivery('never-claimed')).not.toThrow();
+    expect(claimPromptDelivery('never-claimed', 1_000)).toBe(true);
   });
 });
