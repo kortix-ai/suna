@@ -52,6 +52,8 @@ const SESSION_B = crypto.randomUUID();
 const SESSION_DEFAULT = crypto.randomUUID();
 const SESSION_IMPERSONATION = crypto.randomUUID();
 const SESSION_SERVICE_ACCOUNT = crypto.randomUUID();
+const SESSION_AUTO_EMAIL = crypto.randomUUID();
+const SESSION_INHERIT_UNBOUND = crypto.randomUUID();
 const USER = crypto.randomUUID();
 const OTHER_USER = crypto.randomUUID();
 const SERVICE_ACCOUNT = crypto.randomUUID();
@@ -212,6 +214,21 @@ beforeAll(async () => {
       createdBy: SERVICE_ACCOUNT,
       visibility: 'private',
     },
+    {
+      sessionId: SESSION_AUTO_EMAIL,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      branchName: SESSION_AUTO_EMAIL,
+      createdBy: USER,
+    },
+    {
+      sessionId: SESSION_INHERIT_UNBOUND,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      branchName: SESSION_INHERIT_UNBOUND,
+      createdBy: USER,
+      connectorBindingsInheritUnbound: true,
+    },
   ]);
   await db.insert(projectSessionConnectorBindings).values([
     {
@@ -253,6 +270,30 @@ beforeAll(async () => {
       profileId: PROFILE_SERVICE_ACCOUNT,
       source: 'request',
       createdBy: SERVICE_ACCOUNT,
+    },
+    // Auto-wired by the platform (ensureEmailSessionBinding), NOT caller-chosen —
+    // source: 'default'. Must not trip the all-or-nothing gate for OTHER aliases.
+    {
+      sessionId: SESSION_AUTO_EMAIL,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorAlias: 'kortix_email',
+      connectorId: EMAIL_CONNECTOR,
+      profileId: EMAIL_PROFILE_DEFAULT,
+      source: 'default',
+      createdBy: null,
+    },
+    // A caller-REQUESTED (source: 'request') veyris binding on an inherit_unbound
+    // session — the explicit binding still wins, and unbound aliases fall back.
+    {
+      sessionId: SESSION_INHERIT_UNBOUND,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorAlias: 'veyris',
+      connectorId: CONNECTOR_A,
+      profileId: PROFILE_DEFAULT,
+      source: 'request',
+      createdBy: USER,
     },
   ]);
   await db.insert(executorCredentials).values([
@@ -362,6 +403,59 @@ describe('session connector profile isolation', () => {
     });
     expect(legacySessionEmail).toMatchObject({
       profileId: EMAIL_PROFILE_DEFAULT,
+      isDefault: true,
+      source: 'default',
+    });
+  });
+
+  test('inherit_unbound keeps the project-default fallback for unbound aliases while the explicit binding still wins', async () => {
+    // SESSION_INHERIT_UNBOUND binds veyris (source: request) AND was created with
+    // connector_bindings_inherit_unbound = true. The explicit veyris binding must
+    // still win, but an UNBOUND alias (kortix_email) must fall through to the
+    // project default instead of failing closed the way SESSION_A does above.
+    const boundVeyris = await resolveSessionConnectorProfile({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_INHERIT_UNBOUND,
+      alias: 'veyris',
+    });
+    expect(boundVeyris).toMatchObject({ profileId: PROFILE_DEFAULT, source: 'request' });
+
+    const unboundEmail = await resolveSessionConnectorProfile({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_INHERIT_UNBOUND,
+      alias: 'kortix_email',
+    });
+    expect(unboundEmail).toMatchObject({
+      profileId: EMAIL_PROFILE_DEFAULT,
+      isDefault: true,
+      source: 'default',
+    });
+  });
+
+  test('an auto-wired email binding does not disable default fallback for other connectors', async () => {
+    // SESSION_AUTO_EMAIL has ONLY a source: 'default' email binding (as minted by
+    // ensureEmailSessionBinding) — the caller never opted into explicit-only
+    // selection. Its email alias resolves via that bound row…
+    const email = await resolveSessionConnectorProfile({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_AUTO_EMAIL,
+      alias: 'kortix_email',
+    });
+    expect(email).toMatchObject({ profileId: EMAIL_PROFILE_DEFAULT });
+
+    // …and an UNBOUND alias still falls back to the project default, instead of
+    // failing closed the way a caller-requested (source: 'request') binding would.
+    const veyris = await resolveSessionConnectorProfile({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_AUTO_EMAIL,
+      alias: 'veyris',
+    });
+    expect(veyris).toMatchObject({
+      profileId: PROFILE_DEFAULT,
       isDefault: true,
       source: 'default',
     });

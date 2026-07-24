@@ -128,14 +128,38 @@ export async function waitForApprovalDecision(
   }
   while (Date.now() < deadline) {
     const [row] = await db
-      .select({ status: executorExecutions.status, resolvedAt: executorExecutions.resolvedAt })
+      .select({
+        status: executorExecutions.status,
+        resolvedAt: executorExecutions.resolvedAt,
+        approvedBy: executorExecutions.approvedBy,
+        resultSummary: executorExecutions.resultSummary,
+      })
       .from(executorExecutions)
       .where(and(...conds))
       .limit(1);
     // No row under the expected binding → the supplied id belongs to a different
     // session/connector/action (or doesn't exist). Never wait on it.
     if (!row) return 'mismatch';
-    if (row.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
+    if (row.resolvedAt) {
+      if (row.status === 'denied') return 'denied';
+      // Only a GENUINE, still-UNCONSUMED human approve authorizes the call —
+      // mirror consumeApprovedExecution's guard exactly. A resolved row that is
+      // NOT that (a plain ok/error run row, which never has approvedBy, or an
+      // already-consumed approval being REPLAYED, which has consumed_at stamped)
+      // must never resolve to 'approved' — treating any resolved non-denied row
+      // as approved is the require_approval bypass (replay a resolved execution
+      // id to auto-authorize a sensitive call). The legit FIRST waiter still
+      // passes: the gateway stamps consumed_at only AFTER this returns 'approved'
+      // (gateway.ts markApprovalConsumed), so consumed_at is still null in-band;
+      // only LATER replays see it set and are rejected here.
+      const rs: Record<string, unknown> = row.resultSummary ?? {};
+      if (row.approvedBy != null && rs.decision === 'approve' && rs.consumed_at == null) {
+        return 'approved';
+      }
+      // Resolved but not a genuine, unconsumed approve. Don't authorize: the
+      // bound row can't flip to genuine, so keep polling until it hits 'timeout'
+      // (the gateway then leaves the call paused, exactly as if never approved).
+    }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return 'timeout';

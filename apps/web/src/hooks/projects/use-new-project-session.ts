@@ -10,7 +10,7 @@ import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { createProjectSession } from '@kortix/sdk/projects-client';
+import { type SessionConnectorBindings, createProjectSession } from '@kortix/sdk/projects-client';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
@@ -51,7 +51,17 @@ export function useNewProjectSession(projectId: string | undefined) {
       // match the agent the composer sends on the first prompt — the API proxy
       // rejects any prompt whose `agent` differs from the session's bound agent
       // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      create?: { sandbox_slug?: string; agent_name?: string };
+      // `connector_bindings` binds specific connection profiles for this session
+      // (e.g. a member's own private connection); `inherit_unbound` keeps the
+      // project-default fallback for every OTHER connector so binding one doesn't
+      // null the rest. A member-owned binding also requires the session to be
+      // private — which is already the create default.
+      create?: {
+        sandbox_slug?: string;
+        agent_name?: string;
+        connector_bindings?: SessionConnectorBindings;
+        inherit_unbound?: boolean;
+      };
     }) => {
       if (!projectId || creatingRef.current) {
         opts?.onError?.();

@@ -340,6 +340,7 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
       })),
       create: overrides.subscriptionsCreate ?? (async (params: any) => defaultSubscription),
       cancel: overrides.subscriptionsCancel ?? (async (id: string) => ({})),
+      list: overrides.subscriptionsList ?? (async (params?: any) => ({ data: [] })),
     },
     customers: {
       create: overrides.customersCreate ?? (async (params: any) => ({

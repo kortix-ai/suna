@@ -307,13 +307,12 @@ describe('compute metering — cost calculation', () => {
     expect(calculateComputeCost(SPEC, 0)).toBe(0);
   });
 
-  test('hourly cost is in the expected range for a 2/4/20 sandbox', () => {
+  test('hourly cost is $0.201312 for a 2/4/20 sandbox', () => {
     const c = calculateComputeCost(SPEC, 3600);
-    expect(c).toBeGreaterThan(0.10);
-    expect(c).toBeLessThan(0.15);
+    expect(c).toBeCloseTo(0.201312, 8);
   });
 
-  test('provider attribution is persisted and E2B uses its own rate card', async () => {
+  test('provider attribution is persisted and hosted providers use one customer rate', async () => {
     await startComputeSession({
       sandboxId: 'sb_e2b',
       accountId: 'acc_test_123',
@@ -322,8 +321,14 @@ describe('compute metering — cost calculation', () => {
     });
 
     expect(sessions[0].provider).toBe('e2b');
-    expect(calculateComputeCost(SPEC, 3600, 'e2b')).toBeGreaterThan(
+    expect(calculateComputeCost(SPEC, 3600, 'e2b')).toBeCloseTo(
       calculateComputeCost(SPEC, 3600, 'daytona'),
+      8,
     );
+    expect(calculateComputeCost(SPEC, 3600, 'platinum')).toBeCloseTo(
+      calculateComputeCost(SPEC, 3600, 'daytona'),
+      8,
+    );
+    expect(calculateComputeCost(SPEC, 3600, 'local-docker')).toBe(0);
   });
 });

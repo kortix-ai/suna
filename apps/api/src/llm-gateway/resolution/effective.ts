@@ -1,10 +1,7 @@
 import { isRuntimeManagedModelId } from '../models/managed-models';
 
-// One definition of how a default model/agent is chosen across scopes, shared by
-// the gateway's `auto` resolution (chooseDefaultModel → here) and the apps/api
-// display/validation path (resolveEffectiveModel in default-model.ts). Keeping
-// the precedence in ONE pure function means Slack, the web picker, and the
-// gateway can never disagree about what "the default" is.
+// One definition of how a default model/agent is chosen across scopes. Keeping
+// the precedence here means Slack, the web picker, and the gateway agree.
 
 /** Where an effective model came from — drives honest UI copy ("· project default"). */
 export type ModelSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
@@ -75,13 +72,10 @@ export function chooseEffectiveModel(params: {
 
 /**
  * Guard a resolved DEFAULT-chain model against staleness before it's handed to
- * `auto` resolution / the UI. A stored default can silently go unservable after
+ * the gateway or UI. A stored default can silently go unservable after
  * the fact — overwhelmingly a BYOK model (`provider/model`) whose provider key was
  * later disconnected, or that was auto-seeded on connect and never had a key in
- * THIS environment (the `seedProjectDefaultModelOnConnect` path). Returning it
- * routes `auto` to a model with no upstream and dead-turns every session that
- * didn't pick a model by hand — the exact "No upstream configured" failure the
- * explicit-pin path in `resolveEffectiveModel` already guards against.
+ * THIS environment (the `seedProjectDefaultModelOnConnect` path).
  *
  * Managed/platform defaults are servable whenever the tier allows (already enforced
  * upstream by `chooseEffectiveModel`'s free-tier drop), so they are trusted without

@@ -163,7 +163,7 @@ describe('provider-selection', () => {
     ).toBe(false);
   });
 
-  test('converts the project catalog into the managed kortix provider', () => {
+  test('converts the project catalog into the managed kortix provider and drops stale Auto', () => {
     const list = projectLlmCatalogToProviderList({
       models: {
         auto: { name: 'Auto' },
@@ -172,9 +172,9 @@ describe('provider-selection', () => {
     });
 
     expect(list.connected).toEqual(['kortix']);
-    expect(list.default).toEqual({ kortix: 'auto' });
+    expect(list.default).toEqual({ kortix: 'claude-opus-4.8' });
     expect(list.all?.[0]?.id).toBe('kortix');
-    expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['auto', 'claude-opus-4.8']);
+    expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['claude-opus-4.8']);
     expect((list.all?.[0]?.models as any)?.['deepseek-v4-flash-free']).toBeUndefined();
   });
 
@@ -189,7 +189,7 @@ describe('provider-selection', () => {
   test('does not merge session-native providers into gateway catalog', () => {
     const project = projectLlmCatalogToProviderList({
       models: {
-        auto: { name: 'Auto' },
+        'glm-5.2': { name: 'GLM 5.2' },
       },
     });
     const session = filterToGatewayProviders(providers(['opencode', 'anthropic']));

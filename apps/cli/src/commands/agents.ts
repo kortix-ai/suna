@@ -19,10 +19,10 @@ interface ModelDefaults {
 const HELP = help`Usage: kortix agents <subcommand> [options]
 
 Per-agent settings on the linked Kortix project. Today: which MODEL each agent
-runs on — the dynamic gateway default (scope=agent), applied instantly with no
-kortix.yaml commit. A session an agent runs that asks for the synthetic \`auto\`
-model resolves to this pick, falling back to the project → account → platform
-default. (The declarative default lives in kortix.yaml as [[agents]].model.)
+runs on — an explicit concrete model (scope=agent), applied instantly with no
+kortix.yaml commit. An agent without a pin follows the project → account →
+platform default. (The declarative default lives in kortix.yaml as
+[[agents]].model.)
 
 Subcommands:
   models [--json]                 Show every agent's pinned model + the fallback default.
@@ -73,7 +73,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           return 0;
         }
         const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'auto';
+          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
         const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(

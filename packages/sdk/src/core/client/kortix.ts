@@ -712,14 +712,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           sessionId,
           Math.min(30_000, remainingMs()),
         );
-        // Keep polling only while the runtime is still coming up
-        // (provisioning/starting) and the server says it's retriable; a
-        // terminal stage (ready/failed/stopped) or the deadline ends the loop.
+        // Keep polling while the runtime is still coming up. A `null` result is
+        // a TRANSIENT tick, not a terminal state: startProjectSession returns
+        // null for a 5xx/408/429/network blip AND the create→start 404 race
+        // (row not yet visible on the read path) — the exact cases a backend
+        // hits calling ensureReady() right after create(). Only a resolved
+        // provisioning/starting+retriable result or the deadline keeps/ends the
+        // loop; ready/failed/stopped fall through to the guard below.
         while (
-          started &&
-          (started.stage === 'provisioning' || started.stage === 'starting') &&
-          started.retriable &&
-          Date.now() < deadline
+          Date.now() < deadline &&
+          (started == null ||
+            ((started.stage === 'provisioning' || started.stage === 'starting') &&
+              started.retriable))
         ) {
           await new Promise((r) => setTimeout(r, Math.min(1_000, remainingMs())));
           started = await P.startProjectSession(

@@ -30,7 +30,7 @@ kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
-kortix.runtime(); // OpenCode client for the active runtime
+kortix.runtime(); // OpenCode client for the active runtime — throws on a @kortix/sdk/server scoped client
 ```
 
 ### Accounts — `kortix.accounts`
@@ -390,12 +390,16 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 | `list()` · `snapshots()` | sandboxes for this project · built snapshots |
 | `rebuildSnapshot(slug?)` · `fixWithAgent()` | rebuild a snapshot · ask an agent to fix a broken build |
 | `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
-| `setProvider(provider)` | pin or clear the sandbox provider (`null` follows the platform default) |
+| `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'project'` (immediate) or `kind:'preparation'` (poll `getProjectSandboxProviderTransition()` until `activated`/`failed`) |
 
 ### Escape hatch
 
 `kortix.runtime()` returns the typed OpenCode client for the active runtime.
-Prefer the session-scoped `kortix.session(pid, sid).runtime` instead.
+On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
+— the process-global "active" runtime is another request's sandbox in a
+multi-tenant server, a cross-tenant leak. Use the session-scoped
+`kortix.session(pid, sid).runtime` (call `ensureReady()` first) instead, which
+resolves that session's own sandbox.
 
 ## Modules
 
@@ -530,6 +534,10 @@ export async function handler(req: Request) {
 `createScopedKortix` and `runWithKortix` isolate config per request with
 Node's `AsyncLocalStorage`. Never import `@kortix/sdk/server` from a browser
 bundle — it statically pulls in `node:async_hooks`.
+
+A scoped client's top-level `runtime()` throws (it would resolve another
+tenant's sandbox). Reach a specific session's runtime via
+`kortix.session(pid, sid).runtime` after `await s.ensureReady()`.
 
 ### Deprecated aliases
 

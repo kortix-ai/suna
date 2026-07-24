@@ -39,7 +39,7 @@ flow(
   async (ctx) => {
     const body = {
       principal: { accountId: '00000000-0000-4000-a000-000000000000' },
-      input: { requestedModel: 'auto' },
+      input: { requestedModel: 'glm-5.2' },
     };
     await ctx.step('no internal token → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/resolve-route', body);
@@ -70,6 +70,9 @@ flow(
         const models = r.json<any>()?.models;
         if (!models || typeof models !== 'object' || Object.keys(models).length === 0) {
           throw new Error(`${path} returned an empty model catalog`);
+        }
+        if ('auto' in models || 'kortix/auto' in models) {
+          throw new Error(`${path} returned the removed Auto model`);
         }
       });
     }
@@ -360,14 +363,14 @@ flow(
     });
 
     await ctx.step('preview resolves ordered default and exact-model routes', async () => {
-      const automatic = await ctx.client
+      const defaultRoute = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/gateway/routing-policy/preview',
-          { requestedModel: 'auto', imageInput: false },
+          { requestedModel: 'codex/gpt-5.6-sol', imageInput: false },
           { params },
         );
-      automatic
+      defaultRoute
         .status(200)
         .body()
         .has('$.route.policyId', 'project:default')
