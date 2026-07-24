@@ -26,6 +26,7 @@ import {
   ShowCarouselItem,
   ShowContentRenderer,
   showDomain,
+  ShowFileActions,
   showTypeIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
@@ -102,6 +103,15 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
       ? buildHtmlStaticUrl(activePath)
       : '';
   const isWebsitePreview = !!resolvedPreviewUrl;
+
+  /**
+   * A file-backed show — anything with a sandbox path that isn't being served
+   * as a live website preview. Covers PDF, PPTX, DOCX, XLSX, CSV, YAML, code,
+   * markdown and images alike: they all read from a path, so they all earn the
+   * same header actions. Carousels included, using the active item's path, so
+   * paging between deliverables keeps the toolbar rather than losing it.
+   */
+  const showsFile = !isWebsitePreview && !!activePath;
   const preview = useServicePreview(
     resolvedPreviewUrl,
     activeTitle || title || description || undefined,
@@ -190,15 +200,32 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
           fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
         )}
       >
-        {isWebsitePreview && (
+        {/* One header, two payloads. A `show` is backed either by a URL or by
+            a file, and both need the same thing: what am I looking at, and what
+            can I do with it. Only the URL case used to get this row, so a PDF,
+            deck, doc or YAML rendered as a bare card with no refresh, no way to
+            open it larger, and no route into the panel. */}
+        {(isWebsitePreview || showsFile) && (
           <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
+              {isWebsitePreview ? (
+                <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
+              ) : (
+                <span className="text-muted-foreground/50 shrink-0">
+                  {showTypeIcon(activeType || 'file', 'size-3.5')}
+                </span>
+              )}
               <span className="text-foreground/80 truncate text-xs font-medium">
-                {preview.displayLabel}
+                {isWebsitePreview
+                  ? preview.displayLabel
+                  : activeTitle || activePath.split('/').pop() || activePath}
               </span>
             </div>
-            <ServicePreviewActions preview={preview} />
+            {isWebsitePreview ? (
+              <ServicePreviewActions preview={preview} />
+            ) : (
+              <ShowFileActions path={activePath} inPanel={fill} />
+            )}
           </div>
         )}
 
