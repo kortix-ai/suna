@@ -39,7 +39,7 @@ Load both before writing or reviewing UI. When Kortix rules and polish rules ove
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
 | **`@/lib/toast`**, raw `sonner`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx` |
 | Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
-| **`CircleNotchIcon`**, `SpinnerIcon`, or any icon as a spinner (`@phosphor-icons/react`) | **`Loading`** from `apps/web/src/components/ui/loading.tsx` |
+| **Any icon as a spinner** — `CircleNotchIcon`, `SpinnerIcon`, `SpinnerGapIcon`, or the same glyph aliased to `Loader`/`Loader2`/`IconLoader` | **`Loading`** from `apps/web/src/components/ui/loading.tsx` — the codebase's only spinner |
 | Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
 When editing a file that already uses banned primitives, migrate to the reference pattern — do not add more usage.
@@ -433,7 +433,9 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 
 ## Loading pattern (canonical)
 
-**Every in-flight spinner is `Loading` from `loading.tsx`.** The component ships its own rotate/dash animation — do not swap in `CircleNotchIcon`, `SpinnerIcon`, or any other spinning icon.
+**Every in-flight spinner is `Loading` from `loading.tsx`. There are no exceptions and no second spinner in this codebase.** The component ships its own rotate/dash animation, so it never needs `animate-spin`.
+
+**No icon is ever a spinner.** Not `CircleNotchIcon`, not `SpinnerIcon`, not `SpinnerGapIcon`, not any other Phosphor glyph, whatever it is aliased to (`Loader`, `Loader2`, `IconLoader`, …). If you catch yourself writing `animate-spin` on an icon, the answer is `Loading`. `kortix-icons.ts` deliberately exports **no** loader icon so the semantic layer can't offer you one.
 
 ```tsx
 import Loading from '@/components/ui/loading';
