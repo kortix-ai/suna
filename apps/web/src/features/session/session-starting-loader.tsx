@@ -315,37 +315,55 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
  * liveness the screen needs; anything more elaborate here is decoration
  * competing with the one element whose job is to move.
  */
-function BootCompactMessage({ active }: { active: number }) {
+function BootCompactMessage({
+  active,
+  /** Rendered inside the TEXT column, beneath the message. Anything the caller
+   *  wants aligned to the copy rather than to the spinner belongs here — the
+   *  restart offer used to sit outside this block behind a `md:ml-7` offset
+   *  that guessed the spinner's width, overran its own container, and lined up
+   *  with nothing at all once the row stacked. */
+  footer,
+}: {
+  active: number;
+  footer?: React.ReactNode;
+}) {
   const reduce = useReducedMotion();
   const step = STEPS[Math.min(active, STEPS.length - 1)];
   return (
+    // Row at EVERY width. Stacking the spinner above the copy on small screens
+    // bought nothing — a 20px glyph and a 2-line message coexist happily at
+    // 256px — and it cost the one relationship that matters here: the spinner
+    // reads as belonging to the message it sits beside.
     <div className="flex items-start gap-2.5">
       {/* mt-1 optically centres the 20px spinner on the headline's 28px line
           box — geometric top-alignment sits it visibly high against a bold cap. */}
       {/* `spokes` to match the reference: beside a headline the ticking wheel
           reads as steady activity, where the orbit arc's sweeping head pulls
           the eye off the words. */}
-      <Loading variant="spokes" className="text-muted-foreground mt-2 size-5 shrink-0" />
-      {/* Height is RESERVED, not animated. `mode="wait"` leaves a beat with no
-          message mounted, and without a floor the centred block would collapse
-          and rebound on every step — the one jump an animated container was
-          papering over. 13 = headline line-box (7) + gap (1) + description (5).
-          aria-live lives here, on the node that persists, so the swap is
-          actually announced; on the message itself it unmounts before it can be. */}
-      <div className="min-h-13 min-w-0 flex-1" aria-live="polite">
-        <AnimatePresence initial={false} mode="wait">
-          <motion.div
-            key={step.label}
-            initial={{ opacity: 0, y: reduce ? 0 : 4 }}
-            animate={{ opacity: 1, y: 0, transition: MESSAGE_IN }}
-            exit={{ opacity: 0, y: reduce ? 0 : -4, transition: MESSAGE_OUT }}
-          >
-            <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">
-              {step.label}
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm text-pretty">{step.description}</p>
-          </motion.div>
-        </AnimatePresence>
+      <Loading variant="spokes" className="text-muted-foreground mt-1 size-5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        {/* Height is RESERVED, not animated. `mode="wait"` leaves a beat with no
+            message mounted, and without a floor the centred block would collapse
+            and rebound on every step — the one jump an animated container was
+            papering over. 13 = headline line-box (7) + gap (1) + description (5).
+            aria-live lives here, on the node that persists, so the swap is
+            actually announced; on the message itself it unmounts before it can be. */}
+        <div className="min-h-13" aria-live="polite">
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              key={step.label}
+              initial={{ opacity: 0, y: reduce ? 0 : 4 }}
+              animate={{ opacity: 1, y: 0, transition: MESSAGE_IN }}
+              exit={{ opacity: 0, y: reduce ? 0 : -4, transition: MESSAGE_OUT }}
+            >
+              <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">
+                {step.label}
+              </h2>
+              <p className="text-muted-foreground mt-1 text-sm text-pretty">{step.description}</p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        {footer}
       </div>
     </div>
   );
@@ -489,21 +507,36 @@ function RestartFallback({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}
           transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+          // `mt-5` rides here rather than on a wrapper: this element only exists
+          // once the boot has stalled, so the space it needs arrives with it
+          // instead of holding open a gap for the first 45 seconds.
+          className="mt-5 w-full"
         >
+          {/* The framing lives in copy, not in the button label. "Taking too
+              long? Restart session" made the control read as a question rather
+              than an action, and at 256px — the narrowest this block ever gets —
+              it wrapped to two lines inside the button. A muted line above says
+              why the offer appeared; the button says what it does. */}
+          <p className="text-muted-foreground mb-2 text-xs text-pretty">
+            This is taking longer than usual.
+          </p>
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
-            // className="h-7 gap-1.5 rounded-full px-3 text-[11px] transition-transform active:scale-[0.97]"
+            // Full width is for the thumb, not for emphasis: this block is
+            // capped at 320px, so a full-bleed target is comfortably tappable
+            // on a phone while staying visually quiet at `secondary`.
+            className="w-full active:scale-[0.98]"
             disabled={pending}
             onClick={onRestart}
           >
             {pending ? (
-              <Loading className="size-3 shrink-0 text-current" />
+              <Loading className="size-3.5 shrink-0 text-current" />
             ) : (
-              <RotateCcw className="h-3 w-3 shrink-0" />
+              <RotateCcw className="size-3.5 shrink-0" />
             )}
-            {pending ? 'Restarting…' : 'Taking too long? Restart session'}
+            {pending ? 'Restarting…' : 'Restart session'}
           </Button>
         </motion.div>
       ) : null}
@@ -577,15 +610,25 @@ export function SessionStartingLoader({
       <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-8">
         <div
           className={cn(
-            'flex max-w-sm flex-col items-start gap-5 transition-opacity duration-500',
+            'flex w-full max-w-xs flex-col items-start transition-opacity duration-500',
             show ? 'opacity-100' : 'opacity-0',
           )}
         >
-          <BootCompactMessage active={active} />
-          <RestartFallback
-            show={stuck && canRestart}
-            pending={restartMutation.isPending}
-            onRestart={() => restartMutation.mutate()}
+          {/* The restart offer rides in the message's own text column, so it
+              aligns with the copy at every width without an offset that has to
+              know how wide the spinner is. Its spacing lives on the element that
+              animates in, not on a wrapper — for the first 45 seconds there is
+              nothing to show, and a wrapper's margin would hold open a gap under
+              a message that has no second child. */}
+          <BootCompactMessage
+            active={active}
+            footer={
+              <RestartFallback
+                show={stuck && canRestart}
+                pending={restartMutation.isPending}
+                onRestart={() => restartMutation.mutate()}
+              />
+            }
           />
         </div>
       </div>
