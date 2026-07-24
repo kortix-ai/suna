@@ -1466,6 +1466,107 @@ export function isEmbedPdfTilingReactUpdateDepthNoise(input: {
   return frames.some(frameMatchesEmbedPdfTilingCallback);
 }
 
+// The EXACT V8 wording of the @embedpdf/plugin-tiling `TilingLayer` viewport-
+// advance tile-destructure throw: under a rapid scroll/zoom burst the tiling
+// plugin's tile queue drains mid-burst, the viewport-advance path calls
+// `const { tile } = queue.pop()` on an `undefined` pop result, and V8 reports
+// `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` (the
+// minified queue is `r`, so the destructure target renders as `r.pop(...)`).
+// The `tile` property name + the `r.pop(...)` destructure target together pin
+// this single call site; a different destructure (different property / different
+// expression) is a different throw and must keep reporting. Anchored as an EXACT
+// string match (after `stripErrorWrappers`) like the Paper Shaders patterns —
+// not a loose prefix — so a near-worded regression cannot slip through.
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_NOISE_MESSAGE =
+  "Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.";
+
+// The @embedpdf/plugin-tiling `TilingLayer` viewport-advance internal frame
+// anchors. Under a scroll/zoom burst the tiling plugin's viewport advance path
+// (`t5.advance` → `iA.ignore` → `iA.onScroll` / `iA.onScrollChanged`, plus the
+// `IntersectionObserver` threshold callback that drives viewport recomputation)
+// pops the drained tile queue. These minified function names are the tiling
+// plugin's own viewport-advance internals (never present in first-party
+// `apps/web/src/…` source), so their presence is a specific third-party anchor.
+// Function names are stable across deploys (unlike the `c63a46fc` chunk hash,
+// which changes every release), so they are the primary anchor; the chunk hash
+// is a fallback for captures whose function names were stripped.
+const EMBEDPDF_TILING_VIEWPORT_ADVANCE_FRAME_MARKERS = [
+  't5.advance',
+  'iA.ignore',
+  'iA.onScroll',
+  'iA.onScrollChanged',
+  'IntersectionObserver.intersection.IntersectionObserver.threshold',
+] as const;
+
+// The minified @embedpdf/plugin-tiling tiling chunk hash seen in both prod
+// patterns (`c63a46fc-270e35c76d7636cb.js`). Changes per deploy, so it is a
+// fallback anchor only — the function-name markers above are preferred.
+const EMBEDPDF_TILING_CHUNK_MARKER = 'c63a46fc';
+
+function frameMatchesEmbedPdfTilingViewportAdvance(
+  frame: { filename?: unknown; function?: unknown } | undefined,
+): boolean {
+  const fn = normalizeString(frame?.function);
+  if (
+    EMBEDPDF_TILING_VIEWPORT_ADVANCE_FRAME_MARKERS.some((marker) =>
+      fn.includes(marker),
+    )
+  ) {
+    return true;
+  }
+  return normalizeString(frame?.filename).includes(EMBEDPDF_TILING_CHUNK_MARKER);
+}
+
+/**
+ * Whether a Sentry exception is the `@embedpdf/plugin-tiling` `TilingLayer`
+ * viewport-advance tile-destructure noise class: under a rapid scroll/zoom
+ * burst the tiling plugin's tile queue drains mid-burst, the viewport-advance
+ * path (`t5.advance` / `iA.ignore` / `iA.onScroll` / `iA.onScrollChanged` /
+ * `IntersectionObserver.threshold`) calls `const { tile } = queue.pop()` on an
+ * `undefined` pop result, and V8 throws
+ * `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` The
+ * throw is in third-party bundled code (the minified `c63a46fc` tiling chunk),
+ * never first-party. This is a SIBLING of the React #185 render-loop class
+ * (`isEmbedPdfTilingReactUpdateDepthNoise`, Better Stack pattern `366115d4…`,
+ * PR #4718) but a DIFFERENT throw from a different embedpdf tiling path (the
+ * viewport-advance path, not the `onTileRendering` subscription callback), so the
+ * #4718 matcher — anchored on the `Minified React error #185` message + the
+ * `onTileRendering` frame — does NOT catch it. Requires BOTH the EXACT message
+ * AND a positive viewport-advance frame anchor (function name or the
+ * `c63a46fc` tiling chunk), AND a NEGATIVE guard: if any frame resolves to a
+ * de-minified first-party `apps/web/src/…` source, the event keeps reporting (a
+ * real first-party `{ tile } = arr.pop()` regression de-minifies to
+ * `apps/web/src/…` and must not be hidden). The `tile` property name is part of
+ * the anchor, so a different destructure (`{ foo } = r.pop()`) keeps reporting.
+ * Returns false when there are no frames (can't confirm the tiling anchor — keep
+ * reporting). See Better Stack patterns `3e579401…` / `70272e1e…`.
+ */
+export function isEmbedPdfTilingTileDestructureNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (message !== EMBEDPDF_TILING_TILE_DESTRUCTURE_NOISE_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard: a resolved first-party frame means our own code is the
+  // destructure culprit → actionable; keep reporting so the call site can be
+  // found. A real first-party `{ tile } = arr.pop()` regression de-minifies to
+  // `apps/web/src/…` and must never be hidden.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Anchor: the throw must be inside @embedpdf/plugin-tiling's viewport-advance
+  // path. These frames are never present in first-party code, so a real
+  // first-party tile-destructure (or a same-worded throw from a different
+  // third-party lib) is never matched.
+  return frames.some(frameMatchesEmbedPdfTilingViewportAdvance);
+}
+
 // React #327 = `Should not already be working.` — the React production
 // reconciler's re-entrancy guard. It throws from
 // `packages/react-reconciler/src/ReactFiberWorkLoop.js`'s `performSyncWorkOnRoot`
@@ -2196,6 +2297,22 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // real first-party setState loop keeps reporting. See
   // `isEmbedPdfTilingReactUpdateDepthNoise`.
   if (isEmbedPdfTilingReactUpdateDepthNoise({ message, frames })) {
+    return true;
+  }
+
+  // @embedpdf/plugin-tiling `TilingLayer` viewport-advance tile-destructure
+  // noise — a SIBLING of the React #185 class above, but a DIFFERENT throw from a
+  // different embedpdf tiling path: under a rapid scroll/zoom burst the tiling
+  // plugin's tile queue drains mid-burst, the viewport-advance path
+  // (`t5.advance` / `iA.ignore` / `iA.onScroll` / `IntersectionObserver.threshold`)
+  // calls `const { tile } = queue.pop()` on an `undefined` pop result, and V8
+  // throws `Cannot destructure property 'tile' of 'r.pop(...)' as it is
+  // undefined.` The #4718 matcher (React #185 + `onTileRendering`) does NOT
+  // catch it (different message, different frame anchor). Requires BOTH the
+  // EXACT message AND a positive viewport-advance frame anchor, with a
+  // first-party negative guard, so a real first-party `{ tile } = arr.pop()`
+  // regression keeps reporting. See `isEmbedPdfTilingTileDestructureNoise`.
+  if (isEmbedPdfTilingTileDestructureNoise({ message, frames })) {
     return true;
   }
 
