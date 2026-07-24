@@ -485,3 +485,110 @@ flow(
     });
   },
 );
+
+// TOK-5 — project-scoped PAT cross-project WRITE boundary. TOK-4 proves a
+// project PAT can't READ a foreign project; this proves it can't MUTATE one
+// either (POST secrets, POST triggers, DELETE secrets on a different project →
+// 403). enforceTokenProjectScope (apps/api/src/middleware/auth.ts:702-711)
+// rejects any /v1/projects/:projectId/* where the URL id ≠ the token's project
+// at the auth layer, BEFORE the route handler's loadProjectForUser — so a
+// scope regression that only checked reads (or skipped writes) would let a
+// project PAT mutate another project. The positive path (write on its own
+// project → 200) proves the 403 is the scope gate, not a body/authz-floor fail.
+flow(
+  'TOK-5',
+  {
+    domain: 'accounts',
+    serial: true,
+    routes: [
+      'POST /v1/projects/:projectId/cli-token',
+      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
+      'POST /v1/projects/:projectId/secrets',
+      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/projects/:projectId/triggers',
+    ],
+  },
+  async (ctx) => {
+    const projA = await ctx.fixtures.project();
+    const projB = await ctx.fixtures.project();
+    let secret = '';
+    let tokenId = '';
+    await ctx.step('mint a project-scoped PAT on project A', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/cli-token',
+          { name: ctx.fixtures.name('proj-pat-write') },
+          { params: { projectId: projA.id } },
+        );
+      r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
+      const j = r.json<any>();
+      secret = j.secret_key;
+      tokenId = j.token_id;
+    });
+    const pat = () => ctx.client.withBearer(secret, 'PAT_PROJ');
+
+    // ── Positive path: the PAT CAN write on its OWN project (proves the
+    //    denials below are the scope gate, not a malformed body / authz floor).
+    await ctx.step('allowed: POST a secret on its OWN project → 200', async () => {
+      const r = await pat().post(
+        '/v1/projects/:projectId/secrets',
+        { name: 'MY_KEY', value: 'val' },
+        { params: { projectId: projA.id } },
+      );
+      r.status(200);
+    });
+    await ctx.step('allowed: POST a trigger on its OWN project → 201', async () => {
+      const r = await pat().post(
+        '/v1/projects/:projectId/triggers',
+        {
+          name: 'Own Trigger',
+          type: 'cron',
+          cron: '0 0 3 * * *',
+          timezone: 'UTC',
+          prompt_template: 'x',
+        },
+        { params: { projectId: projA.id } },
+      );
+      r.status(201);
+    });
+
+    // ── Cross-project WRITE denials: every foreign-project mutation → 403
+    //    (enforceTokenProjectScope fires at the auth layer, before the handler).
+    await ctx.step('denied: POST a secret on a FOREIGN project → 403', async () => {
+      const r = await pat().post(
+        '/v1/projects/:projectId/secrets',
+        { name: 'FOREIGN_KEY', value: 'val' },
+        { params: { projectId: projB.id } },
+      );
+      r.status(403);
+    });
+    await ctx.step('denied: POST a trigger on a FOREIGN project → 403', async () => {
+      const r = await pat().post(
+        '/v1/projects/:projectId/triggers',
+        {
+          name: 'Foreign Trigger',
+          type: 'cron',
+          cron: '0 0 3 * * *',
+          timezone: 'UTC',
+          prompt_template: 'x',
+        },
+        { params: { projectId: projB.id } },
+      );
+      r.status(403);
+    });
+    await ctx.step('denied: DELETE a secret on a FOREIGN project → 403', async () => {
+      const r = await pat().del('/v1/projects/:projectId/secrets/:name', {
+        params: { projectId: projB.id, name: 'ANY_KEY' },
+      });
+      r.status(403);
+    });
+
+    await ctx.step('revoke the project token → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
+        params: { projectId: projA.id, tokenId },
+      });
+      r.status(200).body().has('$.ok', true);
+    });
+  },
+);
