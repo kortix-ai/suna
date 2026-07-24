@@ -20,6 +20,7 @@ import {
   isOldWebkitRegexNoiseMessage,
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
+  isPaperShaderWebGLUnsupportedNoise,
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -1955,6 +1956,246 @@ test('does NOT suppress a real app TypeError with a different null-property name
       }),
       false,
       `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate-
+// throw noise — a SIBLING of the null-context crash class above, but a DIFFERENT
+// throw. The library's OWN canonical
+//   "Paper Shaders: WebGL is not supported in this browser"
+// `Error` is thrown from the library's shader-mount constructor when WebGL is
+// unavailable (stripped-down/mobile WebView, headless renderer, WebGL disabled,
+// GPU blacklisted at context creation) — a deliberate library signal, NOT a
+// null-context `TypeError` from calling a WebGL2 method on a `null` context.
+// It escapes `<ShaderSafe>` (the library constructor runs inside a dynamic
+// import / `useEffect` that bypasses the React error boundary) and reaches
+// Sentry as an uncaught global `onunhandledrejection` — an EXPECTED
+// degradation state on WebGL-less browsers, never a product bug.
+//
+// Better Stack pattern
+// f1abf79ece48a86faf8eb32cec8bbb6bf270627f9fd5d423fb1ee43b9abcfb23
+// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// `Paper Shaders: WebGL is not supported in this browser`, 1 occurrence /
+// 0 identified users (anonymous), last 2026-07-23 17:26:32 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route `/`
+// (marketing homepage), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached a React error boundary). Browser: Chrome
+// 150.0.0.0 on Android 10 (mobile) — a stripped-down/mobile Android browser
+// without WebGL. Stack frames: 2, both minified `@paper-design/shaders`
+// chunk frames (NO first-party `apps/web/src/…` frame):
+//   - `app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno`
+//     function `?` lineno 251 colno 3276
+//   - same chunk function `new a` lineno 401 colno 1131  (call_site_function)
+//
+// The matcher anchors on the EXACT library message (the `Paper Shaders:`
+// prefix is the library's canonical marker, never emitted by first-party app
+// code) AND a NEGATIVE guard: a resolved first-party `apps/web/src/…` frame
+// means our own code threw this exact message → a real first-party regression
+// (de-minified to `apps/web/src/…`) → keep reporting. The production noise
+// pattern carries only minified `@paper-design/shaders` chunk frames, so the
+// negative guard does not fire for it. A frameless capture with this exact
+// message still classifies as noise (the message alone is specific — the
+// `Paper Shaders:` library prefix is part of the anchor).
+// ---------------------------------------------------------------------------
+
+// The exact exception value + the two production `@paper-design/shaders` chunk
+// frames from Better Stack pattern `f1abf79e…`.
+const PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE =
+  'Paper Shaders: WebGL is not supported in this browser'
+
+const PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES = [
+  {
+    filename:
+      'app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+    function: '?',
+    lineno: 251,
+    colno: 3276,
+  },
+  {
+    filename:
+      'app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+    function: 'new a',
+    lineno: 401,
+    colno: 1131,
+  },
+]
+
+test('classifies the Paper Shaders WebGL-unsupported prod event as noise (exact message + 2 chunk frames)', () => {
+  // Exact production shape: the canonical library message + the two minified
+  // `@paper-design/shaders` chunk frames. No first-party `apps/web/src/…`
+  // frame, so the negative guard does not fire.
+  assert.equal(
+    isPaperShaderWebGLUnsupportedNoise({
+      message: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+      frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the Paper Shaders WebGL-unsupported prod Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), request URL
+  // `https://kortix.com/` (the marketing homepage), the two minified
+  // `@paper-design/shaders` chunk frames.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+            stacktrace: {
+              frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies the Paper Shaders WebGL-unsupported message through all three capture-path wrapper forms', () => {
+  // The raw `exception.values[].value` has no `Error: ` prefix, but Sentry
+  // capture paths vary — pin all three forms (raw, `Error: `, and
+  // `Unhandled promise rejection: Error: `) so the matcher classifies
+  // consistently regardless of which path delivered it. Use the production
+  // chunk frames so the matcher runs in its realistic frame context.
+  const wrapperForms = [
+    PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+    `Error: ${PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE}`,
+  ]
+  for (const message of wrapperForms) {
+    assert.equal(
+      isPaperShaderWebGLUnsupportedNoise({
+        message,
+        frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be classified as Paper Shaders WebGL-unsupported noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}"`,
+    )
+  }
+})
+
+test('classifies the frameless Paper Shaders WebGL-unsupported capture as noise', () => {
+  // The message alone is specific enough (the `Paper Shaders:` library prefix
+  // is part of the anchor) that a frameless capture with this exact message
+  // still classifies as noise — the library throw never originates from
+  // first-party app code. Verify both the matcher and the Sentry gate.
+  assert.equal(
+    isPaperShaderWebGLUnsupportedNoise({
+      message: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Paper Shaders WebGL-unsupported message when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw this exact
+  // message → a real first-party regression (the `Paper Shaders:` prefix is
+  // the library's canonical marker, but a hostile/copy-pasted first-party
+  // throw could share it). The negative guard MUST preserve it so the call
+  // site can be found + fixed. This is the whole reason the matcher is
+  // frame-aware.
+  for (const frames of [
+    [{ filename: 'apps/web/src/components/ui/shader-safe.tsx', function: 'mount' }],
+    [
+      { filename: 'app:///_next/static/chunks/81107-abc.js', function: '?' },
+      { filename: 'app:///apps/web/src/features/marketing/hero.tsx', function: 'render' },
+    ],
+  ]) {
+    assert.equal(
+      isPaperShaderWebGLUnsupportedNoise({
+        message: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party Paper Shaders WebGL-unsupported throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: PAPER_SHADER_WEBGL_UNSUPPORTED_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party Paper Shaders WebGL-unsupported throw from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the Paper Shaders: prefix', () => {
+  // The `Paper Shaders:` library prefix is part of the anchor — a near-worded
+  // message that lacks it (e.g. a real first-party `throw new Error('WebGL is
+  // not supported in this browser')`, or a different library's WebGL check)
+  // must keep reporting. The matcher anchors on the EXACT full library
+  // string, so an over-match guard is in place.
+  for (const message of [
+    'WebGL is not supported in this browser',
+    'Error: WebGL is not supported in this browser',
+    'WebGL is not supported',
+    'Paper Shaders: WebGL is not supported',
+    'Paper Shaders WebGL is not supported in this browser',
+  ]) {
+    assert.equal(
+      isPaperShaderWebGLUnsupportedNoise({
+        message,
+        frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: PAPER_SHADER_WEBGL_UNSUPPORTED_PROD_FRAMES,
+              },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
     )
   }
 })
