@@ -25,8 +25,8 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
     body: 'Free includes 200 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
   },
   {
-    title: 'Use the models you already pay for',
-    body: 'Bring your own API key or connect your ChatGPT subscription for premium model access.',
+    title: 'Keep model billing with your provider',
+    body: 'Bring your own API key or connect ChatGPT. You pay your model provider directly and keep Kortix credits for Agent Computer runtime.',
   },
   {
     title: 'Compute by the second',
@@ -37,8 +37,8 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
 const CREDIT_EXAMPLES: { label: string; body: string }[] = [
   { label: 'Free start', body: '200 credits covers sandbox runtime for early projects and demos.' },
   {
-    label: 'Bring your model',
-    body: 'Use BYOK or ChatGPT subscription when you want premium models without using Kortix credits.',
+    label: 'Managed models are optional',
+    body: 'Kortix-managed models remain available when you need them. Their token-based usage draws from pooled Team credits.',
   },
   {
     label: 'Team scale',
@@ -53,15 +53,15 @@ const FAQ: [string, string][] = [
   ],
   [
     'What does a Team seat include?',
-    '$40/seat/month includes 2,500 pooled credits per seat, access to the latest AI models, and seats for the people on your team. Add seats anytime; credits scale with them.',
+    '$40/seat/month includes 2,500 pooled credits per seat, optional managed model access, and seats for the people on your team. Agent Computer runtime and managed model token usage draw from the same pool.',
   ],
   [
     'How are models and compute priced?',
-    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent Computer compute is billed per second, per resource — $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage — about $0.20/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped.',
+    'Agent Computer compute is billed per second, per resource — $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage — about $0.20/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped. Bring your own key or connect ChatGPT to pay your model provider directly. If you choose Kortix-managed models, their input, output, and cached tokens use Team credits at that model’s rate. Free credits remain sandbox-only.',
   ],
   [
     'Do I pay per seat or per usage?',
-    'Both. The seat is a flat monthly fee that already includes credits; if your team runs heavy, top up credits on top. A light month costs just the seats.',
+    'Both. The seat is a flat monthly fee that includes credits. Top up only when Agent Computer runtime or optional managed model usage exhausts the pooled balance.',
   ],
   [
     'What about Enterprise?',

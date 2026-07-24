@@ -94,8 +94,8 @@ export function ComputeCreditCalculator() {
         <span className="text-foreground font-medium tabular-nums">
           {`${(DEFAULT_COMPUTE_HOURLY_PRICE_USD * CREDITS_PER_USD).toFixed(0)} credits ($${DEFAULT_COMPUTE_HOURLY_PRICE_USD.toFixed(2)}) per hour`}
         </span>
-        . Auto-stop pauses compute charges, so stopped time uses 0 credits. Managed model usage uses
-        the same pooled Team credits.
+        . Auto-stop pauses compute charges, so stopped time uses 0 credits. Optional managed model
+        usage is token-based and uses the same pooled Team credits.
       </p>
     </div>
   );
