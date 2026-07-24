@@ -36,6 +36,7 @@ const {
   isSafeGitBranchName,
   isSafeGitSha,
   WARM_REPO_STAGED_DIR,
+  WARM_REPO_STAGED_GIT_DIR,
 } = await import('./build-context');
 
 const exec = promisify(execFile);
@@ -98,7 +99,7 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
     cleanup.push(ctx);
 
-    const { stagedPath, headSha } = await stageWarmRepoCheckout(ctx, {
+    const { stagedPath, stagedGitPath, headSha } = await stageWarmRepoCheckout(ctx, {
       cloneUrl: `file://${src.dir}`,
       cloneHeaders: { Authorization: `Bearer ${SENTINEL}` },
       branch: 'main',
@@ -107,6 +108,7 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     });
 
     expect(stagedPath).toBe(WARM_REPO_STAGED_DIR);
+    expect(stagedGitPath).toBe(WARM_REPO_STAGED_GIT_DIR);
     expect(headSha).toBe(src.sha);
     expect(headSha).toMatch(/^[0-9a-f]{40}$/);
 
@@ -114,6 +116,15 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     // The checkout is a real repo at the requested tip.
     const gitDir = await stat(join(dest, '.git'));
     expect(gitDir.isDirectory()).toBe(true);
+    const visibleGitDir = await stat(join(ctx, stagedGitPath));
+    expect(visibleGitDir.isDirectory()).toBe(true);
+    const { stdout: visibleHead } = await exec('git', [
+      `--git-dir=${join(ctx, stagedGitPath)}`,
+      `--work-tree=${dest}`,
+      'rev-parse',
+      'HEAD',
+    ]);
+    expect(visibleHead.trim()).toBe(headSha);
     const { stdout: head } = await exec('git', ['-C', dest, 'rev-parse', 'HEAD']);
     expect(head.trim()).toBe(headSha);
 

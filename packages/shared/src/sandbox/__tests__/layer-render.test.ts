@@ -83,6 +83,7 @@ const CASES: Array<{ label: string; opts: BuildLayeredDockerfileOpts }> = [
       ...COMMON,
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git',
         branch: 'main',
       },
     },
@@ -188,6 +189,7 @@ describe('Chromium sits on deterministic parents (cache order is load-bearing)',
       opencodeWarmupScriptPath: 'kortix-opencode-warmup',
       warmRepo: {
         stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git',
         branch: 'main',
       },
     });
@@ -210,13 +212,20 @@ describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () =
     const warm = buildLayeredDockerfile({
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
       ...COMMON,
-      warmRepo: { stagedPath: 'kortix-warm-repo', branch: 'main' },
+      warmRepo: {
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git',
+        branch: 'main',
+      },
     });
     expect(warm).not.toContain('http.extraHeader');
     expect(warm).not.toContain('Authorization');
     // The build-time clone is gone entirely — the image only COPYs staged bytes.
     expect(warm).not.toContain('git clone');
     expect(warm).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
+    expect(warm).toContain(
+      'COPY --chown=kortix:kortix kortix-warm-repo-git/ /workspace/.git/',
+    );
   });
 
   test('a sentinel-shaped branch name is shell-quoted, not interpolated raw', () => {
@@ -226,7 +235,11 @@ describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () =
     const warm = buildLayeredDockerfile({
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
       ...COMMON,
-      warmRepo: { stagedPath: 'kortix-warm-repo', branch: evil },
+      warmRepo: {
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git',
+        branch: evil,
+      },
     });
     // shq single-quotes the whole value and escapes embedded quotes, so the
     // branch appears exactly once, fully quoted — the `; echo …` cannot escape.
@@ -333,6 +346,7 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     warmRepo: {
       stagedPath: 'kortix-warm-repo',
+      stagedGitPath: 'kortix-warm-repo-git',
       branch: 'main',
     },
   };
@@ -362,6 +376,11 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
     // MY credential-free COPY of the sanitized staged checkout …
     expect(rendered).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
+    // Provider uploaders can omit nested dot-directories. Git metadata uses a
+    // visible build-context path and lands at the canonical runtime path.
+    expect(rendered).toContain(
+      'COPY --chown=kortix:kortix kortix-warm-repo-git/ /workspace/.git/',
+    );
     // … and MAIN's opencode instance re-warm via the cache-only warm-up script,
     // which for a per-project warm keeps the baked /workspace checkout.
     expect(rendered).toContain(

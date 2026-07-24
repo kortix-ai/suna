@@ -181,6 +181,11 @@ export interface WarmRepoConfig {
    */
   stagedPath: string;
   /**
+   * Visible build-context path to a copy of the checkout's `.git` directory.
+   * Provider context uploaders can omit nested dot-directories.
+   */
+  stagedGitPath: string;
+  /**
    * Branch that was checked out (the default-branch tip). Diagnostic only —
    * shell-quoted on render (never interpolated raw), so a hostile branch name
    * cannot inject a build-time shell command.
@@ -290,6 +295,9 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     // runtime user (COPY defaults to uid/gid 0). opencode + the daemon run as
     // `kortix` and must be able to write /workspace and its `.git` at runtime.
     `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
+    // Daytona omits nested `.git` directories from uploaded build contexts.
+    // Copy the credential-free visible duplicate explicitly.
+    `COPY --chown=kortix:kortix ${warmRepo.stagedGitPath}/ /workspace/.git/`,
     // Verify the baked checkout is a real repo. The branch is shell-quoted via
     // `shq` (never interpolated raw), so a hostile branch name cannot inject a
     // build-time shell command — closing the latent sink in the old echo.
