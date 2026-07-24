@@ -354,7 +354,14 @@ async function recoverCachedPages(
 
   const pages: MemoryPageContent[] = [];
   const blogPosts: MemoryPageContent[] = [];
-  for (const [url, markdown] of cachedMarkdown) {
+  // Iterate the candidate list, not the map: `getCachedPages` runs an unordered
+  // `IN (…)` query, so the map's iteration order is whatever Postgres returned.
+  // Building the folder from that order makes the committed files — and the
+  // MEMORY.md index — differ between identical re-runs, which both flakes tests
+  // and produces noisy no-op git diffs. `candidateUrls` is a stable deduped list.
+  for (const url of candidateUrls) {
+    const markdown = cachedMarkdown.get(url);
+    if (markdown === undefined) continue;
     const bucket = classifyUrl(url).tier === 'blog' ? blogPosts : pages;
     bucket.push({ url, markdown, tier: 'cache' });
   }
