@@ -9,17 +9,22 @@
  *    and only fall back to a breadth-first walk when it does not yield real
  *    company pages.
  * 2. Page bodies are NOT kept. Discovery returns URLs plus structured signals
- *    (JSON-LD, OpenGraph, meta) and nothing else; readable page content comes
- *    later from Jina Reader, which renders JavaScript that this HTML-only pass
- *    cannot. Keeping bodies here would double memory for no benefit.
+ *    (JSON-LD, OpenGraph, meta, harvested outbound links) and nothing else;
+ *    readable page content comes later from Jina Reader, which renders
+ *    JavaScript that this HTML-only pass cannot. Keeping bodies here would
+ *    double memory for no benefit.
  *
  * JSON-LD in particular is worth more than the prose around it: a site that
  * publishes a schema.org Organization block is telling us its legal name,
  * logo, founders and social profiles as data, so the extraction step can treat
- * those as ground truth instead of inferring them.
+ * those as ground truth instead of inferring them. Outbound links (see
+ * `./links`) cover the case JSON-LD does not: a personal site with no schema.org
+ * markup at all, whose only machine-readable claim about its owner is the
+ * X/GitHub/LinkedIn links in its own nav or footer.
  */
 import * as cheerio from 'cheerio';
 import robotsParser, { type Robot } from 'robots-parser';
+import { harvestLinks, mergeLinkHarvest, type SocialLink } from './links';
 import { boundedFetch, isUnsafeUrlError } from './safe-fetch';
 import { isSameOrigin, normalizeUrl } from './url-filter';
 
@@ -34,6 +39,11 @@ export interface StructuredSignals {
   jsonLd: unknown[];
   openGraph: Record<string, string>;
   meta: Record<string, string>;
+  /** Outbound links harvested deterministically — see `./links`. */
+  socials: SocialLink[];
+  emails: string[];
+  phones: string[];
+  otherExternal: string[];
 }
 
 export interface DiscoveryResult {
@@ -66,7 +76,16 @@ const CHALLENGE_MARKERS = [
 ];
 
 function emptySignals(): StructuredSignals {
-  return { title: null, jsonLd: [], openGraph: {}, meta: {} };
+  return {
+    title: null,
+    jsonLd: [],
+    openGraph: {},
+    meta: {},
+    socials: [],
+    emails: [],
+    phones: [],
+    otherExternal: [],
+  };
 }
 
 function looksBlocked(status: number, body: string): boolean {
@@ -260,6 +279,7 @@ async function crawl(
     }
 
     mergeSignals(signals, extractSignals(html));
+    mergeLinkHarvest(signals, harvestLinks(html, current.url));
 
     if (current.depth >= opts.maxDepth) continue;
     for (const link of extractLinks(html, current.url)) {
@@ -320,6 +340,7 @@ export async function discover(
     } else if (res.ok) {
       homepageHtml = res.body;
       mergeSignals(signals, extractSignals(res.body));
+      mergeLinkHarvest(signals, harvestLinks(res.body, `${origin}/`));
     }
   } catch {
     blocked = true;

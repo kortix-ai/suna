@@ -5,7 +5,17 @@ import { consolidate, titleOf, type ConsolidatePage } from './consolidate';
 const DOMAIN = 'example.com';
 
 function signals(overrides: Partial<StructuredSignals> = {}): StructuredSignals {
-  return { title: null, jsonLd: [], openGraph: {}, meta: {}, ...overrides };
+  return {
+    title: null,
+    jsonLd: [],
+    openGraph: {},
+    meta: {},
+    socials: [],
+    emails: [],
+    phones: [],
+    otherExternal: [],
+    ...overrides,
+  };
 }
 
 function page(url: string, markdown: string, tier: ConsolidatePage['tier'] = 'priority'): ConsolidatePage {

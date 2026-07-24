@@ -179,6 +179,32 @@ describe('discover', () => {
     expect(result.signals.jsonLd).toHaveLength(1);
   });
 
+  test('harvests outbound links from the homepage even in sitemap mode', async () => {
+    const { impl } = fakeFetcher({
+      [`${ORIGIN}/`]: ok(html('<a href="https://github.com/example">GH</a>')),
+      [`${ORIGIN}/sitemap.xml`]: ok(`<urlset><url><loc>${ORIGIN}/about</loc></url></urlset>`),
+    });
+
+    const result = await discover(ORIGIN, { fetchImpl: impl });
+
+    expect(result.signals.socials).toEqual([
+      { platform: 'github', url: 'https://github.com/example' },
+    ]);
+  });
+
+  test('merges outbound links harvested across several crawled pages', async () => {
+    const { impl } = fakeFetcher({
+      [`${ORIGIN}/`]: ok(html('<a href="/about">about</a><a href="https://github.com/example">GH</a>')),
+      [`${ORIGIN}/about`]: ok(html('<a href="https://x.com/example">X</a><a href="mailto:hi@example.com">m</a>')),
+    });
+
+    const result = await discover(ORIGIN, { fetchImpl: impl });
+
+    expect(result.signals.socials).toContainEqual({ platform: 'github', url: 'https://github.com/example' });
+    expect(result.signals.socials).toContainEqual({ platform: 'x', url: 'https://x.com/example' });
+    expect(result.signals.emails).toEqual(['hi@example.com']);
+  });
+
   test('crawls when the sitemap has no company pages', async () => {
     const { impl, calls } = fakeFetcher({
       [`${ORIGIN}/`]: ok(html('<a href="/about">about</a>')),

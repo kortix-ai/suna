@@ -181,11 +181,17 @@ async function executePipeline(
   );
 
   // Nothing readable and nothing structured means the site refused us. Anything
-  // less than that is still worth extracting from.
+  // less than that is still worth extracting from — a harvested social link or
+  // mailto is as much real signal as an OpenGraph tag when a personal site has
+  // no schema.org markup at all.
   const hasSignals =
     discovery.signals.jsonLd.length > 0 ||
     Object.keys(discovery.signals.openGraph).length > 0 ||
-    !!discovery.signals.title;
+    !!discovery.signals.title ||
+    discovery.signals.socials.length > 0 ||
+    discovery.signals.emails.length > 0 ||
+    discovery.signals.phones.length > 0 ||
+    discovery.signals.otherExternal.length > 0;
   if (fetched.pages.length === 0 && !hasSignals) {
     throw new EnrichmentError('blocked', `no readable content for ${domain}`);
   }
