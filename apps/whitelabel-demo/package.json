@@ -5,16 +5,18 @@
   "type": "module",
   "description": "Golden white-label reference — a complete Kortix client built on ONLY @kortix/sdk. Reskin the brand config + point at any Kortix deployment.",
   "scripts": {
-    "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start --port ${WHITELABEL_PORT:-3010}",
+    "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "bun test tests/e2e",
+    "test": "bun test tests/e2e src",
     "test:e2e": "bun test tests/e2e"
   },
   "dependencies": {
     "@kortix/sdk": "workspace:*",
     "@tanstack/react-query": "^5.75.2",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.479.0",

@@ -28,7 +28,11 @@ function Workbench() {
 
   return (
     <>
-      <SessionHeader projectId={projectId} sessionId={sessionId} />
+      <SessionHeader
+        projectId={projectId}
+        sessionId={sessionId}
+        messages={session.phase === 'ready' ? session.messages : undefined}
+      />
       {session.phase !== 'ready' ? (
         <BootScreen
           stage={session.stage ?? undefined}

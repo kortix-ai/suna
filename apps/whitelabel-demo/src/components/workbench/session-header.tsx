@@ -20,17 +20,33 @@ import { Input } from '@/components/ui/input';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-import { isRuntimeReady } from '@kortix/sdk';
+import {
+  type MessageWithParts,
+  formatTranscript,
+  getTranscriptFilename,
+  isRuntimeReady,
+} from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreVertical, Pencil, RotateCw, Trash2 } from 'lucide-react';
+import { Download, MoreVertical, Pause, Pencil, RotateCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-export function SessionHeader({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function SessionHeader({
+  projectId,
+  sessionId,
+  messages,
+}: {
+  projectId: string;
+  sessionId: string;
+  /** The live thread from `useSession`, when ready — powers transcript export. */
+  messages?: MessageWithParts[];
+}) {
   const session = useQuery({
     queryKey: qk.session(projectId, sessionId),
     queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
+    // The status badge must track boot/stop transitions, not the first fetch.
+    refetchInterval: 15_000,
     retry: false,
   });
   const title =
@@ -63,20 +79,33 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
           {status}
         </Badge>
       )}
-      <SessionActions projectId={projectId} sessionId={sessionId} currentName={title} />
+      <SessionActions
+        projectId={projectId}
+        sessionId={sessionId}
+        currentName={title}
+        created={session.data?.created_at}
+        updated={session.data?.updated_at}
+        messages={messages}
+      />
     </header>
   );
 }
 
-/** Session lifecycle actions: rename (update), restart, delete. */
+/** Session lifecycle actions: rename, restart, stop, export transcript, delete. */
 function SessionActions({
   projectId,
   sessionId,
   currentName,
+  created,
+  updated,
+  messages,
 }: {
   projectId: string;
   sessionId: string;
   currentName: string;
+  created?: string;
+  updated?: string;
+  messages?: MessageWithParts[];
 }) {
   const qc = useQueryClient();
   const router = useRouter();
@@ -101,6 +130,16 @@ function SessionActions({
     },
     onError: () => toast.error('Could not restart'),
   });
+  const stop = useMutation({
+    mutationFn: () => kortix.session(projectId, sessionId).stop(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
+      qc.invalidateQueries({ queryKey: ['session-health', projectId, sessionId] });
+      invalidateSessions(qc, projectId);
+      toast.success('Runtime stopped. Reopen the session to resume.');
+    },
+    onError: () => toast.error('Could not stop the runtime'),
+  });
   const remove = useMutation({
     mutationFn: () => kortix.session(projectId, sessionId).delete(),
     onSuccess: () => {
@@ -110,6 +149,29 @@ function SessionActions({
     },
     onError: () => toast.error('Could not delete'),
   });
+
+  const exportTranscript = () => {
+    if (!messages?.length) return;
+    const markdown = formatTranscript(
+      {
+        id: sessionId,
+        title: currentName,
+        time: {
+          created: created ? new Date(created).getTime() : Date.now(),
+          updated: updated ? new Date(updated).getTime() : Date.now(),
+        },
+      },
+      messages,
+    );
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = getTranscriptFilename(sessionId);
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Transcript downloaded');
+  };
 
   return (
     <>
@@ -128,8 +190,15 @@ function SessionActions({
           >
             <Pencil className="size-4" /> Rename
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={exportTranscript} disabled={!messages?.length}>
+            <Download className="size-4" /> Export transcript
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => restart.mutate()} disabled={restart.isPending}>
             <RotateCw className="size-4" /> Restart
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => stop.mutate()} disabled={stop.isPending}>
+            <Pause className="size-4" /> Stop runtime
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

@@ -2,16 +2,26 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowUp, Slash, Square } from 'lucide-react';
+import { ArrowUp, FileText, Loader2, Paperclip, Slash, Square, X } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 type Command = { name: string; description: string | null };
+
+export interface ComposerAttachment {
+  name: string;
+  /** Workspace path once uploaded; null while the upload is in flight. */
+  path: string | null;
+  error?: boolean;
+}
 
 /**
  * Chat composer as a self-contained input card. Enter sends, Shift+Enter
  * newlines. Typing "/" opens a project-command menu (server-side `commands`);
  * picking + sending a "/cmd args" line runs it via `onCommand` instead of
  * sending a text prompt. While the agent is busy the send button stops the run.
+ * Attachments are host-managed: the paperclip (and drag-drop) hand Files to
+ * `onAttachFiles`; uploaded workspace paths render as chips the host later
+ * weaves into the outgoing prompt.
  */
 export function Composer({
   onSend,
@@ -22,6 +32,9 @@ export function Composer({
   toolbar,
   commands,
   onCommand,
+  attachments,
+  onAttachFiles,
+  onRemoveAttachment,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
@@ -31,11 +44,16 @@ export function Composer({
   toolbar?: ReactNode;
   commands?: Command[];
   onCommand?: (name: string, args: string) => void;
+  attachments?: ComposerAttachment[];
+  onAttachFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (name: string) => void;
 }) {
   const [value, setValue] = useState('');
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const grow = () => {
     const el = ref.current;
@@ -68,9 +86,11 @@ export function Composer({
     ref.current?.focus();
   };
 
+  const uploading = attachments?.some((a) => a.path === null && !a.error) ?? false;
+
   const submit = () => {
     const text = value.trim();
-    if (!text || disabled) return;
+    if ((!text && !attachments?.length) || disabled || uploading) return;
     const m = text.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
     if (m && onCommand && commands?.some((c) => c.name === m[1])) {
       onCommand(m[1], (m[2] ?? '').trim());
@@ -117,8 +137,53 @@ export function Composer({
         className={cn(
           'rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring/60',
           disabled && 'opacity-70',
+          dragging && 'border-ring/80 bg-accent/40',
         )}
+        onDragOver={(e) => {
+          if (!onAttachFiles) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          if (!onAttachFiles) return;
+          e.preventDefault();
+          setDragging(false);
+          const files = Array.from(e.dataTransfer.files);
+          if (files.length) onAttachFiles(files);
+        }}
       >
+        {attachments && attachments.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+            {attachments.map((a) => (
+              <span
+                key={a.name}
+                className={cn(
+                  'inline-flex max-w-[220px] items-center gap-1.5 rounded-md border border-border bg-secondary py-1 pl-2 pr-1 text-xs',
+                  a.error && 'border-destructive/40 text-destructive',
+                )}
+              >
+                {a.path === null && !a.error ? (
+                  <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+                ) : (
+                  <FileText className="size-3 shrink-0 text-muted-foreground" />
+                )}
+                <span className="truncate">{a.name}</span>
+                {onRemoveAttachment && (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${a.name}`}
+                    className="rounded-sm p-0.5 hover:bg-accent"
+                    onClick={() => onRemoveAttachment(a.name)}
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+
         <textarea
           ref={ref}
           rows={1}
@@ -160,7 +225,34 @@ export function Composer({
           className="max-h-52 min-h-[24px] w-full resize-none bg-transparent px-4 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground scrollbar-thin"
         />
         <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
-          <div className="min-w-0">{toolbar}</div>
+          <div className="flex min-w-0 items-center gap-0.5">
+            {onAttachFiles && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length) onAttachFiles(files);
+                    e.target.value = '';
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label="Attach files"
+                  disabled={disabled}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="size-3.5" />
+                </Button>
+              </>
+            )}
+            {toolbar}
+          </div>
           {busy ? (
             <Button
               size="icon"
@@ -175,7 +267,7 @@ export function Composer({
             <Button
               size="icon"
               onClick={submit}
-              disabled={!value.trim() || disabled}
+              disabled={(!value.trim() && !attachments?.length) || disabled || uploading}
               aria-label="Send"
               className="size-8 rounded-full"
             >

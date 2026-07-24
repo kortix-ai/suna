@@ -47,6 +47,11 @@ when wrapper mode is on (`src/lib/kortix.ts#configureWrapperMode`).
     components" below), not as bespoke markup in a feature component.
 - **Streaming/pending text uses the `shimmer` util**; scroll containers that need
   soft edges use the `scroll-fade` util (both in `globals.css`).
+- **The Terminal tab (`workbench/terminal-panel.tsx`) is the one non-shadcn
+  surface**: a real PTY needs a terminal renderer, so it uses `@xterm/xterm` +
+  `@xterm/addon-fit` over the SDK's PTY hooks. Its chrome (tab strip, buttons)
+  is still shadcn; only the character grid is xterm. Don't add other canvas
+  surfaces without the same "no primitive exists" justification.
 - **Styling:** Tailwind v4 + the theme tokens in `globals.css` only. Compose
   classes with `cn()` (`@/lib/utils`); variants with `cva`
   (`class-variance-authority`). No inline hex/rgb — use the CSS variables
@@ -75,7 +80,13 @@ overwrites cleanly. Never fork the API.
   `configureWrapperMode()` to re-point it at the BFF proxy.
 - `src/components/ui/` — shadcn primitives only (generated or built-to-spec).
 - `src/components/chat/` — chat surface composed from the chat primitives.
-- `src/components/workbench/` — the session workbench (header, tabs, panels).
+- `src/components/workbench/` — the session workbench (header, tabs, panels —
+  chat, files, changes, preview, terminal, audit).
+- `src/components/review/` — the project Review Center (`/projects/[id]/review`).
+- `src/components/usage/` — gateway observability (`/projects/[id]/usage`).
+- `src/components/settings/` — the project-settings tabs.
+- `src/components/account/` — the `/account` sections (members, invites,
+  billing, API keys, audit log).
 - `src/app/**` — routes; thin, delegate to components.
 - `src/app/api/**` + `src/server/**` — wrapper-mode-only transport (BFF proxy,
   demo auth, route policy, rate limiting). See the exception above; this is

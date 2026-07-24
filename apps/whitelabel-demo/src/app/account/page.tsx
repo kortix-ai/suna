@@ -2,9 +2,12 @@
 
 import { AccountDetailCard } from '@/components/account/account-detail-card';
 import { AccountSwitcher } from '@/components/account/account-switcher';
+import { AuditSection } from '@/components/account/audit-section';
+import { BillingSection } from '@/components/account/billing-section';
 import { InvitesSection } from '@/components/account/invites-section';
 import { MembersSection } from '@/components/account/members-section';
 import { ProjectsSection } from '@/components/account/projects-section';
+import { TokensSection } from '@/components/account/tokens-section';
 import { ApiKeyGate } from '@/components/api-key-gate';
 import { BrandMark } from '@/components/brand-mark';
 import { Button } from '@/components/ui/button';
@@ -37,8 +40,8 @@ function WrapperAccountNotice() {
         <BrandMark className="mx-auto mb-4" />
         <h1 className="text-lg font-semibold tracking-tight">Not available in wrapper mode</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          This app&apos;s wrapper backend manages the underlying Kortix account on your behalf —
-          end users don&apos;t get direct account administration. See{' '}
+          This app&apos;s wrapper backend manages the underlying Kortix account on your behalf — end
+          users don&apos;t get direct account administration. See{' '}
           <Link href="/usage" className="underline">
             Usage
           </Link>{' '}
@@ -141,6 +144,9 @@ function AccountSettings() {
             <MembersSection accountId={accountId} />
             <InvitesSection accountId={accountId} />
             <ProjectsSection accountId={accountId} />
+            <BillingSection accountId={accountId} />
+            <TokensSection accountId={accountId} />
+            <AuditSection accountId={accountId} />
           </div>
         )}
       </div>
