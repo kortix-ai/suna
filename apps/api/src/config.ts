@@ -778,7 +778,7 @@ function validateEnv(): z.infer<typeof envSchema> {
     issues.push({
       var: 'JINA_API_KEY',
       message:
-        'Enrichment worker is on but JINA_API_KEY is unset — every page fetch will fail and jobs will finish as blocked',
+        'Enrichment worker is on but JINA_API_KEY is unset — the Jina tier is skipped and page fetches fall through to Firecrawl (if configured), then a direct fetch; quality only, not fatal',
       level: 'warn',
     });
   }

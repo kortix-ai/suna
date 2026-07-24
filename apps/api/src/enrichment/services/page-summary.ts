@@ -26,6 +26,16 @@ import { DEFAULT_PER_PAGE_CHARS, truncate, type ConsolidatePage } from './consol
 export const PAGE_SUMMARY_THRESHOLD = 4_000;
 export const MAP_CONCURRENCY = 4;
 
+/**
+ * The 1 MB fetch cap (`MAX_PAGE_BYTES` in `page-fetch.ts`) means a single
+ * pathological page can otherwise land ~250k tokens of raw markdown on one map
+ * call. Every other stage bounds its input the same way — `consolidate`'s
+ * per-page truncation, the map pass's own degraded-excerpt fallback — and a
+ * one-page summary needs far less than either: it is asked for a digest, not
+ * the reduce pass's full context, so this stays generous rather than tight.
+ */
+export const MAP_INPUT_MAX_CHARS = 24_000;
+
 export const PageKindSchema = z.enum([
   'home',
   'about',
@@ -90,16 +100,19 @@ export interface SummarizePageOptions {
 /**
  * One map call for one page. Throws on any transport, JSON, or schema failure
  * — by design, callers (`mapPages`) treat that as the signal to degrade this
- * one page to an excerpt rather than retrying or failing the job.
+ * one page to an excerpt rather than retrying or failing the job. The page
+ * text is capped at `MAP_INPUT_MAX_CHARS` first — silently, since a truncated
+ * page still deserves a summary rather than being skipped or failed outright.
  */
 export async function summarizePage(
   page: ConsolidatePage,
   opts: SummarizePageOptions,
 ): Promise<PageSummary> {
   const jsonSchema = buildPageSummaryJsonSchema();
+  const { text } = truncate(page.markdown.trim(), MAP_INPUT_MAX_CHARS);
   const messages: ChatMessage[] = [
     { role: 'system', content: MAP_SYSTEM_PROMPT },
-    { role: 'user', content: `Page URL: ${page.url}\n\n${page.markdown.trim()}` },
+    { role: 'user', content: `Page URL: ${page.url}\n\n${text}` },
   ];
   const raw = await opts.chat({ messages, model: opts.model, jsonSchema, signal: opts.signal });
   const parsed = parseJsonLoose(raw);

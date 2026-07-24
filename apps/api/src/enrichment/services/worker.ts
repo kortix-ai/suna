@@ -279,12 +279,25 @@ async function executePipeline(
 
   await upsertProfile({ domain, profile, crawlStatus, model });
 
+  // Zero fetched pages is not evidence the site actually has none of either
+  // category — every selected URL can fail post-discovery (a DNS rebind
+  // between the two, a vendor outage across all three fetch tiers) with the
+  // site itself untouched. `writeProfileToMemory` reads a concrete `[]` as
+  // "crawled and confirmed empty, delete the stale files" (see its header),
+  // so that verdict is only safe when this run actually fetched something to
+  // confirm it against; otherwise the existing files are left alone exactly
+  // like a cache-hit run that recovered nothing (`recoverCachedPages`).
+  const memoryContent =
+    fetched.pages.length > 0
+      ? { pages: sitePages, blogPosts }
+      : { pages: undefined, blogPosts: undefined };
+
   const memoryPath = await writeToMemory(
     deps,
     job,
     profile,
     { domain, crawledAt: new Date().toISOString(), crawlStatus, model },
-    { pages: sitePages, blogPosts },
+    memoryContent,
   );
 
   return {

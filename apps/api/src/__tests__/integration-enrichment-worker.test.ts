@@ -351,6 +351,75 @@ describe('enrichment worker (integration)', () => {
     expect(memoryWrites.at(-1)!.content).toContain(`enrichment/${DOMAIN}/blog/blog-launch.md`);
   });
 
+  test('a fresh crawl that fetches zero pages leaves a populated memory folder alone', async () => {
+    if (!ctx) return;
+    const first = await seedJob();
+    const [claimedFirst] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
+    await runEnrichmentJob(claimedFirst, testDeps());
+    await completeJob(first.jobId, {});
+
+    const aboutPath = `.kortix/memory/enrichment/${DOMAIN}/pages/about.md`;
+    const blogPath = `.kortix/memory/enrichment/${DOMAIN}/blog/blog-launch.md`;
+    expect(memoryWrites.some((w) => w.path === aboutPath)).toBe(true);
+    expect(memoryWrites.some((w) => w.path === blogPath)).toBe(true);
+
+    await db.execute(sql`delete from kortix.enrichment_page_cache where url like ${`${ORIGIN}%`}`);
+
+    extractionResponse = JSON.stringify({
+      name: 'Integration Example Inc',
+      tagline: 'Testing end to end',
+      description: 'A company used by the enrichment integration test.',
+      products: [],
+      team: [],
+      socials: [],
+      pricingSummary: null,
+      blogPosts: [],
+      contact: { email: null, phone: null, address: null },
+      sectionSources: [],
+      sources: [`${ORIGIN}/`],
+    });
+
+    let homepageDirectCalls = 0;
+    const zeroFetchDeps: Partial<EnrichmentJobDeps> = {
+      ...testDeps(),
+      fetchImpl: (async (url: string) => {
+        fetchLog.push(url);
+        if (url === `${ORIGIN}/robots.txt` || url === `${ORIGIN}/sitemap.xml`) {
+          return toBounded(url, new Response('not found', { status: 404 }));
+        }
+        if (url === `${ORIGIN}/`) {
+          homepageDirectCalls += 1;
+          if (homepageDirectCalls === 1) {
+            return toBounded(
+              url,
+              page(
+                '<html><head><script type="application/ld+json">' +
+                  '{"@type":"Organization","name":"Integration Example Inc"}' +
+                  '</script></head><body></body></html>',
+              ),
+            );
+          }
+          return toBounded(url, new Response('gone', { status: 500 }));
+        }
+        return toBounded(url, new Response('gone', { status: 500 }));
+      }) as never,
+    };
+
+    const second = await seedJob(true);
+    const [claimedSecond] = await claimDueJobs({ workerId: 'test', limit: 5, leaseMs: 60_000 });
+    const result = await runEnrichmentJob(claimedSecond, zeroFetchDeps);
+
+    expect(result.cacheHit).toBe(false);
+    expect(result.pagesFetched).toBe(0);
+    expect(result.blogPostsFetched).toBe(0);
+    expect(second.jobId).not.toBe(first.jobId);
+
+    expect(memoryWrites.some((w) => w.path === aboutPath)).toBe(true);
+    expect(memoryWrites.some((w) => w.path === blogPath)).toBe(true);
+    expect(memoryWrites.at(-1)!.content).toContain(`enrichment/${DOMAIN}/pages/about.md`);
+    expect(memoryWrites.at(-1)!.content).toContain(`enrichment/${DOMAIN}/blog/blog-launch.md`);
+  });
+
   test('force bypasses the cache', async () => {
     if (!ctx) return;
     const first = await seedJob();

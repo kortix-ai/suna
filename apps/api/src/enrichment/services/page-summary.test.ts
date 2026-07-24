@@ -3,6 +3,7 @@ import type { ChatFn } from './chat-json';
 import type { ConsolidatePage } from './consolidate';
 import {
   MAP_CONCURRENCY,
+  MAP_INPUT_MAX_CHARS,
   PAGE_SUMMARY_THRESHOLD,
   mapPages,
   renderMappedPage,
@@ -61,6 +62,30 @@ describe('summarizePage', () => {
     await expect(
       summarizePage(page('https://example.com/about', 'x'.repeat(5_000)), { chat, model: 'm' }),
     ).rejects.toThrow();
+  });
+
+  test('caps the page text sent to the model at MAP_INPUT_MAX_CHARS', async () => {
+    const seen: string[] = [];
+    const chat: ChatFn = async ({ messages }) => {
+      seen.push(messages[messages.length - 1].content);
+      return JSON.stringify(VALID_SUMMARY);
+    };
+    const oversized = 'a'.repeat(MAP_INPUT_MAX_CHARS * 3);
+    await summarizePage(page('https://example.com/huge', oversized), { chat, model: 'm' });
+
+    const bodySent = seen[0].slice(seen[0].indexOf('\n\n') + 2);
+    expect(bodySent.length).toBeLessThanOrEqual(MAP_INPUT_MAX_CHARS);
+    expect(bodySent.length).toBeLessThan(oversized.length);
+  });
+
+  test('still summarizes an oversized page rather than skipping or erroring', async () => {
+    const chat: ChatFn = async () => JSON.stringify(VALID_SUMMARY);
+    const oversized = 'b'.repeat(MAP_INPUT_MAX_CHARS * 5);
+    const result = await summarizePage(page('https://example.com/huge', oversized), {
+      chat,
+      model: 'm',
+    });
+    expect(result.pageKind).toBe('about');
   });
 });
 
