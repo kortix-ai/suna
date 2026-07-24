@@ -23,6 +23,8 @@ export function PublicShareLinkButton({
   tooltip = 'Copy a public view-only link',
   title = 'Copy public link',
   className,
+  iconClassName = 'h-4 w-4',
+  tooltipSideOffset,
 }: {
   projectId?: string;
   sessionId?: string;
@@ -30,6 +32,10 @@ export function PublicShareLinkButton({
   tooltip?: string;
   title?: string;
   className?: string;
+  /** Icon size override. Defaults to this component's own 16px. */
+  iconClassName?: string;
+  /** TooltipContent sideOffset override. Omit to keep Radix's own default. */
+  tooltipSideOffset?: number;
 }) {
   const share = useMutation({
     mutationFn: async () => {
@@ -66,13 +72,13 @@ export function PublicShareLinkButton({
           title={title}
         >
           {share.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className={cn(iconClassName, 'animate-spin')} />
           ) : (
-            <Link2 className="h-4 w-4" />
+            <Link2 className={cn(iconClassName)} />
           )}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-56 text-xs">
+      <TooltipContent side="bottom" className="max-w-56 text-xs" sideOffset={tooltipSideOffset}>
         {tooltip}
       </TooltipContent>
     </Tooltip>

@@ -27,12 +27,45 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
  * usually-dead `localhost:3000`. `callID: 'quick-browser'` never collides
  * with a real tool call's.
  */
-export function quickBrowserOutput(apps: OutputItem[]): OutputItem {
+export function quickBrowserOutput(
+  apps: OutputItem[],
+  /**
+   * A caller that knows the exact page it wants (a `show` preview button, a
+   * localhost link clicked in chat) names it here. Without this the browser
+   * always opened on the first running app — the right surface showing the
+   * wrong page.
+   */
+  target?: { url?: string; title?: string },
+): OutputItem {
   return {
     callID: 'quick-browser',
-    name: 'Browser',
+    name: target?.title || 'Browser',
     kind: 'app',
-    url: apps[0]?.url ?? '',
+    url: target?.url || apps[0]?.url || '',
+  };
+}
+
+/**
+ * A synthetic `OutputItem` for a bare sandbox path — what a file-path click in
+ * the chat produces, where there is no Outputs row to open.
+ *
+ * Same trick as `quickBrowserOutput`: routing through `handleOpenOutput`
+ * instead of a second open funnel means a clicked path inherits the detail
+ * layer's ask-for-changes, panel-split default and tracking for free, and
+ * cannot drift from how an Outputs row opens the same file.
+ *
+ * `callID` is the path itself so `outputKey` stays unique per file — two
+ * different files clicked in a row must produce two different keys, or the
+ * detail layer treats the second as the same detail and skips its animation.
+ * `fresh` is deliberately unset: freshness means "this run produced it", and a
+ * click says nothing about which run the file came from.
+ */
+export function pathOutput(path: string): OutputItem {
+  return {
+    callID: `path:${path}`,
+    name: path.split('/').filter(Boolean).pop() ?? path,
+    kind: 'file',
+    path,
   };
 }
 

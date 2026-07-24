@@ -307,6 +307,17 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'browser preview app port localhost session',
     requiresSession: true,
   },
+  {
+    id: 'open-session-files',
+    label: 'Open Files',
+    icon: FolderOpen,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionFiles',
+    keywords: 'files explorer workspace session',
+    requiresSession: true,
+  },
 
   {
     id: 'restart-config',

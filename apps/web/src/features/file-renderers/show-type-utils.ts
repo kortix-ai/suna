@@ -74,3 +74,31 @@ export function resolveShowType(type: string, path: string): string {
   }
   return type;
 }
+
+/**
+ * Whether a show item must be rendered by reading the file off the sandbox
+ * rather than from an inline `content` string.
+ *
+ * This is the rule that decides whether a `show` renders at all, so it is
+ * stated once, here, instead of living inside a branch condition.
+ *
+ * The renderer used to gate its file branch on `type === 'file'` exactly. That
+ * made rendering depend on which type string the agent happened to emit: a
+ * `.md` shown as `type: 'markdown'` with a path and no inline content matched
+ * the file branch (wrong type), then missed every content branch (no content),
+ * and fell through to an empty box. Same for `.yaml` as `'code'`/`'text'`.
+ * Identical inputs, opposite outcomes, decided by a label — which is why it
+ * read as "sometimes it works".
+ *
+ * The honest rule has nothing to do with the declared type: if there is a
+ * sandbox path and no inline content, the bytes on disk are the only thing
+ * there is to show. `FileContentRenderer` does its own text/code/markdown
+ * detection and binary fallback, so it is always the right destination.
+ *
+ * Call this only AFTER the rich branches (image/video/audio/pdf/csv/xlsx/
+ * docx/pptx/html) have had their turn — those have real viewers of their own
+ * and must keep them.
+ */
+export function shouldRenderFromSandboxFile(sandboxPath: string | null, content: string): boolean {
+  return !!sandboxPath && !content;
+}

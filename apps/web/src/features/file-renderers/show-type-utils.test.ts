@@ -1,38 +1,63 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import {
+  getShowFileCategory,
+  resolveShowType,
+  shouldRenderFromSandboxFile,
+} from './show-type-utils';
 
-import { getShowFileCategory, resolveShowType } from './show-type-utils';
+describe('getShowFileCategory', () => {
+  it('maps rich extensions to their viewer category', () => {
+    expect(getShowFileCategory('/w/a.pdf')).toBe('pdf');
+    expect(getShowFileCategory('/w/a.csv')).toBe('csv');
+    expect(getShowFileCategory('/w/a.xlsx')).toBe('xlsx');
+    expect(getShowFileCategory('/w/a.docx')).toBe('docx');
+    expect(getShowFileCategory('/w/a.pptx')).toBe('pptx');
+    expect(getShowFileCategory('/w/a.png')).toBe('image');
+  });
+
+  it('leaves plain text formats as generic files', () => {
+    expect(getShowFileCategory('/w/kortix.yaml')).toBe('file');
+    expect(getShowFileCategory('/w/notes.md')).toBe('file');
+    expect(getShowFileCategory('/w/main.py')).toBe('file');
+  });
+});
 
 describe('resolveShowType', () => {
-  test('a markdown-declared .csv renders as csv (extension wins)', () => {
-    expect(resolveShowType('markdown', '/w/data.csv')).toBe('csv');
+  it('lets a rich extension override a textish declared type', () => {
+    expect(resolveShowType('markdown', '/w/report.pdf')).toBe('pdf');
+    expect(resolveShowType('text', '/w/data.csv')).toBe('csv');
+    expect(resolveShowType('file', '/w/deck.pptx')).toBe('pptx');
   });
 
-  test('a text-declared .xlsx renders as xlsx (extension wins)', () => {
-    expect(resolveShowType('text', '/w/report.xlsx')).toBe('xlsx');
-  });
-
-  test('a markdown-declared .md stays markdown (not a rich category)', () => {
+  it('leaves a non-rich extension on its declared type', () => {
     expect(resolveShowType('markdown', '/w/notes.md')).toBe('markdown');
+    expect(resolveShowType('code', '/w/kortix.yaml')).toBe('code');
   });
 
-  test('type=file auto-detects a .docx path', () => {
-    expect(resolveShowType('file', '/w/doc.docx')).toBe('docx');
+  it('never overrides an explicit non-textual declaration', () => {
+    expect(resolveShowType('url', '/w/a.pdf')).toBe('url');
+    expect(resolveShowType('error', '/w/a.csv')).toBe('error');
+  });
+});
+
+// ─── The regression this rule exists for: a file shown with a path and no
+// inline content must render regardless of which type label the agent chose.
+// Gating on `type === 'file'` made a .md shown as 'markdown' — and a .yaml
+// shown as 'code'/'text' — fall through every branch into an empty box. ─────
+
+describe('shouldRenderFromSandboxFile', () => {
+  it('reads from disk whenever there is a path and no inline content', () => {
+    expect(shouldRenderFromSandboxFile('/workspace/kortix.yaml', '')).toBe(true);
+    expect(shouldRenderFromSandboxFile('/workspace/asana-projects.md', '')).toBe(true);
+    expect(shouldRenderFromSandboxFile('/workspace/main.py', '')).toBe(true);
   });
 
-  test('an explicit image declaration is never overridden', () => {
-    expect(resolveShowType('image', '/w/photo.png')).toBe('image');
+  it('prefers inline content when the payload carried it', () => {
+    expect(shouldRenderFromSandboxFile('/workspace/kortix.yaml', 'a: 1')).toBe(false);
   });
 
-  test('a markdown declaration with no path stays markdown', () => {
-    expect(resolveShowType('markdown', '')).toBe('markdown');
-  });
-
-  test('code with a non-rich .py extension stays code', () => {
-    expect(resolveShowType('code', '/w/script.py')).toBe('code');
-  });
-
-  test('a textish declaration with a non-rich extension keeps the declared type', () => {
-    expect(getShowFileCategory('/w/script.py')).toBe('file');
-    expect(resolveShowType('text', '/w/script.py')).toBe('text');
+  it('has nothing to read without a sandbox path', () => {
+    expect(shouldRenderFromSandboxFile(null, '')).toBe(false);
+    expect(shouldRenderFromSandboxFile(null, 'some text')).toBe(false);
   });
 });

@@ -63,6 +63,10 @@ type CsvViewerProps = {
   fileName?: string
   search?: boolean
   showToolbar?: boolean
+  /** Extra controls rendered in this toolbar, after zoom/search and before the
+   *  file menu — the same slot pdf/docx/xlsx expose, so a caller adds actions
+   *  to the ONE header this viewer already draws. */
+  toolbarActions?: React.ReactNode
 }
 
 type CsvSearchResult = {
@@ -588,6 +592,7 @@ export function CsvViewer({
   fileName,
   search = false,
   showToolbar = true,
+  toolbarActions,
 }: CsvViewerProps) {
   const gridRef = React.useRef<DataEditorRef | null>(null)
   const isDark = useIsDarkTheme()
@@ -786,6 +791,15 @@ export function CsvViewer({
                 </Button>
               </ToolbarTooltip>
             </div>
+            {toolbarActions ? (
+              <>
+                <Separator
+                  orientation="vertical"
+                  className="mx-1 h-4 self-center"
+                />
+                {toolbarActions}
+              </>
+            ) : null}
             {search ? (
               <>
                 <Separator

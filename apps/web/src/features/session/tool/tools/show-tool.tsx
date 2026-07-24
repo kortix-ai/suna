@@ -26,6 +26,7 @@ import {
   ShowCarouselItem,
   ShowContentRenderer,
   showDomain,
+  ShowFileActions,
   showTypeIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
@@ -102,6 +103,17 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
       ? buildHtmlStaticUrl(activePath)
       : '';
   const isWebsitePreview = !!resolvedPreviewUrl;
+
+  /**
+   * A file-backed show gets its actions INSIDE the renderer's own header —
+   * `ShowContentRenderer` routes them to each viewer's native toolbar slot, or
+   * supplies the row itself for the viewers that ship none. There is never a
+   * second header stacked above the viewer.
+   */
+  const fileActions =
+    !isWebsitePreview && activePath ? (
+      <ShowFileActions path={activePath} inPanel={fill} />
+    ) : undefined;
   const preview = useServicePreview(
     resolvedPreviewUrl,
     activeTitle || title || description || undefined,
@@ -210,6 +222,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
                 fill={fill}
+                toolbarActions={fileActions}
               />
             </ActiveServicePreviewContext.Provider>
           ) : isWebsitePreview ? (
@@ -229,6 +242,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}
+                  toolbarActions={fileActions}
                 />
               </div>
               {description && !title && (

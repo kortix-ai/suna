@@ -5167,7 +5167,7 @@ export function SessionChat({
   if (isDataLoading) {
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
-        <SessionStartingLoader stage="ready" />
+        <SessionStartingLoader stage="ready" variant='compact' />
       </div>
     );
   }

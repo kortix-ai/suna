@@ -55,12 +55,15 @@ import {
 } from 'lucide-react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { ViewerFrame } from './shared/viewer-frame';
+import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
-import { getShowFileCategory, resolveShowType } from './show-type-utils';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
-const PdfRenderer = lazy(() => import('./pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })));
+const PdfRenderer = lazy(() =>
+  import('./pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
+);
 const CsvRenderer = lazy(() =>
   import('./csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
 );
@@ -77,17 +80,17 @@ const PptxRenderer = lazy(() =>
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
 
 export {
-  SHOW_IMAGE_EXT_RE,
-  SHOW_VIDEO_EXT_RE,
-  SHOW_AUDIO_EXT_RE,
-  SHOW_PDF_EXT_RE,
-  SHOW_CSV_EXT_RE,
-  SHOW_XLSX_EXT_RE,
-  SHOW_DOCX_EXT_RE,
-  SHOW_PPTX_EXT_RE,
-  SHOW_HTML_EXT_RE,
   getShowFileCategory,
   resolveShowType,
+  SHOW_AUDIO_EXT_RE,
+  SHOW_CSV_EXT_RE,
+  SHOW_DOCX_EXT_RE,
+  SHOW_HTML_EXT_RE,
+  SHOW_IMAGE_EXT_RE,
+  SHOW_PDF_EXT_RE,
+  SHOW_PPTX_EXT_RE,
+  SHOW_VIDEO_EXT_RE,
+  SHOW_XLSX_EXT_RE,
 } from './show-type-utils';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -181,6 +184,17 @@ export interface ShowContentProps {
    * audio/pdf/csv/docx/pptx) and forwarded from the generic-file renderer.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /**
+   * Controls for the file's header row (refresh / full screen / open in the
+   * panel).
+   *
+   * There is exactly ONE header per show, never two. PDF, DOCX and XLSX own a
+   * real toolbar, so these go into its native `toolbarActions` slot, landing
+   * after zoom and before the file menu. CSV, PPTX and the plain-text viewer
+   * ship no toolbar, so `ViewerFrame` supplies the same row for them. Either
+   * way the user sees one header with the actions on its right.
+   */
+  toolbarActions?: React.ReactNode;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -197,6 +211,7 @@ export function ShowContentRenderer({
   LocalhostPreview,
   fill = false,
   onStatusChange,
+  toolbarActions,
 }: ShowContentProps) {
   const arCSS = showAspectRatioToCSS(aspectRatio);
 
@@ -246,6 +261,44 @@ export function ShowContentRenderer({
   }, [path, isLocalPath]);
 
   const fileName = useMemo(() => path.split('/').pop() || '', [path]);
+
+  /**
+   * ── One header, never two ──────────────────────────────────────────────
+   *
+   * PDF, DOCX, XLSX and CSV each draw a real toolbar (thumbnails, zoom, search,
+   * a file menu). Inline in the chat column that toolbar is noise: nobody zooms
+   * or searches a 420px card, and stacking our actions above it produced eight
+   * controls and two header rows for one small file.
+   *
+   * So the surface decides which single header exists:
+   *   inline  → the viewer goes `compact` (its toolbar hidden) and `ViewerFrame`
+   *             is the one header, carrying name + refresh/full screen/Preview
+   *   panel   → the viewer's own toolbar is the one header, and our actions ride
+   *             in its native `toolbarActions` slot beside zoom and search
+   *
+   * Renderers with no toolbar of their own (PPTX, and the plain-text/code
+   * viewer whose header is suppressed) use `ViewerFrame` on both surfaces —
+   * it is their only header, so it can never double up.
+   */
+  const framed = (node: React.ReactNode) =>
+    fill ? (
+      node
+    ) : (
+      <ViewerFrame label={fileName} actions={toolbarActions}>
+        {node}
+      </ViewerFrame>
+    );
+
+  /** For renderers that never draw a header themselves. */
+  const alwaysFramed = (node: React.ReactNode) => (
+    <ViewerFrame label={fileName} actions={toolbarActions}>
+      {node}
+    </ViewerFrame>
+  );
+
+  /** Props every toolbar-owning renderer takes: hide its chrome inline, hand it
+   *  the actions in the panel. Exactly one of the two is ever in play. */
+  const viewerChrome = { compact: !fill, toolbarActions: fill ? toolbarActions : undefined };
 
   // ═════════════════════════════════════════════════════════════════════════
   // Data loading hooks — called unconditionally (React rules), gated by path
@@ -510,7 +563,14 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={mediaH}>
-            <PdfRenderer fileContent={pdfData.content} fileName={fileName} className="h-full" />
+            {framed(
+              <PdfRenderer
+                fileContent={pdfData.content}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -530,7 +590,14 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <CsvRenderer content={inlineOrLoadedCsv} fileName={fileName} className="h-full" />
+            {framed(
+              <CsvRenderer
+                content={inlineOrLoadedCsv}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -545,7 +612,14 @@ export function ShowContentRenderer({
     return (
       <Suspense fallback={<RendererFallback className={mediaH} />}>
         <div className={cn(mediaH, 'overflow-hidden')}>
-          <XlsxRenderer filePath={sandboxPath} fileName={fileName} className="h-full" />
+          {framed(
+            <XlsxRenderer
+              filePath={sandboxPath}
+              fileName={fileName}
+              className="h-full"
+              {...viewerChrome}
+            />,
+          )}
         </div>
       </Suspense>
     );
@@ -561,7 +635,14 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+            {framed(
+              <DocxRenderer
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+                {...viewerChrome}
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -579,13 +660,15 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <PptxRenderer
-              blob={rawBlob}
-              binaryUrl={blobUrl}
-              filePath={sandboxPath || ''}
-              fileName={fileName}
-              className="h-full"
-            />
+            {alwaysFramed(
+              <PptxRenderer
+                blob={rawBlob}
+                binaryUrl={blobUrl}
+                filePath={sandboxPath || ''}
+                fileName={fileName}
+                className="h-full"
+              />,
+            )}
           </div>
         </Suspense>
       );
@@ -598,16 +681,22 @@ export function ShowContentRenderer({
   // FileContentRenderer handles text/code detection, syntax highlighting,
   // and binary fallbacks. Works great for text files via SDK text-read.
   // ═════════════════════════════════════════════════════════════════════════
-  if (effectiveType === 'file' && path && sandboxPath) {
+  // Deliberately NOT gated on `effectiveType === 'file'` — see
+  // `shouldRenderFromSandboxFile`. Every rich viewer above has already had its
+  // turn, so from here a path with no inline content means the bytes on disk
+  // are the only thing there is to show, whatever the agent labelled it.
+  if (shouldRenderFromSandboxFile(sandboxPath, content)) {
     return (
       <div className={mediaH}>
-        <FileContentRenderer
-          filePath={sandboxPath}
-          showHeader={false}
-          className="h-full"
-          errorFallback={fileErrorFallback}
-          onStatusChange={onStatusChange}
-        />
+        {alwaysFramed(
+          <FileContentRenderer
+            filePath={sandboxPath!}
+            showHeader={false}
+            className="h-full"
+            errorFallback={fileErrorFallback}
+            onStatusChange={onStatusChange}
+          />,
+        )}
       </div>
     );
   }
@@ -745,6 +834,9 @@ export interface ShowCarouselProps {
   onIndexChange?: (index: number) => void;
   /** Fill the available height (side-panel surface) instead of a fixed-height card. */
   fill?: boolean;
+  /** Header actions for the ACTIVE item, forwarded to its renderer so paging
+   *  between deliverables keeps the toolbar instead of losing it after item 1. */
+  toolbarActions?: React.ReactNode;
 }
 
 const SHOW_TYPE_LABELS: Record<string, string> = {
@@ -824,6 +916,7 @@ export function ShowCarousel({
   LocalhostPreview,
   onIndexChange,
   fill = false,
+  toolbarActions,
 }: ShowCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
@@ -893,6 +986,7 @@ export function ShowCarousel({
           language={currentItem.language}
           aspectRatio={currentItem.aspect_ratio}
           LocalhostPreview={LocalhostPreview}
+          toolbarActions={toolbarActions}
           fill={fill}
         />
       </div>

@@ -11,7 +11,6 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
@@ -29,24 +28,27 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
+import { ArrowLeft, ChatMessages, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  AlarmClock,
   ArrowUpCircle,
   AudioLines,
   Bot,
   Boxes,
+  Command,
   Container,
   GitFork,
   Inbox,
   KeyRound,
+  LucideSettings,
+  LucideUsersRound,
   Monitor,
   Plug,
   Store,
   Webhook,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
-import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
@@ -54,6 +56,21 @@ import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailGroup, RailItem } from './type';
+
+const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
+
+const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
+
+const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
+
+const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
+
+// The Upgrades section is always reachable (it hosts the one-off prompt runner)
+// and lives pinned at the very bottom of the rail — out of the scrolling nav (see
+// the desktop footer / mobile tail below). When a registry upgrade is actually
+// applicable (e.g. the project is still on a v1 manifest) it carries a small
+// attention dot instead of claiming a more prominent slot.
+const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
 
 const GROUPS: readonly RailGroup[] = [
   {
@@ -84,28 +101,13 @@ const GROUPS: readonly RailGroup[] = [
     items: [
       { section: 'git', label: 'Git', icon: GitFork },
       { section: 'sandbox', label: 'Sandbox templates', icon: Container },
-      { section: 'members', label: 'Members', icon: LuUsersRound },
-      { section: 'settings', label: 'Settings', icon: LuSettings },
+      { section: 'members', label: 'Members', icon: LucideUsersRound },
+      { section: 'settings', label: 'Settings', icon: LucideSettings },
     ],
   },
 ];
 
 const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
-
-const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
-
-const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
-
-const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
-
-const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
-
-// The Upgrades section is always reachable (it hosts the one-off prompt runner)
-// and lives pinned at the very bottom of the rail — out of the scrolling nav (see
-// the desktop footer / mobile tail below). When a registry upgrade is actually
-// applicable (e.g. the project is still on a v1 manifest) it carries a small
-// attention dot instead of claiming a more prominent slot.
-const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
 
 function railGroups(
   tunnelEnabled: boolean,
@@ -119,10 +121,13 @@ function railGroups(
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
     if (g.label === 'Connect') {
-      const items = [...g.items];
+      // Models lives in the base Connect group (rail-groups.ts) so it's always
+      // in the nav; drop it only where the managed gateway isn't available.
+      const items = g.items.filter(
+        (item) => item.section !== 'llm-management' || llmGatewayAvailable,
+      );
       if (meetEnabled) items.push(MEET_ITEM);
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
-      if (llmGatewayAvailable) items.push(LLM_ITEM);
       return { ...g, items };
     }
     if (g.label === 'Build' && reviewEnabled) {
@@ -262,7 +267,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
         }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          'inset-0 top-0 left-0 h-dvh min-h-dvh w-screen max-w-none translate-x-0 translate-y-0 space-y-0 rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none lg:top-0 lg:left-0 lg:h-dvh lg:min-h-dvh lg:max-w-none lg:translate-x-0 lg:translate-y-0',
+          'inset-0 top-0 left-0 h-dvh min-h-dvh w-screen max-w-none translate-x-0 translate-y-0 space-y-0 rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none md:rounded-none lg:top-0 lg:left-0 lg:h-dvh lg:min-h-dvh lg:max-w-none lg:translate-x-0 lg:translate-y-0 lg:rounded-none',
         )}
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
@@ -469,8 +474,6 @@ function SectionContent({
       return <AgentsView projectId={projectId} />;
     case 'skills':
       return <SkillsView projectId={projectId} />;
-    case 'commands':
-      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'connectors':

@@ -1735,6 +1735,22 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
   animation: spinner-dash 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
 }
 
+@keyframes spinner-spokes {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The spoke spinner TICKS rather than sweeps: steps(8) over a full turn lands
+   each frame exactly one spoke on (45°), so the opacity ramp appears to chase
+   itself around the wheel while the geometry never sits between positions. A
+   smooth rotation here would just look like a spinning asterisk. 0.8s/8 = 100ms
+   a tick — near the classic platform cadence, fast enough to read as busy. */
+.animate-spinner-spokes {
+  transform-origin: center;
+  animation: spinner-spokes 0.8s steps(8) infinite;
+}
+
 /* Reduced motion: keep a calm, constant-speed spin (a loader still needs to
    signal activity) but drop the arc's grow/shrink and speed modulation. */
 @media (prefers-reduced-motion: reduce) {
@@ -1747,6 +1763,12 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
     animation: none;
     stroke-dashoffset: 34;
     transform: none;
+  }
+
+  /* Same bargain as above: a loader still has to signal activity, so keep the
+     rotation but drop the stepping — the 100ms strobe is the part that grates. */
+  .animate-spinner-spokes {
+    animation: spinner-spokes 1.4s linear infinite;
   }
 }
 

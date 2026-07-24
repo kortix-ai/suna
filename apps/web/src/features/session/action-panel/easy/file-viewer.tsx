@@ -6,9 +6,9 @@
  * The view toggle is not a universal control, because "source" only means
  * something for a file whose rendered form differs from its text:
  *
- *   - **HTML** renders to something you can look at AND is code you might want
- *     to read. It is the one file type that earns a Preview/Source toggle, so
- *     that toggle lives at the far left of its toolbar.
+ *   - **HTML and SVG** render to something you can look at AND are code you
+ *     might want to read. They are the file types that earn a Preview/Source
+ *     toggle, so that toggle lives at the far left of their toolbar.
  *   - **Markdown** is meant to be read as a document. A non-technical user has
  *     no reason to see `##` and `**`, so there is no toggle — just the document.
  *   - **Everything else** is source. Showing it is the whole job; a toggle
@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import {
   downloadFile,
   isBrowserViewable,
@@ -45,7 +46,7 @@ import {
   MessageSquarePlus,
   Minimize2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 
 type View = 'preview' | 'source';
@@ -71,6 +72,9 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   css: 'css',
   html: 'html',
   htm: 'html',
+  // An SVG is an XML document. Shiki has no `svg` grammar of its own, and `xml`
+  // is what it would alias to anyway.
+  svg: 'xml',
   sql: 'sql',
 };
 
@@ -88,10 +92,23 @@ export function isMarkdown(fileName: string): boolean {
   return ext === 'md' || ext === 'mdx';
 }
 
-/** HTML is the only file whose rendered form and source are both worth seeing. */
+/** HTML has a rendered form and a source, and both are worth seeing. */
 export function isHtml(fileName: string): boolean {
   const ext = extensionOf(fileName);
   return ext === 'html' || ext === 'htm';
+}
+
+/**
+ * SVG is the other one. It classifies as an *image* everywhere else in the app
+ * (`getFileCategory`), which is true of how it looks and wrong about what it
+ * is: the daemon deliberately keeps `.svg` out of its binary-extension set
+ * ("svg is XML text", `file-mime.ts`), so the bytes that arrive here are
+ * readable markup. `FilePreview` uses this to route SVG down the text path
+ * instead of the image one, which is the only reason a source view is possible
+ * at all.
+ */
+export function isSvg(fileName: string): boolean {
+  return extensionOf(fileName) === 'svg';
 }
 
 /**
@@ -200,7 +217,12 @@ export function FileViewer({
   className?: string;
 }) {
   const html = isHtml(fileName);
+  const svg = isSvg(fileName);
   const markdown = isMarkdown(fileName);
+  // The files whose rendered form and source are both worth seeing — the ones
+  // that earn the toggle, and the ones whose preview owns the pane's scrolling
+  // instead of the pane owning theirs.
+  const renders = html || svg;
   const [view, setView] = useState<View>('preview');
 
   const isExpanded = useIsExpanded();
@@ -212,9 +234,10 @@ export function FileViewer({
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
           <DetailSidebarToggle className="size-7" />
-          {html ? (
-            // Only HTML earns the toggle — and it sits at the far left, before
-            // the name, because it changes what the name is showing you.
+          {renders ? (
+            // Only a file with both a rendered form and a source earns the
+            // toggle — and it sits at the far left, before the name, because it
+            // changes what the name is showing you.
             <Tabs value={view} onValueChange={(next) => setView(next as View)}>
               <TabsList type="default" size="sm" className="h-7 border-b-0 p-0">
                 <TabsTrigger
@@ -294,13 +317,14 @@ export function FileViewer({
       <div
         className={cn(
           'min-h-0 min-w-0 flex-1',
-          html && view === 'preview' ? 'overflow-hidden' : 'overflow-auto',
+          renders && view === 'preview' ? 'overflow-hidden' : 'overflow-auto',
         )}
       >
         <FileBody
           content={content}
           fileName={fileName}
           html={html}
+          svg={svg}
           markdown={markdown}
           view={view}
         />
@@ -309,19 +333,50 @@ export function FileViewer({
   );
 }
 
+/**
+ * SVG source text → a URL an `<img>` can load.
+ *
+ * A blob URL rather than a `data:` URI: `btoa` chokes on any SVG containing
+ * non-Latin1 characters (an embedded label in any non-Latin script), and the
+ * percent-encoded alternative inflates large traced artwork into a megabyte-long
+ * attribute. The blob is created in an effect, never in `useMemo` —
+ * `URL.createObjectURL` doesn't exist during SSR, and a memo is allowed to be
+ * recomputed and discarded, which would leak the URL it created. Returns null
+ * for the first client frame, which is why the caller gates on it.
+ */
+function useSvgObjectUrl(content: string, enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setUrl(null);
+      return;
+    }
+    const next = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }));
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [content, enabled]);
+
+  return url;
+}
+
 function FileBody({
   content,
   fileName,
   html,
+  svg,
   markdown,
   view,
 }: {
   content: string;
   fileName: string;
   html: boolean;
+  svg: boolean;
   markdown: boolean;
   view: View;
 }) {
+  const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
+
   // The rendered page IS the document: it owns the pane edge to edge, and its
   // own <body> sets whatever margin it wants. Padding it would frame someone
   // else's page inside ours.
@@ -339,9 +394,24 @@ function FileBody({
     );
   }
 
+  // The same inertness bargain HTML strikes with `sandbox=""`, made a different
+  // way: an SVG loaded through `<img>` renders in the browser's secure static
+  // mode — no script execution, no external fetches, no interactivity. That
+  // matters here because an agent wrote this file, and `isBrowserViewable`
+  // already refuses to open SVG in a real tab for exactly that reason.
+  //
+  // Everything else — zoom, pan, wheel, fit-to-screen, the % reset readout — is
+  // `ImageRenderer`'s, unchanged. The backdrop swatches are the one thing it
+  // gains here: SVG artwork is usually transparent, so which background it sits
+  // on is a question only the viewer can answer.
+  if (svg && view === 'preview') {
+    if (!svgUrl) return null;
+    return <ImageRenderer url={svgUrl} fileName={fileName} controls="always" backdrop />;
+  }
+
   if (markdown) {
     return (
-      <div className="px-4 pb-4">
+      <div className="p-10">
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
         <DocMarkdown content={content} allowHtml={false} />
@@ -363,7 +433,7 @@ function FileBody({
     <CodeBlockCode
       code={content}
       language={languageFor(fileName)}
-      className="[&_pre]:!bg-transparent [&_pre]:rounded-none [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
+      className="[&_pre]:rounded-none [&_pre]:!bg-transparent [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
     />
   );
 }

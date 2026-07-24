@@ -1008,14 +1008,14 @@ export function CommandPalette() {
   }, [close, panelMode]);
 
   /**
-   * "Open Terminal" / "Open Audit" / "Open Browser" (Easy: the Easy panel's
-   * detail layer, Advanced: the panel's Terminal/Audit/Browser tab). The
+   * "Open Terminal" / "Open Audit" / "Open Browser" / "Open Files" (Easy: the
+   * Easy panel's detail layer, Advanced: the panel's corresponding tab). The
    * id-space-sensitive branching lives in `openSessionQuickView` — shared
-   * with the session header's terminal/browser buttons, so it can never
+   * with the session header's terminal/browser/files buttons, so it can never
    * drift between them.
    */
   const handleOpenQuickView = useCallback(
-    (view: 'terminal' | 'audit' | 'browser') => {
+    (view: 'terminal' | 'audit' | 'browser' | 'files') => {
       close();
       openSessionQuickView(view, 'palette');
     },
@@ -1032,6 +1032,10 @@ export function CommandPalette() {
   );
   const handleOpenSessionBrowser = useCallback(
     () => handleOpenQuickView('browser'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionFiles = useCallback(
+    () => handleOpenQuickView('files'),
     [handleOpenQuickView],
   );
 
@@ -1151,6 +1155,7 @@ export function CommandPalette() {
       openSessionTerminal: handleOpenSessionTerminal,
       openSessionAudit: handleOpenSessionAudit,
       openSessionBrowser: handleOpenSessionBrowser,
+      openSessionFiles: handleOpenSessionFiles,
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
@@ -1169,6 +1174,7 @@ export function CommandPalette() {
       handleOpenSessionTerminal,
       handleOpenSessionAudit,
       handleOpenSessionBrowser,
+      handleOpenSessionFiles,
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
