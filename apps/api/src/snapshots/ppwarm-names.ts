@@ -88,3 +88,14 @@ export function ppwarmReapTargets(projectId: string, currentName: string, allNam
   const prefix = `${PPWARM_PREFIX}${proj8(projectId)}-`;
   return allNames.filter((n) => n.startsWith(prefix) && n !== currentName && !n.includes('__deleted'));
 }
+
+/**
+ * FIX-K-lite guard: drop any reap target that is the ACTIVE pinned image (by name)
+ * of SOME project. proj8 is only the first 8 hex of the projectId, so the
+ * prefix-scoped {@link ppwarmReapTargets} can collide with another project whose id
+ * shares those 8 hex; cross-checking against the live pins makes such a collision
+ * harmless (worst case, a superseded tip is kept one extra cycle).
+ */
+export function excludePinnedTargets(targets: string[], pinnedImages: ReadonlySet<string>): string[] {
+  return targets.filter((name) => !pinnedImages.has(name));
+}
