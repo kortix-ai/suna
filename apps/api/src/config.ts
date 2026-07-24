@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -352,7 +353,7 @@ const envSchema = z.object({
   // Runtime routing is control-plane configuration, not a model-catalog
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
-  LLM_GATEWAY_DEFAULT_MODEL: optStrDefault('codex/gpt-5.6-sol'),
+  LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
   LLM_GATEWAY_VISION_MODEL: optStrDefault('claude-sonnet-4.6'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,

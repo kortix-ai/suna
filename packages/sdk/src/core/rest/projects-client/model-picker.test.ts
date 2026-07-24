@@ -10,7 +10,7 @@ beforeEach(() => {
   globalThis.fetch = mock(
     async (url: unknown, opts: { method?: string } = {}) => {
       calls.push({ url: String(url), method: opts.method ?? 'GET' });
-      return new Response(JSON.stringify({ models: { auto: { name: 'Auto' } } }), {
+      return new Response(JSON.stringify({ models: { 'glm-5.2': { name: 'GLM 5.2' } } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -25,7 +25,7 @@ configureKortix({
 
 test('loads the compact project model picker instead of the full runtime catalog', async () => {
   const result = await getProjectModelPicker('P1');
-  expect(result.models.auto?.name).toBe('Auto');
+  expect(result.models['glm-5.2']?.name).toBe('GLM 5.2');
   expect(calls.at(-1)).toEqual({
     url: 'http://test.local/projects/P1/model-picker',
     method: 'GET',

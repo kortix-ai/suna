@@ -30,9 +30,8 @@ Routing:
                                     resolves from). --json.
   routing set [flags]               Update the project routing policy:
     --default-model <id>              Default model ("" to clear).
-    --vision-model <id>               Vision FALLBACK — only used on 'auto' when
-                                      an image is sent and the default model
-                                      cannot see images. Ignored otherwise.
+    --vision-model <id>               Vision fallback for image requests that
+                                      use a text-only default model.
     --fallback <id,id,…>              Fallback chain ("" to clear).
     --fallback-on transient|any-error
     --file <path|->                   Full policy JSON (stdin with -).
@@ -267,7 +266,7 @@ function renderRouting(doc: RoutingPolicyDoc): number {
   process.stdout.write(
     `\n  ${C.dim}EFFECTIVE ROUTING${C.reset}\n` +
       `  default model   ${C.bold}${e.defaultModel}${C.reset} ${C.dim}(${e.defaultModelSource})${C.reset}\n` +
-      `  vision fallback ${e.visionModel} ${C.dim}(auto only — used only when the default model can't see images)${C.reset}\n` +
+      `  vision fallback ${e.visionModel} ${C.dim}(used when the default model cannot see images)${C.reset}\n` +
       `  fallback        ${fb}\n`,
   );
   if (doc.project.rules.length) {

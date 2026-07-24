@@ -49,7 +49,6 @@ export function ensureKortixConfigured(): void {
       disableMobileAdvertising: parseFlagOverride(process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING),
       enableDinoGame: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_DINO_GAME),
       enableProjects: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_PROJECTS),
-      enableAutoModel: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_AUTO_MODEL),
     },
     onToast: (level, message, options) => {
       const opts = options as Parameters<typeof infoToast>[1];

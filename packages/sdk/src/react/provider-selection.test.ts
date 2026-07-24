@@ -5,6 +5,7 @@ import {
   type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
   mergeProjectSecretConnectedProviders,
+  projectLlmCatalogToProviderList,
 } from './provider-selection';
 
 describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog env', () => {
@@ -71,5 +72,19 @@ describe('mergeProjectSecretConnectedProviders (SDK native-mode provider merge)'
       LLM_PROVIDER_CREDENTIALS,
     );
     expect(merged.connected).not.toContain('amazon-bedrock');
+  });
+});
+
+describe('projectLlmCatalogToProviderList', () => {
+  test('removes stale auto entries and selects a concrete default', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        auto: { name: 'Auto' },
+        'claude-opus-4.8': { name: 'Claude Opus 4.8' },
+      },
+    } as never);
+
+    expect(list.default).toEqual({ kortix: 'claude-opus-4.8' });
+    expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['claude-opus-4.8']);
   });
 });

@@ -81,12 +81,9 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
         return { ...principal, tier, freeModelsOnly: accountIsFreeTierForModels(tier) };
       })()
     : { ...principal, freeModelsOnly: false };
-  // Resolve the account/project/agent-configured default model once, here, so it
-  // travels with the principal (including across the RPC boundary to the
-  // standalone pod) and `auto` resolves to it. freeModelsOnly is already set
-  // above, so the resolver can drop a managed default for free tier. Never let a
-  // resolution hiccup break auth for every LLM call — degrade to the platform
-  // target (undefined) on error.
+  // Resolve the account/project/agent-configured concrete default once, here,
+  // so it travels with the principal across the standalone-gateway RPC boundary.
+  // Never let a resolution error break authentication for every LLM call.
   let defaultModel: string | undefined;
   try {
     defaultModel = await resolveDefaultModelForPrincipal(tiered);
@@ -133,7 +130,7 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
   try {
-    const billing = await assertBillingActive(principal.accountId);
+    const billing = await assertLlmBillingActive(principal.accountId);
     if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
   } catch (err) {
     return {
@@ -165,6 +162,20 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
     };
   }
   return { ok: true, principal };
+}
+
+/**
+ * Apply the LLM wallet gate only to accounts that can spend wallet credits on
+ * Kortix-managed models. Free-tier wallets fund sandbox compute only.
+ */
+export async function assertLlmBillingActive(
+  accountId: string,
+): Promise<{ holdUsd?: number } | void> {
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    const tier = await getCachedAccountTier(accountId);
+    if (accountIsFreeTierForModels(tier)) return;
+  }
+  return assertBillingActive(accountId);
 }
 
 /**
@@ -353,7 +364,7 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     authenticate: authenticatePrincipal,
     resolveRoute: resolveGatewayRoute,
     resolveUpstream: resolveCandidates,
-    assertBillingActive,
+    assertBillingActive: assertLlmBillingActive,
     assertBudget: assertGatewayBudget,
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,
