@@ -1758,6 +1758,112 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   return true;
 }
 
+// Transient WebSocket / Server-Sent-Events (SSE) transport-close noise.
+// `Connection closed.` is the CANONICAL transport-close message a client-side
+// WebSocket/SSE library throws when the server closes the connection — a deploy
+// / restart, an idle-timeout recycle, the session ending, or the load balancer
+// recycling the upstream. The `/dashboard` realtime surface holds a background
+// websocket/SSE connection; when the upstream tears the connection down during
+// a deploy/idle-recycle, the library throws `Connection closed.` (the trailing
+// `.` is part of the library's canonical close string). Better Stack pattern
+// ecac86df82aca61f579836c1b813a0ed02cabd4a480b581db2f1ba5f4e20ab86
+// (Kortix Frontend prod, application_id 2346967): `Error`, 1 occurrence / 0
+// identified users, last 2026-07-23 16:44:09 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
+// `/dashboard`, URL `https://kortix.com/dashboard`, mechanism
+// `auto.browser.global_handlers.onerror` (`handled:false` — UNCAUGHT, never
+// reached a React error boundary), browser Chrome 150 / Windows 10. The single
+// stack frame is the minified main co-worker runtime chunk
+// `app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_…` function `t`
+// (lineno 15, colno 73840, in_app) — NO first-party `apps/web/src/…` frame.
+// ZERO breadcrumbs (no fetches, no UI clicks) — a sparse capture, consistent
+// with a background transport teardown fired before any user activity was
+// recorded. The connection closing during a deploy/idle-recycle is EXPECTED; it
+// is not a product bug. This is the same transient-transport class as the
+// gateway-502 retry (#4609) and the frameless browser-internal rejections
+// (#5200 / #5237 / #5185), but a WebSocket/SSE close on the `/dashboard`
+// realtime surface.
+//
+// The orchestrator's sweep ledger has a HISTORICAL skip-list note about
+// `Connection closed (transient SSE)` (pattern `6c28b5b4…`, noted ~2026-07-15)
+// but NO code matcher existed for it (the note was a manual decision, not code)
+// — this matcher codifies that decision into a real, tested gate.
+//
+// `Connection closed.` is generic enough that a real first-party
+// `throw new Error('Connection closed.')` regression in our own websocket/SSE
+// handling would surface with the SAME wording — so, mirroring
+// `isOperationErrorPopErrorScopeNoise` / the Paper Shaders matchers, this
+// matcher anchors on the EXACT message (case-sensitive, WITH the trailing
+// period — a different message `Connection closed` (no period), or
+// `Connection closed by server`, keeps reporting) and carries a NEGATIVE guard:
+// if ANY frame resolves to a de-minified first-party `apps/web/src/…` source,
+// the event keeps reporting (a real first-party `throw new Error('Connection
+// closed.')` regression de-minifies to `apps/web/src/…` and must not be
+// hidden). The prod event has only a minified `66499` chunk frame, so the
+// negative guard does not fire for it. A frameless capture with this exact
+// message still classifies as noise — the message alone is the library's
+// canonical close string and is specific enough (unlike the bare-`undefined`
+// rejection class, NO frameless-positive guard is required; the message + the
+// first-party negative guard is sufficient). But when frames ARE present, the
+// first-party negative guard MUST run. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `Connection closed.` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const CONNECTION_CLOSED_NOISE_PATTERN = /^Connection closed\.$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient WebSocket /
+ * Server-Sent-Events (SSE) transport-close noise class: a client-side
+ * WebSocket/SSE library threw the canonical `Connection closed.` message when
+ * the server closed a background realtime connection (deploy / restart / idle-
+ * timeout recycle / session end / load-balancer upstream recycle). The
+ * connection closing during a deploy/idle-recycle is EXPECTED, not a product
+ * bug. Requires the EXACT message (case-sensitive, WITH the trailing period —
+ * the library's canonical close string; `Connection closed` without the period,
+ * or `Connection closed by server`, keeps reporting) AND a NEGATIVE guard: if
+ * any frame (or the window.onerror `filename`) resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `throw new Error('Connection closed.')` regression de-minifies to
+ * `apps/web/src/…` and must not be hidden). The prod event carries only a
+ * minified `66499` chunk frame, so the negative guard does not fire for it. A
+ * frameless capture with this exact message still classifies as noise — the
+ * message alone is the library's canonical close string. See
+ * `CONNECTION_CLOSED_NOISE_PATTERN` for the full rationale.
+ */
+export function isConnectionClosedNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and
+  // `<Word>Error: ` (e.g. `SyntaxError: `, `TypeError:`) but NOT a bare
+  // `Error: ` prefix (the regex requires ≥1 letter before `Error`). A bare
+  // `Error: Connection closed.` is the form an `onunhandledrejection` of an
+  // `Error` instance serializes to, so strip that leading `Error: ` too before
+  // anchoring on the library's exact canonical close string.
+  const stripped = stripErrorWrappers(normalizeString(input.message))
+    .replace(/^Error: /, '');
+  if (!CONNECTION_CLOSED_NOISE_PATTERN.test(stripped)) {
+    return false;
+  }
+  // Collect every source location — the window.onerror `filename` (runtime
+  // gate) and any stacktrace frames (Sentry gate) — for the first-party
+  // negative guard.
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own websocket/SSE handling threw `Connection closed.` → actionable
+  // regression; keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -1944,6 +2050,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // carries a chunk/source frame keeps reporting. See
   // `isUnresolvableStackOverflowNoise`.
   if (isUnresolvableStackOverflowNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Transient WebSocket / SSE transport-close noise — a client-side
+  // websocket/SSE library threw the canonical `Connection closed.` message when
+  // the server closed a background realtime connection during a deploy / idle-
+  // timeout recycle / session end. The connection closing is EXPECTED, not a
+  // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
+  // guard so a real first-party `throw new Error('Connection closed.')`
+  // regression keeps reporting. See `isConnectionClosedNoise`.
+  if (isConnectionClosedNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -2246,6 +2363,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isOperationErrorPopErrorScopeNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
+    return true;
+  }
+
+  // Transient WebSocket / SSE transport-close noise — a client-side
+  // websocket/SSE library threw the canonical `Connection closed.` message when
+  // the server closed a background realtime connection on `/dashboard` during a
+  // deploy / idle-timeout recycle / session end / load-balancer upstream
+  // recycle. The connection closing is EXPECTED, not a product bug; sibling of
+  // the transient-transport class (#4609 gateway retry). Requires the EXACT
+  // message (case-sensitive, WITH the trailing period — the library's canonical
+  // close string) and a NEGATIVE guard: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting (a real first-party
+  // `throw new Error('Connection closed.')` regression de-minifies to
+  // `apps/web/src/…` and must not be hidden). The prod event carries only a
+  // minified `66499` chunk frame, so the negative guard does not fire for it.
+  // A frameless capture with this exact message still classifies as noise.
+  // This codifies the historical skip-list decision for `6c28b5b4…`-class
+  // patterns into a real, tested matcher. NOT in `ignoreErrors` (no frame
+  // context there). See `isConnectionClosedNoise`.
+  if (isConnectionClosedNoise({ message, frames })) {
     return true;
   }
 
