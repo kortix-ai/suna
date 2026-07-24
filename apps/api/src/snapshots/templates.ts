@@ -207,7 +207,10 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v31: replace remote installer-script execution with versioned release
 // artifacts whose amd64 and arm64 SHA-256 digests live in the runtime manifest.
 // Pin Bun and include every artifact digest in the runtime fingerprint.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v31';
+// v32: accept uv's release target metadata in `uv --version`. uv 0.11.30 emits
+// `uv 0.11.30 (x86_64-unknown-linux-gnu)`, so v31's exact comparison failed
+// every cold image build. The version bump invalidates any cached v31 image.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v32';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

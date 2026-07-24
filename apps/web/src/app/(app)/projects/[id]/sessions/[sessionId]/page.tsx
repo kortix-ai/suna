@@ -3,12 +3,13 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
@@ -16,6 +17,7 @@ import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,
@@ -201,6 +203,14 @@ export default function ProjectSessionPage() {
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  const unmaterializedFailure =
+    !authLoading &&
+    !!user &&
+    isUnmaterializedSessionFailure({
+      phase: session.phase,
+      hasStartError: !!session.startError,
+      sandboxStatus: sandbox?.status,
+    });
   const sessionSwitchLoading = shouldShowSessionSwitchLoading(
     switchingToSessionId,
     sessionId,
@@ -208,7 +218,7 @@ export default function ProjectSessionPage() {
   );
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
-    if (session.switched || session.startError || fatal || gated) {
+    if (session.switched || session.startError || unmaterializedFailure || fatal || gated) {
       completeSessionSwitch(sessionId);
     }
   }, [
@@ -216,6 +226,7 @@ export default function ProjectSessionPage() {
     sessionId,
     session.switched,
     session.startError,
+    unmaterializedFailure,
     fatal,
     gated,
     completeSessionSwitch,
@@ -276,6 +287,30 @@ export default function ProjectSessionPage() {
       );
     }
 
+    if (unmaterializedFailure) {
+      return (
+        <InlineSessionError
+          title="Couldn't start session"
+          message="The session failed before its computer was created. Restart the session to try again."
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => restartMutation.mutate()}
+              disabled={restartMutation.isPending}
+            >
+              {restartMutation.isPending ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <RotateCcw className="size-3.5 shrink-0" />
+              )}
+              Restart session
+            </Button>
+          }
+        />
+      );
+    }
+
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
       if (sandbox?.status === 'error') {
@@ -313,9 +348,9 @@ export default function ProjectSessionPage() {
               disabled={restartMutation.isPending}
             >
               {restartMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loading className="size-3.5 shrink-0" />
               ) : (
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="size-3.5 shrink-0" />
               )}
               Restart session
             </Button>
@@ -408,7 +443,7 @@ function InlineSessionError({
         <h2 className="text-foreground/90 text-sm font-medium">{title}</h2>
         <p className="text-muted-foreground/70 text-xs leading-relaxed">{message}</p>
         {detail ? (
-          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-2xl border px-2 py-1 font-mono text-xs leading-relaxed">
+          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed">
             {detail}
           </p>
         ) : null}
@@ -567,9 +602,9 @@ function ActiveSessionChat({
             disabled={restartMutation.isPending}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="size-3.5 shrink-0" />
             ) : (
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="size-3.5 shrink-0" />
             )}
             {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}
           </Button>
@@ -596,9 +631,9 @@ function ActiveSessionChat({
             disabled={restartMutation.isPending}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading className="size-3.5 shrink-0" />
             ) : (
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="size-3.5 shrink-0" />
             )}
             {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}
           </Button>

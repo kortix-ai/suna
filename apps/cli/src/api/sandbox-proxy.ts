@@ -304,6 +304,23 @@ export function kortixPtyWsUrlForPort(
   return `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
 }
 
+/**
+ * Open a PTY WebSocket with an explicit User-Agent.
+ *
+ * Bun's WebSocket client does not send User-Agent by default. Cloudflare
+ * rejects that handshake before it reaches the Kortix API.
+ */
+export function openKortixPtyWebSocket(url: string): WebSocket {
+  const version = process.env.KORTIX_CLI_VERSION ?? 'dev';
+  const BunWebSocket = WebSocket as unknown as new (
+    url: string | URL,
+    options?: Bun.WebSocketOptions,
+  ) => WebSocket;
+  return new BunWebSocket(url, {
+    headers: { 'User-Agent': `kortix-cli/${version}` },
+  });
+}
+
 export interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
