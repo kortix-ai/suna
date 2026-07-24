@@ -16,17 +16,24 @@
  */
 
 import { track } from '@/lib/track';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import {
+  type QuickView,
+  type QuickViewTarget,
+  useKortixComputerStore,
+} from '@/stores/kortix-computer-store';
 import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 export function openSessionQuickView(
-  view: 'terminal' | 'audit' | 'browser' | 'files',
-  source: 'palette' | 'header',
+  view: QuickView,
+  source: 'palette' | 'header' | 'chat' | 'preview' | 'chip',
+  /** Aims the request — which URL the browser should land on, or that Files
+   *  should open on its Changes diff. Callers that know the destination pass
+   *  it here instead of writing `viewBySession`, which only Advanced reads. */
+  target?: QuickViewTarget,
 ): void {
   const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
-  const panelMode =
-    useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
+  const panelMode = useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
 
   // Resolved here for BOTH modes: session-browser-store's active panel
   // session is maintained on every route (tab dashboard AND the standalone
@@ -39,16 +46,16 @@ export function openSessionQuickView(
     if (activePanelSessionId) {
       // `SessionPanelView` calls the file explorer 'explorer'; its 'files'
       // member is the git-changes diff view. The quick-view vocabulary uses
-      // 'files' for the explorer, so translate rather than pass through.
-      useSessionBrowserStore
-        .getState()
-        .setView(activePanelSessionId, view === 'files' ? 'explorer' : view);
+      // 'files' for the explorer, so translate rather than pass through —
+      // and a Changes-targeted request lands on that 'files' diff value.
+      const panelView = view === 'files' ? (target?.changes ? 'files' : 'explorer') : view;
+      useSessionBrowserStore.getState().setView(activePanelSessionId, panelView);
     }
     useKortixComputerStore.getState().openSidePanel();
   } else {
     useKortixComputerStore
       .getState()
-      .requestQuickView(view, activePanelSessionId ?? undefined);
+      .requestQuickView(view, activePanelSessionId ?? undefined, target);
   }
 
   if (!wasOpen) track('panel_opened', { source });

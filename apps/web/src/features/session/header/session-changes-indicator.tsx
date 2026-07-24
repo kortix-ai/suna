@@ -5,14 +5,13 @@ import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import {
   CHANGE_STATUS_BADGE,
   useOpenChangeRequest,
   useSessionBaseRef,
 } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { FileDiff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
@@ -36,8 +35,10 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
   if (changedCount === 0) return null;
 
   const viewChanges = () => {
-    useSessionBrowserStore.getState().setView(sessionId, 'files');
-    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    // `changes: true` aims this at the diff. Previously it wrote the
+    // Advanced-only `viewBySession`, so in Easy the chip opened the panel on
+    // the Easy home and the changes were never shown.
+    openSessionQuickView('files', 'chip', { changes: true });
     setOpen(false);
   };
 

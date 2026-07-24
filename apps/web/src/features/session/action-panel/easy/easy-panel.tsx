@@ -25,8 +25,8 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
-import { cn } from '@/lib/utils';
 import { track } from '@/lib/track';
+import { cn } from '@/lib/utils';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
@@ -43,7 +43,7 @@ import { FileText, Terminal as TerminalIcon } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
-import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
+import { clampIndex, type FollowMode } from '../shared/action-navigator-logic';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
@@ -412,9 +412,7 @@ export const EasyPanel = memo(function EasyPanel({
             name={displayName}
             fileName={output.name}
             shareContext={
-              projectId && projectSessionId
-                ? { projectId, sessionId: projectSessionId }
-                : undefined
+              projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
             }
             onClose={closeDetail}
             onAskForChanges={askForChanges}
@@ -575,21 +573,28 @@ export const EasyPanel = memo(function EasyPanel({
    * stays ON, unlike a file preview: the explorer's own header names a
    * version, not this detail, so there is no duplicate name to collapse.
    */
-  const openFiles = useCallback(() => {
-    openDetail({
-      key: 'files',
-      title: 'Files',
-      padded: false,
-      body: (
-        <SessionFilesExplorer
-          chatSessionId={sessionId}
-          projectId={projectId}
-          projectSessionId={projectSessionId}
-          ephemeral
-        />
-      ),
-    });
-  }, [openDetail, sessionId, projectId, projectSessionId]);
+  const openFiles = useCallback(
+    (changes = false) => {
+      openDetail({
+        // The Changes diff and All files are two landings of one surface, so
+        // the key differs — re-opening on the other tab must re-animate rather
+        // than be treated as the same detail already showing.
+        key: changes ? 'files:changes' : 'files',
+        title: changes ? 'Changes' : 'Files',
+        padded: false,
+        body: (
+          <SessionFilesExplorer
+            chatSessionId={sessionId}
+            projectId={projectId}
+            projectSessionId={projectSessionId}
+            ephemeral
+            initialMode={changes ? 'changes' : 'files'}
+          />
+        ),
+      });
+    },
+    [openDetail, sessionId, projectId, projectSessionId],
+  );
 
   /**
    * Header/palette "Open Browser": the in-panel port browser (`AppPreview`),
@@ -604,9 +609,15 @@ export const EasyPanel = memo(function EasyPanel({
    * synthetic `callID` never collides with a real tool call's, so it can't be
    * mistaken for one if it ever leaked into a siblings list.
    */
-  const openBrowser = useCallback(() => {
-    handleOpenOutput(quickBrowserOutput(apps), undefined, 'quick');
-  }, [apps, handleOpenOutput]);
+  const openBrowser = useCallback(
+    (target?: { url?: string; title?: string }) => {
+      // A targeted request (a `show` preview button, a localhost link in chat)
+      // names the exact page it wants. Without honoring it the browser would
+      // open on the first running app instead — right surface, wrong page.
+      handleOpenOutput(quickBrowserOutput(apps, target), undefined, 'quick');
+    },
+    [apps, handleOpenOutput],
+  );
 
   // Command palette "Open Terminal"/"Open Audit"/"Open Browser" (W1→W2-shaped
   // handoff, same pattern as the chip-consume effect above): subscribe to the
@@ -620,15 +631,17 @@ export const EasyPanel = memo(function EasyPanel({
   // `setView`, not here).
   useEffect(() => {
     if (pendingQuickView?.sessionId !== sessionId) return;
-    const view = useKortixComputerStore.getState().consumeQuickView(sessionId);
+    const request = useKortixComputerStore.getState().consumeQuickView(sessionId);
+    if (!request) return;
+    const { view, target } = request;
     if (view === 'terminal') {
       openTerminal();
     } else if (view === 'audit' && projectId && projectSessionId) {
       openAudit();
     } else if (view === 'browser') {
-      openBrowser();
+      openBrowser(target);
     } else if (view === 'files') {
-      openFiles();
+      openFiles(target?.changes);
     }
   }, [
     pendingQuickView,
@@ -671,9 +684,7 @@ export const EasyPanel = memo(function EasyPanel({
             sessionId={sessionId}
             onOpenDetail={openDetail}
           />
-          {apps.length > 0 && (
-            <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />
-          )}
+          {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
         </div>
       </DetailLayer>
 

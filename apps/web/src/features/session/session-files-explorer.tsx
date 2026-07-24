@@ -2,12 +2,12 @@
 import { FilesStoreProvider, useFilesStore } from '@/features/files';
 import { SandboxFileExplorer } from '@/features/files/sandbox-file-explorer';
 import { SessionDiffViewer } from '@/features/session/session-diff-viewer';
-import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import {
   deriveExplorerMode,
   explorerViewForMode,
   initialExplorerNonce,
 } from '@/features/session/session-files-explorer-logic';
+import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import {
   SessionVersionHeader,
   type SessionPanelMode,
@@ -38,10 +38,18 @@ export function SessionFilesExplorer({
   projectId,
   projectSessionId,
   ephemeral = false,
+  initialMode = 'files',
 }: {
   chatSessionId?: string;
   projectId?: string;
   projectSessionId?: string;
+  /**
+   * Which tab an ephemeral mount lands on. Ignored when not `ephemeral` —
+   * a persisted mount takes its mode from `viewBySession`, which is the whole
+   * point of that mode. Lets a caller that means "show me the changes" say so
+   * without writing shared state only Advanced reads.
+   */
+  initialMode?: SessionPanelMode;
   /**
    * True when this mount is a transient detail layer (Easy panel's "Files"
    * drill-in) rather than Advanced mode's canonical Files tab. Advanced is
@@ -59,6 +67,7 @@ export function SessionFilesExplorer({
         projectId={projectId}
         projectSessionId={projectSessionId}
         ephemeral={ephemeral}
+        initialMode={initialMode}
       />
     </FilesStoreProvider>
   );
@@ -69,10 +78,12 @@ function SessionFilesExplorerInner({
   projectId,
   projectSessionId,
   ephemeral = false,
+  initialMode = 'files',
 }: {
   chatSessionId?: string;
   projectId?: string;
   projectSessionId?: string;
+  initialMode?: SessionPanelMode;
   ephemeral?: boolean;
 }) {
   const rawView = useSessionBrowserStore((s) =>
@@ -115,7 +126,7 @@ function SessionFilesExplorerInner({
   // `viewBySession` — that's Advanced's persisted resume point, and Easy has
   // no tab strip it could even apply to — so the mode lives in local state
   // and never round-trips through the store.
-  const [localMode, setLocalMode] = useState<SessionPanelMode>('files');
+  const [localMode, setLocalMode] = useState<SessionPanelMode>(initialMode);
   const mode = deriveExplorerMode(ephemeral, localMode, rawView);
   const onModeChange = (next: SessionPanelMode) => {
     if (ephemeral) {
@@ -130,11 +141,7 @@ function SessionFilesExplorerInner({
 
   return (
     <div className="flex h-full flex-col">
-      <SessionVersionHeader
-        chatSessionId={chatSessionId}
-        mode={mode}
-        onModeChange={onModeChange}
-      />
+      <SessionVersionHeader chatSessionId={chatSessionId} mode={mode} onModeChange={onModeChange} />
       <div className="min-h-0 flex-1">
         {showDiff ? (
           <SessionDiffViewer sessionId={chatSessionId!} />
@@ -142,9 +149,7 @@ function SessionFilesExplorerInner({
           <SandboxFileExplorer
             embedded
             shareContext={
-              projectId && projectSessionId
-                ? { projectId, sessionId: projectSessionId }
-                : undefined
+              projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
             }
           />
         )}
