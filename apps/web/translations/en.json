@@ -5171,7 +5171,12 @@
       "line516JsxAttrPlaceholderUseRepositoryName": "Use repository name",
       "line549JsxTextImportRepo": "Import repo",
       "line623JsxAttrPlaceholderSearchRepositories": "Search repositories...",
-      "line631JsxTextNoRepositoriesFound": "No repositories found"
+      "line631JsxTextNoRepositoriesFound": "No repositories found",
+      "domainFieldLabel": "Company domain",
+      "domainFieldOptional": "Optional",
+      "domainFieldPlaceholder": "acme.com",
+      "domainFieldHint": "We read the public site and save a company profile to this project’s memory.",
+      "domainFieldInvalid": "Enter a domain like acme.com"
     },
     "componentsProjectsProjectProviderModal": {
       "line151JsxTextLlmProviders": "LLM Providers",

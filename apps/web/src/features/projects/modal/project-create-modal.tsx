@@ -83,6 +83,7 @@ import {
   startProjectOnboardingSession,
   startTemplateSetupSession,
 } from './template-setup-session';
+import { isValidCompanyDomain, normalizeCompanyDomain } from '@/lib/company-domain';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -100,6 +101,16 @@ const managedProjectSchema = z.object({
         .min(1, 'Project name is required')
         .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
     ),
+  // Optional. Validated here rather than only server-side: the API ignores a
+  // domain it cannot parse so an optional field can never fail project
+  // creation, which means a typo would otherwise vanish with no explanation
+  // and no company profile.
+  domain: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || isValidCompanyDomain(value), {
+      message: 'Enter a domain like acme.com',
+    }),
 });
 
 const githubLinkSchema = z.object({
@@ -201,6 +212,7 @@ export const ProjectCreateModal = ({
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
+      domain: '',
     },
   });
 
@@ -464,6 +476,9 @@ export const ProjectCreateModal = ({
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
+    // Send the canonical host rather than whatever was typed, so the value
+    // stored on the project matches what enrichment keys its work on.
+    const domain = normalizeCompanyDomain(values.domain ?? '') ?? undefined;
     if (mode === 'github-create') {
       if (!selectedInstallationId) return errorToast('Connect a GitHub account first');
       githubCreateMutation.mutate({
@@ -473,6 +488,7 @@ export const ProjectCreateModal = ({
         private: true,
         starter_template: 'general-knowledge-worker',
         source_item_id: effectiveSourceItemId ?? undefined,
+        domain,
       });
       return;
     }
@@ -481,6 +497,7 @@ export const ProjectCreateModal = ({
         account_id: effectiveAccountId,
         name: values.name,
         source_item_id: effectiveSourceItemId,
+        domain,
       });
       return;
     }
@@ -491,6 +508,7 @@ export const ProjectCreateModal = ({
       // general-knowledge-worker template seeds every skill).
       starter_template: 'general-knowledge-worker',
       marketplace_items: [],
+      domain,
     });
   }
 
@@ -629,6 +647,43 @@ export const ProjectCreateModal = ({
                             {...field}
                           />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={managedForm.control}
+                    name="domain"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          {tHardcodedUi.raw(
+                            'componentsProjectsProjectCreateModal.domainFieldLabel',
+                          )}
+                          <span className="text-muted-foreground text-xs font-normal">
+                            {tHardcodedUi.raw(
+                              'componentsProjectsProjectCreateModal.domainFieldOptional',
+                            )}
+                          </span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={tHardcodedUi.raw(
+                              'componentsProjectsProjectCreateModal.domainFieldPlaceholder',
+                            )}
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            inputMode="url"
+                            {...field}
+                          />
+                        </FormControl>
+                        <p className="text-muted-foreground text-xs">
+                          {tHardcodedUi.raw(
+                            'componentsProjectsProjectCreateModal.domainFieldHint',
+                          )}
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}
