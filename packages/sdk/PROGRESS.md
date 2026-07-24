@@ -1460,3 +1460,15 @@ GitHub client ID; deployed-dev OAuth remains the repository delivery gate.
 **Shippable to production: YES** for the SDK and locally verified API contract.
 Repository PR, Deploy Dev, deployed-SHA proof, and full live-dev OAuth UI
 verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-24 — session `release-v0.10.14-quality-gate-repair` (claim)
+
+Claimed the SDK regression repair reported by release gate run `30092880816`.
+The affected tests are `core/files/client.test.ts` and `node/server.test.ts`.
+The work will preserve all public names and behavior. It will use focused
+RED-to-GREEN evidence, then the full SDK typecheck, test, and packed-install
+smoke gates.
+
+**Status:** IN PROGRESS.
