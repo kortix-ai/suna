@@ -102,7 +102,19 @@ export async function installBrowserSession(
   password: string,
 ): Promise<void> {
   await page.context().clearCookies();
+  const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (vercelBypass) {
+    await page.context().setExtraHTTPHeaders({
+      'x-vercel-protection-bypass': vercelBypass,
+      'x-vercel-set-bypass-cookie': 'true',
+    });
+  }
   await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  if (vercelBypass) {
+    // The first request creates the web-origin _vercel_jwt cookie. Remove the
+    // Vercel-only headers before cross-origin requests reach the Kortix API.
+    await page.context().setExtraHTTPHeaders({});
+  }
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
