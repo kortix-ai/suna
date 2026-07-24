@@ -167,13 +167,13 @@ Also stop if the same failure survives three different fixes (use
 
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
-| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `a8972701f` |
-| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `9409701e3` |
-| 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `c4cf6b453` |
-| 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `b88df4a55` |
-| 5 | Typed platform API coverage | DONE | `frontend-sdk-only` | 2026-07-24 | `2e1a78250` |
-| 6 | Remove runtime routing knowledge | DONE | `frontend-sdk-only` | 2026-07-24 | `0f2c545b8` |
-| 7 | Local parity proof | DONE | `frontend-sdk-only` | 2026-07-24 | `9e339c370` |
+| 1 | Baseline and static boundary gate | DONE | `frontend-sdk-only` | 2026-07-24 | `8a7fec486` |
+| 2 | Canonical SDK imports | DONE | `frontend-sdk-only` | 2026-07-24 | `d365612aa` |
+| 3 | One session engine | DONE | `frontend-sdk-only` | 2026-07-24 | `0e4020c66` |
+| 4 | Runtime-neutral web state | DONE | `frontend-sdk-only` | 2026-07-24 | `f3fc7b7c2` |
+| 5 | Typed platform API coverage | DONE | `frontend-sdk-only` | 2026-07-24 | `6a3349b52` |
+| 6 | Remove runtime routing knowledge | DONE | `frontend-sdk-only` | 2026-07-24 | `1ca7dc19c` |
+| 7 | Local parity proof | DONE | `frontend-sdk-only` | 2026-07-24 | `75afaeac6` |
 | 8 | Delivery and dev proof | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 
 ---
