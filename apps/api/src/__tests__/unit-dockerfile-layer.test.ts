@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   AGENT_BROWSER_VERSION,
   BUN_SHA256_AMD64,
@@ -49,6 +51,8 @@ describe('buildLayeredDockerfile', () => {
       `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-\${uv_arch}-unknown-linux-gnu.tar.gz`,
     );
     expect(merged).toContain(UV_SHA256_AMD64);
+    expect(merged).toContain(`grep -Eq '^uv ${UV_VERSION}( |$)'`);
+    expect(merged).not.toContain(`test "$(uv --version)" = "uv ${UV_VERSION}"`);
     expect(merged).toContain(
       `https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-\${bun_arch}.zip`,
     );
@@ -70,6 +74,16 @@ describe('buildLayeredDockerfile', () => {
     );
     expect(merged).not.toContain('npm install -g');
     expect(merged).not.toContain('npx -y');
+  });
+
+  test('accepts uv release metadata in the standalone sandbox image', () => {
+    const dockerfile = readFileSync(
+      resolve(import.meta.dir, '../../../sandbox/Dockerfile'),
+      'utf8',
+    );
+
+    expect(dockerfile).toContain('grep -Eq "^uv ${UV_VERSION}( |$)"');
+    expect(dockerfile).not.toContain('test "$(uv --version)" = "uv ${UV_VERSION}"');
   });
 
   test('runs build-time and runtime tools as the standard kortix user', () => {

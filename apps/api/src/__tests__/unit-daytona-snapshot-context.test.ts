@@ -240,6 +240,32 @@ describe('Daytona snapshot state', () => {
 });
 
 describe('Daytona auto-build self-heal', () => {
+  test('deletes a retained failed snapshot and retries a duplicate snapshot name', async () => {
+    contextPaths.length = 0;
+    let attempt = 0;
+    let built = false;
+    let deleted = false;
+    createImpl = async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw new Error(
+          'Snapshot with name "kortix-default-7f989bb9735b" already exists for this organization',
+        );
+      }
+      built = true;
+    };
+    snapshotState = () => (built ? 'active' : 'failed');
+    deleteSnapshotImpl = async () => {
+      deleted = true;
+    };
+
+    await daytonaProvider.buildSnapshot(buildInput('kortix-default-7f989bb9735b'));
+
+    expect(deleted).toBe(true);
+    expect(attempt).toBe(2);
+    expect(contextPaths.length).toBe(2);
+  }, 15_000);
+
   test('re-stages a FRESH context + retries on a stale-context error, then succeeds', async () => {
     contextPaths.length = 0;
     let attempt = 0;
