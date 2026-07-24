@@ -436,7 +436,7 @@ RUN cd /opt/kortix/opencode-config-deps \\
 RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
 COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
-RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && rm -f /tmp/kortix-warm-repo-git.tar && chown -R kortix:kortix /workspace/.git
+RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
@@ -499,7 +499,7 @@ USER kortix
 RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
 COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
-RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && rm -f /tmp/kortix-warm-repo-git.tar && chown -R kortix:kortix /workspace/.git
+RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/

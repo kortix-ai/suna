@@ -174,6 +174,7 @@ describe('Daytona snapshot build context', () => {
     expect(dockerfileSeen).toContain(
       'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
     );
+    expect(dockerfileSeen).not.toContain('rm -f /tmp/kortix-warm-repo-git.tar');
   }, 30_000);
 });
 
