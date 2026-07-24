@@ -14,6 +14,7 @@
 
 - **Worktree:** All work happens in `/Users/jay/root/kortix/suna-bring-regressed-feature` on branch `bring-regressed-feature`. Never edit the primary checkout.
 - **Node:** Run `nvm use 22` before any `pnpm` command — the repo's default Node 26 breaks the worktree tooling.
+- **Typecheck:** `cd apps/web && npx tsc --noEmit`. There is NO `typecheck` script in this repo — do not invent one. Two pre-existing unrelated errors in `src/lib/template-url.test.ts` are expected baseline noise.
 - **Test command:** `cd apps/web && bun test <path>` — `apps/web/package.json:21` defines `"test": "bun test"`, preloading `./test-setup.ts` via `bunfig.toml`.
 - **Test framework:** `bun:test`, imports `{ describe, expect, it, beforeEach }` from `'bun:test'`. Tests are co-located next to the module (`foo.ts` → `foo.test.ts`).
 - **No test comments beyond the repo's existing style** — the codebase uses block comments to record *invariants and why*, not to narrate what a line does. Match `stores/session-browser-store.test.ts`.
@@ -216,7 +217,7 @@ Then, immediately after the chip-consume effect (the `pendingPrimaryOpenSessionI
 - [ ] **Step 8: Typecheck**
 
 ```bash
-cd apps/web && pnpm typecheck
+cd apps/web && npx tsc --noEmit
 ```
 
 Expected: no new errors. Pre-existing errors elsewhere in the app are out of scope — compare against `git stash && pnpm typecheck` output if unsure.
@@ -348,7 +349,7 @@ Expected: the project-files wrapper derives `isOpen` from its own explorer store
 - [ ] **Step 5: Typecheck**
 
 ```bash
-cd apps/web && pnpm typecheck
+cd apps/web && npx tsc --noEmit
 ```
 
 Expected: no new errors.
@@ -536,7 +537,7 @@ Use the `FolderOpen` icon at the same size the neighbouring buttons use.
 - [ ] **Step 9: Typecheck and run the panel suite**
 
 ```bash
-cd apps/web && pnpm typecheck && bun test src/features/session/action-panel src/stores
+cd apps/web && npx tsc --noEmit && bun test src/features/session/action-panel src/stores
 ```
 
 Expected: no new type errors; all panel and store tests pass.
@@ -1053,7 +1054,7 @@ Change the detail body in the `focusedToolCallId` effect:
 - [ ] **Step 8: Run the full panel suite and typecheck**
 
 ```bash
-cd apps/web && pnpm typecheck && bun test src/features/session/action-panel
+cd apps/web && npx tsc --noEmit && bun test src/features/session/action-panel
 ```
 
 Expected: no new type errors; all action-panel tests pass, including the pre-existing `detail-view.test.tsx` and `easy-panel-logic.test.ts`.
@@ -1244,7 +1245,7 @@ This mirrors exactly what `session-files-explorer.tsx` already does for `Sandbox
 - [ ] **Step 5: Typecheck**
 
 ```bash
-cd apps/web && pnpm typecheck
+cd apps/web && npx tsc --noEmit
 ```
 
 Expected: no new errors. A missed `shareContext` forward shows up here as an unused-prop or missing-prop error.
