@@ -68,7 +68,7 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
@@ -2229,6 +2229,68 @@ interface SessionTurnProps {
   onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
 }
 
+/**
+ * The worker-run result row shown above a turn — an entity row in the design
+ * system's sense, not a tinted banner: the surface stays neutral and the status
+ * lives in one tinted icon tile, so a run of these reads as a list rather than
+ * a stack of coloured alerts.
+ *
+ * Extracted from the turn body so the row can be rendered (and looked at) on
+ * its own, and so the turn's render reads as a list of sections rather than
+ * forty lines of card markup inlined among them.
+ */
+export function SessionReportCard({
+  report,
+  onOpen,
+}: {
+  report: SessionReport;
+  onOpen: () => void;
+}) {
+  const complete = report.status === 'COMPLETE';
+  return (
+    // A real <button>: Enter, Space and the focus ring come free, where the
+    // previous role="button" div hand-rolled Enter only.
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/report bg-popover hover:bg-accent/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors active:scale-[0.99]"
+    >
+      <span
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-sm',
+          complete ? 'bg-kortix-green/15' : 'bg-kortix-red/15',
+        )}
+      >
+        {complete ? (
+          <CheckCircle className="text-kortix-green size-4" />
+        ) : (
+          <AlertTriangle className="text-kortix-red size-4" />
+        )}
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">
+          Worker {complete ? 'complete' : 'failed'}
+        </span>
+        {/* One meta line, truncated by CSS against the real available width —
+            the old 60-character slice cut mid-word at every viewport and still
+            overflowed narrow ones. */}
+        {(report.project || report.prompt) && (
+          <span className="text-muted-foreground block truncate text-xs">
+            {report.project}
+            {report.project && report.prompt && (
+              <span className="text-muted-foreground/40"> &bull; </span>
+            )}
+            {report.prompt}
+          </span>
+        )}
+      </span>
+
+      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+    </button>
+  );
+}
+
 function SessionTurn({
   turn,
   allMessages,
@@ -2810,44 +2872,10 @@ function SessionTurn({
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setSessionReportModalOpen(true)}
-            onKeyDown={(e) => e.key === 'Enter' && setSessionReportModalOpen(true)}
-            className={cn(
-              'flex items-center gap-2 rounded-2xl px-3 py-2 text-xs',
-              'group/report cursor-pointer border transition-colors select-none',
-              sessionReport.status === 'COMPLETE'
-                ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
-                : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
-            )}
-          >
-            {sessionReport.status === 'COMPLETE' ? (
-              <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
-            ) : (
-              <AlertTriangle className="text-destructive size-3.5 flex-shrink-0" />
-            )}
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span
-                className={cn(
-                  'font-medium',
-                  sessionReport.status === 'COMPLETE' ? STATUS_TEXT.success : 'text-destructive',
-                )}
-              >
-                Worker {sessionReport.status === 'COMPLETE' ? 'Complete' : 'Failed'}
-              </span>
-              {sessionReport.project && (
-                <span className="text-muted-foreground/60">· {sessionReport.project}</span>
-              )}
-              {sessionReport.prompt && (
-                <span className="text-muted-foreground/40 truncate">
-                  {sessionReport.prompt.slice(0, 60)}
-                </span>
-              )}
-            </div>
-            <ExternalLink className="text-muted-foreground/30 group-hover/report:text-muted-foreground/60 size-3 flex-shrink-0 transition-colors" />
-          </div>
+          <SessionReportCard
+            report={sessionReport}
+            onOpen={() => setSessionReportModalOpen(true)}
+          />
           <SubSessionModal
             open={sessionReportModalOpen}
             onOpenChange={setSessionReportModalOpen}
