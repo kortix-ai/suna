@@ -559,7 +559,46 @@ removing public SDK symbols. TDD will be RED-watched before implementation; the
 full SDK typecheck, test, and packed-install smoke gates are required before this
 claim is closed.
 
-**Status:** IN PROGRESS.
+**Status:** COMPLETE.
+
+### 2026-07-25 — session `session-history-pagination` (completion)
+
+Fixed complete-turn history pagination and stable scroll restoration.
+
+The controller now follows assistant-only pages until it loads each referenced
+parent user message. It hydrates the collected pages once in chronological
+order. Tail reconciliation no longer resets a cursor after older-history
+pagination starts. Repeated cursors stop with an explicit error.
+
+The web host now captures the first visible `[data-turn-id]` element before the
+request. It restores that element to the same viewport offset after React
+commits. It no longer applies total `scrollHeight` growth.
+
+**RED evidence:**
+
+- The complete-turn test expected requests through `cursor-3`. The controller
+  stopped after `cursor-1`.
+- The cursor-invariant test expected the next request to use `cursor-2`. Tail
+  reconciliation reset the cursor to `cursor-1`.
+- The scroll tests failed because `session-history-scroll.ts` did not exist.
+
+**Verification:**
+
+- Focused SDK and web tests: **15 pass / 0 fail / 33 assertions**.
+- SDK typecheck: exit 0.
+- SDK suite: **1210 pass / 2 skip / 0 fail** across 98 files and 5461
+  assertions.
+- SDK packed-install smoke: pass.
+- Focused ESLint: 0 errors. One pre-existing
+  `react-hooks/exhaustive-deps` warning remains at `session-chat.tsx:3635`.
+- Changed-file web TypeScript output: empty.
+- Web suite: **2054 pass / 2 unrelated baseline failures**. Both failures expect
+  the retired `deepseek-v4-pro` model in `src/lib/model-pricing.test.ts`.
+- Browser discovery returned no available browser. Local DOM and network
+  verification remains open.
+
+**Shippable to production: NOT YET.** Repository delivery, Deploy Dev, and
+deployed browser verification remain open.
 
 ---
 

@@ -108,6 +108,10 @@ import {
 } from '@kortix/sdk/react';
 import { useSessionSync, type UseSessionResult } from '@kortix/sdk/react';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
+import {
+  captureTurnScrollAnchor,
+  restoreTurnScrollAnchor,
+} from './session-history-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
@@ -4152,11 +4156,11 @@ export function SessionChat({
   });
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
-    const previousHeight = node?.scrollHeight ?? 0;
+    const anchor = node ? captureTurnScrollAnchor(node) : null;
     await loadOlder();
     if (!node) return;
     requestAnimationFrame(() => {
-      node.scrollTop += node.scrollHeight - previousHeight;
+      restoreTurnScrollAnchor(node, anchor);
     });
   }, [loadOlder, scrollRef]);
 
