@@ -21,6 +21,7 @@ import {
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
   isRuntimeNotReadyNoiseMessage,
+  isServerDeadlineNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
@@ -1135,11 +1136,13 @@ test('suppresses a client-side request-timeout unhandled rejection from the brow
   )
 })
 
-test('does NOT suppress the API server-deadline 503 message (different wording)', () => {
-  // The API's request-deadline 503 is `Request exceeded the 25s server processing
-  // deadline` — a different, server-side wording that must keep reporting if it
-  // ever reaches the frontend Sentry config (it is de-noised at the API source
-  // by #4524, not here).
+test('the client-timeout matcher does NOT match the API server-deadline 503 wording', () => {
+  // The API's request-deadline 503 is `Request exceeded the <N>s server
+  // processing deadline` — a distinct, server-side wording. The CLIENT-timeout
+  // matcher (`isClientRequestTimeoutMessage`, anchored on the SDK's
+  // `Request timed out after <N>s: ` prefix) must never match it; the
+  // server-deadline wording has its OWN dedicated matcher
+  // (`isServerDeadlineNoiseMessage`, pinned by the test block below).
   for (const value of [
     'Request exceeded the 25s server processing deadline',
     'Request exceeded the 30s server processing deadline',
@@ -1147,12 +1150,149 @@ test('does NOT suppress the API server-deadline 503 message (different wording)'
     assert.equal(
       isClientRequestTimeoutMessage(value),
       false,
-      `expected server-deadline message "${value}" to keep reporting`,
+      `expected server-deadline message "${value}" to not match the client-timeout matcher`,
+    )
+  }
+})
+
+// Reproduces Better Stack error a330bea136a7b5795a57ef5a33ab40381433132e90c34bbabdca66cc3f6d938c
+// (Kortix Frontend prod, application_id 2346967): a single
+// `ApiError: Request exceeded the 25s server processing deadline` at
+// 2026-07-23 18:41:09 UTC, release 470fe6f3c8 (v0.10.13), transaction
+// `/projects/:id/sessions/:sessionId` (co-worker session page actively polling
+// `useSessionAudit`). Mechanism `generic` (handled=true) — the SDK's
+// `makeRequest` caught the 503 response and re-surfaced it as an `ApiError`.
+// The 99 breadcrumbs were almost all 200s, except THREE
+// `GET .../sessions/<sid>/audit -> 503` — the `useSessionAudit` react-query poll
+// hit the audit endpoint while the API/gateway was transiently saturated.
+//
+// The API's `request-deadline.ts` middleware bounds every non-streaming request
+// to a 25s wall-clock deadline; when exceeded, `RequestDeadlineHTTPException`
+// returns a clean 503 + `Retry-After: 10` with the message
+// `Request exceeded the <N>s server processing deadline`. This is an EXPECTED,
+// retryable degradation — the deadline net bounding a slow downstream / a
+// pool-saturated request. PR #4524 de-noised it from the API's OWN Sentry
+// (app 2346961) by skipping `captureException` for
+// `isRequestDeadlineHTTPException(err)`. BUT the 503 RESPONSE crosses the
+// boundary into the frontend: the SDK's `makeRequest` extracts
+// `errorData.message` (the deadline string), wraps it in an `ApiError` with
+// `status: 503`, and fires `onError` → `handleApiError`, which captures it to
+// the FRONTEND Sentry (app 2346967 — a SEPARATE app from the API's). The
+// `TRANSIENT_GATEWAY_STATUSES` retry (#4609) absorbs a SINGLE transient 503 on
+// idempotent reads, but persistent saturation (the 3 non-200 audit 503s)
+// exhausts the 2-retry loop and surfaces the deadline 503 to `onError` →
+// Sentry. That is exactly how `a330bea1…` reached the frontend telemetry
+// despite #4524's API-side classification.
+//
+// This is the SERVER-side mirror of the CLIENT-timeout class (`b1db01e5…`,
+// #4531 — the SDK's 30s fetch abort). Both are the same expected/retryable
+// degradation under momentary API saturation; react-query retries background
+// polls, and the saturation signal stays visible in the per-route
+// `http_request_duration_seconds` metric + the structured
+// `Request completed: … 503 …` warn log on the API. `handleApiError`
+// (`error-handler.tsx`) skips `captureException` for `status === 503 &&`
+// `isServerDeadlineNoiseMessage(message)`; these checks are the
+// telemetry-side backstop for leak paths (ClientErrorBoundary / route-error /
+// app-error / onunhandledrejection).
+const SERVER_DEADLINE_NOISE_EVENTS = [
+  // The exact prod occurrence — the default 25s budget.
+  'Request exceeded the 25s server processing deadline',
+  // The budget is env-tunable (REQUEST_DEADLINE_MS); the seconds value is not
+  // load-bearing.
+  'Request exceeded the 30s server processing deadline',
+  // The ApiError-class-prefixed wrapper (Sentry/Better Stack often prefixes the
+  // captured error's `.message` with the class name).
+  'ApiError: Request exceeded the 25s server processing deadline',
+  // An unhandled-rejection leak path preserving the message.
+  'Unhandled promise rejection: Request exceeded the 25s server processing deadline',
+  'Unhandled promise rejection: ApiError: Request exceeded the 25s server processing deadline',
+]
+
+test('classifies every API server-deadline 503 message as expected noise', () => {
+  for (const message of SERVER_DEADLINE_NOISE_EVENTS) {
+    assert.equal(
+      isServerDeadlineNoiseMessage(message),
+      true,
+      `expected "${message}" to be classified as a server-deadline 503`,
+    )
+  }
+})
+
+test('suppresses an API server-deadline 503 Sentry event regardless of capture path', () => {
+  for (const value of SERVER_DEADLINE_NOISE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/26996-0650621935b0e261.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses an API server-deadline 503 unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Request exceeded the 25s server processing deadline',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a generic 503 message that is not the typed deadline wording', () => {
+  // A generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`) must
+  // keep reporting — only the typed `Request exceeded the <N>s server processing
+  // deadline` message the API's `RequestDeadlineHTTPException` emits is
+  // classified as noise.
+  for (const value of [
+    'HTTP 503: Service Unavailable',
+    'Service Unavailable',
+    'sandbox waking up',
+    'Bad Gateway',
+    'Request exceeded the 25s client processing deadline',
+    'Request exceeded the server processing deadline',
+    'Request exceeded the 25s server processing deadline.',
+    'A request exceeded the 25s server processing deadline',
+  ]) {
+    assert.equal(
+      isServerDeadlineNoiseMessage(value),
+      false,
+      `expected generic 503 message "${value}" to keep reporting`,
     )
     assert.equal(
       shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
       false,
-      `expected server-deadline Sentry event "${value}" to keep reporting`,
+      `expected generic 503 Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real 5xx server ApiError', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'Service maintenance in progress. Please try again later.',
+  ]) {
+    assert.equal(
+      isServerDeadlineNoiseMessage(value),
+      false,
+      `expected real server error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected real server error Sentry event "${value}" to keep reporting`,
     )
   }
 })

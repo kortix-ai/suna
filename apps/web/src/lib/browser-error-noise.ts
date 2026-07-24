@@ -443,6 +443,48 @@ const CLIENT_REQUEST_TIMEOUT_WRAPPERS: ReadonlyArray<RegExp> = [
   /^Unhandled promise rejection: (?:ApiError: )?Request timed out after \d+s: /,
 ];
 
+// The API's server-side request-deadline 503.
+// `apps/api/src/middleware/request-deadline.ts` bounds every non-streaming
+// request to a 25s wall-clock deadline (default `REQUEST_DEADLINE_MS`); when a
+// handler exceeds it, the `RequestDeadlineHTTPException` returns a clean 503 +
+// `Retry-After: 10` with the message
+// `Request exceeded the <N>s server processing deadline`. It is an EXPECTED,
+// retryable degradation — the deadline net bounding a slow downstream / a
+// pool-saturated request — and is already de-noised at the API SOURCE
+// (`apps/api/src/index.ts` `onError` skips `captureException` for
+// `isRequestDeadlineHTTPException(err)` — PR #4524, API Sentry app 2346961).
+//
+// BUT the 503 RESPONSE crosses the boundary into the frontend: the SDK's
+// `makeRequest` extracts `errorData.message` (the deadline string), wraps it in
+// an `ApiError` with `status: 503`, and fires `onError` → `handleApiError`,
+// which captures it to the FRONTEND Sentry (app 2346967 — a SEPARATE app from
+// the API's). That is exactly how Better Stack FRONTEND pattern
+// `a330bea1…` (`ApiError: Request exceeded the 25s server processing deadline`,
+// on the `useSessionAudit` background poll, 1 occ / 0 users) reached the
+// frontend telemetry despite #4524's API-side classification. The
+// `TRANSIENT_GATEWAY_STATUSES` retry (#4609) absorbs a SINGLE transient 503 on
+// idempotent reads, but persistent saturation exhausts the 2-retry loop (the
+// prod breadcrumbs showed 3 non-200 audit 503s) and surfaces the deadline 503
+// to `onError` → Sentry.
+//
+// This is the frontend mirror of the API's request-deadline classification,
+// sibling to `isClientRequestTimeoutMessage` (the SDK's 30s CLIENT abort,
+// #4531). The deadline 503 is the SAME expected/retryable degradation class,
+// just observed server-side instead of client-side — react-query retries
+// background polls, and the saturation signal stays visible in the per-route
+// `http_request_duration_seconds` metric + the structured
+// `Request completed: … 503 …` warn log on the API. The match is anchored on
+// the API's exact `Request exceeded the <N>s server processing deadline`
+// wording (with the canonical `ApiError: ` / unhandled-rejection wrappers) so
+// a generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`) is
+// never matched — only the typed deadline message the API's
+// `RequestDeadlineHTTPException` emits.
+const SERVER_DEADLINE_NOISE_WRAPPERS: ReadonlyArray<RegExp> = [
+  /^Request exceeded the \d+s server processing deadline$/,
+  /^ApiError: Request exceeded the \d+s server processing deadline$/,
+  /^Unhandled promise rejection: (?:ApiError: )?Request exceeded the \d+s server processing deadline$/,
+];
+
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
@@ -1100,6 +1142,25 @@ export function isStaleWebpackRuntimeCallNoise(input: {
 export function isClientRequestTimeoutMessage(message: unknown): boolean {
   const normalized = normalizeString(message).trim();
   return CLIENT_REQUEST_TIMEOUT_WRAPPERS.some((re) => re.test(normalized));
+}
+
+/**
+ * Whether a message is the API's server-side request-deadline 503 —
+ * `Request exceeded the <N>s server processing deadline` (and its canonical
+ * wrappers). This is the SERVER-side mirror of `isClientRequestTimeoutMessage`
+ * (the SDK's 30s CLIENT abort): the API bounds non-streaming requests to a 25s
+ * deadline that returns a clean 503 + `Retry-After`, de-noised at the API
+ * source by #4524. But the 503 response crosses into the frontend as an
+ * `ApiError(status: 503)` (the SDK extracts `.message`), which `handleApiError`
+ * captures to the FRONTEND Sentry — Better Stack pattern `a330bea1…`. It is
+ * an EXPECTED, retryable degradation (react-query retries background polls; the
+ * saturation signal stays in per-route metrics + the structured 503 warn log),
+ * never an actionable bug. Such a message must NEVER page Better Stack,
+ * regardless of which capture path delivered it.
+ */
+export function isServerDeadlineNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return SERVER_DEADLINE_NOISE_WRAPPERS.some((re) => re.test(normalized));
 }
 
 /**
@@ -1813,6 +1874,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected server-side request-deadline 503 (API 25s wall-clock deadline) —
+  // the API-side classification (#4524) de-noises it from the API's OWN Sentry,
+  // but the 503 response crosses into the frontend as an `ApiError(status:
+  // 503)` that `handleApiError` captures to the FRONTEND Sentry (Better Stack
+  // pattern `a330bea1…`). It is the SAME expected/retryable degradation class
+  // as the client timeout above; never page Better Stack for it. See
+  // `isServerDeadlineNoiseMessage`.
+  if (isServerDeadlineNoiseMessage(message)) {
+    return true;
+  }
+
   // Expected billing-gate 402 outcomes are user-facing business states handled
   // by a toast/upgrade dialog — never page Better Stack for them, even when the
   // SDK's `ApiError` reaches window.onerror / unhandledrejection before
@@ -2016,6 +2088,19 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // remains in per-route metrics + the structured 503 warn log. Drop it before
   // it pages Better Stack, no matter which capture path delivered it.
   if (isClientRequestTimeoutMessage(message)) {
+    return true;
+  }
+
+  // Expected server-side request-deadline 503 (API 25s wall-clock deadline) —
+  // the server-side mirror of the client timeout above. The API's
+  // `RequestDeadlineHTTPException` returns a clean 503 + `Retry-After` with the
+  // message `Request exceeded the <N>s server processing deadline`; the SDK
+  // surfaces it as an `ApiError(status: 503)` that can leak to Sentry through
+  // capture paths that bypass `handleApiError`'s deadline guard
+  // (`<ClientErrorBoundary>` / route-error / app-error / `onunhandledrejection`).
+  // Drop it so the expected deadline state never pages Better Stack. See
+  // `isServerDeadlineNoiseMessage`.
+  if (isServerDeadlineNoiseMessage(message)) {
     return true;
   }
 
