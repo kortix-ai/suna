@@ -167,7 +167,7 @@ Also stop if the same failure survives three different fixes (use
 
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
-| 1 | Baseline and static boundary gate | NOT STARTED | — | — | — |
+| 1 | Baseline and static boundary gate | IN PROGRESS | `frontend-sdk-only` | 2026-07-24 | — |
 | 2 | Canonical SDK imports | NOT STARTED | — | — | — |
 | 3 | One session engine | NOT STARTED | — | — | — |
 | 4 | Runtime-neutral web state | NOT STARTED | — | — | — |
