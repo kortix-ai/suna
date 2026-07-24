@@ -84,6 +84,10 @@ export interface AgentSpec {
   enabled: boolean;
   /** Which connector profiles (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
+  /** Subset of `connectors` that must resolve to the LAUNCHING USER's OWN member
+   *  connection (v2 `connectors_personal`). A session with this agent auto-requires
+   *  these — like the caller passing require_connectors. Omitted/[] = none. */
+  connectorsPersonal?: string[];
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
   /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
@@ -357,6 +361,24 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
 }
 
 /**
+ * The connector aliases this agent declares as PERSONAL (`connectors_personal`) —
+ * a session started with the agent must resolve each to the launching user's OWN
+ * connection. Mirrors grantFromLoadedAgents' agent resolution (a concrete name,
+ * or the `default` sentinel → the manifest's `default_agent`). Returns [] when the
+ * project has no per-agent governance, or the agent isn't found/enabled, or it
+ * declares none. v1 agents never set connectorsPersonal, so this is always [].
+ */
+export function personalConnectorsForAgent(agentName: string, loaded: LoadedAgents): string[] {
+  if (loaded.specs.length === 0 && loaded.errors.length === 0) return [];
+  const spec =
+    loaded.specs.find((s) => s.name === agentName && s.enabled) ??
+    (agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
+      ? loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled)
+      : undefined);
+  return spec?.connectorsPersonal ?? [];
+}
+
+/**
  * Is this project subject to MANDATORY DECLARED AGENTS enforcement?
  * (docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§3 Phase 2)
  *
@@ -619,6 +641,31 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
 
   const connectorsResolved = resolveGrantSet(row.connectors, 'none');
 
+  // connectors_personal: a concrete subset of the connectors grant that must
+  // resolve to the launching user's OWN connection. Deny-by-default (omitted → []).
+  let connectorsPersonal: string[] = [];
+  if (row.connectors_personal !== undefined && row.connectors_personal !== null) {
+    if (
+      !Array.isArray(row.connectors_personal) ||
+      !row.connectors_personal.every((a) => typeof a === 'string')
+    ) {
+      return err(name, `agents.${name}.connectors_personal must be a list of connector names`);
+    }
+    connectorsPersonal = Array.from(new Set(row.connectors_personal as string[]));
+    // An ungranted connector can never be personally required (it isn't usable at
+    // all), so connectors_personal must be a subset of the connectors grant.
+    if (connectorsResolved !== 'all') {
+      const granted = new Set<string>(connectorsResolved === 'none' ? [] : connectorsResolved);
+      const notGranted = connectorsPersonal.filter((alias) => !granted.has(alias));
+      if (notGranted.length > 0) {
+        return err(
+          name,
+          `agents.${name}.connectors_personal must be a subset of connectors — not granted: ${notGranted.join(', ')}`,
+        );
+      }
+    }
+  }
+
   const kortixResolved = resolveGrantSet(row.kortix_cli, 'none');
   if (Array.isArray(kortixResolved)) {
     for (const action of kortixResolved) {
@@ -640,6 +687,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       path: `${filename}#agents.${name}`,
       enabled,
       connectors: toGrantSet(connectorsResolved),
+      connectorsPersonal,
       kortixCli: toGrantSet(kortixResolved),
       env: toGrantSet(secretsResolved),
       file,

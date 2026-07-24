@@ -120,6 +120,14 @@ export interface AgentBlockV2 {
    *  see compile-agent-config.ts. */
   enabled?: boolean;
   connectors?: GrantSetV2;
+  /** Subset of `connectors` that must resolve to the LAUNCHING USER's OWN
+   *  connection (their member profile), never the shared project one. Any session
+   *  started with this agent auto-requires these — server-side, exactly like the
+   *  caller passing `require_connectors`. If the user hasn't connected one,
+   *  session-create is refused with CONNECTOR_CONNECTION_REQUIRED so the UI can
+   *  prompt them to connect it. Must be a subset of this agent's `connectors`
+   *  grant (an alias not granted can never be personally required). */
+  connectors_personal?: string[];
   /** Which project secrets this agent may receive as sandbox env (and read via
    *  the secrets API) — a list of secret IDENTIFIERS (project_secrets.identifier),
    *  NOT raw env-var keys. For a project where every secret's identifier equals

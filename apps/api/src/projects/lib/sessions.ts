@@ -35,6 +35,7 @@ import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
+  personalConnectorsForAgent,
   projectRequiresDeclaredAgents,
   resolveGovernedAgentGrant,
 } from '../agents';
@@ -776,16 +777,28 @@ export async function createProjectSession(input: {
     }
   }
 
+  // Agent-declared personal connectors (connectors_personal): a session with this
+  // agent auto-requires the launching user's OWN connection for each — but only
+  // for an interactive ('user') session. A backend/service-account session has no
+  // single current user and manages connectors explicitly via connector_bindings,
+  // so its agent's personal declaration is not enforced here.
+  const loadedAgents = await loadProjectAgents(project);
+  const agentPersonalConnectors =
+    origin === 'user' ? personalConnectorsForAgent(agentName, loadedAgents) : [];
+  const effectiveRequireConnectors = Array.from(
+    new Set<string>([...requireConnectors, ...agentPersonalConnectors]),
+  );
+
   // Every connector this session touches — whether the caller bound it explicitly
-  // (connector_bindings) or requires the user's own (require_connectors) — must be
-  // granted to the session's agent.
+  // (connector_bindings) or it's required as the user's own (require_connectors or
+  // the agent's connectors_personal) — must be granted to the session's agent.
   const grantCheckAliases = new Set<string>([
     ...(parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : []),
-    ...requireConnectors,
+    ...effectiveRequireConnectors,
   ]);
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
   if (grantCheckAliases.size > 0) {
-    loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
+    loadedAgentGrant = grantFromLoadedAgents(agentName, loadedAgents);
     for (const alias of grantCheckAliases) {
       if (!agentMayUseConnector(loadedAgentGrant, alias)) {
         return {
@@ -822,13 +835,13 @@ export async function createProjectSession(input: {
   // Resolve require_connectors to THE ACTING USER's own member profiles and merge
   // them into the binding set. A missing/revoked one fails create with a
   // structured CONNECTOR_CONNECTION_REQUIRED so the UI can prompt a connect.
-  if (requireConnectors.length > 0) {
+  if (effectiveRequireConnectors.length > 0) {
     const required = await resolveRequiredMemberConnectorProfiles({
       accountId,
       projectId,
       actingUserId: userId,
       actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
-      aliases: requireConnectors,
+      aliases: effectiveRequireConnectors,
     });
     if (!required.ok) {
       return {
