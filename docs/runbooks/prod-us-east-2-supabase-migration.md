@@ -11,6 +11,9 @@
 - Target PITR: 7 days.
 - Target dedicated IPv4: enabled.
 - Target credentials: AWS Secrets Manager secret `kortix/prod-us-east-2-migration`.
+- Target database password: rotated on 2026-07-25.
+- Migration and runtime database URLs: updated after the password rotation.
+- US API and gateway tasks: restarted after the password rotation.
 - Fresh-project bootstrap: applied.
 - Repository migration ledger: 79 migrations applied through
   `20260725012141489_gateway_cost_precision_sync`.
@@ -22,6 +25,14 @@
 - Auth replication sync errors: `0`.
 - The three application sync errors are historical initial-copy retries.
 - Both subscriptions have active apply workers.
+- A source GoTrue refresh token exchanges successfully on target Auth.
+- The target issues the exchanged token with `HS256` and signing-key ID
+  `9871968b-feba-4720-b80e-ba8ae1bbec17`.
+- The target Auth non-secret Apple, Google, GitHub, SAML, and Twilio identifiers
+  match the source where applicable.
+- Apple Auth and SAML are enabled on both projects.
+- Google Auth, GitHub Auth, and phone MFA remain disabled on the target until
+  their plaintext secrets are installed.
 - Source WAL retention limit: 32 GB.
 - Replication credential: rotated after the initial copy.
 - Storage copied: all 79 `avatars` objects with byte and SHA-256 verification.
@@ -29,8 +40,8 @@
 - US API shadow: two healthy ECS tasks on image `kortix/kortix-api:0.10.14`.
 - US gateway shadow: two healthy ECS tasks on image
   `kortix/kortix-gateway:0.10.14`.
-- US API task definition: `kortix-prod-use2:1`.
-- US gateway task definition: `kortix-prod-use2-gateway:1`.
+- US API task definition: `kortix-prod-use2:2`.
+- US gateway task definition: `kortix-prod-use2-gateway:2`.
 - Shadow Terraform state: `prod-us-east-2-shadow/ecs-api.tfstate`.
 - Shadow Terraform state bucket:
   `kortix-terraform-state-us-east-2-935064898258` in `us-east-2`.
@@ -68,22 +79,22 @@ Do not print or copy secret values into this document, shell output, or Git.
 
 ## Verified source inventory
 
-| Item | Value |
-|---|---:|
-| PostgreSQL version | 15.8 |
-| Provisioned disk | 378 GB |
-| Database data | approximately 286 GB |
-| Storage objects | 452,290 |
-| Storage data | approximately 138 GB |
-| Auth users | 405,870 |
-| Auth identities | 409,636 |
-| MFA factors | 8,606 |
-| Auth refresh tokens | 9,538,250 |
-| `public` schema | 250 GB |
-| `kortix` schema | 29 GB |
-| `auth` schema | 11 GB |
-| `cron` schema | 33 GB |
-| `net` schema | 2.7 GB |
+| Item                |                Value |
+| ------------------- | -------------------: |
+| PostgreSQL version  |                 15.8 |
+| Provisioned disk    |               378 GB |
+| Database data       | approximately 286 GB |
+| Storage objects     |              452,290 |
+| Storage data        | approximately 138 GB |
+| Auth users          |              405,870 |
+| Auth identities     |              409,636 |
+| MFA factors         |                8,606 |
+| Auth refresh tokens |            9,538,250 |
+| `public` schema     |               250 GB |
+| `kortix` schema     |                29 GB |
+| `auth` schema       |                11 GB |
+| `cron` schema       |                33 GB |
+| `net` schema        |               2.7 GB |
 
 The source has `wal_level=logical`. It has 24 replication slots and 24 WAL
 senders. The measured WAL rate is approximately 0.39 MB/s. The current
@@ -98,21 +109,21 @@ Monitor retained WAL until both subscriptions are disabled after cutover.
 The source `pg_stat_statements` counters were reset on 2026-06-24.
 The counters prove that the application still reads these legacy Suna tables:
 
-| Relation | Calls since reset |
-|---|---:|
-| `public.projects` | 6,206 |
-| `public.resources` | 149 |
-| `public.threads` | 1,086 |
-| `public.messages` | 1,076 |
+| Relation           | Calls since reset |
+| ------------------ | ----------------: |
+| `public.projects`  |             6,206 |
+| `public.resources` |               149 |
+| `public.threads`   |             1,086 |
+| `public.messages`  |             1,076 |
 
 The same counters distinguish the retired and current credit tables:
 
-| Relation | Calls since reset |
-|---|---:|
-| `public.credit_accounts` | 0 |
-| `public.credit_ledger` | 1 |
-| `kortix.credit_accounts` | 4,475,763 |
-| `kortix.credit_ledger` | 311,776 |
+| Relation                 | Calls since reset |
+| ------------------------ | ----------------: |
+| `public.credit_accounts` |                 0 |
+| `public.credit_ledger`   |                 1 |
+| `kortix.credit_accounts` |         4,475,763 |
+| `kortix.credit_ledger`   |           311,776 |
 
 The application also called the public credit RPC functions at least 295,678
 times since the reset. These functions operate on `kortix.credit_accounts` and
@@ -120,12 +131,12 @@ times since the reset. These functions operate on `kortix.credit_accounts` and
 
 The current control-table row counts are:
 
-| Relation | Rows |
-|---|---:|
+| Relation                        |    Rows |
+| ------------------------------- | ------: |
 | `public.daily_refresh_tracking` | 389,009 |
-| `public.renewal_processing` | 3,450 |
-| `public.contact_forms` | 101 |
-| `public.webhook_config` | 1 |
+| `public.renewal_processing`     |   3,450 |
+| `public.contact_forms`          |     101 |
+| `public.webhook_config`         |       1 |
 
 Do not treat the complete `public` schema as one migration unit. Select live
 relations by verified repository dependency, production query activity, and
@@ -186,11 +197,11 @@ repository still exposes these routes:
 
 Verified account scope on 2026-07-25:
 
-| Scope | Accounts | Projects | Resources | Threads | Messages |
-|---|---:|---:|---:|---:|---:|
-| Active in the last 30 days and not migrated | 712 | 6,011 | 4,196 | 5,897 | 706,172 |
-| Active 31 to 90 days ago and not migrated | 2,955 | 88,141 | 17,319 | 86,858 | 2,457,654 |
-| Active in the last 90 days and not migrated | 3,667 | 94,152 | 21,515 | 92,755 | 3,163,826 |
+| Scope                                       | Accounts | Projects | Resources | Threads |  Messages |
+| ------------------------------------------- | -------: | -------: | --------: | ------: | --------: |
+| Active in the last 30 days and not migrated |      712 |    6,011 |     4,196 |   5,897 |   706,172 |
+| Active 31 to 90 days ago and not migrated   |    2,955 |   88,141 |    17,319 |  86,858 | 2,457,654 |
+| Active in the last 90 days and not migrated |    3,667 |   94,152 |    21,515 |  92,755 | 3,163,826 |
 
 The 90-day subset is approximately 6.4 GiB with proportional index overhead.
 
@@ -228,8 +239,8 @@ Open one Supabase support case before the production cutover.
 Request these actions:
 
 1. Validate the live logical replication of all 22 selected Auth relations.
-2. Clone or safely reapply the original Google OAuth, GitHub OAuth, and Twilio
-   Verify plaintext credentials.
+2. Clone or safely reapply the original Google OAuth secret, GitHub OAuth
+   secret, and Twilio Verify auth token.
 3. Set or explain these platform-managed Auth differences:
 
    - `mfa_allow_low_aal`: source `true`, target `false`.
@@ -271,17 +282,19 @@ Do not start the production write freeze until all four blockers close.
 The source Management API returns one-way 64-character representations for
 configured provider secrets. Do not copy those values to another project.
 
-The source JWT header uses `HS256` with no `kid`. The target has the original
-source secret imported as signing key
-`df227db1-e3fe-4295-b86e-6531d85ec88f`.
+The source access-token header uses `HS256` with non-UUID
+`kid=b2pXFwm+imtLLxBI`. Supabase signing-key IDs must be UUIDs. The target has
+the original source secret as the active signing key
+`9871968b-feba-4720-b80e-ba8ae1bbec17`.
 
-- A token signed by the source secret with that `kid` succeeds on target Auth.
-- The same token without a `kid` returns HTTP `403` with
-  `token signature is invalid`.
+- A direct source access token returns HTTP `403` from target Auth.
+- A source refresh token exchanges successfully on target Auth.
+- The exchanged target access token uses `HS256` with
+  `kid=9871968b-feba-4720-b80e-ba8ae1bbec17`.
 
-Supabase Support must enable the source secret as the target legacy no-`kid`
-verification secret. This is required for active source user tokens and cached
-source anon keys during cutover.
+Supabase Support must map the source non-UUID `kid` to the imported target key,
+or approve a cutover that forces active sessions through refresh-token
+exchange. Do not assume active access tokens work directly on target Auth.
 
 The Management API accepted a PATCH for the three platform-managed Auth fields.
 It kept the target values unchanged. Supabase Support must change or approve
@@ -290,9 +303,14 @@ those fields.
 SMTP is complete. The target uses the original Mailtrap token. SMTP
 authentication returns `235 2.7.0 Ok`. Auth recovery returns HTTP `200`.
 
-Google and GitHub initiation currently return HTTP `302`. Completion remains
-blocked by the missing original plaintext provider secrets. Phone MFA remains
-blocked by the missing original Twilio Verify token.
+The target Google and GitHub client IDs match the source. Their providers
+remain disabled because the original plaintext secrets are unavailable. The
+target Twilio Verify account SID and messaging-service SID match the source.
+Phone MFA remains disabled because the original Twilio Verify auth token is
+unavailable.
+
+Apple Auth requires no source provider secret. Its client ID matches, and the
+provider is enabled on the target. SAML is also enabled on the target.
 
 ## Current validation evidence
 
@@ -322,6 +340,25 @@ The cleanup check covers:
 - `auth.sessions`
 - `auth.users`
 - `kortix.audit_events`
+
+The source refresh-token smoke returns:
+
+```json
+{
+  "sourcePasswordLogin": true,
+  "sourceRowsReplicated": true,
+  "targetRefreshToken": true,
+  "targetUserEndpoint": true,
+  "sourceTokenAlg": "HS256",
+  "sourceTokenKid": "<source-non-UUID-kid>",
+  "targetTokenAlg": "HS256",
+  "targetTokenKid": "<target-key-UUID>",
+  "targetSequenceReserved": true,
+  "cleanupSourceRows": 0,
+  "cleanupTargetRows": 0,
+  "error": null
+}
+```
 
 Auth row counts, primary-key hashes, and critical-row hashes match.
 
@@ -387,6 +424,11 @@ source of truth.
 6. Reset every migrated sequence to `max(column) + 1`.
 7. Monitor replication lag and retained WAL.
 
+Logical replication does not advance target sequences. Do not accept target
+Auth writes while source Auth remains writable. A stale
+`auth.refresh_tokens_id_seq` causes refresh-token rotation to return HTTP `500`
+after a duplicate primary-key insert.
+
 Do not publish Supabase-owned internal tables through a publication owned by
 the application role. Supabase Support must handle those schemas.
 
@@ -428,6 +470,16 @@ Run the target smoke:
 ```bash
 bash scripts/prod-us-east-2/target-smoke.sh
 ```
+
+Run the source refresh-token compatibility smoke:
+
+```bash
+ALLOW_SOURCE_AUTH_REFRESH_SMOKE=1 \
+  bash scripts/prod-us-east-2/auth-refresh-smoke.sh
+```
+
+The refresh smoke reserves a temporary high target sequence range. It restores
+`auth.refresh_tokens_id_seq` to the current target maximum after cleanup.
 
 The production release calls
 `.github/workflows/deploy-prod-us-east-2-shadow.yml`. It applies target
