@@ -269,7 +269,8 @@ export class SessionSyncController {
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
     try {
-      const page = await this.loadPage('tail', reason);
+      const firstPage = await this.loadPage('tail', reason);
+      const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
       if (this.destroyed) return;
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
@@ -318,13 +319,41 @@ export class SessionSyncController {
   }
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
-    const messages: SessionSyncMessage[] = [];
-    const knownUserMessageIds = new Set(this.knownUserMessageIds);
-    const seenCursors = new Set([before]);
-    let cursor: string | undefined = before;
+    const firstPage = await this.loadPage('older', 'manual', before);
+    return this.loadCompleteTurn(firstPage, 'older', 'manual', before);
+  }
 
-    while (cursor) {
-      const page = await this.loadPage('older', 'manual', cursor);
+  private async loadCompleteTurn(
+    firstPage: SessionSyncPage,
+    operation: 'tail' | 'older',
+    reason: SessionSyncReason,
+    initialCursor?: string,
+  ): Promise<SessionSyncPage> {
+    const messages = [...firstPage.messages];
+    const knownUserMessageIds = new Set(this.knownUserMessageIds);
+    const seenCursors = new Set(initialCursor ? [initialCursor] : []);
+    let cursor = firstPage.nextCursor;
+
+    for (const message of firstPage.messages) {
+      if (message.info.role === 'user') {
+        knownUserMessageIds.add(message.info.id);
+      }
+    }
+
+    while (
+      cursor &&
+      messages.some(
+        (message) =>
+          message.info.role === 'assistant' &&
+          Boolean(message.info.parentID) &&
+          !knownUserMessageIds.has(message.info.parentID!),
+      )
+    ) {
+      if (seenCursors.has(cursor)) {
+        throw new Error(`Session history cursor repeated: ${cursor}`);
+      }
+      seenCursors.add(cursor);
+      const page = await this.loadPage(operation, reason, cursor);
       messages.unshift(...page.messages);
       for (const message of page.messages) {
         if (message.info.role === 'user') {
@@ -333,17 +362,6 @@ export class SessionSyncController {
       }
 
       cursor = page.nextCursor;
-      const hasUnresolvedParent = messages.some(
-        (message) =>
-          message.info.role === 'assistant' &&
-          Boolean(message.info.parentID) &&
-          !knownUserMessageIds.has(message.info.parentID!),
-      );
-      if (!hasUnresolvedParent || !cursor) break;
-      if (seenCursors.has(cursor)) {
-        throw new Error(`Session history cursor repeated: ${cursor}`);
-      }
-      seenCursors.add(cursor);
     }
 
     return { messages, nextCursor: cursor };

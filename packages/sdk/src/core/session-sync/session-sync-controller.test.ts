@@ -149,6 +149,66 @@ describe('SessionSyncController', () => {
     expect(controller.getSnapshot().hasOlder).toBe(false);
   });
 
+  test('loads the complete newest turn before exposing older pagination', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        if (!request.before) {
+          return messagePage(
+            [
+              { id: 'assistant-new-3', role: 'assistant', parentID: 'user-only' },
+              { id: 'assistant-new-4', role: 'assistant', parentID: 'user-only' },
+            ],
+            'cursor-1',
+          );
+        }
+        if (request.before === 'cursor-1') {
+          return messagePage(
+            [
+              { id: 'assistant-new-1', role: 'assistant', parentID: 'user-only' },
+              { id: 'assistant-new-2', role: 'assistant', parentID: 'user-only' },
+            ],
+            'cursor-2',
+          );
+        }
+        return messagePage(
+          [
+            { id: 'user-only', role: 'user' },
+            { id: 'assistant-new-0', role: 'assistant', parentID: 'user-only' },
+          ],
+          undefined,
+        );
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+
+    expect(requests).toEqual([
+      { limit: 10 },
+      { limit: 10, before: 'cursor-1' },
+      { limit: 10, before: 'cursor-2' },
+    ]);
+    expect(hydrated).toEqual([
+      [
+        'user-only',
+        'assistant-new-0',
+        'assistant-new-1',
+        'assistant-new-2',
+        'assistant-new-3',
+        'assistant-new-4',
+      ],
+    ]);
+    expect(controller.getSnapshot()).toMatchObject({
+      freshness: 'fresh',
+      hasOlder: false,
+    });
+  });
+
   test('loads through assistant-only pages until the parent user turn is complete', async () => {
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: string[][] = [];
