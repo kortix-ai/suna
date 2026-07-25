@@ -74,6 +74,15 @@ export function projectSessionStartSeed(
   }
   const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
   if (!externalId) return null;
+  // The `project_sessions.sandbox_id` column is nullable (a legacy Suna-migration
+  // session is minted with it null and provisioning only writes `sandbox_url`,
+  // never back-filling `sandbox_id`). Without this guard the seeded
+  // `ProjectSessionSandbox` carries a `null` `sandbox_id`, which the session
+  // page then derefs as `sandbox.sandbox_id.slice(0, 8)` and crashes the render
+  // (Better Stack pattern e6d0e044). Drop the seed entirely when the id is
+  // missing — `useSession`'s `/start` poll then resolves readiness from server
+  // truth (which always carries the non-null `session_sandboxes.sandbox_id`).
+  if (!session.sandbox_id) return null;
   return {
     stage: "ready",
     agent_name: session.agent_name ?? "default",

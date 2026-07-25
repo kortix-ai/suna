@@ -133,6 +133,16 @@ test("projectSessionStartSeed rejects stale or incomplete inventory rows", () =>
     projectSessionStartSeed({ ...base, opencode_session_id: null }),
   ).toBeNull();
   expect(projectSessionStartSeed({ ...base, sandbox_url: null })).toBeNull();
+  // A legacy Suna-migration row is minted with `sandbox_id = null` and
+  // provisioning only writes `sandbox_url`, so a running, fully-wired row can
+  // still carry a null id. The seed MUST drop it — otherwise the session page
+  // derefs `sandbox.sandbox_id.slice(0, 8)` and crashes (BS e6d0e044).
+  // (`sandbox_id` is typed `string` but the DB column is nullable — the runtime
+  // null is exercised through a cast, mirroring what the API actually serves.)
+  expect(
+    projectSessionStartSeed({ ...base, sandbox_id: null as unknown as string }),
+  ).toBeNull();
+  expect(projectSessionStartSeed({ ...base, sandbox_id: "" })).toBeNull();
 });
 
 test("startProjectSession POSTs to /start with no query string when waitMs is omitted", async () => {
