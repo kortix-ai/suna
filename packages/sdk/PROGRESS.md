@@ -250,6 +250,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B19 | **Preserve explicit managed-model pricing and cache-write rates through the project catalog and turn-cost estimator.** Browser-side `models.dev` lookup can substitute another provider's price for a Kortix-managed model, and the turn estimator does not accept a distinct cache-write rate.                                                                                                                                              | `src/core/rest/projects-client/projects.ts`, `src/core/turns/types.ts`, `src/core/turns/state.ts`; confirmed for managed Aster `glm-5.2`.                                                                                                                                                               | **DONE 2026-07-25** — implementation `28c18cbfa`; full SDK suite, typecheck, public-surface snapshot, and packed-install smoke green                                                                                                                                   |
 | B20 | **Keep ACP SSE connections outside the shared 30-second authenticated-fetch timeout.** The ACP controller uses `/kortix/acp/:sessionId` as a long-lived SSE stream.                                                                                                                                                                                                                                                                            | `src/platform/auth-core.ts` exempted only `/global/event`; deployed cold Chromium aborted the ACP stream before `session/load` settled.                                                                                                                                                                | **DONE 2026-07-25** — implementation `89b97f4cc`; RED test, full SDK gates, and local cold ACP plus REST browser matrix pass                                                                                                                                                                                                         |
 | B21 | **Serialize ACP sends with runtime restart reloads.** A send that starts while OpenCode restarts can wait forever on `session/set_config_option` and never send `session/prompt`.                                                                                                                                                                                                                                                               | Deployed cold Chromium sent `session/set_config_option` at `13:36:20.250Z`, received `kortix/runtime_ready`, then sent `session/load` at `13:36:20.640Z`; `POST_RESTART_PONG` never produced `session/prompt`.                                                                                              | **DONE 2026-07-25** — implementation `d8537fa2c`; RED tests, full SDK gates, and test-harness typecheck pass                                                                                                                                                                                                                          |
+| B22 | **Expose server-owned warm project-session ensure and claim operations.** The project index needs one reusable empty session without owning session selection or deduplication in app code.                                                                                                                                                                                                                                                   | `apps/web/src/app/(app)/projects/[id]/page.tsx` creates a session only after send. `packages/sdk/src/core/rest/projects-client/sessions.ts` exposes create and list, but no atomic warm-session operation.                                                                                              | **IN PROGRESS 2026-07-26** — session `warm-project-session`; RED tests, SDK gates, API route proof, browser proof, PR merge, and Deploy Dev required                                                                                                                                                                                    |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -2758,3 +2759,21 @@ Post-fix verification:
 
 **Shippable to production: NOT YET.** Follow-up PR merge, Deploy Dev, deployed
 SHA proof, and deployed ACP plus REST parity remain.
+
+---
+
+### 2026-07-26 — session `warm-project-session` (B22 claim)
+
+Claimed the additive SDK surface for server-owned warm project sessions.
+
+The API will enforce one available empty warm session per project and user.
+The project index will prefetch its runtime and claim it before navigation.
+The existing daemon refresh operation will synchronize a reused warm workspace
+to the latest base branch without restarting OpenCode.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are SDK typecheck, full SDK tests, packed-install smoke, API tests,
+ke2e coverage, local API proof, browser proof, PR merge, Deploy Dev, deployed SHA
+proof, and deployed browser proof.
+
+**Status:** IN PROGRESS.
