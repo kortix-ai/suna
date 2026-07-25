@@ -520,8 +520,8 @@ The cutover cannot complete until all gates pass.
 
 The active production backend uses ECS Fargate in `eu-west-2`.
 
-- EU API: `4/4` tasks.
-- EU gateway: `2/2` tasks.
+- EU API: autoscaling range `2..10`; observed `3/3` tasks on 2026-07-25.
+- EU gateway: autoscaling range `2..6`; observed `2/2` tasks on 2026-07-25.
 - EU EKS: standby.
 
 The prepared US backend uses the same active topology.
