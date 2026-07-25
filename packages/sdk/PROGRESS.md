@@ -2437,7 +2437,6 @@ Non-streaming requests retain the 30-second timeout.
 
 **Shippable to production: NOT YET.** PR merge, Deploy Dev, and the deployed
 cold Chromium matrix remain.
-
 ---
 
 ### 2026-07-25 — session `acp-opencode-canary` (B21 implementation)
@@ -2469,3 +2468,18 @@ It resets the ACP projection before runtime replay.
 
 **Shippable to production: NOT YET.** PR merge, Deploy Dev, and the deployed
 cold Chromium ACP plus REST rollback matrix remain.
+
+---
+
+### 2026-07-25 — session `false-load-older` (claim)
+
+Claimed the user-reported false `Load older messages` control on a one-turn
+session. The investigation will verify the runtime pagination response before
+changing the SDK contract. The implementation will follow RED -> GREEN ->
+REFACTOR and preserve all exported names.
+
+Required completion gates are the full SDK typecheck, test suite, packed-install
+smoke, focused web tests, local browser proof, repository merge, Deploy Dev, and
+deployed browser proof.
+
+**Status:** IN PROGRESS.
