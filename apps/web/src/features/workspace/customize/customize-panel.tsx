@@ -121,13 +121,10 @@ function railGroups(
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
     if (g.label === 'Connect') {
-      // Models lives in the base Connect group (rail-groups.ts) so it's always
-      // in the nav; drop it only where the managed gateway isn't available.
-      const items = g.items.filter(
-        (item) => item.section !== 'llm-management' || llmGatewayAvailable,
-      );
+      const items = [...g.items];
       if (meetEnabled) items.push(MEET_ITEM);
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
+      if (llmGatewayAvailable) items.push(LLM_ITEM);
       return { ...g, items };
     }
     if (g.label === 'Build' && reviewEnabled) {

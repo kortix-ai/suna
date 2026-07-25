@@ -27,4 +27,8 @@ describe('Customize information architecture', () => {
     expect(entry?.label).toBe('Files');
     expect(entry?.href).toBe('/projects/{projectId}/files');
   });
+
+  test('LLM management remains reachable from the Connect rail group', () => {
+    expect(customizePanelSource).toContain('if (llmGatewayAvailable) items.push(LLM_ITEM)');
+  });
 });
