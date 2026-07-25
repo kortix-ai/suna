@@ -45,6 +45,13 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       headers: {
         Authorization: `Bearer ${config.PLATINUM_API_KEY}`,
         'Content-Type': 'application/json',
+        // Caller-supplied headers (plain object literal — NOT a Headers
+        // instance, which wouldn't spread) win over the defaults above. This
+        // is how platinum.ts's create-dedup (S1) forwards a deterministic
+        // `Idempotency-Key`: Platinum's CP implements it (8-255 chars, scoped
+        // per actor+key — same key + a semantically-identical body replays
+        // the already-committed sandbox instead of creating a second one), so
+        // this path is load-bearing, not inert.
         ...(init.headers ?? {}),
       },
     });

@@ -17,7 +17,11 @@ setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 
-const { isRetryablePlatinumBuildError } = await import('./platinum');
+const {
+  isRetryablePlatinumBuildError,
+  isPlatinumSizeCapBuildFailure,
+  PlatinumSizeCapBuildError,
+} = await import('./platinum');
 
 describe('Platinum build-error retry classifier', () => {
   test.each([
@@ -51,7 +55,50 @@ describe('Platinum build-error retry classifier', () => {
       new Error('Platinum template kortix-default-abc123 did not become ready (last state: building)'),
     ],
     ['unrelated application error', new Error('unexpected token in JSON')],
+    // Size-cap failures: a build ext4 ceiling too small for the image content
+    // can never fit — the SAME content at the SAME ceiling fails identically
+    // every time, so retrying is pure waste (see isPlatinumSizeCapBuildFailure).
+    [
+      'from-build registration rejects an oversize ceiling (size_mb too_big)',
+      new Error('platinum POST /v1/templates/from-build -> 400 {"error":"size_mb too_big"}'),
+    ],
+    ['an ENOSPC-shaped async build failure', new Error('podman build failed: ENOSPC: no space left on device')],
+    ['a "no space left on device" message without the ENOSPC code', new Error('write /var/lib: no space left on device')],
+    ['an explicit "template size cap" message', new Error('Platinum template kortix-default-abc123 exceeded its template size cap')],
+    ['the wrapped PlatinumSizeCapBuildError itself', new PlatinumSizeCapBuildError('kortix-default-abc123', new Error('size_mb too_big'))],
   ])('does not retry %s', (_label, err) => {
     expect(isRetryablePlatinumBuildError(err)).toBe(false);
+  });
+});
+
+describe('Platinum size-cap build-failure classifier', () => {
+  test.each([
+    ['from-build 400 size_mb too_big', new Error('platinum POST /v1/templates/from-build -> 400 {"error":"size_mb too_big"}')],
+    ['ENOSPC-shaped async build failure', new Error('podman build failed: ENOSPC: no space left on device')],
+    ['"no space left on device" without the ENOSPC code', new Error('write /var/lib: no space left on device')],
+    ['explicit "template size cap" message', new Error('exceeded the template size cap')],
+    ['a PlatinumSizeCapBuildError instance', new PlatinumSizeCapBuildError('kortix-default-abc123', new Error('size_mb too_big'))],
+  ])('recognizes %s', (_label, err) => {
+    expect(isPlatinumSizeCapBuildFailure(err)).toBe(true);
+  });
+
+  test.each([
+    ['an unrelated build failure', new Error('Platinum template kortix-default-abc123 build failed')],
+    ['a stale-context error', new Error('build context does not exist')],
+    ['a plain network error', new Error('fetch failed: network error')],
+  ])('does not misclassify %s as a size-cap failure', (_label, err) => {
+    expect(isPlatinumSizeCapBuildFailure(err)).toBe(false);
+  });
+
+  test('wraps the original error with remediation naming PLATINUM_BUILD_SIZE_MB and a distinct log token', () => {
+    const cause = new Error('platinum POST /v1/templates/from-build -> 400 {"error":"size_mb too_big"}');
+    const wrapped = new PlatinumSizeCapBuildError('kortix-default-abc123', cause);
+    expect(wrapped.message).toContain('PLATINUM_BUILD_SIZE_MB');
+    expect(wrapped.message).toContain('kortix-default-abc123');
+    expect(wrapped.message).toContain(cause.message);
+    expect(wrapped.name).toBe('PlatinumSizeCapBuildError');
+    // The wrapped error is itself recognized (idempotent re-classification).
+    expect(isPlatinumSizeCapBuildFailure(wrapped)).toBe(true);
+    expect(isRetryablePlatinumBuildError(wrapped)).toBe(false);
   });
 });
