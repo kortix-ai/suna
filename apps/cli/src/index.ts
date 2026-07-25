@@ -13,6 +13,7 @@ import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
+import { runAgi } from './commands/agi.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
@@ -91,6 +92,10 @@ const TIERS: readonly CommandTier[] = [
       {
         title: 'Account — within the host',
         commands: [
+          {
+            name: 'agi',
+            blurb: 'Start Kortix AGI — the control agent that runs above your projects',
+          },
           {
             name: 'accounts',
             args: '<subcommand>',
@@ -338,6 +343,9 @@ async function main(argv: string[]): Promise<number> {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
+  if (argv[0] === 'agi') {
+    return runAgi(argv.slice(1));
+  }
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
@@ -459,6 +467,7 @@ async function main(argv: string[]): Promise<number> {
 }
 
 const KNOWN_COMMANDS = [
+  'agi',
   'init',
   'ship',
   'deploy',

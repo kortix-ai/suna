@@ -1,0 +1,15 @@
+{
+  // OpenCode runtime config for Kortix AGI — the control agent that runs
+  // ABOVE your workspaces, not inside one. Materialized to
+  // `~/.kortix/agi/opencode` by `kortix agi`; edits here are overwritten on
+  // the next run, so change the template in
+  // `packages/starter/templates/agi/` instead.
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "system",
+  // Only one agent lives here. `kortix agi` also passes `--agent kortix-agi`
+  // explicitly, so selection never depends on this file alone.
+  "default_agent": "kortix-agi",
+  // AGI is an orchestrator: it configures Kortix and spawns sessions to do
+  // the work. Stopping to ask before every CLI call would defeat the point.
+  "permission": "allow",
+}

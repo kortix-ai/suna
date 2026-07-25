@@ -79,6 +79,7 @@ export interface StarterVars {
 
 /** Absolute path to the bundled base template directory. */
 const BASE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'base');
+const AGI_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'agi');
 const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
   import.meta.dir,
   '..',
@@ -156,6 +157,18 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
 
   const files = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+/**
+ * The Kortix AGI control agent's OpenCode config dir — an `opencode.jsonc`
+ * plus `agents/kortix-agi.md`. Unlike every other root here this is NOT part
+ * of any project's repo: `kortix agi` materializes it to `~/.kortix/agi/
+ * opencode` and launches OpenCode against it, so AGI runs above the user's
+ * workspaces rather than inside one. Raw — there is nothing project-specific
+ * to interpolate.
+ */
+export function getAgiFiles(): StarterFile[] {
+  return rawFilesForRoot('agi', AGI_TEMPLATE_DIR).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**

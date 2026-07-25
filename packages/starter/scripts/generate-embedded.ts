@@ -24,6 +24,7 @@ import { join, relative, sep } from 'node:path';
 // module that (in turn) imports the file we are about to generate.
 const STARTER_ROOT = join(import.meta.dir, '..');
 const TEMPLATE_ROOTS = {
+  agi: join(STARTER_ROOT, 'templates', 'agi'),
   base: join(STARTER_ROOT, 'templates', 'base'),
   'general-knowledge-worker': join(STARTER_ROOT, 'templates', 'general-knowledge-worker'),
   marketplace: join(STARTER_ROOT, 'templates', 'marketplace'),
