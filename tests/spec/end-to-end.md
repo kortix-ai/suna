@@ -580,12 +580,13 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-3` `POST /executor/call {connector,action,args}` → executor-principal route; user JWT + `ANON` → 401.
 `CONN-4` `POST /executor/projects/:id/connectors/sync` → admin → 200 (re-materialize from kortix.yaml).
 `CONN-5` `GET /executor/projects/:id/policies` → admin → 200; `PUT …/policies {policies[]}` → admin → 200.
-`CONN-7` `PUT /executor/projects/:id/connectors/:slug/credential` → missing value → 400.
+`CONN-7` `PUT /executor/projects/:id/connectors/:slug/credential` → accepts a static value or native OAuth2 client-credentials configuration; missing value or a non-HTTPS OAuth2 token URL → 400.
 `CONN-8` `POST /executor/projects/:id/connectors` → admin; invalid json → 400. `DELETE …/:slug` → admin → ok/404.
 `CONN-9` `GET /executor/projects/:id/pipedream/apps` → admin → 200 or 501 (pipedream not configured).
 `CONN-13` `PUT /executor/projects/:id/connectors/:slug/credential-mode|name|policies` → admin (`project.connector.write`); body validated before the connector lookup (bad mode/empty name/invalid policy action → 400 even against an unknown slug); well-formed body + unknown connector → 404; NONMEMBER → 403.
 `CONN-14` `POST /executor/projects/:id/connectors/auth-discovery {provider,spec|url|endpoint|baseUrl}` → admin (`project.connector.write`) loads the guarded direct source and returns normalized authentication candidates plus a supported recommendation; omitted auth on `POST …/connectors` applies that recommendation, while explicit `{auth:{type:"none"}}` skips discovery and remains a durable opt-out. Source credential literals are never returned.
 `CONN-15` `GET /executor/projects/:id/discover/integrations[?q&cursor]` → project admin browses the direct integrations.sh catalogue; `GET …/discover/integrations/detail?id=…` → resolves the trusted record's API/MCP/Postman/GraphQL/docs/CLI variants; upstream outage → 502; `NONMEMBER` → 403 before any upstream fetch.
+`CONN-OAUTH2` profile-scoped native OAuth2 routes → save and read a redacted provider-independent application; start Authorization Code with PKCE S256; read status; reject SSRF discovery, unavailable Device Authorization, unknown device sessions, and callback state replay.
 
 **Connector authorization is centralized on the AGENT (2026-07-06).** `PUT /executor/projects/:id/connectors/:slug/sharing` and `PUT …/agent-scope` are both RETIRED (route removed — `CONN-6`'s id is intentionally not reused). A connector is now unconditionally project-wide visible to every project member; the only gate on which agents may call it is the agent's own `connectors` grant (`[[agents]].connectors` in kortix.yaml, enforced by `iam/agent-scope.ts` — see `PROJ-agents` flows), not anything configured per-connector.
 
@@ -673,3 +674,17 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-11` `POST /executor/webhook/pipedream` → public; bad/unsigned payload → rejected.
 `CONN-12` `GET /executor/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
 `DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).
+
+---
+
+## 27. Kortix as a Backend (KaaB) — session-create override contract
+
+Origin is DERIVED from the caller's token kind, never the request body: an account PAT / service-account / user-apiKey ⇒ `origin: backend`; a human web JWT ⇒ `origin: user`; the in-sandbox key and agent-scoped tokens are never backend. Only a backend caller may set the by-reference overrides `origin_ref` and `secrets`. See `docs/KORTIX_AS_A_BACKEND_GUIDE.md`.
+
+`KAAB-1` backend PAT `POST /projects/:id/sessions {origin_ref, runtime_context}` → 201; response echoes `origin:"backend"` (derived, not from the body) + `origin_ref`. Overrides omitted = byte-identical to a normal session.
+`KAAB-2` non-backend (user JWT) setting `origin_ref` OR `secrets` → **403 `origin_override_forbidden`** (the field is refused before shape is even considered).
+`KAAB-3` backend `secrets=[unknown]` → **404 `SECRET_IDENTIFIER_NOT_FOUND`**; `secrets=[]` → 201 with `secrets_allowlist:[]` (inject zero project secrets). Narrowing only — never widens beyond the agent's grant.
+`KAAB-4` backend `opencode_model` that isn't servable (retired / not entitled / typo) → **400 `INVALID_SESSION_MODEL`** at create, not a dead turn at prompt time; a bare managed id is normalized to the `kortix/<id>` opencode ref.
+`KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
+`KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
+`KAAB-7` backend idempotency IDENTITY guard: same key + a different `origin_ref` (or `runtime_context`) → **409 `IDEMPOTENCY_ORIGIN_CONFLICT`** / `IDEMPOTENCY_CONTEXT_CONFLICT` — within one backend account a wrapper's end-users must never collide on a shared key (cross-end-user session/attribution bleed); a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`** (a clean rejection, not an uncaught btree-overflow 500).

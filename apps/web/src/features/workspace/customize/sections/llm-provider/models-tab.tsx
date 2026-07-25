@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
+import { useModelStore } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 // match what other surfaces (e.g. the session model picker) resolve
 // visibility against, or the same model silently defaults to a different
 // visibility depending on which tab/picker last computed it.
-import { flattenModels as flattenGatewayCatalog, useOpenCodeProviders } from '@kortix/sdk/react';
+import { flattenModels as flattenGatewayCatalog, useRuntimeProviders } from '@kortix/sdk/react';
 import { ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
@@ -80,7 +80,7 @@ export function ModelsTab({
   // different (heuristic-default) visibility here than on other surfaces —
   // the root cause of toggles reading differently between this tab and the
   // session model picker.
-  const { data: ocProviders } = useOpenCodeProviders();
+  const { data: ocProviders } = useRuntimeProviders();
   const catalogModels = useMemo(() => flattenGatewayCatalog(ocProviders), [ocProviders]);
 
   const modelStore = useModelStore(flatModels, {

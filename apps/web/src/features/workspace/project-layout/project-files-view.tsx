@@ -16,7 +16,7 @@ import {
   ProjectFilesProvider,
   useSelectedVersion,
 } from '@/features/project-files';
-import { getProject } from '@kortix/sdk/projects-client';
+import { getProject } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 export function ProjectFilesView({ projectId }: { projectId: string }) {

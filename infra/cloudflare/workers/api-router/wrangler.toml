@@ -79,9 +79,7 @@ routes = [
 ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://dev-api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"
-# Dev gateway is flipped to ECS. GATEWAY_BACKEND_EKS is the rollback origin
-# (needs gateway-dev-eks on the EKS ingress + wildcard cert to serve; today rollback
-# = remove the gateway-dev route → external-dns record falls back to EKS directly).
+# Dev gateway is flipped to ECS. GATEWAY_BACKEND_EKS is the verified rollback origin.
 GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
 GATEWAY_BACKEND_EKS = "https://gateway-dev-eks.kortix.com"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"

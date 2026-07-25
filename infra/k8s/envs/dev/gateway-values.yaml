@@ -4,7 +4,7 @@
 
 # Immutable dev tag (CI bumps to dev-<sha8>). Bootstrap value until the first run.
 image:
-  tag: "dev-a32b2d12"
+  tag: "dev-29675b2d"
 # Dev sizing (≤100 users): 1-replica floor, burst to 2.
 replicas: 1
 autoscaling:
@@ -27,8 +27,13 @@ resources:
 ingress:
   enabled: true
   host: gateway-dev.kortix.com
+  extraHosts:
+    - gateway-dev-eks.kortix.com
   # ACM cert for gateway-dev.kortix.com (dev-eks/cluster module.acm_gateway).
   certificateArn: "arn:aws:acm:us-west-2:935064898258:certificate/ee7b3729-26c7-4622-881d-028daa58d051"
+  # Wildcard certificate covers the direct EKS origin used by parity checks and rollback.
+  extraCertificateArns:
+    - "arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755"
   # Same shared regional WAFv2 Web ACL as the dev API ingress (envs/dev/values.yaml), us-west-2.
   wafAclArn: "arn:aws:wafv2:us-west-2:935064898258:regional/webacl/kortix-alb-waf/4a81aadc-31ad-470a-a10c-3606de61cf65"
   cloudflareProxied: true

@@ -576,7 +576,11 @@
                   "bearer",
                   "basic",
                   "custom",
+                  "api_key",
                   "oauth1",
+                  "hmac",
+                  "aws_sigv4",
+                  "mtls",
                   "none"
                 ]
               },

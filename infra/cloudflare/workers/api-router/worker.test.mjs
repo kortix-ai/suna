@@ -93,4 +93,34 @@ describe('api-router worker', () => {
     expect(response.headers.get('Location')).toBe('https://gateway.kortix.com/v1/chat/completions');
     expect(fetched).toBe(false);
   });
+
+  test('preserves API WebSocket upgrade responses without wrapping them', async () => {
+    const webSocket = {};
+    const upgradeResponse = {
+      status: 101,
+      headers: new Headers(),
+      webSocket,
+    };
+    let proxiedUrl = '';
+    let proxiedUpgrade = '';
+    globalThis.fetch = async (request) => {
+      proxiedUrl = request.url;
+      proxiedUpgrade = request.headers.get('Upgrade') ?? '';
+      return upgradeResponse;
+    };
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/p/sbx_123/8000/kortix/pty/kpty_123/connect', {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env,
+    );
+
+    expect(proxiedUrl).toBe(
+      'https://api-eks.kortix.com/v1/p/sbx_123/8000/kortix/pty/kpty_123/connect',
+    );
+    expect(proxiedUpgrade).toBe('websocket');
+    expect(response).toBe(upgradeResponse);
+    expect(response.webSocket).toBe(webSocket);
+  });
 });

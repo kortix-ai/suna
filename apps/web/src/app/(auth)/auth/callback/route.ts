@@ -3,7 +3,7 @@ import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-pr
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
-import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
+import { fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';

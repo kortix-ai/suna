@@ -101,7 +101,10 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
  * instead of nothing. (A UI notification / email digest is a larger product
  * surface left for a follow-up; see PR description.)
  */
-function logGatewayBudgetWarnings(principal: AuthedPrincipal, warnings: string[] | undefined): void {
+function logGatewayBudgetWarnings(
+  principal: AuthedPrincipal,
+  warnings: string[] | undefined,
+): void {
   if (!warnings?.length) return;
   for (const message of warnings) {
     logger.warn(`[gateway] budget warn threshold reached: ${message}`, {
@@ -296,6 +299,7 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.upstream_cost_usd': trace.upstreamCost,
         'kortix.provider': trace.provider,
         'kortix.cached_tokens': trace.usage.cachedTokens,
+        'kortix.cache_write_tokens': trace.usage.cacheWriteTokens,
         'kortix.streaming': trace.streaming,
         'kortix.billing_mode': trace.billingMode,
         'kortix.request_id': trace.requestId,
@@ -342,17 +346,14 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     promptTokens: trace.usage.promptTokens,
     completionTokens: trace.usage.completionTokens,
     cachedTokens: trace.usage.cachedTokens,
+    cacheWriteTokens: trace.usage.cacheWriteTokens,
     upstreamCost: trace.upstreamCost,
     finalCost: trace.finalCost,
     streaming: trace.streaming,
     billingMode: trace.billingMode,
     request: trace.request,
     response: trace.response,
-    // gateway_request_logs has no cache_write_tokens column (unlike
-    // usage_events, which does) — stash it in metadata rather than take on a
-    // schema migration for a purely observational field; the dollar amount
-    // (finalCost/upstreamCost) already reflects the cache-write premium.
-    metadata: { ...trace.metadata, cacheWriteTokens: trace.usage.cacheWriteTokens },
+    metadata: trace.metadata,
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);

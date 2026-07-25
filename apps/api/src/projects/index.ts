@@ -23,6 +23,7 @@ import './routes/r2';
 import './routes/r3';
 import './routes/setup-links';
 import './routes/r4';
+import './routes/oauth2-connectors';
 import './routes/r5';
 import './routes/r6';
 import './routes/r7';

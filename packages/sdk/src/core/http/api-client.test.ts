@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { backendApi, isAdminBypassEnabled, setAdminBypass } from './api-client';
-import { configureKortix } from './config';
 import { ApiError } from './api/errors';
+import { configureKortix } from './config';
 
 afterEach(() => {
   setAdminBypass(false);
@@ -236,6 +236,77 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
       expect(stub.attemptCount()).toBe(1);
     } finally {
       stub.restore();
+    }
+  });
+});
+
+describe('makeRequest retries transient transport failures on idempotent reads', () => {
+  test('a failed preflight on GET is retried before the host error handler runs', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      if (attempts === 1) throw new TypeError('Failed to fetch');
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      expect(response).toEqual({ success: true, data: { ok: true } });
+      expect(attempts).toBe(2);
+      expect(errors).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('persistent GET transport failures report once after three attempts', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toBe('Failed to fetch');
+      expect(attempts).toBe(3);
+      expect(errors).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a POST transport failure is not retried', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/sessions', {});
+      expect(response.success).toBe(false);
+      expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 });

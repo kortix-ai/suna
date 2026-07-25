@@ -28,25 +28,38 @@ export function useOpenCodeCommands() {
   });
 }
 
+export interface ExecuteOpenCodeCommandInput {
+  sessionId: string;
+  command: string;
+  args?: string;
+  agent?: string;
+  model?: string;
+  variant?: string;
+}
+
+export async function executeOpenCodeCommand({
+  sessionId,
+  command,
+  args,
+  agent,
+  model,
+  variant,
+}: ExecuteOpenCodeCommandInput): Promise<void> {
+  const client = getClient();
+  const result = await client.session.command({
+    sessionID: sessionId,
+    command,
+    arguments: args || '',
+    ...(agent ? { agent } : {}),
+    ...(model ? { model } : {}),
+    ...(variant ? { variant } : {}),
+  });
+  unwrap(result);
+}
+
 export function useExecuteOpenCodeCommand() {
   return useMutation({
-    mutationFn: async ({
-      sessionId,
-      command,
-      args,
-    }: {
-      sessionId: string;
-      command: string;
-      args?: string;
-    }) => {
-      const client = getClient();
-      const result = await client.session.command({
-        sessionID: sessionId,
-        command,
-        arguments: args || '',
-      });
-      unwrap(result);
-    },
+    mutationFn: executeOpenCodeCommand,
     // CRITICAL: Disable retry for commands. The /command endpoint blocks until
     // the agent finishes, which can take minutes (e.g. onboarding). If a proxy
     // timeout or network error kills the connection, TanStack Query's default

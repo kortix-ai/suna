@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ApiReviewItem } from '@kortix/sdk/projects-client';
+import type { ApiReviewItem } from '@kortix/sdk';
 import {
   PRIMARY_ACTION,
   agentInitials,

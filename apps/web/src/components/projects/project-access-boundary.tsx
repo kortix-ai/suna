@@ -32,8 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { setAdminBypass } from '@/lib/api-client';
-import { getProject, requestProjectAccess } from '@kortix/sdk/projects-client';
+import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 
 interface ProjectAccessBoundaryProps {

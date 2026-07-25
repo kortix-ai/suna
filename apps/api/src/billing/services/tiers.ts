@@ -9,9 +9,6 @@ export const CREDITS_PER_DOLLAR = 100;
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
 export const MACHINE_CREDIT_BONUS = 5;
 
-/** Markup applied to managed VPS prices for additional instances. */
-export const COMPUTE_PRICE_MARKUP = 1.2;
-
 /**
  * Margin multiplier applied to the live models.dev cost on every LLM gateway
  * call. 1.2 = 20% profit (default). Override per-environment with
@@ -55,13 +52,9 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.yaml's
-// `sandbox:` block). The constants below are Daytona's PUBLISHED LIST rates (kept as
-// list so they're easy to re-sync from the pricing page). Our ACTUAL cost is
-// list × the volume discount Daytona gives us (DAYTONA_DISCOUNT). The debit
-// emitter charges:
-//     cost = spec × list_rate × DAYTONA_DISCOUNT × COMPUTE_PRICE_MARKUP
-// i.e. we pass the discount through (cheaper for users) and keep a margin on top.
+// Per-second customer pricing for the reserved sandbox spec in kortix.yaml.
+// These rates apply to every hosted provider. Each rate is 1.2× Daytona's
+// published list rate.
 // Daytona list (https://www.daytona.io/pricing, as of 2026-06):
 //   vCPU  $0.0504 / core-hour → 0.000014   per core-second
 //   RAM   $0.0162 / GiB-hour  → 0.0000045  per GB-second
@@ -69,13 +62,9 @@ export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 // We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
 // is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
 // would under-bill.
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.000014;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000045;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.00000003;
-/** Volume discount Daytona gives us off list (≈50%) → our real cost = list ×
- *  this. Applied before the markup so users are billed on our actual (discounted)
- *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
-export const DAYTONA_DISCOUNT = 0.5;
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.0000168;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000054;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.000000036;
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 

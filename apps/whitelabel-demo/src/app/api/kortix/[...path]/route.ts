@@ -73,6 +73,10 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   headers.delete('content-length');
   headers.delete('cookie'); // the app session cookie is ours, never upstream's
   headers.set('authorization', `Bearer ${apiKey}`);
+  // Browsers can advertise zstd through this BFF. Node's fetch does not decode
+  // zstd, while the response path removes content-encoding before returning
+  // the stream. Request identity so JSON and SSE bytes remain readable.
+  headers.set('accept-encoding', 'identity');
 
   // Buffer the request body instead of streaming it (`body: req.body,
   // duplex: 'half'`): a streamed body has no Content-Length, so undici sends

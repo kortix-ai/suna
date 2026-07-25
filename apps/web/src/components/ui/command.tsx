@@ -10,8 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import { Kbd, KbdGroup } from './kbd';
 
 const CMDK_SHARED_CLASSES = [
@@ -56,7 +58,7 @@ function CommandDialog({
         hideCloseButton={!showCloseButton}
         overlayClassName="bg-black/40 backdrop-blur-[1px]"
       >
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 bg-popover [&_[cmdk-input]]:h-12">
+        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground bg-popover **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12">
           {children}
         </Command>
       </DialogContent>
@@ -125,7 +127,7 @@ function CommandGroup({
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        'text-foreground [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:text-foreground overflow-hidden p-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[13px] [&_[cmdk-group-heading]]:font-medium',
+        'text-foreground [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:text-foreground overflow-hidden p-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[13px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:tracking-normal',
         className,
       )}
       {...props}
@@ -156,6 +158,52 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
       )}
       {...props}
     />
+  );
+}
+
+/**
+ * Rich hover detail for a `CommandItem` — wrap the item, pass the detail as
+ * `content`, and a card floats out beside the row after a short hover (or on
+ * keyboard focus). Renders the bare item untouched when `content` is empty,
+ * so callers can wrap every row and only rows with something to say get a
+ * card. Unlike the stock `HoverCardContent` (`z-50`), this one stacks via the
+ * dialog z-ladder, so it stays ABOVE the command popover it lives in.
+ */
+function CommandItemHoverCard({
+  content,
+  side = 'right',
+  align = 'start',
+  sideOffset = 4,
+  openDelay = 150,
+  closeDelay = 100,
+  className,
+  children,
+}: {
+  content: React.ReactNode;
+  side?: 'top' | 'bottom' | 'left' | 'right';
+  align?: 'start' | 'center' | 'end';
+  sideOffset?: number;
+  openDelay?: number;
+  closeDelay?: number;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const depth = useDialogDepth();
+  if (!content) return <>{children}</>;
+  return (
+    <HoverCard openDelay={openDelay} closeDelay={closeDelay}>
+      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardContent
+        data-slot="command-item-hover-card"
+        side={side}
+        align={align}
+        sideOffset={sideOffset}
+        style={{ zIndex: floatingZ(depth) + 1 }}
+        className={cn('w-60 rounded-md border p-3 shadow-md', className)}
+      >
+        {content}
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -242,10 +290,8 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[300px] overflow-hidden rounded-2xl p-0',
-        'bg-card text-popover-foreground relative',
-        'border-border/60 border',
-        'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+        'bg-sidebar text-sidebar-foreground hover:text-foreground relative w-[300px] overflow-hidden rounded-lg border p-0 shadow-xs ease-out',
+        'border-border',
         'data-[state=closed]:duration-[140ms] data-[state=open]:duration-[180ms]',
         'data-[state=open]:zoom-in-[0.97] data-[state=closed]:zoom-out-[0.97]',
         '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:gap-2 [&_[data-slot=command-input-wrapper]]:px-3',
@@ -271,6 +317,7 @@ export {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandItemHoverCard,
   CommandKbd,
   CommandList,
   CommandPopover,

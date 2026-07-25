@@ -259,7 +259,7 @@ import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getChildSessionError, getRetryInfo, getRetryMessage } from '@/ui';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 import { useEffect, useMemo, useState } from 'react';
 
 ${slice(5075, 5144).replace(/^function /gm, 'export function ')}
@@ -417,7 +417,7 @@ import {
 } from '@/features/session/tool/shared/error-and-executor';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeMessages } from '@kortix/sdk/react';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
@@ -436,7 +436,7 @@ import {
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@kortix/sdk/internal/sync-store';
 import {
   getActivePanelSessionId,
   sessionPreviewTabId,

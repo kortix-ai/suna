@@ -1,4 +1,4 @@
-import type { ProjectSession } from '@kortix/sdk/projects-client';
+import type { ProjectSession } from '@kortix/sdk';
 
 import { sessionSource } from '@/components/projects/session-label';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';

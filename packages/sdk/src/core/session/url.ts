@@ -410,6 +410,46 @@ export function rewriteLocalhostUrl(
   return `http://p${port}-${subdomainOpts.sandboxId}.localhost:${subdomainOpts.backendPort}${safePath}`;
 }
 
+export function buildStaticFilePreviewUrl(
+  filePath: string | undefined,
+  options: SubdomainUrlOptions,
+): string | undefined {
+  if (!filePath) return undefined;
+  const relativePath = filePath.replace(/^\/workspace\//, '').replace(/^\/+/, '');
+  const encodedPath = relativePath
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return rewriteLocalhostUrl(3211, `/open?path=/workspace/${encodedPath}`, options);
+}
+
+export function buildStaticFileServicePath(filePath: string): string {
+  const absolutePath = filePath.startsWith('/workspace')
+    ? filePath
+    : `/workspace/${filePath.replace(/^\/+/, '')}`;
+  const encodedPath = absolutePath
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `/open?path=/${encodedPath}`;
+}
+
+export function buildStaticFileLocalUrl(filePath: string): string {
+  return `http://localhost:3211${buildStaticFileServicePath(filePath)}`;
+}
+
+export function getStaticFileHealthPath(): string {
+  return '/health';
+}
+
+export function buildStaticFileHealthPreviewUrl(
+  options: SubdomainUrlOptions,
+): string {
+  return rewriteLocalhostUrl(3211, getStaticFileHealthPath(), options);
+}
+
 /**
  * Build the proxy base URL for a given port (without path).
  * Used for opening preview tabs.

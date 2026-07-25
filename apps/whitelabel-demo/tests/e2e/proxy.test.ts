@@ -115,6 +115,24 @@ describe('BFF proxy', () => {
     expect(upstreamReq.contentLength).toBe(String(Buffer.byteLength(bodyText, 'utf8')));
   });
 
+  test('response encoding negotiation: the BFF requests identity instead of forwarding browser zstd support', async () => {
+    mock.reset();
+    const email = uniqueEmail('response-encoding');
+    const token = await loginUser(app, email, DEMO_PASSWORD);
+
+    const res = await fetch(`${app.baseUrl}/api/kortix/p/sbx_encoding/8000/encoding`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        'accept-encoding': 'gzip, deflate, br, zstd',
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(mock.requests).toHaveLength(1);
+    expect(mock.requests[0]!.acceptEncoding).toBe('identity');
+  });
+
   test('SSE pass-through: events arrive unbuffered, connection stays open past the first burst', async () => {
     mock.reset();
     const email = uniqueEmail('sse');

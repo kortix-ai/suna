@@ -66,7 +66,7 @@ import {
   provisionProject,
   type KortixAccount,
   type KortixProject,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useCurrentAccountStore } from '@/stores/current-account-store';

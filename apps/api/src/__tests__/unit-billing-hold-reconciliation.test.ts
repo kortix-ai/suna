@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  isPureHoldRefund,
-  reconcileBillingHold,
-} from '../llm-gateway/billing-hold-reconciliation';
+import { isPureHoldRefund, reconcileBillingHold } from '../llm-gateway/billing-hold-reconciliation';
 
 describe('reconcileBillingHold — the atomic admission-hold settlement math', () => {
   test('real cost exceeds the hold → collect the difference (top-up)', () => {
@@ -15,6 +12,17 @@ describe('reconcileBillingHold — the atomic admission-hold settlement math', (
 
   test('real cost exactly matches the hold → nothing to move either way', () => {
     expect(reconcileBillingHold(0.01, 0.01)).toEqual({ toDeduct: 0, toRefund: 0 });
+  });
+
+  test('preserves one-token cache-read charges below one micro-dollar', () => {
+    expect(reconcileBillingHold(0.01000024, 0.01)).toEqual({
+      toDeduct: 0.00000024,
+      toRefund: 0,
+    });
+    expect(reconcileBillingHold(0.00999976, 0.01)).toEqual({
+      toDeduct: 0,
+      toRefund: 0.00000024,
+    });
   });
 
   test('a pre-dispatch-failure hold refund (finalCost always 0) always fully refunds the hold', () => {
@@ -50,9 +58,7 @@ describe('isPureHoldRefund', () => {
   });
 
   test('false when there is no hold at all', () => {
-    expect(
-      isPureHoldRefund({ promptTokens: 0, completionTokens: 0, finalCost: 0 }),
-    ).toBe(false);
+    expect(isPureHoldRefund({ promptTokens: 0, completionTokens: 0, finalCost: 0 })).toBe(false);
   });
 
   test('false when real usage/cost is present even with a hold (the normal settle() path)', () => {

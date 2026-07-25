@@ -89,7 +89,7 @@ import {
   type ProjectResourceGrant,
   type ProjectRole,
   type ResourceGrantType,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { UsersSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';

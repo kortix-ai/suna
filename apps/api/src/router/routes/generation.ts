@@ -28,6 +28,7 @@ const GenerationDataSchema = z
     tokens_prompt: z.number(),
     tokens_completion: z.number(),
     tokens_cached: z.number(),
+    tokens_cache_write: z.number(),
     total_cost: z.number(),
     upstream_cost: z.number(),
     latency_ms: z.number(),

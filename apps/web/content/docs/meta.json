@@ -11,6 +11,7 @@
     "---Develop---",
     "cli",
     "sdk",
+    "backend",
     "[API reference](https://api.kortix.com/v1/docs)"
   ]
 }

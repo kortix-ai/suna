@@ -443,7 +443,12 @@ function toGatewayConnector(
 }
 
 const nodeFetch: FetchImpl = async (url, init) => {
-  const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body });
+  const res = await fetch(url, {
+    method: init.method,
+    headers: init.headers,
+    body: init.body,
+    ...(init.tls ? { tls: init.tls } : {}),
+  } as RequestInit);
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
@@ -636,6 +641,18 @@ export function resolveTokenBoundSessionId(
   return { ok: true, sessionId: authenticatedSessionId };
 }
 
+/**
+ * Only project-scoped tokens carry a Kortix project session identity.
+ * Supabase JWTs also set `sessionId`, but that value identifies the Supabase
+ * authentication session. It must not enter connector profile resolution.
+ */
+export function projectSessionIdForProjectPrincipal(
+  tokenProjectId: string | undefined,
+  contextualSessionId: string | undefined,
+): string | null {
+  return tokenProjectId ? (contextualSessionId ?? null) : null;
+}
+
 async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
   const header = c.req.header('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
@@ -703,7 +720,10 @@ async function resolveProjectPrincipal(
   }
   if (!accountId) return null;
   const sessionIdentity = resolveTokenBoundSessionId(
-    (c.get('sessionId') as string | undefined) ?? null,
+    projectSessionIdForProjectPrincipal(
+      tokenProjectId,
+      c.get('sessionId') as string | undefined,
+    ),
     c.req.header('X-Kortix-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
@@ -769,12 +789,12 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
         .filter(
           (a) =>
             resolveEffectiveAction({
-          fullPath: `${row.slug}.${a.path}`,
-          relPath: a.path,
-          projectPolicies,
-          connectorPolicies,
-          risk: a.risk,
-          defaultMode,
+              fullPath: `${row.slug}.${a.path}`,
+              relPath: a.path,
+              projectPolicies,
+              connectorPolicies,
+              risk: a.risk,
+              defaultMode,
             }).action !== 'block',
         )
         .map((a) => ({
@@ -842,10 +862,7 @@ async function resolveReader(
 /** Admin list — sharing + credential mode + whether the shared credential is set. */
 async function listConnectors(projectId: string): Promise<AdminConnectorView[]> {
   const conns = hideSupersededSlack(
-    await db
-      .select()
-      .from(executorConnectors)
-      .where(eq(executorConnectors.projectId, projectId)),
+    await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId)),
   );
   if (conns.length === 0) return [];
 
@@ -861,16 +878,17 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
     db
       .select()
       .from(executorConnectorActions)
-      .where(inArray(executorConnectorActions.connectorId, conns.map((row) => row.connectorId))),
+      .where(
+        inArray(
+          executorConnectorActions.connectorId,
+          conns.map((row) => row.connectorId),
+        ),
+      ),
     connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
     Promise.all(
-      channelRows.map(async (row) => [
-        row.slug,
-        await connectorConnected(row, null),
-      ] as const),
+      channelRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
     ).then(
-      (entries) =>
-        new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
+      (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
     ),
   ]);
   const actionsByConnector = new Map<string, typeof actions>();
@@ -986,8 +1004,8 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
-  setConnectorCredential: (projectId, slug, value) =>
-    setConnectorCredentialShared(projectId, slug, value),
+  setConnectorCredential: (projectId, slug, input) =>
+    setConnectorCredentialShared(projectId, slug, input),
   deleteConnectorCredential: async (projectId, slug) => {
     const [row] = await db
       .select()

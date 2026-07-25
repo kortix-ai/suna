@@ -20,6 +20,24 @@ function page(ids: string[], nextCursor?: string): SessionSyncPage {
   };
 }
 
+function messagePage(
+  messages: Array<{ id: string; role: 'user' | 'assistant'; parentID?: string }>,
+  nextCursor?: string,
+): SessionSyncPage {
+  return {
+    messages: messages.map(({ id, role, parentID }) => ({
+      info: {
+        id,
+        sessionID: 'session-1',
+        role,
+        ...(parentID ? { parentID } : {}),
+      } as Message,
+      parts: [],
+    })),
+    nextCursor,
+  };
+}
+
 function createScheduler() {
   let now = 0;
   let callback: (() => void) | undefined;
@@ -129,6 +147,103 @@ describe('SessionSyncController', () => {
       'message-older',
     ]);
     expect(controller.getSnapshot().hasOlder).toBe(false);
+  });
+
+  test('loads through assistant-only pages until the parent user turn is complete', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        if (!request.before) {
+          return messagePage(
+            [
+              { id: 'user-new', role: 'user' },
+              { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
+            ],
+            'cursor-1',
+          );
+        }
+        if (request.before === 'cursor-1') {
+          return messagePage(
+            [
+              { id: 'assistant-old-3', role: 'assistant', parentID: 'user-old' },
+              { id: 'assistant-old-4', role: 'assistant', parentID: 'user-old' },
+            ],
+            'cursor-2',
+          );
+        }
+        if (request.before === 'cursor-2') {
+          return messagePage(
+            [
+              { id: 'assistant-old-1', role: 'assistant', parentID: 'user-old' },
+              { id: 'assistant-old-2', role: 'assistant', parentID: 'user-old' },
+            ],
+            'cursor-3',
+          );
+        }
+        return messagePage(
+          [
+            { id: 'user-old', role: 'user' },
+            { id: 'assistant-old-0', role: 'assistant', parentID: 'user-old' },
+          ],
+          'cursor-4',
+        );
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    await controller.loadOlder();
+
+    expect(requests).toEqual([
+      { limit: 10 },
+      { limit: 10, before: 'cursor-1' },
+      { limit: 10, before: 'cursor-2' },
+      { limit: 10, before: 'cursor-3' },
+    ]);
+    expect(hydrated).toEqual([
+      ['user-new', 'assistant-new'],
+      [
+        'user-old',
+        'assistant-old-0',
+        'assistant-old-1',
+        'assistant-old-2',
+        'assistant-old-3',
+        'assistant-old-4',
+      ],
+    ]);
+    expect(controller.getSnapshot().hasOlder).toBe(true);
+  });
+
+  test('rejects a repeated cursor while loading a complete older turn', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        if (!request.before) return page(['message-newest'], 'cursor-1');
+        return messagePage(
+          [{ id: 'assistant-old', role: 'assistant', parentID: 'user-old' }],
+          'cursor-1',
+        );
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+
+    await expect(controller.loadOlder()).rejects.toThrow(
+      'Session history cursor repeated: cursor-1',
+    );
+    expect(requests).toEqual([
+      { limit: 10 },
+      { limit: 10, before: 'cursor-1' },
+    ]);
+    expect(controller.getSnapshot().isLoadingOlder).toBe(false);
   });
 
   test('deduplicates initial and reconciliation reads', async () => {
@@ -271,6 +386,33 @@ describe('SessionSyncController', () => {
       limit: 10,
       before: 'cursor-older',
     });
+  });
+
+  test('does not reset an advanced older-page cursor during tail reconciliation', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        if (!request.before) return page(['message-newest'], 'cursor-1');
+        if (request.before === 'cursor-1') return page(['message-older-1'], 'cursor-2');
+        return page(['message-older-2']);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    await controller.loadOlder();
+    await controller.reconcile('poll');
+    await controller.loadOlder();
+
+    expect(requests).toEqual([
+      { limit: 10 },
+      { limit: 10, before: 'cursor-1' },
+      { limit: 10 },
+      { limit: 10, before: 'cursor-2' },
+    ]);
   });
 
   test('does not hydrate an older page after destruction', async () => {

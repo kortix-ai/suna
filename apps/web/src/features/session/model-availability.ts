@@ -1,4 +1,4 @@
-import type { ModelKey } from '@/hooks/opencode/use-opencode-local';
+import type { ModelKey } from '@kortix/sdk/react';
 
 export const NO_MODEL_AVAILABLE_MESSAGE = 'No models available for this session yet.';
 export const NO_MODEL_AVAILABLE_ACTION_MESSAGE =

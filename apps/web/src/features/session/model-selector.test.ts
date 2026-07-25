@@ -43,6 +43,16 @@ describe('pickerGroupId', () => {
     expect(pickerGroupId(m)).toBe('kortix');
   });
 
+  test('a branded managed DeepSeek model groups under deepseek for its provider icon', () => {
+    const m = model({
+      providerID: 'kortix',
+      modelID: 'deepseek-v4-flash',
+      provider: 'deepseek',
+    });
+    expect(pickerGroupId(m)).toBe('deepseek');
+    expect(pickerGroupLabel(pickerGroupId(m), m)).toBe('DeepSeek');
+  });
+
   test('a codex/<id> model groups under its own `codex` provider, distinct from `openai`', () => {
     const m = model({ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol', provider: 'codex' });
     expect(pickerGroupId(m)).toBe('codex');

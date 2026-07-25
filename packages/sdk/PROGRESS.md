@@ -1,7 +1,7 @@
 # `@kortix/sdk` — progress
 
-**Single source of truth for *state*** across every session and every plan. Not for
-design (that's a spec) and not for *how* (that's a plan). This file indexes them.
+**Single source of truth for _state_** across every session and every plan. Not for
+design (that's a spec) and not for _how_ (that's a plan). This file indexes them.
 
 > **Multiple sessions run against this repo.** Read this file **before** starting
 > work, and update it **before** ending your turn. Both are mandatory.
@@ -14,7 +14,6 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ## Who may edit what
 
-
 | Section                     | Agents may…                                            | Agents may **not**…                                                                                         |
 | --------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
 | **Now** (the active chain)  | claim a task, update its status, add evidence          | **renumber, reorder, delete, or insert tasks.** The plan and the execution prompt reference them by number. |
@@ -23,7 +22,6 @@ tracked, and it is not forgotten just because it isn't scheduled.
 | **Discovered this session** | **append freely**                                      | rewrite others' entries                                                                                     |
 | **Open decisions**          | append a question; mark one RESOLVED with the answer   | resolve one on the user's behalf                                                                            |
 | **Session log**             | **append only**, newest at the bottom                  | edit any earlier entry                                                                                      |
-
 
 **Never delete a row.** Mark it `WON'T DO (reason)` and leave it. A deleted row is
 a decision nobody can audit.
@@ -49,7 +47,7 @@ make the tasks parallelisable.
 Two independent reasons:
 
 **1. The Now chain is a chain.** Task 4 moves **146 files** (97 source + 49 colocated
-tests). A file move has *no behaviour to assert* — the only proof you moved files
+tests). A file move has _no behaviour to assert_ — the only proof you moved files
 rather than renamed an export is that **Task 3's snapshot did not budge**. Start 4
 before 3 lands and the riskiest change in the plan runs with no net. 5 needs 4's
 tree; 6 needs 5's surface; 8 bundles 5's final shape.
@@ -70,12 +68,12 @@ it does not make a chain into a queue. Do not read it as permission to fan out.
 
 ### What _can_ run in parallel
 
-| Stream | Where | Safe? |
-|---|---|---|
-| The Now chain (Tasks 1→10) | `suna-ts-sdk`, one session | ✅ — parallelise **inside** it with subagents, never across sessions |
+| Stream                      | Where                                                              | Safe?                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| The Now chain (Tasks 1→10)  | `suna-ts-sdk`, one session                                         | ✅ — parallelise **inside** it with subagents, never across sessions                                               |
 | **Lumen productionisation** | a **separate worktree** (`pnpm worktree create --name lumen-prod`) | ✅ — touches `apps/whitelabel-demo/src/server/*` only. Zero overlap with `packages/sdk`. Needs its own spec first. |
-| RN transport seam | — | ❌ edits `src/state/event-stream.ts`, the exact file Task 4 moves |
-| Backlog B1/B2/B3 | — | ❌ all add exports; collides with Task 5's barrel rewrite. Do them **after** Task 5. |
+| RN transport seam           | —                                                                  | ❌ edits `src/state/event-stream.ts`, the exact file Task 4 moves                                                  |
+| Backlog B1/B2/B3            | —                                                                  | ❌ all add exports; collides with Task 5's barrel rewrite. Do them **after** Task 5.                               |
 
 Throughput inside the SDK comes from **subagents within one session**
 (`superpowers:subagent-driven-development`), sequenced against the chain — not from
@@ -93,7 +91,7 @@ free-for-all.
 
 1. `git pull` (or rebase) so you are not reading a stale table.
 2. If a task is `IN PROGRESS` and `Last touched` is within ~24h, **do not take
-  it** — another session owns it. Take the next `NOT STARTED` task whose
+   it** — another session owns it. Take the next `NOT STARTED` task whose
    dependencies are `DONE`.
 3. Claim it: set status `IN PROGRESS`, add your session id and the date, and
    **commit that one-line change by itself, before doing any work:**
@@ -119,32 +117,30 @@ real output. `typecheck` is not evidence.
 
 ---
 
-## NOW — active plan: v2 structure & distribution
+## COMPLETED PLAN — v2 structure & distribution
 
 - **Plan:** `docs/superpowers/plans/2026-07-10-sdk-v2-structure-and-distribution.md`
 - **Spec:** `docs/superpowers/specs/2026-07-10-sdk-v2-structure-and-distribution-design.md`
 - **Kickoff prompt:** `docs/superpowers/plans/2026-07-10-sdk-v2-execution-prompt.md`
 
 **Ordering is load-bearing.** Each task is the safety net for the next. Task 3's
-snapshot is the *only* test Task 4 has, because a file move has no behaviour to
+snapshot is the _only_ test Task 4 has, because a file move has no behaviour to
 assert. **Do not run out of order. Do not parallelise.** Dependencies are strictly
 `1 → 2 → … → 10`; only 7, 8 and 10 have slack, and only after 6.
 
-
-| #   | Task                                                    | Status      | Session    | Last touched | Commit                   |
-| --- | ------------------------------------------------------- | ----------- | ---------- | ------------ | ------------------------ |
-| 0   | Docs: spec, plan, `AGENTS.md`, prompt, this file        | **DONE**    | `01AzJBSa` | 2026-07-10   | `6cd4d6e4e`              |
-| 1   | Assert the two export maps agree                        | **DONE**    | `ab099b6a` | 2026-07-10   | `ecb78a113`              |
-| 2   | Install smoke test — pack, install, import              | **DONE**    | `ab099b6a` | 2026-07-10   | `7220e9587`              |
-| 3   | Public-export snapshot                                  | **DONE** (snapshot approved by Jay at hard stop #2) | `ab099b6a` | 2026-07-10   | `84e15ca72`              |
-| 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | **DONE**    | `ab099b6a` | 2026-07-10   | `4c6f7102c` (4 commits from `25068d272`) |
-| 5   | Axis 2 — root canonical, subpaths deprecated            | **DONE** (snapshot growth accepted by Jay at hard stop #3) | `ab099b6a` | 2026-07-10   | `b5e588dbc`+`aafbdf91b`  |
-| 6   | Dogfood `whitelabel-demo` (acceptance gate)             | **DONE**    | `ab099b6a` | 2026-07-10   | `db30c6df3`+`19e500e50`  |
-| 7   | Portability — ban bare globals in `core/`               | **DONE**    | `ab099b6a` | 2026-07-10   | `189428df7`+`a485ad401`  |
-| 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | **DONE**    | `ab099b6a` | 2026-07-10   | `c7bca7a7e`              |
-| 9   | Examples — `07-vanilla.ts`, `08-cdn.html`               | **DONE** (steps 1–5 `549d597a0`, review clean; Step 6 executed 2026-07-12 — D2a + D3 **PASS** in real Chromium vs live local stack, evidence in session log + `docs/superpowers/reviews/2026-07-12-sdk-production-readiness.md`) | `ab099b6a` | 2026-07-10   | `549d597a0` + live gate  |
-| 10  | Docs — README, CHANGELOG, API-MAP                       | **DONE**    | `ab099b6a` | 2026-07-10   | `6e9cc9f5a`              |
-
+| #   | Task                                                    | Status                                                                                                                                                                                                                           | Session    | Last touched | Commit                                   |
+| --- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------ | ---------------------------------------- |
+| 0   | Docs: spec, plan, `AGENTS.md`, prompt, this file        | **DONE**                                                                                                                                                                                                                         | `01AzJBSa` | 2026-07-10   | `6cd4d6e4e`                              |
+| 1   | Assert the two export maps agree                        | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `ecb78a113`                              |
+| 2   | Install smoke test — pack, install, import              | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `7220e9587`                              |
+| 3   | Public-export snapshot                                  | **DONE** (snapshot approved by Jay at hard stop #2)                                                                                                                                                                              | `ab099b6a` | 2026-07-10   | `84e15ca72`                              |
+| 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `4c6f7102c` (4 commits from `25068d272`) |
+| 5   | Axis 2 — root canonical, subpaths deprecated            | **DONE** (snapshot growth accepted by Jay at hard stop #3)                                                                                                                                                                       | `ab099b6a` | 2026-07-10   | `b5e588dbc`+`aafbdf91b`                  |
+| 6   | Dogfood `whitelabel-demo` (acceptance gate)             | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `db30c6df3`+`19e500e50`                  |
+| 7   | Portability — ban bare globals in `core/`               | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `189428df7`+`a485ad401`                  |
+| 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `c7bca7a7e`                              |
+| 9   | Examples — `07-vanilla.ts`, `08-cdn.html`               | **DONE** (steps 1–5 `549d597a0`, review clean; Step 6 executed 2026-07-12 — D2a + D3 **PASS** in real Chromium vs live local stack, evidence in session log + `docs/superpowers/reviews/2026-07-12-sdk-production-readiness.md`) | `ab099b6a` | 2026-07-10   | `549d597a0` + live gate                  |
+| 10  | Docs — README, CHANGELOG, API-MAP                       | **DONE**                                                                                                                                                                                                                         | `ab099b6a` | 2026-07-10   | `6e9cc9f5a`                              |
 
 Statuses: `NOT STARTED` · `IN PROGRESS` · `BLOCKED (reason)` · `DONE (sha)` · `WON'T DO (reason)`
 
@@ -160,11 +156,46 @@ Also stop if the same failure survives three different fixes (use
 
 ---
 
+## COMPLETED PLAN — web SDK-only boundary
+
+- **Plan:** `docs/superpowers/plans/2026-07-24-web-sdk-only-boundary.md`
+- **Spec:** `docs/superpowers/specs/2026-07-24-web-sdk-only-boundary-design.md`
+
+| #   | Task                              | Status | Session             | Last touched | Commit                    |
+| --- | --------------------------------- | ------ | ------------------- | ------------ | ------------------------- |
+| 1   | Baseline and static boundary gate | DONE   | `frontend-sdk-only` | 2026-07-24   | `b388f2f58`               |
+| 2   | Canonical SDK imports             | DONE   | `frontend-sdk-only` | 2026-07-24   | `b84e23c17`               |
+| 3   | One session engine                | DONE   | `frontend-sdk-only` | 2026-07-24   | `486df10f4`               |
+| 4   | Runtime-neutral web state         | DONE   | `frontend-sdk-only` | 2026-07-24   | `afbd6e5a0`               |
+| 5   | Typed platform API coverage       | DONE   | `frontend-sdk-only` | 2026-07-24   | `65202adea`               |
+| 6   | Remove runtime routing knowledge  | DONE   | `frontend-sdk-only` | 2026-07-24   | `e6241bbfc`               |
+| 7   | Local parity proof                | DONE   | `frontend-sdk-only` | 2026-07-24   | `6c02b601e`               |
+| 8   | Delivery and dev proof            | DONE   | `frontend-sdk-only` | 2026-07-24   | `aefa2a628` + `8688b8492` |
+
+---
+
+## NOW — active plan: native integration authentication lifecycle
+
+- **Plan:** `docs/superpowers/plans/2026-07-25-native-integration-auth-lifecycle.md`
+- **Spec:** `docs/superpowers/specs/2026-07-25-native-integration-auth-lifecycle-design.md`
+
+| #   | Task                                          | Status                    | Session                       | Last touched | Commit      |
+| --- | --------------------------------------------- | ------------------------- | ----------------------------- | ------------ | ----------- |
+| 1   | Contracts and RED tests                       | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `de7026bfc` |
+| 2   | Database lifecycle                            | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `572bedb5a` |
+| 3   | OAuth2 protocol engine                        | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `db31d216e` |
+| 4   | API lifecycle routes                          | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `63dda6afe` |
+| 5   | Executor and non-OAuth request authentication | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `35daeda10` |
+| 6   | SDK and web integration                       | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `b3826fa8f` |
+| 7   | Local verification                            | DONE WITH BROWSER BLOCKER | `native-oauth-full-lifecycle` | 2026-07-25   | `4575346db` |
+| 8   | Delivery and dev proof                        | IN PROGRESS               | `native-oauth-full-lifecycle` | 2026-07-25   | claim       |
+
+---
+
 ## NEXT — committed, needs a spec before it starts
 
 Real work, deliberately not scheduled. **Do not start these.** Each needs its own
 spec → plan → chain.
-
 
 | Item                                                        | Why it waits                             | Cost of waiting                                                                                                                                                                                                                                            |
 | ----------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -172,32 +203,33 @@ spec → plan → chain.
 | **Lumen productionisation**                                 | Blocks Lumen's prod ship, not the SDK    | Ownership is a JSON file (`apps/whitelabel-demo/src/server/users.ts`), rate limiting an in-memory `Map` (`…/rate-limit.ts`), both documented single-instance. Anonymous visitors mint a fresh `userId` per visit **and provision real Daytona sandboxes**. |
 | **Migrate `apps/web`'s 340 import sites to the root entry** | Optional, mechanical                     | None — the deprecated aliases exist precisely so this has no deadline.                                                                                                                                                                                     |
 
-
 ---
 
 ## BACKLOG — real gaps, unscheduled. Agents: append here.
 
 Single, self-contained changes. Anything multi-step earns a spec instead.
 
-
-| #   | Gap                                                                                                                                                  | Evidence                                                                                                                                                                          | Status                                                                             |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| B1  | **No skills create/update/delete surface.** The only agent capability with zero SDK coverage.                                                        | `grep -rn "createSkill|deleteSkill" packages/sdk/src` → nothing but a comment in `projects-client/agent-config.ts:7`                                                              | OPEN                                                                               |
-| B2  | **No account-deletion surface.**                                                                                                                     | `grep -rn "deleteAccount" packages/sdk/src` → nothing                                                                                                                             | OPEN                                                                               |
-| B3  | **Host-local React hooks that belong in the SDK.** `apps/web` hand-rolls hooks over client fns the SDK already exposes — violating "hosts are thin". | `apps/web/src/hooks/{transcription/use-transcription,projects/use-project-gateway,channels/use-channel-bindings}.ts`. `@kortix/sdk/react` has only `use-gateway-catalog-sync.ts`. | OPEN                                                                               |
-| B4  | `**.name` on `ApiError` is duck-typed by legacy sniffers.** Changing it is a *silent runtime* break, not a compile break.                            | `src/platform/api/errors.ts:59` — `this.name = 'ApiError'`, with a comment noting legacy sniffers                                                                                 | WON'T DO for now — documented in `AGENTS.md`; revisit only with a deprecation path |
-| B5  | `**structure_version` semantics undocumented** (`1` = legacy tasks, `2` = tickets/board)                                                             | `src/opencode/kortix-master.ts`                                                                                                                                                   | OPEN                                                                               |
-| B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test) | **CLOSED 2026-07-12** — shared `importSpecifiers` helper now catches side-effect imports (both quote styles) in the graph walker, the examples scan, AND the inline tier scan; RED-proven, reviewed. Uncommitted fix wave, see `.superpowers/sdd/fix-wave-2-report.md` |
-| B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider. | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default. | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green |
-| B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
-| B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.** | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`. | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green |
-| B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
-| B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
-| B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
-| B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`. | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input. | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector` |
-| B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback. | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account. | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement` |
-| B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing). | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green |
-
+| #   | Gap                                                                                                                                                                                                                                                                                                                                                                                                                                          | Evidence                                                                                                                                                                                                                                                                                                | Status                                                                                                                                                                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | **No skills create/update/delete surface.** The only agent capability with zero SDK coverage.                                                                                                                                                                                                                                                                                                                                                | `grep -rn "createSkill                                                                                                                                                                                                                                                                                  | deleteSkill" packages/sdk/src`→ nothing but a comment in`projects-client/agent-config.ts:7`                                                                                                                                                                            | OPEN |
+| B2  | **No account-deletion surface.**                                                                                                                                                                                                                                                                                                                                                                                                             | `grep -rn "deleteAccount" packages/sdk/src` → nothing                                                                                                                                                                                                                                                   | OPEN                                                                                                                                                                                                                                                                   |
+| B3  | **Host-local React hooks that belong in the SDK.** `apps/web` hand-rolls hooks over client fns the SDK already exposes — violating "hosts are thin".                                                                                                                                                                                                                                                                                         | `apps/web/src/hooks/{transcription/use-transcription,projects/use-project-gateway,channels/use-channel-bindings}.ts`. `@kortix/sdk/react` has only `use-gateway-catalog-sync.ts`.                                                                                                                       | OPEN                                                                                                                                                                                                                                                                   |
+| B4  | `**.name` on `ApiError` is duck-typed by legacy sniffers.** Changing it is a _silent runtime_ break, not a compile break.                                                                                                                                                                                                                                                                                                                    | `src/platform/api/errors.ts:59` — `this.name = 'ApiError'`, with a comment noting legacy sniffers                                                                                                                                                                                                       | WON'T DO for now — documented in `AGENTS.md`; revisit only with a deprecation path                                                                                                                                                                                     |
+| B5  | `**structure_version` semantics undocumented** (`1` = legacy tasks, `2` = tickets/board)                                                                                                                                                                                                                                                                                                                                                     | `src/opencode/kortix-master.ts`                                                                                                                                                                                                                                                                         | OPEN                                                                                                                                                                                                                                                                   |
+| B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through                                                                                                                                                                                                                                     | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test)                                                                                                            | **CLOSED 2026-07-12** — shared `importSpecifiers` helper now catches side-effect imports (both quote styles) in the graph walker, the examples scan, AND the inline tier scan; RED-proven, reviewed. Uncommitted fix wave, see `.superpowers/sdd/fix-wave-2-report.md` |
+| B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider.                                                                                                                                                                                                               | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default.                                                                                                                                         | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green                                                                                                                                                            |
+| B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability.                                                                                                                                                                                                                  | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`.                                                                                                                                                                               | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green                                                                                                                                                                                                 |
+| B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.**                                                                                                                                                                                                                                                                                                                           | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`.                                                                                                                      | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green                                                                                                                                                                                                 |
+| B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials.                                                                                                                                                                                                | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`.                                                                                                                                      | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green                                                                                                                                                            |
+| B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.**                                                                                                                                                                                                                                                                                                                                  | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`.                                                   | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green                                                                                                                                                            |
+| B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.**                                                                                                                                                                                                                                                                                                                                                                            | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode.                                                                                                                          | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green                                                                                                           |
+| B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`.                                                                                                                                                                                                                                    | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input.                                                                                                      | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector`                                                                                                                                                                                                     |
+| B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback.                                                                                                                                                                                           | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account.                                                                                                              | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement`                                                                                                                                                                            |
+| B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing).                                                                 | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green                               |
+| B16 | **Retry transient transport failures on idempotent REST reads before reporting them.** Browser CORS preflight failures surface as opaque `TypeError: Failed to fetch`, bypass the existing HTTP 502/503/504 retry loop, and call the host error handler before React Query retries successfully. Cache successful preflights to reduce exposure without retrying mutations.                                                                  | Production session `d9abee06-5af1-48b9-ba92-53ca0fcf0589` logged continuous audit `200` responses after one browser preflight failure; `src/core/http/api-client.ts` retries response statuses but reports initial fetch throws immediately; `apps/api/src/index.ts` emits no `Access-Control-Max-Age`. | **DONE 2026-07-24** — implementation `9f6e5b615`; session `cors-transport-resilience`                                                                                                                                                                                  |
+| B17 | **Add native OAuth2 client-credentials lifecycle support to existing connector connection profiles.** Static bearer credentials cannot acquire, cache, refresh, or revoke OAuth2 access tokens. Microsoft Graph and SharePoint require OAuth2 and cannot use a static API key.                                                                                                                                                               | `apps/api/src/executor/credentials.ts` decrypts one opaque value; `apps/api/src/executor/db-deps.ts` passes that value directly to `executeCall`; `packages/sdk/src/core/rest/projects-client/connectors.ts` accepts only `{ value }`.                                                                  | **DONE 2026-07-24** — session `native-oauth-sharepoint`; full SDK gates and real SharePoint proof green                                                                                                                                                                |
+| B18 | **Keep the managed-model playground pin synchronized with the managed catalog.** The playground exits before API access when its pinned IDs differ from `MANAGED_MODELS`.                                                                                                                                                                                                                                                                    | `packages/sdk/playground/chat/14-change-default-model.ts` still pins retired `qwen3.7-max` and `deepseek-v4-pro`.                                                                                                                                                                                       | **DONE 2026-07-24** — session `managed-models-aster`; full SDK gates green                                                                                                                                                                                             |
+| B19 | **Preserve explicit managed-model pricing and cache-write rates through the project catalog and turn-cost estimator.** Browser-side `models.dev` lookup can substitute another provider's price for a Kortix-managed model, and the turn estimator does not accept a distinct cache-write rate.                                                                                                                                              | `src/core/rest/projects-client/projects.ts`, `src/core/turns/types.ts`, `src/core/turns/state.ts`; confirmed for managed Aster `glm-5.2`.                                                                                                                                                               | **DONE 2026-07-25** — implementation `28c18cbfa`; full SDK suite, typecheck, public-surface snapshot, and packed-install smoke green                                                                                                                                   |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -214,34 +246,31 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 Things found mid-task that you did **not** fix. Fixing them inside a claimed task
 is scope creep; losing them is worse. Land them here, then tell the user.
 
-
-| Date       | Session    | Finding                                                                                                       | Where                                                                           |
-| ---------- | ---------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| 2026-07-10 | `01AzJBSa` | The original plan's "bump to `0.3.0`" is **impossible** — `version` is inert and `latest` on npm is `0.9.100` | `scripts/stage-npm-publish.mjs:32`                                              |
-| 2026-07-10 | `01AzJBSa` | `KortixProject` declared **twice**, as two different interfaces                                               | `core/rest/projects-client/projects.ts:31`, `core/runtime/kortix-master.ts:577` |
-| 2026-07-10 | `01AzJBSa` | Bare `process.env` read in the isomorphic core → `ReferenceError` in a `<script>` bundle                      | `platform/platform-client/shared.ts:29` — fixed in Task 7                       |
-| 2026-07-10 | `01AzJBSa` | The tripwire walks **imports**; it cannot see globals (`process`/`window`/`document`)                         | `src/index.isomorphic.test.ts` — fixed in Task 7                                |
-| 2026-07-10 | `01AzJBSa` | Nothing installs and imports the tarball. `npm pack --dry-run` lists contents only                            | `.github/workflows/package-tests.yml` — Task 2                                  |
-| 2026-07-10 | `ab099b6a` | Plan's smoke script can't install: staged `workspace:*` dep pins `@kortix/llm-catalog@0.0.0-smoke`, absent from npm. Fixed per Jay: pack + install the sibling tarball alongside | `packages/sdk/scripts/smoke-install.mjs` — Task 2 |
-| 2026-07-10 | `ab099b6a` | **`createServerKortix` does not exist.** Plan (`:253,991`) and spec (`:158`) assert it from `./server`; real exports are `createScopedKortix`, `runWithKortix`, `getScopedConfig` (`src/server.ts`). Also affects Task 6's Lumen snippet | `docs/superpowers/{plans,specs}/2026-07-10-*` — Task 2/6 |
-| 2026-07-10 | `ab099b6a` | Docs prose says 25 subpaths / 21 legacy; reality is 23 export keys / 20 legacy. Plan's enumerated key lists (Task 5 Step 9) match reality exactly | `packages/sdk/package.json` |
-| 2026-07-10 | `ab099b6a` | Plan's `createCliToken` facade name is fictional; real facade method is `kortix.project(id).tokens.create(input?)` (→ `createProjectCliToken`). `gateway.sessions(days?)` was correct | `packages/sdk/src/core/client/kortix.ts:303` — found in Task 6 |
-| 2026-07-10 | `ab099b6a` | Demo e2e harness memoizes builds on `.next/BUILD_ID` — e2e runs silently exercise STALE builds after source changes; must clear `.next` (or fix the harness) for trustworthy runs | `apps/whitelabel-demo/tests/e2e/harness.ts` (`ensureBuilt()`) |
-| 2026-07-10 | `ab099b6a` | Original preview-token malformed-200 guard was itself broken: `upstreamRes.status \|\| 502` returns 200 on that path, so the "error" response shipped as HTTP 200. Fixed by the Task 6 rewrite (now a real 502, e2e-covered) | `apps/whitelabel-demo/src/app/api/preview-token/route.ts` (pre-`19e500e50`) |
-| 2026-07-10 | `ab099b6a` | **CRITICAL (final review): the CDN claim is unfulfillable by the release pipeline.** Publish runs tsc only (`publish-npm-package.sh:36`; `prepublishOnly` tsc-only) so tsup bundles never land in the tarball; `stage-npm-publish.mjs:37` promotes only `type/main/types/exports/files/bin`, so `browser`/`unpkg`/`jsdelivr` stay nested in `publishConfig` where npm/unpkg/jsDelivr never look; nothing validates them at release. Plan flaw (plan `:1253-1278` said "pass through untouched"), faithfully implemented. Decision with Jay: wire the pipeline vs walk back the README/CHANGELOG claim | `scripts/{publish-npm-package.sh,stage-npm-publish.mjs}`, `packages/sdk/{README,CHANGELOG}.md` |
-| 2026-07-10 | `ab099b6a` | `bundle.test.ts` never executes in CI (no workflow runs `build:bundles` → both tests skip forever) and NO workflow runs `pnpm --filter @kortix/sdk typecheck` at all (examples' "typechecked in CI" claim is local-only). Two cheap CI steps close both | `.github/workflows/package-tests.yml` |
-| 2026-07-10 | `4003a41b` | GETTING-STARTED step 3 was un-followable: the web "API keys" tab's **Create button only rendered in the empty state**, and the executor auto-mints "Executor Session" tokens, so real accounts never see it — no way to mint a PAT from the UI. Fixed (uncommitted, this worktree): `CreateApiKeyAction` header button + regression test; doc wording updated ("CLI tokens tab" → "API keys") | `apps/web/src/features/accounts/settings/cli-tokens-tab.tsx`, `packages/sdk/GETTING-STARTED.md` |
-| 2026-07-10 | `4003a41b` | **`ensureReady()` is single-shot** — one `/start` with `wait_ms=30_000`, then throws `RUNTIME_UNAVAILABLE`; a cold provision (observed: minutes) makes EVERY ensureReady example (02/04/06/07) fail — callers must hand-roll a retry loop (examples 09/step4 in this worktree do). Live-observed worse: the server returned near-instantly ~99× in 5min (long-poll not held), and one session went provisioning→stopped and then **disappeared from `projects.sessions()`**. SDK DX gap: `ensureReady({ deadlineMs })` or documented retry | `packages/sdk/src/core/client/kortix.ts:674` (verified live against local stack) |
-| 2026-07-10 | `4003a41b` | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252` |
-| 2026-07-11 | `4003a41b` | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`) |
-| 2026-07-11 | `4003a41b` | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33` |
-| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path. | `apps/api/src/executor/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
-
+| Date       | Session                  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Where                                                                                                             |
+| ---------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-07-10 | `01AzJBSa`               | The original plan's "bump to `0.3.0`" is **impossible** — `version` is inert and `latest` on npm is `0.9.100`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `scripts/stage-npm-publish.mjs:32`                                                                                |
+| 2026-07-10 | `01AzJBSa`               | `KortixProject` declared **twice**, as two different interfaces                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `core/rest/projects-client/projects.ts:31`, `core/runtime/kortix-master.ts:577`                                   |
+| 2026-07-10 | `01AzJBSa`               | Bare `process.env` read in the isomorphic core → `ReferenceError` in a `<script>` bundle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `platform/platform-client/shared.ts:29` — fixed in Task 7                                                         |
+| 2026-07-10 | `01AzJBSa`               | The tripwire walks **imports**; it cannot see globals (`process`/`window`/`document`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `src/index.isomorphic.test.ts` — fixed in Task 7                                                                  |
+| 2026-07-10 | `01AzJBSa`               | Nothing installs and imports the tarball. `npm pack --dry-run` lists contents only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `.github/workflows/package-tests.yml` — Task 2                                                                    |
+| 2026-07-10 | `ab099b6a`               | Plan's smoke script can't install: staged `workspace:*` dep pins `@kortix/llm-catalog@0.0.0-smoke`, absent from npm. Fixed per Jay: pack + install the sibling tarball alongside                                                                                                                                                                                                                                                                                                                                                                                                                      | `packages/sdk/scripts/smoke-install.mjs` — Task 2                                                                 |
+| 2026-07-10 | `ab099b6a`               | **`createServerKortix` does not exist.** Plan (`:253,991`) and spec (`:158`) assert it from `./server`; real exports are `createScopedKortix`, `runWithKortix`, `getScopedConfig` (`src/server.ts`). Also affects Task 6's Lumen snippet                                                                                                                                                                                                                                                                                                                                                              | `docs/superpowers/{plans,specs}/2026-07-10-*` — Task 2/6                                                          |
+| 2026-07-10 | `ab099b6a`               | Docs prose says 25 subpaths / 21 legacy; reality is 23 export keys / 20 legacy. Plan's enumerated key lists (Task 5 Step 9) match reality exactly                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `packages/sdk/package.json`                                                                                       |
+| 2026-07-10 | `ab099b6a`               | Plan's `createCliToken` facade name is fictional; real facade method is `kortix.project(id).tokens.create(input?)` (→ `createProjectCliToken`). `gateway.sessions(days?)` was correct                                                                                                                                                                                                                                                                                                                                                                                                                 | `packages/sdk/src/core/client/kortix.ts:303` — found in Task 6                                                    |
+| 2026-07-10 | `ab099b6a`               | Demo e2e harness memoizes builds on `.next/BUILD_ID` — e2e runs silently exercise STALE builds after source changes; must clear `.next` (or fix the harness) for trustworthy runs                                                                                                                                                                                                                                                                                                                                                                                                                     | `apps/whitelabel-demo/tests/e2e/harness.ts` (`ensureBuilt()`)                                                     |
+| 2026-07-10 | `ab099b6a`               | Original preview-token malformed-200 guard was itself broken: `upstreamRes.status \|\| 502` returns 200 on that path, so the "error" response shipped as HTTP 200. Fixed by the Task 6 rewrite (now a real 502, e2e-covered)                                                                                                                                                                                                                                                                                                                                                                          | `apps/whitelabel-demo/src/app/api/preview-token/route.ts` (pre-`19e500e50`)                                       |
+| 2026-07-10 | `ab099b6a`               | **CRITICAL (final review): the CDN claim is unfulfillable by the release pipeline.** Publish runs tsc only (`publish-npm-package.sh:36`; `prepublishOnly` tsc-only) so tsup bundles never land in the tarball; `stage-npm-publish.mjs:37` promotes only `type/main/types/exports/files/bin`, so `browser`/`unpkg`/`jsdelivr` stay nested in `publishConfig` where npm/unpkg/jsDelivr never look; nothing validates them at release. Plan flaw (plan `:1253-1278` said "pass through untouched"), faithfully implemented. Decision with Jay: wire the pipeline vs walk back the README/CHANGELOG claim | `scripts/{publish-npm-package.sh,stage-npm-publish.mjs}`, `packages/sdk/{README,CHANGELOG}.md`                    |
+| 2026-07-10 | `ab099b6a`               | `bundle.test.ts` never executes in CI (no workflow runs `build:bundles` → both tests skip forever) and NO workflow runs `pnpm --filter @kortix/sdk typecheck` at all (examples' "typechecked in CI" claim is local-only). Two cheap CI steps close both                                                                                                                                                                                                                                                                                                                                               | `.github/workflows/package-tests.yml`                                                                             |
+| 2026-07-10 | `4003a41b`               | GETTING-STARTED step 3 was un-followable: the web "API keys" tab's **Create button only rendered in the empty state**, and the executor auto-mints "Executor Session" tokens, so real accounts never see it — no way to mint a PAT from the UI. Fixed (uncommitted, this worktree): `CreateApiKeyAction` header button + regression test; doc wording updated ("CLI tokens tab" → "API keys")                                                                                                                                                                                                         | `apps/web/src/features/accounts/settings/cli-tokens-tab.tsx`, `packages/sdk/GETTING-STARTED.md`                   |
+| 2026-07-10 | `4003a41b`               | **`ensureReady()` is single-shot** — one `/start` with `wait_ms=30_000`, then throws `RUNTIME_UNAVAILABLE`; a cold provision (observed: minutes) makes EVERY ensureReady example (02/04/06/07) fail — callers must hand-roll a retry loop (examples 09/step4 in this worktree do). Live-observed worse: the server returned near-instantly ~99× in 5min (long-poll not held), and one session went provisioning→stopped and then **disappeared from `projects.sessions()`**. SDK DX gap: `ensureReady({ deadlineMs })` or documented retry                                                            | `packages/sdk/src/core/client/kortix.ts:674` (verified live against local stack)                                  |
+| 2026-07-10 | `4003a41b`               | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config                                                                                                                                                              | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252`         |
+| 2026-07-11 | `4003a41b`               | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack                                                                                                                                                                                                                                                                                          | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`)                                 |
+| 2026-07-11 | `4003a41b`               | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally                                                                                                                                                                                                                                                                                                       | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33`                                                 |
+| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/executor/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 ---
 
 ## Open decisions
-
 
 | Question                                    | Owner | Status                                                                                                                                                              |
 | ------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,18 +278,17 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | Rename `ApiError` → `KortixApiError`?       | Jay   | **RESOLVED — no.** Package name already namespaces the import; `.name` is duck-typed (B4); `instanceof` is the branch mechanism. Prefix only for genuine ambiguity. |
 | "Shift the cortex tab to SDK" — what is it? | Jay   | **OPEN.** May re-order everything if it names work Marko is waiting on.                                                                                             |
 
-
 ---
 
 ## Standing facts (verified — don't re-derive)
 
 - Baseline: **1046 tests pass, 0 fail, 65 files.** `typecheck` exits 0. Fewer tests
-in your run means you filtered by accident.
+  in your run means you filtered by accident.
 - `@kortix/sdk` is **live on npm**, `latest` = `0.9.100`. **Never edit `version`** —
-`scripts/stage-npm-publish.mjs:32` overwrites it from the root `VERSION`.
+  `scripts/stage-npm-publish.mjs:32` overwrites it from the root `VERSION`.
 - `bun test <dir with no test files>` exits **0**. `Ran 0 tests` is not a green run.
 - Streaming is `fetch` + `response.body.pipeThrough(TextDecoderStream)`, **not**
-`EventSource`. It **cannot run on React Native**.
+  `EventSource`. It **cannot run on React Native**.
 - The 21 legacy subpaths are imported at **340 sites**. They get deprecated aliases, never deletion.co
 
 ---
@@ -281,7 +309,7 @@ Brainstormed → spec → plan → execution prompt → this tracker. **No sourc
 - `packages/sdk/AGENTS.md` (+ `CLAUDE.md` symlink), root `AGENTS.md` pointer
 - `packages/sdk/PROGRESS.md` (this file)
 
-**Found** — see *Discovered this session*. The load-bearing ones: `0.3.0` was
+**Found** — see _Discovered this session_. The load-bearing ones: `0.3.0` was
 impossible; `KortixProject` was declared twice; nothing tests an install; the
 tripwire can't see globals; the SDK can't stream on RN and `apps/mobile` quietly
 works around it with 655 parallel lines.
@@ -435,6 +463,7 @@ global, D3 `instanceof Kortix.ApiError` under the bundle).
 
 **Shippable to production: NOT YET** — solely on the unverified D2a/D3
 browser gate. Everything else is implemented, reviewed, and green.
+
 ### 2026-07-11 — session `b35eea56`
 
 Jay-directed addition, outside the Now chain: `examples/step5-change-model.ts`
@@ -538,7 +567,46 @@ removing public SDK symbols. TDD will be RED-watched before implementation; the
 full SDK typecheck, test, and packed-install smoke gates are required before this
 claim is closed.
 
-**Status:** IN PROGRESS.
+**Status:** COMPLETE.
+
+### 2026-07-25 — session `session-history-pagination` (completion)
+
+Fixed complete-turn history pagination and stable scroll restoration.
+
+The controller now follows assistant-only pages until it loads each referenced
+parent user message. It hydrates the collected pages once in chronological
+order. Tail reconciliation no longer resets a cursor after older-history
+pagination starts. Repeated cursors stop with an explicit error.
+
+The web host now captures the first visible `[data-turn-id]` element before the
+request. It restores that element to the same viewport offset after React
+commits. It no longer applies total `scrollHeight` growth.
+
+**RED evidence:**
+
+- The complete-turn test expected requests through `cursor-3`. The controller
+  stopped after `cursor-1`.
+- The cursor-invariant test expected the next request to use `cursor-2`. Tail
+  reconciliation reset the cursor to `cursor-1`.
+- The scroll tests failed because `session-history-scroll.ts` did not exist.
+
+**Verification:**
+
+- Focused SDK and web tests: **15 pass / 0 fail / 33 assertions**.
+- SDK typecheck: exit 0.
+- SDK suite: **1210 pass / 2 skip / 0 fail** across 98 files and 5461
+  assertions.
+- SDK packed-install smoke: pass.
+- Focused ESLint: 0 errors. One pre-existing
+  `react-hooks/exhaustive-deps` warning remains at `session-chat.tsx:3635`.
+- Changed-file web TypeScript output: empty.
+- Web suite: **2054 pass / 2 unrelated baseline failures**. Both failures expect
+  the retired `deepseek-v4-pro` model in `src/lib/model-pricing.test.ts`.
+- Browser discovery returned no available browser. Local DOM and network
+  verification remains open.
+
+**Shippable to production: NOT YET.** Repository delivery, Deploy Dev, and
+deployed browser verification remain open.
 
 ---
 
@@ -1512,3 +1580,617 @@ provider-funded candidate with no managed fallback. Free Codex reached
 **Shippable to production: YES** for B14 and the published SDK surface.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-24 — session `cors-transport-resilience` (B16 completion)
+
+Added bounded transport retries to the shared SDK HTTP client. `GET` and `HEAD`
+requests now use three total attempts. The retry delays are 250 ms and 500 ms.
+The client still retries HTTP 502, 503, and 504 responses. It does not retry
+mutations or abort errors. The host error handler runs once after exhaustion.
+
+Extracted the API CORS configuration into `apps/api/src/middleware/cors.ts`.
+The origin, method, header, credential, and preview policies remain unchanged.
+Successful preflight responses now include `Access-Control-Max-Age: 600`.
+
+**TDD evidence:** the first SDK regression run reported **18 pass / 2 fail**.
+Both failures showed that `TypeError: Failed to fetch` received no SDK retry.
+The first API test failed because `src/middleware/cors.ts` did not exist.
+The focused GREEN runs reported **20 pass / 0 fail** for the SDK and **3 pass /
+0 fail** for API CORS.
+
+**Final SDK gates:** SDK and API typechecks exited 0. The full SDK suite reported
+**1186 pass / 0 fail** across 89 files with 5204 assertions. The packed-install
+smoke built, packed, installed, imported, and constructed `@kortix/sdk`.
+`git diff --check` exited 0.
+
+**API suite evidence:** the focused CORS suite passed. The full API suite reached
+and passed the CORS suite. It then failed in unrelated existing tests. Examples
+include missing `getTraceHeaders` and `captureException` exports, incomplete
+maintenance mocks, and missing sandbox-reaper exports.
+
+**Real local HTTP evidence:** an allowed preflight returned 204 with
+`Access-Control-Allow-Origin: https://kortix.com`,
+`Access-Control-Allow-Credentials: true`, and
+`Access-Control-Max-Age: 600`. An unknown origin received no
+`Access-Control-Allow-Origin`. `/v1/health` returned 200.
+
+The in-app browser runtime exposed no browser. Local Chromium verification
+remains unexecuted.
+
+**Shippable to production: YES** for B16 and the published SDK surface.
+Repository PR, Deploy Dev, deployed-SHA proof, and live-dev verification remain
+part of the repository lifecycle.
+---
+
+### 2026-07-24 — session `native-oauth-sharepoint` (B17 claim)
+
+Claimed the additive native OAuth2 client-credentials connection-profile
+contract. The existing Executor and Connector architecture remains unchanged.
+The server will acquire, cache, refresh, revoke, and inject OAuth2 access tokens.
+The first slice supports client secrets and certificate-based client assertions.
+Existing static credentials and Pipedream connections remain backward compatible.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-24 — session `native-oauth-sharepoint` (B17 completion)
+
+Added OAuth2 client credentials to the existing Connector and Executor
+credential routes. Static credentials remain compatible. The new contract
+supports `client_secret_post`, `client_secret_basic`, and `private_key_jwt`.
+Certificate assertions use `PS256` and include `x5t#S256`.
+
+The API validates the token endpoint before storage. It encrypts the OAuth2
+configuration and cached access token with the project key. Executor resolution
+refreshes tokens with 60 seconds or less remaining. A PostgreSQL advisory lock
+serializes concurrent refreshes for each credential row. Profile revocation
+removes the credential from the next Executor resolution.
+
+**Final SDK gates:** the SDK typecheck exited 0. The full SDK suite reported
+**1187 pass / 0 fail** across 89 files. The packed-install smoke built,
+packed, installed, imported, and constructed `@kortix/sdk`. The public type
+snapshot adds only `ConnectionProfileCredentialInput` and
+`OAuth2ClientCredentials` under the root and `projects-client` exports.
+
+**Cross-surface evidence:** the API contract reported **37 pass / 0 fail**.
+The focused API suites reported **45 pass / 0 fail**. The isolated PostgreSQL
+profile suite reported **22 pass / 0 fail**. The full web suite reported
+**2089 pass / 0 fail**. Ke2e coverage reported **493/502 routes**, 9 allowlisted,
+and 0 uncovered. API, SDK, and API-contract typechecks exited 0. Focused web
+ESLint and `git diff --check` exited 0.
+
+The repository-wide API suite is not green on this base. Unrelated baseline
+failures include missing `getTraceHeaders`, stale sandbox-reaper exports, and
+incomplete maintenance mocks. The changed OAuth2 and Executor suites pass.
+
+**Real SharePoint evidence:** the isolated API acquired a Microsoft Graph token.
+Graph returned 200 for the configured SharePoint site. Graph returned 200 for
+the document-library list and returned one drive. Local profile revocation
+returned 200. The next Executor call returned 404.
+
+The browser runtime exposed zero browsers. Browser DOM and network verification
+remain unexecuted. The temporary browser fixture was deleted. The isolated
+database reports zero rows for its project and auth user.
+
+**Shippable to production: YES** for B17 and the published SDK surface.
+Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
+remain part of the repository lifecycle.
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 1)
+
+Created the web SDK-only specification and implementation plan. Added an AST
+boundary scanner, an exact ratchet baseline, and ESLint import restrictions.
+
+The RED test reported 155 forbidden production imports. The categories were 103
+host runtime imports, 32 host-owned Kortix API imports, and 20 deprecated SDK
+runtime imports.
+
+The focused GREEN run reported 1 pass and 0 failures. ESLint returned one
+`no-restricted-imports` error for a synthetic `@opencode-ai/sdk` import outside
+the baseline. ESLint passed for the changed configuration, scanner, and test.
+
+**Shippable to production: NOT YET.** The baseline still contains 155 violations.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 2)
+
+Replaced frontend OpenCode compatibility imports with `@kortix/sdk` and
+`@kortix/sdk/react`. Replaced host store imports with
+`@kortix/sdk/internal/*`. Deleted 13 compatibility re-export files.
+
+The boundary baseline decreased from 155 violations to 47 violations. All 20
+deprecated SDK runtime imports are gone. The host runtime category decreased
+from 103 imports to 15 imports. The 32 host-owned Kortix API imports remain for
+Task 5.
+
+Focused web tests reported **51 pass / 0 fail**. The boundary test passed.
+ESLint checked 78 changed TypeScript files and reported 0 errors. It reported
+four existing `react-hooks/exhaustive-deps` warnings.
+
+The web typecheck reported four existing errors. None references a changed
+file. Two errors are in the OG template test. Two errors are unresolved
+generated docs-source imports.
+
+**Shippable to production: NOT YET.** Tasks 3 through 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 3)
+
+Added the generic OAuth2 protocol engine. It implements PKCE S256,
+Authorization Code exchange, refresh-token rotation, Device Authorization,
+discovery, and revocation. Token requests support `none`,
+`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, and
+`private_key_jwt`. Provider responses are bounded. Provider errors omit
+descriptions and token values. Production egress uses the shared SSRF guard.
+
+Expanded the existing Client Credentials contract with `none` and
+`client_secret_jwt`. Removed the certificate-thumbprint requirement from
+generic `private_key_jwt`. The optional thumbprint remains supported.
+
+**RED evidence:** the focused protocol test failed because
+`oauth2-lifecycle.ts` did not exist.
+
+**Verification:**
+
+- Focused OAuth, contract, and SDK suites: **83 pass / 0 fail**.
+- API typecheck: exit 0.
+- SDK typecheck and example typecheck: exit 0.
+
+**Shippable to production: NOT YET.** Tasks 4 through 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 4)
+
+Added project-scoped routes for redacted application configuration, discovery,
+Authorization Code start, Device Authorization start and poll, and status.
+Added the public state-authenticated callback. Callback state is hashed,
+profile-bound, user-bound, expiring, and consumed once. Added remote
+revocation attempts with unconditional local delegated-credential deletion.
+
+**Verification:**
+
+- Focused OAuth, contract, and SDK suites: **83 pass / 0 fail**.
+- API typecheck: exit 0.
+- Local API proof: application PUT 200, redacted GET 200, status GET 200,
+  Authorization Code start 200 with `S256` and state.
+- Callback replay proof: first provider-error callback returned 302 to the
+  allowlisted local frontend; the second callback returned 400.
+- Ke2e `CONN-OAUTH2`: **1 pass / 0 fail** in 4.55 seconds.
+- Ke2e coverage: **492/501 routes covered, 9 allowlisted, 0 uncovered**.
+
+**Shippable to production: NOT YET.** Tasks 5 through 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 5)
+
+Added delegated OAuth2 token resolution and refresh under the credential
+database advisory lock. Refresh-token rotation updates the encrypted credential.
+
+Added native request authentication for API keys in headers, query parameters,
+and cookies; generic HMAC-SHA256; AWS Signature Version 4; and mutual TLS.
+Existing bearer, HTTP Basic, custom, OAuth 1.0a, and no-auth behavior remains.
+The manifest schema and SDK types expose the same authentication matrix.
+
+**RED evidence:** four executor tests failed before implementation. They showed
+missing cookie placement, raw HMAC and SigV4 credentials in headers, and absent
+TLS options.
+
+**Verification:**
+
+- Focused executor, OAuth, manifest, contract, and SDK suites:
+  **205 pass / 0 fail**.
+- Added manifest conformance proof: **108 pass / 0 fail** in the final focused
+  wave.
+- API typecheck: exit 0.
+- SDK typecheck and example typecheck: exit 0.
+
+**Shippable to production: NOT YET.** Tasks 6 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 3)
+
+Enabled the complete `useSession(projectId, sessionId)` engine on the project
+session page. The root `SessionChat` now consumes its messages, status, and
+pagination state. Child session modals retain an isolated read-only sync engine.
+
+Moved permission recovery into `useSession`. Disabled duplicate question and
+permission recovery inside the root `SessionChat`. Replaced the frontend
+`getClient().session.command()` call with the typed SDK command action.
+
+**TDD evidence:** the first command-input test failed because
+`buildSessionCommandInput` did not exist. The first runtime forwarding test
+failed because `executeOpenCodeCommand` did not exist. The GREEN SDK run
+reported **20 pass / 0 fail**.
+
+The web architecture test first reported **0 pass / 2 fail**. It detected
+`chatEngine: false`, a second message sync engine, duplicate recovery pollers,
+and a direct runtime client call. The GREEN web run reported **53 pass / 0
+fail** across 11 focused files.
+
+The SDK typecheck exited 0. The web typecheck reported four existing errors.
+None references a changed file. ESLint reported 0 errors and one existing
+`react-hooks/exhaustive-deps` warning.
+
+**Shippable to production: NOT YET.** Tasks 4 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 4)
+
+Moved provider normalization, provider merging, and server-backed model defaults
+into `@kortix/sdk/react`. Added `useSessionModelSelection` as the
+runtime-neutral project model and agent hook.
+
+Moved optimistic compaction state behind `useSession`. Consolidated first-message
+files and boot-time queued messages into one presentation-only web store.
+Deleted every file under `apps/web/src/hooks/opencode`.
+
+The boundary baseline decreased from 47 violations to 32 violations. The host
+runtime category decreased from 15 imports to 0 imports. The remaining 32
+violations are host-owned Kortix API imports assigned to Task 5.
+
+**TDD evidence:** the provider merge test failed because
+`mergeProviderLists` did not exist. The model-default test failed because
+`use-model-defaults` did not exist. The compaction boundary test failed while
+`SessionChat` imported the host compaction store.
+
+The GREEN SDK run reported **113 pass / 0 fail**. The GREEN web run reported
+**33 pass / 0 fail**. The SDK typecheck exited 0. The web typecheck retained
+four unrelated existing errors. ESLint reported 0 errors and two existing hook
+warnings.
+
+**Shippable to production: NOT YET.** Tasks 5 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 5)
+
+Moved every frontend Kortix API transport into `@kortix/sdk`. Deleted
+`apps/web/src/lib/api-client.ts` and nine host API wrapper modules. Moved the
+IAM client and portable React Query modules into the SDK.
+
+The corrected boundary inventory found 40 forbidden imports after adding
+`@/lib/api-client` enforcement. The final baseline contains 0 violations.
+The scanner also rejects the `backendApi` and `authenticatedFetch` identifiers.
+
+**TDD evidence:** five focused SDK files first failed on missing exports.
+The GREEN SDK run reported **48 pass / 0 fail**. The web boundary and public
+marketplace run reported **5 pass / 0 fail**. The SDK typecheck exited 0.
+ESLint reported 0 errors.
+
+The public runtime and type snapshots contain additions only. They contain no
+removed or renamed exports.
+
+**Shippable to production: NOT YET.** Tasks 6 through 8 remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 6)
+
+Moved runtime routing, runtime actions, SSE transport, preview authentication,
+presentation conversion, PTY commands, and explicit host-boundary transport
+into `@kortix/sdk`.
+
+Added runtime-neutral SDK aliases without removing existing public exports.
+Renamed the remaining frontend files that contained `opencode`. The web source
+tree now contains no file path with that term.
+
+Expanded the AST boundary and ESLint gates. They reject OpenCode imports,
+deprecated runtime SDK subpaths, SDK internal subpaths, legacy runtime stores,
+runtime proxy paths, OpenCode REST paths, and raw Kortix backend routes.
+The boundary baseline contains 0 violations.
+
+The runtime snapshot added 145 names and removed 0 names. The type snapshot
+added 167 names and removed 0 names.
+
+**Verification:**
+
+- SDK typecheck: exit 0.
+- SDK suite: **1206 pass / 0 fail / 2 skip** across 98 files.
+- SDK packed-install smoke: pass.
+- Web suite: **2043 pass / 0 fail** across 224 files.
+- Web boundary test: **1 pass / 0 fail**.
+- Changed-file ESLint: 0 errors and 22 existing warnings.
+- Web typecheck: four existing errors only. Two are in the OG template test.
+  Two are unresolved generated docs-source imports.
+- White-label typecheck: exit 0.
+- White-label fresh build: exit 0.
+- White-label E2E: **44 pass / 0 fail / 3 live-upstream skips**.
+
+**Shippable to production: NOT YET.** Task 7 local parity proof and Task 8
+delivery and dev proof remain incomplete.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 7)
+
+Added a real browser regression for the SDK-only session path. The test creates
+a confirmed user, provisions a project and Platinum session, sends one prompt,
+observes the SDK runtime request, opens Files, and deletes all created resources.
+
+Updated the shared browser login helper for the email-first password flow.
+Added the SDK boundary test and frontend ESLint to the pull-request CI job.
+
+**Verification:**
+
+- SDK typecheck: exit 0.
+- SDK suite: **1206 pass / 0 fail / 2 skip** across 98 files.
+- SDK packed-install smoke: pass.
+- Web suite: **2043 pass / 0 fail** across 224 files.
+- Web SDK boundary plus full source ESLint: **1 pass / 0 fail**, ESLint exit 0.
+- White-label typecheck and fresh build: exit 0.
+- White-label E2E: **44 pass / 0 fail / 3 live-upstream skips**.
+- Managed session HTTP smoke: **25 pass / 0 fail** with a visible `PONG`.
+- PTY smoke: pass, including WebSocket attach and replay.
+- File transport smoke: **26 pass / 1 optional agent-read failure**.
+- SDK-only Chromium session: **1 pass** in 1.0 minutes. It observed one
+  `prompt_async`, visible `PONG`, no failed Kortix responses, and `kortix.yaml`.
+- Tests TypeScript check and `git diff --check`: exit 0.
+
+The generic auth spec failed because its default local user credentials were
+absent. The SDK-only regression creates and deletes its own confirmed user.
+
+**Shippable to production: NOT YET.** Task 8 delivery and dev proof remains.
+
+---
+
+### 2026-07-24 — session `frontend-sdk-only` (web SDK boundary Task 8)
+
+Merged the SDK-only web refactor in PR #5388. The merge commit is
+`aefa2a6282ed540a7296e35db2747bce2cc1d3eb`.
+
+Deploy Dev run 30129604715 completed successfully at
+`ae967fdbc6066f3a941a4553c0d21afb10639774`. Git ancestry proves that deployed
+commit contains the refactor merge. The API health route reported
+`0.10.15-dev.ae967fdb`. The tested Vercel deployment reported
+`0.10.14-dev.ae967fdb`.
+
+The deployed Chromium regression passed in 1.2 minutes. It rendered the session
+workspace, sent one `prompt_async` request, displayed `PONG`, observed zero
+failed Kortix project or runtime responses, and opened `kortix.yaml`.
+
+The first protected-dev browser run exposed an E2E harness defect. The shared
+Vercel bypass header reached the cross-origin API and failed its CORS preflight.
+The login helper now converts that header into a web-origin Vercel cookie before
+the browser sends API requests.
+
+The public PTY smoke exposed a Cloudflare WebSocket response defect. PR #5392,
+merged as `8688b8492c9534bb6d43a3282904f19cbd557c78`, preserves Cloudflare
+`response.webSocket` upgrade responses. Dev worker version
+`33ef7b35-3e6d-452f-9165-b00bafd9e9a1` carries the fix.
+
+The final public dev PTY smoke passed against a real Platinum sandbox. It
+created a PTY, opened the WebSocket, sent and observed a marker, reconnected and
+observed replay, listed the running PTY, deleted it, and removed its disposable
+project and session.
+
+**Verification:**
+
+- SDK typecheck: exit 0.
+- SDK suite: **1210 pass / 0 fail**.
+- SDK packed-install smoke: pass.
+- Web suite: **2043 pass / 0 fail**.
+- Web boundary test: **1 pass / 0 fail**.
+- White-label E2E: **44 pass / 0 fail / 3 live-upstream skips**.
+- Managed session HTTP smoke: **25 pass / 0 fail**.
+- SDK-only local Chromium session: **1 pass**.
+- SDK-only dev Chromium session: **1 pass**.
+- Public dev Platinum PTY smoke: pass.
+- Cloudflare API router regression: **5 pass / 0 fail**.
+
+**Shippable to production: YES.** All eight tasks are complete. Local and
+deployed dev paths pass.
+---
+
+### 2026-07-24 — session `managed-models-aster` (B18 completion)
+
+Synchronized the managed-model playground pin with the four-model managed
+catalog. The pin contains `claude-opus-4.8`, `claude-sonnet-4.6`, `glm-5.2`,
+and `deepseek-v4-flash`. The pin no longer contains `qwen3.7-max` or
+`deepseek-v4-pro`.
+
+**RED evidence:** the playground stopped before API access because the pinned
+IDs contained retired managed models.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0. The full SDK
+suite reported **1185 pass / 2 skip / 0 fail** across 89 files. The
+packed-install smoke built, packed, installed, imported, and constructed
+`@kortix/sdk`.
+
+**Shippable to production: YES** for B18 and the published SDK surface.
+Repository delivery and live-dev verification remain part of the repository
+lifecycle.
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 1)
+
+Added provider-independent OAuth2 application, Authorization Code, Device
+Authorization, connection-status, and client-authentication contracts. Added
+typed SDK methods for every profile-scoped lifecycle route.
+
+**RED evidence:** the focused test command reported two missing exports and
+zero passing tests before implementation.
+
+**Verification:**
+
+- Contract and SDK focused suites: **67 pass / 0 fail**.
+- SDK typecheck and example typecheck: exit 0.
+
+**Shippable to production: NOT YET.** Tasks 2 through 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 2)
+
+Added project-scoped encrypted OAuth application storage. Added short-lived
+Authorization Code and Device Authorization session storage. The database
+enforces valid flow material, session status, unique state hashes, and profile
+tenant ownership.
+
+**Verification:**
+
+- Database typecheck: exit 0.
+- Migration lint: 72 files pass with eight existing destructive warnings.
+- Isolated database migration: applied
+  `20260725120000000_executor_oauth_lifecycle`.
+- Database query returned `executor_oauth_applications` and
+  `executor_oauth_sessions`.
+
+**Shippable to production: NOT YET.** Tasks 3 through 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 6)
+
+Added provider-independent web controls for Client Credentials, Authorization
+Code with PKCE, and Device Authorization. Added all five token-endpoint client
+authentication methods. Added typed project-profile creation for the first
+delegated connection.
+
+Added visible request-authentication controls for API keys, OAuth 1.0a,
+HMAC-SHA256, AWS SigV4, mutual TLS, bearer, Basic, custom parameters, and no
+authentication. Structured strategies accept validated encrypted JSON
+credentials.
+
+**RED evidence:** the focused web suite reported four failures and one missing
+export before implementation.
+
+**Verification:**
+
+- Focused web suite: **17 pass / 0 fail**.
+- Focused SDK connector suite: **26 pass / 0 fail**.
+- API typecheck: exit 0.
+- Changed-file ESLint: exit 0.
+- Changed-file web TypeScript output: no errors.
+- Live profile creation: connector list `200`; profile creation `200`.
+
+The browser runtime reported zero available browsers. DOM and browser network
+proof remains open for Task 7.
+
+**Shippable to production: NOT YET.** Tasks 7 and 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 7)
+
+Completed the local contract, API, executor, SDK, database, web, and live HTTP
+verification.
+
+**Verification:**
+
+- OAuth and request-authentication API suite: **44 pass / 0 fail**.
+- Executor faces and authentication discovery suite: **80 pass / 0 fail**.
+- OAuth web suite: **18 pass / 0 fail**.
+- Full web suite: **2064 pass / 0 fail**.
+- Full SDK suite: **1214 pass / 0 fail**.
+- SDK typecheck, example typecheck, and packed-install smoke: exit 0.
+- API, contract, manifest, and database typechecks: exit 0.
+- API contract: **41 pass / 0 fail**.
+- Manifest schema: **321 pass / 0 fail**.
+- Database: **118 pass / 0 fail**.
+- Migration lint: **72 files pass**. Squawk reports zero issues.
+- Authorization Code callback: HTTP `302`; PKCE method `S256`.
+- Authorization state replay: first callback HTTP `302`; replay HTTP `400`.
+- Device Authorization: start HTTP `200`; poll reaches `active`.
+- Refresh-token rotation replaced both access and refresh tokens.
+- Revocation: HTTP `200`; profile status reaches `revoked`.
+- Local API health: HTTP `200`.
+
+The browser runtime reports `No browser is available`. Browser discovery
+returns `[]`. Chromium DOM and network proof remains blocked.
+
+**Shippable to production: NOT YET.** Task 8 delivery and dev proof remains.
+
+---
+
+### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 8)
+
+Merged the provider-independent authentication engine in PR #5403. The merge
+commit is `00bc29065ac54791b71957b9d2e2ccac313b5c29`.
+
+Deploy Dev run 30136343999 completed successfully. The workflow applied the
+OAuth lifecycle migration. It deployed API image tag `dev-00bc2906` to ECS and
+EKS. It also tagged the frontend image with the full merge SHA.
+
+The live dev health route returned HTTP `200`, environment `dev`, and version
+`0.10.15-dev.00bc2906`. The public OAuth callback returned HTTP `400` without
+state. The protected OAuth status route returned HTTP `401` without
+authentication. These responses prove that the deployed OAuth routes are
+mounted on the merged API artifact.
+
+The browser runtime returned `No browser is available`. Browser discovery
+returned `[]`. Chromium DOM and network proof remains blocked by the missing
+browser runtime.
+
+**Status: COMPLETE.**
+
+**Shippable to production: YES.** Local protocol proof, CI, repository delivery,
+deployed-SHA proof, database migration, and live dev API verification pass.
+
+---
+
+### 2026-07-25 — session `session-history-pagination` (claim)
+
+Claimed the user-directed session-history pagination repair. The SDK will load
+complete turns across fixed-size runtime pages. The web host will preserve a
+stable visible DOM anchor instead of applying total `scrollHeight` growth.
+Existing exports and session synchronization contracts remain backward
+compatible. Work will follow RED -> GREEN -> REFACTOR and finish with the full
+SDK typecheck, test, and packed-install smoke gates, focused web tests, browser
+verification, repository merge, Deploy Dev, and live-dev proof.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-25 — session `gateway-billing-audit` (B19 claim)
+
+Claimed the additive managed-model pricing and cache-write cost contract. The
+project catalog will carry server-supplied managed prices. The turn estimator
+will accept a distinct cache-write rate. Existing public names and required
+fields remain backward compatible.
+
+Implementation will follow RED -> GREEN -> REFACTOR. The final SDK typecheck,
+full suite, and packed-install smoke gates are required.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-25 — session `gateway-billing-audit` (B19 completion)
+
+Added the server-supplied managed-model prices to the typed project catalog.
+Added cache-write rates and context tiers to the public turn-cost contract.
+The browser no longer uses `models.dev` as a fallback for `kortix` models.
+`GatewayLogRow` now includes `cache_write_tokens`.
+
+**RED evidence:**
+
+- The managed GLM lookup returned another provider's price instead of Aster's
+  `$1/M` input, `$0.20/M` cache-read, `$1/M` cache-write, and `$4/M` output.
+- The turn estimator priced cache writes at the input rate because the public
+  contract had no `cacheWritePer1M` field.
+- The gateway log SDK contract had no `cache_write_tokens` field.
+
+**Verification:**
+
+- SDK typecheck and example typecheck: exit 0.
+- Full SDK suite: **1216 pass / 0 fail** across 98 files.
+- Public type-surface snapshot: additive `ModelCostTierRates`; no removals.
+- Packed-install smoke: built, packed, installed, imported, and constructed
+  `@kortix/sdk`.
+- Web managed-pricing suite: **8 pass / 0 fail**.
+- Changed-file web ESLint and Prettier checks: exit 0.
+
+**Shippable to production: YES** for B19 and the published SDK surface.
+Repository merge, Deploy Dev, and live-dev verification remain repository
+delivery tasks.

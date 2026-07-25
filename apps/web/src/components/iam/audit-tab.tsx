@@ -37,8 +37,8 @@ import {
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { listAuditEvents, type IamAuditEvent } from '@/lib/iam-client';
+import { downloadAccountAudit, listAccountMembers } from '@kortix/sdk';
 import {
   formatResourcePill,
   humanizeAuditAction,
@@ -103,33 +103,23 @@ export function AuditTab({ accountId }: AuditTabProps) {
   async function exportEvents(format: 'csv' | 'jsonl') {
     setExporting(true);
     try {
-      const params = new URLSearchParams();
-      params.set('format', format);
-      if (active.action) params.set('action', active.action);
-      if (active.daysBack) params.set('since', daysAgoIso(active.daysBack));
-
       const token = await getSupabaseAccessTokenWithRetry();
       if (!token) {
         errorToast('Not signed in');
         return;
       }
-      // BACKEND_URL already includes the `/v1` prefix (e.g. https://api.kortix.com/v1),
-      // so paths are appended WITHOUT another `/v1` — adding one 404'd the export.
-      const base = (getEnv().BACKEND_URL ?? '').replace(/\/+$/, '');
-      const url = `${base}/accounts/${accountId}/audit/export?${params.toString()}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
+      const result = await downloadAccountAudit(accountId, {
+        format,
+        action: active.action ?? undefined,
+        since: active.daysBack ? daysAgoIso(active.daysBack) : undefined,
+      }, {
+        backendUrl: getEnv().BACKEND_URL ?? '',
+        accessToken: token,
       });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        errorToast(`Export failed: ${res.status} ${text.slice(0, 120)}`);
-        return;
-      }
 
-      const blob = await res.blob();
-      const downloadUrl = URL.createObjectURL(blob);
+      const downloadUrl = URL.createObjectURL(result.blob);
       const filename =
-        res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ??
+        result.filename ??
         `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
       const link = document.createElement('a');
       link.href = downloadUrl;
@@ -139,8 +129,8 @@ export function AuditTab({ accountId }: AuditTabProps) {
       link.remove();
       URL.revokeObjectURL(downloadUrl);
 
-      const capped = res.headers.get('x-audit-capped') === 'true';
-      const rowCount = res.headers.get('x-audit-row-count') ?? '?';
+      const capped = result.capped;
+      const rowCount = result.rowCount ?? '?';
       successToast(
         capped
           ? `Exported ${rowCount} events (capped — narrow your filter for older data)`
@@ -182,7 +172,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
     return map;
   }, [membersQuery.data]);
 
-  const allEvents: AuditEvent[] = useMemo(
+  const allEvents: IamAuditEvent[] = useMemo(
     () => (query.data?.pages ?? []).flatMap((p) => p.events),
     [query.data],
   );
@@ -302,7 +292,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
-function AuditRow({ event, actorEmail }: { event: AuditEvent; actorEmail: string | null }) {
+function AuditRow({ event, actorEmail }: { event: IamAuditEvent; actorEmail: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const hasDiff = event.before !== null || event.after !== null;

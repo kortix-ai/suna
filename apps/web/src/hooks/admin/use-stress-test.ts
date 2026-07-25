@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
+import { openStressTestStream } from '@kortix/sdk';
 
 export interface StressTestConfig {
   num_requests: number;
@@ -129,28 +130,16 @@ export function useStressTest() {
 
       abortControllerRef.current = new AbortController();
 
-      const response = await fetch(`${getEnv().BACKEND_URL}/admin/stress-test/run`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
+      const stream = await openStressTestStream({
           ...config,
           measure_ttft: true,
-        }),
+        }, {
+        backendUrl: getEnv().BACKEND_URL,
+        accessToken: session.access_token,
         signal: abortControllerRef.current.signal,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body');
-      }
+      const reader = stream.getReader();
 
       const decoder = new TextDecoder();
       let buffer = '';

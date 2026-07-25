@@ -27,6 +27,10 @@ import {
   sandboxMembers,
   kortixApiKeys,
   sandboxComputeSessions,
+  creditAccounts,
+  creditLedger,
+  usageEvents,
+  gatewayRequestLogs,
   accountSsoProviders,
 } from './kortix';
 
@@ -69,12 +73,7 @@ describe('kortix enums', () => {
 
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
-    expect(sandboxProviderEnum.enumValues).toEqual([
-      'daytona',
-      'platinum',
-      'e2b',
-      'local-docker',
-    ]);
+    expect(sandboxProviderEnum.enumValues).toEqual(['daytona', 'platinum', 'e2b', 'local-docker']);
   });
 
   test('project_status enum is active or archived', () => {
@@ -94,9 +93,7 @@ describe('kortix enums', () => {
   });
 
   test('session_lifecycle_command_status enum includes dead_lettered', () => {
-    expect(sessionLifecycleCommandStatusEnum.enumName).toBe(
-      'session_lifecycle_command_status',
-    );
+    expect(sessionLifecycleCommandStatusEnum.enumName).toBe('session_lifecycle_command_status');
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
@@ -107,11 +104,7 @@ describe('kortix enums', () => {
   });
 
   test('project_access_request_status enum has the expected values', () => {
-    expect(projectAccessRequestStatusEnum.enumValues).toEqual([
-      'pending',
-      'approved',
-      'rejected',
-    ]);
+    expect(projectAccessRequestStatusEnum.enumValues).toEqual(['pending', 'approved', 'rejected']);
   });
 
   test('api_key_status enum has the expected values', () => {
@@ -152,6 +145,38 @@ describe('sandbox compute provider attribution', () => {
     expect(indexNames(sandboxComputeSessions)).toContain(
       'idx_sandbox_compute_sessions_provider_time',
     );
+  });
+});
+
+describe('billing precision', () => {
+  test('wallet and ledger columns preserve sub-cent LLM charges', () => {
+    for (const [table, names] of [
+      [
+        creditAccounts,
+        [
+          'balance_precise',
+          'expiring_credits_precise',
+          'non_expiring_credits_precise',
+          'daily_credits_balance_precise',
+        ],
+      ],
+      [creditLedger, ['amount_precise', 'balance_after_precise']],
+      [usageEvents, ['cost_usd_precise']],
+      [gatewayRequestLogs, ['upstream_cost_precise', 'final_cost_precise']],
+    ] as const) {
+      const columnNamesToCheck: readonly string[] = names;
+      const columns = getTableConfig(table).columns.filter((column) =>
+        columnNamesToCheck.includes(column.name),
+      );
+      expect(columns).toHaveLength(names.length);
+      for (const column of columns) {
+        expect(column.getSQLType()).toBe('numeric(20, 10)');
+      }
+    }
+  });
+
+  test('gateway logs store cache-write tokens directly', () => {
+    expect(columnNames(gatewayRequestLogs)).toContain('cache_write_tokens');
   });
 });
 
@@ -208,9 +233,7 @@ describe('account_members table', () => {
   });
 
   test('account_role defaults to owner', () => {
-    const col = getTableConfig(accountMembers).columns.find(
-      (c) => c.name === 'account_role',
-    );
+    const col = getTableConfig(accountMembers).columns.find((c) => c.name === 'account_role');
     expect(col?.default).toBe('owner');
   });
 });
@@ -258,31 +281,29 @@ describe('project_llm_routing_policies table', () => {
   test('stores one versioned routing document per project with audit fields', () => {
     expect(getTableConfig(projectLlmRoutingPolicies).name).toBe('project_llm_routing_policies');
     expect(primaryColumn(projectLlmRoutingPolicies)).toBe('project_id');
-    expect(columnNames(projectLlmRoutingPolicies)).toEqual(expect.arrayContaining([
-      'vision_model',
-      'default_fallback_models',
-      'default_fallback_on',
-      'rules',
-      'updated_by',
-      'created_at',
-      'updated_at',
-    ]));
+    expect(columnNames(projectLlmRoutingPolicies)).toEqual(
+      expect.arrayContaining([
+        'vision_model',
+        'default_fallback_models',
+        'default_fallback_on',
+        'rules',
+        'updated_by',
+        'created_at',
+        'updated_at',
+      ]),
+    );
   });
 });
 
 describe('project_members table', () => {
   test('project_role defaults to member (the floor role)', () => {
-    const col = getTableConfig(projectMembers).columns.find(
-      (c) => c.name === 'project_role',
-    );
+    const col = getTableConfig(projectMembers).columns.find((c) => c.name === 'project_role');
     expect(col?.default).toBe('member');
   });
 
   test('enforces a unique project/user index', () => {
     const cfg = getTableConfig(projectMembers);
-    const unique = cfg.indexes.find(
-      (i) => i.config.name === 'idx_project_members_project_user',
-    );
+    const unique = cfg.indexes.find((i) => i.config.name === 'idx_project_members_project_user');
     expect(unique?.config.unique).toBe(true);
   });
 });
@@ -302,17 +323,13 @@ describe('project_git_connections table', () => {
   });
 
   test('managed flag defaults to false', () => {
-    const col = getTableConfig(projectGitConnections).columns.find(
-      (c) => c.name === 'managed',
-    );
+    const col = getTableConfig(projectGitConnections).columns.find((c) => c.name === 'managed');
     expect(col?.default).toBe(false);
   });
 
   test('enforces a unique project index', () => {
     const cfg = getTableConfig(projectGitConnections);
-    const unique = cfg.indexes.find(
-      (i) => i.config.name === 'idx_project_git_connections_project',
-    );
+    const unique = cfg.indexes.find((i) => i.config.name === 'idx_project_git_connections_project');
     expect(unique?.config.unique).toBe(true);
   });
 });
@@ -381,9 +398,7 @@ describe('kortixApiKeys table', () => {
 
   test('enforces a unique public_key index', () => {
     const cfg = getTableConfig(kortixApiKeys);
-    const unique = cfg.indexes.find(
-      (i) => i.config.name === 'idx_kortix_api_keys_public_key',
-    );
+    const unique = cfg.indexes.find((i) => i.config.name === 'idx_kortix_api_keys_public_key');
     expect(unique?.config.unique).toBe(true);
   });
 });
@@ -396,9 +411,7 @@ describe('accountSsoProviders table', () => {
   });
 
   test('enforce_sso is a not-null boolean defaulting to false', () => {
-    const col = getTableConfig(accountSsoProviders).columns.find(
-      (c) => c.name === 'enforce_sso',
-    );
+    const col = getTableConfig(accountSsoProviders).columns.find((c) => c.name === 'enforce_sso');
     expect(col).toBeDefined();
     expect(col?.notNull).toBe(true);
     expect(col?.default).toBe(false);

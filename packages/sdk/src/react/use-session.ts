@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { RuntimeNotReadyError } from '../core/runtime/client';
+import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   setOpenCodeHealth,
@@ -43,8 +44,10 @@ import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
+import { formatModelString } from './use-opencode-local';
 import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
+import { usePermissionSelfHeal } from './use-permission-self-heal';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { clearStartStash, readStartStash } from './session-start-stash';
@@ -181,6 +184,28 @@ export interface SendState {
   sendError: KortixSendError | null;
 }
 
+export interface SessionCommandOptions {
+  agent?: string | null;
+  model?: ModelKey | null;
+  variant?: string | null;
+}
+
+export function buildSessionCommandInput(
+  sessionId: string,
+  command: string,
+  args: string,
+  options: SessionCommandOptions = {},
+) {
+  return {
+    sessionId,
+    command,
+    args,
+    ...(options.agent ? { agent: options.agent } : {}),
+    ...(options.model ? { model: formatModelString(options.model) } : {}),
+    ...(options.variant ? { variant: options.variant } : {}),
+  };
+}
+
 const IDLE_SEND_STATE: SendState = { pending: null, sendError: null };
 
 /** New state when a send is kicked off — always clears any previous error. */
@@ -291,6 +316,9 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   isLoading: false,
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
   todos: [] as ReturnType<typeof useSessionSync>['todos'],
+  hasOlder: false,
+  isLoadingOlder: false,
+  loadOlder: async () => {},
 };
 
 export function useSession(
@@ -389,11 +417,15 @@ export function useSession(
   // is off — see that option's jsdoc: a host mounting its own chat surface
   // already runs its own copy of this poller for the same session.
   useQuestionSelfHeal(ocSessionId, sync.messages, { enabled: chatEngine && !!ocSessionId });
+  usePermissionSelfHeal(ocSessionId, sync.messages, { enabled: chatEngine && !!ocSessionId });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
   const questionMap = useOpenCodePendingStore((s) => s.questions);
   const permissionMap = useOpenCodePendingStore((s) => s.permissions);
+  const isCompacting = useOpenCodeCompactionStore((state) =>
+    Boolean(state.compactingBySession[ocSessionId]),
+  );
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const questions = useMemo(
@@ -463,9 +495,15 @@ export function useSession(
   };
 
   // Run a project slash-command (server-side `/command`), distinct from a prompt.
-  const runCommand = (command: string, args: string) => {
-    if (!ocSessionId) return;
-    commandMutation.mutate({ sessionId: ocSessionId, command, args });
+  const runCommand = (
+    command: string,
+    args: string,
+    options: SessionCommandOptions = {},
+  ): Promise<void> => {
+    if (!ocSessionId) return Promise.resolve();
+    return commandMutation.mutateAsync(
+      buildSessionCommandInput(ocSessionId, command, args, options),
+    );
   };
 
   // The one true cancel: abort the run AND drop any pending prompt + open prompts.
@@ -511,6 +549,9 @@ export function useSession(
     permissions,
     diffs: sync.diffs,
     todos: sync.todos,
+    hasOlder: sync.hasOlder,
+    isLoadingOlder: sync.isLoadingOlder,
+    loadOlder: sync.loadOlder,
 
     // lifecycle
     phase,
@@ -527,6 +568,7 @@ export function useSession(
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
     isBusy: sync.isBusy || !!pending,
+    isCompacting,
     isLoading: sync.isLoading,
     isError: terminal || !!startError,
     /** Whether there are open interactive prompts (questions/permissions). */

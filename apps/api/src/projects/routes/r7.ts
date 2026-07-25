@@ -401,6 +401,19 @@ projectsApp.openapi(
       { type: 'agent', id: launchAgent },
     );
   }
+  // Bound the client-supplied idempotency key at intake. It's stored in a unique
+  // btree (index entry limit ~2704 bytes), so an oversized header would surface
+  // as an uncaught 500 (+ Sentry spam) instead of a clean rejection.
+  const idempotencyKey = c.req.header('idempotency-key') ?? null;
+  if (idempotencyKey !== null && !/^[\w.:+/=-]{1,255}$/.test(idempotencyKey)) {
+    return c.json(
+      {
+        error: 'idempotency-key must be 1–255 characters of [A-Za-z0-9._:+/=-]',
+        code: 'INVALID_IDEMPOTENCY_KEY',
+      },
+      400,
+    );
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
@@ -418,7 +431,7 @@ projectsApp.openapi(
     apiKeyType: c.get('apiKeyType') as string | undefined,
     inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
-    idempotencyKey: c.req.header('idempotency-key') ?? null,
+    idempotencyKey,
     mayManageSystemConnectorProfiles,
   });
   if (result.error) return sendSessionCreateError(c, result.error);

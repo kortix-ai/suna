@@ -33,7 +33,7 @@ import {
   deleteSandboxTemplate,
   getProject,
   listProjectSnapshots,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { CheckCircleSolid, SparklesSolid, XCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {

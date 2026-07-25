@@ -147,8 +147,7 @@ export async function resolveCandidates(
         byok.kind === 'bedrock'
           ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
           : undefined;
-      const baseUrl =
-        byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
+      const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
@@ -166,6 +165,7 @@ export async function resolveCandidates(
         // models.dev catalog only knows the base model id. See
         // stripBedrockInferenceProfilePrefix's doc comment.
         pricing: livePricing(
+          provider,
           byok.kind === 'bedrock'
             ? stripBedrockInferenceProfilePrefix(resolvedModelId)
             : resolvedModelId,

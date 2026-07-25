@@ -531,3 +531,117 @@ describe('cancelFreeSubscriptionForUpgrade', () => {
     ).rejects.toThrow('Stripe internal error');
   });
 });
+
+// ─── Machine-Sub Hijack Prevention ──────────────────────────────────────────
+// Regression tests for the bug where a machine/compute subscription created
+// via the saved-card instant-charge path would clobber the account's existing
+// live paid-plan subscription pointer, stranding the customer when the machine
+// sub was later canceled.
+
+describe('createCheckoutSession: machine sub does not clobber live plan sub', () => {
+  test('machine sub preserves existing live plan subscription pointer', async () => {
+    // Account already has a live plan subscription
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'tier_2_20',
+        stripeSubscriptionId: 'sub_live_plan',
+        stripeSubscriptionStatus: 'active',
+      });
+
+    // Simulate a saved payment method so the direct-create path is taken
+    mockRegistry.stripeClient.paymentMethods.list = async () => ({
+      data: [{ id: 'pm_saved_123' }],
+    });
+
+    // Machine sub comes back active from Stripe
+    const machineSub = createMockStripeSubscription({
+      id: 'sub_machine_new',
+      status: 'active',
+      metadata: { account_id: 'acc_test_123', tier_key: 'pro', server_type: 'pro' },
+    });
+    mockRegistry.stripeClient.subscriptions.create = async () => machineSub;
+
+    const result = await createCheckoutSession({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'pro',
+      successUrl: 'https://example.com/success',
+      cancelUrl: 'https://example.com/cancel',
+      serverType: 'pro',
+    });
+
+    expect((result as any).status).toBe('subscription_created');
+
+    // The upsert should NOT have overwritten stripeSubscriptionId
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBeUndefined();
+    // But should have updated tier/status
+    expect(upsertCreditAccountCalls[0].data.tier).toBe('pro');
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('active');
+  });
+
+  test('machine sub overwrites when no existing live plan sub', async () => {
+    // Account has no existing subscription
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        stripeSubscriptionId: null,
+        stripeSubscriptionStatus: null,
+      });
+
+    mockRegistry.stripeClient.paymentMethods.list = async () => ({
+      data: [{ id: 'pm_saved_123' }],
+    });
+
+    const machineSub = createMockStripeSubscription({
+      id: 'sub_machine_new',
+      status: 'active',
+    });
+    mockRegistry.stripeClient.subscriptions.create = async () => machineSub;
+
+    await createCheckoutSession({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'pro',
+      successUrl: 'https://example.com/success',
+      cancelUrl: 'https://example.com/cancel',
+      serverType: 'pro',
+    });
+
+    // Should have set the stripeSubscriptionId since there was no live plan
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_machine_new');
+  });
+
+  test('machine sub overwrites when existing sub is canceled (dead)', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'pro',
+        stripeSubscriptionId: 'sub_dead_plan',
+        stripeSubscriptionStatus: 'canceled',
+      });
+
+    mockRegistry.stripeClient.paymentMethods.list = async () => ({
+      data: [{ id: 'pm_saved_123' }],
+    });
+
+    const machineSub = createMockStripeSubscription({
+      id: 'sub_machine_new',
+      status: 'active',
+    });
+    mockRegistry.stripeClient.subscriptions.create = async () => machineSub;
+
+    await createCheckoutSession({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'pro',
+      successUrl: 'https://example.com/success',
+      cancelUrl: 'https://example.com/cancel',
+      serverType: 'pro',
+    });
+
+    // Should overwrite since the existing sub is dead
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_machine_new');
+  });
+});

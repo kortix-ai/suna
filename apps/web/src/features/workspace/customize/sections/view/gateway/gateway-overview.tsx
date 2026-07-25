@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
+import { listProjectSessions } from '@kortix/sdk';
 import {
   useGatewayBreakdown,
   useGatewayErrors,

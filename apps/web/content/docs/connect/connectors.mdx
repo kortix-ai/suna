@@ -23,7 +23,7 @@ A connector uses one provider type:
 
 A connector authenticates one of two ways:
 
-- **OAuth** — through Pipedream, or through a channel install. Kortix stores only the resulting token. You do not edit the manifest.
+- **OAuth** — through Pipedream, through a channel install, or through native OAuth2 client credentials for direct API connectors.
 - **API key or token** — you declare the connector in `kortix.yaml` and enter the credential yourself, or reference it from a project [secret](/docs/project/secrets) (legacy).
 
 Kortix never gives a connector's credential to the sandbox. It stores the credential encrypted and resolves it server-side, at call time. The agent requests the action. Kortix attaches the credential, calls the external API, and returns the result.
@@ -46,6 +46,36 @@ Click **Connect** and complete the OAuth flow. Kortix stores only the connected-
 </Steps>
 
 This path creates the connector for you. Skip the next section.
+
+## Connect a direct API with OAuth2 client credentials
+
+Use this path for server-to-server APIs that require OAuth2. Microsoft Graph and SharePoint Online use this pattern.
+
+<Steps>
+<Step>
+### Declare the direct connector
+
+In the Custom connector form, select **OAuth 2.0 client credentials** under **Auth**. Kortix configures bearer-token injection and shows the OAuth2 fields before it creates the connector.
+</Step>
+<Step>
+### Enter the OAuth2 configuration
+
+Enter the token URL, client ID, scopes, and client secret. Existing connectors expose the same fields under **Set credential**.
+
+For certificate authentication, select **Certificate assertion**. Enter the PKCS#8 private key PEM and the certificate's Base64url SHA-256 thumbprint (`x5t#S256`).
+</Step>
+<Step>
+### Save and verify
+
+Kortix requests a token before it saves the configuration. A rejected client ID, secret, certificate assertion, scope, or resource returns an error.
+</Step>
+</Steps>
+
+Kortix encrypts the OAuth2 configuration and access token. The Executor refreshes the token 60 seconds before expiry. PostgreSQL serializes concurrent refreshes for one connection profile. Revoking the profile blocks the next Executor call.
+
+For Microsoft Graph, use `https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token` and the scope `https://graph.microsoft.com/.default`.
+
+For direct SharePoint REST endpoints under `https://{tenant}.sharepoint.com/_api`, use the scope `https://{tenant}.sharepoint.com/.default` instead of the Microsoft Graph scope.
 
 ## Connect with an API key
 

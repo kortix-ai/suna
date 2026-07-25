@@ -1,6 +1,6 @@
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
-import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
+import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
@@ -9,14 +9,14 @@ export function providerCredentialSummary(provider: LlmProviderEntry): string {
   return provider.envVars.join(' · ');
 }
 
-type OpenCodeProvidersSnapshot =
+type RuntimeProvidersSnapshot =
   | {
       connected?: string[];
       all?: Array<{ id: string; models?: Record<string, unknown> }>;
     }
   | undefined;
 
-export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmProviderEntry {
+export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmProviderEntry {
   const connectedIds = new Set(ocProviders?.connected ?? []);
   const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
   const models: LlmProviderModel[] =
@@ -49,7 +49,7 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
   return {
     id: 'codex',
     label: 'ChatGPT',
-    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
+    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME],
     // EITHER secret alone is a full ChatGPT subscription connection (current
     // vs. legacy secret name) — two alternative single-var methods, not one
     // AND-of-both requirement. Matches the `hasCodexSubscription` OR check in
@@ -57,7 +57,7 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
     authRequirement: {
       methods: [
         { envVars: [CODEX_AUTH_JSON_SECRET_NAME] },
-        { envVars: [LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME] },
+        { envVars: [LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME] },
       ],
     },
     helpUrl: null,

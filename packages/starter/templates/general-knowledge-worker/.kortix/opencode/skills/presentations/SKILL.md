@@ -66,13 +66,10 @@ URL scheme:
 - `http://localhost:3210/` — index listing all presentations
 - `http://localhost:3210/presentations/<name>/` — viewer for that deck
 - `http://localhost:3210/presentations/<name>/slide_01.html` — raw slide file
-- `http://localhost:3210/presentations/<name>/download/pdf` — export and download PDF
-- `http://localhost:3210/presentations/<name>/download/pptx` — export and download PPTX
 
-The viewer includes PDF and PPTX download buttons by default. They call the
-served `/download/pdf` and `/download/pptx` routes, export the current deck on
-demand, and return a browser download. For script-only generation, keep using
-`export_pdf` and `export_pptx`.
+The viewer does not include PDF or PPTX export controls. After you show the
+viewer, offer to create a portable PDF or PPTX copy for the user. Run
+`export_pdf` or `export_pptx` only when the user requests that export.
 
 After starting the server, show the URL to the user via `show`:
 ```
@@ -113,7 +110,7 @@ show(action="show", type="url", url="http://localhost:3210/presentations/<name>/
 ## Workflow (HTML deck path)
 
 ```
-create_slide × N → validate_slide → serve → show viewer URL → user can download PDF/PPTX from viewer
+create_slide × N → validate_slide → serve → show viewer URL → offer to create a PDF or PPTX export
 ```
 
 ---

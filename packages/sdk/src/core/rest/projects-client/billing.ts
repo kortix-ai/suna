@@ -393,16 +393,21 @@ export async function getBillingUsageHistory(days?: number): Promise<BillingTran
 }
 
 export interface BillingTierConfiguration {
+  tier_key?: string;
   name: string;
   display_name: string;
   monthly_price: number;
   yearly_price: number;
   monthly_credits: number;
   can_purchase_credits: boolean;
+  project_limit?: number;
+  price_ids?: string[];
 }
 
 export interface BillingTierConfigurationsResponse {
+  success?: boolean;
   tiers: BillingTierConfiguration[];
+  timestamp?: string;
 }
 
 /** Publicly visible pricing tiers (for a plans/pricing page). */
@@ -466,7 +471,10 @@ export interface CreateCheckoutSessionInput {
 
 export interface CheckoutSessionResult {
   url?: string | null;
+  checkout_url?: string;
   session_id?: string;
+  status?: string;
+  message?: string;
   [key: string]: unknown;
 }
 
@@ -529,6 +537,8 @@ export async function createPortalSession(
 
 export interface SubscriptionMutationResult {
   ok?: boolean;
+  success: boolean;
+  message: string;
   [key: string]: unknown;
 }
 
@@ -656,5 +666,76 @@ export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promis
       amount: input.amount,
     }),
     'Failed to configure auto-topup',
+  );
+}
+
+export interface AutoTopupSetupStatus {
+  has_payment_method: boolean;
+  has_default_payment_method: boolean;
+}
+
+export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoTopupSetupStatus> {
+  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  return unwrap(
+    await backendApi.get<AutoTopupSetupStatus>(`/billing/auto-topup/setup-status${query}`, {
+      timeout: 8000,
+      showErrors: false,
+    }),
+    'Failed to load auto-topup setup status',
+  );
+}
+
+export interface CreatePerSeatCheckoutInput {
+  accountId?: string;
+  successUrl: string;
+  cancelUrl: string;
+  locale?: string;
+}
+
+export interface CreatePerSeatCheckoutResult {
+  status: 'subscription_created' | 'checkout_created';
+  checkout_url?: string;
+  subscription_id?: string;
+  seat_count: number;
+}
+
+export async function createPerSeatCheckout(
+  input: CreatePerSeatCheckoutInput,
+): Promise<CreatePerSeatCheckoutResult> {
+  return unwrap(
+    await backendApi.post<CreatePerSeatCheckoutResult>('/billing/create-per-seat-checkout', {
+      account_id: input.accountId,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      locale: input.locale,
+    }),
+    'Failed to create per-seat checkout',
+  );
+}
+
+export interface ClaimPerSeatResult {
+  ok: boolean;
+  status: string;
+  credited_usd: number;
+  first_seat_covered_usd: number;
+  cancelled_subscriptions: number;
+  reason?: string | null;
+}
+
+export async function claimPerSeatBilling(accountId?: string): Promise<ClaimPerSeatResult> {
+  return unwrap(
+    await backendApi.post<ClaimPerSeatResult>('/billing/claim-per-seat', {
+      account_id: accountId,
+    }),
+    'Failed to switch to per-seat billing',
+  );
+}
+
+export async function syncSubscription(accountId?: string): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/sync-subscription', {
+      account_id: accountId,
+    }),
+    'Failed to sync subscription',
   );
 }

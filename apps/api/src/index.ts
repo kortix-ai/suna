@@ -19,7 +19,6 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 import { sendDemoRequestNotification } from './lib/demo-request-email';
-import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
@@ -34,6 +33,7 @@ import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
+import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
@@ -70,6 +70,7 @@ import {
 } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
+import { nativeOAuth2CallbackApp } from './executor/oauth2-callback';
 import {
   projectWebhooksApp,
   projectsApp,
@@ -176,70 +177,17 @@ app.use('*', async (c, next) => {
 
 // === Global Middleware ===
 
-// CORS origins: production domains + localhost for local dev + any extras from env.
-const cloudOrigins = [
-  'https://www.kortix.com',
-  'https://kortix.com',
-  'https://dev.kortix.com',
-  'https://new-dev.kortix.com',
-  'https://dev-new.kortix.com',
-  'https://staging.kortix.com',
-  'https://kortix.cloud',
-  'https://www.kortix.cloud',
-  'https://new.kortix.com',
-];
-const localOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
-  'http://localhost:3010',
-  'http://127.0.0.1:3010',
-];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',')
       .map((s) => s.trim())
       .filter(Boolean)
   : [];
-const corsOrigins = [
-  ...new Set([
-    ...cloudOrigins,
-    ...localOrigins, // Always include — needed for local dev and self-hosted
-    ...extraOrigins,
-  ]),
-];
-
-// Preview env (ephemeral per-PR API): also allow the matching preview frontends.
-// Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
-// aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
-// only — dev/prod keep the strict static allowlist.
-const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
-const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
 
 app.use(
   '*',
-  cors({
-    origin: (origin) => {
-      // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
-      if (!origin) return origin;
-      if (corsOrigins.includes(origin)) return origin;
-      if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
-      return null; // not allowed → no Access-Control-Allow-Origin
-    },
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Kortix-Token',
-      'X-Api-Key',
-      'Accept',
-      'X-Kortix-Signature',
-      'X-Hub-Signature-256',
-      'traceparent',
-      'tracestate',
-      'X-Request-Id',
-    ],
-    exposeHeaders: ['X-Next-Cursor', 'X-Request-Id'],
-    credentials: true,
+  createCorsMiddleware({
+    internalEnvironment: config.INTERNAL_KORTIX_ENV,
+    extraOrigins,
   }),
 );
 
@@ -827,6 +775,7 @@ app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
+app.route('/v1/integrations/oauth2', nativeOAuth2CallbackApp);
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -1129,7 +1078,7 @@ console.log(`
 
 // Load LLM pricing from models.dev (non-blocking if it fails).
 // Awaited so pricing is available before the first billing request.
-initModelPricing().catch((err) =>
+await initModelPricing().catch((err) =>
   console.error('[startup] Model pricing init failed (will retry in 24h):', err),
 );
 runtimeModelCatalog

@@ -849,3 +849,246 @@ describe('checkout.session.completed: cancel old free sub', () => {
     expect(stripeCancelSubCalls.length).toBe(0);
   });
 });
+
+// ─── Orphaned Plan-Sub Recovery ─────────────────────────────────────────────
+// Regression tests for the machine-sub hijack bug:
+// 1. syncSubscriptionState adopts a live plan sub when the stored sub is dead
+// 2. handleSubscriptionDeleted restores another active sub instead of going free
+// 3. handleSubscriptionCheckout does not clobber a live plan sub (tested in subscriptions.test.ts)
+
+describe('syncSubscriptionState: orphaned-plan-sub recovery', () => {
+  test('adopts incoming live plan sub when stored sub is dead (canceled)', async () => {
+    // Account points at a dead machine sub (canceled)
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_dead_machine',
+        stripeSubscriptionStatus: 'canceled',
+        paymentStatus: 'cancelling',
+        tier: 'pro',
+        balance: '0',
+      });
+
+    // Incoming event is for the still-active annual plan sub
+    const livePlanSub = createMockStripeSubscription({
+      id: 'sub_live_plan',
+      metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+    });
+    const event = createMockStripeEvent('customer.subscription.updated', livePlanSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should have adopted the live plan sub (updated the row, not skipped)
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_live_plan');
+    expect(updateCreditAccountCalls[0].data.tier).toBe('tier_2_20');
+    expect(updateCreditAccountCalls[0].data.paymentStatus).toBe('active');
+  });
+
+  test('adopts incoming live plan sub when stored sub is cancelling', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_dead_machine',
+        stripeSubscriptionStatus: 'active',
+        paymentStatus: 'cancelling',
+        tier: 'pro',
+        balance: '0',
+      });
+
+    const livePlanSub = createMockStripeSubscription({
+      id: 'sub_live_plan',
+      metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+    });
+    const event = createMockStripeEvent('customer.subscription.updated', livePlanSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_live_plan');
+  });
+
+  test('still skips stale sub when stored sub is alive (not orphaned)', async () => {
+    // Account points at a LIVE sub — incoming different sub should still be skipped
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_live_existing',
+        stripeSubscriptionStatus: 'active',
+        paymentStatus: 'active',
+        tier: 'tier_6_50',
+      });
+
+    const staleSub = createMockStripeSubscription({
+      id: 'sub_old_free',
+      metadata: { account_id: 'acc_test_123', tier_key: 'free' },
+    });
+    const event = createMockStripeEvent('customer.subscription.updated', staleSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should NOT update — the stored sub is live, incoming is stale
+    expect(updateCreditAccountCalls.length).toBe(0);
+  });
+
+  test('does not adopt machine sub over a dead plan sub', async () => {
+    // Even if the stored sub is dead, we should NOT adopt an incoming machine sub
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_dead_plan',
+        stripeSubscriptionStatus: 'canceled',
+        paymentStatus: 'cancelling',
+        tier: 'tier_2_20',
+      });
+
+    const machineSub = createMockStripeSubscription({
+      id: 'sub_machine_new',
+      metadata: { account_id: 'acc_test_123', server_type: 'pro', tier_key: 'pro' },
+    });
+    const event = createMockStripeEvent('customer.subscription.updated', machineSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should skip — machine sub should not be adopted as plan recovery
+    expect(updateCreditAccountCalls.length).toBe(0);
+  });
+});
+
+describe('handleSubscriptionDeleted: restore other active sub', () => {
+  test('restores to another active plan sub instead of reverting to free', async () => {
+    // Account points at the machine sub being deleted
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_machine',
+        stripeSubscriptionStatus: 'active',
+        paymentStatus: 'cancelling',
+        tier: 'pro',
+      });
+
+    const deletedMachineSub = createMockStripeSubscription({
+      id: 'sub_machine',
+      customer: 'cus_test_123',
+      metadata: { account_id: 'acc_test_123', server_type: 'pro', tier_key: 'pro' },
+    });
+    const event = createMockStripeEvent('customer.subscription.deleted', deletedMachineSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    // Stripe returns the customer's other active plan sub
+    const livePlanSub = createMockStripeSubscription({
+      id: 'sub_live_plan',
+      status: 'active',
+      metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+    });
+    mockRegistry.stripeClient.subscriptions.list = async () => ({ data: [livePlanSub] });
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should have restored to the plan sub, NOT reverted to free
+    const updateCall = updateCreditAccountCalls.find(
+      (c: any) => c.data.stripeSubscriptionId === 'sub_live_plan',
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall!.data.tier).toBe('tier_2_20');
+
+    // Should NOT have reverted to free
+    const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
+    expect(freeRevert).toBeUndefined();
+  });
+
+  test('reverts to free when no other active sub exists', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_machine',
+        stripeSubscriptionStatus: 'active',
+        tier: 'pro',
+      });
+
+    const deletedSub = createMockStripeSubscription({
+      id: 'sub_machine',
+      customer: 'cus_test_123',
+    });
+    const event = createMockStripeEvent('customer.subscription.deleted', deletedSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    // No other active subs
+    mockRegistry.stripeClient.subscriptions.list = async () => ({ data: [] });
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should revert to free
+    const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
+    expect(freeRevert).toBeDefined();
+  });
+
+  test('prefers plan sub over machine sub when restoring', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_machine_deleted',
+        stripeSubscriptionStatus: 'active',
+        tier: 'pro',
+      });
+
+    const deletedSub = createMockStripeSubscription({
+      id: 'sub_machine_deleted',
+      customer: 'cus_test_123',
+      metadata: { account_id: 'acc_test_123', server_type: 'pro' },
+    });
+    const event = createMockStripeEvent('customer.subscription.deleted', deletedSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    // Two other active subs: a machine sub and a plan sub
+    const machineSub = createMockStripeSubscription({
+      id: 'sub_other_machine',
+      status: 'active',
+      metadata: { account_id: 'acc_test_123', server_type: 'pro', tier_key: 'pro' },
+    });
+    const planSub = createMockStripeSubscription({
+      id: 'sub_plan',
+      status: 'active',
+      metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+    });
+    mockRegistry.stripeClient.subscriptions.list = async () => ({ data: [machineSub, planSub] });
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should restore to the plan sub, not the machine sub
+    const planRestore = updateCreditAccountCalls.find(
+      (c: any) => c.data.stripeSubscriptionId === 'sub_plan',
+    );
+    expect(planRestore).toBeDefined();
+    expect(planRestore!.data.tier).toBe('tier_2_20');
+
+    const machineRestore = updateCreditAccountCalls.find(
+      (c: any) => c.data.stripeSubscriptionId === 'sub_other_machine',
+    );
+    expect(machineRestore).toBeUndefined();
+  });
+
+  test('falls through to revertToFree when Stripe list fails', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_machine',
+        stripeSubscriptionStatus: 'active',
+        tier: 'pro',
+      });
+
+    const deletedSub = createMockStripeSubscription({
+      id: 'sub_machine',
+      customer: 'cus_test_123',
+    });
+    const event = createMockStripeEvent('customer.subscription.deleted', deletedSub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    // Stripe list throws
+    mockRegistry.stripeClient.subscriptions.list = async () => {
+      throw new Error('Stripe API error');
+    };
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Should fall through to revertToFree
+    const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
+    expect(freeRevert).toBeDefined();
+  });
+});

@@ -101,6 +101,14 @@ export interface CreateProjectSessionInput {
    * the caller holds the management capability. */
   connector_bindings?: SessionConnectorBindings;
   /**
+   * When `connector_bindings` is set, binding any alias normally disables the
+   * project-default fallback for every OTHER (unbound) alias ("all-or-nothing").
+   * `inherit_unbound: true` keeps that fallback, so you can override just one
+   * connector (e.g. a user's own account) without re-binding the rest. Only ever
+   * inherits the project default — never another owner's profile.
+   */
+  inherit_unbound?: boolean;
+  /**
    * Kortix-as-a-Backend (backend-origin callers only — a PAT / service-account
    * bearer). The wrapper's opaque end-user this session acts for; recorded on the
    * session and surfaced to the sandbox as KORTIX_ORIGIN_REF. A non-backend

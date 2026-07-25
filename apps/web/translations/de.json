@@ -320,10 +320,7 @@
         "Moin moin! Was bauen wir heute?",
         "Morgen! Bereit durchzustarten?"
       ],
-      "afternoon": [
-        "Guten Tag! Wie kann ich helfen?",
-        "Na, wie läuft's? Was gibt's zu tun?"
-      ],
+      "afternoon": ["Guten Tag! Wie kann ich helfen?", "Na, wie läuft's? Was gibt's zu tun?"],
       "evening": [
         "Guten Abend! Nachtschicht?",
         "Abend! Woran arbeiten wir heute?",
@@ -7000,9 +6997,9 @@
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": ", und stellen Sie den Agenten bereit, den Sie bereits verwenden.",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "Stellen Sie interne Agenten bereit",
     "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "Einfache Preisgestaltung pro Sitzplatz. Bezahlen Sie für das, was Sie nutzen.",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Jeder Sitzplatz erhält die volle Plattform plus eine monatliche Kreditvergütung. Zahlen Sie nur für die Modelle und berechnen Sie, welche Ihre Agenten tatsächlich ausführen – kein Token m",
-    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Credits treiben alles an",
-    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Eine einfache Balance für Modelle und Agentencomputer – keine Alibi-Rechnung, keine überraschenden Rechnungen.",
+    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "Jeder Sitzplatz umfasst die vollständige Plattform und monatliche Credits für die Laufzeit von Agent Computers. Verwenden Sie einen eigenen API-Schlüssel oder verbinden Sie ChatGPT für den Modellzugriff. Verwaltete Modelle bleiben verfügbar und verbrauchen Credits auf Basis der Token-Nutzung.",
+    "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "Bezahlen Sie für den Computer. Verwenden Sie Ihr eigenes Modell.",
+    "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Kortix-Credits sind primär für die Laufzeit von Agent Computers vorgesehen. Verwenden Sie einen eigenen API-Schlüssel oder ein ChatGPT-Abonnement, damit Ihr Modellanbieter die Modellnutzung abrechnet. Optionale verwaltete Modelle verbrauchen Team-Credits auf Basis der Token-Nutzung.",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "Beginnen Sie mit dem Bau",
     "autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76": "Bringen Sie Ihr Team in Schwung",
     "autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a": "40 $ pro Sitzplatz, mit jeweils 20 $ Nutzungsguthaben. Automatisch anteilig abgerechnet, jederzeit kündbar – oder sprechen Sie mit uns über Enterprise.",

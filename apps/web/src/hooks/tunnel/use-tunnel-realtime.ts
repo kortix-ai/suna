@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
 import { useTunnelStore } from '@/stores/tunnel-store';
-import { createSSEStream, type SSEStream } from '@/lib/utils/sse-stream';
+import { createTunnelEventStream, type SSEStream } from '@kortix/sdk';
 import { tunnelKeys } from './use-tunnel';
 import type { TunnelPermissionRequest } from './use-tunnel';
 
@@ -28,9 +28,7 @@ export function useTunnelRealtimeSync() {
         sseStreamRef.current = null;
       }
 
-      const url = `${getEnv().BACKEND_URL}/tunnel/permission-requests/stream`;
-      const stream = createSSEStream({
-        url,
+      const stream = createTunnelEventStream(getEnv().BACKEND_URL, {
         token: session.access_token,
         onError: () => {
           stream.close();

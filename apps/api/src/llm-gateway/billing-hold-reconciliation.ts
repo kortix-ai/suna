@@ -15,8 +15,13 @@ export interface HoldReconciliation {
   toRefund: number;
 }
 
+export function roundBillingAmount(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Number(value.toFixed(10));
+}
+
 export function reconcileBillingHold(finalCost: number, holdUsd: number): HoldReconciliation {
-  const remainder = finalCost - holdUsd;
+  const remainder = roundBillingAmount(roundBillingAmount(finalCost) - roundBillingAmount(holdUsd));
   if (remainder > 0) return { toDeduct: remainder, toRefund: 0 };
   if (remainder < 0) return { toDeduct: 0, toRefund: -remainder };
   return { toDeduct: 0, toRefund: 0 };

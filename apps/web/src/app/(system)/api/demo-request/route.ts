@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { submitDemoRequest } from '@kortix/sdk';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -55,10 +56,7 @@ function backendUrl() {
 // Best-effort: never throws, never blocks the user's flow on a failed email.
 async function notify(body: Record<string, unknown>): Promise<void> {
   try {
-    const res = await fetch(`${backendUrl()}/system/demo-request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await submitDemoRequest({
         name: typeof body.name === 'string' ? body.name : undefined,
         email: String(body.email ?? '').trim(),
         company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
@@ -66,10 +64,10 @@ async function notify(body: Record<string, unknown>): Promise<void> {
         goal: typeof body.goal === 'string' ? body.goal : undefined,
         qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
         source: typeof body.source === 'string' ? body.source : undefined,
-      }),
+      }, {
+      backendUrl: backendUrl(),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) console.error(`[api/demo-request] notify API responded ${res.status}`);
   } catch (err) {
     console.warn('[api/demo-request] notify failed:', (err as Error).message);
   }

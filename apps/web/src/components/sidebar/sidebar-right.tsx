@@ -25,9 +25,9 @@ import {
   SIDEBAR_RIGHT_WIDTH_ICON,
 } from '@/components/ui/sidebar-right-provider';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
+import { useCreatePty } from '@kortix/sdk/react';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk';
 import {
   getNavItemsClustered,
   isItemActive,

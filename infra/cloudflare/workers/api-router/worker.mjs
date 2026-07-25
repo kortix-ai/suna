@@ -62,6 +62,11 @@ export default {
     });
 
     const response = await fetch(modifiedRequest);
+    // Cloudflare attaches the accepted socket to response.webSocket. Creating
+    // a new Response drops that non-standard property and breaks the upgrade.
+    if (response.status === 101 || response.webSocket) {
+      return response;
+    }
     const newResponse = new Response(response.body, response);
     newResponse.headers.set('X-Backend', active);
     newResponse.headers.set('X-Backend-Service', isGateway ? 'gateway' : 'api');

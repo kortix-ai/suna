@@ -7,8 +7,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { hasUsableModel } from '@/hooks/opencode/use-model-store';
+import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
+import { hasUsableModel } from '@kortix/sdk/react';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -17,7 +17,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import type { FlatModel } from './session-chat-input';
 
 /**

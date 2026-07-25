@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ChangeRequest } from '@/features/project-files/api/change-requests';
-import type { ProjectCommit } from '@kortix/sdk/projects-client';
+import type { ProjectCommit } from '@kortix/sdk';
 import {
   KORTIX_AGENT_EMAIL,
   buildTimeline,

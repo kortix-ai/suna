@@ -40,7 +40,15 @@ export interface GatewayConnector {
   profileIsDefault?: boolean;
   profileMetadata?: Record<string, unknown>;
   slug: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
+  provider:
+    | 'pipedream'
+    | 'mcp'
+    | 'openapi'
+    | 'postman'
+    | 'graphql'
+    | 'http'
+    | 'channel'
+    | 'computer';
   platform?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
@@ -399,7 +407,16 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
-  const usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
+  let usable: Awaited<ReturnType<typeof connectorUsable>>;
+  try {
+    usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
+  } catch (error) {
+    const reason = (error as Error).message || 'credential_resolution_failed';
+    await audit(deps, input, connector, 'error', action.risk, {
+      reason: reason.slice(0, 500),
+    });
+    return { status: 'error', reason };
+  }
   if (!usable.ok) {
     await audit(deps, input, connector, 'denied', action.risk, {
       reason: usable.reason,

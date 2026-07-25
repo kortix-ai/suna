@@ -54,7 +54,15 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { backendApi } from '@/lib/api-client';
+import {
+  getAdminProviderAnalytics,
+  getAdminProviderDistribution,
+  getAdminProviderFallback,
+  listAdminSandboxes,
+  migrateAdminSandboxProvider,
+  setAdminProviderDistribution,
+  setAdminProviderFallback,
+} from '@kortix/sdk';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -202,26 +210,20 @@ export default function ProvidersPage() {
   const distQ = useQuery({
     queryKey: ['admin', 'provider-distribution'],
     queryFn: async () => {
-      const r = await backendApi.get<Dist>('/admin/api/provider-distribution');
-      if (r.error) throw new Error(r.error.message);
-      return r.data!;
+      return getAdminProviderDistribution<Dist>();
     },
   });
   const listQ = useQuery({
     queryKey: ['admin', 'sandboxes'],
     queryFn: async () => {
-      const r = await backendApi.get<SbxResp>('/admin/api/sandboxes?limit=300');
-      if (r.error) throw new Error(r.error.message);
-      return r.data!;
+      return listAdminSandboxes<SbxResp>(300);
     },
     refetchInterval: 10_000,
   });
   const anQ = useQuery({
     queryKey: ['admin', 'provider-analytics', days],
     queryFn: async () => {
-      const r = await backendApi.get<Analytics>(`/admin/api/provider-analytics?days=${days}`);
-      if (r.error) throw new Error(r.error.message);
-      return r.data!;
+      return getAdminProviderAnalytics<Analytics>(days);
     },
     enabled: tab === 'analytics',
     refetchInterval: tab === 'analytics' ? 30_000 : false,
@@ -239,9 +241,7 @@ export default function ProvidersPage() {
     mutationFn: async () => {
       const body: Record<string, number> = {};
       for (const k in weights) body[k] = Number(weights[k]) || 0;
-      const r = await backendApi.put('/admin/api/provider-distribution', body);
-      if (r.error) throw new Error(r.error.message);
-      return r.data;
+      return setAdminProviderDistribution(body);
     },
     onSuccess: () => {
       toast.success('Distribution saved');
@@ -254,11 +254,7 @@ export default function ProvidersPage() {
   const [target, setTarget] = useState('');
   const migrate = useMutation({
     mutationFn: async () => {
-      const r = await backendApi.post(`/admin/api/sandboxes/${migrating!.sessionId}/migrate`, {
-        targetProvider: target,
-      });
-      if (r.error) throw new Error(r.error.message);
-      return r.data;
+      return migrateAdminSandboxProvider(migrating!.sessionId, target);
     },
     onSuccess: () => {
       toast.success(`Migrating to ${target}…`);
@@ -272,9 +268,7 @@ export default function ProvidersPage() {
   const fbQ = useQuery({
     queryKey: ['admin', 'provider-fallback'],
     queryFn: async () => {
-      const r = await backendApi.get<{ enabled: boolean }>('/admin/api/provider-fallback');
-      if (r.error) throw new Error(r.error.message);
-      return r.data!;
+      return getAdminProviderFallback();
     },
   });
   const [fbEnabled, setFbEnabled] = useState(false);
@@ -283,9 +277,7 @@ export default function ProvidersPage() {
   }, [fbQ.data]);
   const saveFb = useMutation({
     mutationFn: async () => {
-      const r = await backendApi.put('/admin/api/provider-fallback', { enabled: fbEnabled });
-      if (r.error) throw new Error(r.error.message);
-      return r.data;
+      return setAdminProviderFallback(fbEnabled);
     },
     onSuccess: () => {
       toast.success('Failover saved');

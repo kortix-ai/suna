@@ -321,14 +321,21 @@ function estimateTokenCost(tokens: TokenUsageLike | undefined, rates: ModelCostR
   const cacheRead = tokens.cache?.read ?? 0;
   const cacheWrite = tokens.cache?.write ?? 0;
   const regularInput = Math.max(0, input - cacheRead - cacheWrite);
+  const tierCandidates = [
+    ...(rates.tiers ?? []),
+    ...(rates.contextOver200k ? [rates.contextOver200k] : []),
+  ]
+    .filter((tier) => input > tier.contextThreshold)
+    .sort((a, b) => b.contextThreshold - a.contextThreshold);
+  const effective = tierCandidates[0] ?? rates;
 
-  let cost = (regularInput / 1_000_000) * rates.inputPer1M;
-  cost += (output / 1_000_000) * rates.outputPer1M;
+  let cost = (regularInput / 1_000_000) * effective.inputPer1M;
+  cost += (output / 1_000_000) * effective.outputPer1M;
   if (cacheRead > 0) {
-    cost += (cacheRead / 1_000_000) * (rates.cacheReadPer1M ?? rates.inputPer1M);
+    cost += (cacheRead / 1_000_000) * (effective.cacheReadPer1M ?? effective.inputPer1M);
   }
   if (cacheWrite > 0) {
-    cost += (cacheWrite / 1_000_000) * rates.inputPer1M;
+    cost += (cacheWrite / 1_000_000) * (effective.cacheWritePer1M ?? effective.inputPer1M);
   }
   return cost;
 }

@@ -7,6 +7,11 @@
  * Set it from the admin panel at /admin/utils.
  */
 
+import {
+  getMaintenanceConfig as sdkGetMaintenanceConfig,
+  setMaintenanceConfig as sdkSetMaintenanceConfig,
+} from '@kortix/sdk';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -54,9 +59,10 @@ function backendUrl(): string {
 /** Read the current maintenance configuration (public). */
 export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
   try {
-    const res = await fetch(`${backendUrl()}/system/maintenance`, { cache: 'no-store' });
-    if (!res.ok) return { ...DEFAULT_CONFIG };
-    const config = (await res.json()) as MaintenanceConfig | null;
+    const config = await sdkGetMaintenanceConfig<MaintenanceConfig | null>({
+      backendUrl: backendUrl(),
+      cache: 'no-store',
+    });
     return config ?? { ...DEFAULT_CONFIG };
   } catch (err) {
     console.warn('[maintenance-store] read failed, using defaults:', err);
@@ -72,17 +78,8 @@ export async function setMaintenanceConfig(
   config: MaintenanceConfig,
   accessToken: string,
 ): Promise<MaintenanceConfig> {
-  const res = await fetch(`${backendUrl()}/system/maintenance`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(config),
+  return sdkSetMaintenanceConfig(config, {
+    backendUrl: backendUrl(),
+    accessToken,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`maintenance write failed (${res.status}): ${body}`);
-  }
-  return (await res.json()) as MaintenanceConfig;
 }

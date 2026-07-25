@@ -36,7 +36,7 @@ test('sentry.client.config anchors expected billing-gate 402 markers', async () 
 
 test('sentry.client.config anchors the expected no-compaction-model marker', async () => {
   // Reproduces Better Stack error 9f72dd9a2cb49a81aa57be27e9b3cb2f1ef06a8ebf59ede6900267febd3f7ded
-  // (Kortix Frontend prod): the SDK's `useSummarizeOpenCodeSession` mutation
+  // (Kortix Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
   // throws a sentinel `NoCompactionModelError` when no model is configured
   // anywhere — an expected, user-facing config state the host already toasts.
   // It leaks to Sentry as an unhandled promise rejection

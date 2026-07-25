@@ -22,6 +22,7 @@ export interface RecordedRequest {
   path: string; // pathname + search, e.g. "/v1/projects/proj_1"
   authorization: string | null;
   cookie: string | null;
+  acceptEncoding: string | null;
   contentLength: string | null;
   transferEncoding: string | null;
   body: unknown;
@@ -116,6 +117,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       const method = req.method.toUpperCase();
       const authorization = req.headers.get('authorization');
       const cookie = req.headers.get('cookie');
+      const acceptEncoding = req.headers.get('accept-encoding');
       const contentLength = req.headers.get('content-length');
       const transferEncoding = req.headers.get('transfer-encoding');
 
@@ -136,6 +138,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         path: `${url.pathname}${url.search}`,
         authorization,
         cookie,
+        acceptEncoding,
         contentLength,
         transferEncoding,
         body,
@@ -226,6 +229,18 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       }
 
       // ── sandbox runtime proxy: /p/{sandboxId}/{port}/... ───────────────
+      if (p === 'p/sbx_encoding/8000/encoding' && method === 'GET') {
+        if (acceptEncoding !== 'identity') {
+          return Response.json(
+            {
+              error: 'wrapper forwarded unsupported response encoding negotiation',
+            },
+            { status: 502 },
+          );
+        }
+        return Response.json({ ok: true });
+      }
+
       const sseMatch = p.match(/^p\/([^/]+)\/(\d+)\/global\/event$/);
       if (sseMatch && method === 'GET') {
         let interval: ReturnType<typeof setInterval> | undefined;

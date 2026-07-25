@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S node --experimental-strip-types
 
 /**
  * Real provider PTY smoke:
@@ -7,7 +7,7 @@
  *
  * Run with the isolated stack up:
  *   dotenvx run -f apps/api/.env -f apps/web/.env -- \
- *     bun tests/e2e/scripts/terminal-pty-smoke.ts platinum
+ *     node --experimental-strip-types tests/e2e/scripts/terminal-pty-smoke.ts platinum
  */
 
 const provider = process.argv[2];

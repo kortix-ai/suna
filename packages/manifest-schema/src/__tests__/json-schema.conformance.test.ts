@@ -295,6 +295,21 @@ channels:
       'kortix_version = 1\n[[connectors]]\nslug = "x"\nprovider = "openapi"\nspec = "https://x/y.json"\n[connectors.auth]\ntype = "oauth1"\n',
   },
   {
+    name: 'connectors.auth supports API key cookie, HMAC, SigV4, and mTLS modes',
+    format: 'toml',
+    valid: true,
+    input:
+      'kortix_version = 1\n' +
+      '[[connectors]]\nslug = "api-key"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "api_key"\nin = "cookie"\nname = "session_key"\n' +
+      '[[connectors]]\nslug = "signed"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "hmac"\nname = "X-Signature"\n' +
+      '[[connectors]]\nslug = "aws"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "aws_sigv4"\n' +
+      '[[connectors]]\nslug = "mtls"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "mtls"\n',
+  },
+  {
     name: 'channel connectors must not declare a non-"none" auth.type',
     format: 'toml',
     valid: false,

@@ -6,8 +6,7 @@
  * it, and return structured data.
  */
 
-import { createKortixPty, removeKortixPty, getKortixPtyWebSocketUrl } from '@/lib/opencode-sdk';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { runPtyCommand } from '@kortix/sdk/react';
 import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
@@ -31,67 +30,10 @@ const WS_TIMEOUT = 15_000;
  * Returns the combined stdout as a string.
  */
 async function runGitCommand(command: string): Promise<string> {
-  const baseUrl = getActiveOpenCodeUrl();
-
-  // Create a PTY that runs the git command
-  const pty = await createKortixPty(baseUrl, {
-    command: '/bin/sh',
-    args: ['-c', command],
+  return runPtyCommand(command, {
     title: '__git-history-query__',
+    timeoutMs: WS_TIMEOUT,
   });
-  const ptyId = pty.id;
-
-  // Connect via WebSocket to read output
-  const connectUrl = await getKortixPtyWebSocketUrl(ptyId, baseUrl);
-
-  const output = await new Promise<string>((resolve, reject) => {
-    const chunks: string[] = [];
-    let resolved = false;
-
-    const ws = new WebSocket(connectUrl);
-    ws.binaryType = 'arraybuffer';
-
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        ws.close();
-        resolve(chunks.join(''));
-      }
-    }, WS_TIMEOUT);
-
-    ws.onmessage = (event) => {
-      if (resolved) return;
-      let text: string;
-      if (event.data instanceof ArrayBuffer) {
-        text = new TextDecoder().decode(event.data);
-      } else {
-        text = String(event.data);
-      }
-      chunks.push(text);
-    };
-
-    ws.onclose = () => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        resolve(chunks.join(''));
-      }
-    };
-
-    ws.onerror = () => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        // Still resolve with what we have — the command may have finished
-        resolve(chunks.join(''));
-      }
-    };
-  });
-
-  // Cleanup: remove the PTY (fire-and-forget)
-  removeKortixPty(baseUrl, ptyId).catch(() => {});
-
-  return output;
 }
 
 // ---------------------------------------------------------------------------

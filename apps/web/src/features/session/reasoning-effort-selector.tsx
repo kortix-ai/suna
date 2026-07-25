@@ -13,7 +13,7 @@
  * *** WHY THIS WRITES A PROJECT-LEVEL SETTING, NOT A PER-MESSAGE ONE ***
  * OpenCode's own message-send payload (`SendMessageOptions` in
  * `@kortix/sdk`'s `use-opencode-sessions/keys.ts`, consumed by
- * `promptOpenCodeMessage`) only ever carries `model` / `agent` / `variant` /
+ * `promptRuntimeMessage`) only ever carries `model` / `agent` / `variant` /
  * `directory` — there is no per-message reasoning-effort field to set on a
  * chat send today. Separately, models.dev-sourced models don't populate
  * OpenCode's legacy per-model `variant` map, which is why the composer's
@@ -54,10 +54,10 @@ import {
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
-import { modelKeyToWire } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
-import type { GatewayProjectRoutingPolicy } from '@kortix/sdk/projects-client';
+import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
 import { useGatewayRoutingPolicy } from '@kortix/sdk/react';
 
 export interface ReasoningEffortModelKey {

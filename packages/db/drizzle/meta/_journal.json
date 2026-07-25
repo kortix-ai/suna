@@ -71,6 +71,34 @@
       "when": 1784829248655,
       "tag": "20260723175408_add_provider_transitions_lease_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784900386151,
+      "tag": "20260724133946_session_connector_bindings_inherit_unbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784937680824,
+      "tag": "20260725000120_executor_oauth_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784941778905,
+      "tag": "20260725010938_gateway_billing_precision_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784942492106,
+      "tag": "20260725012132_gateway_cost_precision_columns",
+      "breakpoints": true
     }
   ]
 }

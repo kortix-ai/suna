@@ -74,8 +74,8 @@ mock.module('./descriptors', () => ({
     markup: 0,
     resolvedModel: model,
   }),
-  livePricing: (modelId: string) => {
-    livePricingCalls.push(modelId);
+  livePricing: (providerId: string, modelId: string) => {
+    livePricingCalls.push(`${providerId}/${modelId}`);
     return undefined;
   },
   stripBedrockInferenceProfilePrefix: (modelId: string) =>
@@ -256,7 +256,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
 
     expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-4-8' });
-    expect(livePricingCalls).toEqual(['anthropic.claude-opus-4-8']);
+    expect(livePricingCalls).toEqual(['amazon-bedrock/anthropic.claude-opus-4-8']);
   });
 
   test('BYOK non-Bedrock provider: pricing lookup is never run through the Bedrock prefix-strip', async () => {
@@ -271,7 +271,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
-    expect(livePricingCalls).toEqual(['claude-sonnet-4.6']);
+    expect(livePricingCalls).toEqual(['anthropic/claude-sonnet-4.6']);
   });
 
   test('Bedrock with no project key connected: provider_not_connected (never a silent managed fallback)', async () => {

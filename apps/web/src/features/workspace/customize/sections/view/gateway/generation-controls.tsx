@@ -36,7 +36,7 @@ import {
   getManagedModel,
   pricingRefLookupCandidates,
 } from '@kortix/llm-catalog';
-import type { GatewayModelGenerationConfig } from '@kortix/sdk/projects-client';
+import type { GatewayModelGenerationConfig } from '@kortix/sdk';
 
 /** See the module doc comment — this is the client-side mirror of
  *  apps/api's `catalogModelForWireModel`. Kept in lockstep deliberately:

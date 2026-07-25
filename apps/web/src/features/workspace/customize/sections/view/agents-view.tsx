@@ -21,8 +21,8 @@ import {
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useModelDefaults } from '@kortix/sdk/react';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -35,7 +35,7 @@ import {
   listProjectSecrets,
   setAgentScope,
   updateProjectDefaultAgent,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { StarSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
@@ -260,7 +260,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
     staleTime: 20_000,
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
   const explicit = defaults.agentDefaults[agentName] ?? null;

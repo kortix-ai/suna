@@ -48,7 +48,14 @@ export function hasOpenFloatingLayer(): boolean {
   );
 }
 
-/** Nested modals/sheets opened above the customize panel (or any parent dialog). */
+/** Nested modals/sheets opened above the customize panel (or any parent dialog).
+ *  Radix gives alerts `role="alertdialog"`, so confirm dialogs only count here
+ *  if that role is matched too — miss it and Escape aimed at a confirm tears
+ *  down the panel behind it. */
 export function hasOpenNestedDialog(): boolean {
-  return document.querySelectorAll('[role="dialog"][data-state="open"]').length > 1;
+  return (
+    document.querySelectorAll(
+      '[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"]',
+    ).length > 1
+  );
 }

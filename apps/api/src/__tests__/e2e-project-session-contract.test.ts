@@ -131,6 +131,7 @@ function resetState() {
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    connectorBindingsInheritUnbound: false,
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -307,6 +308,7 @@ mock.module('../projects/github', () => ({
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
   verifyGitHubInstallationAdmin: async () => undefined,
+  listLinkableGitHubAppInstallations: async () => [],
   createRepo: async () => {
     throw new Error('not used');
   },
@@ -608,6 +610,7 @@ mock.module('../shared/db', () => ({
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
+            connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),

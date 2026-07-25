@@ -5,16 +5,20 @@ import {
   cancelSubscription,
   confirmCheckoutSession,
   configureAutoTopup,
+  claimPerSeatBilling,
+  createPerSeatCheckout,
   createCheckoutSession,
   createPortalSession,
   fetchAccountStateWithToken,
   getAccountState,
   getAutoTopupSettings,
+  getAutoTopupSetupStatus,
   getDefaultAccountState,
   getProrationPreview,
   purchaseCredits,
   reactivateSubscription,
   scheduleDowngrade,
+  syncSubscription,
 } from './billing';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
@@ -137,6 +141,31 @@ test('cancelSubscription / reactivateSubscription / scheduleDowngrade / cancelSc
 
   await cancelScheduledChange();
   expect(last().url).toContain('/billing/cancel-scheduled-change');
+});
+
+test('per-seat, sync, and auto-topup setup methods own their REST paths', async () => {
+  nextResponse = { status: 200, body: { status: 'checkout_created' } };
+  await createPerSeatCheckout({
+    successUrl: 'https://example.com/success',
+    cancelUrl: 'https://example.com/cancel',
+    accountId: 'acc-1',
+  });
+  expect(last().url).toContain('/billing/create-per-seat-checkout');
+  expect(last().body).toMatchObject({ account_id: 'acc-1' });
+
+  nextResponse = { status: 200, body: { ok: true, status: 'migrated' } };
+  await claimPerSeatBilling('acc-1');
+  expect(last().url).toContain('/billing/claim-per-seat');
+
+  await syncSubscription('acc-1');
+  expect(last().url).toContain('/billing/sync-subscription');
+
+  nextResponse = {
+    status: 200,
+    body: { has_payment_method: true, has_default_payment_method: true },
+  };
+  await getAutoTopupSetupStatus('acc-1');
+  expect(last().url).toContain('/billing/auto-topup/setup-status?account_id=acc-1');
 });
 
 test('getProrationPreview GETs with new_price_id (+ optional account_id) as query params', async () => {

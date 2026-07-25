@@ -147,7 +147,7 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
 ] as const;
 
 // Expected "no compaction model configured" configuration state. The SDK's
-// `useSummarizeOpenCodeSession` mutation
+// `useSummarizeRuntimeSession` mutation
 // (`packages/sdk/src/react/use-opencode-sessions/sessions.ts`) throws a
 // sentinel-marked `NoCompactionModelError`
 // (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`,
@@ -289,6 +289,78 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   "null is not an object (evaluating 'this.gl.getSupportedExtensions')",
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
 ] as const;
+
+// Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate
+// throw — a SIBLING of the null-context crash class above, but a DIFFERENT
+// throw. When the library's shader mount detects that WebGL is unavailable
+// (a stripped-down/mobile WebView, a headless renderer, a browser with WebGL
+// disabled, or a GPU blacklisted at context creation), the library throws its
+// OWN deliberate `Error('Paper Shaders: WebGL is not supported in this browser')`
+// from its constructor — NOT a null-context `TypeError` from calling a WebGL2
+// method on a `null` context (the `getSupportedExtensions` / `getAttribLocation`
+// wording covered by `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` above). The
+// `Paper Shaders:` prefix is the library's own canonical marker, so this exact
+// message is the library's deliberate signal that the browser cannot render the
+// decorative shader; it is an EXPECTED degradation state on WebGL-less browsers,
+// never a product bug.
+//
+// Better Stack pattern
+// f1abf79ece48a86faf8eb32cec8bbb6bf270627f9fd5d423fb1ee43b9abcfb23
+// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// `Paper Shaders: WebGL is not supported in this browser`, 1 occurrence /
+// 0 identified users (anonymous), last 2026-07-23 17:26:32 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route `/`
+// (marketing homepage), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
+// unhandledrejection — never reached a React error boundary, `handled:false`).
+// Browser: Chrome 150.0.0.0 on Android 10 (mobile), UA
+// `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko)
+// Chrome/150.0.0.0 Mobile Safari/537.36` — a stripped-down/mobile Android
+// browser without WebGL. Stack frames: 2, both minified
+// `@paper-design/shaders` chunk frames — NO first-party `apps/web/src/…`
+// frame:
+//   - `app:///_next/static/chunks/81107-7c84018ef9475be5.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno`
+//     function `?` lineno 251 colno 3276
+//   - same chunk function `new a` lineno 401 colno 1131  (call_site_function)
+//
+// The `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
+// degrades to the fallback BEFORE this throw fires (it calls
+// `getContext('webgl2')` + `getSupportedExtensions()` on a probe canvas and
+// treats a `null`/throw as unsupported). But the probe is a one-shot memo that
+// runs at first `render` of `<ShaderSafe>`, while the library's own `new a`
+// constructor throws synchronously on a browser where WebGL is `null` — and on
+// some code paths the probe's result is computed after the library has already
+// been dynamically imported and its constructor reached. The residual async
+// throw then escapes as an unhandled rejection (the library constructor runs
+// inside a dynamic import / `useEffect` that bypasses the React error
+// boundary). This matcher is the leak-path backstop for that residual throw,
+// the way `isPaperShaderNullContextNoise` is the backstop for the null-context
+// `TypeError` class.
+//
+// The message is the library's OWN canonical string (the `Paper Shaders:`
+// prefix is the library's deliberate marker, never emitted by first-party app
+// code), so an EXACT-message match is safe — a real first-party
+// `throw new Error('Paper Shaders: WebGL is not supported in this browser')`
+// regression is vanishingly unlikely AND would de-minify to `apps/web/src/…`
+// frames, which the mandatory negative guard below preserves. Unlike
+// `isPaperShaderNullContextNoise` (message-only, no negative guard — safe
+// because WebGL2 API method names are never called from first-party code),
+// this message COULD theoretically be thrown from first-party code, so the
+// first-party-frame negative guard MUST run when frames are present. The prod
+// event has only minified `81107` chunk frames, so the negative guard does
+// not fire for it. A frameless capture with this exact message still
+// classifies as noise (the message alone is specific — the `Paper Shaders:`
+// library prefix is part of the anchor). `Error: ` / `Unhandled promise
+// rejection: ` / `Unhandled promise rejection: Error: ` wrappers are stripped
+// before matching so all capture paths (window.onerror,
+// onunhandledrejection, Sentry exception) classify consistently. Deliberately
+// NOT added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has
+// no frame context, so a bare-string match there could swallow a real
+// first-party throw the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the
+// only safe gate.
+const PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE =
+  'Paper Shaders: WebGL is not supported in this browser';
 
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
 // browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
@@ -443,6 +515,48 @@ const CLIENT_REQUEST_TIMEOUT_WRAPPERS: ReadonlyArray<RegExp> = [
   /^Unhandled promise rejection: (?:ApiError: )?Request timed out after \d+s: /,
 ];
 
+// The API's server-side request-deadline 503.
+// `apps/api/src/middleware/request-deadline.ts` bounds every non-streaming
+// request to a 25s wall-clock deadline (default `REQUEST_DEADLINE_MS`); when a
+// handler exceeds it, the `RequestDeadlineHTTPException` returns a clean 503 +
+// `Retry-After: 10` with the message
+// `Request exceeded the <N>s server processing deadline`. It is an EXPECTED,
+// retryable degradation — the deadline net bounding a slow downstream / a
+// pool-saturated request — and is already de-noised at the API SOURCE
+// (`apps/api/src/index.ts` `onError` skips `captureException` for
+// `isRequestDeadlineHTTPException(err)` — PR #4524, API Sentry app 2346961).
+//
+// BUT the 503 RESPONSE crosses the boundary into the frontend: the SDK's
+// `makeRequest` extracts `errorData.message` (the deadline string), wraps it in
+// an `ApiError` with `status: 503`, and fires `onError` → `handleApiError`,
+// which captures it to the FRONTEND Sentry (app 2346967 — a SEPARATE app from
+// the API's). That is exactly how Better Stack FRONTEND pattern
+// `a330bea1…` (`ApiError: Request exceeded the 25s server processing deadline`,
+// on the `useSessionAudit` background poll, 1 occ / 0 users) reached the
+// frontend telemetry despite #4524's API-side classification. The
+// `TRANSIENT_GATEWAY_STATUSES` retry (#4609) absorbs a SINGLE transient 503 on
+// idempotent reads, but persistent saturation exhausts the 2-retry loop (the
+// prod breadcrumbs showed 3 non-200 audit 503s) and surfaces the deadline 503
+// to `onError` → Sentry.
+//
+// This is the frontend mirror of the API's request-deadline classification,
+// sibling to `isClientRequestTimeoutMessage` (the SDK's 30s CLIENT abort,
+// #4531). The deadline 503 is the SAME expected/retryable degradation class,
+// just observed server-side instead of client-side — react-query retries
+// background polls, and the saturation signal stays visible in the per-route
+// `http_request_duration_seconds` metric + the structured
+// `Request completed: … 503 …` warn log on the API. The match is anchored on
+// the API's exact `Request exceeded the <N>s server processing deadline`
+// wording (with the canonical `ApiError: ` / unhandled-rejection wrappers) so
+// a generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`) is
+// never matched — only the typed deadline message the API's
+// `RequestDeadlineHTTPException` emits.
+const SERVER_DEADLINE_NOISE_WRAPPERS: ReadonlyArray<RegExp> = [
+  /^Request exceeded the \d+s server processing deadline$/,
+  /^ApiError: Request exceeded the \d+s server processing deadline$/,
+  /^Unhandled promise rejection: (?:ApiError: )?Request exceeded the \d+s server processing deadline$/,
+];
+
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
@@ -522,7 +636,7 @@ const TRONLINK_PROXY_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /'set' on proxy: trap returned falsish for property 'tronlinkParams'/,
   // SpiderMonkey (Firefox): different engine, same TronLink property.
   /proxy set handler returned false for property 'tronlinkParams'/,
-]
+];
 
 function isTronLinkInjectedSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
@@ -1043,7 +1157,7 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
 
 /**
  * Whether a message is the EXPECTED "no compaction model configured"
- * configuration state thrown by the SDK's `useSummarizeOpenCodeSession`
+ * configuration state thrown by the SDK's `useSummarizeRuntimeSession`
  * mutation (`NoCompactionModelError`) when every model-resolution fallback
  * tier fails. The host already surfaces it via a user-facing toast; it must
  * never page Better Stack, but the sentinel error can leak to Sentry as an
@@ -1103,6 +1217,25 @@ export function isClientRequestTimeoutMessage(message: unknown): boolean {
 }
 
 /**
+ * Whether a message is the API's server-side request-deadline 503 —
+ * `Request exceeded the <N>s server processing deadline` (and its canonical
+ * wrappers). This is the SERVER-side mirror of `isClientRequestTimeoutMessage`
+ * (the SDK's 30s CLIENT abort): the API bounds non-streaming requests to a 25s
+ * deadline that returns a clean 503 + `Retry-After`, de-noised at the API
+ * source by #4524. But the 503 response crosses into the frontend as an
+ * `ApiError(status: 503)` (the SDK extracts `.message`), which `handleApiError`
+ * captures to the FRONTEND Sentry — Better Stack pattern `a330bea1…`. It is
+ * an EXPECTED, retryable degradation (react-query retries background polls; the
+ * saturation signal stays in per-route metrics + the structured 503 warn log),
+ * never an actionable bug. Such a message must NEVER page Better Stack,
+ * regardless of which capture path delivered it.
+ */
+export function isServerDeadlineNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return SERVER_DEADLINE_NOISE_WRAPPERS.some((re) => re.test(normalized));
+}
+
+/**
  * Whether a message is the old-WebKit (< 16.4) lookbehind parse failure
  * `SyntaxError: Invalid regular expression: invalid group specifier name`.
  * The lookbehind lives in bundled third-party deps
@@ -1141,6 +1274,71 @@ export function isPaperShaderNullContextNoise(message: unknown): boolean {
   return PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS.some((pattern) =>
     stripped.includes(pattern),
   );
+}
+
+/**
+ * Whether a Sentry event is the Paper Shaders
+ * (`@paper-design/shaders-react`) WebGL-unsupported deliberate-throw noise
+ * class: the library's OWN canonical
+ * `Paper Shaders: WebGL is not supported in this browser` `Error`, thrown from
+ * the library's shader-mount constructor when WebGL is unavailable (a
+ * stripped-down/mobile WebView, a headless renderer, a browser with WebGL
+ * disabled, or a GPU blacklisted at context creation). This is a SIBLING of
+ * the null-context crash class (`isPaperShaderNullContextNoise`), but a
+ * DIFFERENT throw — a deliberate library `Error`, NOT a null-context
+ * `TypeError` from calling a WebGL2 method on a `null` context. The throw
+ * escapes `<ShaderSafe>` (it fires from the library constructor inside a
+ * dynamic import / `useEffect` that bypasses the React error boundary) and
+ * reaches Sentry as an uncaught global `onunhandledrejection` — an EXPECTED
+ * degradation state on WebGL-less browsers, never a product bug. The
+ * `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
+ * degrades to the fallback BEFORE the throw; this matcher is the leak-path
+ * backstop for the residual async throw that bypasses the one-shot probe.
+ *
+ * Requires the EXACT library message (case-sensitive; the `Paper Shaders:`
+ * prefix is the library's canonical marker, never emitted by first-party
+ * app code) AND a NEGATIVE guard: if ANY frame resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a
+ * real first-party `throw new Error('Paper Shaders: WebGL is not supported
+ * in this browser')` regression de-minifies to `apps/web/src/…` and must not
+ * be hidden). The production noise pattern carries only minified
+ * `@paper-design/shaders` chunk frames, so the negative guard does not fire
+ * for it. A frameless capture with this exact message still classifies as
+ * noise (the message alone is specific — the `Paper Shaders:` library prefix
+ * is part of the anchor, so a near-worded `WebGL is not supported in this
+ * browser` without the prefix does NOT match). See
+ * `PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE` for the full rationale.
+ */
+export function isPaperShaderWebGLUnsupportedNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and typed
+  // `<Name>Error: ` prefixes (e.g. `TypeError: `), but NOT a bare `Error: `
+  // (its `[A-Za-z]+Error:` requires a leading prefix). Sentry capture paths
+  // can deliver either shape, so additionally strip a leading bare `Error: `
+  // here — mirroring `isBareImageLoadNoiseMessage`'s explicit `Error: ` form.
+  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(
+    /^Error: /,
+    '',
+  );
+  if (stripped !== PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw this exact message → a real first-party regression (even
+  // though the `Paper Shaders:` prefix is the library's canonical marker, a
+  // hostile/copy-pasted first-party throw could share it). Keep reporting so
+  // the call site can be found + fixed. Only the library throw (minified
+  // `@paper-design/shaders` chunk frames, or frameless) is dropped. No second
+  // "any resolvable frame" guard is needed — the message is specific enough
+  // (the library's canonical string) that a frameless capture is safe to
+  // drop, unlike the generic `undefined` / `OperationError` matchers.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  return true;
 }
 
 // Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
@@ -1466,6 +1664,107 @@ export function isEmbedPdfTilingReactUpdateDepthNoise(input: {
   return frames.some(frameMatchesEmbedPdfTilingCallback);
 }
 
+// The EXACT V8 wording of the @embedpdf/plugin-tiling `TilingLayer` viewport-
+// advance tile-destructure throw: under a rapid scroll/zoom burst the tiling
+// plugin's tile queue drains mid-burst, the viewport-advance path calls
+// `const { tile } = queue.pop()` on an `undefined` pop result, and V8 reports
+// `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` (the
+// minified queue is `r`, so the destructure target renders as `r.pop(...)`).
+// The `tile` property name + the `r.pop(...)` destructure target together pin
+// this single call site; a different destructure (different property / different
+// expression) is a different throw and must keep reporting. Anchored as an EXACT
+// string match (after `stripErrorWrappers`) like the Paper Shaders patterns —
+// not a loose prefix — so a near-worded regression cannot slip through.
+const EMBEDPDF_TILING_TILE_DESTRUCTURE_NOISE_MESSAGE =
+  "Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.";
+
+// The @embedpdf/plugin-tiling `TilingLayer` viewport-advance internal frame
+// anchors. Under a scroll/zoom burst the tiling plugin's viewport advance path
+// (`t5.advance` → `iA.ignore` → `iA.onScroll` / `iA.onScrollChanged`, plus the
+// `IntersectionObserver` threshold callback that drives viewport recomputation)
+// pops the drained tile queue. These minified function names are the tiling
+// plugin's own viewport-advance internals (never present in first-party
+// `apps/web/src/…` source), so their presence is a specific third-party anchor.
+// Function names are stable across deploys (unlike the `c63a46fc` chunk hash,
+// which changes every release), so they are the primary anchor; the chunk hash
+// is a fallback for captures whose function names were stripped.
+const EMBEDPDF_TILING_VIEWPORT_ADVANCE_FRAME_MARKERS = [
+  't5.advance',
+  'iA.ignore',
+  'iA.onScroll',
+  'iA.onScrollChanged',
+  'IntersectionObserver.intersection.IntersectionObserver.threshold',
+] as const;
+
+// The minified @embedpdf/plugin-tiling tiling chunk hash seen in both prod
+// patterns (`c63a46fc-270e35c76d7636cb.js`). Changes per deploy, so it is a
+// fallback anchor only — the function-name markers above are preferred.
+const EMBEDPDF_TILING_CHUNK_MARKER = 'c63a46fc';
+
+function frameMatchesEmbedPdfTilingViewportAdvance(
+  frame: { filename?: unknown; function?: unknown } | undefined,
+): boolean {
+  const fn = normalizeString(frame?.function);
+  if (
+    EMBEDPDF_TILING_VIEWPORT_ADVANCE_FRAME_MARKERS.some((marker) =>
+      fn.includes(marker),
+    )
+  ) {
+    return true;
+  }
+  return normalizeString(frame?.filename).includes(EMBEDPDF_TILING_CHUNK_MARKER);
+}
+
+/**
+ * Whether a Sentry exception is the `@embedpdf/plugin-tiling` `TilingLayer`
+ * viewport-advance tile-destructure noise class: under a rapid scroll/zoom
+ * burst the tiling plugin's tile queue drains mid-burst, the viewport-advance
+ * path (`t5.advance` / `iA.ignore` / `iA.onScroll` / `iA.onScrollChanged` /
+ * `IntersectionObserver.threshold`) calls `const { tile } = queue.pop()` on an
+ * `undefined` pop result, and V8 throws
+ * `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` The
+ * throw is in third-party bundled code (the minified `c63a46fc` tiling chunk),
+ * never first-party. This is a SIBLING of the React #185 render-loop class
+ * (`isEmbedPdfTilingReactUpdateDepthNoise`, Better Stack pattern `366115d4…`,
+ * PR #4718) but a DIFFERENT throw from a different embedpdf tiling path (the
+ * viewport-advance path, not the `onTileRendering` subscription callback), so the
+ * #4718 matcher — anchored on the `Minified React error #185` message + the
+ * `onTileRendering` frame — does NOT catch it. Requires BOTH the EXACT message
+ * AND a positive viewport-advance frame anchor (function name or the
+ * `c63a46fc` tiling chunk), AND a NEGATIVE guard: if any frame resolves to a
+ * de-minified first-party `apps/web/src/…` source, the event keeps reporting (a
+ * real first-party `{ tile } = arr.pop()` regression de-minifies to
+ * `apps/web/src/…` and must not be hidden). The `tile` property name is part of
+ * the anchor, so a different destructure (`{ foo } = r.pop()`) keeps reporting.
+ * Returns false when there are no frames (can't confirm the tiling anchor — keep
+ * reporting). See Better Stack patterns `3e579401…` / `70272e1e…`.
+ */
+export function isEmbedPdfTilingTileDestructureNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (message !== EMBEDPDF_TILING_TILE_DESTRUCTURE_NOISE_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard: a resolved first-party frame means our own code is the
+  // destructure culprit → actionable; keep reporting so the call site can be
+  // found. A real first-party `{ tile } = arr.pop()` regression de-minifies to
+  // `apps/web/src/…` and must never be hidden.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Anchor: the throw must be inside @embedpdf/plugin-tiling's viewport-advance
+  // path. These frames are never present in first-party code, so a real
+  // first-party tile-destructure (or a same-worded throw from a different
+  // third-party lib) is never matched.
+  return frames.some(frameMatchesEmbedPdfTilingViewportAdvance);
+}
+
 // React #327 = `Should not already be working.` — the React production
 // reconciler's re-entrancy guard. It throws from
 // `packages/react-reconciler/src/ReactFiberWorkLoop.js`'s `performSyncWorkOnRoot`
@@ -1758,6 +2057,216 @@ export function isOperationErrorPopErrorScopeNoise(input: {
   return true;
 }
 
+// Transient WebSocket / Server-Sent-Events (SSE) transport-close noise.
+// `Connection closed.` is the CANONICAL transport-close message a client-side
+// WebSocket/SSE library throws when the server closes the connection — a deploy
+// / restart, an idle-timeout recycle, the session ending, or the load balancer
+// recycling the upstream. The `/dashboard` realtime surface holds a background
+// websocket/SSE connection; when the upstream tears the connection down during
+// a deploy/idle-recycle, the library throws `Connection closed.` (the trailing
+// `.` is part of the library's canonical close string). Better Stack pattern
+// ecac86df82aca61f579836c1b813a0ed02cabd4a480b581db2f1ba5f4e20ab86
+// (Kortix Frontend prod, application_id 2346967): `Error`, 1 occurrence / 0
+// identified users, last 2026-07-23 16:44:09 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
+// `/dashboard`, URL `https://kortix.com/dashboard`, mechanism
+// `auto.browser.global_handlers.onerror` (`handled:false` — UNCAUGHT, never
+// reached a React error boundary), browser Chrome 150 / Windows 10. The single
+// stack frame is the minified main co-worker runtime chunk
+// `app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_…` function `t`
+// (lineno 15, colno 73840, in_app) — NO first-party `apps/web/src/…` frame.
+// ZERO breadcrumbs (no fetches, no UI clicks) — a sparse capture, consistent
+// with a background transport teardown fired before any user activity was
+// recorded. The connection closing during a deploy/idle-recycle is EXPECTED; it
+// is not a product bug. This is the same transient-transport class as the
+// gateway-502 retry (#4609) and the frameless browser-internal rejections
+// (#5200 / #5237 / #5185), but a WebSocket/SSE close on the `/dashboard`
+// realtime surface.
+//
+// The orchestrator's sweep ledger has a HISTORICAL skip-list note about
+// `Connection closed (transient SSE)` (pattern `6c28b5b4…`, noted ~2026-07-15)
+// but NO code matcher existed for it (the note was a manual decision, not code)
+// — this matcher codifies that decision into a real, tested gate.
+//
+// `Connection closed.` is generic enough that a real first-party
+// `throw new Error('Connection closed.')` regression in our own websocket/SSE
+// handling would surface with the SAME wording — so, mirroring
+// `isOperationErrorPopErrorScopeNoise` / the Paper Shaders matchers, this
+// matcher anchors on the EXACT message (case-sensitive, WITH the trailing
+// period — a different message `Connection closed` (no period), or
+// `Connection closed by server`, keeps reporting) and carries a NEGATIVE guard:
+// if ANY frame resolves to a de-minified first-party `apps/web/src/…` source,
+// the event keeps reporting (a real first-party `throw new Error('Connection
+// closed.')` regression de-minifies to `apps/web/src/…` and must not be
+// hidden). The prod event has only a minified `66499` chunk frame, so the
+// negative guard does not fire for it. A frameless capture with this exact
+// message still classifies as noise — the message alone is the library's
+// canonical close string and is specific enough (unlike the bare-`undefined`
+// rejection class, NO frameless-positive guard is required; the message + the
+// first-party negative guard is sufficient). But when frames ARE present, the
+// first-party negative guard MUST run. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `Connection closed.` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const CONNECTION_CLOSED_NOISE_PATTERN = /^Connection closed\.$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient WebSocket /
+ * Server-Sent-Events (SSE) transport-close noise class: a client-side
+ * WebSocket/SSE library threw the canonical `Connection closed.` message when
+ * the server closed a background realtime connection (deploy / restart / idle-
+ * timeout recycle / session end / load-balancer upstream recycle). The
+ * connection closing during a deploy/idle-recycle is EXPECTED, not a product
+ * bug. Requires the EXACT message (case-sensitive, WITH the trailing period —
+ * the library's canonical close string; `Connection closed` without the period,
+ * or `Connection closed by server`, keeps reporting) AND a NEGATIVE guard: if
+ * any frame (or the window.onerror `filename`) resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `throw new Error('Connection closed.')` regression de-minifies to
+ * `apps/web/src/…` and must not be hidden). The prod event carries only a
+ * minified `66499` chunk frame, so the negative guard does not fire for it. A
+ * frameless capture with this exact message still classifies as noise — the
+ * message alone is the library's canonical close string. See
+ * `CONNECTION_CLOSED_NOISE_PATTERN` for the full rationale.
+ */
+export function isConnectionClosedNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and
+  // `<Word>Error: ` (e.g. `SyntaxError: `, `TypeError:`) but NOT a bare
+  // `Error: ` prefix (the regex requires ≥1 letter before `Error`). A bare
+  // `Error: Connection closed.` is the form an `onunhandledrejection` of an
+  // `Error` instance serializes to, so strip that leading `Error: ` too before
+  // anchoring on the library's exact canonical close string.
+  const stripped = stripErrorWrappers(normalizeString(input.message))
+    .replace(/^Error: /, '');
+  if (!CONNECTION_CLOSED_NOISE_PATTERN.test(stripped)) {
+    return false;
+  }
+  // Collect every source location — the window.onerror `filename` (runtime
+  // gate) and any stacktrace frames (Sentry gate) — for the first-party
+  // negative guard.
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own websocket/SSE handling threw `Connection closed.` → actionable
+  // regression; keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
+
+// Bare lowercase `network error` rejection noise — the canonical Axios /
+// `XMLHttpRequest` transport-abort message. Axios throws this (or the
+// capitalized `Network Error` wrapper — a DIFFERENT surface, see below) when a
+// request fails at the transport layer (DNS failure, connection refused, TLS
+// abort, CORS preflight rejection, or the server dropping the connection
+// mid-flight). The underlying XHR `onerror` emits the lowercase `network error`
+// string; Axios wraps it as `new Error('Network Error')` (capitalized) for its
+// own rejection. This matcher targets ONLY the bare lowercase form.
+//
+// Better Stack pattern
+// 2403c9ba5deee2af387834e95461cfb32b9b5080b21d6f307b2f09bb09e71f21
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `network error` (lowercase, bare), 1 occurrence / 0 identified users, last
+// 2026-07-23 16:53:55 UTC, release
+// `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
+// `/projects/:id/sessions/:sessionId` (co-worker session page), mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT, never reached a React error boundary), Chrome 150 on Generic
+// Linux. Stack frames: ZERO — `stacktrace.frames` is an empty array, no
+// `call_site_file`, no `call_site_function`, no `call_stack_hash`. Breadcrumbs:
+// 100 total, 88 fetches, 0 non-200 (so no fetch visibly failed with a non-200
+// in the captured window — the rejection is a fire-and-forget `.then()` or a
+// network-abort that didn't surface a status). This is the same session that
+// hit the 25s-deadline + audit 503s — a degraded-network user.
+//
+// With ZERO frames and an UNCAUGHT `onunhandledrejection`, this is a
+// fire-and-forget `.then()` whose rejection was never caught — likely a
+// third-party script (analytics, the CookieYes cookie banner, Vercel insights)
+// or an app fetch whose `.catch()` was missing, on a degraded network. It is
+// the same family as the prior frameless browser-internal rejection noise
+// matchers — `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`), and `isFirefoxReactSchedulerReentryNoise` (PR #5185, pattern
+// `0f03b24e…`).
+//
+// The message is GENERIC — a real first-party unhandled rejection that throws
+// `new Error('network error')` (or `Promise.reject('network error')`) would
+// surface with the SAME message — so the matcher requires BOTH:
+//   1. The EXACT bare message `network error` (lowercase, case-sensitive,
+//      after `stripErrorWrappers`). The capitalized `Network Error` (Axios's
+//      own wrapper Error) is a DIFFERENT surface and is deliberately NOT
+//      matched — it is left to report so a blanket-silence does not hide a
+//      real Axios rejection we may want to triage. A near-worded message such
+//      as `network error: failed to fetch` is also NOT matched (only the EXACT
+//      bare string is noise).
+//   2. A FRAMELESS positive guard: the event has NO resolvable frames (empty
+//      `stacktrace.frames` AND no resolvable `filename`/`call_site` anywhere)
+//      — mirroring `isOperationErrorPopErrorScopeNoise` /
+//      `isNonErrorUndefinedRejectionNoise`. A real first-party
+//      `new Error('network error')` throw almost always has a stack with a
+//      resolvable frame (chunk URL or `apps/web/src/…`), so requiring
+//      framelessness is the over-match guard.
+// Plus TWO negative guards (mirror the frameless-noise matchers): (a) any
+// resolved first-party `apps/web/src/…` frame → keep reporting; (b) ANY
+// resolvable frame location (chunk/URL/named file) → keep reporting. Only the
+// FRAMELESS capture is dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `new Error('network error')` the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const FRAMELESS_NETWORK_ERROR_MESSAGE = 'network error';
+
+/**
+ * Whether a Sentry event is the bare lowercase `network error` rejection noise
+ * class: the canonical Axios / `XMLHttpRequest` transport-abort message (lower-
+ * case; distinct from Axios's capitalized `Network Error` wrapper, which is a
+ * different surface and is NOT matched), captured as an uncaught global
+ * `onunhandledrejection` with NO resolvable stack frames. A fire-and-forget
+ * `.then()` or a third-party script (analytics / cookie banner / tag manager)
+ * on a degraded network whose promise rejected with the bare transport-abort
+ * string; never attributable first-party app code. Requires the EXACT bare
+ * message (case-sensitive, after `stripErrorWrappers`) AND NEGATIVE guards:
+ * any resolved first-party `apps/web/src/…` frame OR any resolvable frame
+ * location → keep reporting (a real first-party `new Error('network error')`
+ * we can attribute should still surface). The production noise pattern has NO
+ * frames at all; only the frameless capture is dropped. See
+ * `FRAMELESS_NETWORK_ERROR_MESSAGE` for the full rationale.
+ */
+export function isFramelessNetworkErrorNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (message !== FRAMELESS_NETWORK_ERROR_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw/rejected with `new Error('network error')` → actionable;
+  // keep reporting so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -1790,6 +2299,18 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Transient WebSocket / SSE transport-close noise — a client-side
+  // websocket/SSE library threw the canonical `Connection closed.` message when
+  // the server closed a background realtime connection during a deploy / idle-
+  // timeout recycle / session end. The connection closing is EXPECTED, not a
+  // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
+  // guard so a real first-party `throw new Error('Connection closed.')`
+  // regression keeps reporting. See `isConnectionClosedNoise`.
+  if (isConnectionClosedNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+
   // Browser-native <img> / next/image load failures can surface as this exact
   // message through window.onerror. Keep this exact: pptx-react-viewer throws
   // actionable errors such as "Failed to load image for colour change
@@ -1813,6 +2334,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected server-side request-deadline 503 (API 25s wall-clock deadline) —
+  // the API-side classification (#4524) de-noises it from the API's OWN Sentry,
+  // but the 503 response crosses into the frontend as an `ApiError(status:
+  // 503)` that `handleApiError` captures to the FRONTEND Sentry (Better Stack
+  // pattern `a330bea1…`). It is the SAME expected/retryable degradation class
+  // as the client timeout above; never page Better Stack for it. See
+  // `isServerDeadlineNoiseMessage`.
+  if (isServerDeadlineNoiseMessage(message)) {
+    return true;
+  }
+
   // Expected billing-gate 402 outcomes are user-facing business states handled
   // by a toast/upgrade dialog — never page Better Stack for them, even when the
   // SDK's `ApiError` reaches window.onerror / unhandledrejection before
@@ -1822,7 +2354,7 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   // Expected "no compaction model configured" configuration state — the SDK's
-  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `useSummarizeRuntimeSession` mutation throws a sentinel
   // `NoCompactionModelError` that the host already surfaces via a toast. It
   // leaks here as an unhandled promise rejection (`void loadingToast(...)`
   // re-throws after the toast → `onunhandledrejection`). Drop it so the
@@ -2019,6 +2551,19 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Expected server-side request-deadline 503 (API 25s wall-clock deadline) —
+  // the server-side mirror of the client timeout above. The API's
+  // `RequestDeadlineHTTPException` returns a clean 503 + `Retry-After` with the
+  // message `Request exceeded the <N>s server processing deadline`; the SDK
+  // surfaces it as an `ApiError(status: 503)` that can leak to Sentry through
+  // capture paths that bypass `handleApiError`'s deadline guard
+  // (`<ClientErrorBoundary>` / route-error / app-error / `onunhandledrejection`).
+  // Drop it so the expected deadline state never pages Better Stack. See
+  // `isServerDeadlineNoiseMessage`.
+  if (isServerDeadlineNoiseMessage(message)) {
+    return true;
+  }
+
   // Expected billing-gate 402 outcomes (insufficient credits / no account /
   // subscription required) are user-facing business states handled by a toast
   // or upgrade dialog. The SDK's `ApiError` can leak to Sentry through capture
@@ -2032,7 +2577,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   // Expected "no compaction model configured" configuration state — the SDK's
-  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `useSummarizeRuntimeSession` mutation throws a sentinel
   // `NoCompactionModelError` that the host already surfaces via a toast. It
   // can leak to Sentry through capture paths that bypass the toast (the
   // `void loadingToast(...)` re-throw → `onunhandledrejection`, plus
@@ -2057,6 +2602,23 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // the `<ShaderSafe>` error boundary and reaches Sentry as a global error.
   // Decorative-canvas noise on incompatible GPUs; never an app defect.
   if (isPaperShaderNullContextNoise(message)) {
+    return true;
+  }
+
+  // Paper Shaders WebGL-unsupported deliberate-throw noise — the library's
+  // OWN canonical `Paper Shaders: WebGL is not supported in this browser`
+  // `Error`, thrown from the library's shader-mount constructor when WebGL is
+  // unavailable (stripped-down/mobile WebView, headless renderer, WebGL
+  // disabled). A SIBLING of the null-context crash class above, but a
+  // DIFFERENT throw (a deliberate library `Error`, not a null-context
+  // `TypeError`). An EXPECTED degradation state on WebGL-less browsers;
+  // never a product bug. Requires the exact library message AND a NEGATIVE
+  // guard: a resolved first-party `apps/web/src/…` frame means our own code
+  // threw this exact message (a real first-party regression) → keep
+  // reporting. The production noise pattern carries only minified
+  // `@paper-design/shaders` chunk frames. NOT in `ignoreErrors` (no frame
+  // context there). See `isPaperShaderWebGLUnsupportedNoise`.
+  if (isPaperShaderWebGLUnsupportedNoise({ message, frames })) {
     return true;
   }
 
@@ -2199,6 +2761,22 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // @embedpdf/plugin-tiling `TilingLayer` viewport-advance tile-destructure
+  // noise — a SIBLING of the React #185 class above, but a DIFFERENT throw from a
+  // different embedpdf tiling path: under a rapid scroll/zoom burst the tiling
+  // plugin's tile queue drains mid-burst, the viewport-advance path
+  // (`t5.advance` / `iA.ignore` / `iA.onScroll` / `IntersectionObserver.threshold`)
+  // calls `const { tile } = queue.pop()` on an `undefined` pop result, and V8
+  // throws `Cannot destructure property 'tile' of 'r.pop(...)' as it is
+  // undefined.` The #4718 matcher (React #185 + `onTileRendering`) does NOT
+  // catch it (different message, different frame anchor). Requires BOTH the
+  // EXACT message AND a positive viewport-advance frame anchor, with a
+  // first-party negative guard, so a real first-party `{ tile } = arr.pop()`
+  // regression keeps reporting. See `isEmbedPdfTilingTileDestructureNoise`.
+  if (isEmbedPdfTilingTileDestructureNoise({ message, frames })) {
+    return true;
+  }
+
   // Firefox-specific React scheduler re-entrancy noise — `Minified React error
   // #327;` (`Should not already be working.`), thrown from React's own
   // production reconciler chunk when the scheduler re-enters during the commit
@@ -2248,6 +2826,45 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   if (isOperationErrorPopErrorScopeNoise({ message, frames })) {
     return true;
   }
+
+  // Bare lowercase `network error` rejection noise — the canonical Axios / XHR
+  // transport-abort message (lowercase; distinct from Axios's capitalized
+  // `Network Error` wrapper, which is a different surface and is NOT matched),
+  // captured as an uncaught global `onunhandledrejection` with NO resolvable
+  // stack frames. A fire-and-forget `.then()` or a third-party script on a
+  // degraded network (the same session hit the 25s-deadline + audit 503s)
+  // whose promise rejected with the bare transport-abort string; never
+  // attributable first-party app code. Requires the EXACT bare message AND
+  // NEGATIVE guards: any resolved first-party `apps/web/src/…` frame OR any
+  // resolvable frame location → keep reporting (a real first-party
+  // `new Error('network error')` we can attribute should still surface). The
+  // production noise pattern has NO frames at all; only the frameless capture
+  // is dropped. See `isFramelessNetworkErrorNoise`. NOT in `ignoreErrors` (no
+  // frame context there).
+  if (isFramelessNetworkErrorNoise({ message, frames })) {
+    return true;
+  }
+
+  // Transient WebSocket / SSE transport-close noise — a client-side
+  // websocket/SSE library threw the canonical `Connection closed.` message when
+  // the server closed a background realtime connection on `/dashboard` during a
+  // deploy / idle-timeout recycle / session end / load-balancer upstream
+  // recycle. The connection closing is EXPECTED, not a product bug; sibling of
+  // the transient-transport class (#4609 gateway retry). Requires the EXACT
+  // message (case-sensitive, WITH the trailing period — the library's canonical
+  // close string) and a NEGATIVE guard: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting (a real first-party
+  // `throw new Error('Connection closed.')` regression de-minifies to
+  // `apps/web/src/…` and must not be hidden). The prod event carries only a
+  // minified `66499` chunk frame, so the negative guard does not fire for it.
+  // A frameless capture with this exact message still classifies as noise.
+  // This codifies the historical skip-list decision for `6c28b5b4…`-class
+  // patterns into a real, tested matcher. NOT in `ignoreErrors` (no frame
+  // context there). See `isConnectionClosedNoise`.
+  if (isConnectionClosedNoise({ message, frames })) {
+    return true;
+  }
+
 
   if (frames.some((frame) => isExtensionSource(frame.filename))) {
     return true;

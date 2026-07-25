@@ -8,7 +8,7 @@ import { Bot, ShieldCheck } from 'lucide-react';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { GrantSetField, KortixCliField } from './grant-mode-field';
 import { WORKSPACE_MODES, WORKSPACE_MODE_HELP } from './agent-editor-catalog';
-import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk/projects-client';
+import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk';
 
 export function KortixLayerFields({
   draft,
