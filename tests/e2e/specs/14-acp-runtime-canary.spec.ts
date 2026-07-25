@@ -328,8 +328,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
     });
     await welcomeCard
       .getByRole("button", { name: "Dismiss" })
-      .click({ timeout: 10_000 })
-      .catch(() => {});
+      .click({ timeout: 30_000 });
     await expect(welcomeCard).toBeHidden({ timeout: 10_000 });
     await input.fill("Reply with exactly: ACP_PONG");
     await page.getByRole("button", { name: "Send message" }).click();

@@ -205,8 +205,8 @@ Also stop if the same failure survives three different fixes (use
 | 4 | SDK ACP transport | DONE | `acp-opencode-canary` | 2026-07-25 | `a28df36f3` |
 | 5 | SDK session projection | DONE | `acp-opencode-canary` | 2026-07-25 | `951896a44` |
 | 6 | Existing `useSession` integration | DONE | `acp-opencode-canary` | 2026-07-25 | `951896a44` |
-| 7 | Local parity and rollback proof | DONE | `acp-opencode-canary` | 2026-07-25 | pending |
-| 8 | Delivery and dev proof | IN PROGRESS | `acp-opencode-canary` | 2026-07-25 | — |
+| 7 | Local parity and rollback proof | DONE | `acp-opencode-canary` | 2026-07-25 | `33900d7f1` |
+| 8 | Delivery and dev proof | DONE | `acp-opencode-canary` | 2026-07-25 | `3a45ab55b` |
 
 ---
 
@@ -2351,3 +2351,53 @@ The browser returns only ACP JSON-RPC responses.
 **Status:** COMPLETE.
 
 **Shippable to production: NOT YET.** Task 8 delivery and dev proof remain.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Task 8 completion)
+
+Merged the OpenCode-only ACP canary in PR #5415.
+The merge commit is `3a45ab55b7a53cc20a3a360a7e8d65e4180a5c2a`.
+
+Deploy Dev run 30148258802 completed successfully at
+`f8968d3e1ae3066a3cdc819e6da99b363e36b744`.
+Git ancestry proves that the deployed commit contains the ACP merge.
+The live API health route reports `0.10.15-dev.f8968d3e`.
+
+The active Vercel deployment is
+`dpl_E9tZk2nS94mk1cAH1FmX6X464zkr`.
+It is `READY` at commit
+`0aa15072cf91e7be5c0d0cd2c39b8d3d703d5be2`.
+Git ancestry proves that this frontend commit contains the ACP merge.
+
+The deployed cold Chromium matrix passed without a preloaded ACP session.
+It covered ordered SSE reconnects, `Last-Event-ID`, `session/load`, prompt
+streaming, transcript reload, permissions, questions, attachments,
+cancellation, busy-message serialization, slash commands, process restart
+recovery, and REST rollback.
+Playwright reported **1 pass / 0 fail** in 4.2 minutes.
+
+The first deployed run exposed a test-harness defect.
+The welcome-card close action used a 10-second timeout and suppressed its
+timeout with `.catch(() => {})`.
+The production button already had `aria-label="Dismiss"`.
+The corrected test uses a 30-second click timeout and does not suppress a
+failed click.
+
+**Final verification:**
+
+- SDK typecheck and example typecheck: exit 0.
+- SDK full suite: **1249 pass / 0 fail** across 104 files with 5589 assertions.
+- SDK packed-install smoke: pass.
+- Test-harness typecheck: exit 0.
+- Frontend SDK and session-engine boundaries: **3 pass / 0 fail**.
+- Test formatting and `git diff --check`: exit 0.
+- PR #5415 checks: **18 successful / 0 failing**.
+- CodeQL: **0 new alerts**.
+- Local ACP and REST Chromium matrix: **1 pass / 0 fail**.
+- Deployed cold ACP and REST Chromium matrix: **1 pass / 0 fail**.
+
+**Status: COMPLETE.**
+
+**Shippable to production: YES.** All eight tasks are complete.
+Local and deployed dev ACP and REST paths pass.
