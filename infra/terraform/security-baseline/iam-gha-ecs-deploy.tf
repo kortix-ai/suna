@@ -58,8 +58,8 @@ resource "aws_iam_role" "gha_ecs_deploy" {
 }
 
 resource "aws_iam_role_policy" "gha_ecs_deploy" {
-  # checkov:skip=CKV_AWS_355: the TaskDefinitionLifecycle statement's "*" is
-  # required — RegisterTaskDefinition/DescribeTaskDefinition do not support
+  # checkov:skip=CKV_AWS_355: TaskDefinitionLifecycle and
+  # DescribeLoadBalancers require "*" because these APIs do not support
   # resource-level permissions; every other statement is ARN-scoped.
   name = "ecs-deploy"
   role = aws_iam_role.gha_ecs_deploy.id
@@ -106,6 +106,14 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "ecs:DescribeTaskDefinition",
           "ecs:RegisterTaskDefinition",
         ]
+        Resource = "*"
+      },
+      {
+        # The US shadow workflow resolves each ALB DNS name before updating its
+        # Cloudflare CNAME. DescribeLoadBalancers supports no resource ARN.
+        Sid      = "DescribeLoadBalancers"
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
         Resource = "*"
       },
       {
