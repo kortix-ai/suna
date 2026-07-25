@@ -154,6 +154,25 @@ if [[ -n "$unsafe_relations" ]]; then
   exit 1
 fi
 
+read -r baseline_apply_errors baseline_sync_errors < <(
+  psql "$TARGET_DATABASE_URL" -X -qAt -F ' ' -v ON_ERROR_STOP=1 \
+    -v subscription="$SUBSCRIPTION" <<'SQL'
+SELECT
+  COALESCE(pg_stat_subscription_stats.apply_error_count, 0),
+  COALESCE(pg_stat_subscription_stats.sync_error_count, 0)
+FROM pg_subscription
+LEFT JOIN pg_stat_subscription_stats
+  ON pg_stat_subscription_stats.subid = pg_subscription.oid
+WHERE pg_subscription.subname = :'subscription'
+  AND pg_subscription.subenabled;
+SQL
+)
+
+if [[ -z "${baseline_apply_errors:-}" || -z "${baseline_sync_errors:-}" ]]; then
+  echo "The enabled target subscription is missing." >&2
+  exit 1
+fi
+
 psql "$SOURCE_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
   -v publication="$PUBLICATION" <<'SQL'
 SELECT set_config('kortix.migration_publication', :'publication', false)
@@ -293,15 +312,16 @@ GROUP BY
 SQL
   )
 
-  if [[ "$apply_errors" != "0" || "$sync_errors" != "0" ]]; then
-    echo "Replication errors detected: apply=$apply_errors sync=$sync_errors" >&2
+  if [[ "$apply_errors" -gt "$baseline_apply_errors" \
+    || "$sync_errors" -gt "$baseline_sync_errors" ]]; then
+    echo "New replication errors detected: apply=$apply_errors baseline=$baseline_apply_errors sync=$sync_errors baseline=$baseline_sync_errors" >&2
     exit 1
   fi
 
   if [[ "$ready_relations" == "$total_relations" \
     && "$total_relations" == "$source_relation_count" \
     && "$apply_workers" -ge 1 ]]; then
-    echo "US shadow replication is ready: $ready_relations/$total_relations relations."
+    echo "US shadow replication is ready: $ready_relations/$total_relations relations; errors unchanged at apply=$apply_errors sync=$sync_errors."
     exit 0
   fi
 

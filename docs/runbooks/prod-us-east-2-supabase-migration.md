@@ -15,8 +15,8 @@
 - Migration and runtime database URLs: updated after the password rotation.
 - US API and gateway tasks: restarted after the password rotation.
 - Fresh-project bootstrap: applied.
-- Repository migration ledger: 79 migrations applied through
-  `20260725012141489_gateway_cost_precision_sync`.
+- Repository migration ledger: 80 migrations applied through
+  `20260725012200000_voice_call_turns`.
 - `pg_cron`: enabled at version 1.6.4 with zero scheduled jobs.
 - Application logical replication: `101/101` relations ready.
 - Auth logical replication: `22/22` relations ready.
@@ -24,6 +24,8 @@
 - Application replication sync errors: `3`.
 - Auth replication sync errors: `0`.
 - The three application sync errors are historical initial-copy retries.
+- Replication refreshes compare cumulative error counters with a pre-refresh
+  baseline and fail if either counter increases.
 - Both subscriptions have active apply workers.
 - A source GoTrue refresh token exchanges successfully on target Auth.
 - The target issues the exchanged token with `HS256` and signing-key ID
@@ -395,6 +397,11 @@ host. A Fargate probe returned `ECONNREFUSED` for the same endpoint.
 The regional session pooler accepted the Fargate connection. The
 `kortix-prod-us-east-2-env` secret therefore uses the session pooler on port
 `5432` with user `postgres.uhrwvisbqjfxhxjvoofd`.
+
+Keep the stored pooler URL compatible with both `psql` and Node. Store
+`sslmode=require` without the Node-only `uselibpqcompat` query parameter. The
+shadow workflow adds `uselibpqcompat=true` only for the `node-postgres`
+migration process.
 
 Do not replace the runtime `DATABASE_URL` with the direct database endpoint.
 Keep the direct endpoint in `kortix/prod-us-east-2-migration` for logical

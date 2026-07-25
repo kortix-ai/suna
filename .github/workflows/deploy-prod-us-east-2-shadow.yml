@@ -226,7 +226,14 @@ jobs:
 
       - name: Apply migrations to the US shadow database
         if: inputs.synchronize_database
-        run: DATABASE_URL="$TARGET_DATABASE_URL" pnpm --filter @kortix/db migrate
+        run: |
+          set -euo pipefail
+          migration_database_url="$(
+            DATABASE_URL="$TARGET_DATABASE_URL" \
+              node scripts/prod-us-east-2/node-pg-database-url.mjs
+          )"
+          echo "::add-mask::$migration_database_url"
+          DATABASE_URL="$migration_database_url" pnpm --filter @kortix/db migrate
 
       - name: Refresh application replication
         if: inputs.synchronize_database
