@@ -42,8 +42,11 @@
 - US API shadow: two healthy ECS tasks on image `kortix/kortix-api:0.10.14`.
 - US gateway shadow: two healthy ECS tasks on image
   `kortix/kortix-gateway:0.10.14`.
-- US API task definition: `kortix-prod-use2:2`.
-- US gateway task definition: `kortix-prod-use2-gateway:2`.
+- US API task definition: `kortix-prod-use2:3`.
+- US gateway task definition: `kortix-prod-use2-gateway:3`.
+- Cloudflare CI credential: scoped repository secret
+  `CLOUDFLARE_API_TOKEN`.
+- GitHub copies of `CLOUDFLARE_GLOBAL_API_KEY`: zero.
 - Shadow Terraform state: `prod-us-east-2-shadow/ecs-api.tfstate`.
 - Shadow Terraform state bucket:
   `kortix-terraform-state-us-east-2-935064898258` in `us-east-2`.
