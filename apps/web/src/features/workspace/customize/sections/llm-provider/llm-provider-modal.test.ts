@@ -17,13 +17,13 @@ describe('LLM provider modal flow', () => {
 
   test('renders pending and query-refresh loading states with the shared Loading component', () => {
     expect(modalSource).toContain('pendingProviderId &&');
-    expect(modalSource).toContain('secretsQuery.isLoading || secretsQuery.isFetching');
+    expect(modalSource).toContain('providerStateLoading');
     expect(modalSource).toContain('Connecting {pendingProviderLabel}…');
     expect(modalSource).toContain('<Loading');
   });
 
   test('uses the 600 by 680 modal dimensions', () => {
-    expect(modalSource).toContain('h-[min(80vh,680px)]');
+    expect(modalSource).toContain('h-[min(680px,calc(100dvh-2rem))]');
     expect(modalSource).toContain('max-w-[600px]');
     expect(modalSource).toContain('lg:max-w-[600px]');
     expect(modalSource).not.toContain('max-w-[520px]');

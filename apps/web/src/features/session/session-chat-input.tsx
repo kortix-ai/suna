@@ -2249,6 +2249,7 @@ function SessionChatInputImpl({
               {(models.length > 0 || modelRequired) && onModelChange && (
                 <ModelSelector
                   models={models}
+                  modelsLoading={modelsLoading}
                   selectedModel={selectedModel}
                   onSelect={onModelChange}
                   providers={providers}

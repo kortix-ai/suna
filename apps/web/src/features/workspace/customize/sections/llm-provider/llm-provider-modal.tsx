@@ -43,7 +43,7 @@ export function ProjectProviderModal({
   canWrite = false,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { secretsQuery, connectedProviders, llmGatewayEnabled } = useConnectedProviders(
+  const { connectedProviders, llmGatewayEnabled, providerStateLoading } = useConnectedProviders(
     projectId,
     open || asPanel,
   );
@@ -192,7 +192,7 @@ export function ProjectProviderModal({
           </div>
         )}
 
-        {!pendingProviderId && (secretsQuery.isLoading || secretsQuery.isFetching) && (
+        {!pendingProviderId && providerStateLoading && (
           <div
             className="flex min-h-[200px] items-center justify-center"
             role="status"
@@ -202,7 +202,7 @@ export function ProjectProviderModal({
           </div>
         )}
 
-        {!pendingProviderId && !secretsQuery.isLoading && !secretsQuery.isFetching && (
+        {!pendingProviderId && !providerStateLoading && (
           <>
             <TabsContent value="connected" className="mt-0">
               <ConnectedTab
@@ -245,8 +245,8 @@ export function ProjectProviderModal({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="flex h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] flex-col gap-0 overflow-hidden p-0 lg:max-w-[600px]">
-        <ModalHeader>
+      <ModalContent className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[600px] flex-col gap-0 overflow-hidden p-0 lg:max-w-[600px]">
+        <ModalHeader className="shrink-0 pb-3">
           <ModalTitle>
             {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line151JsxTextLlmProviders')}
           </ModalTitle>

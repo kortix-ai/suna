@@ -28,4 +28,10 @@ describe('model management entry-point routing', () => {
     expect(selectorSource).toContain('aria-label="Manage models"');
     expect(selectorSource).toContain('Connect provider');
   });
+
+  test('keeps the model picker in a loading state until all model inputs resolve', () => {
+    expect(selectorSource).toContain('modelsLoading || entitlementsPending');
+    expect(selectorSource).toContain('aria-label="Loading models"');
+    expect(selectorSource).toContain('<Loading');
+  });
 });
