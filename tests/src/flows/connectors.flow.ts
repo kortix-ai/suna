@@ -532,18 +532,16 @@ flow(
 
     let profileId = '';
     await ctx.step('create (reconcile) a connection profile → 201 with a real shape', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/connector-profiles',
-          {
-            connector_alias: slug,
-            owner_type: 'external',
-            owner_id: 'ke2e-external-owner-1',
-            label: 'KE2E connection',
-          },
-          { params: { projectId: p.id } },
-        );
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/connector-profiles',
+        {
+          connector_alias: slug,
+          owner_type: 'external',
+          owner_id: 'ke2e-external-owner-1',
+          label: 'KE2E connection',
+        },
+        { params: { projectId: p.id } },
+      );
       r.status(201)
         .body()
         .has('$.connector_alias', slug)
@@ -719,10 +717,11 @@ flow(
         { params: { projectId: p.id, profileId } },
       );
       saved.status(200).body().has('$.ok', true);
-      const read = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application',
-        { params: { projectId: p.id, profileId } },
-      );
+      const read = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application', {
+          params: { projectId: p.id, profileId },
+        });
       read
         .status(200)
         .body()
@@ -731,35 +730,38 @@ flow(
     });
 
     await ctx.step('start Authorization Code with PKCE and read ready status', async () => {
-      const started = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize',
-        {},
-        { params: { projectId: p.id, profileId } },
-      );
-      started
-        .status(200)
-        .body()
-        .exists('$.authorization_url')
-        .exists('$.expires_at');
-      const status = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status',
-        { params: { projectId: p.id, profileId } },
-      );
+      const started = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize',
+          {},
+          { params: { projectId: p.id, profileId } },
+        );
+      started.status(200).body().exists('$.authorization_url').exists('$.expires_at');
+      const status = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status', {
+          params: { projectId: p.id, profileId },
+        });
       status.status(200).body().has('$.status', 'ready');
     });
 
     await ctx.step('reject SSRF discovery and unavailable device endpoints', async () => {
-      const discovery = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
-        { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
-        { params: { projectId: p.id, profileId } },
-      );
+      const discovery = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
+          { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
+          { params: { projectId: p.id, profileId } },
+        );
       discovery.status(400);
-      const device = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device',
-        {},
-        { params: { projectId: p.id, profileId } },
-      );
+      const device = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device',
+          {},
+          { params: { projectId: p.id, profileId } },
+        );
       device.status(400);
       const poll = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device/:sessionId',
@@ -797,11 +799,9 @@ flow(
   },
   async (ctx) => {
     await ctx.step('GET with a bogus token → 404 (invalid/unknown link)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/setup-links/connector/:token', {
-          params: { token: 'bogus-connector-setup-link' },
-        });
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/setup-links/connector/:token', {
+        params: { token: 'bogus-connector-setup-link' },
+      });
       r.status(404).body().exists('$.error');
     });
     await ctx.step('POST .../start with a bogus token → 404 (invalid/unknown link)', async () => {
@@ -857,5 +857,70 @@ flow(
         );
       r.status([403, 404]);
     });
+  },
+);
+
+// CONN-OAUTH — POST /v1/projects/:projectId/connectors/:slug/oauth2/profile
+// (apps/api/src/projects/routes/oauth2-connectors.ts:91-122). Ensures (or
+// returns) the default OAuth2 profile for a project connector. The route is a
+// recent addition that surfaced as a 1-route coverage gap; this closes it with
+// the auth/validation/boundary assertions the gate requires — it does NOT
+// provision a real connector (ensureDefaultProfile only runs once the connector
+// lookup succeeds, so an unknown slug stops at the 404 "Connector not found"
+// boundary before any write).
+flow(
+  'CONN-OAUTH',
+  {
+    domain: 'connectors',
+    routes: ['POST /v1/projects/:projectId/connectors/:slug/oauth2/profile'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+          {},
+          { params: { projectId: p.id, slug: 'github' } },
+        );
+      r.status(401);
+    });
+    await ctx.step('unknown projectId → 404 (project not loadable)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+          {},
+          { params: { projectId: '00000000-0000-4000-a000-000000000000', slug: 'github' } },
+        );
+      r.status(404);
+    });
+    await ctx.step('NONMEMBER → 403/404 (no project access)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+          {},
+          { params: { projectId: p.id, slug: 'github' } },
+        );
+      r.status([403, 404]);
+    });
+    await ctx.step(
+      'OWNER, unknown connector slug → 404 "Connector not found" (no profile write)',
+      async () => {
+        // OWNER passes the manage-capability gate; the connector lookup by
+        // (account, project, slug) misses → 404 before ensureDefaultProfile runs,
+        // so no OAuth2 profile row is written for a non-existent connector.
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+            {},
+            { params: { projectId: p.id, slug: 'no-such-connector-' + ctx.fixtures.name('x') } },
+          );
+        r.status(404);
+      },
+    );
   },
 );
