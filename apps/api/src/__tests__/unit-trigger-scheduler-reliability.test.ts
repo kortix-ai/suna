@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isSweepStale, withTimeout } from '../projects/lib/triggers';
+import { isSweepStale, mapWithConcurrency, withTimeout } from '../projects/lib/triggers';
 
 // These primitives are what keep one hung trigger fire from freezing the entire
 // cron scheduler — the 2026-06-21 fleet-wide outage, where a single
@@ -13,7 +13,9 @@ describe('withTimeout', () => {
 
   test('rejects with a labelled timeout error when the promise hangs past ms', async () => {
     const hang = new Promise<never>(() => {}); // never settles — models a hung fire
-    await expect(withTimeout(hang, 20, 'stuck fire')).rejects.toThrow(/stuck fire timed out after 20ms/);
+    await expect(withTimeout(hang, 20, 'stuck fire')).rejects.toThrow(
+      /stuck fire timed out after 20ms/,
+    );
   });
 
   test('a slow-but-completing promise still resolves (no false timeout)', async () => {
@@ -33,13 +35,25 @@ describe('isSweepStale (scheduler stall detection)', () => {
 
   test('never stale when this pod is not the leader', () => {
     expect(
-      isSweepStale({ isLeader: false, lastSweepStartedAt: null, lastSweepCompletedAt: null, nowMs: T0, staleMs: STALE }),
+      isSweepStale({
+        isLeader: false,
+        lastSweepStartedAt: null,
+        lastSweepCompletedAt: null,
+        nowMs: T0,
+        staleMs: STALE,
+      }),
     ).toBe(false);
   });
 
   test('grace: leader but the scheduler has not ticked yet (no start) → not stale', () => {
     expect(
-      isSweepStale({ isLeader: true, lastSweepStartedAt: null, lastSweepCompletedAt: null, nowMs: T0, staleMs: STALE }),
+      isSweepStale({
+        isLeader: true,
+        lastSweepStartedAt: null,
+        lastSweepCompletedAt: null,
+        nowMs: T0,
+        staleMs: STALE,
+      }),
     ).toBe(false);
   });
 
@@ -92,5 +106,41 @@ describe('isSweepStale (scheduler stall detection)', () => {
         staleMs: STALE,
       }),
     ).toBe(true);
+  });
+});
+
+describe('mapWithConcurrency', () => {
+  test('processes every item without exceeding the configured worker count', async () => {
+    let active = 0;
+    let peak = 0;
+
+    const results = await mapWithConcurrency(
+      Array.from({ length: 12 }, (_, index) => index),
+      3,
+      async (index) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return index * 2;
+      },
+    );
+
+    expect(peak).toBe(3);
+    expect(results).toEqual(Array.from({ length: 12 }, (_, index) => index * 2));
+  });
+
+  test('uses one worker when the configured count is invalid', async () => {
+    let active = 0;
+    let peak = 0;
+
+    await mapWithConcurrency([1, 2, 3], 0, async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+    });
+
+    expect(peak).toBe(1);
   });
 });

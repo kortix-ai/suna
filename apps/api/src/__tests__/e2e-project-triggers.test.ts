@@ -38,6 +38,7 @@ let activeSessionCount = 0;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let manifestReadCalls = 0;
+let mirrorInvalidationCalls = 0;
 let modelDefaults: {
   account: string | null;
   agents: Record<string, string>;
@@ -68,6 +69,7 @@ const projectRow: typeof projects.$inferSelect = {
 };
 
 function resetState() {
+  resetRateLimiters();
   setTestAuth();
   repoFiles = new Map();
   commitCalls = [];
@@ -82,6 +84,7 @@ function resetState() {
   provisioningSessionCount = 0;
   secretRows = [];
   manifestReadCalls = 0;
+  mirrorInvalidationCalls = 0;
   modelDefaults = { account: null, agents: {}, projects: {} };
   projectRow.metadata = {};
   secretValues.clear();
@@ -139,7 +142,9 @@ mock.module('../projects/git', () => ({
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
-  invalidateProjectMirror: () => {},
+  invalidateProjectMirror: () => {
+    mirrorInvalidationCalls += 1;
+  },
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -467,10 +472,14 @@ const triggerDbMock: any = {
               const idx = runtimeRows.findIndex(
                 (r) => r.projectId === values.projectId && r.slug === values.slug,
               );
+              const existing = idx >= 0 ? runtimeRows[idx] : undefined;
               const next = {
                 projectId: values.projectId,
                 slug: values.slug,
-                lastFiredAt: (set.lastFiredAt ?? values.lastFiredAt) as Date | null,
+                lastFiredAt: (set.lastFiredAt ??
+                  values.lastFiredAt ??
+                  existing?.lastFiredAt ??
+                  null) as Date | null,
                 updatedAt: (set.updatedAt ?? values.updatedAt ?? new Date()) as Date,
               };
               if (idx >= 0) runtimeRows[idx] = next;
@@ -533,6 +542,7 @@ const {
   projectWebhooksApp,
   runProjectTriggerSweep,
 } = await import('../projects/index');
+const { resetRateLimiters } = await import('../shared/rate-limit');
 
 function createApp() {
   const app = new Hono();
@@ -647,6 +657,9 @@ describe('git-backed triggers — CRUD', () => {
       enabled: true,
       agent: 'default',
     });
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.slug).toBe('daily-digest');
+    expect(runtimeRows[0]!.lastFiredAt).toBeNull();
   });
 
   test('POST /triggers commits a webhook trigger and exposes the URL on listing', async () => {
@@ -753,6 +766,26 @@ describe('git-backed triggers — CRUD', () => {
     expect(body.triggers[0].slug).toBe('good');
     expect(body.errors).toHaveLength(1);
     expect(body.errors[0].slug).toBe('broken');
+  });
+
+  test('GET /triggers preserves runtime rows when the manifest is not parseable', async () => {
+    repoFiles.set(MANIFEST_PATH, 'kortix_version: [invalid');
+    runtimeRows.push({
+      projectId: PROJECT_ID,
+      slug: 'existing',
+      lastFiredAt: null,
+      updatedAt: new Date('2026-01-03T12:00:00Z'),
+    });
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.triggers).toEqual([]);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0].slug).toBe('(manifest)');
+    expect(runtimeRows.map((row) => row.slug)).toEqual(['existing']);
   });
 
   test('PATCH /triggers/:slug rewrites the manifest entry with the merged spec', async () => {
@@ -1061,7 +1094,20 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(wrong.status).toBe(401);
+    expect(mirrorInvalidationCalls).toBe(1);
     expect(manifestReadCalls).toBe(1);
+
+    const repeated = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'another-wrong-secret'),
+      },
+      body: rawBody,
+    });
+    expect(repeated.status).toBe(401);
+    expect(mirrorInvalidationCalls).toBe(1);
+    expect(manifestReadCalls).toBe(2);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {

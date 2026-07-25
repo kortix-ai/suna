@@ -25,6 +25,7 @@ import {
 } from '../seed-files';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
+import { invalidateProjectMirror } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -37,7 +38,10 @@ import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { createRemoteSessionBranch } from '../git';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
-import { createProjectWebhookRateLimitMiddleware } from '../../shared/rate-limit';
+import {
+  consumeProjectWebhookManifestRefreshBudget,
+  createProjectWebhookRateLimitMiddleware,
+} from '../../shared/rate-limit';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -71,6 +75,12 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     .limit(1);
   if (!project) return c.json({ error: 'Not found' }, 404);
 
+  // Trigger CRUD can commit on another API replica. Refresh this replica's
+  // mirror before authentication, but bound the unauthenticated Git work by
+  // project. Rotating source IPs cannot force more than one refresh per 30s.
+  if (consumeProjectWebhookManifestRefreshBudget(projectId)) {
+    invalidateProjectMirror(projectId);
+  }
   const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec || spec.type !== 'webhook' || !spec.enabled) {

@@ -125,6 +125,7 @@ import {
   upsertTriggerInManifest,
 } from '../lib/triggers';
 import { listProjectSecretsSnapshot } from '../secrets';
+import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
@@ -831,6 +832,7 @@ projectsApp.openapi(
     if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
+    await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -980,6 +982,7 @@ projectsApp.openapi(
       if ('error' in result) {
         return c.json({ error: result.error }, result.status as 400 | 502);
       }
+      await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));

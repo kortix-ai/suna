@@ -38,6 +38,7 @@ import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
 import { authorize } from '../iam';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import type { ChannelPlatform } from '../projects/connectors';
+import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
 import {
   publicConnectorAlias,
@@ -981,8 +982,10 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listConnectors,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
-  syncConnectors: (projectId, accountId) =>
-    syncProjectConnectors(projectId, accountId, { force: true }),
+  syncConnectors: (projectId, accountId) => {
+    invalidateProjectMirror(projectId);
+    return syncProjectConnectors(projectId, accountId, { force: true });
+  },
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),

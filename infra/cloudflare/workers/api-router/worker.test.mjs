@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import worker from './worker.mjs';
 
 const env = {
@@ -19,6 +20,22 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
+  test('keeps the staging API on EKS in config and deployment metadata', () => {
+    const wrangler = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
+    const deployWorkflow = readFileSync(
+      new URL('../../../../.github/workflows/deploy-staging.yml', import.meta.url),
+      'utf8',
+    );
+
+    const stagingVars = wrangler.match(
+      /\[env\.staging\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+    expect(stagingVars).toContain('ACTIVE_BACKEND = "eks"');
+    expect(deployWorkflow).toContain(
+      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"}',
+    );
+  });
+
   test('redirects plaintext API requests to HTTPS before proxying', async () => {
     let fetched = false;
     globalThis.fetch = async () => {
