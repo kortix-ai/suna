@@ -257,7 +257,7 @@ try {
 
 For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string. `message` is an enumerable own property on `ApiError`, so it survives `JSON.stringify` and object spread.
 
-Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
+Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A transient transport failure on a `GET` or `HEAD` — a network error, not a status code — is retried the same way. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
 
 Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
 

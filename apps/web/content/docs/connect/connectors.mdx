@@ -77,6 +77,43 @@ For Microsoft Graph, use `https://login.microsoftonline.com/{tenant_id}/oauth2/v
 
 For direct SharePoint REST endpoints under `https://{tenant}.sharepoint.com/_api`, use the scope `https://{tenant}.sharepoint.com/.default` instead of the Microsoft Graph scope.
 
+## Connect a user-facing API with OAuth2
+
+For APIs that require a user's consent — Google, Microsoft, GitHub, or any identity provider that speaks standard OAuth2 — use the **Authorization Code with PKCE** or **Device Authorization** grant instead of client credentials. Kortix runs the full lifecycle: discovery, authorization redirect (or device pairing), token exchange, refresh, and revocation.
+
+<Steps>
+<Step>
+### Declare the direct connector and pick a grant
+
+In the Custom connector form, select **OAuth 2.0** under **Auth**, then choose a **Grant**: **Client Credentials** (server-to-server, covered above), **Authorization Code with PKCE**, or **Device Authorization**.
+</Step>
+<Step>
+### Enter the OAuth2 application configuration
+
+Enter the **Token URL**, **Client ID**, and **Scopes**. For **Authorization Code** you also provide an **Authorization URL**; for **Device Authorization** a **Device Authorization URL**.
+
+A **Discovery URL** (RFC 8414 or OpenID metadata) can fill the endpoint URLs for you — paste it and Kortix fetches the authorization, token, device-authorization, and revocation URLs from the metadata.
+</Step>
+<Step>
+### Pick a token-endpoint authentication method
+
+| Method | When to use it |
+| --- | --- |
+| **Public client** (`none`) | A public/native client with no secret. |
+| **Client secret with Basic** (`client_secret_basic`) | The standard server-side client secret, sent in the `Authorization` header. |
+| **Client secret in body** (`client_secret_post`) | Client secret sent in the request body. |
+| **Client secret JWT** (`client_secret_jwt`) | The client asserts itself with an HS256-signed JWT derived from the shared secret. |
+| **Private key JWT** (`private_key_jwt`) | Asymmetric assertion — paste a PKCS#8 private key PEM; Kortix signs RS256 client assertions with it. No shared secret crosses the wire. |
+</Step>
+<Step>
+### Authorize and verify
+
+For **Authorization Code**, Kortix generates a consent URL with a PKCE code challenge — send your user to it; they approve, and Kortix exchanges the code for tokens. For **Device Authorization**, Kortix returns a verification URL and code the user enters on another device; Kortix polls until they complete it.
+
+Kortix encrypts the tokens and refreshes them before they expire. Revoking the profile blocks the next Executor call.
+</Step>
+</Steps>
+
 ## Connect with an API key
 
 <Steps>
