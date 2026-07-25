@@ -604,8 +604,17 @@ CREATE TEMP TABLE migration_counts (
   row_count bigint NOT NULL
 ) ON COMMIT DROP;
 
+SELECT
+  set_config('kortix.migration_database_side', :'database_side', true),
+  set_config('kortix.migration_publication', :'publication', true),
+  set_config('kortix.migration_subscription', :'subscription', true)
+\gset
+
 DO $do$
 DECLARE
+  database_side text := current_setting('kortix.migration_database_side');
+  publication_name text := current_setting('kortix.migration_publication');
+  subscription_name text := current_setting('kortix.migration_subscription');
   relation record;
 BEGIN
   FOR relation IN
@@ -620,8 +629,8 @@ BEGIN
         ON pg_class.oid = pg_publication_rel.prrelid
       JOIN pg_namespace
         ON pg_namespace.oid = pg_class.relnamespace
-      WHERE :'database_side' = 'source'
-        AND pg_publication.pubname = :'publication'
+      WHERE database_side = 'source'
+        AND pg_publication.pubname = publication_name
 
       UNION ALL
 
@@ -635,8 +644,8 @@ BEGIN
         ON pg_class.oid = pg_subscription_rel.srrelid
       JOIN pg_namespace
         ON pg_namespace.oid = pg_class.relnamespace
-      WHERE :'database_side' = 'target'
-        AND pg_subscription.subname = :'subscription'
+      WHERE database_side = 'target'
+        AND pg_subscription.subname = subscription_name
     )
     SELECT table_schema, table_name
     FROM replicated_tables
@@ -706,8 +715,17 @@ CREATE TEMP TABLE migration_key_hashes (
   hash_b numeric NOT NULL
 ) ON COMMIT DROP;
 
+SELECT
+  set_config('kortix.migration_database_side', :'database_side', true),
+  set_config('kortix.migration_publication', :'publication', true),
+  set_config('kortix.migration_subscription', :'subscription', true)
+\gset
+
 DO $do$
 DECLARE
+  database_side text := current_setting('kortix.migration_database_side');
+  publication_name text := current_setting('kortix.migration_publication');
+  subscription_name text := current_setting('kortix.migration_subscription');
   relation record;
 BEGIN
   FOR relation IN
@@ -722,8 +740,8 @@ BEGIN
         ON pg_class.oid = pg_publication_rel.prrelid
       JOIN pg_namespace
         ON pg_namespace.oid = pg_class.relnamespace
-      WHERE :'database_side' = 'source'
-        AND pg_publication.pubname = :'publication'
+      WHERE database_side = 'source'
+        AND pg_publication.pubname = publication_name
 
       UNION ALL
 
@@ -737,8 +755,8 @@ BEGIN
         ON pg_class.oid = pg_subscription_rel.srrelid
       JOIN pg_namespace
         ON pg_namespace.oid = pg_class.relnamespace
-      WHERE :'database_side' = 'target'
-        AND pg_subscription.subname = :'subscription'
+      WHERE database_side = 'target'
+        AND pg_subscription.subname = subscription_name
     )
     SELECT
       selected_tables.table_schema,
