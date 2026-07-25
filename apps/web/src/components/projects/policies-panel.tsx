@@ -78,6 +78,42 @@ function newRuleId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+/**
+ * Seeded draft rules + default mode + canonical server signature derived from a
+ * `listProjectPolicies` response.
+ *
+ * Extracted as a pure helper so the exact prod failure shape
+ * (Better Stack pattern `236e88fb…` — `Cannot read properties of undefined
+ * (reading 'map')` in the project layout's `?c=global` → `GlobalRulesPanel` →
+ * `PoliciesPanel` path) can be unit-tested directly without a react-query
+ * harness. `listProjectPolicies` is typed to always return `policies` /
+ * `defaultMode`, but a 200 with a missing/`null` `policies` field (empty/new
+ * project, a backend shape gap, a partial response) is a valid HTTP outcome; the
+ * prior `if (!query.data) return` guard only covered `query.data` itself, so
+ * `query.data`'s `policies` field accessed via `.map` threw. The `?? []` / `?? 'allow_all'`
+ * absorb that without changing the happy path. Mirrors the chunk-22256
+ * `toArray()` guard (#4542).
+ */
+export function seedDraft(data: {
+  policies?: ProjectPolicy[] | null;
+  defaultMode?: PolicyDefaultMode | null;
+}): {
+  draft: DraftRule[];
+  defaultMode: PolicyDefaultMode;
+  serverSig: string;
+} {
+  const policies = data.policies ?? [];
+  const defaultMode = data.defaultMode ?? 'allow_all';
+  return {
+    draft: policies.map((p) => ({ id: newRuleId(), match: p.match, action: p.action })),
+    defaultMode,
+    // `JSON.stringify` drops `undefined` values to `null`, so coercing here
+    // keeps the signature `[]`-stable (a subsequent save would otherwise write
+    // `policies: null`).
+    serverSig: JSON.stringify({ policies, defaultMode }),
+  };
+}
+
 export function PoliciesPanel({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -94,16 +130,10 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (!query.data) return;
-    const seeded = query.data.policies.map((p) => ({
-      id: newRuleId(),
-      match: p.match,
-      action: p.action,
-    }));
-    setDraft(seeded);
-    setDefaultMode(query.data.defaultMode);
-    setServerSig(
-      JSON.stringify({ policies: query.data.policies, defaultMode: query.data.defaultMode }),
-    );
+    const seeded = seedDraft(query.data);
+    setDraft(seeded.draft);
+    setDefaultMode(seeded.defaultMode);
+    setServerSig(seeded.serverSig);
   }, [query.data]);
 
   const currentSig = JSON.stringify({
@@ -139,10 +169,9 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
   }
   function revert() {
     if (!query.data) return;
-    setDraft(
-      query.data.policies.map((p) => ({ id: newRuleId(), match: p.match, action: p.action })),
-    );
-    setDefaultMode(query.data.defaultMode);
+    const seeded = seedDraft(query.data);
+    setDraft(seeded.draft);
+    setDefaultMode(seeded.defaultMode);
   }
 
   if (isForbidden) {
