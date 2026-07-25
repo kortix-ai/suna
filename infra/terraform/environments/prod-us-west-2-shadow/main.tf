@@ -1,0 +1,113 @@
+terraform {
+  required_version = ">= 1.5"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+locals {
+  name = "kortix-prod-usw2"
+  tags = {
+    Environment = "prod-usw2-shadow"
+    Project     = "kortix"
+    ManagedBy   = "terraform"
+  }
+  secrets = {
+    for key in var.secret_keys :
+    key => "${var.secret_arn}:${key}::"
+  }
+}
+
+module "network" {
+  source = "../../modules/network"
+
+  name               = local.name
+  cidr               = "10.30.0.0/16"
+  az_count           = 2
+  single_nat_gateway = false
+  tags               = local.tags
+}
+
+module "api" {
+  source = "../../modules/ecs-api"
+
+  name       = local.name
+  aws_region = var.aws_region
+
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+
+  image             = var.api_image
+  container_name    = "api"
+  container_port    = 8000
+  health_check_path = "/v1/health"
+  certificate_arn   = var.certificate_arn
+  environment = {
+    KORTIX_VERSION = "0.10.14"
+  }
+  secrets = local.secrets
+
+  alb_ingress_cidrs = var.alb_ingress_cidrs
+
+  task_cpu           = 1024
+  task_memory        = 2048
+  desired_count      = 2
+  min_capacity       = 2
+  max_capacity       = 10
+  use_fargate_spot   = false
+  container_insights = true
+  cpu_target         = 55
+  memory_target      = 65
+
+  requests_per_target_target = 600
+  tags = merge(local.tags, {
+    Service = "kortix-api"
+  })
+}
+
+module "gateway" {
+  source = "../../modules/ecs-api"
+
+  name       = "${local.name}-gateway"
+  aws_region = var.aws_region
+
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+
+  image             = var.gateway_image
+  container_name    = "gateway"
+  container_port    = 8090
+  health_check_path = "/health/live"
+  certificate_arn   = var.certificate_arn
+  environment = {
+    KORTIX_API_URL = "https://${var.api_shadow_hostname}"
+    KORTIX_VERSION = "0.10.14"
+  }
+  secrets = local.secrets
+
+  alb_ingress_cidrs = var.alb_ingress_cidrs
+
+  task_cpu           = 512
+  task_memory        = 1024
+  desired_count      = 2
+  min_capacity       = 2
+  max_capacity       = 6
+  use_fargate_spot   = false
+  container_insights = true
+  cpu_target         = 55
+  memory_target      = 65
+
+  tags = merge(local.tags, {
+    Service = "kortix-gateway"
+  })
+}

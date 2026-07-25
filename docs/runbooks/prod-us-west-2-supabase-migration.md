@@ -15,7 +15,27 @@
 - Repository migration ledger: 75 migrations applied through
   `20260725003708138_align_nullable_schema_contract`.
 - `pg_cron`: enabled at version 1.6.4 with zero scheduled jobs.
-- Production data copied: none.
+- Application logical replication: `101/101` relations ready.
+- Auth logical replication: `22/22` relations ready.
+- Replication apply errors: `0`.
+- Replication sync errors: `0`.
+- Source WAL retention limit: 32 GB.
+- Replication credential: rotated after the initial copy.
+- Storage copied: all 79 `avatars` objects with byte and SHA-256 verification.
+- Legacy Storage copied: none.
+- US API shadow: two healthy ECS tasks on image `kortix/kortix-api:0.10.14`.
+- US gateway shadow: two healthy ECS tasks on image
+  `kortix/kortix-gateway:0.10.14`.
+- US API task definition: `kortix-prod-usw2:2`.
+- US gateway task definition: `kortix-prod-usw2-gateway:2`.
+- Shadow Terraform state: `prod-us-west-2-shadow/ecs-api.tfstate`.
+- Shadow verification hosts:
+  - `api-usw2-shadow.kortix.com`
+  - `gateway-usw2-shadow.kortix.com`
+- Target Auth email rate limit: 30,000 per hour, equal to the source.
+- Production release workflow: deploys and verifies the US shadow.
+- US shadow worker, scheduler, channel, tunnel, warm-pool, managed-provider,
+  legacy-migration, and Suna-migration flags: disabled.
 - Production traffic still uses the source project.
 
 Do not print or copy secret values into this document, shell output, or Git.
@@ -29,8 +49,10 @@ Do not print or copy secret values into this document, shell output, or Git.
 | Database data | approximately 286 GB |
 | Storage objects | 452,290 |
 | Storage data | approximately 138 GB |
-| Auth users | 405,859 |
+| Auth users | 405,870 |
+| Auth identities | 409,636 |
 | MFA factors | 8,606 |
+| Auth refresh tokens | 9,538,250 |
 | `public` schema | 250 GB |
 | `kortix` schema | 29 GB |
 | `auth` schema | 11 GB |
@@ -88,7 +110,7 @@ the approved retention policy.
 
 1. All `kortix` schema data.
 2. All Supabase Auth users, identities, MFA factors, and required Auth data.
-3. All Supabase Storage metadata and all 452,290 storage objects.
+3. The current `avatars` Storage bucket.
 4. These `public` control tables:
 
    - `daily_refresh_tracking`
@@ -147,39 +169,154 @@ Verified account scope on 2026-07-25:
 
 The 90-day subset is approximately 6.4 GiB with proportional index overhead.
 
-Recommended policy:
+Migration policy:
 
-1. Snapshot the 90-day subset at the replication cutover time.
-2. Load it into a dedicated `legacy_suna` schema on the target.
-3. Update the Suna migration worker to read `legacy_suna`.
-4. Export the complete four-table corpus to encrypted S3 archival storage.
-5. Keep a documented manual restore path for older accounts.
-6. Remove the self-service migration feature after a fixed deprecation date.
+1. Do not copy `public.projects`.
+2. Do not copy `public.resources`.
+3. Do not copy `public.threads`.
+4. Do not copy `public.messages`.
+5. Keep `KORTIX_SUNA_MIGRATION_WORKER_ENABLED=false` on the US shadow.
+6. Keep the EU source unchanged through cutover and rollback.
 
-Do not delete or omit the complete legacy corpus without the archive and
-retention policy.
+The API treats a missing `public.projects` relation as zero eligible projects.
+The retired self-service Suna migration path therefore stays unavailable on the
+US target.
+
+### Product decision: legacy Storage
+
+Do not copy these source buckets:
+
+- `agent-profile-images`
+- `browser-screenshots`
+- `file-uploads`
+- `image-uploads`
+- `legacy-migrations`
+- `staged-files`
+
+The current repository directly reads and writes `avatars`. The migration tool
+therefore defaults to `STORAGE_BUCKETS=avatars`.
 
 ## Supabase support requirements
 
-Open one Supabase support case before the rehearsal.
+Open one Supabase support case before the production cutover.
 
 Request these actions:
 
-1. Assist with a managed-project migration where the source database exceeds
-   150 GB.
-2. Migrate Supabase-owned `auth` and `storage` schemas.
-3. Validate PostgreSQL 15.8 to 17.6 compatibility.
-4. Preserve the legacy JWT secret until all applications use the target keys.
-5. Coordinate the `supa.kortix.com` custom-domain transfer.
-6. Confirm the minimal-downtime logical replication plan.
-7. Confirm the supported Storage object migration method for 452,290 objects
-   and approximately 138 GB.
+1. Validate the live logical replication of all 22 selected Auth relations.
+2. Clone or safely reapply the original Google OAuth, GitHub OAuth, and Twilio
+   Verify plaintext credentials.
+3. Set or explain these platform-managed Auth differences:
+
+   - `mfa_allow_low_aal`: source `true`, target `false`.
+   - `audit_log_disable_postgres`: source `false`, target `true`.
+   - `index_worker_ensure_user_search_indexes_exist`: source `false`, target
+     `true`.
+
+4. Validate the imported source HS256 compatibility key.
+5. Validate PostgreSQL 15.8 to 17.6 compatibility.
+6. Coordinate the `supa.kortix.com` custom-domain transfer.
+7. Confirm the write-freeze, final synchronization, and rollback procedure.
+8. Confirm that no platform action is required for the completed `avatars`
+   object copy.
+
+Submit the request through:
+
+<https://supabase.com/dashboard/support/new>
+
+The Management API personal access token cannot submit this form. The
+`/platform/feedback/send` request returns HTTP `401` without a dashboard JWT.
 
 Official references:
 
 - <https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore>
 - <https://supabase.com/docs/guides/resources/migrating-to-supabase/postgres>
 - <https://supabase.com/docs/guides/platform/custom-domains>
+
+## Pre-cutover blockers
+
+Do not start the production write freeze until all four blockers close.
+
+1. Supabase Support confirms the Auth replication, JWT compatibility, and
+   custom-domain procedure.
+2. The target receives the original plaintext Google OAuth secret, GitHub OAuth
+   secret, and Twilio Verify token.
+3. Google login, GitHub login, and phone MFA complete on the target.
+4. The maintenance window and rollback owner are assigned.
+
+The source Management API returns one-way 64-character representations for
+configured provider secrets. Do not copy those values to another project.
+
+The source JWT header uses `HS256` with no `kid`. The target has the original
+source secret imported as signing key
+`df227db1-e3fe-4295-b86e-6531d85ec88f`.
+
+- A token signed by the source secret with that `kid` succeeds on target Auth.
+- The same token without a `kid` returns HTTP `403` with
+  `token signature is invalid`.
+
+Supabase Support must enable the source secret as the target legacy no-`kid`
+verification secret. This is required for active source user tokens and cached
+source anon keys during cutover.
+
+SMTP is complete. The target uses the original Mailtrap token. SMTP
+authentication returns `235 2.7.0 Ok`. Auth recovery returns HTTP `200`.
+
+Google and GitHub initiation currently return HTTP `302`. Completion remains
+blocked by the missing original plaintext provider secrets. Phone MFA remains
+blocked by the missing original Twilio Verify token.
+
+## Current validation evidence
+
+The target smoke returns:
+
+```json
+{
+  "passwordLogin": true,
+  "emailRecovery": true,
+  "apiAuthenticated": true,
+  "targetSchemaUserVisible": true,
+  "totpEnrollment": true,
+  "totpChallenge": true,
+  "aal2Token": true,
+  "signedAvatar": true,
+  "publicAvatar": true,
+  "cleanupRows": 0
+}
+```
+
+The cleanup check covers:
+
+- `auth.audit_log_entries`
+- `auth.identities`
+- `auth.mfa_factors`
+- `auth.refresh_tokens`
+- `auth.sessions`
+- `auth.users`
+- `kortix.audit_events`
+
+Auth row counts, primary-key hashes, and critical-row hashes match.
+
+Application row counts and hashes change while production accepts writes.
+Observed differences occur on active tables such as:
+
+- `audit_events`
+- `credit_ledger`
+- `stripe_webhook_events_processed`
+- `api_keys.last_used_at`
+- `session_sandboxes.last_used_at`
+- `session_sandboxes.metadata`
+- `session_sandboxes.updated_at`
+
+The repair command removes target-only smoke state and copies the current source
+values for mutable shadow-tested columns. Exact equality remains a cutover gate.
+
+All 79 `avatars` objects pass complete source and target SHA-256 verification.
+
+The US shadow endpoints return:
+
+- API `/v1/health`: HTTP `200`, version `0.10.14`.
+- Gateway `/health/live`: HTTP `200`, version `0.10.14`.
+- Gateway `/health`: HTTP `200`, API dependency `up`.
 
 ## Target preparation
 
@@ -199,14 +336,58 @@ source of truth.
 
 1. Take a consistent initial copy.
 2. Start logical replication for approved application tables.
-3. Copy Auth and Storage through the Supabase-supported path.
-4. Copy Storage objects with checksums and metadata reconciliation.
-5. Copy the approved legacy Suna subset.
+3. Copy Auth through its dedicated logical subscription.
+4. Copy `avatars` with byte and SHA-256 reconciliation.
+5. Do not copy the legacy Suna tables or legacy Storage buckets.
 6. Reset every migrated sequence to `max(column) + 1`.
 7. Monitor replication lag and retained WAL.
 
 Do not publish Supabase-owned internal tables through a publication owned by
 the application role. Supabase Support must handle those schemas.
+
+### Continuous synchronization commands
+
+Inspect both subscriptions:
+
+```bash
+bash scripts/prod-us-west-2/db-sync.sh status
+bash scripts/prod-us-west-2/auth-sync.sh status
+```
+
+Refresh the application publication after source and target migrations:
+
+```bash
+ALLOW_REPLICATION_REFRESH=1 \
+  bash scripts/prod-us-west-2/refresh-replication.sh
+```
+
+Repair target-only smoke mutations:
+
+```bash
+ALLOW_TARGET_SHADOW_REPAIR=1 \
+  bash scripts/prod-us-west-2/db-sync.sh repair-shadow-mutations
+
+ALLOW_TARGET_AUTH_SHADOW_REPAIR=1 \
+  bash scripts/prod-us-west-2/auth-sync.sh repair-shadow-mutations
+```
+
+Synchronize and verify `avatars`:
+
+```bash
+bash scripts/prod-us-west-2/storage-sync.sh
+STORAGE_VERIFY_ALL=1 bash scripts/prod-us-west-2/storage-sync.sh
+```
+
+Run the target smoke:
+
+```bash
+bash scripts/prod-us-west-2/target-smoke.sh
+```
+
+The production release calls
+`.github/workflows/deploy-prod-us-west-2-shadow.yml`. It applies target
+migrations, refreshes application replication, synchronizes `avatars`, deploys
+the released API and gateway images, and verifies the shadow endpoints.
 
 ## Reconciliation gates
 
@@ -216,7 +397,7 @@ The cutover cannot start until all gates pass.
 2. Primary-key set hashes match for every migrated table.
 3. Critical aggregate hashes match for Auth, billing, accounts, projects,
    sessions, API keys, and the legacy Suna subset.
-4. Storage bucket counts, object counts, and total bytes match.
+4. The `avatars` object count and total bytes match.
 5. A deterministic object sample passes content checksum verification.
 6. Auth password login succeeds on the target.
 7. MFA enrollment and challenge succeed on the target.
@@ -228,18 +409,51 @@ The cutover cannot start until all gates pass.
 13. Logical replication lag reaches zero.
 14. The target passes the production smoke suite before DNS changes.
 
+## Application topology
+
+The active production backend uses ECS Fargate in `eu-west-2`.
+
+- EU API: `4/4` tasks.
+- EU gateway: `2/2` tasks.
+- EU EKS: standby.
+
+The prepared US backend uses the same active topology.
+
+- US API: `2/2` tasks, autoscaling range `2..10`.
+- US gateway: `2/2` tasks, autoscaling range `2..6`.
+- US EKS: not provisioned.
+
+US EKS is not required for the database and traffic cutover. The US ECS stack
+matches the current active production backend. Provision US EKS later if the
+post-cutover design requires a same-region standby.
+
 ## Cutover
 
-1. Announce the maintenance window.
-2. Stop all production writers.
-3. Wait for replication lag to reach zero.
-4. Run final row-count, sequence, and checksum reconciliation.
-5. Disable source cron and worker writers.
-6. Switch application secrets to the target project.
-7. Transfer `supa.kortix.com`.
-8. Start the `us-west-2` application stack.
-9. Run authenticated API, web, Auth, Storage, billing, and trigger checks.
-10. Reopen writes.
+1. Confirm all pre-cutover blockers are closed.
+2. Raise the production maintenance notice.
+3. Block new API, gateway, and `supa.kortix.com` requests at Cloudflare.
+4. Stop EU ECS and EKS application writers.
+5. Disable the source scheduler, trigger scheduler, channels, workers, and cron
+   writers.
+6. Wait for both replication slots to reach the source WAL position.
+7. Run both target-only repair commands.
+8. Run exact application and Auth row-count reconciliation.
+9. Run exact application and Auth primary-key hash reconciliation.
+10. Run exact application and Auth critical-row hash reconciliation.
+11. Copy application and Auth sequence state.
+12. Run the final complete `avatars` synchronization and SHA-256 verification.
+13. Disable both target subscriptions only after all final checks pass.
+14. Transfer `supa.kortix.com` to the target project with Supabase Support.
+15. Update the production application secret to the target Supabase URLs and
+    keys.
+16. Confirm all production secret values contain no source project reference.
+17. Roll the US API and gateway with worker flags still disabled.
+18. Switch `api.kortix.com` and `gateway.kortix.com` to the US ECS origins.
+19. Run authenticated API, web, Auth, Storage, billing, OAuth, MFA, scheduler,
+    trigger, and gateway checks.
+20. Enable US schedulers and workers one group at a time.
+21. Remove the Cloudflare maintenance block.
+22. Clear the production maintenance notice.
 
 Target downtime: the final write freeze, final reconciliation, secret switch,
 custom-domain activation, and smoke checks.
@@ -248,11 +462,15 @@ custom-domain activation, and smoke checks.
 
 Rollback is permitted only before target writes reopen.
 
-1. Keep the source project unchanged and writable until the cutover gate.
-2. If a target check fails, point applications and the custom domain back to
-   the source.
-3. Restart source writers.
-4. Discard target writes from the failed rehearsal.
+1. Keep the source project unchanged until all target checks pass.
+2. Keep target schedulers and workers disabled during validation.
+3. If a target check fails, restore the production application secret.
+4. Point `api.kortix.com`, `gateway.kortix.com`, and `supa.kortix.com` back to
+   their source origins.
+5. Start EU ECS and EKS application services.
+6. Re-enable source schedulers, workers, channels, and cron.
+7. Remove the Cloudflare maintenance block.
+8. Discard target writes from the failed rehearsal.
 
 After target writes reopen, use a forward recovery plan. Do not run two
 writable primaries.
