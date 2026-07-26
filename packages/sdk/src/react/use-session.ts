@@ -256,6 +256,14 @@ export interface UseSessionOptions {
    */
   enabled?: boolean;
   /**
+   * A server-authorized OpenCode session pin already associated with this
+   * Kortix session. The hook uses it only to hydrate cached transcript content
+   * while `/start` runs. The pin returned by `/start` remains authoritative.
+   *
+   * Do not accept this value from an untrusted browser tenant selector.
+   */
+  initialOpenCodeSessionId?: string | null;
+  /**
    * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
    * todos, including its 10s busy-poll SSE-stall fallback) and `useQuestionSelfHeal`
    * (the 2s missed-`question.asked` self-heal poll) — on top of the boot/lifecycle
@@ -303,6 +311,7 @@ export function useSession(
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
+    initialOpenCodeSessionId = null,
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
@@ -371,6 +380,7 @@ export function useSession(
     projectId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
+    initialPin: initialOpenCodeSessionId,
   });
   const ocSessionId = rootSessionId ?? '';
   // Always call the hook (rules-of-hooks) so it stays in the same position

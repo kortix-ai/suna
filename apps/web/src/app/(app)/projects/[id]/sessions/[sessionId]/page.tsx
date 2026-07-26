@@ -7,13 +7,18 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
+import {
+  canMountSessionChat,
+  canShowSessionChat,
+  findInitialSessionPin,
+} from '@/features/session/session-load-state';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
@@ -36,6 +41,7 @@ import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
 import {
   getProjectDetail,
+  listProjectSessions,
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
@@ -76,6 +82,7 @@ export default function ProjectSessionPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
 
   // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
@@ -97,6 +104,14 @@ export default function ProjectSessionPage() {
   const billingGatePending =
     isBillingEnabled() && !!projectAccountId && (accountStateLoading || !accountLoaded);
   const noPlan = isBillingEnabled() && accountLoaded && !accountState.credits?.can_run;
+  const { data: projectSessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
+    enabled: !!user && !!projectId,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+  const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
@@ -111,6 +126,7 @@ export default function ProjectSessionPage() {
     enabled: !!user && !billingGatePending && !noPlan,
     replayStartStash: false,
     chatEngine: false,
+    initialOpenCodeSessionId,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -125,7 +141,6 @@ export default function ProjectSessionPage() {
   // dead-end "open a new session" card — yet a hard refresh's fresh /start hits
   // the resume path and wakes the box. So: re-issue /start ourselves a few times
   // (what the refresh did) before ever surfacing a manual control.
-  const queryClient = useQueryClient();
   const sandboxResumable = isSandboxResumable(sandbox);
   const MAX_AUTO_RESUME = 3;
   const [resumeAttempts, setResumeAttempts] = useState(0);
@@ -217,27 +232,33 @@ export default function ProjectSessionPage() {
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  const sessionContentAvailable = canMountSessionChat({
+    switched: session.switched,
+    opencodeSessionId: session.opencodeSessionId,
+  });
   const sessionSwitchLoading = shouldShowSessionSwitchLoading(
     switchingToSessionId,
     sessionId,
-    session.switched,
+    sessionContentAvailable,
   );
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
-    if (session.switched || session.startError || fatal || gated) {
+    if (sessionContentAvailable || session.startError || fatal || gated) {
       completeSessionSwitch(sessionId);
     }
   }, [
     switchingToSessionId,
     sessionId,
-    session.switched,
+    sessionContentAvailable,
     session.startError,
     fatal,
     gated,
     completeSessionSwitch,
   ]);
-  // The chat subtree mounts once useSession reports the runtime is switched in.
-  const canMountChat = session.switched;
+  // Existing sessions can mount from their server-owned pin before the runtime
+  // switch completes. SessionChat hydrates IndexedDB first, then revalidates
+  // over the live runtime after useSession finishes the switch.
+  const canMountChat = sessionContentAvailable;
   // For a fresh session, hold the real chat until the user actually sends their
   // first message — the instant shell is the typing surface until then.
   const mountChat = canMountChat && (!isFresh || shellSubmitted);
@@ -545,8 +566,11 @@ function ActiveSessionChat({
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 
-  const chatShowable =
-    (!!chatSessionId && runtimeReady) || !!runtimeError || (!runtimeReady && !!runtimeBootError);
+  const chatShowable = canShowSessionChat({
+    chatSessionId,
+    runtimeError,
+    runtimeBootError,
+  });
   useEffect(() => {
     if (chatShowable) onChatReady?.();
   }, [chatShowable, onChatReady]);

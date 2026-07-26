@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getProjectSession } from '../core/rest/projects-client';
 
+import { resolveSessionPin } from './initial-session-pin';
 import { useOpenCodeSessions, type Session } from './use-opencode-sessions';
 
 /**
@@ -43,8 +44,10 @@ export function useCanonicalOpenCodeSession(params: {
   sessionId: string;
   /** The pin POST /start resolved server-side this render (preferred source). */
   pinFromStart?: string | null;
+  /** A server-authorized pin supplied by the host for pre-readiness cache hydration. */
+  initialPin?: string | null;
 }): CanonicalOpenCodeSession {
-  const { projectId, sessionId, pinFromStart } = params;
+  const { projectId, sessionId, pinFromStart, initialPin } = params;
   const sessionsQuery = useOpenCodeSessions();
 
   // The Kortix session row carries the authoritative, server-managed pin — used
@@ -58,11 +61,15 @@ export function useCanonicalOpenCodeSession(params: {
   const projectSessionQuery = useQuery({
     queryKey: ['project-session', projectId, sessionId],
     queryFn: () => getProjectSession(projectId, sessionId, { showErrors: false }),
-    enabled: !!projectId && !!sessionId && !pinFromStart,
+    enabled: !!projectId && !!sessionId && !pinFromStart && !initialPin,
     staleTime: 10_000,
   });
   const pin = projectSessionQuery.data?.opencode_session_id ?? null;
-  const rootSessionId = pinFromStart ?? pin ?? null;
+  const rootSessionId = resolveSessionPin({
+    startPin: pinFromStart,
+    initialPin,
+    persistedPin: pin,
+  });
 
   return {
     rootSessionId,

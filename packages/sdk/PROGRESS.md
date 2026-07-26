@@ -194,6 +194,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
 | B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 | B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.** | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode. | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green |
+| B13 | **Allow an authorized host to seed the known OpenCode session pin so IndexedDB transcript hydration does not wait for `/start`.** | `useSession()` currently passes only the `/start` pin into `useCanonicalOpenCodeSession`; an authorized session list can already contain `opencode_session_id`. | **DONE 2026-07-23** — `initialOpenCodeSessionId`; SDK typecheck, 1,153 tests, packed-install smoke, web typecheck, and 1,913 web tests green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1274,3 +1275,33 @@ and cleaned up the session and project.
 **Shippable to production: YES** for the SDK and local end-to-end terminal path.
 Repository merge, Deploy Dev, deployed-SHA proof, and live-dev verification
 remain part of the repository lifecycle.
+
+---
+
+### 2026-07-23 — session `session-load-latency` (B13 claim)
+
+Claimed an additive `useSession` option for a server-authorized initial OpenCode
+session pin. The pin lets `useSessionSync` hydrate IndexedDB history while
+`/start` wakes or reconciles the runtime. The `/start` pin remains authoritative
+when it arrives.
+
+---
+
+### 2026-07-23 — session `session-load-latency` (B13 completion)
+
+Added `UseSessionOptions.initialOpenCodeSessionId`. The option starts IndexedDB
+transcript hydration before `/start` completes. The `/start` pin remains
+authoritative and replaces a stale initial pin.
+
+The web session route seeds this option from the authorized `project-sessions`
+query. Existing sessions mount their chat when the pin is known. Runtime writes
+remain gated on `session.switched`.
+
+**Final SDK gates:** typecheck passed; the full suite reported **1,153 pass /
+0 fail**; and the packed-install smoke built, packed, installed, imported, and
+constructed `@kortix/sdk` successfully. Web typecheck passed. The full web suite
+reported **1,913 pass / 0 fail**. The web production build passed with an 8 GB
+Node heap after the default 4 GB heap exhausted.
+
+**Shippable to production: YES** for the SDK and web changes. Repository merge,
+Deploy Dev, deployed-SHA proof, and live-dev verification remain required.
