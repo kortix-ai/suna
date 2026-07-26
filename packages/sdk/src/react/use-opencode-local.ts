@@ -18,6 +18,7 @@ import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/cl
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useKortixRouteProjectId } from './route-project';
+import { createAgentSelectionScope } from './agent-selection-scope';
 import {
   connectedGatewayProviderIdsFromSecretNames,
   normalizeProviderList,
@@ -336,7 +337,11 @@ export function useOpenCodeLocal({
   // loaded project default. Project-config hydration can change
   // `defaultAgentName` after the user picks an agent. Including that value in
   // this key discarded the explicit pick and reset the composer to the default.
-  const agentSelectionScope = `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${projectId ?? ''}`;
+  const agentSelectionScope = createAgentSelectionScope({
+    sessionId,
+    boundAgentName,
+    projectId,
+  });
   const [explicitAgentSelection, setExplicitAgentSelection] = useState<{
     scope: string;
     name: string | undefined;
