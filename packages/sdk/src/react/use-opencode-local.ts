@@ -332,7 +332,11 @@ export function useOpenCodeLocal({
   // Resolve the current agent name (see `resolveCurrentAgentName`): per-session
   // slot -> server-bound project agent -> project default -> global last-used.
   const sessionAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : undefined;
-  const agentSelectionScope = `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${defaultAgentName ?? ''}`;
+  // Scope a composer override to the route project, not the asynchronously
+  // loaded project default. Project-config hydration can change
+  // `defaultAgentName` after the user picks an agent. Including that value in
+  // this key discarded the explicit pick and reset the composer to the default.
+  const agentSelectionScope = `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${projectId ?? ''}`;
   const [explicitAgentSelection, setExplicitAgentSelection] = useState<{
     scope: string;
     name: string | undefined;
