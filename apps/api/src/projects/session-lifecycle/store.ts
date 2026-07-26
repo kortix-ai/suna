@@ -2,6 +2,7 @@ import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, asc, eq, isNull, lte, ne, or } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { recordSessionOutcomeBestEffort } from '../../agi/liveness';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -288,6 +289,10 @@ export async function markCommandFailed(
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    // R-33, and the case that matters most: a dead-lettered session never ran the
+    // prompt at all, so any task it claimed is stranded at 'doing' behind a lease
+    // nobody will release. This is the writeback's crash path.
+    recordSessionOutcomeBestEffort(row.sessionId);
   }
 }
 

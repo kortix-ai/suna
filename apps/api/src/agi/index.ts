@@ -7,6 +7,7 @@
  * imported never mounts.
  */
 import './goals/routes';
+import './liveness/routes';
 import './tasks/routes';
 
 export { agiApp } from './app';

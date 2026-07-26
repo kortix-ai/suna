@@ -19,6 +19,7 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { prepareInPlaceRestartMetadata } from './readiness-clocks';
+import { recordSessionOutcomeBestEffort } from '../../agi/liveness';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -102,6 +103,10 @@ export async function deleteSession(input: {
   void pauseComputeSession(sessionId).catch((err) =>
     console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
   );
+
+  // R-33. A deleted session is terminal for every purpose, and its claims are the
+  // ones most likely to strand work — nothing else will ever come back for them.
+  recordSessionOutcomeBestEffort(sessionId);
 
   return { ok: true };
 }

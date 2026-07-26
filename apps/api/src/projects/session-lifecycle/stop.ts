@@ -6,6 +6,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { isAlreadyNotRunning } from '../sandbox-reaper';
 import { invalidateProviderCache } from '../../sandbox-proxy';
+import { recordSessionOutcomeBestEffort } from '../../agi/liveness';
 
 /**
  * Manual, user-triggered stop: pause the running sandbox in place (disk kept,
@@ -91,6 +92,11 @@ export async function stopSession(input: {
     .where(eq(projectSessions.sessionId, sessionId));
 
   invalidateProviderCache(sandbox.externalId);
+
+  // R-33: the session is terminal, so any AGI task it still holds a claim on has
+  // to learn what came of it. Fire-and-forget and gated on `agi` inside — a
+  // no-op for every project that has not opted in.
+  recordSessionOutcomeBestEffort(sessionId);
 
   return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
 }
