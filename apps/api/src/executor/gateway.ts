@@ -125,21 +125,6 @@ export interface GatewayDeps {
   ): Promise<EmailConnectorContext | null>;
   /** Resolve the AgentMail credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
-  /**
-   * Meet (Recall.ai) join augmentation — the realtime webhook endpoint + bot
-   * `metadata` (owning session + an HMAC token) injected server-side so Recall
-   * streams transcript/chat back to us. Null when no public URL is configured or
-   * the call isn't session-scoped. The sandbox never builds this callback.
-   */
-  resolveMeetJoinContext?(
-    projectId: string,
-    sessionId: string | null,
-  ): Promise<{
-    metadata: Record<string, unknown>;
-    realtimeEndpoints: unknown[];
-    automaticAudioOutput: unknown;
-    botName: string;
-  } | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -214,6 +199,20 @@ export interface GatewayDeps {
     method: string;
     args: Record<string, unknown>;
   }): Promise<ComputerCallOutcome>;
+  /**
+   * Voice (LiveKit) channel execution — required for the `kortix_voice`
+   * channel connector's `{ kind: 'voice' }`-bound actions. `op` is the
+   * action's connector-relative path (`spawn_room` / `join_gmeet` /
+   * `join_zoom`); only `spawn_room` is implemented, the rest resolve to a
+   * `not_implemented` outcome the gateway maps onto a clear, actionable error.
+   */
+  executeVoiceCall?(input: {
+    projectId: string;
+    accountId: string;
+    sessionId: string | null;
+    op: string;
+    args: Record<string, unknown>;
+  }): Promise<VoiceCallOutcome>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
 }
@@ -223,6 +222,17 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | { ok: false; kind: 'permission_required'; requestId: string; message: string }
   | { ok: false; kind: 'no_machine'; message: string }
+  | { ok: false; kind: 'error'; message: string };
+
+/**
+ * Result of a voice channel action (`spawn_room` / `join_gmeet` / `join_zoom`).
+ * `not_implemented` is its own outcome (not folded into `error`) so a caller
+ * can tell "this mechanism doesn't exist yet" apart from a real failure —
+ * `message` is expected to say what to do instead, e.g. "use spawn_room".
+ */
+export type VoiceCallOutcome =
+  | { ok: true; data: unknown }
+  | { ok: false; kind: 'not_implemented'; message: string }
   | { ok: false; kind: 'error'; message: string };
 
 export interface CallInput {
@@ -424,37 +434,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: usable.reason };
   }
 
-  let executionArgs = emailExecution.args;
+  const executionArgs = emailExecution.args;
   const executionSecret = usable.secret;
-
-  // Meet (Recall.ai) live relay: on join, inject the realtime webhook + bot
-  // metadata server-side so Recall streams transcript/chat back to us, tagged
-  // with this session. Merges with the recording_config the caller already set.
-  if (
-    connector.provider === 'channel' &&
-    connector.platform === 'meet' &&
-    input.actionPath === 'join_meeting' &&
-    deps.resolveMeetJoinContext
-  ) {
-    const ctx = await deps.resolveMeetJoinContext(input.projectId, input.sessionId ?? null);
-    if (ctx) {
-      const rc = { ...((executionArgs.recording_config as Record<string, unknown>) ?? {}) };
-      const existing = Array.isArray(rc.realtime_endpoints) ? rc.realtime_endpoints : [];
-      rc.realtime_endpoints = [...existing, ...ctx.realtimeEndpoints];
-      executionArgs = {
-        ...executionArgs,
-        recording_config: rc,
-        metadata: {
-          ...((executionArgs.metadata as Record<string, unknown>) ?? {}),
-          ...ctx.metadata,
-        },
-        // Enable the bot to speak (output_audio) unless the caller set its own.
-        automatic_audio_output: executionArgs.automatic_audio_output ?? ctx.automaticAudioOutput,
-        // The project's configured bot display name, unless the caller passed one.
-        bot_name: executionArgs.bot_name ?? ctx.botName,
-      };
-    }
-  }
 
   // Layered policy enforcement: project policies first → connector → risk default.
   if (deps.enforcePolicies !== false) {
@@ -630,6 +611,35 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         reason: outcome.message.slice(0, 500),
       });
       logger.warn(`[executor] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
+      return { status: 'error', reason: outcome.message };
+    }
+
+    // Voice channel: server-side room creation, not an outbound HTTP call —
+    // route through GatewayDeps.executeVoiceCall instead of executeCall, same
+    // shape as the computer branch above.
+    if (connector.provider === 'channel' && connector.platform === 'voice') {
+      if (action.binding.kind !== 'voice') {
+        throw new Error(`voice connector has unexpected binding kind "${action.binding.kind}"`);
+      }
+      if (!deps.executeVoiceCall) throw new Error('voice runner not wired');
+      const outcome = await deps.executeVoiceCall({
+        projectId: input.projectId,
+        accountId: input.accountId,
+        sessionId: input.sessionId ?? null,
+        op: action.binding.op,
+        args: executionArgs,
+      });
+      if (outcome.ok) {
+        await audit(deps, input, connector, 'ok', action.risk, { op: action.binding.op });
+        return { status: 'ok', data: outcome.data, risk: action.risk };
+      }
+      await audit(deps, input, connector, 'error', action.risk, {
+        reason: outcome.message.slice(0, 500),
+        kind: outcome.kind,
+      });
+      if (outcome.kind !== 'not_implemented') {
+        logger.warn(`[executor] ${fullPath} voice call failed: ${outcome.message.slice(0, 500)}`);
+      }
       return { status: 'error', reason: outcome.message };
     }
 

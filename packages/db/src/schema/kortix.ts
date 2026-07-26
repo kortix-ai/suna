@@ -605,6 +605,13 @@ export const projectSessions = kortixSchema.table(
       table.projectId,
       table.sessionId,
     ),
+    uniqueIndex('idx_project_sessions_one_available_warm')
+      .on(table.projectId, table.createdBy)
+      .where(
+        sql`${table.createdBy} is not null
+          and ${table.metadata}->'warm_session'->>'state' = 'available'
+          and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
+      ),
     // NOTE: a partial composite index `idx_project_sessions_account_active`
     // ((account_id) WHERE status IN active-set) ALSO exists — created by the
     // hand-written migration drizzle/20260617102106_account_active_session_index.sql
@@ -1108,6 +1115,92 @@ export const chatTurnStreams = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_chat_turn_streams_expiry').on(table.expiresAt)],
+);
+
+/**
+ * The shared transcript of a live voice call — written by the realtime provider
+ * as speech happens, read back by the Kortix session through `voice_read`.
+ *
+ * `cursor` (bigserial) is what makes the read non-blocking: the agent loop is
+ * single-threaded and can never sit on a stream, so it asks "what is new since
+ * X" and gets an answer immediately. Ordering is on the cursor, never
+ * created_at — two turns can land in the same millisecond and a wall-clock tie
+ * would silently drop one on the next poll.
+ */
+export const voiceCallTurns = kortixSchema.table(
+  'voice_call_turns',
+  {
+    cursor: bigint('cursor', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    callId: text('call_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    /** 'user' (a human in the call) | 'agent' (the voice agent speaking) |
+     *  'tool' (an ask_kortix/run_command call the worker made through the
+     *  voice MCP — see mcp.ts's callTool). CHECK constraint enforces this set. */
+    role: varchar('role', { length: 16 }).notNull(),
+    speaker: text('speaker'),
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_voice_call_turns_call_cursor').on(table.callId, table.cursor),
+    index('idx_voice_call_turns_session').on(table.sessionId, table.cursor),
+  ],
+);
+
+/**
+ * The Kortix agent's read position in a call's transcript — the state that lets
+ * a bare `read_transcript {}` mean "only what I have not been shown yet".
+ *
+ * Cursor-paging was already incremental, but only for an agent that threaded the
+ * returned cursor back on every call; one that forgot passed 0 and re-read the
+ * whole conversation. Keeping the position here makes the cheap path the DEFAULT
+ * path and removes the agent's obligation to remember anything.
+ *
+ * `cursor` is the highest `voice_call_turns.cursor` actually handed over, and it
+ * only ever moves forward (the upsert's `setWhere` refuses to lower it) — a race
+ * between two reads in one call must not rewind it. Exactly one writer: the
+ * agent-side `read_transcript`. The call page's poll (r7.ts,
+ * public-join-routes.ts) passes its own explicit cursor and never touches this
+ * row, so a human scrolling the transcript cannot consume the agent's unread.
+ */
+export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors', {
+  /** The call — which is also the session id. */
+  callId: text('call_id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  cursor: bigint('cursor', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Short, ungessable join links that resolve server-side to a fresh LiveKit
+ * access token — see `apps/api/src/channels/voice/join-links.ts`. Replaces
+ * handing out the raw ~300-char LiveKit JWT itself in `voice_spawn`'s
+ * `join_url` (fragile in transit: one corrupted character breaks the
+ * signature and the browser gets "invalid token").
+ *
+ * `token_hash` (sha256 of the raw token), never the raw token, is the primary
+ * key — same posture as `project_session_public_shares.token_hash`: a DB dump
+ * should not itself be a bag of live capability tokens.
+ *
+ * DB-backed rather than a stateless encrypted envelope (compare
+ * `setup-links/token.ts`) for the one property a self-contained token cannot
+ * give: revocation. A live call can end while a copy of its link is still
+ * sitting in someone's chat history, and that link must stop working the
+ * moment the call does (`revoked_at`, set by `endCall`) -- not just whenever
+ * its TTL happens to lapse.
+ */
+export const voiceJoinLinks = kortixSchema.table(
+  'voice_join_links',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    callId: text('call_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_voice_join_links_call').on(table.callId)],
 );
 
 export const teamsPendingUploads = kortixSchema.table(

@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { ProjectShell } from '@/components/project-shell';
 import { CapabilitiesTab } from '@/components/settings/capabilities-tab';
 import { ConnectorsTab } from '@/components/settings/connectors-tab';
@@ -8,15 +10,18 @@ import { PoliciesTab } from '@/components/settings/policies-tab';
 import { SecretsTab } from '@/components/settings/secrets-tab';
 import { TriggersTab } from '@/components/settings/triggers-tab';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, GitBranch, Loader2 } from 'lucide-react';
+import type { ExperimentalFeatureView, KortixProject } from '@kortix/sdk';
+import { ExternalLink, GitBranch } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -142,9 +147,7 @@ function GeneralTab() {
 
   const p = project.data;
   const repoUrl: string | undefined = p?.repo_url || undefined;
-  const repoLabel = repoUrl
-    ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '')
-    : undefined;
+  const repoLabel = repoUrl ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '') : undefined;
   const baseRef: string | undefined = p?.default_branch || undefined;
 
   return (
@@ -162,7 +165,7 @@ function GeneralTab() {
             disabled={!name.trim() || name.trim() === current || rename.isPending}
             onClick={() => rename.mutate()}
           >
-            {rename.isPending && <Loader2 className="size-4 animate-spin" />}
+            {rename.isPending && <Loading className="size-4" />}
             Save
           </Button>
         </div>
@@ -195,6 +198,8 @@ function GeneralTab() {
         <Stat label="Runtime" value={healthState ?? '—'} />
       </Card>
 
+      {p && <ExperimentalFeatures projectId={projectId} project={p} />}
+
       <Card className="border-destructive/30 p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -211,6 +216,79 @@ function GeneralTab() {
           </Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function ExperimentalFeatures({
+  projectId,
+  project,
+}: {
+  projectId: string;
+  project: KortixProject;
+}) {
+  const features = (project.experimental_features ?? []).filter((feature) => feature.available);
+
+  if (features.length === 0) return null;
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="border-b border-border px-5 py-3">
+        <div className="text-sm font-medium">Experimental features</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Project-scoped capabilities supplied by the Kortix server.
+        </p>
+      </div>
+      <div className="divide-y divide-border">
+        {features.map((feature) => (
+          <ExperimentalFeatureRow key={feature.key} projectId={projectId} feature={feature} />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ExperimentalFeatureRow({
+  projectId,
+  feature,
+}: {
+  projectId: string;
+  feature: ExperimentalFeatureView;
+}) {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      kortix.project(projectId).updateExperimentalFeature(feature.key, enabled),
+    onSuccess: (updated) => {
+      qc.setQueryData(qk.project(projectId), updated);
+      qc.invalidateQueries({ queryKey: qk.projects });
+      toast.success(
+        `${feature.name} ${updated.experimental?.[feature.key] ? 'enabled' : 'disabled'}`,
+      );
+    },
+    onError: () => toast.error(`Could not update ${feature.name}`),
+  });
+
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-medium">{feature.name}</div>
+          <Badge variant="outline" className="capitalize">
+            {feature.stability}
+          </Badge>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{feature.description}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {mutation.isPending && <Loading className="size-3.5 text-muted-foreground" />}
+        <Switch
+          aria-label={`Enable ${feature.name}`}
+          checked={feature.enabled}
+          disabled={mutation.isPending}
+          onCheckedChange={(enabled) => mutation.mutate(enabled)}
+        />
+      </div>
     </div>
   );
 }

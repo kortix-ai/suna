@@ -7,25 +7,26 @@ import { useCallback, useMemo, useState } from 'react';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
-import { hasUsableModel } from '@kortix/sdk/react';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { connectedGatewayProviderIdsFromSecretNames, hasUsableModel } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
+export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
+  return tab === 'providers' ? 'catalog' : tab;
+}
+
 /**
- * Shared "connect a model" routing — where clicking Upgrade / Connect provider
- * should actually take the user, given the current route context (project with
- * the LLM gateway on, project without it, or no project at all). Extracted from
- * `ModelSelector` so any surface (the picker's empty state, the chat input's
- * full-block gate, onboarding) opens the exact same dialogs.
+ * Shared "connect a model" routing. Project actions open the project-scoped
+ * provider modal in place. Non-project actions use the global provider modal.
+ * Extracted from `ModelSelector` so the picker, chat gate, and onboarding use
+ * the same surface.
  *
  * Also computes `hasSelectableModels` — pass the caller's flattened model list
  * (default `[]` for callers that only need the routing actions). This is
@@ -40,7 +41,6 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   // module-level LLM_PROVIDERS binding.
   const catalogRevision = useLlmProviderCatalogRevision();
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const params = useParams<{ id?: string }>();
@@ -109,21 +109,13 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {
       if (projectId) {
-        if (llmGatewayEnabled) {
-          // Plus → "Add provider" (the core surface); the sliders / manage-models
-          // button → "Models". Both land on LLM → Providers, never Files.
-          openCustomize('llm-providers', {
-            llmProvidersTab: tab === 'models' ? 'models' : 'catalog',
-          });
-        } else {
-          setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-          setProjectModalOpen(true);
-        }
+        setProjectModalTab(projectProviderModalTab(tab));
+        setProjectModalOpen(true);
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
+    [projectId, openProviderModal],
   );
 
   const openUpgrade = useCallback(() => {

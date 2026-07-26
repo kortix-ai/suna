@@ -15,7 +15,6 @@ setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum');
 setTestEnv('KORTIX_URL', 'https://api.example.test');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
-setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
 

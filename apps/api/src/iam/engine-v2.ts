@@ -112,10 +112,12 @@ export function deriveEffectiveProjectRole(
 
 // ─── DB lookups ────────────────────────────────────────────────────────────
 //
-// LATENCY NOTE (prod incident, 2026-06-12): every DB statement from the prod
-// fleet pays a cross-region roundtrip, and these principal lookups run on
-// every single authed request — often 10+ times in parallel during one page
-// load. Two levers keep that off the floor of every request:
+// LATENCY NOTE (prod incident, 2026-06-12; measurement corrected 2026-07-26):
+// every DB statement from the prod fleet is a fast same-region roundtrip
+// (~3ms measured — DB and API both sit in eu-west-2, not the cross-region
+// cost originally assumed here), and these principal lookups run on every
+// single authed request — often 10+ times in parallel during one page load.
+// Two levers keep that off the floor of every request:
 //   1. Independent queries run via Promise.all (depth, not count, costs time).
 //   2. Results are memoized for a short TTL (IAM_CACHE_TTL_MS, default 15s) —
 //      *positive* results only, so a freshly granted member sees access

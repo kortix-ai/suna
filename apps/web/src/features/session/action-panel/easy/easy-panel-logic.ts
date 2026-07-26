@@ -20,6 +20,23 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
 }
 
 /**
+ * Where inside a step's parts the clicked call lives.
+ *
+ * A step is a GROUP — "Ran 13 commands" holds 13 parts behind one scrubber.
+ * Opening it without this always landed on `parts.length - 1` in live mode, so
+ * clicking the 4th command showed the 13th and every later click appeared to
+ * do nothing. Returns -1 when the call isn't in this step, which the caller
+ * reads as "no focus, follow live".
+ */
+export function focusIndexForCall(
+  parts: ReadonlyArray<{ callID?: string }>,
+  callId: string | null | undefined,
+): number {
+  if (!callId) return -1;
+  return parts.findIndex((p) => p.callID === callId);
+}
+
+/**
  * The synthetic app `OutputItem` behind the header/palette "Open Browser"
  * quick-view — the first running app's url when the session has one, else an
  * EMPTY url: `AppPreview` renders its "no app yet" landing (helper copy +

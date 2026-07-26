@@ -556,6 +556,17 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
     await waitForReadySession(auth.access_token, projectId, sessionId, "rest");
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(input).toBeVisible({ timeout: 120_000 });
+    const modelPicker = page.getByRole("button", { name: "Model picker" });
+    await expect(modelPicker).toBeVisible({ timeout: 120_000 });
+    await modelPicker.click();
+    const restModel = page
+      .locator('[data-slot="command-item"]')
+      .filter({ hasText: "Claude Sonnet 4.6" })
+      .first();
+    await expect(restModel).toBeVisible({ timeout: 120_000 });
+    await page.keyboard.press("Escape");
+    await expect(restModel).toBeHidden({ timeout: 30_000 });
+    expect(restPromptRequests).toHaveLength(0);
     await input.fill("Reply with exactly: REST_PONG");
     await input.press("Enter");
     await expect(

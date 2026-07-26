@@ -418,18 +418,14 @@ jobs:
             exit 1
           fi
 
-          # DRIFT WARNING: this REST deploy REPLACES the staging Worker's
-          # bindings wholesale on every staging rollout — it re-asserts
-          # ACTIVE_BACKEND=eks and drops any GATEWAY_* vars a `wrangler deploy
-          # --env staging` (wrangler.toml says ecs-fargate) may have set. Live
-          # staging is therefore EKS-active BY THIS JOB. If staging is ever
-          # flipped to ECS-active like prod, change the binding here (and
-          # wrangler.toml) together, or the next staging deploy flips it back.
+          # This REST deploy replaces all staging Worker bindings. Keep these
+          # values equal to the staging defaults in wrangler.toml. The API uses
+          # EKS. The gateway uses ECS Fargate.
           metadata="$(jq -cn '{
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: [
-              {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"},
               {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},

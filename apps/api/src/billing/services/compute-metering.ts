@@ -19,10 +19,12 @@
 // bills any session whose last_billed_at is > 1 hour ago, so a missed close
 // hook can never silently accrue 24h+ of uncharged compute.
 
-import { sandboxComputeSessions } from '@kortix/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { creditAccounts, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
-import type { ProviderName } from '../../platform/providers';
+import { getProvider, type ProviderName } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
+import { db } from '../../shared/db';
 import {
   insertComputeSession,
   getOpenComputeSession,
@@ -36,6 +38,11 @@ import { deductCredits } from './credits';
 import { isPerSeatAccount } from './tiers';
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
+// Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
+// sandbox-reaper.ts, findStaleActiveSessions' default) so one pass can never
+// stampede a large backlog of reconcile candidates into a burst of provider/DB
+// writes — a full backlog just drains over several ticks instead.
+const RECONCILE_MISSING_BATCH_SIZE = 100;
 
 export interface StartComputeOpts {
   sandboxId: string;
@@ -227,13 +234,134 @@ export async function endComputeSession(sandboxId: string): Promise<void> {
   });
 }
 
+export interface ReconcileMissingComputeResult {
+  checked: number;
+  reconciled: number;
+  errors: number;
+}
+
+/**
+ * Reconciliation safety net for a close-without-reopen defect: a sandbox row
+ * can end up `status='active'` with no open `sandbox_compute_sessions` row
+ * behind it when a reopen hook (resume-in-place, provisioning finishing,
+ * in-place runtime recovery — see `resumeStoppedSandbox` /
+ * `openComputeSessionForSandbox` / `markInPlaceRuntimeRecoveryAccepted`) fires
+ * its `reopenComputeForSandbox`/`startComputeSession` call fire-and-forget
+ * (`void … .catch(warn)`): the sandbox row transition already committed by the
+ * time that call runs, so if it fails nothing ever retries the metering open
+ * and the box bills nothing for the rest of its life.
+ *
+ * This sweeps every `active` sandbox with no currently-open compute row and
+ * reopens one via `reopenComputeForSandbox`, which already applies the
+ * `isPerSeatAccount` gate (no-op for `legacy` accounts — never reimplemented
+ * here) and reuses the sandbox's last known spec so a reconciled window bills
+ * at the same rate the sandbox always has. Idempotent: `startComputeSession`
+ * underneath is a no-op if a row already raced open between the SELECT below
+ * and this call. Bounded per pass. Deliberately does NOT back-bill — the
+ * reopened window starts accruing from `now`, exactly like every other reopen
+ * path in this file; any already-elapsed unmetered time is a business
+ * decision, not something this sweep silently charges for.
+ */
+/**
+ * Candidate query, exported so its predicate can be asserted directly rather
+ * than through a mock that reimplements the filtering.
+ *
+ * The `per_seat` inner join is load-bearing, not defence-in-depth: a `legacy`
+ * account can NEVER be metered (`startComputeSession` returns early), so every
+ * active legacy box matches "no open window" permanently. Without this filter an
+ * unordered `LIMIT` fills with legacy rows on every pass and the per-seat rows
+ * this sweep exists for are never reached — a no-op that costs a round-trip per
+ * row. The inner join also drops accounts with no `credit_accounts` row at all,
+ * which is the same fail-closed outcome as the `isPerSeatAccount` gate below.
+ */
+export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
+  return db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      externalId: sessionSandboxes.externalId,
+    })
+    .from(sessionSandboxes)
+    .innerJoin(
+      creditAccounts,
+      and(
+        eq(creditAccounts.accountId, sessionSandboxes.accountId),
+        eq(creditAccounts.billingModel, 'per_seat'),
+      ),
+    )
+    .leftJoin(
+      sandboxComputeSessions,
+      and(
+        eq(sandboxComputeSessions.sandboxId, sessionSandboxes.sandboxId),
+        isNull(sandboxComputeSessions.endedAt),
+      ),
+    )
+    .where(and(eq(sessionSandboxes.status, 'active'), isNull(sandboxComputeSessions.id)))
+    .limit(limit);
+}
+
+export async function reconcileMissingComputeSessions(
+  limit = RECONCILE_MISSING_BATCH_SIZE,
+): Promise<ReconcileMissingComputeResult> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { checked: 0, reconciled: 0, errors: 0 };
+
+  const rows = await selectMissingComputeCandidates(limit);
+
+  let reconciled = 0;
+  let errors = 0;
+  for (const row of rows) {
+    try {
+      // Liveness gate. Every stop path in this codebase closes billing FIRST and
+      // flips `session_sandboxes.status` second (session-lifecycle/stop.ts,
+      // sandbox-reaper.ts), so "active row, no open window" is ALSO exactly what a
+      // half-completed stop looks like. Opening a window on DB state alone would
+      // bill a box that is really stopped, and would fight
+      // `reconcileOrphanComputeSessions` — which settles such rows back down and
+      // pages via the BILLING INVARIANT VIOLATED monitor. Only reopen for a box the
+      // provider still reports as running.
+      if (!row.externalId) continue;
+      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      if (status !== 'running') continue;
+
+      const opened = await reopenComputeForSandbox(
+        row.sandboxId,
+        row.accountId,
+        row.sessionId,
+        null,
+        row.provider as ProviderName,
+      );
+      if (opened) reconciled += 1;
+    } catch (err) {
+      errors += 1;
+      console.error(
+        `[compute-metering] reconcile-missing failed for sandbox ${row.sandboxId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if (rows.length > 0) {
+    console.log('[compute-metering] reconciled missing compute windows', {
+      checked: rows.length,
+      reconciled,
+      errors,
+    });
+  }
+
+  return { checked: rows.length, reconciled, errors };
+}
+
 /**
  * Cron entry point. Every 15 minutes: find sessions that have been billing for
  * over an hour without a hook firing, settle a partial window. Prevents a
- * missed close from accumulating uncharged compute indefinitely.
+ * missed close from accumulating uncharged compute indefinitely. Also runs the
+ * missing-compute-session reconciler (see `reconcileMissingComputeSessions`)
+ * in the same pass — the natural periodic hook for both safety nets.
  */
-export async function tickRunningComputeCharges(): Promise<{ settled: number }> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { settled: 0 };
+export async function tickRunningComputeCharges(): Promise<{ settled: number; reconciled: number }> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { settled: 0, reconciled: 0 };
   const cutoff = new Date(Date.now() - PARTIAL_BILL_INTERVAL_MS);
   const stale = await findStaleActiveSessions(cutoff);
   let settled = 0;
@@ -246,5 +374,11 @@ export async function tickRunningComputeCharges(): Promise<{ settled: number }> 
       console.error(`[compute-metering] tick failed for session ${row.id}:`, err);
     }
   }
-  return { settled };
+
+  const { reconciled } = await reconcileMissingComputeSessions().catch((err) => {
+    console.error('[compute-metering] reconcile-missing pass failed:', err);
+    return { checked: 0, reconciled: 0, errors: 0 };
+  });
+
+  return { settled, reconciled };
 }

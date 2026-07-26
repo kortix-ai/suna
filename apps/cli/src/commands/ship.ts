@@ -383,14 +383,6 @@ async function ensureConnectorsConnected(
   if (flags.noConnect) return;
   const ex = `/executor/projects/${projectId}`;
 
-  // The catalog materializes from the manifest we just pushed — sync first so
-  // the cloud knows about freshly-added connectors. Best-effort.
-  try {
-    await client.post(`${ex}/connectors/sync`);
-  } catch {
-    // A sync failure shouldn't block the ship; connectors can be set up later.
-  }
-
   let connectors: ShipConnector[];
   try {
     const resp = await client.get<{ connectors: ShipConnector[] }>(`${ex}/connectors`);
@@ -437,6 +429,23 @@ async function ensureConnectorsConnected(
     process.stdout.write(
       `  ${C.dim}${connected} connector${connected === 1 ? '' : 's'} connected.${C.reset}\n`,
     );
+  }
+}
+
+/**
+ * Reconcile the pushed manifest into the server runtime catalog.
+ *
+ * This step always runs. The --no-connect flag only skips credential prompts.
+ */
+export async function reconcileShippedManifest(
+  client: ApiClient,
+  projectId: string,
+): Promise<void> {
+  try {
+    await client.post(`/executor/projects/${projectId}/connectors/sync`);
+  } catch {
+    // A reconcile failure does not invalidate the completed git push.
+    // The rotating server discovery sweep retries the project.
   }
 }
 
@@ -668,6 +677,7 @@ async function shipFirstTime(
   const pushed = pushCurrentBranch(repoUrl, pushToken, pushUsername);
   if (!pushed) return 1;
 
+  await reconcileShippedManifest(client, project.project_id);
   await ensureConnectorsConnected(client, project.project_id, flags);
 
   reportShipped(auth, project, repoUrl);
@@ -733,6 +743,7 @@ async function shipExisting(
   const pushed = pushCurrentBranch(repoUrl, pushToken, pushUsername);
   if (!pushed) return 1;
 
+  await reconcileShippedManifest(client, projectId);
   await ensureConnectorsConnected(client, projectId, flags);
 
   reportShipped(auth, project, repoUrl);

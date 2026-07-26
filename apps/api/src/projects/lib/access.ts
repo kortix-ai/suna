@@ -3,7 +3,6 @@ import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
-import { preResumeRecentStoppedSessions } from '../routes/shared';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -142,8 +141,11 @@ export async function loadSessionForSharing(
 
 
 // Memoized briefly (positive hits only) — same rationale and trade-off as
-// getAccountMembership: runs on every project request, cross-region roundtrip
-// per statement, revocations lag at most one TTL window, grants are instant.
+// getAccountMembership: runs on every project request. Each statement is a
+// fast same-region roundtrip (~3ms measured, not the cross-region cost this
+// comment used to claim), but the same query repeats across a burst of
+// parallel requests, so caching still cuts redundant query volume;
+// revocations lag at most one TTL window, grants are instant.
 const loadProjectMemberRole = ttlMemo({
   ttlMs: 15_000,
   // Key is `${userId}|${projectId}` (userId-first) so a single
@@ -495,8 +497,10 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   const requestCtx = deriveRequestContext(c);
 
   // Membership, project role and the IAM verdict are independent lookups —
-  // overlap them. Every project-scoped request runs this path and each DB
-  // statement costs a cross-region roundtrip in prod, so depth matters.
+  // overlap them. Every project-scoped request runs this path; each DB
+  // statement is a fast same-region roundtrip (~3ms measured, DB and API
+  // both in eu-west-2), but they're serial by default, so running them in
+  // parallel instead of stacked still matters at this call frequency.
   // The engine consults super-admin bypass, direct + group policies,
   // project_groups, AND the legacy account_role / project_members bridges
   // (in non-strict mode), so it's strictly a superset of the old role-only
@@ -593,12 +597,6 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   const effectiveRole =
     (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
   (c as any).set('accountId', row.accountId);
-
-  if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
-    // Proactively wake the user's most recently-stopped session(s) so the resume
-    // overlaps their navigation. No-op unless KORTIX_PRERESUME_ENABLED.
-    preResumeRecentStoppedSessions(projectId, userId);
-  }
 
   return {
     row,

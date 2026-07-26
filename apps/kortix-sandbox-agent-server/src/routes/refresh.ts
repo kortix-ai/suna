@@ -9,6 +9,11 @@ import {
 import { logger } from '../logger'
 import type { Opencode } from '../opencode'
 
+function bearerToken(header: string | undefined): string | null {
+  if (!header?.startsWith('Bearer ')) return null
+  return header.slice('Bearer '.length).trim() || null
+}
+
 export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
@@ -18,10 +23,17 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
 
-    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
-    if (!auth.ok) {
-      logger.warn('[refresh] reject', { reason: auth.reason })
-      return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
+    const serviceAuthenticated =
+      bearerToken(c.req.header('Authorization')) === cfg.sandboxToken
+    if (!serviceAuthenticated) {
+      const auth = verifyKortixUserContext(
+        c.req.header(KORTIX_USER_CONTEXT_HEADER),
+        cfg.sandboxToken,
+      )
+      if (!auth.ok) {
+        logger.warn('[refresh] reject', { reason: auth.reason })
+        return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
+      }
     }
 
     if (refreshInFlight) {
@@ -33,10 +45,16 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
     // and keeps warm-snapshot restore fast). Default behaviour is refresh+restart.
     const syncBase = c.req.query('base') === '1'
     const skipRestart = c.req.query('restart') === '0'
+    const baseSha = c.req.query('base_sha')
+    if (baseSha !== undefined && !/^[0-9a-f]{40}$/i.test(baseSha)) {
+      return c.json({ error: 'invalid base_sha' }, 400)
+    }
 
     refreshInFlight = (async () => {
       try {
-        const repo = syncBase ? await syncWorkspaceToBase(cfg) : await refreshRepo(cfg)
+        const repo = syncBase
+          ? await syncWorkspaceToBase(cfg, baseSha)
+          : await refreshRepo(cfg)
         if (!skipRestart) await opencode.restart()
         return c.json({
           ok: true,

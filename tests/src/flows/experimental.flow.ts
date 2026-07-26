@@ -45,15 +45,15 @@ flow(
       r.status(200);
     });
 
-    // meet uses the same write path + reconciles the kortix_meet channel connector.
-    // Assert structure (not the effective value — that depends on MEET_ENABLED on the
+    // meet uses the same write path + reconciles the kortix_voice channel connector.
+    // Assert structure (not the effective value — that depends on the project's own
     // target), then clear it.
     await ctx.step("OWNER enables meet → 200 + catalog in body", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/experimental",
-          { feature: "meet", enabled: true },
+          { feature: "voice", enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists("$.experimental_features").exists("$.experimental");
@@ -64,7 +64,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/experimental",
-          { feature: "meet", enabled: null },
+          { feature: "voice", enabled: null },
           { params: { projectId: p.id } },
         );
       r.status(200);

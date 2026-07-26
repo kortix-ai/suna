@@ -18,7 +18,7 @@ export type ExperimentalFeatureKey =
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
-  | 'meet'
+  | 'voice'
   | 'llm_gateway'
   | 'acp_runtime'
   | 'review_center';
@@ -72,6 +72,9 @@ export interface ProjectConfigSummary {
   signals: Record<string, boolean>;
   manifest_raw: string | null;
   open_code_raw: string | null;
+  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  default_agent?: string | null;
+  /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
@@ -81,6 +84,8 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** Agent-specific sandbox template. null or absent inherits the project default. */
+    sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -271,12 +276,19 @@ export function isManagedGithubProject(project: {
 }
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
-  return unwrap(
+  const detail = unwrap(
     await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
       showErrors: false,
       ...options,
     }),
   );
+  return {
+    ...detail,
+    config: {
+      ...detail.config,
+      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+    },
+  };
 }
 
 export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
@@ -350,12 +362,22 @@ export async function createProjectRepo(input: CreateProjectRepoInput) {
  * default. No GitHub account or repo-name uniqueness needed; the starter is
  * seeded server-side so the project boots immediately.
  */
-export async function provisionProject(input: ProvisionProjectInput) {
+export async function provisionProject(
+  input: ProvisionProjectInput,
+  options: ApiClientOptions = {},
+) {
   return unwrap(
-    await backendApi.post<KortixProject>('/projects/provision', {
-      seed_starter: true,
-      ...input,
-    }),
+    await backendApi.post<KortixProject>(
+      '/projects/provision',
+      {
+        seed_starter: true,
+        ...input,
+      },
+      {
+        timeout: 120_000,
+        ...options,
+      },
+    ),
   );
 }
 

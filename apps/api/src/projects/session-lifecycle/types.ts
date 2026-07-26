@@ -10,7 +10,7 @@ export type SessionInvocationSource =
   | 'email'
   | 'telegram'
   | 'teams'
-  | 'meet'
+  | 'voice'
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'

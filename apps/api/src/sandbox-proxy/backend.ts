@@ -80,7 +80,17 @@ const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 const sandboxTouchCache = new Map<string, number>();
 
 function previewLinkKey(sandboxId: string, request: SandboxIngressRequest): string {
-  return `${sandboxId}:${request.port}:${request.transport ?? 'http'}:${request.path ?? ''}`;
+  const transport = request.transport ?? 'http';
+  // `path` only ever changes a provider's resolved ingress on the websocket
+  // route (Platinum's routeIngress picks AGENT_PORT vs request.port, and sets
+  // `websocket`, based on classifyPtyWebSocketPath(request.path) — but only
+  // when transport === 'websocket'). Every provider's http resolveIngress
+  // ignores `path` entirely, so folding it into the key there only fragments
+  // the cache (one entry per distinct HTTP path instead of per port). Keep it
+  // for websocket, where dropping it would collide PTY and non-PTY requests
+  // on the same key and return the wrong effectivePort/websocket config.
+  const pathSegment = transport === 'websocket' ? `:${request.path ?? ''}` : '';
+  return `${sandboxId}:${request.port}:${transport}${pathSegment}`;
 }
 
 function preferredSandboxOrder() {

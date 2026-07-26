@@ -68,6 +68,10 @@ export {
   Bell as IconNotification,
   Pause as IconPause,
   Play as IconPlay,
+  Mic as IconMic,
+  MicOff as IconMicOff,
+  PhoneOff as IconPhoneOff,
+  Volume2 as IconVolume,
   // ── Files & folders ─────────────────────────────────────────
   FolderGit2 as IconProject,
   RotateCw as IconRefresh,

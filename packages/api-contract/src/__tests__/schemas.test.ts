@@ -21,6 +21,8 @@ import {
   TriggerListSchema,
   TriggerSchema,
   UpdateConnectionProfileCredentialInputSchema,
+  WarmProjectSessionResultSchema,
+  ClaimWarmProjectSessionInputSchema,
 } from '../index';
 
 const NOW = '2026-07-01T12:00:00.000Z';
@@ -47,7 +49,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
-      meet: false,
+      voice: false,
       llm_gateway: true,
       acp_runtime: false,
       review_center: false,
@@ -253,6 +255,39 @@ describe('ProjectSessionSchema', () => {
   });
 });
 
+describe('warm project session schemas', () => {
+  test('accepts the ensure response with workspace refresh state', () => {
+    expect(
+      WarmProjectSessionResultSchema.parse({
+        session: sessionFixture(),
+        reused: true,
+        workspace_refresh: {
+          status: 'updated',
+          before_sha: 'abc123',
+          after_sha: 'def456',
+        },
+      }),
+    ).toMatchObject({
+      reused: true,
+      workspace_refresh: { status: 'updated' },
+    });
+  });
+
+  test('requires an RFC 4122 v4 session_id for claims', () => {
+    expect(
+      ClaimWarmProjectSessionInputSchema.safeParse({
+        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        agent_name: 'default',
+        sandbox_slug: 'default',
+      }).success,
+    ).toBe(true);
+    expect(
+      ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' })
+        .success,
+    ).toBe(false);
+  });
+});
+
 describe('SessionStartResultSchema', () => {
   test('accepts the provisioning payload without sandbox or runtime_url', () => {
     const parsed = SessionStartResultSchema.strict().parse({
@@ -390,7 +425,7 @@ describe('envelopes', () => {
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
-      'meet',
+      'voice',
       'llm_gateway',
       'acp_runtime',
       'review_center',

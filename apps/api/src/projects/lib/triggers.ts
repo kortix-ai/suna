@@ -1,8 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TriggerList } from '@kortix/api-contract';
-import { projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import {
+  executorConnectors,
+  projectSessions,
+  projectTriggerRuntime,
+  projects,
+} from '@kortix/db';
 import { Cron } from 'croner';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
@@ -22,14 +27,16 @@ import {
   GIT_TRIGGER_SESSION_MODES,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
+  type LoadedTriggers,
   MANIFEST_FILENAME,
   type ParsedManifest,
-  loadProjectTriggers,
+  extractTriggers,
   readManifest,
   serializeManifest,
   synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
+import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import {
   type ProjectRow,
@@ -163,10 +170,6 @@ export const globalForProjectTriggers = globalThis as typeof globalThis & {
 export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
 export let triggerSweepRunning = false;
-// When the in-flight sweep started (epoch ms). Used to reclaim a stuck guard if
-// a sweep hangs past its hard cap, so a single frozen pass can't wedge the
-// scheduler forever (root cause of the 2026-06-21 fleet-wide cron outage).
-export let triggerSweepStartedMs = 0;
 
 // In-memory heartbeat for the trigger scheduler, surfaced at /health so an
 // operator can tell at a glance whether the leader's sweep is alive and what
@@ -177,6 +180,8 @@ export interface TriggerSchedulerHealth {
   lastSweepCompletedAt: string | null;
   lastSweepDurationMs: number | null;
   lastResult: {
+    projects: number;
+    projectFailures: number;
     scanned: number;
     fired: number;
     queued: number;
@@ -214,17 +219,41 @@ export function triggerLoadTimeoutMs(): number {
   const raw = Number(process.env.KORTIX_TRIGGER_LOAD_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30_000;
 }
-/** Hard cap on a whole sweep pass — backstop so nothing can wedge the guard. */
-export function triggerSweepTimeoutMs(): number {
-  // GENEROUS backstop, not a routine cap. A full sweep loads every active
-  // project's manifest sequentially (~1.7k projects → ~11min/pass observed), and
-  // the per-fire/per-load timeouts already guarantee no single op hangs forever.
-  // A short cap here would GUILLOTINE a legit long sweep and drop cron coverage
-  // for projects late in the pass (a 4min cap reached only ~10 of ~39 due
-  // triggers). Keep this well above a real sweep so it only fires on a true hang
-  // not bounded by the per-op timeouts (e.g. a wedged DB call); tune via env.
-  const raw = Number(process.env.KORTIX_TRIGGER_SWEEP_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 20 * 60_000;
+
+/** Hard cap on resolving git credentials for one project. */
+export function triggerAuthTimeoutMs(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_AUTH_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 15_000;
+}
+
+/** Number of projects whose trigger manifests can load in parallel. */
+export function triggerProjectConcurrency(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_PROJECT_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
+}
+
+/** Number of project manifests the connector reconciler processes in parallel. */
+export function connectorProjectConcurrency(): number {
+  const raw = Number(process.env.KORTIX_CONNECTOR_PROJECT_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 6;
+}
+
+/** Maximum wall time for one connector reconciliation. */
+export function connectorProjectTimeoutMs(): number {
+  const raw = Number(process.env.KORTIX_CONNECTOR_PROJECT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120_000;
+}
+
+/** Rotating raw-git discovery batch size. */
+export function manifestDiscoveryBatchSize(): number {
+  const raw = Number(process.env.KORTIX_MANIFEST_DISCOVERY_BATCH_SIZE);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 50;
+}
+
+/** Known manifest projects reconciled per connector sweep. */
+export function manifestCatalogBatchSize(): number {
+  const raw = Number(process.env.KORTIX_MANIFEST_CATALOG_BATCH_SIZE);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 100;
 }
 
 /**
@@ -244,6 +273,36 @@ export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): 
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * Map all items through a bounded worker pool.
+ *
+ * The output order matches the input order.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  configuredConcurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const concurrency = Math.max(
+    1,
+    Math.min(items.length, Math.floor(configuredConcurrency) || 1),
+  );
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const runWorker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index]!, index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+  return results;
 }
 
 /**
@@ -276,12 +335,7 @@ export function isSweepStale(opts: {
 }
 
 function schedulerStaleMs(): number {
-  // Generous: several intervals OR one full sweep-timeout window, whichever is
-  // larger, so we never false-alarm on a legitimately long (but completing) pass.
-  return Math.max(
-    5 * triggerSchedulerIntervalMs(),
-    triggerSweepTimeoutMs() + triggerSchedulerIntervalMs(),
-  );
+  return Math.max(5 * triggerSchedulerIntervalMs(), 5 * 60_000);
 }
 
 /** Is the leader's trigger sweep stalled right now? (Wraps the pure check.) */
@@ -339,47 +393,51 @@ export function withTriggersPaused(metadata: unknown, paused: boolean): Record<s
 }
 
 /**
- * Walks every active project's git repo for `.opencode/triggers/*.md` and
- * fires due cron triggers. Triggers are 100% file-defined now (kortix.yaml,
- * or kortix.toml for a legacy v1 project); the old DB-backed trigger tables
- * have been removed.
+ * Loads cataloged trigger projects and fires due cron triggers.
+ *
+ * Trigger configuration stays in git. The runtime table is the project catalog
+ * and the last-fire state store.
  */
 
 export async function runProjectTriggerSweep(now = new Date()): Promise<{
+  projects: number;
+  projectFailures: number;
   scanned: number;
   fired: number;
   queued: number;
   failed: number;
   skipped: number;
 }> {
-  // In-flight guard with SELF-HEAL: a sweep that hangs past the hard cap must
-  // not freeze the scheduler forever. If the guard is held but the running sweep
-  // is older than its timeout, reclaim it so this tick starts a fresh pass.
   if (triggerSweepRunning) {
-    if (Date.now() - triggerSweepStartedMs < triggerSweepTimeoutMs()) {
-      return { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
-    }
-    console.error(
-      `[project-triggers] reclaiming stuck sweep guard — previous sweep exceeded ${triggerSweepTimeoutMs()}ms without completing (self-heal)`,
-    );
+    return {
+      projects: 0,
+      projectFailures: 0,
+      scanned: 0,
+      fired: 0,
+      queued: 0,
+      failed: 0,
+      skipped: 0,
+    };
   }
   triggerSweepRunning = true;
   const startedMs = Date.now();
-  triggerSweepStartedMs = startedMs;
   schedulerHealth.lastSweepStartedAt = now.toISOString();
-  const result = { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
+  const result = {
+    projects: 0,
+    projectFailures: 0,
+    scanned: 0,
+    fired: 0,
+    queued: 0,
+    failed: 0,
+    skipped: 0,
+  };
+  let status: 'completed' | 'failed' = 'completed';
   try {
-    // Overall hard cap so a hang anywhere (project scan, mirror load, fire) can
-    // never block the guard indefinitely. The per-item timeouts inside the sweep
-    // keep one bad project/trigger from starving the rest within a single pass.
-    await withTimeout(
-      runGitTriggerSweep(now, result),
-      triggerSweepTimeoutMs(),
-      'project trigger sweep',
-    );
+    await runGitTriggerSweep(now, result);
     schedulerHealth.lastError = null;
     return result;
   } catch (err) {
+    status = 'failed';
     schedulerHealth.lastError = err instanceof Error ? err.message : String(err);
     console.error('[project-triggers/git] sweep failed', err);
     return result;
@@ -388,39 +446,99 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
     schedulerHealth.lastSweepDurationMs = Date.now() - startedMs;
     schedulerHealth.lastResult = result;
     triggerSweepRunning = false;
+    console.log('[project-triggers] sweep completed', {
+      status,
+      durationMs: schedulerHealth.lastSweepDurationMs,
+      ...result,
+      error: schedulerHealth.lastError,
+    });
   }
 }
 
 /**
- * Reconcile every active project's connector DB cache against its kortix.yaml.
- * This is the reliability backstop for connectors: the UI CRUD path and the
- * CR-merge hook reconcile inline, but a raw `git push` / `kortix` CLI edit that
- * bypasses both is only caught here. We invalidate the git mirror per project
- * so an out-of-band manifest edit is seen this sweep (not up to a minute later,
- * behind the mirror refresh throttle). `syncProjectConnectors` is hash-aware,
- * so unchanged connectors cost a manifest read, not a catalog re-fetch.
+ * Reconcile bounded, rotating batches of manifest projects.
+ *
+ * UI CRUD and `kortix ship` reconcile inline. The discovery batch catches raw
+ * git pushes. The catalog batch refreshes known trigger and connector projects.
  */
 
+/** Select only active projects that have at least one trigger catalog row. */
+async function selectTriggerCatalogProjects(): Promise<ProjectRow[]> {
+  return db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        eq(projects.status, 'active'),
+        sql`exists (
+          select 1
+          from ${projectTriggerRuntime}
+          where ${projectTriggerRuntime.projectId} = ${projects.projectId}
+        )`,
+      ),
+    )
+    .orderBy(projects.projectId);
+}
+
+let manifestCatalogCursor: string | null = null;
+
+/** Select one keyset-paginated batch of known trigger or connector projects. */
+async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
+  const limit = manifestCatalogBatchSize();
+  const catalogPredicate = or(
+    sql`exists (
+      select 1
+      from ${projectTriggerRuntime}
+      where ${projectTriggerRuntime.projectId} = ${projects.projectId}
+    )`,
+    sql`exists (
+      select 1
+      from ${executorConnectors}
+      where ${executorConnectors.projectId} = ${projects.projectId}
+    )`,
+  );
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        eq(projects.status, 'active'),
+        manifestCatalogCursor ? gt(projects.projectId, manifestCatalogCursor) : undefined,
+        catalogPredicate,
+      ),
+    )
+    .orderBy(projects.projectId)
+    .limit(limit);
+
+  manifestCatalogCursor =
+    rows.length < limit ? null : (rows.at(-1)?.projectId ?? null);
+  return rows;
+}
+
+let manifestDiscoveryCursor: string | null = null;
+
 /**
- * Page through EVERY active project. The sweeps used to `LIMIT 200`, which
- * silently dropped every active project past the 200th once the platform grew
- * beyond that many — their triggers / connectors just never ran, with no error
- * and no log. Paging keeps coverage complete while bounding each query.
+ * Select one keyset-paginated batch for raw git pushes.
+ *
+ * CRUD and `kortix ship` reconcile immediately. This rotating batch is the
+ * backstop for pushes that bypass both paths.
  */
-async function selectActiveProjects(pageSize = 500): Promise<ProjectRow[]> {
-  const all: ProjectRow[] = [];
-  for (let offset = 0; ; offset += pageSize) {
-    const batch = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.status, 'active'))
-      .orderBy(projects.projectId)
-      .limit(pageSize)
-      .offset(offset);
-    all.push(...batch);
-    if (batch.length < pageSize) break;
-  }
-  return all;
+async function selectManifestDiscoveryProjects(): Promise<ProjectRow[]> {
+  const limit = manifestDiscoveryBatchSize();
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(
+      manifestDiscoveryCursor
+        ? and(eq(projects.status, 'active'), gt(projects.projectId, manifestDiscoveryCursor))
+        : eq(projects.status, 'active'),
+    )
+    .orderBy(projects.projectId)
+    .limit(limit);
+
+  manifestDiscoveryCursor =
+    rows.length < limit ? null : (rows.at(-1)?.projectId ?? null);
+  return rows;
 }
 
 export async function runProjectConnectorSweep(): Promise<{
@@ -430,29 +548,64 @@ export async function runProjectConnectorSweep(): Promise<{
 }> {
   if (connectorSweepRunning) return { scanned: 0, synced: 0, errors: 0 };
   connectorSweepRunning = true;
+  const startedMs = Date.now();
   const out = { scanned: 0, synced: 0, errors: 0 };
+  let status: 'completed' | 'failed' = 'completed';
   try {
     const { syncProjectConnectors } = await import('../../executor/sync');
-    const projectsForSweep = await selectActiveProjects();
-    for (const project of projectsForSweep) {
-      out.scanned += 1;
-      try {
-        invalidateProjectMirror(project.projectId);
-        const res = await syncProjectConnectors(project.projectId, project.accountId);
-        out.synced += res.synced;
-        out.errors += res.errors.length;
-      } catch (err) {
-        out.errors += 1;
-        console.warn(
-          '[project-connectors] sweep failed',
-          project.projectId,
-          err instanceof Error ? err.message : err,
-        );
-      }
+    const [catalogProjects, discoveryProjects] = await Promise.all([
+      selectManifestCatalogProjects(),
+      selectManifestDiscoveryProjects(),
+    ]);
+    const uniqueProjects = new Map<string, ProjectRow>();
+    for (const project of [...catalogProjects, ...discoveryProjects]) {
+      uniqueProjects.set(project.projectId, project);
     }
+    const projectsForSweep = [...uniqueProjects.values()];
+
+    const results = await mapWithConcurrency(
+      projectsForSweep,
+      connectorProjectConcurrency(),
+      async (project) => {
+        invalidateProjectMirror(project.projectId);
+        try {
+          const result = await withTimeout(
+            syncProjectConnectors(project.projectId, project.accountId),
+            connectorProjectTimeoutMs(),
+            `sync connectors ${project.projectId}`,
+          );
+          return { synced: result.synced, errors: result.errors.length };
+        } catch (error) {
+          console.warn('[project-connectors] project reconcile failed', {
+            projectId: project.projectId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return { synced: 0, errors: 1 };
+        }
+      },
+    );
+    out.scanned = projectsForSweep.length;
+    for (const result of results) {
+      out.synced += result.synced;
+      out.errors += result.errors;
+    }
+    return out;
+  } catch (error) {
+    status = 'failed';
+    out.errors += 1;
+    console.error('[project-connectors] sweep failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return out;
   } finally {
     connectorSweepRunning = false;
+    console.log('[project-connectors] sweep completed', {
+      status,
+      durationMs: Date.now() - startedMs,
+      ...out,
+      catalogCursor: manifestCatalogCursor,
+      discoveryCursor: manifestDiscoveryCursor,
+    });
   }
 }
 
@@ -960,6 +1113,8 @@ export function summarizeTriggerPayload(payload: Record<string, unknown>): Recor
 export async function runGitTriggerSweep(
   now: Date,
   accumulator: {
+    projects: number;
+    projectFailures: number;
     scanned: number;
     fired: number;
     queued: number;
@@ -967,119 +1122,166 @@ export async function runGitTriggerSweep(
     skipped: number;
   },
 ): Promise<void> {
-  const projectsForSweep = await selectActiveProjects();
+  const projectsForSweep = await selectTriggerCatalogProjects();
+  const results = await mapWithConcurrency(
+    projectsForSweep,
+    triggerProjectConcurrency(),
+    (project) => runGitTriggerProject(project, now),
+  );
 
-  for (const project of projectsForSweep) {
-    // Server-side per-project kill-switch — skip the whole project (no manifest
-    // read, no session spin) when its triggers are paused, so a repo deployed
-    // to two control planes only fires on the un-paused one. See
-    // triggersPausedForProject.
-    if (triggersPausedForProject(project.metadata)) continue;
-    let specs: GitTriggerSpec[];
-    try {
-      // Time-bound the mirror load: a hung clone/fetch for one project must not
-      // stall the sweep for everyone else.
-      const loaded = await withTimeout(
-        loadProjectTriggers(await withProjectGitAuth(project)),
-        triggerLoadTimeoutMs(),
-        `load triggers ${project.projectId}`,
-      );
-      specs = loaded.specs;
-      // Surface parse errors instead of dropping them: record each bad entry
-      // against its slug so it shows up in the triggers API/UI, and log it.
-      // Previously a malformed `[[triggers]]` entry just vanished from the
-      // sweep with zero feedback — a prime "my trigger isn't running" trap.
-      for (const e of loaded.errors) {
-        console.warn('[project-triggers/git] parse error', project.projectId, e.slug, e.error);
+  for (const result of results) {
+    accumulator.projects += 1;
+    accumulator.projectFailures += result.projectFailures;
+    accumulator.scanned += result.scanned;
+    accumulator.fired += result.fired;
+    accumulator.queued += result.queued;
+    accumulator.failed += result.failed;
+    accumulator.skipped += result.skipped;
+  }
+}
+
+export async function runGitTriggerProject(
+  project: ProjectRow,
+  now: Date,
+): Promise<{
+  projectFailures: number;
+  scanned: number;
+  fired: number;
+  queued: number;
+  failed: number;
+  skipped: number;
+}> {
+  const out = {
+    projectFailures: 0,
+    scanned: 0,
+    fired: 0,
+    queued: 0,
+    failed: 0,
+    skipped: 0,
+  };
+
+  if (triggersPausedForProject(project.metadata)) return out;
+
+  let specs: GitTriggerSpec[];
+  try {
+    const gitProject = await withTimeout(
+      withProjectGitAuth(project),
+      triggerAuthTimeoutMs(),
+      `resolve git auth ${project.projectId}`,
+    );
+    const manifest = await withTimeout(
+      readManifest(gitProject),
+      triggerLoadTimeoutMs(),
+      `load manifest ${project.projectId}`,
+    );
+    if (!manifest) {
+      throw new Error('kortix manifest not found or unreadable');
+    }
+
+    const loaded = extractTriggers(manifest);
+    specs = loaded.specs;
+    await reconcileProjectTriggerRuntime(project.projectId, specs);
+
+    for (const error of loaded.errors) {
+      console.warn('[project-triggers/git] parse error', {
+        projectId: project.projectId,
+        slug: error.slug,
+        error: error.error,
+      });
+      if (/^[a-z0-9][a-z0-9_-]{0,127}$/.test(error.slug)) {
         await markGitTriggerAttemptFailed(
           project.projectId,
-          e.slug,
+          error.slug,
           now,
-          `parse error: ${e.error}`,
+          `parse error: ${error.error}`,
         );
       }
-    } catch (err) {
-      console.warn(
-        '[project-triggers/git] load failed',
-        project.projectId,
-        err instanceof Error ? err.message : err,
-      );
+    }
+  } catch (error) {
+    out.projectFailures = 1;
+    console.warn('[project-triggers/git] manifest load failed', {
+      projectId: project.projectId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return out;
+  }
+
+  const runtimeRows = await db
+    .select()
+    .from(projectTriggerRuntime)
+    .where(eq(projectTriggerRuntime.projectId, project.projectId));
+  const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
+
+  for (const spec of specs) {
+    if (spec.type !== 'cron' || !spec.enabled) continue;
+    out.scanned += 1;
+
+    const lastFired = runtimeBySlug.get(spec.slug)?.lastFiredAt ?? null;
+    if (!isGitCronSpecDue(spec, lastFired, now)) {
+      out.skipped += 1;
       continue;
     }
 
-    for (const spec of specs) {
-      if (spec.type !== 'cron' || !spec.enabled) continue;
-      accumulator.scanned += 1;
+    const payload = {
+      cron: {
+        schedule: spec.cron ?? spec.runAt,
+        timezone: spec.timezone,
+        fired_at: now.toISOString(),
+        last_fired_at: lastFired?.toISOString() ?? null,
+      },
+      trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
+    };
+    const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+    const scheduledAt = now.toISOString();
+    const dueSlotKey =
+      (spec.cron
+        ? nextCronRun(spec.cron, lastFired ?? new Date(0), spec.timezone)?.toISOString()
+        : spec.runAt) ?? scheduledAt;
 
-      const runtime = await getGitTriggerRuntime(project.projectId, spec.slug);
-      const lastFired = runtime?.lastFiredAt ?? null;
-      if (!isGitCronSpecDue(spec, lastFired, now)) {
-        accumulator.skipped += 1;
-        continue;
-      }
+    let result: Awaited<ReturnType<typeof fireGitTrigger>>;
+    try {
+      result = await withTimeout(
+        fireGitTrigger({
+          spec,
+          project,
+          payload,
+          renderedPrompt,
+          source: 'cron',
+          idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${dueSlotKey}`,
+        }),
+        triggerFireTimeoutMs(),
+        `fire ${spec.slug} ${project.projectId}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[project-triggers/git] fire failed', {
+        projectId: project.projectId,
+        slug: spec.slug,
+        error: message,
+      });
+      await markGitTriggerAttemptFailed(project.projectId, spec.slug, now, message).catch(() => {});
+      out.failed += 1;
+      continue;
+    }
 
-      const payload = {
-        cron: {
-          schedule: spec.cron ?? spec.runAt,
-          timezone: spec.timezone,
-          fired_at: now.toISOString(),
-          last_fired_at: lastFired?.toISOString() ?? null,
-        },
-        trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
-      };
-      const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
-      const scheduledAt = now.toISOString();
-      // Stable idempotency key per DUE SLOT (the cron boundary that made this
-      // trigger due), not per sweep tick — so a fire we timed out on but that
-      // actually lands late isn't duplicated when the next tick retries.
-      const dueSlotKey =
-        (spec.cron
-          ? nextCronRun(spec.cron, lastFired ?? new Date(0), spec.timezone)?.toISOString()
-          : spec.runAt) ?? scheduledAt;
-
-      let result: Awaited<ReturnType<typeof fireGitTrigger>>;
-      try {
-        // Time-bound the fire (createSession/continueSession). A hung or throwing
-        // fire must NOT abort the sweep or wedge the scheduler: record it
-        // (diagnosable, retries next tick) and move on to the next trigger.
-        result = await withTimeout(
-          fireGitTrigger({
-            spec,
-            project,
-            payload,
-            renderedPrompt,
-            source: 'cron',
-            idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${dueSlotKey}`,
-          }),
-          triggerFireTimeoutMs(),
-          `fire ${spec.slug} ${project.projectId}`,
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[project-triggers/git] fire errored', project.projectId, spec.slug, msg);
-        await markGitTriggerAttemptFailed(project.projectId, spec.slug, now, msg).catch(() => {});
-        accumulator.failed += 1;
-        continue;
-      }
-      if (result.status === 'fired') {
-        await markGitTriggerFired(project.projectId, spec.slug, now, 'fired');
-        accumulator.fired += 1;
-      } else if (result.status === 'queued') {
-        await markGitTriggerFired(project.projectId, spec.slug, now, 'queued');
-        accumulator.queued += 1;
-      } else {
-        // A failed fire is NOT stamped as fired, so it retries next tick — but
-        // we record why so "trigger isn't running" is diagnosable from the API.
-        await markGitTriggerAttemptFailed(
-          project.projectId,
-          spec.slug,
-          now,
-          result.error ?? result.reason ?? 'trigger fire failed',
-        );
-        accumulator.failed += 1;
-      }
+    if (result.status === 'fired') {
+      await markGitTriggerFired(project.projectId, spec.slug, now, 'fired');
+      out.fired += 1;
+    } else if (result.status === 'queued') {
+      await markGitTriggerFired(project.projectId, spec.slug, now, 'queued');
+      out.queued += 1;
+    } else {
+      await markGitTriggerAttemptFailed(
+        project.projectId,
+        spec.slug,
+        now,
+        result.error ?? result.reason ?? 'trigger fire failed',
+      );
+      out.failed += 1;
     }
   }
+
+  return out;
 }
 
 export function startProjectTriggerScheduler(): void {
@@ -1087,12 +1289,10 @@ export function startProjectTriggerScheduler(): void {
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
-  triggerSchedulerTimer = setInterval(() => {
+  const tick = () => {
     // Watchdog: if we're the leader but the sweep has stalled (started and never
     // completed within the stale window), make it LOUD. A silent dead scheduler
-    // is what turned a single hung fire into an ~18h fleet-wide outage. The
-    // self-heal guard in runProjectTriggerSweep reclaims the stuck sweep on this
-    // same tick; this console.error is the alert signal for log-based monitoring.
+    // is what turned a single hung fire into an ~18h fleet-wide outage.
     if (schedulerSweepIsStale(isLeader())) {
       console.error(
         '[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed',
@@ -1114,11 +1314,6 @@ export function startProjectTriggerScheduler(): void {
       });
 
     runProjectTriggerSweep()
-      .then((result) => {
-        if (result.fired || result.queued || result.failed) {
-          console.log('[project-triggers] sweep completed', result);
-        }
-      })
       .catch((error) => {
         console.error('[project-triggers] sweep failed:', error);
       });
@@ -1129,16 +1324,13 @@ export function startProjectTriggerScheduler(): void {
     if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
       lastConnectorSweepAt = Date.now();
       runProjectConnectorSweep()
-        .then((result) => {
-          if (result.synced || result.errors) {
-            console.log('[project-connectors] sweep completed', result);
-          }
-        })
         .catch((error) => {
           console.error('[project-connectors] sweep failed:', error);
         });
     }
-  }, triggerSchedulerIntervalMs());
+  };
+  tick();
+  triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
 }
 
@@ -1168,7 +1360,28 @@ export async function loadTriggersForResponse(
   projectId: string,
   project: ProjectRow,
 ): Promise<TriggerList> {
-  const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
+  const gitProject = await withProjectGitAuth(project);
+  let manifest: ParsedManifest | null = null;
+  let loaded: LoadedTriggers;
+  try {
+    manifest = await readManifest(gitProject);
+    loaded = manifest ? extractTriggers(manifest) : { specs: [], errors: [] };
+  } catch (error) {
+    loaded = {
+      specs: [],
+      errors: [
+        {
+          slug: '(manifest)',
+          path: gitProject.manifestPath || MANIFEST_FILENAME,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      ],
+    };
+  }
+  const { specs, errors } = loaded;
+  if (manifest) {
+    await reconcileProjectTriggerRuntime(projectId, specs);
+  }
   const runtimeRows =
     specs.length === 0
       ? []

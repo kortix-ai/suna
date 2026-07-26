@@ -21,6 +21,7 @@ import {
   projectLlmCatalogToProviderList,
   providerListHasModels,
 } from '../provider-selection';
+import { shouldLoadProjectModelPicker } from './provider-load-plan';
 
 // ============================================================================
 // Provider Hooks
@@ -40,23 +41,39 @@ export function useOpenCodeProviders() {
   const projectGatewayEnabled =
     projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
   const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
-  // BYOK makes the connected model set project-specific (a provider connected
-  // in one project must NOT leak into another, nor linger after removal), so
-  // the persisted placeholder is scoped per project — not the old global scope.
-  const cacheScope = projectId
-    ? `proj:${projectId}:${projectGatewayEnabled ? 'gateway' : 'native'}`
-    : CACHE_SCOPE_GLOBAL;
-  return useQuery<ProviderListResponse>({
-    queryKey: projectId
-      ? ['project-providers', projectId, projectGatewayEnabled ? 'gateway' : 'native']
-      : opencodeKeys.providers(),
+  const gatewayCacheScope = projectId ? `proj:${projectId}:gateway` : CACHE_SCOPE_GLOBAL;
+  const gatewayProvidersQuery = useQuery<ProviderListResponse>({
+    queryKey: ['project-providers', projectId, 'gateway'],
     queryFn: async () => {
-      if (projectId && projectGatewayEnabled) {
-        const catalog = await getProjectModelPicker(projectId);
-        const providers = projectLlmCatalogToProviderList(catalog);
-        setLSCache(LS_PROVIDERS, providers, cacheScope);
-        return providers;
-      }
+      const catalog = await getProjectModelPicker(projectId!);
+      const providers = projectLlmCatalogToProviderList(catalog);
+      setLSCache(LS_PROVIDERS, providers, gatewayCacheScope);
+      return providers;
+    },
+    placeholderData: () => {
+      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, gatewayCacheScope);
+      if (!providerListHasModels(cached)) return undefined;
+      const providers = filterToGatewayProviders(cached as ProviderListResponse);
+      return providerListHasModels(providers) ? providers : undefined;
+    },
+    enabled: shouldLoadProjectModelPicker({
+      projectId,
+      projectModeKnown,
+      projectGatewayEnabled,
+    }),
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+    retry: (failureCount) =>
+      (!projectModeKnown || projectGatewayEnabled) && failureCount < 10,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
+  });
+
+  // BYOK makes the connected model set project-specific. A provider connected
+  // in one project must not leak into another or remain after removal.
+  const nativeCacheScope = projectId ? `proj:${projectId}:native` : CACHE_SCOPE_GLOBAL;
+  const nativeProvidersQuery = useQuery<ProviderListResponse>({
+    queryKey: projectId ? ['project-providers', projectId, 'native'] : opencodeKeys.providers(),
+    queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
       let rawProviders = normalizeProviderList(unwrap(result));
@@ -91,28 +108,23 @@ export function useOpenCodeProviders() {
       // server id) so a fresh session paints the right models instantly. Only
       // genuine, model-bearing responses reach here, so the placeholder cache
       // is never poisoned with an empty list.
-      setLSCache(LS_PROVIDERS, providers, cacheScope);
+      setLSCache(LS_PROVIDERS, providers, nativeCacheScope);
       return providers;
     },
     // Only ever serve a model-bearing placeholder. A previously-poisoned cache
     // (written before this guard existed) is ignored so it can't paint empty.
     placeholderData: () => {
-      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, cacheScope);
+      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, nativeCacheScope);
       if (!providerListHasModels(cached)) return undefined;
-      // Old gateway caches may have been persisted before the source filter —
-      // clean them on read, but native-mode projects must see the runtime's
-      // actual provider list for v0.9.68/backward-compatible fallback.
-      if (projectGatewayEnabled) {
-        const gatewayProviders = filterToGatewayProviders(cached as ProviderListResponse);
-        return providerListHasModels(gatewayProviders) ? gatewayProviders : undefined;
-      }
-      if (projectId && !projectGatewayEnabled) {
+      if (projectId) {
         const nativeProviders = filterToNativeProviders(cached as ProviderListResponse);
         return providerListHasModels(nativeProviders) ? nativeProviders : undefined;
       }
       return cached;
     },
-    enabled: projectId ? projectModeKnown && (projectGatewayEnabled || runtimeReady) : runtimeReady,
+    enabled: projectId
+      ? projectModeKnown && !projectGatewayEnabled && runtimeReady
+      : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep
@@ -120,4 +132,5 @@ export function useOpenCodeProviders() {
     retry: (failureCount) => failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
+  return projectId && projectGatewayEnabled ? gatewayProvidersQuery : nativeProvidersQuery;
 }

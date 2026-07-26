@@ -1,0 +1,10 @@
+{
+  "name": "@kortix/e2e",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@kortix/sdk": "workspace:*",
+    "@playwright/test": "^1.61.0"
+  }
+}

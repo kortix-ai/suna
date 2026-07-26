@@ -42,6 +42,7 @@ import {
   type SandboxTemplateProvider,
   type SandboxTemplateProviderCoverage,
 } from './provider-coverage';
+import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
@@ -145,6 +146,12 @@ export async function ensureSandboxImage(
     slug?: string;
     accountId?: string;
     source?: SnapshotBuildSource;
+    /**
+     * Reject the previous active snapshot when the runtime identity changed.
+     * ACP sessions set this because the daemon is part of the JSON-RPC
+     * transport contract.
+     */
+    requireCurrentRuntime?: boolean;
     /**
      * The provider the SESSION will run on (its sandbox provider). Build there,
      * not on the template row's last-built provider — otherwise a template built
@@ -302,7 +309,10 @@ export async function ensureSandboxImage(
   // path above. Pre-builds and explicit manual/CR builds skip this and build
   // inline, since their whole job is to produce the new image up front.
   if (
-    (opts.source ?? 'session-start') === 'session-start' &&
+    canServeLastKnownGoodRuntime({
+      source: opts.source ?? 'session-start',
+      requireCurrentRuntime: opts.requireCurrentRuntime ?? false,
+    }) &&
     template.providerSnapshotName &&
     template.providerSnapshotName !== identity.snapshotName
   ) {

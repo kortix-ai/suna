@@ -6,6 +6,30 @@ export interface AllowEntry {
 
 export const uncoveredAllow: AllowEntry[] = [
   {
+    method: "POST",
+    path: "/v1/platform/boot-timeline",
+    reason:
+      "sandbox-only telemetry sink called by the in-guest boot relay with a sandbox token; not an end-user API route",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:*/sessions/:*/voice/prompt",
+    reason:
+      "worker-only HMAC callback from the realtime voice worker; the end-user voice action is exposed through the flow-covered voice MCP",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:*/sessions/:*/voice/run-command",
+    reason:
+      "worker-only HMAC callback from the realtime voice worker; the end-user voice action is exposed through the flow-covered voice MCP",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:*/sessions/:*/voice/turns",
+    reason:
+      "worker-only HMAC transcript sink called by the realtime voice worker; not an end-user API route",
+  },
+  {
     method: "PUT",
     path: "/v1/executor/projects/:*/connectors/:*/sensitive",
     reason:

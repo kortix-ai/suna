@@ -115,6 +115,100 @@ describe('ACP to Kortix session projection', () => {
     ]);
   });
 
+  test('preserves native tool names instead of ACP protocol kinds', () => {
+    let state = createAcpProjection('ses_1');
+    state = update(state, 'tool_call', {
+      toolCallId: 'bash_1',
+      title: 'bash',
+      kind: 'execute',
+      status: 'pending',
+      rawInput: {},
+    });
+    state = update(state, 'tool_call_update', {
+      toolCallId: 'bash_1',
+      title: 'ls -la /workspace',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { command: 'ls -la /workspace' },
+    });
+    state = update(state, 'tool_call_update', {
+      toolCallId: 'bash_1',
+      title: 'ls -la /workspace',
+      kind: 'execute',
+      status: 'completed',
+      rawOutput: { output: 'README.md' },
+    });
+    state = update(state, 'tool_call', {
+      toolCallId: 'todo_1',
+      title: 'todowrite',
+      kind: 'other',
+      status: 'pending',
+      rawInput: {},
+    });
+    state = update(state, 'tool_call_update', {
+      toolCallId: 'todo_1',
+      title: '2 todos',
+      kind: 'other',
+      status: 'completed',
+      rawInput: {
+        todos: [
+          { content: 'Research', status: 'completed' },
+          { content: 'Create deck', status: 'completed' },
+        ],
+      },
+      rawOutput: [],
+    });
+    state = update(state, 'tool_call', {
+      toolCallId: 'show_1',
+      title: 'show',
+      kind: 'other',
+      status: 'pending',
+      rawInput: {},
+    });
+    state = update(state, 'tool_call_update', {
+      toolCallId: 'show_1',
+      title: 'show',
+      kind: 'other',
+      status: 'completed',
+      rawOutput: { success: true },
+    });
+
+    expect(state.messages[0]?.parts).toMatchObject([
+      {
+        type: 'tool',
+        tool: 'bash',
+        state: {
+          status: 'completed',
+          title: 'ls -la /workspace',
+          input: { command: 'ls -la /workspace' },
+          output: 'README.md',
+        },
+      },
+      {
+        type: 'tool',
+        tool: 'todowrite',
+        state: {
+          status: 'completed',
+          title: '2 todos',
+          input: {
+            todos: [
+              { content: 'Research', status: 'completed' },
+              { content: 'Create deck', status: 'completed' },
+            ],
+          },
+        },
+      },
+      {
+        type: 'tool',
+        tool: 'show',
+        state: {
+          status: 'completed',
+          title: 'Show Output',
+        },
+      },
+    ]);
+  });
+
   test('projects item plan updates and plan removal', () => {
     let state = createAcpProjection('ses_1');
     state = update(state, 'plan_update', {

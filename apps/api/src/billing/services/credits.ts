@@ -57,8 +57,11 @@ export async function getBalance(accountId: string) {
   };
 }
 
-export async function getCreditSummary(accountId: string) {
-  const account = await getCreditAccount(accountId);
+export async function getCreditSummary(
+  accountId: string,
+  prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
+) {
+  const account = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
   if (!account) {
     return { total: 0, daily: 0, monthly: 0, extra: 0, canRun: false };
   }

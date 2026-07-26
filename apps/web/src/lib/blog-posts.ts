@@ -649,7 +649,7 @@ const kortixVsClaudeCowork: BlogPostEntry = {
         {
           dimension: 'Model cost (per 1M output)',
           them: '~$25–30 — frontier only',
-          kortix: '~$4.40 (GLM-5.2) to ~$0.30 (DeepSeek)',
+          kortix: '~$4.40 (GLM-5.2) to ~$0.28 (DeepSeek)',
         },
         {
           dimension: 'Agents, skills & memory shared org-wide',

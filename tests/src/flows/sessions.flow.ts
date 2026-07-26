@@ -675,3 +675,85 @@ flow(
     });
   },
 );
+
+flow(
+  'SESS-18',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 300_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions/warm',
+      'POST /v1/projects/:projectId/sessions/warm/claim',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ seed: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let warmSessionId = '';
+
+    await ctx.step('first ensure creates one available warm session', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        {},
+        { params: { projectId: p.id } },
+      );
+      r.status(200)
+        .body()
+        .has('$.reused', false)
+        .has('$.workspace_refresh.status', 'skipped')
+        .has('$.session.metadata.warm_session.state', 'available')
+        .exists('$.session.session_id');
+      warmSessionId = r.json<any>().session.session_id;
+      ctx.track('session', warmSessionId, { projectId: p.id });
+    });
+
+    await ctx.step('second ensure reuses the same session', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        {},
+        { params: { projectId: p.id } },
+      );
+      r.status(200)
+        .body()
+        .has('$.reused', true)
+        .has('$.session.session_id', warmSessionId)
+        .exists('$.workspace_refresh.status');
+    });
+
+    await ctx.step('claim changes the warm state atomically', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm/claim',
+        { session_id: warmSessionId },
+        { params: { projectId: p.id } },
+      );
+      r.status(200)
+        .body()
+        .has('$.session_id', warmSessionId)
+        .has('$.metadata.warm_session.state', 'claimed');
+    });
+
+    await ctx.step('a second claim returns the stable conflict code', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm/claim',
+        { session_id: warmSessionId },
+        { params: { projectId: p.id } },
+      );
+      r.status(409).body().has('$.code', 'WARM_SESSION_ALREADY_CLAIMED');
+    });
+
+    await ctx.step('the next ensure creates the replacement', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        {},
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has('$.reused', false);
+      const replacementId = r.json<any>().session.session_id;
+      if (replacementId === warmSessionId) {
+        throw new Error('The replacement reused the claimed session id');
+      }
+      ctx.track('session', replacementId, { projectId: p.id });
+    });
+  },
+);

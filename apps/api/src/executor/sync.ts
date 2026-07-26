@@ -23,6 +23,7 @@ import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-sto
 import { resolveExperimentalFeature } from '../experimental/features';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch } from '../shared/ssrf-guard';
+import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';
 import {
   type ConnectorSpec,
@@ -32,7 +33,8 @@ import {
 import { type GitBackedProject, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
-import { readManifest } from '../projects/triggers';
+import { extractTriggers, readManifest } from '../projects/triggers';
+import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { db } from '../shared/db';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
@@ -65,6 +67,14 @@ import type { HttpRouteSpec, NormalizedAction } from './types';
 export interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+function connectorAuthTimeoutMs(): number {
+  return configuredTimeoutMs('KORTIX_CONNECTOR_AUTH_TIMEOUT_MS', 15_000, 1_000);
+}
+
+function connectorManifestTimeoutMs(): number {
+  return configuredTimeoutMs('KORTIX_CONNECTOR_MANIFEST_TIMEOUT_MS', 30_000, 1_000);
 }
 
 const EMPTY_AUTH_DISCOVERY: ConnectorAuthDiscovery = {
@@ -237,16 +247,45 @@ export async function syncProjectConnectors(
   if (!row) return { synced: 0, errors: [{ slug: '(project)', error: 'project not found' }] };
   const accountId = row.accountId;
 
-  const gitProject = await withProjectGitAuth(row);
-  const manifest = await readManifest(gitProject).catch(() => null);
+  const errors: SyncResult['errors'] = [];
+  let gitProject: GitBackedProject = row;
+  try {
+    gitProject = await withTimeout(
+      withProjectGitAuth(row),
+      connectorAuthTimeoutMs(),
+      `resolve git auth ${projectId}`,
+    );
+  } catch (error) {
+    errors.push({
+      slug: '(git-auth)',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  let manifest: Awaited<ReturnType<typeof readManifest>> = null;
+  try {
+    manifest = await withTimeout(
+      readManifest(gitProject),
+      connectorManifestTimeoutMs(),
+      `read manifest ${projectId}`,
+    );
+  } catch (error) {
+    errors.push({
+      slug: '(manifest)',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   // Manifest-declared connectors + project policies are only reconciled when the
   // kortix.yaml is actually readable. A NULL manifest can mean "no repo / no
   // kortix.yaml" OR a transient git error — either way we must not treat it as
   // "zero declared connectors" and delete the project's real ones below.
-  const errors: SyncResult['errors'] = [];
   let declaredSpecs: ConnectorSpec[] = [];
   if (manifest) {
+    const triggers = extractTriggers(manifest);
+    await reconcileProjectTriggerRuntime(projectId, triggers.specs);
+    errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
+
     const parsed = extractConnectors(manifest);
     declaredSpecs = parsed.specs;
     errors.push(...parsed.errors.map((e) => ({ slug: e.slug, error: e.error })));
@@ -322,10 +361,23 @@ export async function syncProjectConnectors(
       // network catalog fetch. The DB row's cheap fields (name/enabled/
       // policies) are still reconciled inside upsertConnector. `force` (manual
       // sync) always re-fetches; error rows always retry.
+      //
+      // EXCEPT for channel connectors, which are never skipped. Their catalog is
+      // not fetched at all — `resolveCatalog` builds it locally from
+      // `channelCatalog(platform)`, i.e. from OUR OWN CODE — so there is no
+      // network cost to save, and `manifestHashForConnector` deliberately hashes
+      // only the spec (provider/platform/auth/...), which a code-side action
+      // change does not touch. Skipping therefore froze every existing channel
+      // connector's action list at whatever shipped the day it materialized:
+      // adding `read_transcript`/`send_prompt` to voice reached only brand-new
+      // projects, and the same was true of any Slack/Teams/email action ever
+      // added. Re-resolving locally on every sync is free and keeps deployed
+      // projects honest.
       const catalogUnchanged =
         !opts.force &&
         !!ex &&
         ex.status !== 'error' &&
+        spec.provider !== 'channel' &&
         ex.manifestHash === manifestHashForConnector(spec);
       const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);

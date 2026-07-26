@@ -1,88 +1,101 @@
-# AGENTS.md — Lumen (white-label reference app)
+# AGENTS.md — Lumen white-label reference
 
-Lumen is the **golden reference** for building on `@kortix/sdk`. Two things must
-stay true at all times:
+Lumen is the reference implementation for `@kortix/sdk`.
 
-1. **Every Kortix call goes through the SDK.** No raw `fetch`, no
-   `@opencode-ai/sdk` imports, no transport/runtime code in the app. The single
-   client lives in `src/lib/kortix.ts`; data flows through `@kortix/sdk` +
-   `@kortix/sdk/react` (notably `useSession`).
-2. **Every pixel is shadcn.** This app is the shadcn showcase. The UI must look
-   and feel Vercel-grade and be built from shadcn primitives — never bespoke
-   markup where a primitive exists.
+## Required architecture
 
-If a change violates either rule, it's wrong. Fix the rule, not the symptom.
+1. `src/lib/kortix.ts` owns the only browser SDK client.
+2. `useSession(projectId, sessionId)` owns the complete workbench session.
+3. Client code imports only `@kortix/sdk` and `@kortix/sdk/react`.
+4. Client code does not implement runtime transport logic.
+5. Server Kortix calls use `@kortix/sdk/server`.
+6. The `/api/kortix` route delegates upstream forwarding to `forwardKortixRequest()`.
 
-**Exception — the wrapper-mode BFF transport layer.** `src/server/**` and
-`src/app/api/**` (the `/api/kortix` proxy, `/api/auth/*`, `/api/usage`,
-`/api/preview-token`, `/api/mode`) are server-only transport code, not app
-code — raw `fetch`/`node:crypto`/`node:fs` are correct there, the same way
-they're correct *inside* `@kortix/sdk` itself. Rule 1 still governs every
-client component: the browser only ever talks to Kortix through
-`@kortix/sdk`, pointed at `/api/kortix` instead of a real Kortix deployment
-when wrapper mode is on (`src/lib/kortix.ts#configureWrapperMode`).
+Do not add:
 
-## UI rules (strict shadcn)
+- `@opencode-ai/sdk` imports.
+- Provider REST paths.
+- Runtime proxy URL construction.
+- Browser calls to `session.previewUrl()` or `session.proxyUrl()`.
+- Legacy runtime stores.
+- A second SDK client.
+- A second session event provider.
+- A client-side transport selector.
+- A raw Kortix `fetch()` in client or server code.
 
-- **Use shadcn primitives, always.** Buttons → `Button`, inputs → `Input`/
-  `Textarea`, menus → `DropdownMenu`, dialogs → `Dialog`, tabs → `Tabs`, lists/
-  cards → `Card`, badges → `Badge`, tooltips → `Tooltip`, scroll regions →
-  `ScrollArea`. Do **not** hand-roll a styled `<button>`, `<input>`, or ad-hoc
-  dropdown when the primitive exists.
-- **Chat is built from the shadcn chat primitives that exist in this app
-  (`src/components/ui/`):**
-  - `Message` + `MessageGroup` / `MessageAvatar` / `MessageContent` /
-    `MessageHeader` / `MessageFooter` (`message.tsx`) — one row per turn
-    (`align="end"` for the user, `"start"` for the agent).
-  - `Bubble` + `BubbleContent` / `BubbleReactions` / `BubbleGroup`
-    (`bubble.tsx`) — the message surface (`variant` + `align`).
-  - `Marker` + `MarkerIcon` / `MarkerContent` (`marker.tsx`) — inline tool-call
-    / status / "thinking" rows and labeled separators.
-  - The transcript container itself is a plain `scrollRef` + `scrollTo` effect
-    (`workbench-tabs.tsx`), not a dedicated primitive — there is no
-    `MessageScroller` or `Attachment` component in this app. Don't add code
-    that imports either; if a chat surface needs file attachments or a
-    fancier auto-scroll/jump-to container, build it as a new primitive under
-    `src/components/ui/` to the shadcn API shape (see "Adding shadcn
-    components" below), not as bespoke markup in a feature component.
-- **Streaming/pending text uses the `shimmer` util**; scroll containers that need
-  soft edges use the `scroll-fade` util (both in `globals.css`).
-- **Styling:** Tailwind v4 + the theme tokens in `globals.css` only. Compose
-  classes with `cn()` (`@/lib/utils`); variants with `cva`
-  (`class-variance-authority`). No inline hex/rgb — use the CSS variables
-  (`bg-card`, `text-muted-foreground`, `border-border`, `bg-secondary`, …).
-- **Icons:** `lucide-react` only.
-- **Dark-first.** The theme is dark by default; every component must read well in
-  dark mode (use tokens, not fixed colors).
-- **Accessibility:** real labels (`aria-label`) on icon-only buttons; keyboard
-  paths work (Enter to send, Esc to close, arrow keys in menus).
+`scripts/sdk-boundary.mjs` enforces the client, server, and application-test
+rules. Update its tests when a new same-origin application route is intentional.
 
-## Adding shadcn components
+Application tests use `createTestKortix()` for Kortix product flows. Raw HTTP
+is limited to application-owned routes such as auth, mode, preview, and usage.
 
-```bash
-pnpm dlx shadcn@latest add <name>      # e.g. button, dialog, message, bubble
-```
+## ACP experiment
 
-The chat primitives this app actually has (`message`, `bubble`, `marker`) and
-the `shimmer` / `scroll-fade` utils are part of this app. If the public
-registry can't resolve one yet, the equivalent lives in `src/components/ui/`
-built to the **exact documented shadcn API** — drop-in, so a later `shadcn add`
-overwrites cleanly. Never fork the API.
+ACP selection remains a server-owned project experiment.
+
+The settings page must:
+
+- Read `project.experimental_features`.
+- Render only entries with `available === true`.
+- Use each entry's server-provided label and description.
+- Call `updateExperimentalFeature(feature.key, enabled)`.
+
+Do not hard-code the ACP experiment key in client code. This rule preserves
+transport and runtime independence.
+
+## Server boundary
+
+`src/app/api/**` and `src/server/**` are server-only.
+
+- Use `createScopedKortix()` for request-scoped server SDK calls.
+- Authenticate before parsing or forwarding privileged requests.
+- Check project ownership before wrapper-mode project actions.
+- Keep `KORTIX_API_KEY` outside all response bodies.
+- Return provider-neutral response fields.
+- Validate identifiers before interpolating them into SDK calls.
+
+`POST /api/preview-url` owns session readiness and preview URL resolution. The
+client receives one final URL. Do not return a standalone preview token,
+upstream base URL, or runtime coordinates.
+
+The `/api/kortix` route calls `forwardKortixRequest()` from
+`@kortix/sdk/server`. The SDK owns upstream authentication, request buffering,
+streaming, and response-header sanitization.
+
+## UI boundary
+
+Feature code composes primitives from `src/components/ui`.
+
+- Use `Button`, `Input`, `Textarea`, `Select`, and `Switch`.
+- Use `Loading` for pending actions.
+- Use `Skeleton` for page-level loading.
+- Use semantic theme tokens.
+- Use `lucide-react` icons.
+- Add accessible names to icon-only controls.
+- Preserve keyboard actions.
+
+Do not add native feature controls or feature-level spinner implementations.
+The SDK boundary scanner rejects both.
 
 ## Structure
 
-- `src/lib/kortix.ts` — the one SDK client (`createKortix`), plus
-  `configureWrapperMode()` to re-point it at the BFF proxy.
-- `src/components/ui/` — shadcn primitives only (generated or built-to-spec).
-- `src/components/chat/` — chat surface composed from the chat primitives.
-- `src/components/workbench/` — the session workbench (header, tabs, panels).
-- `src/app/**` — routes; thin, delegate to components.
-- `src/app/api/**` + `src/server/**` — wrapper-mode-only transport (BFF proxy,
-  demo auth, route policy, rate limiting). See the exception above; this is
-  the one place raw `fetch`/`node:crypto` is correct.
+- `src/lib/kortix.ts`: One browser SDK client.
+- `src/components/ui/`: Shared UI primitives.
+- `src/components/chat/`: Transcript and composer.
+- `src/components/workbench/`: Session workbench.
+- `src/app/**`: Route components.
+- `src/app/api/**`: Same-origin server endpoints.
+- `src/server/**`: Wrapper authentication, authorization, policy, and limits.
+- `tests/e2e/**`: Production-server black-box tests.
 
-## Quality bar
+## Required checks
 
-`pnpm typecheck` must be clean before any commit. Match the surrounding code's
-density and idiom. Prefer composition over props-explosions. The result should be
-indistinguishable from a first-party Vercel product.
+Run these commands before each commit:
+
+```bash
+pnpm --filter @kortix/whitelabel-demo typecheck
+pnpm --filter @kortix/whitelabel-demo build
+pnpm --filter @kortix/whitelabel-demo test
+```
+
+All three commands must exit `0`. The SDK boundary must report `0 violations`.

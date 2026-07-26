@@ -11,12 +11,12 @@ const response = (body: unknown) =>
   new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
 
 describe('ExecutionLeaseReporter', () => {
-  test('touches both provider and API while busy', async () => {
-    const calls: Array<{ url: string; kind?: string; headers?: RequestInit['headers'] }> = [];
+  test('stays silent while idle, then acquires, renews, and releases while busy', async () => {
+    const calls: Array<{ url: string; action?: string; headers?: RequestInit['headers'] }> = [];
     const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      const body = init?.body ? (JSON.parse(String(init.body)) as { kind?: string }) : {};
-      calls.push({ url, kind: body.kind, headers: init?.headers });
+      const body = init?.body ? (JSON.parse(String(init.body)) as { action?: string }) : {};
+      calls.push({ url, action: body.action, headers: init?.headers });
       return url.startsWith('https://api.test/')
         ? response({
             provider_url: 'https://edge.test',
@@ -25,14 +25,17 @@ describe('ExecutionLeaseReporter', () => {
         : response({ status: 'ok' });
     }) as typeof fetch;
     const reporter = new ExecutionLeaseReporter(context, { fetchFn, heartbeatIntervalMs: 5 });
-    reporter.discover();
+    await reporter.settled();
+    expect(calls).toEqual([]);
     reporter.markBusy('root');
     await reporter.settled();
     await Bun.sleep(12);
     reporter.markInactive('root');
     await reporter.settled();
-    expect(calls.some((call) => call.kind === 'execution_heartbeat')).toBe(true);
-    expect(calls.some((call) => call.kind === 'execution_lease_release')).toBe(true);
+    expect(calls.some((call) => call.url.endsWith('/execution-lease'))).toBe(true);
+    expect(calls.some((call) => call.action === 'acquire')).toBe(true);
+    expect(calls.some((call) => call.action === 'renew')).toBe(true);
+    expect(calls.some((call) => call.action === 'release')).toBe(true);
     const direct = calls.find((call) => call.url === 'https://edge.test/kortix/health');
     expect(direct).toBeDefined();
     expect(direct?.headers).toMatchObject({
@@ -41,10 +44,10 @@ describe('ExecutionLeaseReporter', () => {
     });
   });
   test('holds the lease until every root/subagent is inactive', async () => {
-    const kinds: string[] = [];
+    const actions: string[] = [];
     const fetchFn = (async (_input: string | URL | Request, init?: RequestInit) => {
-      const body = init?.body ? (JSON.parse(String(init.body)) as { kind?: string }) : {};
-      if (body.kind) kinds.push(body.kind);
+      const body = init?.body ? (JSON.parse(String(init.body)) as { action?: string }) : {};
+      if (body.action) actions.push(body.action);
       return response({ ok: true });
     }) as typeof fetch;
     const reporter = new ExecutionLeaseReporter(context, { fetchFn, heartbeatIntervalMs: 60_000 });
@@ -52,9 +55,32 @@ describe('ExecutionLeaseReporter', () => {
     reporter.markBusy('child');
     reporter.markInactive('root');
     await reporter.settled();
-    expect(kinds).toEqual(['execution_heartbeat']);
+    expect(actions).toEqual(['acquire']);
     reporter.markInactive('child');
     await reporter.settled();
-    expect(kinds).toEqual(['execution_heartbeat', 'execution_lease_release']);
+    expect(actions).toEqual(['acquire', 'release']);
+  });
+
+  test('coalesces timer renewals while one renewal is pending', async () => {
+    const actions: string[] = [];
+    let releaseRenewal!: () => void;
+    const renewalBlocked = new Promise<void>((resolve) => {
+      releaseRenewal = resolve;
+    });
+    const fetchFn = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body ? (JSON.parse(String(init.body)) as { action?: string }) : {};
+      if (body.action) actions.push(body.action);
+      if (body.action === 'renew') await renewalBlocked;
+      return response({ ok: true });
+    }) as typeof fetch;
+    const reporter = new ExecutionLeaseReporter(context, { fetchFn, heartbeatIntervalMs: 5 });
+    reporter.markBusy('root');
+    await reporter.settled();
+    await Bun.sleep(18);
+    reporter.markInactive('root');
+    releaseRenewal();
+    await reporter.settled();
+    expect(actions.filter((action) => action === 'renew')).toHaveLength(1);
+    expect(actions.at(-1)).toBe('release');
   });
 });

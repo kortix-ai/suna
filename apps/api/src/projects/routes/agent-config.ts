@@ -32,12 +32,14 @@ import { projects } from '@kortix/db';
 import {
   type AgentBlockV2,
   type ManifestIssue,
+  SLUG_RE,
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { readRepoFile } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -71,6 +73,7 @@ const GrantSetSchema = z.union([
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
+    sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
     connectors: GrantSetSchema.optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
@@ -322,6 +325,27 @@ projectsApp.openapi(
         { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
         400,
       );
+    }
+
+    if (governanceBlock.sandbox) {
+      try {
+        await resolveTemplateBySlug(await withProjectGitAuth(loaded.row), governanceBlock.sandbox);
+      } catch {
+        return c.json(
+          {
+            error: `Unknown sandbox template "${governanceBlock.sandbox}"`,
+            code: 'invalid_config',
+            issues: [
+              {
+                path: `agents.${agentName}.sandbox`,
+                message: 'must name an available project template or "default".',
+                severity: 'error',
+              },
+            ],
+          },
+          400,
+        );
+      }
     }
 
     const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);

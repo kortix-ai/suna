@@ -15,9 +15,12 @@ import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
-// request, and prod pays a cross-region roundtrip per DB statement. A revoked
-// membership lingers for at most one TTL window; a fresh grant is visible
-// immediately because null results are never cached.
+// request. Each DB statement is a fast same-region roundtrip (~3ms measured,
+// not the cross-region cost this comment used to claim), but the same
+// lookup repeats across a burst of parallel requests, so caching still cuts
+// redundant query volume. A revoked membership lingers for at most one TTL
+// window; a fresh grant is visible immediately because null results are
+// never cached.
 const loadAccountMembership = ttlMemo({
   ttlMs: 15_000,
   keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,

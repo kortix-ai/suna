@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-let subscriptionInfo: any = null;
+let account: any = null;
 let creditSummary: any = null;
 let autoTopup: any = null;
 let isAdmin = false;
 
 mock.module('../billing/repositories/credit-accounts', () => ({
-  getCreditAccount: async () => null,
+  getCreditAccount: async () => account,
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
   upsertCreditAccount: async () => undefined,
-  getSubscriptionInfo: async () => subscriptionInfo,
+  getSubscriptionInfo: async () => account,
   updateBalance: async () => undefined,
   getYearlyAccountsDueForRotation: async () => [],
 }));
@@ -37,7 +37,7 @@ const { buildMinimalAccountState } = await import('../billing/services/account-s
 
 describe('buildMinimalAccountState revenuecat', () => {
   beforeEach(() => {
-    subscriptionInfo = {
+    account = {
       tier: 'tier_2_20',
       provider: 'revenuecat',
       planType: 'monthly',
@@ -80,7 +80,7 @@ describe('buildMinimalAccountState revenuecat', () => {
   });
 
   test('reports past_due revenuecat subscription correctly', async () => {
-    subscriptionInfo.paymentStatus = 'past_due';
+    account.paymentStatus = 'past_due';
 
     const state = await buildMinimalAccountState('acc_test_123');
 
@@ -88,7 +88,7 @@ describe('buildMinimalAccountState revenuecat', () => {
   });
 
   test('reports canceled revenuecat subscription correctly', async () => {
-    subscriptionInfo.revenuecatCancelledAt = new Date().toISOString();
+    account.revenuecatCancelledAt = new Date().toISOString();
 
     const state = await buildMinimalAccountState('acc_test_123');
 

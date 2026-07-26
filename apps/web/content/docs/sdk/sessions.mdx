@@ -218,6 +218,29 @@ The OpenCode `sessionID` here is not the session ID you pass to
 `kortix.session(projectId, sessionId)`. The SDK resolves it during
 `ensureReady()` and caches it on the handle.
 
+## Warm a project session
+
+Use the server-owned warm-session operations when a project landing page needs
+one empty runtime before the first prompt.
+
+```ts
+const project = kortix.project(projectId);
+const warm = await project.sessions.ensureWarm();
+
+await kortix.session(projectId, warm.session.session_id).ensureReady();
+
+const claimed = await project.sessions.claimWarm({
+  session_id: warm.session.session_id,
+  agent_name: selectedAgent,
+  sandbox_slug: selectedSandbox,
+});
+```
+
+`ensureWarm()` creates or reuses one available session for the current user.
+`claimWarm()` atomically reserves that session before navigation or prompt
+delivery. A `409` response means another client claimed it or the selected
+agent or sandbox differs.
+
 ## Handling errors
 
 Every call through `createKortix` rejects with a typed `Error` subclass,

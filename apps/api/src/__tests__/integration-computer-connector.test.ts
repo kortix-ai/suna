@@ -58,7 +58,10 @@ beforeAll(async () => {
   meta.experimental = exp;
   await db.update(projects).set({ metadata: meta }).where(eq(projects.projectId, projectId));
 
-  // Seed a connected machine (what device-auth approve would create).
+  // Seed a machine that has connected before and is now offline (closed
+  // laptop) — `lastHeartbeatAt` is set because device-auth approval is
+  // followed within seconds by the CLI's real WS handshake in practice.
+  // A row that has NEVER gone online is a different case, covered below.
   const [t] = await db
     .insert(tunnelConnections)
     .values({
@@ -66,6 +69,7 @@ beforeAll(async () => {
       name: 'E2E Test Machine',
       capabilities: ['filesystem', 'shell', 'desktop'],
       status: 'offline',
+      lastHeartbeatAt: new Date(),
       machineInfo: { platform: 'darwin', hostname: 'e2e-host', arch: 'arm64' },
     })
     .returning();
@@ -227,5 +231,77 @@ describe('computer connector — real DB e2e', () => {
     const out = await executeComputerCall({ accountId, selector: 'does-not-exist', method: 'fs.read', args: { path: '/x' } });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.kind).toBe('no_machine');
+  });
+
+  describe('a tunnel row that has NEVER connected (no heartbeat, ever)', () => {
+    // Reproduces the reported bug: a device-auth approval (or a leftover test
+    // fixture) creates a `tunnel_connections` row up front, but the CLI never
+    // actually dials in. Without the heartbeat gate that row alone was enough
+    // to permanently materialize an "active" `computer` connector across
+    // EVERY project in the account — looking exactly like a real connection
+    // even though nothing had ever connected.
+    let deadTunnelId = '';
+    let otherProjectId = '';
+
+    beforeAll(async () => {
+      if (!seeded) return;
+      const [t] = await db
+        .insert(tunnelConnections)
+        .values({
+          accountId,
+          name: 'Never Connected',
+          capabilities: [],
+          status: 'offline',
+          // lastHeartbeatAt intentionally omitted — this row has never come online.
+        })
+        .returning();
+      deadTunnelId = t!.tunnelId;
+
+      // A second, otherwise-unrelated project on the SAME account — proves the
+      // dead row doesn't fan out a phantom connector account-wide either.
+      const [p] = await db
+        .insert(projects)
+        .values({
+          accountId,
+          name: 'computer-synth-fanout-test',
+          repoUrl: 'https://example.invalid/computer-synth-fanout-test.git',
+        })
+        .returning({ projectId: projects.projectId });
+      otherProjectId = p!.projectId;
+    });
+
+    afterAll(async () => {
+      if (deadTunnelId) await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, deadTunnelId));
+      if (otherProjectId) await db.delete(projects).where(eq(projects.projectId, otherProjectId));
+    });
+
+    test('does NOT materialize the computer connector by itself', async () => {
+      if (!seeded) return;
+      // Temporarily remove the real (heartbeat-bearing) seeded tunnel so the
+      // never-connected row is the account's ONLY tunnel_connections row.
+      await db
+        .update(tunnelConnections)
+        .set({ lastHeartbeatAt: null })
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+      try {
+        const specs = await synthesizeComputerConnectors(otherProjectId, []);
+        expect(specs).toEqual([]);
+      } finally {
+        await db
+          .update(tunnelConnections)
+          .set({ lastHeartbeatAt: new Date() })
+          .where(eq(tunnelConnections.tunnelId, tunnelId));
+      }
+    });
+
+    test('once the account has ANY real (ever-heartbeat) machine, it materializes for other projects too', async () => {
+      if (!seeded) return;
+      // The real seeded tunnel (with a heartbeat) still exists on the account,
+      // so even a project with no direct relationship to it gets the connector
+      // — the dead row contributes nothing either way.
+      const specs = await synthesizeComputerConnectors(otherProjectId, []);
+      expect(specs).toHaveLength(1);
+      expect(specs[0]!.slug).toBe('computer');
+    });
   });
 });

@@ -21,7 +21,11 @@ function page(ids: string[], nextCursor?: string): SessionSyncPage {
 }
 
 function messagePage(
-  messages: Array<{ id: string; role: 'user' | 'assistant'; parentID?: string }>,
+  messages: Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    parentID?: string;
+  }>,
   nextCursor?: string,
 ): SessionSyncPage {
   return {
@@ -149,6 +153,82 @@ describe('SessionSyncController', () => {
     expect(controller.getSnapshot().hasOlder).toBe(false);
   });
 
+  test('loads the complete newest turn before exposing older pagination', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        if (!request.before) {
+          return messagePage(
+            [
+              {
+                id: 'assistant-new-3',
+                role: 'assistant',
+                parentID: 'user-only',
+              },
+              {
+                id: 'assistant-new-4',
+                role: 'assistant',
+                parentID: 'user-only',
+              },
+            ],
+            'cursor-1',
+          );
+        }
+        if (request.before === 'cursor-1') {
+          return messagePage(
+            [
+              {
+                id: 'assistant-new-1',
+                role: 'assistant',
+                parentID: 'user-only',
+              },
+              {
+                id: 'assistant-new-2',
+                role: 'assistant',
+                parentID: 'user-only',
+              },
+            ],
+            'cursor-2',
+          );
+        }
+        return messagePage(
+          [
+            { id: 'user-only', role: 'user' },
+            { id: 'assistant-new-0', role: 'assistant', parentID: 'user-only' },
+          ],
+          undefined,
+        );
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+
+    expect(requests).toEqual([
+      { limit: 10 },
+      { limit: 10, before: 'cursor-1' },
+      { limit: 10, before: 'cursor-2' },
+    ]);
+    expect(hydrated).toEqual([
+      [
+        'user-only',
+        'assistant-new-0',
+        'assistant-new-1',
+        'assistant-new-2',
+        'assistant-new-3',
+        'assistant-new-4',
+      ],
+    ]);
+    expect(controller.getSnapshot()).toMatchObject({
+      freshness: 'fresh',
+      hasOlder: false,
+    });
+  });
+
   test('loads through assistant-only pages until the parent user turn is complete', async () => {
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: string[][] = [];
@@ -168,8 +248,16 @@ describe('SessionSyncController', () => {
         if (request.before === 'cursor-1') {
           return messagePage(
             [
-              { id: 'assistant-old-3', role: 'assistant', parentID: 'user-old' },
-              { id: 'assistant-old-4', role: 'assistant', parentID: 'user-old' },
+              {
+                id: 'assistant-old-3',
+                role: 'assistant',
+                parentID: 'user-old',
+              },
+              {
+                id: 'assistant-old-4',
+                role: 'assistant',
+                parentID: 'user-old',
+              },
             ],
             'cursor-2',
           );
@@ -177,8 +265,16 @@ describe('SessionSyncController', () => {
         if (request.before === 'cursor-2') {
           return messagePage(
             [
-              { id: 'assistant-old-1', role: 'assistant', parentID: 'user-old' },
-              { id: 'assistant-old-2', role: 'assistant', parentID: 'user-old' },
+              {
+                id: 'assistant-old-1',
+                role: 'assistant',
+                parentID: 'user-old',
+              },
+              {
+                id: 'assistant-old-2',
+                role: 'assistant',
+                parentID: 'user-old',
+              },
             ],
             'cursor-3',
           );
@@ -239,10 +335,7 @@ describe('SessionSyncController', () => {
     await expect(controller.loadOlder()).rejects.toThrow(
       'Session history cursor repeated: cursor-1',
     );
-    expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-    ]);
+    expect(requests).toEqual([{ limit: 10 }, { limit: 10, before: 'cursor-1' }]);
     expect(controller.getSnapshot().isLoadingOlder).toBe(false);
   });
 
@@ -335,6 +428,65 @@ describe('SessionSyncController', () => {
     await Promise.resolve();
     expect(requests).toHaveLength(2);
     expect(statuses).toEqual([{ type: 'idle' }]);
+  });
+
+  test('keeps REST prompt completion busy until runtime idle is stable after real work starts', () => {
+    let now = 0;
+    let timeout:
+      | {
+          handler: () => void;
+          dueAt: number;
+        }
+      | undefined;
+    const scheduler = {
+      now: () => now,
+      setInterval: () => 1,
+      clearInterval: () => {},
+      setTimeout: (handler: () => void, delayMs: number) => {
+        timeout = { handler, dueAt: now + delayMs };
+        return 2;
+      },
+      clearTimeout: () => {
+        timeout = undefined;
+      },
+    };
+    const advance = (ms: number) => {
+      now += ms;
+      if (timeout && timeout.dueAt <= now) {
+        const handler = timeout.handler;
+        timeout = undefined;
+        handler();
+      }
+    };
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler,
+    });
+
+    controller.beginPromptObservation();
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    controller.observePromptStatus({ type: 'idle' });
+    advance(1_000);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    controller.observePromptStatus({ type: 'busy' });
+    controller.observePromptStatus({ type: 'idle' });
+    advance(400);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    controller.observePromptStatus({ type: 'busy' });
+    advance(1_000);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    controller.observePromptStatus({ type: 'idle' });
+    advance(499);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    advance(1);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
   });
 
   test('marks an empty or failed initial read as loaded', async () => {

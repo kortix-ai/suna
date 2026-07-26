@@ -125,6 +125,25 @@ export interface CreateProjectSessionInput {
   secrets?: string[];
 }
 
+export interface WarmProjectSessionWorkspaceRefresh {
+  status: 'skipped' | 'unchanged' | 'updated' | 'failed';
+  before_sha?: string | null;
+  after_sha?: string | null;
+  error?: string;
+}
+
+export interface WarmProjectSessionResult {
+  session: ProjectSession;
+  reused: boolean;
+  workspace_refresh: WarmProjectSessionWorkspaceRefresh;
+}
+
+export interface ClaimWarmProjectSessionInput {
+  session_id: string;
+  agent_name?: string;
+  sandbox_slug?: string;
+}
+
 export interface ProjectOpenCodeSession {
   id: string;
   title: string | null;
@@ -264,6 +283,31 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
+export async function ensureWarmProjectSession(projectId: string) {
+  const result = unwrap(
+    await backendApi.post<WarmProjectSessionResult>(
+      `/projects/${projectId}/sessions/warm`,
+      {},
+    ),
+  );
+  markSessionFresh(result.session.session_id);
+  return result;
+}
+
+export async function claimWarmProjectSession(
+  projectId: string,
+  input: ClaimWarmProjectSessionInput,
+) {
+  const session = unwrap(
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions/warm/claim`,
+      input,
+    ),
+  );
+  markSessionFresh(session.session_id);
+  return session;
+}
+
 export async function getProjectSession(
   projectId: string,
   sessionId: string,
@@ -367,6 +411,53 @@ export async function getSessionTranscript(
   return unwrap(
     await backendApi.get<SessionTranscript>(
       `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+/** One line of a session's voice-call transcript (`kortix.voice_call_turns`).
+ *  'user'/'agent' are either side of the spoken conversation; 'tool' is a
+ *  record of an `ask_kortix`/`run_command` call the voice-agent worker made
+ *  through the voice MCP (see apps/api/src/channels/voice/mcp.ts) — not
+ *  spoken, but part of "what did the voice agent DO" during the call. */
+export interface VoiceTranscriptTurn {
+  cursor: number;
+  role: 'user' | 'agent' | 'tool' | (string & {});
+  speaker: string | null;
+  text: string;
+  at: string;
+}
+
+export interface VoiceTranscript {
+  session_id: string;
+  call_id: string;
+  /** Whether a voice-agent worker is in the call's LiveKit room right now. */
+  live: boolean;
+  /** Highest `cursor` returned — pass back as `cursor` to page for only what's new. */
+  cursor: number;
+  count: number;
+  turns: VoiceTranscriptTurn[];
+}
+
+/** A session's live voice-call transcript — every spoken turn plus every
+ *  ask_kortix/run_command the worker issued, in one monotonic feed (a call's
+ *  `callId` IS its `sessionId`, so there is nothing else to key this by).
+ *  Visible to anyone who can see the session (same gate as `/audit`,
+ *  `/transcript`). Returns `{ turns: [] }` for a session that never made a
+ *  voice call — not a 404, since "no call yet" is the common case. */
+export async function getVoiceTranscript(
+  projectId: string,
+  sessionId: string,
+  options?: { cursor?: number; limit?: number; showErrors?: boolean },
+) {
+  const search = new URLSearchParams();
+  if (options?.cursor != null) search.set('cursor', String(options.cursor));
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  const qs = search.toString();
+  return unwrap(
+    await backendApi.get<VoiceTranscript>(
+      `/projects/${projectId}/sessions/${sessionId}/voice-transcript${qs ? `?${qs}` : ''}`,
+      { showErrors: options?.showErrors },
     ),
   );
 }

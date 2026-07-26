@@ -5,6 +5,7 @@ import type { ProjectSummary } from '../api/types.ts';
 import {
   authHeaderArgs,
   linkGitHubBackedProject,
+  reconcileShippedManifest,
   resolveExistingShipGitTarget,
   resolveProvisionShipGitTarget,
 } from '../commands/ship.ts';
@@ -114,10 +115,12 @@ describe('ship git target resolution', () => {
   });
 
   test('existing managed ship ignores proxy origin and mints a managed git token', () => {
-    const target = resolveExistingShipGitTarget(project({
-      git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
-      metadata: { git: { managed: true } },
-    }));
+    const target = resolveExistingShipGitTarget(
+      project({
+        git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
+        metadata: { git: { managed: true } },
+      }),
+    );
 
     expect(target).toEqual({
       repoUrl: 'https://github.com/managed-kortix/demo.git',
@@ -126,11 +129,13 @@ describe('ship git target resolution', () => {
   });
 
   test('non-managed proxy projects still push through the Kortix git proxy', () => {
-    const target = resolveExistingShipGitTarget(project({
-      repo_url: 'https://github.com/acme/byo.git',
-      git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
-      metadata: { git: { managed: false } },
-    }));
+    const target = resolveExistingShipGitTarget(
+      project({
+        repo_url: 'https://github.com/acme/byo.git',
+        git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
+        metadata: { git: { managed: false } },
+      }),
+    );
 
     expect(target).toEqual({
       repoUrl: 'https://api.kortix.com/v1/git/proj_1.git',
@@ -139,14 +144,30 @@ describe('ship git target resolution', () => {
   });
 
   test('plain BYO projects rely on local git credentials', () => {
-    const target = resolveExistingShipGitTarget(project({
-      repo_url: 'https://github.com/acme/byo.git',
-      metadata: { git: { managed: false } },
-    }));
+    const target = resolveExistingShipGitTarget(
+      project({
+        repo_url: 'https://github.com/acme/byo.git',
+        metadata: { git: { managed: false } },
+      }),
+    );
 
     expect(target).toEqual({
       repoUrl: 'https://github.com/acme/byo.git',
       credentialMode: 'none',
     });
   });
+});
+
+test('ship reconciles the remote manifest independently of connector prompts', async () => {
+  const calls: Array<{ path: string; body: unknown }> = [];
+  const client = recordingClient(calls, project());
+
+  await reconcileShippedManifest(client, 'proj_1');
+
+  expect(calls).toEqual([
+    {
+      path: '/executor/projects/proj_1/connectors/sync',
+      body: undefined,
+    },
+  ]);
 });

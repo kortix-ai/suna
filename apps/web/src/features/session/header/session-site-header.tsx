@@ -20,6 +20,7 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { useChatDetail } from '@/features/session/activity/chat-detail';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -36,6 +37,7 @@ import {
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Code2,
   FileDown,
   FolderOpen,
   Globe,
@@ -43,9 +45,11 @@ import {
   MoreHorizontal,
   PanelLeft,
   PanelRight,
+  ListTree,
   RotateCcw,
   Square,
   SquareTerminal,
+  Text,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -131,6 +135,7 @@ export function SessionSiteHeader({
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
   const readyChip = useReadyChip();
+  const { detail: chatDetail, toggle: toggleChatDetail } = useChatDetail();
 
   return (
     <>
@@ -183,6 +188,63 @@ export function SessionSiteHeader({
               sidebarHidden && 'h-[28px]',
             )}
           >
+            {/* Resting header, non-technical default: identity (left, not
+                ours) + these two indicators (self-hide via `return null`
+                until there's something to see) + the panel toggle. Every
+                icon-only control below carries a Hint label — nothing here
+                is legible from the icon alone. */}
+            <SessionChangesIndicator sessionId={sessionId} />
+
+            <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {/* Terminal / Browser / Files, grouped behind one "Developer
+                tools" control (product owner's ask: "besides the show tool
+                and specific things, all these terminals here should be
+                perhaps grouped together" — three unlabeled icon buttons that
+                spell out sandbox internals is exactly the thing a
+                non-technical reader bounces off). Each item still fires the
+                same `openSessionQuickView` call as before with the same
+                'header' source, so nothing that worked stops working — it's
+                one extra tap instead of a bare icon. */}
+            <DropdownMenu>
+              <Hint side="bottom" sideOffset={4} delayDuration={300} label="Developer tools">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Developer tools"
+                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                  >
+                    <Code2 className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </Hint>
+
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => openSessionQuickView('terminal', 'header')}
+                >
+                  <SquareTerminal />
+                  Terminal
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => openSessionQuickView('browser', 'header')}
+                >
+                  <Globe />
+                  Browser
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => openSessionQuickView('files', 'header')}
+                >
+                  <FolderOpen />
+                  Files
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <DropdownMenu>
               <Hint
                 side="bottom"
@@ -204,14 +266,35 @@ export function SessionSiteHeader({
                 </DropdownMenuTrigger>
               </Hint>
 
-              {/* Four unrelated jobs live in here — naming the session, running
-                  it, taking the transcript away, and destroying it. Separators
-                  are what make that scannable; without them it reads as one
-                  undifferentiated wall. The conditionals are arranged so a
-                  separator can never lead, trail, or double up: within
-                  `isProjectSession` the first two groups always have at least
-                  Rename and Restart, and the transcript group is unconditional. */}
-              <DropdownMenuContent align="end" className="w-52">
+              {/* Rename/Share (identity) and Restart/Stop (lifecycle) sit at
+                  full weight — those are what a normal user reaches for.
+                  Export/Summarize are transcript-level, rarely-touched, and
+                  jargon-adjacent (a non-technical reader has no idea what
+                  "compacting" a session does), so they're visually
+                  subordinate (muted text/icon) and pushed down next to
+                  Delete. Delete stays the one destructive item and stays
+                  last. The conditionals are arranged so a separator can
+                  never lead, trail, or double up: within `isProjectSession`
+                  the first two groups always have at least Rename and
+                  Restart, and the transcript group is unconditional. */}
+              <DropdownMenuContent align="end" className="w-56">
+                {/* Reading depth. It lived as a persistent button above the
+                    transcript, which spent permanent chat real estate on a
+                    setting most people touch once. It belongs with the other
+                    per-session view actions. */}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    toggleChatDetail();
+                  }}
+                >
+                  {chatDetail === 'full' ? <Text /> : <ListTree />}
+                  {chatDetail === 'full' ? 'Hide full history' : 'Show full history'}
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem
@@ -260,18 +343,20 @@ export function SessionSiteHeader({
                   </>
                 )}
 
-                <DropdownMenuItem className="cursor-pointer" onClick={() => setExportOpen(true)}>
+                <DropdownMenuItem
+                  className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+                  onClick={() => setExportOpen(true)}
+                >
                   <FileDown />
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionSiteHeader.line124JsxTextExportTranscript',
-                  )}
+                  Export conversation
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
+                <DropdownMenuItem
+                  className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+                  onClick={() => setCompactOpen(true)}
+                >
                   <Layers />
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
-                  )}
+                  Summarize conversation
                 </DropdownMenuItem>
 
                 {isProjectSession && (
@@ -290,56 +375,6 @@ export function SessionSiteHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <SessionChangesIndicator sessionId={sessionId} />
-
-            <SessionPendingApprovalsIndicator sessionId={sessionId} />
-
-            {/* Terminal, one tap from the header (product owner's placement —
-                it used to be a labeled row under the Easy cards). Icon-only
-                like every trailing-cluster control; the Hint carries the name. */}
-            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Terminal">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Open terminal"
-                onClick={() => openSessionQuickView('terminal', 'header')}
-                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
-              >
-                <SquareTerminal className="h-4 w-4" />
-              </Button>
-            </Hint>
-
-            {/* Browser, same one-tap placement as Terminal above — opens the
-                in-panel port browser (AppPreview) on the first running app,
-                or localhost:3000 as a starting point when nothing's running
-                yet. */}
-            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Browser">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Open browser"
-                onClick={() => openSessionQuickView('browser', 'header')}
-                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
-              >
-                <Globe className="h-4 w-4" />
-              </Button>
-            </Hint>
-
-            {/* Files, same one-tap placement as Terminal/Browser above — opens
-                the opt-in File Explorer as a detail layer (Marko's ask), never
-                a default view. */}
-            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Files">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Open files"
-                onClick={() => openSessionQuickView('files', 'header')}
-                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </Hint>
 
             <Hint
               side="bottom"

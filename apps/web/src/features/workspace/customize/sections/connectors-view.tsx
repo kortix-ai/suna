@@ -1342,14 +1342,22 @@ function ConnectorDetail({
   );
 }
 
-// ─── Channel connection profile (Email / Slack install state) ───────────────
+// ─── Channel connection profile (Email / Slack install state, Voice) ────────
 
 type ChannelPlatform = 'slack' | 'email';
 
-function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
+/** Which profile UI a channel connector shows. Wider than ChannelPlatform,
+ *  which is the set a user can CREATE — voice is materialized automatically
+ *  from the experimental flag and never appears in the add-connector picker. */
+type ChannelProfilePlatform = ChannelPlatform | 'voice';
+
+function connectorPlatform(connector: AdminConnector): ChannelProfilePlatform | null {
   if (connector.platform === 'slack' || connector.platform === 'email') {
     return connector.platform;
   }
+  // `platform` is typed to the platforms that have an install flow; voice has
+  // none, so it is matched on the reserved slug instead of widening that type.
+  if (connector.slug === 'kortix_voice') return 'voice';
   if (connector.slug === 'kortix_slack') return 'slack';
   if (connector.slug === 'kortix_email') return 'email';
   if (connector.slug.startsWith('email_')) return 'email';
@@ -1389,6 +1397,24 @@ function ChannelConnectionSection({
         onRemoved={onRemoved}
         canWrite={canWrite}
       />
+    );
+  }
+  if (platform === 'voice') {
+    // Voice genuinely has nothing to connect: no OAuth, no API key, no
+    // workspace to link. Calls run on Kortix's own LiveKit project, and each
+    // one is scoped to the session that spawned it. Falling through to the
+    // warning below told people their profile was broken when it was complete.
+    return (
+      <section className="space-y-4">
+        <Label>Connection</Label>
+        <div className="bg-popover rounded-md border px-4 py-5">
+          <p className="text-muted-foreground text-sm">
+            Nothing to connect — voice calls run on Kortix&apos;s own infrastructure. Your agent can
+            start a call, follow what is said, and speak into it. Use the Permissions tab to choose
+            what it may do without asking.
+          </p>
+        </div>
+      </section>
     );
   }
   return (

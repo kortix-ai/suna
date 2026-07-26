@@ -33,8 +33,12 @@ describe('isExperimentalFeatureKey', () => {
 
 describe('resolveExperimentalFeature — explicit override wins', () => {
   test('per-project experimental map overrides the default', () => {
-    expect(resolveExperimentalFeature({ experimental: { review_center: true } }, 'review_center')).toBe(true);
-    expect(resolveExperimentalFeature({ experimental: { review_center: false } }, 'review_center')).toBe(false);
+    expect(
+      resolveExperimentalFeature({ experimental: { review_center: true } }, 'review_center'),
+    ).toBe(true);
+    expect(
+      resolveExperimentalFeature({ experimental: { review_center: false } }, 'review_center'),
+    ).toBe(false);
   });
 
   test('agent_tunnel respects explicit per-project choice', () => {
@@ -171,6 +175,12 @@ describe('buildExperimentalCatalog', () => {
       if (!f.available) expect(f.enabled).toBe(false);
     }
   });
+
+  test('the ACP experiment description is provider-neutral', () => {
+    const acp = findCatalogFeature('acp_runtime');
+    expect(acp.description).not.toMatch(/opencode/i);
+    expect(acp.description).toContain('compatibility transport');
+  });
 });
 
 describe('applyExperimentalOverride', () => {
@@ -195,7 +205,11 @@ describe('applyExperimentalOverride', () => {
   });
 
   test('null clears the override; empty map is removed', () => {
-    const next = applyExperimentalOverride({ experimental: { review_center: true } }, 'review_center', null);
+    const next = applyExperimentalOverride(
+      { experimental: { review_center: true } },
+      'review_center',
+      null,
+    );
     expect(next.experimental).toBeUndefined();
   });
 });

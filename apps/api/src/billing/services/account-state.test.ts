@@ -1,0 +1,179 @@
+// buildMinimalAccountState used to fetch the identical credit_accounts row 4
+// separate times (directly, then again inside getCreditSummary /
+// getAccountEntitlements / getAutoTopupSettings) across ~10 fully sequential
+// awaits. The fix: fetch the row once and pass it down, and run the
+// independent lookups concurrently via Promise.all. This file asserts both
+// halves of that fix — single fetch, real concurrency — plus that the
+// response shape is unchanged. Mirrors the mock.module + dynamic import
+// pattern in ./billing-gate.test.ts.
+import { describe, expect, mock, test } from 'bun:test';
+import { sandboxes } from '@kortix/db';
+
+let getCreditAccountCalls = 0;
+let account: Record<string, unknown> | null = null;
+
+let inFlight = 0;
+let maxInFlight = 0;
+
+async function trackedDelay<T>(value: T, ms = 15): Promise<T> {
+  inFlight += 1;
+  maxInFlight = Math.max(maxInFlight, inFlight);
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  inFlight -= 1;
+  return value;
+}
+
+mock.module('../../config', () => ({
+  config: {
+    ENTERPRISE_LICENSE_AVAILABLE: false,
+    KORTIX_BILLING_INTERNAL_ENABLED: true,
+    INTERNAL_KORTIX_ENV: 'dev',
+  },
+}));
+
+mock.module('../repositories/credit-accounts', () => ({
+  getCreditAccount: async (_accountId: string) => {
+    getCreditAccountCalls += 1;
+    return account;
+  },
+  getCreditBalance: async (_accountId: string) => account,
+  updateCreditAccount: async () => undefined,
+  getSubscriptionInfo: async (_accountId: string) => account,
+}));
+
+mock.module('./free-tier', () => ({
+  initializeFreeTierAccount: async () => undefined,
+}));
+
+// ./credits and ./auto-topup are deliberately NOT mocked: they are two of the
+// four call sites the dedupe fix threads `prefetchedAccount` through, so
+// mocking them would make this suite pass even if they regressed to an
+// unconditional getCreditAccount(). They reach getCreditAccount only via the
+// mocked ../repositories/credit-accounts, so the real modules run here.
+
+mock.module('./seat-management', () => ({
+  countActiveMembers: async (_accountId: string) => trackedDelay(3),
+}));
+
+mock.module('./usage-breakdown', () => ({
+  getUsageBreakdownThisPeriod: async (_accountId: string) => trackedDelay(null),
+}));
+
+mock.module('../../shared/platform-roles', () => ({
+  isPlatformAdmin: async (_accountId: string) => trackedDelay(false),
+}));
+
+mock.module('../../shared/db', () => ({
+  db: {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => {
+          const rows = table === sandboxes ? [] : [{ activeCount: 0 }];
+          const resultPromise = trackedDelay(rows);
+          return {
+            limit: async () => resultPromise,
+            then: (resolve: (v: unknown) => void, reject: (e: unknown) => void) =>
+              resultPromise.then(resolve, reject),
+          };
+        },
+      }),
+    }),
+  },
+}));
+
+const { buildMinimalAccountState } = await import('./account-state');
+
+function creditAccount(overrides: Record<string, unknown> = {}) {
+  return {
+    accountId: 'acct-1',
+    tier: 'free',
+    billingModel: 'legacy',
+    balance: '10.00',
+    dailyCreditsBalance: '1.00',
+    expiringCredits: '5.00',
+    nonExpiringCredits: '4.00',
+    autoTopupEnabled: false,
+    autoTopupThreshold: null,
+    autoTopupAmount: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionStatus: null,
+    provider: 'stripe',
+    demoEnterprise: false,
+    lastDailyRefresh: null,
+    commitmentType: null,
+    commitmentEndDate: null,
+    scheduledTierChange: null,
+    scheduledTierChangeDate: null,
+    revenuecatCancelledAt: null,
+    revenuecatSubscriptionId: null,
+    revenuecatCustomerId: null,
+    revenuecatPendingChangeProduct: null,
+    revenuecatPendingChangeDate: null,
+    planType: null,
+    seatCount: null,
+    maxConcurrentSessions: null,
+    ...overrides,
+  };
+}
+
+describe('buildMinimalAccountState — credit row dedupe + concurrency (measured p95 3,537ms / p99 8,977ms fix)', () => {
+  test('fetches the credit_accounts row exactly once per request', async () => {
+    getCreditAccountCalls = 0;
+    account = creditAccount();
+
+    await buildMinimalAccountState('acct-1');
+
+    expect(getCreditAccountCalls).toBe(1);
+  });
+
+  test('the independent lookups actually run concurrently, not sequentially', async () => {
+    getCreditAccountCalls = 0;
+    account = creditAccount({ billingModel: 'per_seat' });
+    inFlight = 0;
+    maxInFlight = 0;
+
+    await buildMinimalAccountState('acct-1');
+
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
+
+  test('response shape is unchanged — credits, subscription, tier, auto_topup, instances, limits all present', async () => {
+    getCreditAccountCalls = 0;
+    account = creditAccount();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.credits).toEqual({
+      total: 10,
+      daily: 1,
+      monthly: 5,
+      extra: 4,
+      can_run: true,
+      daily_refresh: null,
+    });
+    expect(state.subscription.tier_key).toBe('free');
+    expect(state.tier.name).toBe('free');
+    expect(state.auto_topup).toEqual({
+      enabled: false,
+      threshold: expect.any(Number),
+      amount: expect.any(Number),
+    });
+    expect(state.instances).toEqual([]);
+    expect(state.limits?.concurrent_sessions.active).toBe(0);
+    expect(state.billing_model).toBe('legacy');
+    expect(state.member_count).toBe(3);
+  });
+
+  test('when no credit row exists, the account is initialized and the fresh row is still read only once more (not re-fetched by downstream helpers)', async () => {
+    getCreditAccountCalls = 0;
+    account = null;
+
+    // initializeFreeTierAccount is mocked as a no-op, so the account stays
+    // null even after "initialization" here — this only asserts the call
+    // count discipline: one probe fetch + one post-init fetch, no extra
+    // reads from getCreditSummary / getAccountEntitlements / getAutoTopupSettings.
+    await buildMinimalAccountState('acct-1');
+
+    expect(getCreditAccountCalls).toBe(2);
+  });
+});

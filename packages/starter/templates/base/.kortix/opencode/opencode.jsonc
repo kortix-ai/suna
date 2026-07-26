@@ -8,7 +8,7 @@
   // Kortix sessions are already sandboxed (isolated VM, ephemeral branch),
   // so the agent has full access by default. Tighten per-tool here if you
   // want a stricter policy. Docs: https://opencode.ai/docs/permissions/
-  "permission": "allow",
+  "permission": "allow"
   // Local tools in `tools/` and plugins in `plugins/` are auto-discovered.
   // Install optional tools/plugins through the Kortix marketplace.
 }

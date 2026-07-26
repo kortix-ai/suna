@@ -1,6 +1,6 @@
 // ─── Observability (must be first — instruments before other imports) ────────
 import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
+import { captureException, flushSentry, addBreadcrumb, isSentryIgnoredError } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
 import {
@@ -11,7 +11,7 @@ import {
   renderMetrics,
   metricsEnabled,
 } from './lib/metrics';
-import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
+import { getDiagnosticFields, getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
 
 import { timingSafeEqual } from 'node:crypto';
@@ -48,6 +48,7 @@ import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
 import { db, hasDatabase } from './shared/db';
+import { computeEtag, etagMatches } from './shared/http-cache';
 import { getPlatformRole } from './shared/platform-roles';
 import { platformSettings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -60,6 +61,7 @@ import {
   startTunnelService,
   stopTunnelService,
 } from './tunnel';
+import { voiceMcpRoutes } from './channels/voice/routes';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
@@ -291,6 +293,10 @@ app.use('*', async (c, next) => {
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
+      // Allowlisted, non-identifying only — see getDiagnosticFields. This is what
+      // makes turn-stream `kind` queryable in CloudWatch Logs Insights; the full
+      // request context (which carries identity) still goes to Better Stack only.
+      ...getDiagnosticFields(),
     });
     void emitOtelSpan({
       name: `${method} ${path}`,
@@ -516,14 +522,32 @@ app.openapi(
     summary: 'Read the maintenance config (public — banner + maintenance page)',
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
+  // Cacheable: the response never varies per tenant/user (no auth, same row
+  // for every caller), so `public` is safe. `max-age=5` + ETag revalidation
+  // shaves the repeat-poll DB roundtrip most callers pay without risking a
+  // stale kill switch — this is the platform's emergency maintenance toggle,
+  // so a long `stale-while-revalidate` (which would let a just-flipped-on
+  // lockdown keep serving the OLD state to clients for minutes) is
+  // deliberately not used here.
   async (c: any) => {
-    if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
+    if (!hasDatabase) {
+      const etag = computeEtag(DEFAULT_MAINTENANCE);
+      c.header('Cache-Control', 'public, max-age=5, must-revalidate');
+      c.header('ETag', etag);
+      if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
+      return c.json(DEFAULT_MAINTENANCE);
+    }
     const [row] = await db
       .select({ value: platformSettings.value })
       .from(platformSettings)
       .where(eq(platformSettings.key, MAINTENANCE_KEY))
       .limit(1);
-    return c.json(row?.value ?? DEFAULT_MAINTENANCE);
+    const payload = row?.value ?? DEFAULT_MAINTENANCE;
+    const etag = computeEtag(payload);
+    c.header('Cache-Control', 'public, max-age=5, must-revalidate');
+    c.header('ETag', etag);
+    if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
+    return c.json(payload);
   },
 );
 
@@ -699,6 +723,12 @@ app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
+// Voice routes are registered BEFORE projectsApp: Hono matches in registration
+// order, and projectsApp's auth middleware would otherwise claim the worker's
+// MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
+// before its own per-call HMAC check ever runs. The worker is not a Kortix
+// session and cannot present session auth.
+app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
@@ -731,7 +761,6 @@ const {
   slackOauthApp,
   slackIdentityApp,
   emailWebhookApp,
-  meetWebhookApp,
 } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
@@ -741,7 +770,6 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
-app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -763,6 +791,13 @@ app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,co
 // access — the API reads the sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
+// Anonymous resolve step for a `voice_spawn` join link: exchanges the short,
+// ungessable id for a freshly-minted LiveKit access token + server URL. Backs
+// the logged-out `/voice/[token]` page the same way publicSessionSharesApp
+// backs `/share/[shareId]` above — see join-links.ts / public-join-routes.ts.
+import { voiceJoinPublicApp } from './channels/voice/public-join-routes';
+app.route('/v1/public/voice-join', voiceJoinPublicApp); // /v1/public/voice-join/:token
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
@@ -976,20 +1011,39 @@ app.onError((err, c) => {
     (err as any).code?.match?.(/^[0-9]{5}$/);
   if (isDbError) {
     const pgErr = err as any;
-    captureException(err, {
-      method,
-      path,
-      errorType: 'database',
-      pgCode: pgErr.code,
-      table: pgErr.table,
-      schema: pgErr.schema_name || pgErr.schema,
-    });
+    // Pool-exhaustion (Supabase pooler / PgBouncer session-mode saturation on
+    // the us-east-2 shadow deployment) is a TRANSIENT infra/pooler-capacity
+    // class, NOT a code bug — `(EMAXCONNSESSION) max clients reached in
+    // session mode - max_size: 20` fires when the `FreeTierRotation`/
+    // `YearlyRotation` cron ticks + `llm-gateway` catalog loads + a user
+    // `GET /v1/projects` contend for the pooler's 20-session pool. It
+    // resolves when load drops. Reusing `isSentryIgnoredError` keeps the
+    // classification in one place (mirrors the #4709 ignore list + the
+    // #5167/#5175 Daytona transient no-capture pattern). The DIRECT
+    // `captureException` below would otherwise page Sentry despite
+    // `ignoreErrors` (a direct call bypasses that list); skip it but STILL
+    // log + STILL 500 so the client sees the error and retries. The infra
+    // follow-up (raise the shadow pooler's `pool_size` / move to transaction
+    // mode) is a human-owned external action recorded in the sweep ledger.
+    // Better Stack patterns 721b7efe… (API) + b38179c5… (frontend symptom).
+    const isPoolExhaustion = isSentryIgnoredError(errName, err.message);
+    if (!isPoolExhaustion) {
+      captureException(err, {
+        method,
+        path,
+        errorType: 'database',
+        pgCode: pgErr.code,
+        table: pgErr.table,
+        schema: pgErr.schema_name || pgErr.schema,
+      });
+    }
     appLogger.error(
       `${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`,
       {
         method,
         path,
-        errorType: 'database',
+        errorType: isPoolExhaustion ? 'database-pool-exhaustion' : 'database',
+        transient: isPoolExhaustion || undefined,
         pgCode: pgErr.code,
         table: pgErr.table,
         hint: pgErr.hint,

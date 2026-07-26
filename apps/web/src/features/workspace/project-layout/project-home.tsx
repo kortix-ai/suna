@@ -4,6 +4,7 @@ import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
+  Bot,
   CalendarClock,
   Container,
   FileCode,
@@ -105,10 +106,10 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        sandbox_slug: activeSlug,
+        ...(selectedSlug ? { sandbox_slug: selectedSlug } : {}),
       });
     },
-    [activeSlug, onSend],
+    [selectedSlug, onSend],
   );
 
   const handleCommand = useCallback(
@@ -196,6 +197,7 @@ export function ProjectHome({
                 <SandboxPicker
                   items={sandboxItems}
                   activeSlug={activeSlug}
+                  selectedSlug={selectedSlug}
                   onSelect={setSelectedSlug}
                 />
               ) : null
@@ -300,11 +302,13 @@ export function StarterPromptChips({ onPick }: { onPick: (text: string) => void 
 function SandboxPicker({
   items,
   activeSlug,
+  selectedSlug,
   onSelect,
 }: {
   items: SandboxTemplate[];
   activeSlug: string;
-  onSelect: (slug: string) => void;
+  selectedSlug: string | null;
+  onSelect: (slug: string | null) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
@@ -329,7 +333,9 @@ function SandboxPicker({
           className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200"
         >
           <ActiveIcon className="size-3.5 shrink-0" />
-          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className="max-w-[7rem] truncate">
+            {selectedSlug ? active.name : 'Agent environment'}
+          </span>
           <span className={cn('size-1.5 shrink-0 rounded-full', activeStateTone)} />
         </button>
       </DropdownMenuTrigger>
@@ -337,6 +343,23 @@ function SandboxPicker({
         <DropdownMenuLabel>
           {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSandboxe9c5fbaa')}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="flex items-start gap-2" onSelect={() => onSelect(null)}>
+          <Bot className="text-muted-foreground mt-0.5 size-4" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Agent environment</span>
+              {selectedSlug === null && (
+                <Badge variant="outline" size="xs">
+                  selected
+                </Badge>
+              )}
+            </div>
+            <div className="text-muted-foreground text-xs">
+              Uses the selected agent, project, or platform default.
+            </div>
+          </div>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {items.map((tpl) => {
           const Icon = tpl.is_default ? Container : tpl.has_image ? Package : FileCode;
@@ -371,7 +394,7 @@ function SandboxPicker({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{tpl.name}</span>
-                  {tpl.slug === activeSlug && (
+                  {tpl.slug === selectedSlug && (
                     <Badge variant="outline" size="xs">
                       selected
                     </Badge>

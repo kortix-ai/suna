@@ -33,6 +33,7 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
+    sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`

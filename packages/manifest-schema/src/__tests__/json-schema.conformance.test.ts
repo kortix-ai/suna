@@ -335,10 +335,10 @@ channels:
 
   // ─── shared sections: reserved connector slugs ─────────────────────────
   {
-    name: 'reserved slug "kortix_meet" rejects a mismatched provider',
+    name: 'reserved slug "kortix_voice" rejects a mismatched provider',
     format: 'toml',
     valid: false,
-    input: 'kortix_version = 1\n[[connectors]]\nslug = "kortix_meet"\nprovider = "pipedream"\napp = "x"\n',
+    input: 'kortix_version = 1\n[[connectors]]\nslug = "kortix_voice"\nprovider = "pipedream"\napp = "x"\n',
   },
   {
     name: 'reserved slug "computer" rejects a mismatched (otherwise-valid) provider — regression guard for the computer-slug accept bug',

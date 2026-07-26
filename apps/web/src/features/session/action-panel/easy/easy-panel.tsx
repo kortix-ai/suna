@@ -70,6 +70,7 @@ import {
   quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
@@ -544,11 +545,21 @@ export const EasyPanel = memo(function EasyPanel({
     const step = stepForCallId(steps, focusedToolCallId);
     if (step) {
       openDetail({
-        key: `step:${step.id}`,
+        // The call id is part of the key on purpose: a step is a GROUP, and
+        // two clicks on different commands inside it produce the same
+        // `step:<id>`. Deduped on that key, the second click was a no-op and
+        // the panel kept showing whatever it showed before.
+        key: `step:${step.id}:${focusedToolCallId}`,
         title: step.label,
         icon: <StepIcon family={step.family} status={step.status} />,
         padded: false,
-        body: <StepDetailBody parts={step.parts} sessionId={sessionId} />,
+        body: (
+          <StepDetailBody
+            parts={step.parts}
+            sessionId={sessionId}
+            focusCallId={focusedToolCallId}
+          />
+        ),
       });
     }
     clearFocusedToolCall();
@@ -767,9 +778,23 @@ export const EasyPanel = memo(function EasyPanel({
  * scoped to one open detail: closing it and opening another must start at the
  * latest action again, and local state gives that for free by unmounting.
  */
-function StepDetailBody({ parts, sessionId }: { parts: ToolPart[]; sessionId: string }) {
-  const [index, setIndex] = useState(parts.length - 1);
-  const [mode, setMode] = useState<FollowMode>('live');
+function StepDetailBody({
+  parts,
+  sessionId,
+  /** The call the user actually clicked in the chat. A step is a GROUP ("Ran
+   *  13 commands"), so without this the detail always opened on the last part
+   *  in live mode — clicking the 4th command showed the 13th. */
+  focusCallId,
+}: {
+  parts: ToolPart[];
+  sessionId: string;
+  focusCallId?: string;
+}) {
+  const focusIndex = focusIndexForCall(parts, focusCallId);
+  const [index, setIndex] = useState(focusIndex >= 0 ? focusIndex : parts.length - 1);
+  // Arriving from a chat click pins the view to that call; 'live' would drag
+  // it straight back to the newest part on the next streaming update.
+  const [mode, setMode] = useState<FollowMode>(focusIndex >= 0 ? 'manual' : 'live');
 
   useEffect(() => {
     if (parts.length === 0) return;
