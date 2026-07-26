@@ -51,6 +51,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       acp_runtime: false,
       review_center: false,
+      agi: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -394,6 +395,7 @@ describe('envelopes', () => {
       'llm_gateway',
       'acp_runtime',
       'review_center',
+      'agi',
     ]);
   });
 

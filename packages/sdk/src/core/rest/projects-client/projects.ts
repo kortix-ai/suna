@@ -21,7 +21,8 @@ export type ExperimentalFeatureKey =
   | 'meet'
   | 'llm_gateway'
   | 'acp_runtime'
-  | 'review_center';
+  | 'review_center'
+  | 'agi';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

@@ -146,6 +146,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'agi',
+    name: 'AGI',
+    description:
+      'One agent that runs the workspace continuously: you set goals, it decomposes them into tasks, spawns sessions to do the work, and keeps pushing on a schedule without being asked. Goals live in kortix.yaml, tasks in the platform, and every wake comes from the triggers you already declare. The whole surface is moving.',
+    stability: 'experimental',
+    // Goals are manifest keys and tasks are app tables — both ship with the
+    // app, so nothing operator-side gates availability.
+    available: () => true,
+    // Explicit opt-in: an autonomous loop is never turned on for someone.
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(

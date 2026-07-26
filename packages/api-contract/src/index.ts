@@ -53,6 +53,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   llm_gateway: z.boolean(),
   acp_runtime: z.boolean(),
   review_center: z.boolean(),
+  agi: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 

@@ -25,6 +25,7 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
     expect(isExperimentalFeatureKey('acp_runtime')).toBe(true);
+    expect(isExperimentalFeatureKey('agi')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -55,6 +56,15 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     expect(
       resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email'),
     ).toBe(false);
+  });
+
+  // An autonomous loop that spawns sessions and spends tokens on a schedule is
+  // never turned on for someone — availability must not imply enablement.
+  test('agi is explicit opt-in and available everywhere', () => {
+    expect(findCatalogFeature('agi').available).toBe(true);
+    expect(resolveExperimentalFeature({}, 'agi')).toBe(false);
+    expect(resolveExperimentalFeature({ experimental: { agi: true } }, 'agi')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { agi: false } }, 'agi')).toBe(false);
   });
 
   test('connectors API Discover is explicit opt-in', () => {
