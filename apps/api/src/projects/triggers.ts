@@ -41,6 +41,7 @@ import {
   serializeManifestObject,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
+import { desugarGoalTriggers } from './lib/agi-goals';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
  *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
@@ -342,54 +343,77 @@ export function serializeManifest(manifest: ParsedManifest): string {
 
 /* ─── Trigger extraction ────────────────────────────────────────────────── */
 
+export interface ExtractTriggerOptions {
+  /**
+   * Fold in the cron triggers a `goals:` block's `push` entries desugar to
+   * (R-8, docs/specs/2026-07-26-agi-autonomous-operations.md §4).
+   *
+   * Defaults to FALSE. Goals are part of the `agi` experimental surface, whose
+   * per-project state is DB-only (`projects.metadata.experimental.agi`) and so
+   * is invisible to this pure manifest parser. Every caller resolves the flag
+   * itself and opts in — a project that has not enabled `agi` gets exactly the
+   * behavior it had before goals existed, `goals:` block or not.
+   */
+  goals?: boolean;
+}
+
 /**
  * Parse the `[[triggers]]` array out of a loaded manifest, validating each
  * entry. Never throws — bad entries land in `errors` with a slug + reason
  * so the UI can render them alongside the good ones.
  */
-export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
+export function extractTriggers(
+  manifest: ParsedManifest,
+  options: ExtractTriggerOptions = {},
+): LoadedTriggers {
   const filename = manifest.path || MANIFEST_FILENAME;
-  const rawTriggers = manifest.raw.triggers;
-  if (rawTriggers === undefined || rawTriggers === null) {
-    return { specs: [], errors: [] };
-  }
-  if (!Array.isArray(rawTriggers)) {
-    return {
-      specs: [],
-      errors: [
-        {
-          slug: '(top-level)',
-          path: filename,
-          error:
-            manifest.format === 'yaml'
-              ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
-              : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
-        },
-      ],
-    };
-  }
-
   const specs: GitTriggerSpec[] = [];
   const errors: GitTriggerParseError[] = [];
   const seenSlugs = new Set<string>();
 
-  rawTriggers.forEach((entry, index) => {
-    const result = parseTriggerEntry(entry, index, filename);
-    if (!result.ok) {
-      errors.push(result.error);
-      return;
-    }
-    if (seenSlugs.has(result.spec.slug)) {
+  const rawTriggers = manifest.raw.triggers;
+  if (rawTriggers !== undefined && rawTriggers !== null) {
+    if (!Array.isArray(rawTriggers)) {
       errors.push({
-        slug: result.spec.slug,
-        path: result.spec.path,
-        error: `Duplicate trigger slug "${result.spec.slug}" — slugs must be unique within a project`,
+        slug: '(top-level)',
+        path: filename,
+        error:
+          manifest.format === 'yaml'
+            ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
+            : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
       });
-      return;
+    } else {
+      rawTriggers.forEach((entry, index) => {
+        const result = parseTriggerEntry(entry, index, filename);
+        if (!result.ok) {
+          errors.push(result.error);
+          return;
+        }
+        if (seenSlugs.has(result.spec.slug)) {
+          errors.push({
+            slug: result.spec.slug,
+            path: result.spec.path,
+            error: `Duplicate trigger slug "${result.spec.slug}" — slugs must be unique within a project`,
+          });
+          return;
+        }
+        seenSlugs.add(result.spec.slug);
+        specs.push(result.spec);
+      });
     }
-    seenSlugs.add(result.spec.slug);
-    specs.push(result.spec);
-  });
+  }
+
+  // R-8: a goal's `push:` is sugar for exactly ONE cron trigger in this
+  // subsystem, never a second scheduler. Desugaring here — the single point the
+  // sweep, the fire route and the trigger list all read triggers through — is
+  // what makes that true without any of them learning what a goal is. The
+  // derived spec is re-computed from the goal slug on every read and never
+  // written back to the manifest, so re-shipping cannot accumulate duplicates.
+  if (options.goals) {
+    const derived = desugarGoalTriggers(manifest, seenSlugs);
+    specs.push(...derived.specs);
+    errors.push(...derived.errors);
+  }
 
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
   errors.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -402,7 +426,10 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
  * arrays + a single top-level error when the manifest fails to parse —
  * never throws.
  */
-export async function loadProjectTriggers(project: GitBackedProject): Promise<LoadedTriggers> {
+export async function loadProjectTriggers(
+  project: GitBackedProject,
+  options: ExtractTriggerOptions = {},
+): Promise<LoadedTriggers> {
   let manifest: ParsedManifest | null;
   try {
     manifest = await readManifest(project);
@@ -423,7 +450,7 @@ export async function loadProjectTriggers(project: GitBackedProject): Promise<Lo
     };
   }
   if (!manifest) return { specs: [], errors: [] };
-  return extractTriggers(manifest);
+  return extractTriggers(manifest, options);
 }
 
 /* ─── Trigger ↔ manifest-entry conversion ───────────────────────────────── */
