@@ -39,6 +39,29 @@ export interface AgiTask {
   updated_at: string;
 }
 
+/** One reading of one metric — spec §4.2's observation, on the wire. */
+export interface AgiObservationPoint {
+  value: number;
+  observed_at: string;
+  source: string;
+}
+
+/** A goal's metric with the three facts that answer "did it get closer?": where
+ *  it is, where it was, and how many re-measurements produced no movement. */
+export interface AgiGoalMetric {
+  metric: string;
+  latest: AgiObservationPoint;
+  previous: AgiObservationPoint | null;
+  direction: 'up' | 'down' | 'flat' | 'unknown';
+  flat_observations: number;
+  window_truncated: boolean;
+}
+
+export interface AgiGoalMetricSeries extends AgiGoalMetric {
+  /** Oldest → newest. */
+  series: AgiObservationPoint[];
+}
+
 export interface AgiGoal {
   slug: string;
   title: string;
@@ -49,6 +72,10 @@ export interface AgiGoal {
   trigger_slug: string | null;
   open_task_count: number;
   task_counts: Record<string, number>;
+  metrics: AgiGoalMetric[];
+  /** R-12d. `unmeasurable` means done_when names a threshold nobody has ever
+   *  measured — which is NOT the same as on track. */
+  measurability: 'measured' | 'unmeasurable' | 'unquantified';
 }
 
 export interface AgiManifestIssue {
@@ -87,7 +114,23 @@ export interface AgiGoalListResponse {
 
 export interface AgiGoalDetailResponse {
   goal: AgiGoal;
+  metric_series: AgiGoalMetricSeries[];
   open_tasks: AgiTask[];
+}
+
+export interface AgiObservation {
+  observation_id: string;
+  workspace_id: string;
+  goal_slug: string;
+  metric: string;
+  value: number;
+  observed_at: string;
+  source: string;
+  created_at: string;
+}
+
+export interface AgiObserveResponse {
+  observation: AgiObservation;
 }
 
 export interface AgiGoalPushResponse {

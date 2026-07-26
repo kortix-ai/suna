@@ -11,6 +11,12 @@
  * counts and the derived trigger's runtime row.
  */
 import { GOAL_STATUSES, type GoalParseError, type GoalSpec, type GoalStatus } from '../../projects/lib/agi-goals';
+import {
+  resolveGoalMeasurability,
+  serializeGoalMetric,
+  serializeGoalMetricWithSeries,
+  type GoalMetricSummary,
+} from '../observations/wire';
 import { TASK_STATUSES, TERMINAL_TASK_STATUSES } from '../tasks/wire';
 
 /** Per-status task tallies for one goal, every status present so a caller never
@@ -33,8 +39,20 @@ export function openTaskCount(counts: GoalTaskCounts): number {
  * `push`/`trigger_slug` are both nullable and move together: a goal with no
  * standing advance desugars to no trigger, which is why `goals push` on it is a
  * conflict rather than a fire.
+ *
+ * `metrics` and `measurability` are what make R-12's "measurably advanced"
+ * checkable. Before them a goal's only evidence of progress was its open task
+ * count, which moves whenever an agent invents work and says nothing about
+ * whether the goal got closer. `measurability` is carried EXPLICITLY rather than
+ * inferred from `metrics.length === 0`, because R-12d's whole point is that a
+ * threshold nobody measures is a different state from a goal that has no
+ * threshold to measure — and a bare empty array cannot tell them apart.
  */
-export function serializeAgiGoal(goal: GoalSpec, counts: GoalTaskCounts) {
+export function serializeAgiGoal(
+  goal: GoalSpec,
+  counts: GoalTaskCounts,
+  metrics: readonly GoalMetricSummary[] = [],
+) {
   return {
     slug: goal.slug,
     title: goal.title,
@@ -47,10 +65,21 @@ export function serializeAgiGoal(goal: GoalSpec, counts: GoalTaskCounts) {
     trigger_slug: goal.triggerSlug,
     task_counts: counts,
     open_task_count: openTaskCount(counts),
+    metrics: metrics.map(serializeGoalMetric),
+    measurability: resolveGoalMeasurability({
+      doneWhen: goal.doneWhen,
+      hasObservations: metrics.length > 0,
+    }),
   };
 }
 
 export type SerializedAgiGoal = ReturnType<typeof serializeAgiGoal>;
+
+/** The detail view's metrics: same summaries, plus the points themselves, so
+ *  `kortix goals show` can render the series without a second round trip. */
+export function serializeGoalMetricSeries(metrics: readonly GoalMetricSummary[]) {
+  return metrics.map(serializeGoalMetricWithSeries);
+}
 
 /** A goal the manifest declares but the parser rejected. `index` is the entry's
  *  ordinal in the `goals:` list, or -1 for a problem with the block as a whole. */

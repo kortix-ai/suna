@@ -3,8 +3,9 @@
  * validation, exactly as the task routes do, so the normative error strings
  * survive instead of being flattened into the shared zod-failure envelope.
  */
+import { AgiGoalMetricSchema } from '../observations/schemas';
 import { AgiTaskSchema } from '../tasks/schemas';
-import { LIVENESS_STATES, STALL_REASONS } from './wire';
+import { GOAL_LIVENESS_STATES, GOAL_STALL_REASONS, LIVENESS_STATES, STALL_REASONS } from './wire';
 import { z } from '@hono/zod-openapi';
 
 export const AgiTaskLivenessSchema = z
@@ -27,12 +28,41 @@ export const AgiLivenessViewSchema = z
   .object({ task: AgiTaskSchema, liveness: AgiTaskLivenessSchema })
   .openapi('AgiLivenessView');
 
+export const AgiGoalLivenessSchema = z
+  .object({
+    state: z.enum(GOAL_LIVENESS_STATES),
+    reason: z.enum(GOAL_STALL_REASONS).nullable(),
+    flat_metrics: z.array(z.object({ metric: z.string(), flat_observations: z.number() })),
+    /** The N this verdict used, so a caller never has to guess. */
+    flat_stall_after: z.number(),
+  })
+  .openapi('AgiGoalLiveness');
+
+export const AgiGoalLivenessViewSchema = z
+  .object({
+    slug: z.string(),
+    title: z.string(),
+    status: z.string(),
+    liveness: AgiGoalLivenessSchema,
+    metrics: z.array(AgiGoalMetricSchema),
+  })
+  .openapi('AgiGoalLivenessView');
+
 export const AgiLivenessSchema = z
   .object({
     tasks: z.array(AgiLivenessViewSchema),
     stalled: z.array(AgiLivenessViewSchema),
+    /** Stalled TASKS. Unchanged meaning — see the route. */
     stalled_count: z.number(),
     truncated: z.boolean(),
+    goals: z.array(AgiGoalLivenessViewSchema),
+    /** R-12e: every metric flat across at least `flat_stall_after` readings. */
+    stalled_goals: z.array(AgiGoalLivenessViewSchema),
+    stalled_goal_count: z.number(),
+    /** R-12d: `done_when` names a threshold, nothing has ever been recorded. */
+    unmeasurable_goals: z.array(AgiGoalLivenessViewSchema),
+    unmeasurable_goal_count: z.number(),
+    stalled_total: z.number(),
   })
   .openapi('AgiLiveness');
 

@@ -5,6 +5,11 @@
  * flattened into the shared zod-failure envelope.
  */
 import { GOAL_STATUSES } from '../../projects/lib/agi-goals';
+import {
+  AgiGoalMeasurabilitySchema,
+  AgiGoalMetricSchema,
+  AgiGoalMetricSeriesSchema,
+} from '../observations/schemas';
 import { AgiTaskSchema } from '../tasks/schemas';
 import { z } from '@hono/zod-openapi';
 
@@ -21,6 +26,12 @@ export const AgiGoalSchema = z
     trigger_slug: z.string().nullable(),
     task_counts: z.record(z.string(), z.number()),
     open_task_count: z.number(),
+    /** R-12: how the goal is actually moving. Empty until something records an
+     *  observation. */
+    metrics: z.array(AgiGoalMetricSchema),
+    /** R-12d. `unmeasurable` is NOT on-track: it means `done_when` names a
+     *  threshold and nothing has ever been recorded for it. */
+    measurability: AgiGoalMeasurabilitySchema,
   })
   .openapi('AgiGoal');
 
@@ -61,6 +72,8 @@ export const AgiGoalTriggerSchema = z
 export const AgiGoalDetailSchema = z
   .object({
     goal: AgiGoalSchema,
+    /** `goal.metrics` with the points attached — the detail view's series. */
+    metric_series: z.array(AgiGoalMetricSeriesSchema),
     open_tasks: z.array(AgiTaskSchema),
     /** Live state of the trigger `push` desugars to, or null for an on-demand
      *  goal. */

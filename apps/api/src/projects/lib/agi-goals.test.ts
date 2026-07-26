@@ -210,6 +210,21 @@ describe('R-8 — push desugars to exactly one cron trigger', () => {
     expect(goalPushPrompt({ slug: 'g', title: 'G', doneWhen: 'x' })).toBe(prompt);
   });
 
+  // Without this the verb exists and nothing calls it, which is exactly the
+  // failure spec section 4.2 describes: "measurably advanced" stays an adjective
+  // in a prompt string and the model grades its own homework.
+  test('R-12: the push prompt makes taking a reading part of the push', () => {
+    const prompt = goalPushPrompt({ slug: 'seo', title: 'SEO', doneWhen: 'Top 3.' });
+    expect(prompt).toContain('kortix goals observe seo --metric <name> --value <number>');
+    expect(prompt).toContain('TAKE A READING');
+    // R-12a: the push IS the signal. It must not send the session off to build a
+    // scheduler of its own.
+    expect(prompt).not.toContain('cron');
+    // R-12d and R-12f, in the session's own instructions.
+    expect(prompt).toContain('UNMEASURABLE');
+    expect(prompt).toContain('recording one never changes the status');
+  });
+
   test('a goal that names no agent desugars to a trigger targeting the platform AGI', () => {
     const { specs } = desugarGoalTriggers(
       parse(

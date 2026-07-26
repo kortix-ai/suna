@@ -9,10 +9,13 @@ import {
   isRecoverableStall,
   isStallFingerprint,
   nextRecoveryStep,
+  resolveGoalLiveness,
   resolveTaskLiveness,
+  serializeGoalLiveness,
   serializeTaskLiveness,
   stallFingerprint,
 } from './wire';
+import { summarizeMetric, type GoalMetricSummary } from '../observations/wire';
 import type { AgiTaskRow } from '../tasks/wire';
 
 const TASK_ID = '11111111-1111-4111-8111-111111111111';
@@ -389,6 +392,111 @@ describe('serializeTaskLiveness', () => {
       task_id: BLOCKER_ID,
       escalated: true,
       escalated_to: USER_ID,
+    });
+  });
+});
+
+// ─── R-12d/R-12e: the goal half of the same surface ─────────────────────────
+
+describe('resolveGoalLiveness', () => {
+  const AT = new Date('2026-07-27T09:00:00.000Z');
+
+  /** Newest first, the order summarizeMetric consumes. */
+  function series(name: string, ...values: number[]): GoalMetricSummary {
+    return summarizeMetric(
+      name,
+      values.map((value, index) => ({
+        value,
+        observedAt: new Date(AT.getTime() - index * 86_400_000),
+        source: 'session:s1',
+      })),
+      50,
+    )!;
+  }
+
+  const active = (metrics: GoalMetricSummary[], doneWhen = 'Top 3 for the core terms.') =>
+    resolveGoalLiveness({ status: 'active', doneWhen, metrics, flatStallAfter: 3 });
+
+  test('achieved and abandoned are settled — outside the question, like a done task', () => {
+    for (const status of ['achieved', 'abandoned']) {
+      expect(
+        resolveGoalLiveness({ status, doneWhen: 'Top 3.', metrics: [], flatStallAfter: 3 }).state,
+      ).toBe('settled');
+    }
+  });
+
+  test('a paused goal is paused, not stalled — pausing is a choice, not a defect', () => {
+    expect(
+      resolveGoalLiveness({ status: 'paused', doneWhen: 'Top 3.', metrics: [], flatStallAfter: 3 })
+        .state,
+    ).toBe('paused');
+  });
+
+  // R-12d. The whole point: "be #1 on Google" with nothing ever recorded is not
+  // progressing slowly, it is un-judged — and it must never read as on-track.
+  test('a threshold with zero observations is UNMEASURABLE, never measuring and never stalled', () => {
+    const verdict = active([], 'Be #1 on Google for the core terms.');
+    expect(verdict.state).toBe('unmeasurable');
+    expect(verdict.reason).toBeNull();
+  });
+
+  test('prose with no threshold and no observations is UNQUANTIFIED — a different problem', () => {
+    expect(active([], 'An offer is signed and a start date is on the calendar.').state).toBe(
+      'unquantified',
+    );
+  });
+
+  test('a metric that moved is measuring, with no flat metrics reported', () => {
+    const verdict = active([series('rank', 9, 12, 12, 12)]);
+    expect(verdict.state).toBe('measuring');
+    expect(verdict.flatMetrics).toEqual([]);
+  });
+
+  test('a flat run short of the threshold is not yet a stall', () => {
+    expect(active([series('rank', 9, 9, 9)]).state).toBe('measuring');
+  });
+
+  // R-12e, and the failure the whole section exists for: three weeks of a loop
+  // that looks alive while the number has not moved.
+  test('a metric flat across N consecutive readings is a stall, named and counted', () => {
+    const verdict = active([series('rank', 9, 9, 9, 9)]);
+    expect(verdict.state).toBe('stalled');
+    expect(verdict.reason).toBe('metric_flat');
+    expect(verdict.flatMetrics).toEqual([{ metric: 'rank', flatObservations: 3 }]);
+    expect(verdict.flatStallAfter).toBe(3);
+  });
+
+  test('one metric still moving keeps the goal measuring — something got closer', () => {
+    const verdict = active([series('rank', 9, 9, 9, 9), series('signups', 40, 31)]);
+    expect(verdict.state).toBe('measuring');
+    // The flat one is still reported by name, so it is visible before it stalls
+    // the whole goal.
+    expect(verdict.flatMetrics.map((m) => m.metric)).toEqual(['rank']);
+  });
+
+  test('every metric flat is a stall, worst flat run first', () => {
+    const verdict = active([series('rank', 9, 9, 9, 9), series('signups', 40, 40, 40, 40, 40)]);
+    expect(verdict.state).toBe('stalled');
+    expect(verdict.flatMetrics.map((m) => m.metric)).toEqual(['signups', 'rank']);
+  });
+
+  test('the threshold is carried on the verdict so a caller never has to guess which N ran', () => {
+    const verdict = resolveGoalLiveness({
+      status: 'active',
+      doneWhen: 'Top 3.',
+      metrics: [series('rank', 9, 9, 9, 9)],
+      flatStallAfter: 5,
+    });
+    expect(verdict.state).toBe('measuring');
+    expect(verdict.flatStallAfter).toBe(5);
+  });
+
+  test('serializes to the snake_case wire shape', () => {
+    expect(serializeGoalLiveness(active([series('rank', 9, 9, 9, 9)]))).toEqual({
+      state: 'stalled',
+      reason: 'metric_flat',
+      flat_metrics: [{ metric: 'rank', flat_observations: 3 }],
+      flat_stall_after: 3,
     });
   });
 });

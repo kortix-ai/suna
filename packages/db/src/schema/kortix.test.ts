@@ -33,6 +33,7 @@ import {
   gatewayRequestLogs,
   accountSsoProviders,
   agiTasks,
+  agiObservations,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -523,5 +524,96 @@ describe('agi_tasks table', () => {
 
   test('a task cannot be its own parent', () => {
     expect(checkNames).toContain('agi_tasks_parent_not_self_check');
+  });
+});
+
+describe('agi_observations table', () => {
+  const cfg = getTableConfig(agiObservations);
+  const checkNames = cfg.checks.map((c) => c.name);
+  const column = (name: string) => cfg.columns.find((c) => c.name === name);
+  const index = (name: string) => cfg.indexes.find((i) => i.config.name === name);
+
+  test('lives in the kortix schema under the gate-prefixed name', () => {
+    expect(cfg.name).toBe('agi_observations');
+    expect(cfg.schema).toBe('kortix');
+    expect(primaryColumn(agiObservations)).toBe('observation_id');
+  });
+
+  test('carries every column from spec R-12b, plus the workspace scope', () => {
+    expect(columnNames(agiObservations)).toEqual([
+      'observation_id',
+      'workspace_id',
+      'goal_slug',
+      'metric',
+      'value',
+      'observed_at',
+      'source',
+      'created_at',
+    ]);
+  });
+
+  test('is APPEND-ONLY: there is no updated_at to write', () => {
+    // R-12f makes an observation evidence and never authority. A series that can
+    // be edited after the fact proves nothing, so the schema has no mutable
+    // column to edit.
+    expect(columnNames(agiObservations)).not.toContain('updated_at');
+  });
+
+  test('cascades from the workspace project and has NO foreign key to a goal', () => {
+    const targets = cfg.foreignKeys.map((f) => ({
+      table: getTableConfig(f.reference().foreignTable).name,
+      columns: f.reference().columns.map((c) => c.name),
+    }));
+    // Goals are authored state in kortix.yaml. Deleting or renaming one must not
+    // delete the measurements that judged it — same rule agi_tasks follows.
+    expect(targets).toEqual([{ table: 'projects', columns: ['workspace_id'] }]);
+    expect(column('goal_slug')?.notNull).toBe(true);
+  });
+
+  test('value is double precision, not numeric', () => {
+    // A JSON number IS an IEEE-754 double, so numeric would promise precision the
+    // wire cannot keep — and node-postgres returns numeric as a string, which
+    // would serialize as `"3"` and break every comparison built on this column.
+    expect(column('value')?.getSQLType()).toBe('double precision');
+    expect(column('value')?.notNull).toBe(true);
+  });
+
+  test('rejects NaN and both infinities, which would otherwise pin the latest value', () => {
+    expect(checkNames).toContain('agi_observations_value_finite_check');
+  });
+
+  test('constrains the metric name shape so a series cannot fork on a spelling', () => {
+    expect(checkNames).toContain('agi_observations_metric_check');
+  });
+
+  test('one index serves both the latest-value read and the range scan', () => {
+    const series = index('idx_agi_observations_series');
+    expect(series?.config.columns.map((c) => (c as { name?: string }).name)).toEqual([
+      'workspace_id',
+      'goal_slug',
+      'metric',
+      'observed_at',
+      'observation_id',
+    ]);
+    // Descending on observed_at is what makes "latest" a LIMIT 1 rather than a
+    // sort; observation_id is the deterministic tiebreak for two readings that
+    // share a timestamp.
+    expect(
+      series?.config.columns.map((c) => (c as { indexConfig?: { order?: string } }).indexConfig?.order),
+    ).toEqual(['asc', 'asc', 'asc', 'desc', 'desc']);
+  });
+
+  test('observed_at and created_at are separate facts, both defaulted', () => {
+    // A webhook relaying an outside reading carries the reading's own timestamp;
+    // ordering the series by arrival would misdate it.
+    for (const name of ['observed_at', 'created_at']) {
+      expect(column(name)?.notNull).toBe(true);
+      expect(column(name)?.hasDefault).toBe(true);
+    }
+  });
+
+  test('source is required — an unattributed number is not evidence', () => {
+    expect(column('source')?.notNull).toBe(true);
+    expect(column('source')?.hasDefault).toBe(false);
   });
 });

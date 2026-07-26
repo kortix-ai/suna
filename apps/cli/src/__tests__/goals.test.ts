@@ -2,12 +2,36 @@ import { expect, test } from 'bun:test';
 
 import {
   buildGoalListQuery,
+  buildObserveBody,
+  directionMark,
+  formatMetricValue,
   formatGoalIssue,
+  goalMetricCell,
+  measurabilityNotice,
   renderGoalTable,
+  renderMetricTable,
+  renderSeries,
   runGoals,
 } from '../commands/goals.ts';
-import type { AgiGoal } from '../commands/tasks.ts';
+import type { AgiGoal, AgiGoalMetric, AgiGoalMetricSeries } from '../commands/tasks.ts';
 import { stripAnsi } from '../style.ts';
+
+function point(value: number, observedAt = '2026-07-26T09:00:00.000Z') {
+  return { value, observed_at: observedAt, source: 'session:s1' };
+}
+
+function metric(overrides: Partial<AgiGoalMetricSeries> = {}): AgiGoalMetricSeries {
+  return {
+    metric: 'rank',
+    latest: point(9),
+    previous: point(12),
+    direction: 'up',
+    flat_observations: 0,
+    window_truncated: false,
+    series: [point(12), point(9)],
+    ...overrides,
+  };
+}
 
 function goal(overrides: Partial<AgiGoal> = {}): AgiGoal {
   return {
@@ -20,6 +44,8 @@ function goal(overrides: Partial<AgiGoal> = {}): AgiGoal {
     trigger_slug: 'goal-ship-v1',
     open_task_count: 3,
     task_counts: { todo: 2, doing: 1 },
+    metrics: [],
+    measurability: 'unquantified',
     ...overrides,
   };
 }
@@ -69,7 +95,108 @@ test('the goal table carries slug, status, push, open count, and title', () => {
   expect(table).toContain('OPEN');
   expect(table).toContain('0 0 9 * * 1-5');
   // A goal with no `push:` reads as a dash, not an empty column.
-  expect(table).toMatch(/\n {2}x +active +- +0 +Ship v1/);
+  expect(table).toMatch(/\n {2}x +active +- +0 +- +Ship v1/);
+});
+
+test('the list METRIC cell shows the FLATTEST metric — the one closest to a stall', () => {
+  const cell = goalMetricCell({
+    measurability: 'measured',
+    metrics: [
+      { ...metric({ metric: 'signups', latest: point(40), direction: 'up' }) },
+      { ...metric({ metric: 'rank', latest: point(9), direction: 'flat', flat_observations: 4 }) },
+    ] as AgiGoalMetric[],
+  });
+  expect(cell).toBe('rank 9 → flat×4');
+});
+
+// R-12d: the distinction the whole section exists for. A goal with no readings
+// must never render as a blank cell, which is indistinguishable from healthy.
+test('an unmeasurable goal says so in the list instead of showing a blank cell', () => {
+  expect(goalMetricCell({ metrics: [], measurability: 'unmeasurable' })).toBe('UNMEASURABLE');
+  expect(goalMetricCell({ metrics: [], measurability: 'unquantified' })).toBe('-');
+});
+
+test('unmeasurable warns and names the verb that fixes it; unquantified is informational', () => {
+  const warned = stripAnsi(measurabilityNotice({ slug: 'seo', measurability: 'unmeasurable' }));
+  expect(warned).toContain('UNMEASURABLE');
+  expect(warned).toContain('kortix goals observe seo --metric');
+
+  const quiet = stripAnsi(measurabilityNotice({ slug: 'hire', measurability: 'unquantified' }));
+  expect(quiet).toContain('no threshold');
+  expect(quiet).not.toContain('UNMEASURABLE');
+});
+
+test('direction marks distinguish "flat" from "only one reading"', () => {
+  expect(directionMark('up')).toBe('↑');
+  expect(directionMark('down')).toBe('↓');
+  expect(directionMark('flat')).toBe('→');
+  expect(directionMark('unknown')).toBe('?');
+});
+
+test('metric values drop float noise but keep real decimals', () => {
+  expect(formatMetricValue(9)).toBe('9');
+  expect(formatMetricValue(9.300000000000001)).toBe('9.3');
+  expect(formatMetricValue(-0.5)).toBe('-0.5');
+});
+
+test('the series preview keeps the NEWEST readings and marks what it dropped', () => {
+  expect(renderSeries([])).toBe('-');
+  expect(renderSeries([point(1), point(2), point(3)])).toBe('1 → 2 → 3');
+  const long = [1, 2, 3, 4, 5, 6, 7, 8].map((v) => point(v));
+  const rendered = renderSeries(long);
+  expect(rendered).toBe('… → 3 → 4 → 5 → 6 → 7 → 8');
+});
+
+test('the metric table carries the flat run as its own column', () => {
+  const table = stripAnsi(
+    renderMetricTable([
+      metric({ metric: 'rank', latest: point(9), direction: 'flat', flat_observations: 3 }),
+    ]),
+  );
+  expect(table).toContain('FLAT');
+  expect(table).toMatch(/rank +9 +→ +3 +12 → 9/);
+});
+
+test('observe requires a metric and a finite value before any network call', async () => {
+  expect(() => buildObserveBody({ value: '1' })).toThrow('--metric is required');
+  expect(() => buildObserveBody({ metric: 'rank' })).toThrow('--value is required');
+  // Number('') is 0 and Number('1e999') is Infinity — both would record a
+  // reading nobody took.
+  expect(() => buildObserveBody({ metric: 'rank', value: '' })).toThrow('--value is required');
+  expect(() => buildObserveBody({ metric: 'rank', value: 'soon' })).toThrow('finite number');
+  expect(() => buildObserveBody({ metric: 'rank', value: '1e999' })).toThrow('finite number');
+});
+
+test('observe passes the metric name through untouched — the server owns normalization', () => {
+  // If the CLI folded the name too, a webhook posting directly could disagree
+  // about which series a name belongs to.
+  expect(buildObserveBody({ metric: 'Google Rank', value: '9' })).toEqual({
+    metric: 'Google Rank',
+    value: 9,
+  });
+});
+
+test('observe omits source and observed_at unless given, so the server defaults apply', () => {
+  expect(buildObserveBody({ metric: 'rank', value: '0' })).toEqual({ metric: 'rank', value: 0 });
+  expect(buildObserveBody({ metric: 'rank', value: '9', source: 'cron', at: '2026-07-26T09:00:00Z' })).toEqual({
+    metric: 'rank',
+    value: 9,
+    source: 'cron',
+    observed_at: '2026-07-26T09:00:00.000Z',
+  });
+  expect(() => buildObserveBody({ metric: 'rank', value: '9', at: 'tuesday' })).toThrow('ISO-8601');
+});
+
+test('observe without a slug is a usage error before any network call', async () => {
+  const { code, err } = await capture(['observe', '--metric', 'rank', '--value', '9']);
+  expect(code).toBe(2);
+  expect(err).toContain('Pass a goal slug.');
+});
+
+test('observe with a slug but no metric is a usage error, not a round trip', async () => {
+  const { code, err } = await capture(['observe', 'seo']);
+  expect(code).toBe(2);
+  expect(err).toContain('--metric is required');
 });
 
 test('show and push without a slug are usage errors before any network call', async () => {

@@ -32,13 +32,24 @@ import {
   classifyClaimSession,
   isRecoverableStall,
   isStallFingerprint,
+  resolveGoalLiveness,
   resolveTaskLiveness,
+  serializeGoalLiveness,
   serializeTaskLiveness,
   stallFingerprint,
   type ClaimSessionState,
+  type GoalLiveness,
   type SerializedTaskLiveness,
   type TaskLiveness,
 } from './wire';
+import type { GoalSpec } from '../../projects/lib/agi-goals';
+import { METRIC_WINDOW, loadMetricWindows } from '../observations/store';
+import {
+  resolveFlatStallThreshold,
+  rollupGoalMetrics,
+  serializeGoalMetric,
+  type GoalMetricSummary,
+} from '../observations/wire';
 
 /** Whole-workspace bound. See the note on `loadOpenTasks`. */
 export const LIVENESS_TASK_CAP = 500;
@@ -239,6 +250,77 @@ async function sweepOne(input: {
     claimReleased,
     progressed: progress.progressed,
     recovery,
+  };
+}
+
+// ─── R-12e: the goal half of the same surface ───────────────────────────────
+
+export interface GoalLivenessView {
+  slug: string;
+  title: string;
+  status: string;
+  metrics: GoalMetricSummary[];
+  liveness: GoalLiveness;
+}
+
+export interface WorkspaceGoalLiveness {
+  views: GoalLivenessView[];
+  stalled: GoalLivenessView[];
+  /** R-12d's bucket, kept separate from `stalled` on purpose — see
+   *  {@link resolveGoalLiveness}. */
+  unmeasurable: GoalLivenessView[];
+}
+
+/**
+ * Every goal in the workspace with its R-12d/R-12e verdict.
+ *
+ * ONE query regardless of goal count, and the goal specs are passed IN rather
+ * than read here: they live in kortix.yaml, the caller has already paid for that
+ * git round trip to answer its own question, and re-reading the manifest inside
+ * a liveness pass would make one HTTP request clone the repo twice.
+ */
+export async function resolveWorkspaceGoalLiveness(input: {
+  workspaceId: string;
+  goals: readonly Pick<GoalSpec, 'slug' | 'title' | 'status' | 'doneWhen'>[];
+  flatStallAfter?: number;
+}): Promise<WorkspaceGoalLiveness> {
+  const flatStallAfter = input.flatStallAfter ?? resolveFlatStallThreshold();
+  const windows = await loadMetricWindows(
+    input.workspaceId,
+    input.goals.map((goal) => goal.slug),
+  );
+  const byGoal = rollupGoalMetrics(windows, METRIC_WINDOW);
+
+  const views = input.goals.map((goal) => {
+    const metrics = byGoal.get(goal.slug) ?? [];
+    return {
+      slug: goal.slug,
+      title: goal.title,
+      status: goal.status,
+      metrics,
+      liveness: resolveGoalLiveness({
+        status: goal.status,
+        doneWhen: goal.doneWhen,
+        metrics,
+        flatStallAfter,
+      }),
+    };
+  });
+
+  return {
+    views,
+    stalled: views.filter((view) => view.liveness.state === 'stalled'),
+    unmeasurable: views.filter((view) => view.liveness.state === 'unmeasurable'),
+  };
+}
+
+export function serializeGoalLivenessView(view: GoalLivenessView) {
+  return {
+    slug: view.slug,
+    title: view.title,
+    status: view.status,
+    liveness: serializeGoalLiveness(view.liveness),
+    metrics: view.metrics.map(serializeGoalMetric),
   };
 }
 

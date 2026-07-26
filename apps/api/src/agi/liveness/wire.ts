@@ -18,6 +18,7 @@
  *     Feed it the same evidence twice and it MUST return the same string.
  */
 import { createHash } from 'node:crypto';
+import { namesThreshold, type GoalMetricSummary } from '../observations/wire';
 import { isTerminalTaskStatus, type AgiTaskRow } from '../tasks/wire';
 
 /**
@@ -382,6 +383,127 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
     claimSession: task.claimSessionId !== null ? input.claimSession : null,
   };
 }
+
+// ─── R-12d/R-12e: is the GOAL moving? ───────────────────────────────────────
+//
+// A task's liveness answers "what moves this forward next?". A goal's answers a
+// different question — "did it get closer?" — and only a metric can answer it.
+// The two live in the same module, and are surfaced by the same route, because
+// R-12e says a flat line MUST surface as a stall "exactly like a task with no
+// live path": one place a human looks to find out what is stuck. They are not
+// merged into one vocabulary, because a goal is not a task and pretending
+// otherwise would give a goal a claim, a blocker list, and a recovery row it
+// cannot have.
+
+/**
+ * The answer to "is this goal moving?".
+ *
+ *   settled       — achieved or abandoned. Outside the question, like a terminal
+ *                   task's `settled`.
+ *   paused        — deliberately not advancing. Not a defect.
+ *   measuring     — active, at least one metric, and something has moved (or is
+ *                   too new to have gone flat).
+ *   unmeasurable  — R-12d. `done_when` names a threshold and NOTHING has ever
+ *                   been recorded. Distinct from `stalled` on purpose: the fix
+ *                   is to start measuring, not to work harder.
+ *   unquantified  — active, nothing recorded, and `done_when` names no threshold
+ *                   to record. Legal under R-7, reported so it is a choice
+ *                   rather than an oversight.
+ *   stalled       — R-12e. Every metric has been flat across at least N
+ *                   consecutive readings.
+ */
+export const GOAL_LIVENESS_STATES = [
+  'settled',
+  'paused',
+  'measuring',
+  'unmeasurable',
+  'unquantified',
+  'stalled',
+] as const;
+export type GoalLivenessState = (typeof GOAL_LIVENESS_STATES)[number];
+
+/** Why a goal is stalled. One value today; it is an array because §13 leaves
+ *  open what else counts, and a bare boolean could not grow. */
+export const GOAL_STALL_REASONS = ['metric_flat'] as const;
+export type GoalStallReason = (typeof GOAL_STALL_REASONS)[number];
+
+export interface GoalLiveness {
+  state: GoalLivenessState;
+  reason: GoalStallReason | null;
+  /** Metrics whose flat run has reached the threshold, worst (longest flat run)
+   *  first — the ones a human should be told about by name. */
+  flatMetrics: { metric: string; flatObservations: number }[];
+  /** The threshold this verdict was reached with, so a caller never has to guess
+   *  which N produced it. */
+  flatStallAfter: number;
+}
+
+export interface GoalLivenessInput {
+  status: string;
+  doneWhen: string;
+  metrics: readonly GoalMetricSummary[];
+  flatStallAfter: number;
+}
+
+/**
+ * R-12e, decided from the series alone.
+ *
+ * A goal stalls only when EVERY metric it carries is flat past the threshold.
+ * That is the deliberate reading of "the goal did not get closer": if a goal
+ * tracks rank and signups, and rank has been pinned for a week while signups
+ * climb, something moved and the goal is advancing. The trade-off is stated
+ * honestly — a goal that carries one real metric and one noisy one can hide a
+ * flat line behind the noise, and the answer to that is to stop recording the
+ * noisy one, not to make any single flat metric condemn the goal.
+ *
+ * `unmeasurable` is checked BEFORE the flat run and can never be reached by it:
+ * with zero observations there is no run to be flat, and R-12d insists that case
+ * is reported as its own thing rather than folded into "on track" OR into
+ * "stalled".
+ */
+export function resolveGoalLiveness(input: GoalLivenessInput): GoalLiveness {
+  const base = {
+    reason: null as GoalStallReason | null,
+    flatMetrics: [] as { metric: string; flatObservations: number }[],
+    flatStallAfter: input.flatStallAfter,
+  };
+
+  if (input.status === 'achieved' || input.status === 'abandoned') {
+    return { ...base, state: 'settled' };
+  }
+  if (input.status === 'paused') return { ...base, state: 'paused' };
+
+  if (input.metrics.length === 0) {
+    return {
+      ...base,
+      state: namesThreshold(input.doneWhen) ? 'unmeasurable' : 'unquantified',
+    };
+  }
+
+  const flatMetrics = input.metrics
+    .filter((metric) => metric.flatObservations >= input.flatStallAfter)
+    .map((metric) => ({ metric: metric.metric, flatObservations: metric.flatObservations }))
+    .sort((a, b) => b.flatObservations - a.flatObservations);
+
+  if (flatMetrics.length === input.metrics.length) {
+    return { ...base, state: 'stalled', reason: 'metric_flat', flatMetrics };
+  }
+  return { ...base, state: 'measuring', flatMetrics };
+}
+
+export function serializeGoalLiveness(liveness: GoalLiveness) {
+  return {
+    state: liveness.state,
+    reason: liveness.reason,
+    flat_metrics: liveness.flatMetrics.map((entry) => ({
+      metric: entry.metric,
+      flat_observations: entry.flatObservations,
+    })),
+    flat_stall_after: liveness.flatStallAfter,
+  };
+}
+
+export type SerializedGoalLiveness = ReturnType<typeof serializeGoalLiveness>;
 
 export function serializeTaskLiveness(liveness: TaskLiveness) {
   return {

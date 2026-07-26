@@ -78,6 +78,8 @@ export {
   // AGI (experimental — gated on the `agi` feature key)
   agiTasks,
   agiTasksRelations,
+  agiObservations,
+  agiObservationsRelations,
   // Relations
   projectsRelations,
   projectGitConnectionsRelations,

@@ -31,7 +31,10 @@ import {
   goalIssues,
   parseGoalStatusFilter,
   serializeAgiGoal,
+  serializeGoalMetricSeries,
 } from './wire';
+import { METRIC_WINDOW, loadMetricWindows } from '../observations/store';
+import { rollupGoalMetrics, type GoalMetricSummary } from '../observations/wire';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -82,18 +85,25 @@ agiApp.openapi(
     const visible =
       status === 'all' ? loaded.specs : loaded.specs.filter((goal) => goal.status === status);
 
-    // Counts come from the FULL slug set, not the filtered one, because the
-    // rollup is per-goal — filtering the query would only save a WHERE clause.
-    const counts = await countTasksByGoal(
-      projectId,
-      loaded.specs.map((goal) => goal.slug),
-    );
+    // Counts and metrics come from the FULL slug set, not the filtered one,
+    // because the rollup is per-goal — filtering the query would only save a
+    // WHERE clause. Two queries for the whole list, never one per goal.
+    const slugs = loaded.specs.map((goal) => goal.slug);
+    const [counts, windows] = await Promise.all([
+      countTasksByGoal(projectId, slugs),
+      loadMetricWindows(projectId, slugs),
+    ]);
+    const metrics = rollupGoalMetrics(windows, METRIC_WINDOW);
 
     return c.json({
       // Declaration order, never sorted: the author's ordering IS the priority
       // ordering they wrote the file for (R-10).
       goals: visible.map((goal) =>
-        serializeAgiGoal(goal, counts.get(goal.slug) ?? emptyGoalTaskCounts()),
+        serializeAgiGoal(
+          goal,
+          counts.get(goal.slug) ?? emptyGoalTaskCounts(),
+          metrics.get(goal.slug) ?? [],
+        ),
       ),
       // A malformed goal is REPORTED, never omitted. It is otherwise invisible
       // in every surface: `extractGoals` returns it here, but the trigger
@@ -129,7 +139,7 @@ agiApp.openapi(
     const goal = loaded.specs.find((spec) => spec.slug === slug);
     if (!goal) return c.json({ error: 'Not found' }, 404);
 
-    const [counts, openTasks, runtime] = await Promise.all([
+    const [counts, openTasks, runtime, windows] = await Promise.all([
       countTasksByGoal(projectId, [goal.slug]),
       listTasks(projectId, {
         status: { kind: 'in', statuses: [...OPEN_TASK_STATUSES] },
@@ -137,7 +147,10 @@ agiApp.openapi(
         limit: TASK_RELATION_CAP,
       }),
       goal.triggerSlug ? goalTriggerRuntime(projectId, goal.triggerSlug) : null,
+      loadMetricWindows(projectId, [goal.slug]),
     ]);
+    const metrics: GoalMetricSummary[] =
+      rollupGoalMetrics(windows, METRIC_WINDOW).get(goal.slug) ?? [];
 
     // Resolved through the trigger extractor, so an authored `triggers:` entry
     // that claims the derived slug is what shows up here — the same trigger the
@@ -149,7 +162,11 @@ agiApp.openapi(
 
     const now = new Date();
     return c.json({
-      goal: serializeAgiGoal(goal, counts.get(goal.slug) ?? emptyGoalTaskCounts()),
+      goal: serializeAgiGoal(goal, counts.get(goal.slug) ?? emptyGoalTaskCounts(), metrics),
+      // The same metrics the goal carries, plus their points. Kept as a sibling
+      // key rather than fattening `goal.metrics` so the goal object is byte-wise
+      // identical in the list and the detail view.
+      metric_series: serializeGoalMetricSeries(metrics),
       open_tasks: openTasks.map((row) => serializeAgiTask(row, now)),
       trigger: spec
         ? {

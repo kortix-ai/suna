@@ -8,6 +8,7 @@
  */
 import './goals/routes';
 import './liveness/routes';
+import './observations/routes';
 import './tasks/routes';
 
 export { agiApp } from './app';

@@ -132,6 +132,14 @@ function isValidTimeZone(tz: string): boolean {
  * changed), R-12's "advanced or say why not", and R-9's prohibition on the
  * session declaring the goal achieved.
  *
+ * The measurement step is the one that makes R-12 real. Without it "measurably
+ * advanced" is an adjective in a prompt string and the only thing evaluating
+ * `done_when` is a model grading its own homework — the failure mode §4.2 was
+ * written about, where the loop looks alive for three weeks while the metric has
+ * not moved. This push IS the signal (R-12a: a signal is a trigger, never a
+ * probe registry), so taking the reading is part of the push and not a separate
+ * schedule.
+ *
  * Pure and deterministic: the same goal always renders the same prompt, so a
  * re-ship produces a byte-identical trigger.
  */
@@ -142,11 +150,13 @@ export function goalPushPrompt(goal: Pick<GoalSpec, 'slug' | 'title' | 'doneWhen
     'Done when:',
     goal.doneWhen.trim(),
     '',
-    `In this order: re-read this goal and its completion criteria; read the open tasks for goal "${goal.slug}"; decide the single most valuable next move; take it, or create the tasks that constitute it; then record what changed.`,
+    `In this order: re-read this goal and its completion criteria; read the open tasks for goal "${goal.slug}"; TAKE A READING of whatever the completion criteria measure and record it; decide the single most valuable next move; take it, or create the tasks that constitute it; then record what changed.`,
+    '',
+    `Record every reading with: kortix goals observe ${goal.slug} --metric <name> --value <number>. Use the SAME metric name every time — that series is the only evidence that this goal is moving, and a renamed metric starts an empty one. If the criteria above name a threshold you cannot measure yet, say so and make measuring it the next move; a goal nobody measures is reported as UNMEASURABLE, not as on track.`,
     '',
     'Leave the goal measurably advanced, or state why you could not — "reviewed, nothing to do" is only a valid outcome with a stated reason.',
     '',
-    'Do not mark the goal achieved. Goal status is authored state in kortix.yaml and changes only by an explicit human act with cited evidence.',
+    'Do not mark the goal achieved. Goal status is authored state in kortix.yaml and changes only by an explicit human act with cited evidence. A reading is evidence, never authority: recording one never changes the status.',
   ].join('\n');
 }
 

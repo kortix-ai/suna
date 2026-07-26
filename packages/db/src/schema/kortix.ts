@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -4221,4 +4222,96 @@ export const agiTasksRelations = relations(agiTasks, ({ one, many }) => ({
     relationName: 'agi_task_children',
   }),
   children: many(agiTasks, { relationName: 'agi_task_children' }),
+}));
+
+// Observations are how "measurably advanced" stops being an adjective in a
+// prompt string (R-12/R-12b, docs/specs/2026-07-26-agi-autonomous-operations.md
+// §4.2). One row is one reading of one metric for one goal: the time series a
+// held `done_when` ("top-3, sustained 30 days") can actually be evaluated
+// against, and the only thing that can prove a flat line (R-12e).
+//
+// GENERATED state, so R-3 puts it here and R-12b forbids the repository: a
+// reading is written at machine rate by whatever trigger session or webhook
+// took it. Goals stay authored state in kortix.yaml, referenced by `goal_slug`
+// with deliberately NO foreign key — same rule as agi_tasks: renaming or
+// deleting a goal must not delete the measurements that judged it.
+//
+// R-12a is why there is no `signals` table next to this one. A measurement is
+// produced by an ORDINARY cron trigger's session or an ordinary webhook's
+// session; this table is only the place the number lands. There is no probe
+// registry, no scheduler, and no third scheduling concept to declare one.
+//
+// APPEND-ONLY by construction: no `updated_at`, and no route updates or deletes
+// a row. R-12f makes an observation evidence and never authority, so history
+// must not be editable — a series you can rewrite cannot prove anything.
+export const agiObservations = kortixSchema.table(
+  'agi_observations',
+  {
+    observationId: uuid('observation_id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // No FK: goals live in kortix.yaml. See the block comment above.
+    goalSlug: text('goal_slug').notNull(),
+    // Normalized before it ever gets here (lowercased, whitespace folded) so
+    // "Google Rank" and "google_rank" cannot become two series that each look
+    // healthy while neither has moved. The CHECK below is the backstop.
+    metric: text('metric').notNull(),
+    // `double precision`, not `numeric`, on purpose. The wire format is JSON and
+    // a JSON number IS an IEEE-754 double, so numeric would promise a precision
+    // the transport cannot keep — and node-postgres hands numeric back as a
+    // STRING, which would serialize as `"3"` and silently break every
+    // comparison this table exists to support.
+    value: doublePrecision('value').notNull(),
+    // WHEN THE READING WAS TAKEN. Distinct from created_at on purpose: a webhook
+    // relaying an outside measurement carries the measurement's own timestamp,
+    // and ordering the series by arrival would misdate it.
+    observedAt: timestamp('observed_at', { withTimezone: true }).defaultNow().notNull(),
+    // Who took the reading — `session:<id>` for the ordinary case, since R-12a
+    // makes a trigger session the producer. Never null: an unattributed number
+    // is not evidence.
+    source: text('source').notNull(),
+    // WHEN THE ROW LANDED. Immutable, and never used for ordering the series.
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // ONE index serves both reads the surface makes, because they share a
+    // prefix: "latest value of metric M for goal G" is this index with LIMIT 1,
+    // and "series of M for G over a range" is a range scan on `observed_at`
+    // inside the same (workspace, goal, metric) prefix. Rolling up every metric
+    // of a goal at once — what the goals list does — is the shorter prefix.
+    //
+    // `observation_id` is the last key so a tie on `observed_at` still has a
+    // total, deterministic order. Two readings sharing a timestamp are ordered
+    // arbitrarily but STABLY; a caller who needs them ordered gives them
+    // distinct `observed_at` values.
+    index('idx_agi_observations_series').on(
+      table.workspaceId,
+      table.goalSlug,
+      table.metric,
+      table.observedAt.desc(),
+      table.observationId.desc(),
+    ),
+    // NaN, +Infinity, and -Infinity are all valid `double precision` values in
+    // Postgres and all of them poison a series: NaN sorts greater than every
+    // real number, so one bad write would pin "latest" forever. Postgres sorts
+    // NaN above +Infinity, which is exactly why the upper bound rejects it too —
+    // this single predicate excludes all three.
+    check(
+      'agi_observations_value_finite_check',
+      sql`${table.value} > double precision '-infinity' and ${table.value} < double precision 'infinity'`,
+    ),
+    // Defence in depth for the normalizer: a metric name that reached the table
+    // un-normalized would fork a series, and a forked series can never be flat.
+    check('agi_observations_metric_check', sql`${table.metric} ~ '^[a-z0-9][a-z0-9._-]{0,63}$'`),
+    check('agi_observations_goal_slug_check', sql`length(${table.goalSlug}) between 1 and 128`),
+    check('agi_observations_source_check', sql`length(${table.source}) between 1 and 255`),
+  ],
+);
+
+export const agiObservationsRelations = relations(agiObservations, ({ one }) => ({
+  workspace: one(projects, {
+    fields: [agiObservations.workspaceId],
+    references: [projects.projectId],
+  }),
 }));

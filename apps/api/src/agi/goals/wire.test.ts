@@ -61,6 +61,10 @@ describe('serializeAgiGoal', () => {
       task_counts: counts,
       // done is terminal, so it is counted but never "open".
       open_task_count: 3,
+      metrics: [],
+      // R-12d: "unattended for 7 days" is a threshold, and nothing has ever been
+      // recorded for it — so this goal reads as un-judged, never as on track.
+      measurability: 'unmeasurable',
     });
   });
 
