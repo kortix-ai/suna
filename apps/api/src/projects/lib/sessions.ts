@@ -33,7 +33,9 @@ import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import {
+  agiAgentGrant,
   grantFromLoadedAgents,
+  isAgiAgentName,
   loadProjectAgents,
   projectRequiresDeclaredAgents,
   resolveGovernedAgentGrant,
@@ -47,6 +49,7 @@ import {
   parseSessionSecretsAllowlist,
   secretKeyCollisionInAllowlist,
 } from '../secrets';
+import { withPlatformAgiAgent } from './agi-agent-behavior';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
@@ -299,6 +302,22 @@ export async function buildSessionSandboxEnvVars(input: {
     }).catch(() => null);
     const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
     agentGrantEnv = grant?.env;
+  }
+
+  // The platform AGI has no manifest entry and no behavior file in the repo
+  // (R-35), so the compiler above can never produce its config — a trigger-fired
+  // AGI session would otherwise get the name and the authority while OpenCode
+  // silently ran the project's default agent, with none of the operating rules.
+  // Fold the bundled behavior file in here instead, outside the git-context
+  // branch: the AGI must not need a checkout to start (R-36). Only ever fires
+  // for the one reserved name, so every other session's env is unchanged.
+  if (isAgiAgentName(input.agentName)) {
+    compiledAgentConfig = withPlatformAgiAgent(compiledAgentConfig);
+    // Re-assert the AGI's secret denial here rather than inheriting it from the
+    // resolution above: without git context that block never runs, and the
+    // `undefined` it leaves behind means 'all'. The AGI must fail CLOSED on the
+    // one grant dimension no route re-checks — see `agiAgentGrant`.
+    agentGrantEnv = agiAgentGrant().env;
   }
 
   // Per-session KaaB fields, read by sessionId inside the builder so all three

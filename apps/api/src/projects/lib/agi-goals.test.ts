@@ -14,6 +14,7 @@
  * Pure parser, no I/O: everything runs off `parseManifestString`.
  */
 import { describe, expect, test } from 'bun:test';
+import { AGI_AGENT_NAME, agiAgentGrant, grantFromLoadedAgents } from '../agents';
 import {
   MANIFEST_FILENAME_YAML,
   extractTriggers,
@@ -76,8 +77,9 @@ describe('extractGoals', () => {
     expect(oil.triggerSlug).toBe('goal-oil-desk');
     expect(oil.path).toBe('kortix.yaml#goals.oil-desk');
 
-    // Defaults: no agent, no push, no timezone declared.
-    expect(hire.agent).toBe('default');
+    // Defaults: no agent, no push, no timezone declared. An unqualified goal is
+    // advanced by the platform AGI (R-38) — the push prompt IS its loop.
+    expect(hire.agent).toBe(AGI_AGENT_NAME);
     expect(hire.push).toBeNull();
     expect(hire.triggerSlug).toBeNull();
     expect(hire.status).toBe('paused');
@@ -206,6 +208,50 @@ describe('R-8 — push desugars to exactly one cron trigger', () => {
     const prompt = goalPushPrompt({ slug: 'g', title: 'G', doneWhen: 'x' });
     expect(prompt).toContain('Do not mark the goal achieved');
     expect(goalPushPrompt({ slug: 'g', title: 'G', doneWhen: 'x' })).toBe(prompt);
+  });
+
+  test('a goal that names no agent desugars to a trigger targeting the platform AGI', () => {
+    const { specs } = desugarGoalTriggers(
+      parse(
+        'kortix_version: 2\ngoals:\n  - slug: oil\n    done_when: x\n    push: "0 0 9 * * *"\n',
+      ),
+    );
+    expect(specs[0].agent).toBe(AGI_AGENT_NAME);
+  });
+
+  test('the AGI-targeted trigger resolves to a real grant, not the deny-all an unlisted name gets', () => {
+    // The defect this closes: a trigger targets an agent BY NAME, and a governed
+    // project denies every name it did not declare. A goal push that resolved
+    // that way booted with `kortixCli: []` and 403'd on every `kortix` call, so
+    // the scheduled push structurally could not run the AGI.
+    const { specs } = desugarGoalTriggers(
+      parse(
+        'kortix_version: 2\ngoals:\n  - slug: oil\n    done_when: x\n    push: "0 0 9 * * *"\n',
+      ),
+    );
+    const governed = {
+      specs: [
+        {
+          name: 'release-bot',
+          path: 'kortix.yaml#agents.release-bot',
+          enabled: true,
+          connectors: [] as string[],
+          kortixCli: [] as string[],
+          env: [] as string[],
+          file: null,
+          model: null,
+        },
+      ],
+      errors: [],
+      defaultAgent: null,
+    };
+
+    expect(grantFromLoadedAgents(specs[0].agent, governed)).toEqual(agiAgentGrant());
+  });
+
+  test('a goal naming a project agent still targets that agent', () => {
+    const { specs } = desugarGoalTriggers(parse(MANIFEST));
+    expect(specs[0].agent).toBe('trader');
   });
 
   test('a collision with an authored trigger drops the derived one and reports it', () => {

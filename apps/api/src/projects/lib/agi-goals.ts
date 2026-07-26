@@ -15,7 +15,7 @@
  *         days with no manual intervention and a positive risk-adjusted return.
  *       status: active          # active | achieved | paused | abandoned
  *       push: "0 0 9 * * *"     # standing advance; omit for on-demand goals
- *       agent: default
+ *       agent: kortix-agi       # default; name a project agent to override
  *
  * Two requirements shape everything in this file:
  *
@@ -39,6 +39,7 @@
  * same contract `extractTriggers` guarantees, so one bad goal can't blank the
  * whole list.
  */
+import { AGI_AGENT_NAME } from '../agents';
 import type { GitTriggerParseError, GitTriggerSpec, ParsedManifest } from '../triggers';
 
 /** Same shape trigger slugs use — the derived trigger slug has to satisfy the
@@ -73,7 +74,8 @@ export interface GoalSpec {
    *  advanced only on demand. Syntax is validated by croner at fire time, the
    *  same as an authored cron trigger's. */
   push: string | null;
-  /** Agent that advances the goal (default: "default"). */
+  /** Agent that advances the goal. Defaults to the platform AGI
+   *  ({@link AGI_AGENT_NAME}) — see {@link parseGoalEntry}. */
   agent: string;
   /** IANA timezone the `push` expression is evaluated in. Defaults to UTC. */
   timezone: string;
@@ -155,6 +157,13 @@ export function goalPushPrompt(goal: Pick<GoalSpec, 'slug' | 'title' | 'doneWhen
  * A non-`active` goal still yields the trigger, DISABLED — the sweep skips it,
  * but it stays visible in the trigger list so pausing a goal reads as "this
  * stopped" rather than "this vanished".
+ *
+ * `agent` is passed through verbatim, which is the whole trick: a trigger targets
+ * an agent BY NAME, and {@link AGI_AGENT_NAME} is a name the grant resolver
+ * answers without a manifest entry. Before that reserved path existed, a goal
+ * naming the AGI desugared into a trigger whose session booted with an empty
+ * `kortix_cli` grant and 403'd on every `kortix` call — the scheduled push
+ * structurally could not run the agent whose loop it encodes.
  */
 export function goalTriggerSpec(goal: GoalSpec, filename: string): GitTriggerSpec | null {
   if (!goal.push || !goal.triggerSlug) return null;
@@ -333,7 +342,14 @@ function parseGoalEntry(
   }
   const status = (statusRaw || 'active') as GoalStatus;
 
-  const agent = typeof row.agent === 'string' && row.agent.trim() ? row.agent.trim() : 'default';
+  // The push prompt below IS the AGI's loop (R-11/R-12), and R-38 makes the AGI
+  // the thing that advances goals — so an unqualified goal is advanced by the
+  // platform AGI, not by whatever general-purpose agent the project happens to
+  // default to. The AGI is nameable here without a manifest entry because it
+  // resolves through the reserved-name path in ../agents.ts (R-35); a goal that
+  // wants a specific project agent still names it and is unaffected.
+  const agent =
+    typeof row.agent === 'string' && row.agent.trim() ? row.agent.trim() : AGI_AGENT_NAME;
 
   const timezone =
     typeof row.timezone === 'string' && row.timezone.trim() ? row.timezone.trim() : 'UTC';

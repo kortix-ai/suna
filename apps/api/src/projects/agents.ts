@@ -48,6 +48,64 @@ const MANIFEST_FILENAME = 'kortix.toml';
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
 /**
+ * The platform-owned AGI agent's RESERVED name (R-34/R-35,
+ * docs/specs/2026-07-26-agi-autonomous-operations.md §9).
+ *
+ * Reserved, not declared. It resolves through the dedicated path in
+ * `grantFromLoadedAgents`/`resolveGovernedAgentGrant` below and never through
+ * the manifest roster, which is what lets a trigger name it without a
+ * `kortix.yaml` entry. A project that writes an `agents.kortix-agi` block does
+ * NOT shadow, narrow, widen, or disable it — the AGI is versioned with the
+ * platform and identical across workspaces, and an agent whose authority the
+ * workspace can rewrite would not be.
+ *
+ * The literal matches the behavior file `kortix agi` already materializes
+ * (`packages/starter/templates/agi/agents/kortix-agi.md`), so the same agent
+ * runs on a laptop and in an unattended trigger-fired sandbox — see
+ * `lib/agi-agent-behavior.ts`, which carries that file into the session.
+ */
+export const AGI_AGENT_NAME = 'kortix-agi';
+
+/** Is this the reserved platform AGI? An EXACT literal match — a near-miss
+ *  (`agi`, `kortix-agi-2`) is an ordinary undeclared name and default-denies. */
+export function isAgiAgentName(name: string): boolean {
+  return name === AGI_AGENT_NAME;
+}
+
+/**
+ * The AGI's grant (R-39: "the full authority of the human who launched it, and
+ * no more").
+ *
+ * `'all'` on every dimension is NOT unbounded. A grant is only ever the
+ * agent-side half of `principalRole ∩ agentGrant` (iam/agent-scope.ts), so
+ * `'all'` resolves to exactly "whatever the launching principal could do
+ * itself" — the same grant the conventional `kortix` default agent carries.
+ *
+ * A cron-fired push has no live human, so the ceiling is whoever
+ * `resolveTriggerActor` resolves to: the project's automation actor, i.e. the
+ * account owner. That is the answer to "what is the ceiling with no human in
+ * the loop" — the owner, never more, and never a capability the owner lacks.
+ *
+ * `env` is the exception, and `[]` is not conservatism — it is the only value
+ * R-39 permits. `kortixCli` and `connectors` are re-checked against the
+ * principal's role at every route, so `'all'` collapses to the principal. `env`
+ * is NOT: sandbox secret injection is gated by this field ALONE, and no route
+ * ever returns a secret value to a human. So in a project whose declared agents
+ * all carry narrow `secrets` allowlists, an `env: 'all'` AGI would hand any
+ * member who can name it every project credential in a shell they control —
+ * capability the launching user demonstrably lacks. R-38 also says the AGI
+ * spawns sessions rather than doing the work: the agents it spawns carry their
+ * own secret grants, and the AGI's own prompt already routes credential intake
+ * through `kortix secrets request` rather than through reading values.
+ *
+ * Returns a fresh object per call — grants are stored on tokens and passed
+ * around by reference, so there is no shared mutable singleton to corrupt.
+ */
+export function agiAgentGrant(): AgentGrant {
+  return { agent: AGI_AGENT_NAME, kortixCli: 'all', connectors: 'all', env: [] };
+}
+
+/**
  * The actions an agent's `kortix_cli` may grant — the project-scoped surface,
  * including the manager-tier project leaves (`project.delete`,
  * `project.members.manage`, `project.gateway.keys.manage`) — these are still
@@ -302,6 +360,13 @@ export async function resolveAgentGrant(
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
 export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): AgentGrant | null {
+  // The platform AGI is answered BEFORE the roster is consulted (R-35). This is
+  // the dedicated path: `loaded` is not read at all for this one reserved name,
+  // so the AGI needs no manifest entry and a manifest entry cannot change it.
+  // Nothing else short-circuits here — every other name, declared or not, falls
+  // through to the unchanged rules below.
+  if (isAgiAgentName(agentName)) return agiAgentGrant();
+
   // No [[agents]] section parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return null;
@@ -330,6 +395,10 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // through to the unchanged `return null` below.
   if (agentName === DEFAULT_AGENT_SENTINEL) {
     if (loaded.defaultAgent) {
+      // A manifest may point `default_agent` at the platform AGI. It is not in
+      // `specs` by construction, so without this the sentinel would fall through
+      // to the permissive null below and lose the AGI's identity on the token.
+      if (isAgiAgentName(loaded.defaultAgent)) return agiAgentGrant();
       const declared = loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled);
       if (declared) {
         return {
@@ -416,6 +485,20 @@ export function resolveGovernedAgentGrant(
   loaded: LoadedAgents,
   opts: { subject: boolean; projectDefaultAgent: string | null },
 ): GovernedAgentGrantResult {
+  // Mandatory-declared-agents governs the MANIFEST roster: its job is to stop an
+  // UNLISTED name from running with the permissive null grant. The AGI is not
+  // unlisted — it is declared by the platform, versioned with it, and auditable
+  // in exactly one place — so the roster property holds and R-34 ("available in
+  // every workspace without declaring it") keeps holding under enforcement.
+  // Hoisted above the `subject` split because the answer is the same either way,
+  // which is also what makes it provable that no OTHER name's path moved.
+  //
+  // A workspace that wants no AGI leaves the `agi` experimental key off: that
+  // removes goal desugaring, the routes, and the CLI — everything that can name
+  // it (R-44). Enforcement here would instead make the AGI unavailable in
+  // precisely the workspaces most likely to want a supervised control agent.
+  if (isAgiAgentName(agentName)) return { ok: true, grant: agiAgentGrant() };
+
   if (!opts.subject) {
     return { ok: true, grant: grantFromLoadedAgents(agentName, loaded) };
   }
@@ -424,6 +507,12 @@ export function resolveGovernedAgentGrant(
 
   if (agentName === DEFAULT_AGENT_SENTINEL) {
     const declaredDefault = opts.projectDefaultAgent ?? loaded.defaultAgent;
+    // Naming the platform AGI as the project default is a valid configuration;
+    // it will never be found in `specs`, so answer it before the roster lookup
+    // rather than rejecting it as an undeclared default.
+    if (declaredDefault && isAgiAgentName(declaredDefault)) {
+      return { ok: true, grant: agiAgentGrant() };
+    }
     if (!declaredDefault) {
       return {
         ok: false,
