@@ -6,6 +6,7 @@
  * route group here is the only wiring step — a module that compiles but is not
  * imported never mounts.
  */
+import './goals/routes';
 import './tasks/routes';
 
 export { agiApp } from './app';
