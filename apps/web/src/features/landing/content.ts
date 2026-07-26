@@ -32,11 +32,36 @@ export const hero = {
  */
 export const heroSteps = [
   {
-    id: 'context',
-    label: 'Context',
-    title: 'Connect what it needs to know.',
-    body: 'Your tools, files, and credentials — connected once through 3,000+ apps, MCP, or plain HTTP, then scoped per agent and shared across the team.',
-    ui: { kind: 'panel', panel: 'context' },
+    id: 'repo',
+    label: 'Source of truth',
+    title: 'Your company is a git repo.',
+    body: 'Agents, skills, memory, config, and policy are files in one versioned repo you own. Not rows in our database — text you can clone, grep, diff, and take with you.',
+    ui: { kind: 'panel', panel: 'repo' },
+    cli: {
+      file: 'acme-operations',
+      lines: [
+        '$ kortix projects clone acme-operations && tree -L 2',
+        '',
+        '  kortix.yaml            # agents, grants, triggers',
+        '  AGENTS.md              # how this company works',
+        '  .kortix/',
+        '    memory/MEMORY.md     # what it has learned',
+        '    opencode/agents/     # one file per agent',
+        '    opencode/skills/     # one folder per skill',
+        '',
+        '$ git log --oneline -3',
+        '  a41c9e2  memory: Q3 close tolerances',
+        '  7b02d1f  skills: add contract-playbook',
+        '  3e8f7a0  agents: scope finance-analyst',
+      ],
+    },
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    title: 'Reach the tools you already run on.',
+    body: 'Connect Stripe, Slack, Drive, your CRM — 3,000+ apps, plus MCP, OpenAPI, and plain HTTP. One scoped token per project, granted per agent.',
+    ui: { kind: 'panel', panel: 'integrations' },
     cli: {
       file: 'terminal',
       lines: [
@@ -148,7 +173,7 @@ export const heroSteps = [
     id: 'execution',
     label: 'Execution',
     title: 'Every agent gets its own computer.',
-    body: 'A real machine on its own git branch, running the harness you picked on the models you connect. Watch every command as it happens and redirect it mid-run.',
+    body: 'A real machine on its own git branch, running the harness you picked. Hundreds run in parallel on the same config — watch any of them and redirect it mid-run.',
     ui: { kind: 'panel', panel: 'execution' },
     cli: {
       file: 'session s_7f3a',
@@ -189,111 +214,125 @@ export const heroSteps = [
   },
 ] as const;
 
-/** Six-cell capability grid — the "what it actually does" section. */
-export const capabilities = {
-  eyebrow: 'What it does',
-  title: 'Kortix takes on the work.',
-  intro:
-    'Every agent gets its own computer, loaded with your files, your tools, and your credentials. Work comes back as something you can review, not a transcript you have to copy out of a chat.',
-  items: [
-    {
-      icon: 'goal',
-      title: 'Say what, not how',
-      body: 'Describe the outcome. Kortix plans the approach, picks the tools, and asks when a decision is actually yours to make.',
-    },
-    {
-      icon: 'machine',
-      title: 'Every agent gets its own computer',
-      body: 'A real machine that can install packages, run builds, drive a browser, and keep state while it works — not a locked-down scratchpad.',
-    },
-    {
-      icon: 'watch',
-      title: 'Watch every step',
-      body: 'Every command, file, and tool call is visible while it happens. Follow along from anywhere, and redirect the moment it drifts.',
-    },
-    {
-      icon: 'parallel',
-      title: 'Many agents at once',
-      body: 'Split a project across sessions that run in parallel on the same config. One drafts, one researches, one cleans up the data.',
-    },
-    {
-      icon: 'schedule',
-      title: 'Runs without you',
-      body: 'Triggers start sessions on a cron or a signed webhook. Close your laptop; the work lands in Slack when it is done.',
-    },
-    {
-      icon: 'merge',
-      title: 'Work lands as a change request',
-      body: 'Nothing touches main until you approve it. Every result arrives as a reviewable diff, so the company improves one merge at a time.',
-    },
-  ],
-} as const;
-
 /**
- * Use cases by team — the "Expand what every team can do" beat.
+ * Use cases by team.
  *
- * Replaced a scrolling marquee of prompt cards. The marquee looked busy and
- * said the same thing eight times; grouping by team lets a visitor find
- * themselves and read three concrete jobs in their own language.
+ * Each entry is the ask in the person's own words plus the artefact that comes
+ * back — the deliverable is the point, so it is shown rather than implied.
+ * This is the beat that used to be a scrolling marquee of prompt cards, and
+ * before that a six-cell grid re-explaining the hero carousel in prose.
  */
 export const useCases = {
   eyebrow: 'Use cases',
   title: 'What every team hands off.',
-  intro:
-    'Start with work your team already has to do. Each of these is one prompt, on a schedule if you want it.',
+  intro: 'One prompt each. Put any of them on a schedule and it just keeps happening.',
   teams: [
+    {
+      id: 'finance',
+      label: 'Finance',
+      items: [
+        {
+          ask: 'Reconcile last week\u2019s payouts against the ledger and flag anything that disagrees.',
+          gives: 'Clean sheet + flagged rows',
+        },
+        {
+          ask: 'Run the month-end close checklist and write up every variance you find.',
+          gives: 'Close pack, change request',
+        },
+        {
+          ask: 'Match incoming invoices to purchase orders and escalate only the exceptions.',
+          gives: 'Exception queue',
+        },
+      ],
+    },
     {
       id: 'sales',
       label: 'Sales',
       items: [
-        'Research every account in this quarter’s pipeline and write the pre-call brief.',
-        'Compare this quarter’s pipeline against last week’s forecast and flag what moved.',
-        'Draft follow-ups for every deal that has gone quiet for ten days, unsent for review.',
+        {
+          ask: 'Research every account in this quarter\u2019s pipeline and write the pre-call brief.',
+          gives: 'One brief per account',
+        },
+        {
+          ask: 'Compare this quarter\u2019s pipeline against last week\u2019s forecast and flag what moved.',
+          gives: 'Movement summary',
+        },
+        {
+          ask: 'Draft follow-ups for every deal quiet for ten days. Leave them unsent.',
+          gives: 'Drafts in your outbox',
+        },
       ],
     },
     {
       id: 'marketing',
       label: 'Marketing',
       items: [
-        'Check our five competitors for pricing and positioning changes and summarize what moved.',
-        'Turn this product doc and the launch thread into a brief with owners and risks.',
-        'Refresh the pages losing search traffic, keeping our voice and brand guidelines.',
-      ],
-    },
-    {
-      id: 'finance',
-      label: 'Finance',
-      items: [
-        'Reconcile last week’s payouts against the ledger and flag anything that disagrees.',
-        'Run the month-end close checklist and open a change request with the variances.',
-        'Match incoming invoices to purchase orders and escalate only the exceptions.',
+        {
+          ask: 'Check our five competitors for pricing and positioning changes this week.',
+          gives: 'Diff since last run',
+        },
+        {
+          ask: 'Turn this product doc and the launch thread into a brief with owners and risks.',
+          gives: 'Launch brief',
+        },
+        {
+          ask: 'Refresh the pages losing search traffic, keeping our voice and brand guidelines.',
+          gives: 'Updated pages, for review',
+        },
       ],
     },
     {
       id: 'operations',
       label: 'Operations',
       items: [
-        'Turn my calendar, Slack, and docs into a Monday brief with priorities and risks.',
-        'Onboard this customer: workspace, welcome sequence, tracker, and a flag on anything odd.',
-        'Scan the training sheet for anyone below 100% and draft the nudges.',
+        {
+          ask: 'Turn my calendar, Slack, and docs into a Monday brief with priorities and risks.',
+          gives: 'Weekly brief',
+        },
+        {
+          ask: 'Onboard this customer: workspace, welcome sequence, tracker, and flag anything odd.',
+          gives: 'Workspace + tracker',
+        },
+        {
+          ask: 'Scan the training sheet for anyone below 100% and draft the nudges.',
+          gives: 'Drafted Slack DMs',
+        },
       ],
     },
     {
       id: 'data',
       label: 'Data',
       items: [
-        'Reconcile these three exports, flag the rows that disagree, and give me one clean sheet.',
-        'Rebuild last month’s report from the warehouse and explain every number that changed.',
-        'Watch for cost anomalies daily and post to #data when something spikes.',
+        {
+          ask: 'Reconcile these three exports, flag the rows that disagree, give me one clean sheet.',
+          gives: 'Merged dataset',
+        },
+        {
+          ask: 'Rebuild last month\u2019s report and explain every number that changed.',
+          gives: 'Report + changelog',
+        },
+        {
+          ask: 'Watch for cost anomalies daily and post to #data when something spikes.',
+          gives: 'Daily Slack alert',
+        },
       ],
     },
     {
       id: 'engineering',
       label: 'Engineering',
       items: [
-        'Reproduce this bug from the issue, write a failing test, fix it, and open a change request.',
-        'Upgrade the dependency across every service and run the suites before you ship it.',
-        'Turn the last two weeks of merged work into release notes for the changelog.',
+        {
+          ask: 'Reproduce this bug from the issue, write a failing test, fix it, open a change request.',
+          gives: 'Reviewable change request',
+        },
+        {
+          ask: 'Upgrade the dependency across every service and run the suites before you ship.',
+          gives: 'One CR per service',
+        },
+        {
+          ask: 'Turn the last two weeks of merged work into release notes.',
+          gives: 'Changelog entry',
+        },
       ],
     },
   ],

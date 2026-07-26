@@ -161,12 +161,11 @@ function SkillsUi() {
 }
 
 /**
- * Context — a mocked connector grid rather than the screenshot it replaced.
- *
- * The screenshot read fine on its own but was the only non-mock left in the
- * carousel, so it broke the visual rhythm every time the step came round.
+ * Integrations — how the company reaches out. Named for what it is: this step
+ * is about third-party reach, not about what the company knows. What it knows
+ * lives in the repo (see `RepoUi`).
  */
-function ContextUi() {
+function IntegrationsUi() {
   const apps = [
     ['stripe.com', 'Stripe', 'Payments', true],
     ['slack.com', 'Slack', 'Communication', true],
@@ -355,10 +354,56 @@ function ExecutionUi() {
   );
 }
 
+/**
+ * Source of truth — the repo itself.
+ *
+ * The most important claim on the page and previously only present as plumbing
+ * in "Under the hood". Layout mirrors the real starter template; see
+ * packages/starter/templates/base.
+ */
+function RepoUi() {
+  const tree = [
+    { depth: 0, name: 'kortix.yaml', note: 'agents · grants · triggers', file: true },
+    { depth: 0, name: 'AGENTS.md', note: 'how this company works', file: true },
+    { depth: 0, name: '.kortix/', note: '', file: false },
+    { depth: 1, name: 'memory/', note: 'what it has learned', file: false },
+    { depth: 1, name: 'opencode/agents/', note: 'one file per agent', file: false },
+    { depth: 1, name: 'opencode/skills/', note: 'one folder per skill', file: false },
+  ] as const;
+
+  return (
+    <UiFrame>
+      <PageHead title="acme-operations" sub="One repo you own · branch main" />
+      <div className="mt-3">
+        <Panel count="synced">
+          <div className="px-3 py-2.5 font-mono text-xs">
+            {tree.map((node) => (
+              <div
+                key={node.name}
+                className="flex items-center gap-2 py-1"
+                style={{ paddingLeft: node.depth * 16 }}
+              >
+                <span className={cn(node.file ? 'text-muted-foreground' : 'text-foreground')}>
+                  {node.file ? '·' : '▸'}
+                </span>
+                <span className="text-foreground">{node.name}</span>
+                {node.note ? (
+                  <span className="text-muted-foreground/60 truncate"># {node.note}</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </UiFrame>
+  );
+}
+
 /* ── registry ────────────────────────────────────────────────────────────── */
 
 export const stepUiPanels = {
-  context: ContextUi,
+  repo: RepoUi,
+  integrations: IntegrationsUi,
   agents: AgentsUi,
   skills: SkillsUi,
   models: ModelsUi,

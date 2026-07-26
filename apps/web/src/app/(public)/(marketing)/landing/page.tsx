@@ -1,10 +1,9 @@
 'use client';
 
 import { LandingNav } from '@/features/landing/nav';
-import { LandingCapabilities } from '@/features/landing/sections/capabilities';
 import { LandingFaq } from '@/features/landing/sections/faq';
 import { LandingFinalCta } from '@/features/landing/sections/final-cta';
-import { LandingHero } from '@/features/landing/sections/hero';
+import { LandingFlow, LandingHero } from '@/features/landing/sections/hero';
 import { LandingOpenSource } from '@/features/landing/sections/open-source';
 import { LandingSecurity } from '@/features/landing/sections/security';
 import { LandingUnderTheHood } from '@/features/landing/sections/under-the-hood';
@@ -26,7 +25,7 @@ export default function LandingPage() {
     <main className="bg-background">
       <LandingNav />
       <LandingHero />
-      <LandingCapabilities />
+      <LandingFlow />
       <LandingUseCases />
       <LandingOpenSource />
       <LandingUnderTheHood />

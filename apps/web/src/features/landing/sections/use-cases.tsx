@@ -63,17 +63,40 @@ export function LandingUseCases() {
             transition={{ type: 'spring', duration: 0.35, bounce: 0 }}
             className="mt-8 grid gap-4 md:grid-cols-3"
           >
-            {active.items.map((item, i) => (
-              <li key={item} className="bg-popover flex flex-col gap-4 rounded-md border px-5 py-5">
-                <span className="text-muted-foreground/60 font-mono text-xs">
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <p className="text-foreground text-sm leading-relaxed">{item}</p>
+            {active.items.map((item) => (
+              <li
+                key={item.ask}
+                className="bg-popover flex flex-col justify-between gap-5 rounded-md border px-5 py-5"
+              >
+                <p className="text-foreground text-sm leading-relaxed">“{item.ask}”</p>
+                {/* The deliverable is the point, so name it rather than imply it. */}
+                <p className="text-muted-foreground flex items-center gap-2 text-xs">
+                  <ArrowReturn className="size-3.5 shrink-0" />
+                  {item.gives}
+                </p>
               </li>
             ))}
           </motion.ul>
         </AnimatePresence>
       </div>
     </section>
+  );
+}
+
+/** Return arrow — "and this is what comes back". */
+function ArrowReturn({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M13 4v3.5a2 2 0 0 1-2 2H4M6.5 7 4 9.5 6.5 12" />
+    </svg>
   );
 }

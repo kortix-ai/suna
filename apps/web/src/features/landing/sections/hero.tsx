@@ -68,10 +68,22 @@ export function LandingHero() {
 
         <p className="text-muted-foreground/80 mt-6 text-xs tracking-wider">{hero.fineprint}</p>
       </div>
+    </section>
+  );
+}
 
-      <div className="relative z-10 mx-auto mt-14 max-w-6xl sm:mt-20">
-        <HeroStage />
-      </div>
+/**
+ * The flow carousel is a sibling of the hero rather than a child of it.
+ *
+ * The hero needs `overflow-hidden` so the letter field and wallpaper can bleed
+ * past its edges — but `overflow: hidden` on any ancestor silently kills
+ * `position: sticky` on a descendant, which is what pins the stage while you
+ * scroll it. They cannot live in the same element.
+ */
+export function LandingFlow() {
+  return (
+    <section className="px-6 pb-16 sm:pb-24">
+      <HeroStage className="mx-auto max-w-6xl" />
     </section>
   );
 }
