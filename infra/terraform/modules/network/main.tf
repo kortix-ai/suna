@@ -37,8 +37,8 @@ locals {
 }
 
 resource "aws_vpc" "this" {
-  #checkov:skip=CKV2_AWS_11:Flow-log destination, KMS key, and retention are deployment concerns composed by production callers; enterprise-vpc creates aws_flow_log.vpc with 60-second aggregation.
-  #checkov:skip=CKV2_AWS_12:The enterprise-vpc caller owns the VPC default security group and empties ingress and egress; keeping it outside this shared module avoids duplicate aws_default_security_group ownership.
+  #checkov:skip=CKV2_AWS_11: Flow log is owned by this module in compliance.tf (aws_flow_log.vpc → region-local CloudWatch log group + account-wide delivery role).
+  #checkov:skip=CKV2_AWS_12: Default security group is owned and emptied by this module in compliance.tf (aws_default_security_group.this).
   cidr_block           = var.cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
