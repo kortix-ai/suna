@@ -131,6 +131,55 @@ liveness failure under §6.
 R-12 — A push MUST leave the goal measurably advanced or MUST state why it
 could not. "Reviewed, nothing to do" is a valid outcome only with a reason.
 
+### 4.2 Observations — how "measurably" is measured
+
+Without this section R-12 is an adjective in a prompt string, and the only
+thing evaluating `done_when` is a model grading its own homework. That is the
+failure mode where the loop looks alive for three weeks while the metric has
+not moved.
+
+R-12a — A **signal is a trigger**. There MUST NOT be a `signals:` declaration,
+a probe registry, or any third scheduling concept. A measurement is produced
+either by a cron trigger whose session takes a reading, or by a webhook that
+receives one from outside. This is R-21 applied to measurement.
+
+R-12b — An **observation** is generated state and MUST live in the database:
+`(goal_slug, metric, value, observed_at, source)`. It is a time series, queried
+by range, written at machine rate — R-3 applies, and it MUST NOT go in the repo.
+
+R-12c — A session records one with a single CLI verb, so that any agent, any
+trigger, and any webhook handler all use the same path:
+
+```
+kortix goals observe <goal-slug> --metric <name> --value <number>
+```
+
+R-12d — `done_when` MAY be a **held** condition rather than a finish line
+("top-3 for the core terms, sustained 30 days"). Evaluating a held condition
+REQUIRES the series; prose alone cannot express "sustained". A goal whose
+`done_when` names a threshold without any observation ever being recorded for
+that metric MUST surface as unmeasurable rather than as on-track.
+
+R-12e — A goal whose metric has not moved across N consecutive pushes MUST
+surface as a stall (§8), exactly like a task with no live path. The system MUST
+NOT require a human to notice a flat line.
+
+R-12f — Observations are evidence, never authority. Recording one MUST NOT
+change goal status; only R-9's explicit act does.
+
+### 4.3 Reaching a human when nobody is watching
+
+R-12g — A session that cannot proceed without a human act — a credential, an
+access grant, a decision — MUST deliver that request to a surface a human will
+see: a channel message, a notification, or a pending item attached to the task.
+Writing it into the session log is NOT delivery.
+
+Rationale: the interactive path is already correct (`kortix secrets request`
+mints a link; the agent never sees the value). The unattended path is not. A
+07:00 push that discovers it needs an access grant currently mints the URL and
+writes it where only that session can see it, then stalls silently. For a fresh
+workspace this is the FIRST thing that happens, before any real work.
+
 ---
 
 ## 5. Tasks
@@ -228,6 +277,14 @@ subsystem. Out of scope for v1.
 ## 7. What replaces projects, roles, and org charts
 
 Nothing, for now.
+
+R-25a — Codified orchestrations ("workflows" — a recurring multi-agent
+procedure stored as a script rather than re-improvised from prose each run) are
+DEFERRED, decided 2026-07-27. The company repo already hand-rolls this as
+orchestrator+worker agent PAIRS. It is a real gap and a likely sixth noun, but
+the five nouns are not yet proven to run unattended overnight, and a sixth
+before the fifth works is how scope escapes. Revisit after a push has run a
+full night. Do not build it meanwhile; the agent pairs are not broken.
 
 R-26 — Grouping MUST NOT be built until a workspace demonstrates enough tasks
 to need it. `tasks.project` reserves the column so the eventual grouping — a
@@ -384,7 +441,10 @@ production use.
 ## 13. Open items
 
 - Whether `done_when` evaluation is a distinguished session type with a
-  different prompt, or an ordinary session instructed to judge.
+  different prompt, or an ordinary session instructed to judge. (§4.2 gives it
+  a series to judge AGAINST; it does not settle who judges.)
+- How many consecutive flat pushes constitute a stall (R-12e), and whether that
+  count is per-goal or global.
 - Whether the continuation budget in R-32 is per-goal, per-trigger, or
   per-workspace, and where it is declared.
 - Whether a task may belong to more than one goal.
