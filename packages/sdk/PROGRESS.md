@@ -254,6 +254,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B23 | **Prevent ACP prompt results from exposing a false idle window before late protocol updates settle.**                                                                                                                                                                                                                                                                                                                                          | The deployed white-label parity screenshot rendered 4 ACP tool cards and `Agent is working…`, while REST rendered 26 completed tool cards. `applyAcpEnvelope()` marks the projection idle on the prompt result, and later tool or text updates can mark it busy again.                                                                                                  | **IN PROGRESS 2026-07-26** — session `whitelabel-acp-stable-completion`; RED test, SDK fix, strengthened parity gate, merge, Deploy Dev, and deployed proof required                                                                                                                            |
 | B24 | **Accept a server-authorized initial OpenCode session pin in `useSession`.** The SDK must hydrate the cached transcript before runtime readiness without making the initial pin authoritative over the `/start` result.                                                                                                                                                                                                                          | Existing sessions wait for `/start` before `useSessionSync` can hydrate IndexedDB history. The preserved `session-load-latency` work proved the additive option and pin precedence.                                                                                                                       | **IN PROGRESS 2026-07-26** — session `api-latency-refactor`; RED test, implementation port, full SDK gates, browser proof, merge, and Deploy Dev proof required                                                                                                                               |
 | B25 | **Start project model-picker and project-detail reads in parallel.** Gateway projects must not wait for project detail before the SDK starts the compact model-picker request.                                                                                                                                                                                                                                                                   | `src/react/use-opencode-sessions/providers.ts` enables the model query only after `projectDetailQuery.isSuccess`, which creates a sequential request waterfall on project load.                                                                                                                          | **IN PROGRESS 2026-07-26** — session `api-latency-refactor`; RED test, implementation, full SDK gates, browser network proof, merge, and Deploy Dev proof required                                                                                                                            |
+| B26 | **Expose the production maintenance read and write contracts through the SDK.** The web maintenance store imports two names that the root SDK does not export.                                                                                                                                                                                                                                                                                     | Live `/api/maintenance` returned automatic blocking while `/v1/system/maintenance` returned `level=none`; `typeof sdk.getMaintenanceConfig` and `typeof sdk.setMaintenanceConfig` both returned `undefined`.                                                                                            | **IN PROGRESS 2026-07-26** — session `maintenance-sdk-hotfix`; RED test, additive SDK transport, full SDK gates, release, and live production proof required                                                                                                                                    |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -3274,3 +3275,19 @@ Post-rebase live ACP and REST presentation plus question parity:
 
 **Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
 and deployed ACP plus REST parity remain.
+
+---
+
+### 2026-07-26 — session `maintenance-sdk-hotfix` (B26 claim)
+
+Claimed the additive maintenance read and write SDK contract after production
+`0.10.16` exposed a missing root export. The web maintenance store imports two
+undefined SDK functions. This makes the public maintenance route enter automatic
+blocking while the production API remains healthy.
+
+The change will add typed transport functions for `GET` and `PUT
+/system/maintenance`. Existing exported names and fields remain unchanged.
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
