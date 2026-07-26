@@ -236,6 +236,18 @@ const envSchema = z.object({
   // the executor token is re-minted per requested agent before tool execution.
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
 
+  // The NARROWER lock that IS on by default: refuse only an in-session agent
+  // switch that would change which project SECRETS are in scope. Ordinary
+  // switching between agents with the same `secrets` grant stays free, so this
+  // doesn't reintroduce the false-positives that gated the name-based lock
+  // above off. It exists because a sandbox's env is provisioned for ONE grant:
+  // re-scoping it on a later turn cannot un-read what the previous agent
+  // already pulled into the box's tmpfs env file, its shells, and its context.
+  // Turning it off degrades to re-scoping onto the running agent's grant — it
+  // never restores the old behavior of resolving from the session's stale
+  // create-time agent. See projects/lib/secret-grant.ts.
+  KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: optBoolTrue,
+
   // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
   // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
   // immediately reject every session/trigger on a pre-existing, agent-less project.
@@ -896,6 +908,7 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
+  KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────

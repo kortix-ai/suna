@@ -4,6 +4,10 @@ import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import {
+  AgentSecretGrantMismatchError,
+  SecretGrantResolutionError,
+} from '../../projects/lib/secret-grant';
 import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
@@ -632,8 +636,31 @@ export async function forwardToSandbox(
             previewUrl,
             providerHeaders: ingress.headers,
             providerName: record.provider as ProviderName,
+            // The secret grant is resolved from the agent this prompt actually
+            // runs, not the session's create-time column — see
+            // projects/lib/secret-grant.ts.
+            requestedAgent,
           });
         } catch (err) {
+          // A switch that would change which secrets are in scope is refused,
+          // not silently re-scoped: the sandbox's env was provisioned for the
+          // session's grant and the previous agent has already read it.
+          if (err instanceof AgentSecretGrantMismatchError) {
+            return agentSwitchConflictResponse(err.sessionAgent, err.requestedAgent, origin);
+          }
+          // Fail closed: we could not establish what this agent may read, so we
+          // refuse rather than push a wider env. 503 (not 502) — it's a
+          // transient inability to verify, and retrying is the right client move.
+          if (err instanceof SecretGrantResolutionError) {
+            console.warn(
+              `[PREVIEW] Secret grant unresolved for ${sandboxId}:${port}: ${err.message}`,
+            );
+            return jsonProxyError(
+              { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
+              503,
+              origin,
+            );
+          }
           const message = errorMessage(err, 'project env sync failed');
           if (isRetryableEnvSyncFailure(message)) {
             // Treat daemon/preview-transient env-sync failures like any other
