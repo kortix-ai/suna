@@ -258,14 +258,18 @@ export async function updateEmailPolicy(
   return normalizeEmailInstallation(installation);
 }
 
-// ── Meet — the bot voice + display name a project's Google/Zoom Meet channel uses ──
+// ── Voice — the display name the bot uses when it joins a call ──
+// The voice itself now comes from the realtime provider, not a per-project
+// ElevenLabs pick, so the name is all that's left to configure here.
 
+/** @deprecated Realtime voice channels do not expose a selectable voice catalog. */
 export interface MeetVoice {
   id: string;
   name: string;
   desc: string;
 }
 
+/** @deprecated Realtime voice channels do not expose a selectable voice catalog. */
 export interface MeetVoicesResponse {
   selected: string;
   bot_name: string;
@@ -274,6 +278,7 @@ export interface MeetVoicesResponse {
   voices: MeetVoice[];
 }
 
+/** @deprecated Realtime voice channels do not expose a selectable voice catalog. */
 export async function getMeetVoices(projectId: string): Promise<MeetVoicesResponse | null> {
   const res = await backendApi.get<MeetVoicesResponse>(
     `/projects/${encodeURIComponent(projectId)}/channels/meet/voices`,
@@ -283,6 +288,7 @@ export async function getMeetVoices(projectId: string): Promise<MeetVoicesRespon
   return res.data ?? null;
 }
 
+/** @deprecated Realtime voice channels select their voice at the provider. */
 export async function setMeetVoice(
   projectId: string,
   voice: string,
@@ -311,7 +317,7 @@ export async function setMeetBotName(
   );
 }
 
-/** Returns a base64-encoded audio sample for the given voice, or null on failure. */
+/** @deprecated Realtime voice channels do not expose provider voice previews. */
 export async function previewMeetVoice(projectId: string, voiceId: string): Promise<string | null> {
   const res = await backendApi.post<{ b64: string }>(
     `/projects/${encodeURIComponent(projectId)}/channels/meet/voices/${encodeURIComponent(voiceId)}/preview`,
@@ -320,6 +326,29 @@ export async function previewMeetVoice(projectId: string, voiceId: string): Prom
   );
   if (!res.success || !res.data?.b64) return null;
   return res.data.b64;
+}
+
+/** @deprecated Realtime voice channels speak through their live media session. */
+export interface SpeakInMeetingResult {
+  ok: boolean;
+  voice: string;
+}
+
+/** @deprecated Realtime voice channels speak through their live media session. */
+export async function speakInMeeting(
+  projectId: string,
+  botId: string,
+  text: string,
+  voice?: string,
+): Promise<SpeakInMeetingResult> {
+  return unwrap(
+    await backendApi.post<SpeakInMeetingResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/meet/speak`,
+      { bot_id: botId, text, voice },
+      { showErrors: false },
+    ),
+    'Failed to speak in meeting',
+  );
 }
 
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──
@@ -393,30 +422,5 @@ export async function updateChannelBinding(
       { showErrors: false },
     ),
     'Failed to update channel binding',
-  );
-}
-
-export interface SpeakInMeetingResult {
-  ok: boolean;
-  voice: string;
-}
-
-/**
- * Make the meeting bot speak: text → ElevenLabs (project voice) → Recall
- * `output_audio`, both keys kept server-side. Backs `meet speak`.
- */
-export async function speakInMeeting(
-  projectId: string,
-  botId: string,
-  text: string,
-  voice?: string,
-): Promise<SpeakInMeetingResult> {
-  return unwrap(
-    await backendApi.post<SpeakInMeetingResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/speak`,
-      { bot_id: botId, text, voice },
-      { showErrors: false },
-    ),
-    'Failed to speak in meeting',
   );
 }

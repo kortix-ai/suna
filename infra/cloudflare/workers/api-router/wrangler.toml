@@ -11,11 +11,9 @@
 # Flip a backend live WITHOUT redeploying code:
 #   wrangler secret put / or set the plain-text var ACTIVE_BACKEND in the dash,
 #   e.g. wrangler deploy --env prod --var ACTIVE_BACKEND:eks
-# Values: "ecs-fargate" (ECS Fargate — the ACTIVE prod/dev backend since
-# PR #4683) or "eks" (the EKS standby). Both backends are deployed on every
-# release/dev push so the flip is always safe. Verify with the `X-Backend`
-# response header. The live Worker var is the runtime source of truth; keep
-# these checked-in defaults in sync with it.
+# Values: "ecs-fargate" (EU ECS), "eks" (EKS standby), or "us-east-2" (Ohio
+# ECS). Production stays on "ecs-fargate" until the database cutover. Verify
+# the live selection with the `X-Backend` response header.
 
 main = "worker.mjs"
 compatibility_date = "2026-06-01"
@@ -40,9 +38,11 @@ routes = [
 ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://api-ecs-fargate.kortix.com"
+BACKEND_US_EAST_2 = "https://api-use2-shadow.kortix.com"
 GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
 GATEWAY_BACKEND_EKS = "https://gateway-eks.kortix.com"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-ecs-fargate.kortix.com"
+GATEWAY_BACKEND_US_EAST_2 = "https://gateway-use2-shadow.kortix.com"
 
 # ── STAGING: staging-api.kortix.com + gateway-staging.kortix.com ──────────────
 [env.staging]

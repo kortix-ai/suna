@@ -2,7 +2,7 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
   listAgentMailInstalls,
-  loadMeetInstall,
+  loadVoiceInstall,
   loadSlackInstall,
   loadTeamsInstall,
 } from '../channels/install-store';
@@ -107,11 +107,11 @@ export async function synthesizeChannelConnectors(
 
   // Meet (Recall.ai) — gated on the per-project `meet` experimental flag. Like
   // Slack, a resolvable Recall key IS the registration (no OAuth / no [[connectors]]).
-  if (project && resolveExperimentalFeature(project.metadata, 'meet')) {
-    const meetSlug = channelDefaultSlug('meet');
-    if (!channelAlreadyDeclared(declared, 'meet', meetSlug)) {
-      const install = await loadMeetInstall(projectId).catch(() => null);
-      if (install) specs.push(channelSpec('meet', meetSlug));
+  if (project && resolveExperimentalFeature(project.metadata, 'voice')) {
+    const meetSlug = channelDefaultSlug('voice');
+    if (!channelAlreadyDeclared(declared, 'voice', meetSlug)) {
+      const install = await loadVoiceInstall(projectId).catch(() => null);
+      if (install) specs.push(channelSpec('voice', meetSlug));
     }
   }
 

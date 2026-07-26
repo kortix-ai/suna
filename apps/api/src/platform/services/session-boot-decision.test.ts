@@ -27,8 +27,20 @@ const pinned = { activeProvider: 'platinum', activeExternalTemplateId: 'tpl_pinn
 describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
   test('boots by the pinned id when the active provider matches and id-boot is supported', () => {
     expect(
-      decideSessionBoot({ killSwitchOn: true, routing: pinned, providerName: 'platinum', providerSupportsIdBoot: true }),
+      decideSessionBoot({ killSwitchOn: true, routing: pinned, providerName: 'platinum', providerSupportsIdBoot: true, imageIsDefault: true }),
     ).toEqual({ bootByTemplateId: 'tpl_pinned' });
+  });
+
+  test('a custom template never boots the pinned project-default template id', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: false,
+      }),
+    ).toEqual({ bootByTemplateId: null });
   });
 
   test('rollback: a leftover Platinum id pin does NOT id-boot a Daytona session (name-boot)', () => {

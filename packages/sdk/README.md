@@ -1,7 +1,7 @@
 # @kortix/sdk
 
 The **single, opinionated data layer** for the Kortix agent platform. One typed
-client wraps both the **Kortix REST API** and the **OpenCode v2 runtime** so a
+client wraps both the **Kortix REST API** and the **agent runtime** so a
 host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
 `@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
 below is the target state, not yet fully true of apps/web — see Rules of the
@@ -83,6 +83,8 @@ const detail   = await kortix.project(pid).detail();
 await kortix.project(pid).secrets.upsert({ name: 'STRIPE_API_KEY', value });
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix.project(pid).sessions.list({ scope: 'project' }); // manager only
+const warm = await kortix.project(pid).sessions.ensureWarm();
+await kortix.project(pid).sessions.claimWarm({ session_id: warm.session.session_id });
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
@@ -95,6 +97,16 @@ await s.previews();
 const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
+
+### React runtime transport
+
+`useSession(projectId, sessionId)` uses the transport selected by `POST /start`.
+The default is the OpenCode REST client. A project with the `acp_runtime`
+experiment uses OpenCode ACP through the authenticated sandbox bridge.
+The hook keeps one return shape for both transports. It routes messages,
+cancellation, commands, permissions, and questions inside the SDK. A host does
+not construct ACP routes or branch on the selected transport. Disable
+`acp_runtime` to return that project to REST without a frontend deployment.
 
 ## The facade surface
 

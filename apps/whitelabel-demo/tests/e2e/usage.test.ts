@@ -5,17 +5,19 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type AppInstance, loginUser, resetUsersStore, startApp, uniqueEmail } from './harness';
+import {
+  type AppInstance,
+  createTestKortix,
+  loginUser,
+  resetUsersStore,
+  startApp,
+  uniqueEmail,
+} from './harness';
 import { createMockUpstream, type MockUpstream } from './mock-upstream';
 import { COST_MARKUP, DEMO_PASSWORD, wrapperEnv, WRAPPER_KEY } from './env';
 
 async function provision(app: AppInstance, token: string, name: string): Promise<string> {
-  const res = await fetch(`${app.baseUrl}/api/kortix/projects/provision`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  const project = (await res.json()) as { project_id: string };
+  const project = await createTestKortix(app, token).projects.provision({ name });
   return project.project_id;
 }
 

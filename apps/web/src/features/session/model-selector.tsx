@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import {
   CommandGroup,
   CommandInput,
@@ -153,6 +154,8 @@ export interface ModelSelectorProps {
    */
   unsetLabel?: string;
   disabled?: boolean;
+  /** True while the runtime provider catalog request has not resolved. */
+  modelsLoading?: boolean;
 }
 
 export function ModelSelector({
@@ -162,6 +165,7 @@ export function ModelSelector({
   defaultControls,
   unsetLabel = 'No model',
   disabled = false,
+  modelsLoading = false,
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -173,6 +177,7 @@ export function ModelSelector({
     openConnectProvider,
     openUpgrade,
     modal: connectionModal,
+    entitlementsPending,
     showUpgradeOption,
   } = useModelConnectionGate();
 
@@ -412,7 +417,15 @@ export function ModelSelector({
               />
 
               <CommandList className="max-h-[380px]">
-                {grouped.length > 0 ? (
+                {modelsLoading || entitlementsPending ? (
+                  <div
+                    className="flex min-h-32 items-center justify-center"
+                    role="status"
+                    aria-label="Loading models"
+                  >
+                    <Loading className="text-muted-foreground size-4 shrink-0" />
+                  </div>
+                ) : grouped.length > 0 ? (
                   <>
                     {grouped.map((group) => (
                       <CommandGroup

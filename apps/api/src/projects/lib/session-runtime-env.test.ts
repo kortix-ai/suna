@@ -8,9 +8,25 @@ const BASE_INPUT = {
   baseRef: 'main',
   agentName: 'default',
   apiUrl: 'https://api.kortix.test/v1',
+  opencodeProcessTransport: 'acp' as const,
 };
 
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
+  test('passes the server-selected OpenCode process transport into the sandbox', () => {
+    expect(
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        opencodeProcessTransport: 'acp',
+      }).KORTIX_OPENCODE_PROCESS_TRANSPORT,
+    ).toBe('acp');
+    expect(
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        opencodeProcessTransport: 'rest',
+      }).KORTIX_OPENCODE_PROCESS_TRANSPORT,
+    ).toBe('rest');
+  });
+
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
     expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');

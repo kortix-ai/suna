@@ -37,7 +37,7 @@ export function mayUseLegacyDefaultProfile(hasAnyDurableBinding: boolean): boole
 const PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS: Readonly<Record<string, string>> = {
   email: 'kortix_email',
   slack: 'kortix_slack',
-  meet: 'kortix_meet',
+  meet: 'kortix_voice',
 };
 
 export function canonicalConnectorAlias(alias: string): string {

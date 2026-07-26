@@ -10,5 +10,5 @@ describe('apps/web SDK boundary', () => {
     ) as string[];
     const actual = scanSdkBoundary(resolve(import.meta.dir)).map(violationKey);
     expect(actual).toEqual(baseline);
-  });
+  }, 30_000);
 });

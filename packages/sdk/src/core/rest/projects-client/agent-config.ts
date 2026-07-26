@@ -52,6 +52,7 @@ export interface OpencodeAgentConfig {
  *  module doc above). */
 export interface AgentConfigBlock {
   enabled?: boolean;
+  sandbox?: string;
   connectors?: AgentGrantSetV2;
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;

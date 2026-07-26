@@ -519,6 +519,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     type: 'object',
     properties: {
       enabled: { type: 'boolean' },
+      sandbox: SLUG_SCHEMA,
       connectors: grantSetSchema(),
       secrets: grantSetSchema(),
       skills: grantSetSchema(),

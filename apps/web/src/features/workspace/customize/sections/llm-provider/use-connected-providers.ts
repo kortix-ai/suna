@@ -1,11 +1,11 @@
 'use client';
 
-import { useRuntimeProviders } from '@kortix/sdk/react';
 import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -47,7 +47,8 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   // into the LLM Gateway. Native OpenCode projects should show only providers
   // backed by project secrets, even if an old running sandbox still exposes a
   // stale `kortix` provider.
-  const { data: ocProviders } = useRuntimeProviders();
+  const runtimeProvidersQuery = useRuntimeProviders();
+  const { data: ocProviders } = runtimeProvidersQuery;
 
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
     // CLOUD-ONLY: the served catalog already excludes every managed model on a
@@ -113,5 +114,8 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
   }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
 
-  return { secretsQuery, connectedProviders, llmGatewayEnabled };
+  const providerStateLoading =
+    projectDetailQuery.isLoading || secretsQuery.isLoading || runtimeProvidersQuery.isLoading;
+
+  return { secretsQuery, connectedProviders, llmGatewayEnabled, providerStateLoading };
 }

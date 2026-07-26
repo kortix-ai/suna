@@ -16,7 +16,7 @@ name: Deploy Prod
 #        blob, stamped with the clean KORTIX_VERSION.
 #      - EKS (standby): the promote PR merge already bumped infra/k8s/envs/prod,
 #        so Argo CD rolls the prod Deployment — deploy-api WATCHES it reach vX.Y.Z.
-#      - US West 2 ECS shadow: deploy-us-shadow applies the same database
+#      - US East 2 ECS shadow: deploy-us-shadow applies the same database
 #        migrations, refreshes logical replication, and rolls the US API and
 #        gateway. It does not change production routing or enable writers.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
@@ -772,18 +772,18 @@ jobs:
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}"
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}"
 
-  # ── Deploy the pre-cutover US West 2 production shadow ──────────────────────
-  # The shadow uses the native US West 2 Supabase project and separate ECS
+  # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
+  # The shadow uses the native US East 2 Supabase project and separate ECS
   # services. This job keeps its database schema, logical publication, API, and
   # gateway on the same release as production. It does not change Cloudflare
   # routing, production DNS, desired counts, or worker flags.
   deploy-us-shadow:
-    name: Deploy API + gateway to US West 2 shadow
+    name: Deploy API + gateway to US East 2 shadow
     needs: [version, retag-images, verify-image-commits, migrate-db]
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/deploy-prod-us-west-2-shadow.yml
+    uses: ./.github/workflows/deploy-prod-us-east-2-shadow.yml
     with:
       version: ${{ needs.version.outputs.version }}
       source_sha: ${{ needs.version.outputs.source_sha }}
@@ -1017,7 +1017,7 @@ jobs:
   #     api-ecs-fargate.kortix.com / api-eks.kortix.com
   #     gateway-ecs-fargate.kortix.com / gateway-eks.kortix.com
   #
-  # The US West 2 shadow endpoints are also hard requirements. A release cannot
+  # The US East 2 shadow endpoints are also hard requirements. A release cannot
   # leave the prepared cutover stack on an older version.
   #
   # Everything that announces success (github-release, announce, banner-off)
@@ -1050,8 +1050,8 @@ jobs:
             "origin-api-eks|https://api-eks.kortix.com/v1/health|origin|1"
             "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin|0"
             "origin-gateway-eks|https://gateway-eks.kortix.com/health/live|origin|0"
-            "shadow-api-usw2|https://api-usw2-shadow.kortix.com/v1/health|required|1"
-            "shadow-gateway-usw2|https://gateway-usw2-shadow.kortix.com/health/live|required|1"
+            "shadow-api-use2|https://api-use2-shadow.kortix.com/v1/health|required|1"
+            "shadow-gateway-use2|https://gateway-use2-shadow.kortix.com/health/live|required|1"
           )
 
           declare -A live

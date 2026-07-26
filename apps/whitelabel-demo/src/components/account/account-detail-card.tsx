@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,7 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, LogOut, Users } from 'lucide-react';
+import { LogOut, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -127,7 +129,7 @@ export function AccountDetailCard({
             placeholder="Account name"
           />
           <Button type="submit" variant="outline" disabled={!dirty || rename.isPending}>
-            {rename.isPending && <Loader2 className="size-4 animate-spin" />}
+            {rename.isPending && <Loading className="size-4" />}
             Save
           </Button>
         </div>
@@ -192,7 +194,7 @@ function LeaveAccountDialog({
               setOpen(false);
             }}
           >
-            {pending && <Loader2 className="size-4 animate-spin" />}
+            {pending && <Loading className="size-4" />}
             Leave account
           </Button>
         </DialogFooter>

@@ -103,6 +103,8 @@ export interface AgentSpec {
    * gateway is the source of truth for entitlement.
    */
   model: string | null;
+  /** Default sandbox template slug for sessions started with this agent. */
+  sandbox?: string | null;
 }
 
 export interface AgentParseError {
@@ -356,6 +358,15 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   return { agent: agentName, kortixCli: [], connectors: [], env: [] };
 }
 
+/** Resolve the selected agent's sandbox template without repository I/O. */
+export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents): string | null {
+  const concreteName =
+    agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
+      ? loaded.defaultAgent
+      : agentName;
+  return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.sandbox ?? null;
+}
+
 /**
  * Is this project subject to MANDATORY DECLARED AGENTS enforcement?
  * (docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§3 Phase 2)
@@ -576,6 +587,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       env: envParsed.value,
       file,
       model,
+      sandbox: null,
     },
   };
 }
@@ -616,6 +628,8 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   const enabled = row.enabled !== false;
   const file: string | null = null;
   const model: string | null = null;
+  const sandbox =
+    typeof row.sandbox === 'string' && row.sandbox.trim() ? row.sandbox.trim() : null;
 
   const connectorsResolved = resolveGrantSet(row.connectors, 'none');
 
@@ -644,6 +658,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       env: toGrantSet(secretsResolved),
       file,
       model,
+      sandbox,
     },
   };
 }

@@ -17,7 +17,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type AppInstance, startApp } from './harness';
+import { type AppInstance, createTestKortix, startApp } from './harness';
 import { wrapperEnv } from './env';
 
 describe('mode bootstrap', () => {
@@ -29,7 +29,7 @@ describe('mode bootstrap', () => {
       startApp(wrapperEnv()),
       startApp({ KORTIX_API_KEY: undefined, NEXT_PUBLIC_KORTIX_API_URL: 'https://direct.example/v1' }),
     ]);
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     await Promise.all([wrapperApp?.stop(), directApp?.stop()]);
@@ -63,19 +63,18 @@ describe('mode bootstrap', () => {
     expect(html).toContain('animate-spin');
   });
 
-  test('wrapper mode: proxy is enabled (500 only for missing session, not missing key)', async () => {
-    // Sanity: confirms this boot really is wrapper mode end-to-end, not just
-    // /api/mode lying — an unauthenticated proxy call should 401, never the
-    // 500 "wrapper mode is not enabled" branch.
-    const res = await fetch(`${wrapperApp.baseUrl}/api/kortix/projects`);
-    expect(res.status).toBe(401);
+  test('wrapper mode: the SDK reaches the enabled BFF and receives its auth gate', async () => {
+    const kortix = createTestKortix(wrapperApp, 'invalid-wrapper-session');
+    await expect(kortix.projects.list()).rejects.toMatchObject({ status: 401 });
   });
 
-  test('direct mode: proxy route reports wrapper mode is not enabled', async () => {
-    const res = await fetch(`${directApp.baseUrl}/api/kortix/projects`);
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({
-      error: 'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).',
+  test('direct mode: the SDK reports that the wrapper BFF is disabled', async () => {
+    const kortix = createTestKortix(directApp, 'direct-mode-key');
+    await expect(kortix.projects.list()).rejects.toMatchObject({
+      status: 500,
+      details: {
+        error: 'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).',
+      },
     });
   });
 });

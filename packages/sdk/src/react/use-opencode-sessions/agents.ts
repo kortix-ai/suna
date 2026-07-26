@@ -5,10 +5,7 @@ import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
-import {
-  getProjectDetail,
-  type ProjectConfigSummary,
-} from '../../core/rest/projects-client';
+import { getProjectDetail, type ProjectConfigSummary } from '../../core/rest/projects-client';
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';
@@ -48,7 +45,9 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
       const client = getClient();
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
-      const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
+      const agents: Agent[] = Array.isArray(data)
+        ? data
+        : Object.values(data as Record<string, Agent>);
       // Agents are defined in the project repo (.kortix/opencode/agents), so the
       // roster is stable across every session that shares a working directory.
       // Cache under a directory-scoped (or global) STABLE key — not the
@@ -72,7 +71,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
  */
 export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): Agent[] {
   const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
-  const defaultName = config.open_code_default_agent;
+  const defaultName = config.default_agent ?? config.open_code_default_agent;
   if (!defaultName) return agents;
   return agents.sort((left, right) => {
     if (left.name === defaultName) return -1;
@@ -81,9 +80,7 @@ export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary
   });
 }
 
-function projectConfigAgentToOpenCodeAgent(
-  agent: ProjectConfigSummary['agents'][number],
-): Agent {
+function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents'][number]): Agent {
   return {
     name: agent.name,
     description: agent.description ?? undefined,

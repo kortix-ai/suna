@@ -12,17 +12,28 @@ import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
+import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
-import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { AnyObject, ClaimWarmProjectSessionInputSchema, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
-import { sendSessionCreateError } from '../lib/sessions';
+import { createProjectSession, sendSessionCreateError, type SessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
+import {
+  claimAvailableWarmProjectSession,
+  discardAvailableWarmProjectSession,
+  findAvailableWarmProjectSession,
+} from '../lib/warm-session-store';
+import { refreshWarmSessionWorkspace } from '../lib/warm-session-workspace';
+import {
+  createWarmProjectSessionCoordinator,
+  WarmProjectSessionError,
+} from '../lib/warm-sessions';
 import {
   createSession,
   deleteSession,
@@ -146,6 +157,194 @@ projectsApp.openapi(
     }),
   });
 },
+);
+
+class WarmSessionCreateFailure extends Error {
+  constructor(readonly detail: SessionCreateError) {
+    super(
+      typeof detail.body.error === 'string'
+        ? detail.body.error
+        : 'Warm session creation failed',
+    );
+    this.name = 'WarmSessionCreateFailure';
+  }
+}
+
+function resolvedWarmSessionConfiguration(project: {
+  defaultBranch: string;
+  metadata: Record<string, unknown> | null;
+}) {
+  const metadata = project.metadata ?? {};
+  return {
+    baseRef: project.defaultBranch,
+    agentName: normalizeString(metadata.default_agent) ?? 'default',
+    sandboxSlug:
+      normalizeString(metadata.default_sandbox_slug) ?? DEFAULT_SANDBOX_SLUG,
+  };
+}
+
+// POST /v1/projects/:projectId/sessions/warm
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/warm',
+    tags: ['sessions'],
+    summary: 'Create or reuse the current user warm project session',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({}).strict() } } },
+    },
+    responses: {
+      200: json(WarmProjectSessionResultSchema, 'The available warm session'),
+      ...errors(400, 402, 403, 404, 409, 429, 500, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+
+    const scope = {
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+    };
+    const configuration = resolvedWarmSessionConfiguration(loaded.row);
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: () => findAvailableWarmProjectSession(scope),
+      discard: (sessionId, metadata) =>
+        discardAvailableWarmProjectSession(scope, sessionId, metadata),
+      claim: (sessionId, metadata) =>
+        claimAvailableWarmProjectSession(scope, sessionId, metadata),
+      create: async (metadata) => {
+        const result = await createProjectSession({
+          project: loaded.row,
+          userId: loaded.userId,
+          requestingPrincipalType:
+            c.get('authType') === 'service_account' ? 'service_account' : 'human',
+          body: {
+            base_ref: configuration.baseRef,
+            agent_name: configuration.agentName,
+            sandbox_slug: configuration.sandboxSlug,
+          },
+          metadata: { source: 'ui', ...metadata },
+          authType: c.get('authType') as string | undefined,
+          apiKeyType: c.get('apiKeyType') as string | undefined,
+          inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+          request: requestAuditContext(c),
+        });
+        if (result.error) throw new WarmSessionCreateFailure(result.error);
+        if (!result.row) {
+          throw new WarmSessionCreateFailure({
+            status: 500,
+            body: { error: 'Warm session creation returned no row', retry: true },
+          });
+        }
+        return result.row;
+      },
+    });
+
+    try {
+      const ensured = await coordinator.ensure(configuration);
+      const workspaceRefresh = ensured.reused
+        ? await refreshWarmSessionWorkspace(
+            loaded.row,
+            ensured.session.sessionId,
+          )
+        : { status: 'skipped' as const };
+      return c.json(
+        {
+          session: serializeSession(ensured.session, {
+            viewerId: loaded.userId,
+            canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+          }),
+          reused: ensured.reused,
+          workspace_refresh: workspaceRefresh,
+        },
+        200,
+      );
+    } catch (error) {
+      if (error instanceof WarmSessionCreateFailure) {
+        return sendSessionCreateError(c, error.detail);
+      }
+      throw error;
+    }
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/warm/claim
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/warm/claim',
+    tags: ['sessions'],
+    summary: 'Claim the current user warm project session',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: ClaimWarmProjectSessionInputSchema },
+        },
+      },
+    },
+    responses: {
+      200: json(SessionSchema, 'The claimed session'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const body = await readBody(c);
+    const sessionId = normalizeString(body.session_id);
+    if (!sessionId || !UUID_V4_REGEX.test(sessionId)) {
+      return c.json({ error: 'Invalid session id', code: 'INVALID_SESSION_ID' }, 400);
+    }
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+
+    const scope = {
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+    };
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: () => findAvailableWarmProjectSession(scope),
+      discard: (candidateSessionId, metadata) =>
+        discardAvailableWarmProjectSession(scope, candidateSessionId, metadata),
+      claim: (candidateSessionId, metadata) =>
+        claimAvailableWarmProjectSession(scope, candidateSessionId, metadata),
+      create: async () => {
+        throw new Error('Claim cannot create a warm session');
+      },
+    });
+
+    try {
+      const claimed = await coordinator.claim({
+        sessionId,
+        agentName: normalizeString(body.agent_name) ?? undefined,
+        sandboxSlug: normalizeString(body.sandbox_slug) ?? undefined,
+      });
+      return c.json(
+        serializeSession(claimed, {
+          viewerId: loaded.userId,
+          canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+        }),
+        200,
+      );
+    } catch (error) {
+      if (error instanceof WarmProjectSessionError) {
+        return c.json({ error: error.message, code: error.code }, error.status as 409);
+      }
+      throw error;
+    }
+  },
 );
 
 // POST /v1/projects/:projectId/group-grants

@@ -35,6 +35,10 @@
           "enabled": {
             "type": "boolean"
           },
+          "sandbox": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
           "connectors": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
             "oneOf": [
@@ -557,7 +561,7 @@
               "slack",
               "teams",
               "email",
-              "meet"
+              "voice"
             ]
           },
           "credential": {
@@ -680,7 +684,7 @@
             "if": {
               "properties": {
                 "slug": {
-                  "const": "kortix_meet"
+                  "const": "kortix_voice"
                 }
               }
             },

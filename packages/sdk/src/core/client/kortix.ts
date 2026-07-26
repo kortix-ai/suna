@@ -506,6 +506,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
+        ensureWarm: () => P.ensureWarmProjectSession(projectId),
+        claimWarm: (input: Parameters<typeof P.claimWarmProjectSession>[1]) =>
+          P.claimWarmProjectSession(projectId, input),
       },
 
       /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
@@ -587,12 +590,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
             P.updateEmailPolicy(projectId, ...a),
         },
+        voice: {
+          setBotName: (name: string) => P.setMeetBotName(projectId, name),
+        },
+        /** @deprecated Use `channels.voice`. Retained for SDK compatibility. */
         meet: {
           voices: () => P.getMeetVoices(projectId),
           setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
           setBotName: (name: string) => P.setMeetBotName(projectId, name),
           previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
-          /** Make the meeting bot speak text (text → ElevenLabs → Recall `output_audio`). */
           speak: (botId: string, text: string, voice?: string) =>
             P.speakInMeeting(projectId, botId, text, voice),
         },

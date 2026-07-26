@@ -14,6 +14,7 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
+import { createAcpRouter } from './routes/acp'
 import webProxyRouter from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
@@ -128,6 +129,11 @@ export function buildOpencodeApp(
   // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
   // the parameter is optional only so tests can build the app without one.
   const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
+  const acpRouter = createAcpRouter(
+    cfg,
+    () => opencode.getAcpConnection(),
+    () => bootState.initialOpenCodeSessionId ?? null,
+  )
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -138,6 +144,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
+  kortixRouter.route('/acp', acpRouter)
+  kortixRouter.route('/acp/', acpRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)

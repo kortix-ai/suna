@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 /**
  * FilesPanel — a compact two-pane workspace file browser for the white-label
  * app, driven entirely through the `@kortix/sdk` project facade. It exercises
@@ -22,11 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
-import type {
-  ProjectCommit,
-  ProjectFileEntry,
-  ProjectFileSearchMatch,
-} from '@kortix/sdk';
+import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Download,
@@ -34,7 +32,6 @@ import {
   FileText,
   GitCommitHorizontal,
   History,
-  Loader2,
   Search,
 } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
@@ -129,7 +126,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
           onClick={() => download.mutate()}
         >
           {download.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loading className="size-3.5" />
           ) : (
             <Download className="size-3.5" />
           )}
@@ -186,12 +183,13 @@ export function FilesPanel({ projectId }: { projectId: string }) {
                       active && 'bg-accent',
                     )}
                   >
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => setSelected(path)}
                       title={path}
                       className={cn(
-                        'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                        'h-auto min-w-0 flex-1 justify-start gap-2 whitespace-normal px-2 py-1.5 text-left text-xs',
                         active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                       )}
                     >
@@ -204,7 +202,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
                           </span>
                         )}
                       </span>
-                    </button>
+                    </Button>
                     <FileHistory projectId={projectId} path={path} />
                   </div>
                 );

@@ -13,7 +13,7 @@
 #   - ECS resources region-wildcarded (dev/staging = us-west-2, prod = eu-west-2)
 #   - PassRole for the task+exec roles of all production release services:
 #     kortix-{dev,staging,prod} (api) and kortix-{dev,staging,prod}-gateway
-#     plus the pre-cutover kortix-prod-usw2 API and gateway shadow services
+#     plus the pre-cutover US East 2 API and gateway shadow services
 #     (the ecs-api TF module names roles "<service>-exec"/"<service>-task")
 #   - Secrets Manager read of every kortix-<env>-env blob (the task-def renderer
 #     wires each blob key as a container secret)
@@ -58,8 +58,8 @@ resource "aws_iam_role" "gha_ecs_deploy" {
 }
 
 resource "aws_iam_role_policy" "gha_ecs_deploy" {
-  # checkov:skip=CKV_AWS_355: the TaskDefinitionLifecycle statement's "*" is
-  # required — RegisterTaskDefinition/DescribeTaskDefinition do not support
+  # checkov:skip=CKV_AWS_355: TaskDefinitionLifecycle and
+  # DescribeLoadBalancers require "*" because these APIs do not support
   # resource-level permissions; every other statement is ARN-scoped.
   name = "ecs-deploy"
   role = aws_iam_role.gha_ecs_deploy.id
@@ -109,6 +109,14 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Resource = "*"
       },
       {
+        # The US shadow workflow resolves each ALB DNS name before updating its
+        # Cloudflare CNAME. DescribeLoadBalancers supports no resource ARN.
+        Sid      = "DescribeLoadBalancers"
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
+        Resource = "*"
+      },
+      {
         Sid    = "PassTaskRoles"
         Effect = "Allow"
         Action = ["iam:PassRole"]
@@ -129,10 +137,10 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]

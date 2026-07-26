@@ -180,6 +180,7 @@ interface ReapCandidate {
   provider: ProviderName;
   externalId: string;
   metadata: Record<string, unknown> | null;
+  warmState: string | null;
   createdAt: Date;
 }
 
@@ -291,9 +292,16 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
       provider: sessionSandboxes.provider,
       externalId: sessionSandboxes.externalId,
       metadata: sessionSandboxes.metadata,
+      warmState: sql<string | null>`
+        ${projectSessions.metadata}->'warm_session'->>'state'
+      `,
       createdAt: sessionSandboxes.createdAt,
     })
     .from(sessionSandboxes)
+    .innerJoin(
+      projectSessions,
+      eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+    )
     .where(and(
       eq(sessionSandboxes.status, 'active'),
       isNotNull(sessionSandboxes.externalId),
@@ -313,6 +321,11 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
+        if (row.warmState === 'available') {
+          result.skipped += 1;
+          continue;
+        }
+
         const providerStatus: SandboxStatus = await getProvider(row.provider).getStatus(row.externalId);
 
         if (providerStatus === 'running') {

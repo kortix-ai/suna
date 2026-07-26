@@ -26,7 +26,7 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
 export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
 export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
-export const MEET_CHANNEL_CONNECTOR_SLUG = 'kortix_meet';
+export const VOICE_CHANNEL_CONNECTOR_SLUG = 'kortix_voice';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
@@ -36,8 +36,8 @@ export function channelDefaultSlug(platform: string): string {
       return TEAMS_CHANNEL_CONNECTOR_SLUG;
     case 'email':
       return EMAIL_CHANNEL_CONNECTOR_SLUG;
-    case 'meet':
-      return MEET_CHANNEL_CONNECTOR_SLUG;
+    case 'voice':
+      return VOICE_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
@@ -50,7 +50,7 @@ export function channelDefaultSlug(platform: string): string {
  * the only meet-specific auth wiring is this descriptor.
  */
 export function channelAuth(platform: string): ExecutorAuth {
-  if (platform === 'meet') return { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' };
+  if (platform === 'voice') return { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' };
   return { type: 'bearer', in: 'header', name: null, prefix: null };
 }
 
@@ -68,7 +68,7 @@ export function channelApiBase(platform: string): string {
       return 'https://graph.microsoft.com/v1.0';
     case 'email':
       return 'https://api.agentmail.to/v0';
-    case 'meet':
+    case 'voice':
       // Recall.ai regional gateway. Swappable via RECALL_BASE_URL.
       return config.RECALL_BASE_URL;
     default:
@@ -85,7 +85,7 @@ export function channelLabel(platform: string): string {
       return 'Microsoft Teams';
     case 'email':
       return 'Email';
-    case 'meet':
+    case 'voice':
       return 'Google Meet';
     default:
       return platform;
@@ -465,7 +465,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
  * required (Recall runs Django REST Framework). Phase 1 is listen-only — speak /
  * output-media land in Phase 2.
  */
-const MEET_ACTIONS: ChannelActionDef[] = [
+const VOICE_ACTIONS: ChannelActionDef[] = [
   {
     path: 'join_meeting',
     method: 'bot/',
@@ -691,8 +691,8 @@ export function channelCatalog(platform: string): NormalizedAction[] {
       return TEAMS_ACTIONS.map(toAction);
     case 'email':
       return EMAIL_ACTIONS.map(toAction);
-    case 'meet':
-      return MEET_ACTIONS.map(toAction);
+    case 'voice':
+      return VOICE_ACTIONS.map(toAction);
     default:
       return [];
   }

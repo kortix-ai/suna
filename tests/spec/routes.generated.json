@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 501,
+  "count": 503,
   "routes": [
     {
       "method": "GET",
@@ -951,6 +951,10 @@
       "path": "/v1/platform"
     },
     {
+      "method": "POST",
+      "path": "/v1/platform/boot-timeline"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/platform/github-app"
     },
@@ -1164,22 +1168,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/channels/meet/speak"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/voice"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/meet/voices"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/meet/voices/:voiceId/preview"
-    },
-    {
-      "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/bind-thread"
     },
     {
@@ -1321,6 +1309,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connector-profiles/me"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/:slug/oauth2/profile"
     },
     {
       "method": "PUT",
@@ -1477,6 +1469,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/mcp/voice"
     },
     {
       "method": "DELETE",
@@ -1669,6 +1665,26 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/voice/prompt"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/voice/run-command"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/voice/turns"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/warm"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/warm/claim"
     },
     {
       "method": "GET",
@@ -1937,14 +1953,6 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/meet/realtime"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/meet/status"
     },
     {
       "method": "POST",

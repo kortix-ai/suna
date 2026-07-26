@@ -29,7 +29,7 @@ export const AGENTMAIL_SENDER_POLICY = 'AGENTMAIL_SENDER_POLICY';
 
 export const RECALL_API_KEY = 'RECALL_API_KEY';
 
-export interface MeetInstallSummary {
+export interface VoiceInstallSummary {
   /** Where the resolved Recall key came from — operator env or a project override. */
   source: 'project' | 'env';
 }
@@ -40,13 +40,13 @@ export interface MeetInstallSummary {
  * meet channel connector's `Authorization: Token` header and is never injected
  * into a sandbox.
  */
-export async function loadMeetTokenForProject(projectId: string): Promise<string | null> {
+export async function loadVoiceTokenForProject(projectId: string): Promise<string | null> {
   const override = await readSecret(projectId, RECALL_API_KEY);
   return override ?? (config.RECALL_API_KEY || null);
 }
 
 /** Cheap "is meet usable?" — a Recall key resolves (per-project override or env). */
-export async function loadMeetInstall(projectId: string): Promise<MeetInstallSummary | null> {
+export async function loadVoiceInstall(projectId: string): Promise<VoiceInstallSummary | null> {
   const override = await readSecret(projectId, RECALL_API_KEY).catch(() => null);
   if (override) return { source: 'project' };
   if (config.RECALL_API_KEY) return { source: 'env' };

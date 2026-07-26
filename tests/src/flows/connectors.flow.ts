@@ -670,6 +670,7 @@ flow(
   {
     domain: 'connectors',
     routes: [
+      'POST /v1/projects/:projectId/connectors/:slug/oauth2/profile',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/oauth2/application',
       'GET /v1/projects/:projectId/connector-profiles/:profileId/oauth2/application',
       'POST /v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
@@ -683,7 +684,7 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const slug = `ke2e-oauth2-${Date.now().toString(36)}`;
-    await ctx.client.as(ctx.P.OWNER).post(
+    const connector = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/executor/projects/:projectId/connectors',
       {
         slug,
@@ -693,6 +694,13 @@ flow(
       },
       { params: { projectId: p.id } },
     );
+    connector.status(201);
+    const defaultProfile = await ctx.client.as(ctx.P.OWNER).post(
+      '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+      {},
+      { params: { projectId: p.id, slug } },
+    );
+    defaultProfile.status(200).body().exists('$.profile_id');
     const created = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/projects/:projectId/connector-profiles',
       {

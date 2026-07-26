@@ -231,6 +231,9 @@ const envSchema = z.object({
   // after validating; tune how many recent sessions to pre-resume per project.
   KORTIX_PRERESUME_ENABLED: optBoolFalse,
   KORTIX_PRERESUME_MAX_PER_PROJECT: optInt(1),
+  // OpenCode client transport. REST remains the default until the project
+  // experimental flag enables ACP after parity verification.
+  KORTIX_OPENCODE_TRANSPORT: z.enum(['acp', 'rest']).default('rest'),
 
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
@@ -285,17 +288,15 @@ const envSchema = z.object({
   AGENTMAIL_WEBHOOK_SECRET: optStr,
 
   // ── Channels — Recall.ai meeting bot (optional) ──────────────────────────
-  // MEET_ENABLED is the operator master switch (the global gate): when false the
-  // Google Meet experimental feature is unavailable platform-wide regardless of
-  // any per-project choice. RECALL_BASE_URL is the regional gateway (us-west-2 =
-  // pay-as-you-go default; us-east-1 / eu-central-1 / ap-northeast-1 also exist).
-  // The key is sent server-side as `Authorization: Token <key>`; never in a sandbox.
-  MEET_ENABLED: optBoolFalse,
+  // No operator on/off switch here: voice is gated the same way every other
+  // experimental feature is — per project, in Settings. An env var would be a
+  // second, hidden gate that only an operator could clear, which is exactly the
+  // friction the experimental-features system exists to avoid.
+  // RECALL_BASE_URL is the regional gateway (us-west-2 = pay-as-you-go default;
+  // us-east-1 / eu-central-1 / ap-northeast-1 also exist). The key is sent
+  // server-side as `Authorization: Token <key>`; never in a sandbox.
   RECALL_BASE_URL: optUrl('https://us-west-2.recall.ai/api/v1'),
   RECALL_API_KEY: optStr,
-  // ElevenLabs TTS — gives the meeting bot a voice (the agent speaks in-call).
-  ELEVENLABS_BASE_URL: optUrl('https://api.elevenlabs.io'),
-  ELEVENLABS_API_KEY: optStr,
 
   // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
   // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
@@ -389,11 +390,20 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: optStr,
   OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
-  // xAI / Gemini / Groq route through OpenRouter (see router/config/proxy-services.ts),
-  // so only their base URLs are read — no per-provider API keys.
+  // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
+  // router/config/proxy-services.ts), so only base URLs are read there.
   XAI_API_URL: optUrl('https://api.x.ai/v1'),
   GEMINI_API_URL: optUrl('https://generativelanguage.googleapis.com/v1beta'),
   GROQ_API_URL: optUrl('https://api.groq.com/openai/v1'),
+  // ── LiveKit — the voice channel's transport (see channels/voice/livekit.ts) ──
+  // A room per call, an agents-js worker doing STT->LLM->TTS, Recall's rendered
+  // page as a plain LiveKit client. Defaults match the project's local dev
+  // server (ws://localhost:7880, devkey/secret are LiveKit's own published
+  // dev-mode credentials, not a real secret) — every real deployment overrides
+  // all three.
+  LIVEKIT_URL: optStrDefault('ws://localhost:7880'),
+  LIVEKIT_API_KEY: optStrDefault('devkey'),
+  LIVEKIT_API_SECRET: optStrDefault('secret'),
   // ── Billing — Stripe (optional, only for cloud billing) ──────────────────
   STRIPE_SECRET_KEY: optStr,
   STRIPE_WEBHOOK_SECRET: optStr,
@@ -433,6 +443,16 @@ const envSchema = z.object({
   // bakes. Provider transitions still prepare their target image explicitly.
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
+  // Per-provider allowlist for per-project warm images of CUSTOM (non-default-
+  // slug) templates — see `perProjectWarmEligible` in builder.ts. Defaults to
+  // 'platinum' only: Platinum's per-project templates warm-miss 100% of the
+  // time today (`template.isShared` used to gate this off entirely), while
+  // Daytona's shared-default warm path already hits 66% and its quota-gc
+  // cache-floor math (quota-gc-select.ts) has not been re-measured for real
+  // Daytona custom-template counts. Comma-separated, same syntax and parser as
+  // ALLOWED_SANDBOX_PROVIDERS; a provider listed here that isn't itself in
+  // ALLOWED_SANDBOX_PROVIDERS is a no-op (intersected below).
+  KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: optStrDefault('platinum'),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -599,9 +619,19 @@ export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
   'local-docker',
 ] as const;
 
-/** Parse comma-separated provider list (e.g. "daytona,platinum"). */
-function parseAllowedProviders(raw: string): SandboxProviderName[] {
-  if (!raw) return ['daytona'];
+/**
+ * Parse comma-separated provider list (e.g. "daytona,platinum"). `fallback` is
+ * returned both when `raw` is empty and when every entry in it is unrecognised
+ * — kept as a parameter (rather than hardcoding `['daytona']`) so callers whose
+ * empty/all-invalid answer should mean "nothing enabled" (e.g.
+ * KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS) don't silently inherit
+ * ALLOWED_SANDBOX_PROVIDERS' "default to daytona" safety belt.
+ */
+export function parseAllowedProviders(
+  raw: string,
+  fallback: SandboxProviderName[] = ['daytona'],
+): SandboxProviderName[] {
+  if (!raw) return fallback;
   const names = raw
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -617,7 +647,7 @@ function parseAllowedProviders(raw: string): SandboxProviderName[] {
       );
     }
   }
-  return valid.length > 0 ? valid : ['daytona'];
+  return valid.length > 0 ? valid : fallback;
 }
 
 function validateEnv(): z.infer<typeof envSchema> {
@@ -766,15 +796,6 @@ function validateEnv(): z.infer<typeof envSchema> {
     }
   }
 
-  if (raw.MEET_ENABLED === 'true' && !raw.RECALL_API_KEY) {
-    issues.push({
-      var: 'RECALL_API_KEY',
-      message:
-        'MEET_ENABLED is on but RECALL_API_KEY is unset — the meeting bot cannot join or transcribe',
-      level: 'warn',
-    });
-  }
-
   // ── Print results ─────────────────────────────────────────────────────
   const errors = issues.filter((i) => i.level === 'error');
   const warnings = issues.filter((i) => i.level === 'warn');
@@ -827,6 +848,12 @@ const env = validateEnv();
 // ─── Parse Providers ────────────────────────────────────────────────────────
 
 const allowedProviders = parseAllowedProviders(env.ALLOWED_SANDBOX_PROVIDERS);
+// Intersected with `allowedProviders`: a provider listed here that isn't itself
+// enabled globally must never become "enabled for custom-template warming only".
+const customTemplateWarmProviders = parseAllowedProviders(
+  env.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS,
+  ['platinum'],
+).filter((p) => allowedProviders.includes(p));
 
 // ─── Config Object (typed, validated) ───────────────────────────────────────
 
@@ -888,6 +915,7 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
+  KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
@@ -911,11 +939,8 @@ export const config = {
   AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
 
   // ─── Channels (Recall.ai meeting bot) ────────────────────────────────────
-  MEET_ENABLED: env.MEET_ENABLED,
   RECALL_BASE_URL: env.RECALL_BASE_URL,
   RECALL_API_KEY: env.RECALL_API_KEY,
-  ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
-  ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
 
   // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
   MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,
@@ -955,6 +980,9 @@ export const config = {
   XAI_API_URL: env.XAI_API_URL,
   GEMINI_API_URL: env.GEMINI_API_URL,
   GROQ_API_URL: env.GROQ_API_URL,
+  LIVEKIT_URL: env.LIVEKIT_URL,
+  LIVEKIT_API_KEY: env.LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET: env.LIVEKIT_API_SECRET,
   // ─── Stripe (Billing) ─────────────────────────────────────────────────────
   STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
@@ -991,6 +1019,7 @@ export const config = {
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
+  KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: customTemplateWarmProviders,
 
   /**
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.
@@ -1144,6 +1173,16 @@ export const config = {
 
   isE2BEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('e2b') && !!this.E2B_API_KEY;
+  },
+
+  /**
+   * True iff `provider` is allowlisted to warm-bake per-project images for
+   * CUSTOM (non-default-slug) templates — see `perProjectWarmEligible` in
+   * builder.ts. Already intersected with ALLOWED_SANDBOX_PROVIDERS at parse
+   * time, so this alone is the full gate.
+   */
+  isCustomTemplateWarmEligible(provider: SandboxProviderName): boolean {
+    return this.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS.includes(provider);
   },
 };
 

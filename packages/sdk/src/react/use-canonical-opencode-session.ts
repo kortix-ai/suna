@@ -43,9 +43,11 @@ export function useCanonicalOpenCodeSession(params: {
   sessionId: string;
   /** The pin POST /start resolved server-side this render (preferred source). */
   pinFromStart?: string | null;
+  /** Disable the legacy OpenCode REST session list for ACP sessions. */
+  listRuntimeSessions?: boolean;
 }): CanonicalOpenCodeSession {
-  const { projectId, sessionId, pinFromStart } = params;
-  const sessionsQuery = useOpenCodeSessions();
+  const { projectId, sessionId, pinFromStart, listRuntimeSessions = true } = params;
+  const sessionsQuery = useOpenCodeSessions(listRuntimeSessions);
 
   // The Kortix session row carries the authoritative, server-managed pin — used
   // as a fallback when /start's value isn't in this render's props yet.

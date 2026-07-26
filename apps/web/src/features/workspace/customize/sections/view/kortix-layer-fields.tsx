@@ -4,6 +4,13 @@
  *  runtime-agnostic, saves to `kortix.yaml`. */
 
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Bot, ShieldCheck } from 'lucide-react';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { GrantSetField, KortixCliField } from './grant-mode-field';
@@ -16,12 +23,14 @@ export function KortixLayerFields({
   skillsOptions,
   connectorOptions,
   secretOptions,
+  sandboxOptions,
 }: {
   draft: AgentConfigBlock;
   set: <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
   skillsOptions: { id: string; label: string }[];
   connectorOptions: { id: string; label: string }[];
   secretOptions: { id: string; label: string }[];
+  sandboxOptions: { id: string; label: string }[];
 }) {
   return (
     <>
@@ -39,6 +48,31 @@ export function KortixLayerFields({
             onCheckedChange={(v) => set('enabled', v ? undefined : false)}
           />
         </div>
+        <FieldRow label="Environment">
+          <div className="space-y-1.5">
+            <Select
+              value={draft.sandbox ?? '__inherit__'}
+              onValueChange={(value) =>
+                set('sandbox', value === '__inherit__' ? undefined : value)
+              }
+            >
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__inherit__">Project default</SelectItem>
+                {sandboxOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground/60 text-[11px]">
+              New sessions and automations use this sandbox template.
+            </p>
+          </div>
+        </FieldRow>
       </section>
 
       <section className="space-y-4">

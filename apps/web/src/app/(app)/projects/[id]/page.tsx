@@ -10,6 +10,7 @@ import {
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
 import { isBillingEnabled } from '@/lib/config';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -34,7 +35,12 @@ export default function ProjectIndexPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const newSession = useNewProjectSession(projectId);
+  const warmSession = useWarmProjectSession(projectId);
+  const newSession = useNewProjectSession(
+    projectId,
+    warmSession.data?.session,
+    warmSession.resolveSession,
+  );
   // Composer sending state: spans Enter → create confirmed → navigation. Reset
   // only on create failure (success navigates this page away).
   const [sending, setSending] = useState(false);

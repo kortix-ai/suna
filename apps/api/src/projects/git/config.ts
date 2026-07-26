@@ -185,6 +185,7 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
+          sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
           // secrets/connectors/CLI powers each declared agent is scoped to.
           scope: {

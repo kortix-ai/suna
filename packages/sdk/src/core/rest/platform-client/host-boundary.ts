@@ -35,10 +35,7 @@ function apiBase(backendUrl: string): string {
   return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
-function requestHeaders(
-  options: HostRequestOptions,
-  json: boolean,
-): Headers {
+function requestHeaders(options: HostRequestOptions, json: boolean): Headers {
   const headers = new Headers(options.headers);
   headers.set('Accept', 'application/json');
   if (json) headers.set('Content-Type', 'application/json');
@@ -109,26 +106,27 @@ function marketplaceQuery(input?: PublicMarketplaceQuery): string {
   return query ? `?${query}` : '';
 }
 
-export function listPublicMarketplaceItems<T = {
-  items: unknown[];
-  total?: number;
-  hasMore?: boolean;
-  loading?: boolean;
-  pending?: number;
-  sources?: unknown[];
-}>(
-  options: HostRequestOptions,
-  query?: PublicMarketplaceQuery,
-): Promise<T> {
+export function listPublicMarketplaceItems<
+  T = {
+    items: unknown[];
+    total?: number;
+    hasMore?: boolean;
+    loading?: boolean;
+    pending?: number;
+    sources?: unknown[];
+  },
+>(options: HostRequestOptions, query?: PublicMarketplaceQuery): Promise<T> {
   return requestJson<T>(`/marketplace/items${marketplaceQuery(query)}`, options);
 }
 
-export function listPublicMarketplaces<T = {
-  marketplaces: unknown[];
-  loading?: boolean;
-  pending?: number;
-  sources?: unknown[];
-}>(options: HostRequestOptions): Promise<T> {
+export function listPublicMarketplaces<
+  T = {
+    marketplaces: unknown[];
+    loading?: boolean;
+    pending?: number;
+    sources?: unknown[];
+  },
+>(options: HostRequestOptions): Promise<T> {
   return requestJson<T>('/marketplace/marketplaces', options);
 }
 
@@ -184,10 +182,7 @@ export function getOAuthConsentRequest(
   requestId: string,
   options: HostRequestOptions,
 ): Promise<OAuthConsentRequest> {
-  return requestJson(
-    `/oauth/authorize/consent/${encodeURIComponent(requestId)}`,
-    options,
-  );
+  return requestJson(`/oauth/authorize/consent/${encodeURIComponent(requestId)}`, options);
 }
 
 export function submitOAuthConsent(
@@ -218,11 +213,10 @@ export function startConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<{ connect_url: string }> {
-  return requestJson(
-    `/setup-links/connector/${encodeURIComponent(token)}/start`,
-    options,
-    { method: 'POST', body: {} },
-  );
+  return requestJson(`/setup-links/connector/${encodeURIComponent(token)}/start`, options, {
+    method: 'POST',
+    body: {},
+  });
 }
 
 export interface SecretSetupLinkInfo {
@@ -272,25 +266,18 @@ export function startSessionWithToken(
   );
 }
 
-export function getMaintenanceConfig<T>(
-  options: HostRequestOptions,
-): Promise<T> {
+export function getMaintenanceConfig<T>(options: HostRequestOptions): Promise<T> {
   return requestJson<T>('/system/maintenance', options);
 }
 
-export function setMaintenanceConfig<T>(
-  config: T,
-  options: HostRequestOptions,
-): Promise<T> {
+export function setMaintenanceConfig<T>(config: T, options: HostRequestOptions): Promise<T> {
   return requestJson<T>('/system/maintenance', options, {
     method: 'PUT',
     body: config,
   });
 }
 
-export function getUserRolesWithToken<T = unknown[]>(
-  options: HostRequestOptions,
-): Promise<T> {
+export function getUserRolesWithToken<T = unknown[]>(options: HostRequestOptions): Promise<T> {
   return requestJson<T>('/user-roles', options);
 }
 
@@ -313,12 +300,24 @@ export interface AccountAuditExport {
 
 export async function downloadAccountAudit(
   accountId: string,
-  query: { format: 'csv' | 'jsonl'; action?: string; since?: string },
+  query: {
+    format: 'csv' | 'jsonl';
+    action?: string;
+    actor?: string;
+    resource_type?: string;
+    since?: string;
+    until?: string;
+    q?: string;
+  },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
   const params = new URLSearchParams({ format: query.format });
   if (query.action) params.set('action', query.action);
+  if (query.actor) params.set('actor', query.actor);
+  if (query.resource_type) params.set('resource_type', query.resource_type);
   if (query.since) params.set('since', query.since);
+  if (query.until) params.set('until', query.until);
+  if (query.q) params.set('q', query.q);
   const response = await fetch(
     `${apiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
     {
@@ -332,8 +331,7 @@ export async function downloadAccountAudit(
   }
   return {
     blob: await response.blob(),
-    filename:
-      response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null,
+    filename: response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null,
     capped: response.headers.get('x-audit-capped') === 'true',
     rowCount: response.headers.get('x-audit-row-count'),
   };
@@ -359,18 +357,11 @@ export async function openStressTestStream(
   return response.body;
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function buildPublicTemplateUrl(
-  backendUrl: string,
-  shareId: string,
-): URL | null {
+export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
   if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(
-    `templates/public/${shareId.toLowerCase()}`,
-    `${apiBase(backendUrl)}/`,
-  );
+  return new URL(`templates/public/${shareId.toLowerCase()}`, `${apiBase(backendUrl)}/`);
 }
 
 export async function getPublicTemplate<T>(

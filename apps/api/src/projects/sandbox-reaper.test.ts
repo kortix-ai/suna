@@ -50,19 +50,23 @@ mock.module('../shared/db', () => ({
       return fn(this);
     },
     select: () => ({
-      from: (table: unknown) => ({
-        where: () =>
-          hybrid(
-            table === sessionSandboxes
-              ? candidates
-              : table === usageEvents
-                ? usageRows
-                : table === projectSessions
-                  ? stuckSessions
-                  : [],
-            table === usageEvents && throwOnUsageLookup,
-          ),
-      }),
+      from: (table: unknown) => {
+        const builder = {
+          innerJoin: () => builder,
+          where: () =>
+            hybrid(
+              table === sessionSandboxes
+                ? candidates
+                : table === usageEvents
+                  ? usageRows
+                  : table === projectSessions
+                    ? stuckSessions
+                    : [],
+              table === usageEvents && throwOnUsageLookup,
+            ),
+        };
+        return builder;
+      },
     }),
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({
@@ -241,12 +245,26 @@ function candidate(over: Partial<any> = {}) {
     provider: 'daytona',
     externalId: 'ext-1',
     metadata: null,
+    warmState: null,
     createdAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000), // 2h ago → idle
     ...over,
   };
 }
 
 describe('reapAndReconcileSandboxes', () => {
+  test('keeps an available warm session running before its first prompt', async () => {
+    candidates = [candidate({ warmState: 'available' })];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'idle';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.skipped).toBe(1);
+    expect(r.stopped).toBe(0);
+    expect(stops).toEqual([]);
+    expect(updateCalls).toEqual([]);
+  });
+
   test('stops an idle, running Daytona box and closes billing + quiesces', async () => {
     candidates = [candidate()];
     statusByExternal['ext-1'] = 'running';

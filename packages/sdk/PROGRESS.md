@@ -174,21 +174,39 @@ Also stop if the same failure survives three different fixes (use
 
 ---
 
-## NOW — active plan: native integration authentication lifecycle
+## COMPLETED PLAN — native integration authentication lifecycle
 
 - **Plan:** `docs/superpowers/plans/2026-07-25-native-integration-auth-lifecycle.md`
 - **Spec:** `docs/superpowers/specs/2026-07-25-native-integration-auth-lifecycle-design.md`
 
-| #   | Task                                          | Status                    | Session                       | Last touched | Commit      |
-| --- | --------------------------------------------- | ------------------------- | ----------------------------- | ------------ | ----------- |
-| 1   | Contracts and RED tests                       | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `de7026bfc` |
-| 2   | Database lifecycle                            | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `572bedb5a` |
-| 3   | OAuth2 protocol engine                        | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `db31d216e` |
-| 4   | API lifecycle routes                          | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `63dda6afe` |
-| 5   | Executor and non-OAuth request authentication | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `35daeda10` |
-| 6   | SDK and web integration                       | DONE                      | `native-oauth-full-lifecycle` | 2026-07-25   | `b3826fa8f` |
-| 7   | Local verification                            | DONE WITH BROWSER BLOCKER | `native-oauth-full-lifecycle` | 2026-07-25   | `4575346db` |
-| 8   | Delivery and dev proof                        | IN PROGRESS               | `native-oauth-full-lifecycle` | 2026-07-25   | claim       |
+| # | Task | Status | Session | Last touched | Commit |
+|---|---|---|---|---|---|
+| 1 | Contracts and RED tests | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `de7026bfc` |
+| 2 | Database lifecycle | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `572bedb5a` |
+| 3 | OAuth2 protocol engine | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `db31d216e` |
+| 4 | API lifecycle routes | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `63dda6afe` |
+| 5 | Executor and non-OAuth request authentication | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `35daeda10` |
+| 6 | SDK and web integration | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `b3826fa8f` |
+| 7 | Local verification | DONE WITH BROWSER BLOCKER | `native-oauth-full-lifecycle` | 2026-07-25 | `4575346db` |
+| 8 | Delivery and dev proof | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `00bc29065` + `8a1249883` |
+
+---
+
+## NOW — active plan: OpenCode ACP canary
+
+- **Plan:** `docs/superpowers/plans/2026-07-25-opencode-acp-canary.md`
+- **Spec:** `docs/superpowers/specs/2026-07-25-opencode-acp-canary-design.md`
+
+| # | Task | Status | Session | Last touched | Commit |
+|---|---|---|---|---|---|
+| 1 | Native process and protocol core | DONE | `acp-opencode-canary` | 2026-07-25 | `2ba64ab68` |
+| 2 | Authenticated HTTP/SSE bridge | DONE | `acp-opencode-canary` | 2026-07-25 | `8560c2dfc` |
+| 3 | API transport metadata and rollback | DONE | `acp-opencode-canary` | 2026-07-25 | `b558def6f` |
+| 4 | SDK ACP transport | DONE | `acp-opencode-canary` | 2026-07-25 | `a28df36f3` |
+| 5 | SDK session projection | DONE | `acp-opencode-canary` | 2026-07-25 | `951896a44` |
+| 6 | Existing `useSession` integration | DONE | `acp-opencode-canary` | 2026-07-25 | `951896a44` |
+| 7 | Local parity and rollback proof | DONE | `acp-opencode-canary` | 2026-07-25 | `33900d7f1` |
+| 8 | Delivery and dev proof | DONE | `acp-opencode-canary` | 2026-07-25 | `3a45ab55b` |
 
 ---
 
@@ -230,6 +248,10 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B17 | **Add native OAuth2 client-credentials lifecycle support to existing connector connection profiles.** Static bearer credentials cannot acquire, cache, refresh, or revoke OAuth2 access tokens. Microsoft Graph and SharePoint require OAuth2 and cannot use a static API key.                                                                                                                                                               | `apps/api/src/executor/credentials.ts` decrypts one opaque value; `apps/api/src/executor/db-deps.ts` passes that value directly to `executeCall`; `packages/sdk/src/core/rest/projects-client/connectors.ts` accepts only `{ value }`.                                                                  | **DONE 2026-07-24** — session `native-oauth-sharepoint`; full SDK gates and real SharePoint proof green                                                                                                                                                                |
 | B18 | **Keep the managed-model playground pin synchronized with the managed catalog.** The playground exits before API access when its pinned IDs differ from `MANAGED_MODELS`.                                                                                                                                                                                                                                                                    | `packages/sdk/playground/chat/14-change-default-model.ts` still pins retired `qwen3.7-max` and `deepseek-v4-pro`.                                                                                                                                                                                       | **DONE 2026-07-24** — session `managed-models-aster`; full SDK gates green                                                                                                                                                                                             |
 | B19 | **Preserve explicit managed-model pricing and cache-write rates through the project catalog and turn-cost estimator.** Browser-side `models.dev` lookup can substitute another provider's price for a Kortix-managed model, and the turn estimator does not accept a distinct cache-write rate.                                                                                                                                              | `src/core/rest/projects-client/projects.ts`, `src/core/turns/types.ts`, `src/core/turns/state.ts`; confirmed for managed Aster `glm-5.2`.                                                                                                                                                               | **DONE 2026-07-25** — implementation `28c18cbfa`; full SDK suite, typecheck, public-surface snapshot, and packed-install smoke green                                                                                                                                   |
+| B20 | **Keep ACP SSE connections outside the shared 30-second authenticated-fetch timeout.** The ACP controller uses `/kortix/acp/:sessionId` as a long-lived SSE stream.                                                                                                                                                                                                                                                                            | `src/platform/auth-core.ts` exempted only `/global/event`; deployed cold Chromium aborted the ACP stream before `session/load` settled.                                                                                                                                                                | **DONE 2026-07-25** — implementation `89b97f4cc`; RED test, full SDK gates, and local cold ACP plus REST browser matrix pass                                                                                                                                                                                                         |
+| B21 | **Serialize ACP sends with runtime restart reloads.** A send that starts while OpenCode restarts can wait forever on `session/set_config_option` and never send `session/prompt`.                                                                                                                                                                                                                                                               | Deployed cold Chromium sent `session/set_config_option` at `13:36:20.250Z`, received `kortix/runtime_ready`, then sent `session/load` at `13:36:20.640Z`; `POST_RESTART_PONG` never produced `session/prompt`.                                                                                              | **DONE 2026-07-25** — implementation `d8537fa2c`; RED tests, full SDK gates, and test-harness typecheck pass                                                                                                                                                                                                                          |
+| B22 | **Expose server-owned warm project-session ensure and claim operations.** The project index needs one reusable empty session without owning session selection or deduplication in app code.                                                                                                                                                                                                                                                   | `apps/web/src/app/(app)/projects/[id]/page.tsx` creates a session only after send. `packages/sdk/src/core/rest/projects-client/sessions.ts` exposes create and list, but no atomic warm-session operation.                                                                                              | **DONE 2026-07-26** — implementation `13167d7cf`; RED tests, full SDK gates, live API/SDK lifecycle, workspace refresh, and maintenance retention proof pass                                                                                                                                                                           |
+| B23 | **Prevent ACP prompt results from exposing a false idle window before late protocol updates settle.**                                                                                                                                                                                                                                                                                                                                          | The deployed white-label parity screenshot rendered 4 ACP tool cards and `Agent is working…`, while REST rendered 26 completed tool cards. `applyAcpEnvelope()` marks the projection idle on the prompt result, and later tool or text updates can mark it busy again.                                                                                                  | **IN PROGRESS 2026-07-26** — session `whitelabel-acp-stable-completion`; RED test, SDK fix, strengthened parity gate, merge, Deploy Dev, and deployed proof required                                                                                                                            |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -805,6 +827,122 @@ REFACTOR and finish on the full typecheck, test, and packed-install smoke gates.
 **Status:** IN PROGRESS.
 
 ---
+
+### 2026-07-26 — session `warm-project-session` (B22 completion)
+
+Added one server-owned available warm session per project and user. A partial
+unique PostgreSQL index resolves concurrent ensure races. The SDK exposes
+`ensureWarmProjectSession`, `claimWarmProjectSession`,
+`project.sessions.ensureWarm()`, and `project.sessions.claimWarm()`.
+
+The project index ensures the warm session on mount and starts its runtime.
+Send claims that session atomically before navigation. A claimed, stopped, or
+configuration-mismatched session cannot become the next warm session.
+
+Reused active workspaces resolve the latest base SHA on the API. The sandbox
+daemon returns immediately when the workspace already matches that SHA. It
+fetches and checks out the exact SHA only when the workspace differs. OpenCode
+does not restart. No agent message performs Git synchronization.
+
+Available warm sessions bypass idle maintenance. Claimed sessions return to the
+normal idle policy.
+
+TDD evidence:
+
+- Workspace refresh RED: the API did not resolve or send `base_sha`.
+- Daemon RED: an unchanged workspace performed a Git fetch and returned `500`
+  against a missing remote.
+- Exact-SHA RED: the daemon checked out remote `v3` instead of requested `v2`.
+- Stopped-session RED: the coordinator reused a stopped warm session.
+- Maintenance RED: an available warm session entered idle-stop handling.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: **1263 pass / 0 fail**, **5644**
+  assertions.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed install and Node ESM
+  import passed.
+
+Additional local gates:
+
+- Database: **121 pass / 0 fail**.
+- API contract: **43 pass / 0 fail**.
+- Warm coordinator and workspace tests: **9 pass / 0 fail**.
+- Sandbox reaper: **43 pass / 0 fail**.
+- Sandbox daemon: **297 pass / 0 fail**.
+- Web helper: **3 pass / 0 fail**.
+- API typecheck, daemon build, migration lint, changed web ESLint, and
+  `git diff --check`: exit 0.
+- ke2e coverage: **490/503 routes**, **13 allowlisted**, **0 uncovered**.
+
+Real local proof used disposable project
+`4f9f6c04-9101-424b-aaaa-2e850b18ef12`:
+
+- Concurrent ensure calls returned one session. The database contained one
+  available warm row.
+- Reused workspace refresh changed
+  `f309cbda70b97a124585ba0e6d12a0b6b2c8be9f` to
+  `92b337bb3641598de4dec4e251f6087ba3609a18` in **2579 ms**.
+- The next refresh returned `unchanged` in **801 ms**.
+- A real maintenance pass returned `candidates=1`, `stopped=0`, and
+  `skipped=1` for an available warm session.
+- Session `5c83a894-d330-45c7-bc7e-a77c0c175881` reached runtime readiness.
+- Claim completed in **14 ms**.
+- Replacement session `444ca1db-97b9-4f16-bf0b-1eb96b2330a9` was different.
+- The replacement reached runtime readiness in **22481 ms**.
+
+The browser runtime returned `agent.browsers.list() = []`. Local DOM and network
+assertions remain unavailable. Web typecheck reports only three unrelated
+baseline errors in `template-url.test.ts` and `project-create-modal.tsx`.
+
+The full API suite retains an existing `mock.module` isolation defect when
+`sandbox-reaper.test.ts` shares a process with sibling files. Each changed API
+test file passes in an isolated process. API typecheck passes.
+
+**Shippable to production: YES.** The SDK surface is additive. The package,
+database, API, daemon, web helper, live lifecycle, and maintenance retention
+contracts pass. Browser verification remains a deployment item.
+
+---
+
+### 2026-07-25 — session `false-load-older` (local completion)
+
+OpenCode paginates raw messages in groups of 10. The reported dev session has
+one user message and 43 assistant messages in one logical turn. The initial page
+contained 10 assistant messages and an `x-next-cursor` header. The user message
+was on page 5.
+
+The controller now follows assistant-only pages during the initial load until
+every assistant parent user message is present. It hydrates the complete newest
+turn once in chronological order. It exposes `hasOlder` only when the completed
+turn has an earlier cursor.
+
+Implementation commit: `b759cca6bad8548b54ec3ab80d105f162a1f497d`.
+
+**RED evidence:**
+
+- The focused controller suite reported **13 pass / 1 fail**.
+- The new test expected three page requests. The controller made one request.
+
+**Verification:**
+
+- Focused controller suite: **14 pass / 0 fail** with 32 assertions.
+- SDK typecheck and example typecheck: exit 0.
+- SDK full suite: **1249 pass / 2 skip / 0 fail** across 104 files with 5589
+  assertions.
+- SDK packed-install smoke: pass.
+- Exact dev-session probe: 5 HTTP `200` page requests, 44 hydrated messages,
+  1 user message, 43 assistant messages, and `hasOlder: false`.
+- `git diff --check`: exit 0.
+
+The browser runtime returned `No browser is available` and `[]`. Local and
+deployed DOM proof remains open.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, and deployed proof
+remain.
 
 ### 2026-07-13 — session `gateway-routing-ui` (completion)
 
@@ -2149,7 +2287,6 @@ SDK typecheck, test, and packed-install smoke gates, focused web tests, browser
 verification, repository merge, Deploy Dev, and live-dev proof.
 
 **Status:** IN PROGRESS.
-
 ---
 
 ### 2026-07-25 — session `gateway-billing-audit` (B19 claim)
@@ -2194,3 +2331,799 @@ The browser no longer uses `models.dev` as a fallback for `kortix` models.
 **Shippable to production: YES** for B19 and the published SDK surface.
 Repository merge, Deploy Dev, and live-dev verification remain repository
 delivery tasks.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Task 3 claim)
+
+Claimed the OpenCode-only ACP canary after both previous SDK claims closed.
+PR #5400 merged the session-history pagination change.
+PR #5403 and Deploy Dev run 30136343999 completed the authentication lifecycle.
+
+The sandbox process and bridge slices are complete.
+The real OpenCode `1.18.4` smoke negotiated ACP v1, exposed its internal HTTP
+server, and created ACP session `ses_0693a6e03ffeGeChw6OVEfRGaW`.
+
+Task 3 will add server-owned `acp` and `rest` transport metadata.
+The SDK source remains unchanged until Task 4 starts with a failing test.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Task 3 completion)
+
+Separated the OpenCode process transport from the SDK client transport.
+Every sandbox injects `KORTIX_OPENCODE_PROCESS_TRANSPORT=acp`.
+The API client transport defaults to `rest` during the parity implementation.
+The `/start` response reports that client transport as `runtime_transport`.
+Pre-ACP servers can omit the additive field.
+
+**Verification:**
+
+- API contract and runtime-env tests: **22 pass / 0 fail**.
+- Focused `/start` HTTP contract: **1 pass / 0 fail**.
+- API contract typecheck: exit 0.
+- API typecheck: exit 0.
+
+**Status:** COMPLETE.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Task 4 completion)
+
+Added the framework-free SDK ACP transport.
+It sends JSON-RPC requests, notifications, and responses through the authenticated sandbox bridge.
+It consumes ordered SSE events and reconnects with `Last-Event-ID`.
+It exposes native `session/load`, `session/prompt`, `session/cancel`, and `session/set_config_option` methods.
+
+Added the framework-free ACP session projection.
+It converts user, assistant, thought, tool, plan, permission, question, usage, and stop updates into the existing Kortix session presentation types.
+It rejects updates for a different ACP session.
+
+**RED evidence:** the focused run reported two missing modules and zero passing tests.
+
+**Verification:**
+
+- Focused ACP SDK suite: **8 pass / 0 fail**.
+- SDK typecheck and example typecheck: exit 0.
+- Isomorphic export and public-surface gates: **69 pass / 0 fail**.
+- Direct OpenCode `1.18.4` smoke: ACP v1 initialize, session creation, streamed thought and assistant chunks, and `end_turn` completion.
+
+**Status:** COMPLETE.
+
+**Shippable to production: NOT YET.** Tasks 5 through 8 remain incomplete.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Tasks 5–6 completion)
+
+Extended the ACP projection for command, mode, config, session-information,
+usage, permission, question, cancellation, and transport-error state.
+
+Integrated ACP into the existing `useSession(projectId, sessionId)` hook.
+The server-provided `runtime_transport` selects the SDK path.
+Missing metadata and `rest` retain the existing OpenCode REST path.
+The ACP path disables OpenCode REST events, session listing, message sync, and
+prompt sends.
+
+The root web composer calls `sessionState.sendParts()`.
+The web application does not inspect `runtimeTransport`.
+The same SDK result handles commands, cancellation, permissions, and questions.
+
+Added the `acp_runtime` project experiment.
+The existing self-describing experimental settings UI renders its catalog entry.
+
+**RED evidence:**
+
+- Runtime policy test: missing `createSessionRuntimePolicy` export; **0 pass / 1 fail**.
+- Web routing test: missing `sessionState.sendParts`; **1 pass / 1 fail**.
+- Projection and controller error fixtures: **8 pass / 2 fail**.
+
+**Verification:**
+
+- Focused ACP projection/controller suite: **10 pass / 0 fail**.
+- Runtime policy/controller suite: **8 pass / 0 fail**.
+- Web SDK routing gate: **2 pass / 0 fail**.
+- SDK typecheck and examples: exit 0.
+- SDK full suite: **1228 pass / 2 skip / 0 fail**.
+- SDK packed-install smoke: pass.
+- API experimental-feature suite: **16 pass / 0 fail**.
+- API serializer suite: **17 pass / 0 fail**.
+- API contract schema suite: **41 pass / 0 fail**.
+- Sandbox ACP process and bridge suite: **19 pass / 0 fail**.
+- White-label typecheck: exit 0.
+
+**Status:** COMPLETE.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Task 7 completion)
+
+Completed the real OpenCode ACP parity matrix in one Chromium session.
+The matrix covers ordered SSE reconnects, `Last-Event-ID`, `session/load`,
+transcript restoration, text streaming, permissions, questions, attachments,
+busy-message serialization, cancellation, slash commands, and process restart.
+
+The sandbox daemon resumes the canonical ACP session after OpenCode restarts.
+It publishes the replayable `kortix/runtime_ready` process-generation signal.
+The SDK reloads the canonical session before it accepts another prompt.
+
+The OpenCode question compatibility bridge exposes questions as
+`session/request_input`.
+The browser returns only ACP JSON-RPC responses.
+
+**RED evidence:**
+
+- SDK restart recovery: **12 pass / 1 fail**.
+- Sandbox restart signal: **13 pass / 1 fail**.
+- The pre-fix Chromium matrix reconnected SSE after `/kortix/refresh/`.
+  It did not send a post-restart prompt because the new process had no loaded
+  ACP session.
+
+**Verification:**
+
+- Focused ACP SDK suite: **18 pass / 0 fail**.
+- Focused sandbox ACP suite: **17 pass / 0 fail**.
+- Linux sandbox daemon build: exit 0.
+- Platinum image `kortix-default-0429779a8bc2`: built in 370.774 seconds.
+- Full local Chromium ACP and REST rollback matrix: **1 pass / 0 fail** in
+  4.3 minutes.
+
+**Status:** COMPLETE.
+
+**Shippable to production: NOT YET.** Task 8 delivery and dev proof remain.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (OpenCode ACP Task 8 completion)
+
+Merged the OpenCode-only ACP canary in PR #5415.
+The merge commit is `3a45ab55b7a53cc20a3a360a7e8d65e4180a5c2a`.
+
+Deploy Dev run 30148258802 completed successfully at
+`f8968d3e1ae3066a3cdc819e6da99b363e36b744`.
+Git ancestry proves that the deployed commit contains the ACP merge.
+The live API health route reports `0.10.15-dev.f8968d3e`.
+
+The active Vercel deployment is
+`dpl_E9tZk2nS94mk1cAH1FmX6X464zkr`.
+It is `READY` at commit
+`0aa15072cf91e7be5c0d0cd2c39b8d3d703d5be2`.
+Git ancestry proves that this frontend commit contains the ACP merge.
+
+The deployed cold Chromium matrix passed without a preloaded ACP session.
+It covered ordered SSE reconnects, `Last-Event-ID`, `session/load`, prompt
+streaming, transcript reload, permissions, questions, attachments,
+cancellation, busy-message serialization, slash commands, process restart
+recovery, and REST rollback.
+Playwright reported **1 pass / 0 fail** in 4.2 minutes.
+
+The first deployed run exposed a test-harness defect.
+The welcome-card close action used a 10-second timeout and suppressed its
+timeout with `.catch(() => {})`.
+The production button already had `aria-label="Dismiss"`.
+The corrected test uses a 30-second click timeout and does not suppress a
+failed click.
+
+**Final verification:**
+
+- SDK typecheck and example typecheck: exit 0.
+- SDK full suite: **1249 pass / 0 fail** across 104 files with 5589 assertions.
+- SDK packed-install smoke: pass.
+- Test-harness typecheck: exit 0.
+- Frontend SDK and session-engine boundaries: **3 pass / 0 fail**.
+- Test formatting and `git diff --check`: exit 0.
+- PR #5415 checks: **18 successful / 0 failing**.
+- CodeQL: **0 new alerts**.
+- Local ACP and REST Chromium matrix: **1 pass / 0 fail**.
+- Deployed cold ACP and REST Chromium matrix: **1 pass / 0 fail**.
+
+**Status: COMPLETE.**
+
+**Shippable to production: YES.** All eight tasks are complete.
+Local and deployed dev ACP and REST paths pass.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (ACP stream timeout correction)
+
+The follow-up deployed cold Chromium run exposed an ACP transport defect.
+`authenticatedFetch` applied its 30-second default timeout to `/kortix/acp/:sessionId`.
+The controller lost the stream while `session/load` was pending.
+The browser never sent `session/prompt`.
+
+`isStreamingRequest` now exempts both OpenCode REST `/global/event` streams and
+ACP `/kortix/acp/:sessionId` streams.
+Non-streaming requests retain the 30-second timeout.
+
+**RED evidence:**
+
+- Focused auth transport suite: **11 pass / 1 fail**.
+- The ACP URL returned `false` from `isStreamingRequest`.
+
+**Verification:**
+
+- Focused auth transport suite: **12 pass / 0 fail**.
+- SDK typecheck and example typecheck: exit 0.
+- SDK full suite: **1250 pass / 0 fail** across 104 files with 5592 assertions.
+- SDK packed-install smoke: pass.
+- Test-harness typecheck: exit 0.
+- Frontend SDK and session-engine boundaries: **3 pass / 0 fail**.
+- Full local cold Chromium ACP and REST rollback matrix: **1 pass / 0 fail** in
+  2.7 minutes.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, and the deployed
+cold Chromium matrix remain.
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (B21 implementation)
+
+Serialized ACP prompt preparation with OpenCode runtime restarts.
+The controller interrupts stalled config-option requests when
+`kortix/runtime_ready` changes the runtime generation.
+It waits for canonical `session/load` replay and retries only the idempotent
+model and mode config preflight.
+It does not retry `session/prompt` after dispatch.
+It resets the ACP projection before runtime replay.
+
+**RED evidence:**
+
+- Focused controller suite: **13 pass / 2 fail**.
+- Runtime replay produced four messages instead of two.
+- The interrupted config preflight did not complete within 50 milliseconds.
+
+**Verification:**
+
+- Focused ACP controller suite: **16 pass / 0 fail**.
+- SDK typecheck and example typecheck: exit 0.
+- SDK full suite: **1253 pass / 0 fail** across 104 files with 5603 assertions.
+- SDK packed-install smoke: pass.
+- Test-harness typecheck: exit 0.
+- `git diff --check`: exit 0.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, and the deployed
+cold Chromium ACP plus REST rollback matrix remain.
+---
+
+### 2026-07-25 — session `false-load-older` (claim)
+
+Claimed the user-reported false `Load older messages` control on a one-turn
+session. The investigation will verify the runtime pagination response before
+changing the SDK contract. The implementation will follow RED -> GREEN ->
+REFACTOR and preserve all exported names.
+
+Required completion gates are the full SDK typecheck, test suite, packed-install
+smoke, focused web tests, local browser proof, repository merge, Deploy Dev, and
+deployed browser proof.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-25 — session `acp-opencode-canary` (B21 delivery completion)
+
+Merged the ACP restart-safe send serialization in PR #5433.
+The merge commit is `aedb8c16b1c11baeb501ea9107dfcac083cb8caa`.
+All 15 PR checks passed.
+
+Deploy Dev run `30160708566` completed successfully.
+The active API reports `0.10.15-dev.85ae91df`.
+The active Vercel deployment is `dpl_9M5yptfdDL48vPASvYDt92kQCFtD`.
+It is `READY` at commit `85ae91df47da26281dc35d098954567b132f192e`.
+Git ancestry proves that both deployed artifacts contain the B21 merge.
+
+The first post-deploy rollback attempt pressed Enter before the REST model list
+loaded. Its trace contains zero `/prompt_async` occurrences.
+The harness now opens the model picker and waits for `Claude Sonnet 4.6` before
+it sends the REST rollback prompt.
+
+The final deployed cold Chromium matrix passed.
+It proved ACP chat, SSE reconnect, transcript reload, tool approval, question
+input, attachments, queueing, cancellation, slash commands, runtime restart,
+post-restart prompt delivery, and REST rollback.
+
+**Final verification:**
+
+- Focused ACP controller suite: **16 pass / 0 fail**.
+- SDK full suite: **1253 pass / 0 fail** across 104 files.
+- SDK assertions: **5603**.
+- SDK typecheck and example typecheck: exit 0.
+- SDK packed-install smoke: pass.
+- Test-harness typecheck: exit 0.
+- PR #5433 checks: **15 pass / 0 fail**.
+- Deployed cold ACP and REST Chromium matrix: **1 pass / 0 fail** in 3.3 minutes.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.** ACP and REST rollback pass on deployed dev.
+
+---
+
+### 2026-07-25 — session `voice-sdk-import-recovery` (claim)
+
+Claimed the stale `.channels.meet` SDK test references found by PR #5450.
+The implementation already exposes `.channels.voice`.
+This correction changes test references only.
+
+Required completion gates are SDK typecheck, full tests, packed-install smoke,
+PR merge, and Deploy Dev.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-25 — session `voice-sdk-import-recovery` (implementation)
+
+PR #5450 supplied the RED state.
+The SDK typecheck failed because the voice change removed the public
+`.channels.meet` compatibility surface.
+
+Restored `.channels.meet` as a deprecated compatibility facade.
+Kept `.channels.voice` as the current voice surface.
+Restored the five removed REST compatibility tests.
+
+**Verification:**
+
+- SDK typecheck: exit 0.
+- SDK full suite: **1254 pass / 0 fail** across 104 files.
+- SDK assertions: **5608**.
+- SDK packed-install smoke: pass.
+- `git diff --check`: exit 0.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, and deployed web
+verification remain.
+
+---
+
+### 2026-07-25 — session `whitelabel-acp-reference` (claim)
+
+Claimed the full white-label ACP and SDK reference-app refactor.
+The SDK will add the provider-neutral `default_agent` project-config field.
+The legacy `open_code_default_agent` field will remain as a deprecated alias.
+
+The reference app will use one `createKortix` client and one `useSession`
+runtime path.
+Client code will not import runtime transports, legacy runtime stores, or
+OpenCode packages.
+Client code will not construct Kortix REST or runtime proxy requests.
+Project settings will render the server-provided experimental-feature catalog.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are the SDK suite, SDK typecheck, packed-install smoke,
+white-label typecheck, build, full E2E suite, deterministic boundary tests,
+real ACP browser proof, REST rollback proof, PR merge, Deploy Dev, and deployed
+artifact verification.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-25 — session `whitelabel-acp-reference` (local completion)
+
+Completed the SDK-only white-label ACP reference implementation.
+
+The white-label application uses one `createKortix` client and one
+`useSession` path. Application code does not import OpenCode packages,
+runtime transports, legacy runtime stores, or SDK source files.
+
+The wrapper BFF delegates HTTP forwarding to the SDK-owned
+`forwardKortixRequest()` function. White-label BFF tests use
+`createScopedKortix()` from `@kortix/sdk/server`. Repository Playwright specs
+also import the public SDK entry point.
+
+The boundary scanner covers application source, local tests, and repository
+Playwright specs. It rejects raw Kortix transport calls, SDK source imports,
+OpenCode imports, runtime proxy URLs, OpenCode REST paths, provider terms,
+legacy runtime stores, and direct runtime imports.
+
+ACP question requests remain pending without a timeout. Fresh subscribers
+receive unresolved questions. The daemon accepts the first client response
+and suppresses duplicate or late responses.
+
+ACP tool projections preserve native tool names, output text, output metadata,
+and reference-compatible labels. Projection resets preserve requests received
+during `session/load`.
+
+Local verification:
+
+- SDK typecheck: exit 0.
+- SDK suite: **1259 pass / 0 fail** with **5627** assertions.
+- SDK packed-install smoke: pass.
+- Sandbox daemon typecheck and build: exit 0.
+- Sandbox daemon suite: **293 pass / 0 fail** with **704** assertions.
+- White-label typecheck and build: exit 0.
+- White-label suite: **56 pass / 3 skip / 0 fail** with **181** assertions.
+- White-label SDK boundary: **0 violations**.
+- API typecheck: exit 0.
+- Repository test-harness typecheck: exit 0.
+- `git diff --check`: exit 0.
+- Real ACP and REST presentation plus question parity: **1 pass** in
+  **11.9 minutes**.
+- Real project-settings ACP-to-REST rollback: **1 pass** in **1.2 minutes**.
+- Test cleanup archived **15** projects through SDK methods.
+- Post-cleanup database proof: `active_projects=0`, `cleanup_users=0`.
+
+The final boundary review found two Playwright imports of
+`packages/sdk/src/node/server`. The RED test reported **10 pass / 1 fail**.
+Both specs now import `@kortix/sdk/server`. The GREEN run reports
+**11 pass / 0 fail**. Playwright lists both specs with the public package
+import.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** Rebase, full post-rebase gates, PR merge,
+Deploy Dev, deployed SHA proof, and deployed ACP plus REST parity remain.
+
+---
+
+### 2026-07-25 — session `whitelabel-acp-reference` (CI repair)
+
+PR #5458 exposed two delivery defects.
+
+The root `@kortix/sdk` development dependency broke the reduced API Docker
+workspace. The dependency now belongs to the minimal `tests/e2e` workspace.
+Both Playwright specs import the public `@kortix/sdk/server` entry point.
+
+The first package-unit run timed out while the mode suite built Next.js and
+started two servers. The setup limit is now 120 seconds. Test assertions remain
+unchanged.
+
+Post-repair verification:
+
+- SDK typecheck: exit 0.
+- SDK suite: **1259 pass / 0 fail** with **5629** assertions.
+- SDK packed-install smoke: pass.
+- White-label suite: **57 pass / 3 skip / 0 fail** with **182** assertions.
+- White-label SDK boundary: **0 violations**.
+- Repository test-harness typecheck: exit 0.
+- Playwright collection: **2 tests in 2 files**.
+- API self-host Docker build: exit 0.
+- `git diff --check`: exit 0.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
+and deployed ACP plus REST parity remain.
+
+---
+
+### 2026-07-26 — session `whitelabel-acp-stable-completion` (B23 delivery completion)
+
+Merged B23 in PR #5477.
+The merge commit is `480a44dcb9c6fce4f1f51c54dcb017750d187bdb`.
+All PR checks passed: **15 pass / 0 fail** with **11** path-filtered checks.
+
+Deploy Dev run `30184932143` completed successfully.
+The API health response reports `0.10.16-dev.480a44dc`.
+The API EKS rollout used image tag `dev-480a44dc`.
+The frontend image tag references the full merge SHA.
+
+Vercel deployment `dpl_FX4EmhvavKet4MvwcDyjVeqxZWdD` is ready.
+GitHub maps that deployment to the full merge SHA.
+The deployment owns the `dev.kortix.com` alias.
+
+The final deployed ACP and REST presentation plus question matrix passed:
+
+- Playwright: **1 pass / 0 fail** in **13.8 minutes**.
+- ACP sent **2** ACP prompts and **0** REST prompts.
+- REST sent **2** REST prompts and **0** ACP prompts.
+- ACP rendered **28** completed tool cards.
+- REST rendered **24** completed tool cards.
+- Tool-card parity ratio: **0.857**.
+- ACP created `/workspace/marko-kraemer.pptx` at **250,193 bytes**.
+- REST created `/workspace/marko-kraemer.pptx` at **237,913 bytes**.
+- Both transports persisted the question flow and rendered `QUESTION_BETA`.
+- Post-cleanup database proof: `active_projects=0`, `cleanup_users=0`.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.** ACP and REST stable completion pass on
+deployed dev.
+
+---
+
+### 2026-07-25 — session `whitelabel-acp-reference` (runtime freshness follow-up)
+
+The merged reference app exposed two live-path defects.
+
+Project provisioning used the shared 30-second request timeout. Real sandbox
+provisioning exceeded that limit. `projects.provision()` now accepts request
+options and defaults to 120 seconds.
+
+ACP startup accepted a stale last-known-good daemon snapshot while rebuilding the
+current snapshot. That daemon dropped unresolved ACP questions after 120 seconds.
+ACP sessions now require the current content-addressed runtime snapshot. REST
+sessions retain the last-known-good compatibility policy.
+
+TDD evidence:
+
+- Provisioning request options and default timeout: RED before `6c9db9051`,
+  GREEN after `6c9db9051`.
+- Runtime-freshness module: **0 pass / 1 fail** before implementation.
+- Session-sandbox policy: **9 pass / 2 fail** before implementation.
+- Runtime-freshness module: **3 pass / 0 fail** after implementation.
+- Session-sandbox policy: **11 pass / 0 fail** after implementation.
+
+Post-fix verification:
+
+- SDK typecheck: exit 0.
+- SDK suite: **1260 pass / 0 fail** with **5630** assertions.
+- SDK packed-install smoke: pass.
+- API typecheck: exit 0.
+- White-label typecheck and production build: exit 0.
+- White-label suite: **57 pass / 3 skip / 0 fail** with **182** assertions.
+- White-label SDK boundary: **0 violations**.
+- Real local ACP and REST presentation plus question parity: **1 pass** in
+  **12.4 minutes**.
+- The ACP question remained visible after 121 seconds and a page reload.
+- Both transports submitted Beta and rendered `QUESTION_BETA`.
+- ACP used `session/prompt` and sent zero `/prompt_async` requests.
+- REST used `/prompt_async` and sent zero `/kortix/acp/` requests.
+- Post-cleanup database proof: `active_projects=0`, `cleanup_users=0`.
+- `git diff --check`: exit 0.
+
+**Status:** FOLLOW-UP IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** Follow-up PR merge, Deploy Dev, deployed
+SHA proof, and deployed ACP plus REST parity remain.
+---
+
+### 2026-07-26 — session `whitelabel-acp-reference` (deployed parity completion)
+
+The first deployed parity run exposed a fixture funding defect.
+The test changed only `credit_accounts.balance`.
+Billing reads `balance_precise` and `non_expiring_credits_precise`.
+Both precise fields retained the default `$1.00` balance.
+
+The corrected fixture seeds `$100.00` into the rounded and precise wallet
+fields. The test rejects `Out of credits`.
+
+The deployed screenshot comparison also exposed a REST synchronization defect.
+The REST prompt reached `/prompt_async`, but the UI became idle before the first
+SSE status event. The SDK did not start its 10-second reconciliation fallback.
+The transcript therefore contained only the user message at the screenshot
+point.
+
+`useSession()` now marks an accepted REST prompt busy before the first SSE event.
+The session synchronization controller polls the transcript and runtime status
+until the runtime reports idle. Failed sends and explicit cancellation clear the
+optimistic busy state.
+
+The parity specification now requires:
+
+- one rendered assistant message per transport;
+- one rendered tool card per transport;
+- no `Out of credits` transcript;
+- ACP question persistence after 121 seconds and reload;
+- `QUESTION_BETA` after both question replies;
+- zero REST prompt calls from ACP;
+- zero ACP prompt calls from REST.
+
+TDD evidence:
+
+- Deployed screenshot RED: REST had no assistant message or tool card.
+- Focused unit RED: missing `beginRestPromptObservation` export.
+- Focused unit GREEN: **20 pass / 0 fail** with **43** assertions.
+
+Final verification:
+
+- SDK typecheck and example typecheck: exit 0.
+- SDK suite: **1261 pass / 0 fail** with **5632** assertions.
+- SDK packed-install smoke: pass.
+- White-label typecheck and dev-API production build: exit 0.
+- White-label suite: **57 pass / 3 skip / 0 fail** with **182** assertions.
+- White-label SDK boundary: **0 violations**.
+- Test-harness typecheck: exit 0.
+- Strong deployed ACP and REST presentation plus question parity:
+  **1 pass / 0 fail** in **14.1 minutes**.
+- ACP sent **2** ACP prompts and **0** REST prompts.
+- REST sent **2** REST prompts and **0** ACP prompts.
+- ACP rendered **29** real tool cards.
+- REST rendered **32** real tool cards.
+- Both screenshots contain completed presentation tool sequences.
+- Both transports submitted Beta and rendered `QUESTION_BETA`.
+- The stale project `81050937-bc7f-4b05-aafb-914acc019fe4` was archived
+  through `@kortix/sdk`.
+- Post-cleanup database proof: `active_projects=0`, `cleanup_users=0`.
+- `git diff --check`: exit 0.
+
+**Status:** DEPLOYED PARITY COMPLETE.
+
+**Shippable to production: NOT YET.** The synchronization correction still
+requires PR merge, Deploy Dev, deployed SHA proof, and one post-deploy smoke.
+
+---
+
+### 2026-07-26 — session `whitelabel-acp-stable-completion` (B23 claim)
+
+Claimed the intermittent ACP false-completion gap exposed by the deployed
+white-label parity screenshots.
+
+The SDK will keep prompt completion monotonic across the JSON-RPC result and
+late ACP tool, text, or reasoning updates. The parity gate will require stable
+completion and a complete presentation artifact on both transports.
+
+Implementation will follow RED -> GREEN -> REFACTOR. Required gates are the
+focused SDK test, full SDK typecheck, suite, packed-install smoke, white-label
+typecheck, build, suite, SDK boundary, test-harness typecheck, local ACP and REST
+parity, PR merge, Deploy Dev, deployed SHA proof, and deployed parity.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-26 — session `agent-sandbox-environments` (claim)
+
+Claimed the user-directed per-agent sandbox environment contract. The additive
+SDK field will expose `agents.<name>.sandbox` from `kortix.yaml`. Session
+creation will resolve an explicit session override first, then the selected
+agent environment, then the project default, then the platform default.
+
+The central session path will apply this contract to manual sessions, triggers,
+schedules, and channels. Replacement runtimes will retain the resolved sandbox
+template. Existing public names and required fields remain unchanged.
+
+Implementation will follow RED -> GREEN -> REFACTOR. Required SDK gates are the
+full typecheck, test suite, and packed-install smoke.
+
+**Status:** IMPLEMENTED — `7174dddc4`.
+
+---
+
+### 2026-07-26 — session `agent-sandbox-environments` (completion)
+
+Added `agents.<name>.sandbox` as an optional SDK and manifest field. The server
+now resolves session templates in this order:
+
+1. Explicit session `sandbox_slug`.
+2. Selected agent `sandbox`.
+3. Project `sandbox.default`.
+4. Platform `default`.
+
+The central session-create path applies the result to manual sessions,
+triggers, schedules, and channels. The server persists the resolved slug in
+`project_sessions.metadata.sandbox_slug`. Runtime-open, unmaterialized-runtime
+replacement, and restart allocation paths reuse this persisted value. Custom
+templates cannot boot through a pinned project-default external template ID.
+
+The dashboard agent editor now exposes the field as **Environment**. The new
+session composer now sends `sandbox_slug` only for an explicit user override.
+Manifest validation checks slug syntax. The agent-config API checks the slug
+against manifest-defined and dashboard-managed templates before committing it.
+
+TDD evidence:
+
+- Manifest RED: `agents.researcher.sandbox` was not part of the v2 schema.
+- API parser RED: the parsed `AgentSpec` had no `sandbox` value.
+- Precedence RED: the new `session-sandbox-metadata` module did not exist.
+- Provider RED: a custom image still selected the pinned default template ID.
+- SDK RED: `AgentConfigBlock` rejected `{ sandbox: "ml" }`.
+- Web RED: the agent editor had no environment control and the composer sent
+  the project default as an explicit override.
+- GREEN: manifest **324 pass / 0 fail**.
+- GREEN: focused API **66 pass / 0 fail**.
+- GREEN: focused web **17 pass / 0 fail**.
+- GREEN: starter **45 pass / 0 fail**.
+
+SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: **1262 pass / 0 fail**, **5633**
+  assertions.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed install and Node ESM
+  import passed.
+
+Additional gates:
+
+- `pnpm --filter @kortix/manifest-schema typecheck`: exit 0.
+- `pnpm --filter kortix-api typecheck`: exit 0.
+- Focused web ESLint: exit 0.
+- `pnpm --filter @kortix/starter typecheck`: exit 0.
+- `git diff --check`: exit 0.
+
+Real local proof used disposable project
+`d6a155db-3ab5-44b2-aa26-0ffb7df42042`:
+
+- Agent-config GET returned `block.sandbox = "ml"`.
+- Manual session `e4ef1acd-44cb-4ad8-934a-169b95b7d4ca` persisted `ml`.
+- Scheduled session `bddc4c18-de6b-485f-bb5b-32aaadcc2f85` persisted `ml`.
+- Explicit override session `c046cc69-68b7-4ef1-8d05-ecd41dce1dde`
+  persisted `default`.
+- Both inherited sessions reached `active` on Platinum.
+- Both inherited sessions used content hash
+  `3e41f3954ec150c409e145f73c22de3c335f534713ea39981b562805bbc781bf`.
+- Restarting the two unmaterialized rows allocated runtimes with the persisted
+  `ml` environment.
+- Established runtime identity remains immutable. Provider-confirmed loss
+  returns `409 SESSION_RUNTIME_IDENTITY_UNAVAILABLE`; it does not create a
+  replacement with a different external ID.
+- Cleanup archived all three session rows, removed all three provider
+  sandboxes, deleted the template, purged the managed repository, archived the
+  project, and deleted the Supabase user.
+
+Browser discovery returned `[]`. The Environment selector interaction, outgoing
+PUT payload, and saved visible value remain unverified in a real browser.
+
+**Shippable to production: YES.** The implementation, SDK package, API path,
+provider allocation, generated schemas, starter artifact, and source-level web
+contract pass. Browser interaction remains a deployment verification item.
+
+---
+
+### 2026-07-26 — session `warm-project-session` (B22 claim)
+
+Claimed the additive SDK surface for server-owned warm project sessions.
+
+The API will enforce one available empty warm session per project and user.
+The project index will prefetch its runtime and claim it before navigation.
+The existing daemon refresh operation will synchronize a reused warm workspace
+to the latest base branch without restarting OpenCode.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are SDK typecheck, full SDK tests, packed-install smoke, API tests,
+ke2e coverage, local API proof, browser proof, PR merge, Deploy Dev, deployed SHA
+proof, and deployed browser proof.
+
+**Status:** COMPLETE — `13167d7cf`.
+
+---
+
+### 2026-07-26 — session `whitelabel-acp-stable-completion` (B23 local completion)
+
+Completed the monotonic ACP and REST prompt-settlement implementation in
+`7a546585c`.
+
+ACP `send()` now resolves after the prompt result and a 500-millisecond quiet
+period. Late assistant, tool, question, and permission updates restart or block
+that settlement. Prompt queue serialization waits for full settlement.
+
+REST prompt observation now belongs to `SessionSyncController`. Premature idle
+events do not clear the public busy state. Late busy events cancel the
+500-millisecond settlement timer. Status reconciliation and SSE events use the
+same controller.
+
+TDD evidence:
+
+- ACP RED: `send()` resolved before delayed tool updates reached the transcript.
+- REST RED: `beginPromptObservation()` did not exist.
+- Focused REST GREEN: **40 pass / 0 fail** with **113** assertions.
+- Preview RED: expected status `200`; received `502`.
+- Preview GREEN: **7 pass / 0 fail** with **36** assertions.
+
+Post-rebase gates:
+
+- SDK typecheck: exit 0.
+- SDK suite: **1268 pass / 0 fail** with **5662** assertions across **105**
+  files.
+- SDK packed-install smoke: pass.
+- White-label typecheck: exit 0.
+- White-label suite: **57 pass / 3 skip / 0 fail** with **182** assertions.
+- White-label SDK boundary: **0 violations**.
+- White-label dev-API production build: exit 0.
+- Test-harness typecheck: exit 0.
+- `git diff --check`: exit 0.
+
+Post-rebase live ACP and REST presentation plus question parity:
+
+- Playwright: **1 pass / 0 fail** in **13.5 minutes**.
+- ACP sent **2** ACP prompts and **0** REST prompts.
+- REST sent **2** REST prompts and **0** ACP prompts.
+- ACP rendered **34** completed tool cards.
+- REST rendered **28** completed tool cards.
+- Tool-card parity ratio: **0.824**.
+- ACP created `/workspace/marko-kraemer.pptx` at **231,898 bytes**.
+- REST created `/workspace/marko_kraemer.pptx` at **228,064 bytes**.
+- Both transports persisted the question flow and rendered `QUESTION_BETA`.
+- Post-cleanup database proof: `active_projects=0`, `cleanup_users=0`.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
+and deployed ACP plus REST parity remain.

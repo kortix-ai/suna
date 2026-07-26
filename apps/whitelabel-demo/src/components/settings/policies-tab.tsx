@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,7 +18,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Shield, Trash2 } from 'lucide-react';
+import { Plus, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -197,7 +199,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
 
       <div className="flex justify-end">
         <Button disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending && <Loader2 className="size-4 animate-spin" />}
+          {save.isPending && <Loading className="size-4" />}
           Save policies
         </Button>
       </div>

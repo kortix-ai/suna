@@ -12,7 +12,7 @@
 #   ecs-deploy.sh <env> <image> [--service api|gateway] [--version X.Y.Z]
 #                 [--no-wait] [--dry-run]
 #
-#   env        dev | staging | prod | prod-usw2-shadow
+#   env        dev | staging | prod | prod-use2-shadow
 #   image      full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
 #   --version  explicit KORTIX_VERSION to stamp into the task-def env. When
 #              omitted, it is DERIVED from the image tag if the tag is a clean
@@ -47,7 +47,7 @@ if [ "${KORTIX_ECS_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-ENV="${1:?env required: dev|staging|prod|prod-usw2-shadow}"
+ENV="${1:?env required: dev|staging|prod|prod-use2-shadow}"
 IMAGE="${2:?image required, e.g. kortix/kortix-api:dev-481dc551}"
 shift 2
 
@@ -84,10 +84,10 @@ case "$ENV" in
     SERVICE_PREFIX="kortix-prod"
     SECRET_NAME="kortix-prod-env"
     ;;
-  prod-usw2-shadow)
-    REGION="us-west-2"
-    SERVICE_PREFIX="kortix-prod-usw2"
-    SECRET_NAME="kortix-prod-us-west-2-env"
+  prod-use2-shadow)
+    REGION="us-east-2"
+    SERVICE_PREFIX="kortix-prod-use2"
+    SECRET_NAME="kortix-prod-us-east-2-env"
     ;;
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
 esac

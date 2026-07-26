@@ -12,7 +12,7 @@ import { describe, expect, test } from 'bun:test';
 import { config } from '../config';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
-  MEET_CHANNEL_CONNECTOR_SLUG,
+  VOICE_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
   channelAuth,
@@ -152,7 +152,7 @@ describe('channelCatalog(email)', () => {
 });
 
 describe('channelCatalog(meet)', () => {
-  const actions = channelCatalog('meet');
+  const actions = channelCatalog('voice');
   const byPath = new Map(actions.map((a) => [a.path, a]));
   const action = (path: string) => expectDefined(byPath.get(path));
 
@@ -214,13 +214,13 @@ describe('channelCatalog(meet)', () => {
   });
 
   test('api base = the configured Recall gateway; default slug is platform-owned', () => {
-    expect(channelApiBase('meet')).toBe(config.RECALL_BASE_URL);
-    expect(channelDefaultSlug('meet')).toBe(MEET_CHANNEL_CONNECTOR_SLUG);
-    expect(MEET_CHANNEL_CONNECTOR_SLUG).toBe('kortix_meet');
+    expect(channelApiBase('voice')).toBe(config.RECALL_BASE_URL);
+    expect(channelDefaultSlug('voice')).toBe(VOICE_CHANNEL_CONNECTOR_SLUG);
+    expect(VOICE_CHANNEL_CONNECTOR_SLUG).toBe('kortix_voice');
   });
 
   test('meet auth is `Authorization: Token …` (custom header), not Bearer', () => {
-    expect(channelAuth('meet')).toEqual({
+    expect(channelAuth('voice')).toEqual({
       type: 'custom',
       in: 'header',
       name: 'Authorization',
@@ -650,9 +650,9 @@ describe('handleCall — channel (email)', () => {
 
 const MEET: GatewayConnector = {
   connectorId: 'conn-meet',
-  slug: MEET_CHANNEL_CONNECTOR_SLUG,
+  slug: VOICE_CHANNEL_CONNECTOR_SLUG,
   provider: 'channel',
-  platform: 'meet',
+  platform: 'voice',
   baseUrl: 'https://us-west-2.recall.ai/api/v1',
   auth: { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' },
   hasAuth: true,
@@ -661,7 +661,7 @@ const MEET: GatewayConnector = {
 };
 
 const MEET_JOIN: GatewayAction = {
-  path: `${MEET_CHANNEL_CONNECTOR_SLUG}.join_meeting`,
+  path: `${VOICE_CHANNEL_CONNECTOR_SLUG}.join_meeting`,
   relPath: 'join_meeting',
   inputSchema: {
     type: 'object',
@@ -673,7 +673,7 @@ const MEET_JOIN: GatewayAction = {
 };
 
 const MEET_TRANSCRIPT: GatewayAction = {
-  path: `${MEET_CHANNEL_CONNECTOR_SLUG}.get_transcript`,
+  path: `${VOICE_CHANNEL_CONNECTOR_SLUG}.get_transcript`,
   relPath: 'get_transcript',
   inputSchema: {
     type: 'object',
@@ -712,7 +712,7 @@ describe('handleCall — channel (meet)', () => {
     const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc","status_changes":[]}', 201);
     const res = await handleCall(deps, {
       ...input,
-      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
+      connectorSlug: VOICE_CHANNEL_CONNECTOR_SLUG,
       actionPath: 'join_meeting',
       args: { meeting_url: 'https://meet.google.com/abc-defg-hij' },
     });
@@ -726,61 +726,51 @@ describe('handleCall — channel (meet)', () => {
     });
   });
 
-  test('join_meeting injects the realtime webhook + bot metadata server-side (live relay)', async () => {
+  test('join_meeting points the bot at the audio bridge and tags it with the session', async () => {
     const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc"}', 201);
-    deps.resolveMeetJoinContext = async (projectId, sessionId) => ({
+    deps.resolveVoiceJoinContext = async (projectId: string, sessionId: string | null) => ({
       metadata: {
         kortix_project_id: projectId,
         kortix_session_id: sessionId,
         kortix_token: 'sig',
-        kortix_wake: 'kortix',
       },
-      realtimeEndpoints: [
-        {
-          type: 'webhook',
-          url: 'https://pub.example/v1/webhooks/meet/realtime',
-          events: ['transcript.data'],
-        },
-      ],
-      automaticAudioOutput: { in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } },
-      botName: 'Acme Notetaker',
+      outputMedia: { camera: { kind: 'webpage', config: { url: 'https://pub.example/voice/kvr_t' } } },
+      botName: 'Acme',
     });
     const res = await handleCall(deps, {
       ...input,
       sessionId: 'sess-xyz',
-      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
+      connectorSlug: VOICE_CHANNEL_CONNECTOR_SLUG,
       actionPath: 'join_meeting',
       args: {
         meeting_url: 'https://meet.google.com/abc-defg-hij',
         recording_config: { transcript: { provider: { meeting_captions: {} } } },
+        // A caller-supplied audio output would silence the agent — Recall treats
+        // it as mutually exclusive with output_media, so the bridge must win.
+        automatic_audio_output: { in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } },
       },
     });
     expect(res.status).toBe('ok');
     const body = JSON.parse(expectDefined(expectDefined(fetchCalls[0]).body));
-    // Caller's recording_config (transcript provider) is preserved …
+    // Caller's recording_config is preserved …
     expect(body.recording_config.transcript).toEqual({ provider: { meeting_captions: {} } });
-    // … and the realtime webhook + session-tagged metadata are merged in.
-    expect(body.recording_config.realtime_endpoints).toEqual([
-      {
-        type: 'webhook',
-        url: 'https://pub.example/v1/webhooks/meet/realtime',
-        events: ['transcript.data'],
-      },
-    ]);
-    expect(body.metadata).toMatchObject({ kortix_session_id: 'sess-xyz', kortix_token: 'sig' });
-    // … and the bot is enabled to speak (output_audio) via automatic_audio_output.
-    expect(body.automatic_audio_output).toEqual({
-      in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } },
+    // … the bridge page is injected as the bot's camera …
+    expect(body.output_media).toEqual({
+      camera: { kind: 'webpage', config: { url: 'https://pub.example/voice/kvr_t' } },
     });
+    // … the caller's conflicting audio output is dropped, not merged …
+    expect(body.automatic_audio_output).toBeUndefined();
+    // … the call is tagged with the session that spawned it …
+    expect(body.metadata).toMatchObject({ kortix_session_id: 'sess-xyz', kortix_token: 'sig' });
     // … and the project's configured bot name is used (caller passed none).
-    expect(body.bot_name).toBe('Acme Notetaker');
+    expect(body.bot_name).toBe('Acme');
   });
 
   test('get_transcript lists by bot_id (query param) and carries the Token header on a GET', async () => {
     const { deps, fetchCalls } = meetDeps(MEET_TRANSCRIPT, '{"results":[]}');
     const res = await handleCall(deps, {
       ...input,
-      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
+      connectorSlug: VOICE_CHANNEL_CONNECTOR_SLUG,
       actionPath: 'get_transcript',
       args: { bot_id: 'bot_abc' },
     });

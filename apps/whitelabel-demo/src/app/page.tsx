@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { ApiKeyGate } from '@/components/api-key-gate';
 import { BrandMark } from '@/components/brand-mark';
 import { LoginGate } from '@/components/login-gate';
@@ -22,7 +24,7 @@ import { qk } from '@/lib/query-keys';
 import { clearSessionToken, getSessionToken } from '@/lib/session';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderGit2, Loader2, LogOut, Plus, Receipt, Users } from 'lucide-react';
+import { FolderGit2, LogOut, Plus, Receipt, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -39,7 +41,7 @@ export default function Home() {
   if (ready === null) {
     return (
       <div className="grid min-h-dvh place-items-center bg-background">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loading className="size-5 text-muted-foreground" />
       </div>
     );
   }
@@ -120,10 +122,16 @@ function Dashboard({
             ))}
           {projects.isError && (
             <Card className="col-span-full p-4 text-sm text-destructive">
-              Couldn&apos;t load projects — {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
-              <button className="underline" onClick={onDisconnect}>
+              Couldn&apos;t load projects —{' '}
+              {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-destructive"
+                onClick={onDisconnect}
+              >
                 {wrapperMode ? 'Sign out' : 'Reconnect'}
-              </button>
+              </Button>
             </Card>
           )}
           {projects.isSuccess && items.length === 0 && (
@@ -203,7 +211,7 @@ function CreateProjectDialog() {
           </div>
           <DialogFooter className="mt-4">
             <Button type="submit" disabled={!name.trim() || create.isPending}>
-              {create.isPending && <Loader2 className="size-4 animate-spin" />}
+              {create.isPending && <Loading className="size-4" />}
               Create project
             </Button>
           </DialogFooter>

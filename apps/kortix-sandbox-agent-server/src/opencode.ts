@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileS
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { access, constants, stat } from 'node:fs/promises'
+import { createInterface } from 'node:readline'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
@@ -12,6 +13,13 @@ import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
+import {
+  AcpConnection,
+  buildOpenCodeLaunch,
+  redactAcpDiagnostic,
+  resolveOpenCodeTransport,
+  type OpenCodeTransport,
+} from './acp/connection'
 
 const READY_POLL_MS = 100
 const BOOT_READY_POLL_MS = 50
@@ -180,22 +188,18 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
         ? (out.provider as Record<string, unknown>)
         : {}
-    const kortixProvider = await buildKortixProvider({
+    const kortixProvider = buildKortixProvider({
       // In proxy mode opencode talks to the localhost proxy with a placeholder
       // key; the proxy injects the real per-session token upstream. In direct
       // mode (cold/Daytona) it's the real gateway base + key, as before.
       baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
       apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-      // Catalog is org-stable, so prefer the baked file — the full model catalog
-      // ships in every image at BAKED_LLM_CATALOG_PATH. Defaulting to it means a
-      // COLD boot (Daytona + Platinum) reads the file and SKIPS the ~2.2s gateway
-      // /models fetch that otherwise gates opencode's port bind on the critical
-      // path — matching how the warm seed (KORTIX_LLM_CATALOG_FILE) already
-      // behaves. Missing/empty file → readCatalogFile returns null → the fetch
-      // (step 2) still runs as the fallback, so this only ever removes latency.
+      // Catalog is org-stable and ships baked into every image at
+      // BAKED_LLM_CATALOG_PATH, so this resolves off DISK — no network on the
+      // path that gates opencode's port bind. loadGatewayCatalog is local-only
+      // by construction now; a missing file degrades to the minimal set and is
+      // repaired in the background (scheduleCatalogWarm), never by blocking boot.
       catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
-      fetchBaseURL: llmBaseUrl,
-      fetchApiKey: llmApiKey,
     })
     out.provider = {
       ...provider,
@@ -243,15 +247,13 @@ type KortixProviderOpts = {
   baseURL: string
   /** apiKey baked into the config (real key, or the proxy placeholder). */
   apiKey: string
-  /** Optional baked catalog file (org-stable models JSON) — preferred source. */
+  /** Baked catalog file (org-stable models JSON). Local read only — there is
+   *  deliberately NO fetch fallback here; see loadGatewayCatalog. */
   catalogFile?: string
-  /** Real gateway base/key for fetching the catalog when no file is baked. */
-  fetchBaseURL?: string
-  fetchApiKey?: string
 }
 
-async function buildKortixProvider(opts: KortixProviderOpts): Promise<Record<string, unknown>> {
-  const catalog = withModelLimits(await loadGatewayCatalog(opts))
+function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
+  const catalog = withModelLimits(loadGatewayCatalog(opts))
   const models = Object.fromEntries(
     Object.entries(catalog).map(([id, model]) => {
       // The gateway catalog's string `provider` is UI metadata describing the
@@ -295,15 +297,32 @@ function readCatalogFile(path: string): Record<string, KortixGatewayModel> | nul
   }
 }
 
-// Resolve the model catalog. Order:
-//   1. an EXPLICIT baked file (warm seed's KORTIX_LLM_CATALOG_FILE) — tokenless
-//      full catalog, wins outright;
-//   2. a fresh per-session fetch from the real gateway (per-account catalog) when
-//      we have creds (direct mode);
-//   3. the IMAGE-BAKED catalog at the well-known path — so a slow/down gateway
-//      still yields the full picker instead of the tiny minimal set;
-//   4. the minimal hardcoded set (last resort).
-async function loadGatewayCatalog(opts: KortixProviderOpts): Promise<Record<string, KortixGatewayModel>> {
+/**
+ * Resolve the model catalog for the config opencode boots with — from LOCAL
+ * SOURCES ONLY. This function must never touch the network.
+ *
+ * `opencode serve` cannot bind its port until the config that embeds this
+ * catalog is written, so anything awaited here is dead time on every single
+ * session boot. The catalog is org-stable and ~400KB, which makes it the worst
+ * possible thing to fetch on a hot path: a US sandbox fetching it from the
+ * eu-west-2 control plane pays a cross-region round-trip to learn a list that
+ * changes on the order of days.
+ *
+ * So the boot path reads a FILE, always:
+ *   1. an EXPLICIT baked file (warm seed's KORTIX_LLM_CATALOG_FILE);
+ *   2. the IMAGE-BAKED catalog at the well-known path — staged unconditionally
+ *      by build-context.ts and asserted by its completeness guard, so this is
+ *      the normal production hit;
+ *   3. the minimal hardcoded set (~13 models) as a last resort.
+ *
+ * Case 3 is a DEGRADED PICKER, not a broken session — every model still routes
+ * through the gateway. Recovering the full catalog is handled off the critical
+ * path by the caller (see scheduleCatalogWarm), never by blocking boot.
+ *
+ * The live per-account fetch still exists for the post-adoption refresh
+ * (refreshGatewayCatalogFile), which runs when a session is already usable.
+ */
+function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGatewayModel> {
   if (opts.catalogFile) {
     const models = readCatalogFile(opts.catalogFile)
     if (models) {
@@ -312,29 +331,153 @@ async function loadGatewayCatalog(opts: KortixProviderOpts): Promise<Record<stri
     }
     logger.warn(`[opencode] baked catalog ${opts.catalogFile} unreadable/empty; falling back`)
   }
-  if (opts.fetchBaseURL && opts.fetchApiKey) {
-    const fetched = await fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
-    if (fetched) return fetched
-  }
   const baked = readCatalogFile(BAKED_LLM_CATALOG_PATH)
   if (baked) {
-    logger.info(`[opencode] gateway fetch unavailable; loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
+    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
     return baked
   }
-  logger.warn('[opencode] no baked catalog and no gateway models; using minimal fallback')
+  // Loud: this means the image was built without its catalog layer, which is a
+  // bake regression, not a runtime condition. The session boots fast on the
+  // minimal set rather than paying a cross-region fetch to hide it.
+  logger.error(
+    `[opencode] no catalog file at ${BAKED_LLM_CATALOG_PATH} — booting on the minimal ` +
+      `${Object.keys(MINIMAL_FALLBACK_MODELS).length}-model set. This is an IMAGE BAKE defect ` +
+      `(build-context.ts stages kortix-llm-catalog.json unconditionally); boot latency is preserved by design.`,
+  )
   return MINIMAL_FALLBACK_MODELS
+}
+
+/** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
+export function catalogIsDegraded(catalogFile?: string): boolean {
+  return !readCatalogFile(catalogFile ?? BAKED_LLM_CATALOG_PATH) && !readCatalogFile(BAKED_LLM_CATALOG_PATH)
+}
+
+/**
+ * Repair a degraded catalog AFTER boot, off the critical path.
+ *
+ * Writes the live catalog to the well-known baked path so the next opencode
+ * start on this box (a restart, a later session) has the full picker. It
+ * deliberately does NOT restart opencode: opencode materializes providers at
+ * process start, so adopting a fresh catalog costs a full cold start
+ * (4.7-12s measured) — vastly more than a temporarily short model list is worth.
+ */
+/**
+ * Re-validate a fetched catalog into a KNOWN-SHAPE object before it is allowed
+ * anywhere near disk.
+ *
+ * This is not alert-appeasement — the file this guards becomes opencode's config
+ * on the next start, and this repo has already been burned by exactly that: an
+ * unexpected config field produced ConfigInvalidError and opencode refused to
+ * start at all, wedging fresh sessions. A catalog is remote JSON, so treating it
+ * as trusted-by-arrival is how a gateway bug or a bad deploy turns into "every
+ * new sandbox in this image is dead".
+ *
+ * So: rebuild the object field-by-field rather than passing it through. Anything
+ * unrecognised is dropped, ids and names are bounded, and the result is capped so
+ * a pathological response cannot write an unbounded file into the guest.
+ * Returns null when nothing survives, which the caller treats as "don't write".
+ */
+const CATALOG_MAX_MODELS = 20_000
+const CATALOG_MAX_ID_LEN = 256
+const CATALOG_MAX_NAME_LEN = 512
+
+function sanitizeCatalogForDisk(
+  models: Record<string, KortixGatewayModel>,
+): Record<string, KortixGatewayModel> | null {
+  const out: Record<string, KortixGatewayModel> = {}
+  let kept = 0
+  for (const [rawId, rawModel] of Object.entries(models)) {
+    if (kept >= CATALOG_MAX_MODELS) break
+    if (typeof rawId !== 'string' || rawId.length === 0 || rawId.length > CATALOG_MAX_ID_LEN) continue
+    if (!rawModel || typeof rawModel !== 'object' || Array.isArray(rawModel)) continue
+    const m = rawModel as Record<string, unknown>
+    const name = typeof m.name === 'string' && m.name.length <= CATALOG_MAX_NAME_LEN ? m.name : rawId
+    const clean: KortixGatewayModel = { name }
+    for (const flag of ['reasoning', 'tool_call', 'attachment', 'temperature', 'structured_output', 'open_weights'] as const) {
+      if (typeof m[flag] === 'boolean') (clean as Record<string, unknown>)[flag] = m[flag]
+    }
+    for (const str of ['provider', 'knowledge', 'family', 'description', 'last_updated'] as const) {
+      const v = m[str]
+      if (typeof v === 'string' && v.length <= CATALOG_MAX_NAME_LEN) (clean as Record<string, unknown>)[str] = v
+    }
+    // limit/cost/modalities/reasoning_options are structured; keep them only when
+    // they are plain objects, and let withModelLimits/opencode validate depth.
+    for (const obj of ['limit', 'cost', 'modalities'] as const) {
+      const v = m[obj]
+      if (v && typeof v === 'object' && !Array.isArray(v)) (clean as Record<string, unknown>)[obj] = v
+    }
+    if (Array.isArray(m.reasoning_options)) {
+      const opts = m.reasoning_options.filter(
+        (o) => o && typeof o === 'object' && !Array.isArray(o) && typeof (o as { type?: unknown }).type === 'string',
+      )
+      if (opts.length) (clean as Record<string, unknown>).reasoning_options = opts
+    }
+    out[rawId] = clean
+    kept++
+  }
+  return kept > 0 ? out : null
+}
+
+export function scheduleCatalogWarm(fetchBaseURL?: string, fetchApiKey?: string): void {
+  scheduleCatalogWarmToPath(fetchBaseURL, fetchApiKey, BAKED_LLM_CATALOG_PATH)
+}
+
+/** Test seam: same repair, to a caller-chosen path (the real one is root-owned). */
+export function scheduleCatalogWarmToPathForTests(
+  fetchBaseURL: string,
+  fetchApiKey: string,
+  targetPath: string,
+): void {
+  scheduleCatalogWarmToPath(fetchBaseURL, fetchApiKey, targetPath)
+}
+
+function scheduleCatalogWarmToPath(
+  fetchBaseURL: string | undefined,
+  fetchApiKey: string | undefined,
+  targetPath: string,
+): void {
+  if (!fetchBaseURL || !fetchApiKey) return
+  void (async () => {
+    try {
+      const fetched = await fetchGatewayModels(fetchBaseURL, fetchApiKey)
+      if (!fetched) return
+      // NEVER write the response through — rebuild it to a known shape first.
+      const models = sanitizeCatalogForDisk(fetched)
+      if (!models) {
+        logger.warn('[opencode] fetched catalog had no usable models after validation; not writing')
+        return
+      }
+      mkdirSync(dirname(targetPath), { recursive: true })
+      writeFileSync(targetPath, JSON.stringify({ models }), { mode: 0o644 })
+      logger.info(
+        `[opencode] repaired degraded catalog off the boot path ` +
+          `(${Object.keys(models).length} models kept of ${Object.keys(fetched).length} fetched)`,
+      )
+    } catch (err) {
+      logger.warn('[opencode] background catalog repair failed; minimal set stands', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+  })()
 }
 
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
 
-const GATEWAY_MODELS_RETRY_DELAYS_MS = [500, 1000, 2000]
+const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
 // Per-request hard cap. `opencode serve` cannot bind its port until
 // buildOpencodeConfigContent (which awaits this fetch) returns — so a slow/degraded
 // gateway `/models` directly blocks session start on BOTH providers (platinum +
 // daytona). Bound it and fall back to the minimal catalog rather than hang; a slow
 // gateway won't get faster on retry. Restoring the full catalog is the gateway's
 // job once /models is fast (it is uncached + ~400KB today).
-const GATEWAY_MODELS_TIMEOUT_MS = 6_000
+const GATEWAY_MODELS_TIMEOUT_MS = 2_500
+// TOTAL wall-clock ceiling across every attempt + backoff. The per-request cap
+// alone does NOT bound this path: responses that are slow but never time out
+// (say 2.4s each) still cost attempts × timeout + backoff, which was ~25s of
+// dead session-start time on the old 6s × 4 budget. The catalog is a nicety —
+// opencode boots fine on the baked/minimal one — so it gets a fixed, small
+// slice of the boot budget and nothing more.
+const GATEWAY_MODELS_TOTAL_BUDGET_MS = 4_000
 
 async function fetchGatewayModels(
   baseUrl: string,
@@ -342,12 +485,21 @@ async function fetchGatewayModels(
 ): Promise<Record<string, KortixGatewayModel> | null> {
   const url = `${baseUrl.replace(/\/+$/, '')}/models`
   const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
-  logger.info(`[opencode] fetching gateway models from ${url} (timeout ${GATEWAY_MODELS_TIMEOUT_MS}ms)`)
+  const deadline = Date.now() + GATEWAY_MODELS_TOTAL_BUDGET_MS
+  logger.info(
+    `[opencode] fetching gateway models from ${url} ` +
+      `(per-try ${GATEWAY_MODELS_TIMEOUT_MS}ms, total budget ${GATEWAY_MODELS_TOTAL_BUDGET_MS}ms)`,
+  )
   for (let attempt = 0; attempt < attempts; attempt++) {
+    if (Date.now() >= deadline) {
+      logger.warn('[opencode] gateway models budget exhausted; falling back to the baked/minimal catalog')
+      break
+    }
     try {
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(GATEWAY_MODELS_TIMEOUT_MS),
+        // Never let one attempt outlive the total budget.
+        signal: AbortSignal.timeout(Math.max(250, Math.min(GATEWAY_MODELS_TIMEOUT_MS, deadline - Date.now()))),
       })
       if (!res.ok) {
         const detail = (await res.text().catch(() => '')).slice(0, 200)
@@ -369,7 +521,8 @@ async function fetchGatewayModels(
       // genuine transient failures (5xx / network) are worth retrying.
       if (timedOut) break
       const delay = GATEWAY_MODELS_RETRY_DELAYS_MS[attempt]
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      if (delay && Date.now() + delay < deadline) await new Promise((resolve) => setTimeout(resolve, delay))
+      else break
     }
   }
   logger.error(`[opencode] gateway models unavailable (${url}); caller will fall back to the baked/minimal catalog`)
@@ -699,13 +852,32 @@ export type Opencode = {
   getInternalUrl(): string
   getBinaryPath(): string | null
   getState(): OpencodeState
+  getTransport(): OpenCodeTransport
+  getAcpConnection(): AcpConnection | null
   markReady(): void
+}
+
+export async function resumeCanonicalAcpSession(
+  connection: Pick<AcpConnection, 'request'>,
+  sessionId: string,
+  cwd: string,
+): Promise<void> {
+  await connection.request('session/resume', {
+    sessionId,
+    cwd,
+    mcpServers: [],
+  })
+}
+
+export interface OpencodeSupervisorOptions {
+  getCanonicalAcpSessionId?: () => string | null
 }
 
 export function createOpencodeSupervisor(
   cfg: Config,
   opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
+  options: OpencodeSupervisorOptions = {},
 ): Opencode {
   let currentCfg = cfg
   let currentOpencodeConfigDir = opencodeConfigDir
@@ -717,6 +889,14 @@ export function createOpencodeSupervisor(
   let state: OpencodeState = 'starting'
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let opencodeCwd = cfg.workspace
+  let transport: OpenCodeTransport = resolveOpenCodeTransport(process.env)
+  let acpConnection: AcpConnection | null = null
+  let nextAcpEventId = 1
+
+  function rememberAcpEventCursor(): void {
+    if (!acpConnection) return
+    nextAcpEventId = Math.max(nextAcpEventId, acpConnection.lastEventId + 1)
+  }
 
   function ensureCwdExists(): string {
     try {
@@ -807,16 +987,19 @@ export function createOpencodeSupervisor(
       logger.info(`[opencode] wrote config (${opencodeConfig.length} bytes) to ${configPath}`)
     }
 
-    const args = [
-      'serve',
-      '--port',
-      String(currentCfg.opencodeInternalPort),
-      '--hostname',
-      '127.0.0.1',
-    ]
-
     const cwd = ensureCwdExists()
-    logger.info('[opencode] spawning', { bin, port: currentCfg.opencodeInternalPort, cwd })
+    transport = resolveOpenCodeTransport(env)
+    const launch = buildOpenCodeLaunch(
+      transport,
+      currentCfg.opencodeInternalPort,
+      cwd,
+    )
+    logger.info('[opencode] spawning', {
+      bin,
+      port: currentCfg.opencodeInternalPort,
+      cwd,
+      transport,
+    })
     // detached: true makes opencode the leader of its own process group, so
     // stop()/restart() can SIGTERM/SIGKILL the whole group (-pid) instead of
     // just this direct child. Without it, a grandchild opencode forks itself
@@ -825,15 +1008,20 @@ export function createOpencodeSupervisor(
     // freshly-spawned opencode is installing into concurrently — a real path
     // to a torn/corrupted node_modules that then fails every session's first
     // prompt until the sandbox is rebuilt.
-    const proc = spawn(bin, args, {
+    const proc = spawn(bin, launch.args, {
       cwd,
-      env,
-      stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...env, ...launch.env },
+      stdio: launch.stdio,
       detached: true,
     })
 
     proc.on('exit', (code, signal) => {
       logger.warn('[opencode] child exited', { code, signal })
+      rememberAcpEventCursor()
+      acpConnection?.dispose(
+        `OpenCode ACP exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`,
+      )
+      acpConnection = null
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
@@ -850,6 +1038,61 @@ export function createOpencodeSupervisor(
     })
 
     child = proc
+
+    if (transport === 'acp') {
+      if (!proc.stdin || !proc.stdout || !proc.stderr) {
+        throw new Error('OpenCode ACP process did not expose stdio pipes')
+      }
+      const stderr = createInterface({ input: proc.stderr })
+      stderr.on('line', (line) => {
+        logger.warn('[opencode-acp] stderr', {
+          line: redactAcpDiagnostic(line, env),
+        })
+      })
+      const connection = new AcpConnection({
+        input: proc.stdin,
+        output: proc.stdout,
+        initialEventId: nextAcpEventId,
+        onDiagnostic: (line) => logger.warn('[opencode-acp] protocol', { line }),
+      })
+      try {
+        const initialized = await connection.initialize({
+          clientInfo: {
+            name: 'kortix-sandbox-agent-server',
+            version: '1',
+          },
+        })
+        logger.info('[opencode-acp] initialized', {
+          protocolVersion: initialized.protocolVersion,
+        })
+        const canonicalSessionId = options.getCanonicalAcpSessionId?.()
+        if (canonicalSessionId) {
+          await resumeCanonicalAcpSession(
+            connection,
+            canonicalSessionId,
+            currentCfg.workspace,
+          )
+          logger.info('[opencode-acp] resumed canonical session after process start', {
+            sessionId: canonicalSessionId,
+          })
+        }
+        acpConnection = connection
+        connection.notifyClient('kortix/runtime_ready', {
+          sessionId: canonicalSessionId ?? null,
+        })
+      } catch (error) {
+        connection.dispose('OpenCode ACP initialization failed')
+        acpConnection = null
+        if (proc.pid) {
+          try {
+            process.kill(-proc.pid, 'SIGTERM')
+          } catch {
+            proc.kill('SIGTERM')
+          }
+        }
+        throw error
+      }
+    }
   }
 
   function markReady() {
@@ -903,6 +1146,9 @@ export function createOpencodeSupervisor(
     async stop(signal: NodeJS.Signals = 'SIGTERM') {
       stopping = true
       state = 'down'
+      rememberAcpEventCursor()
+      acpConnection?.dispose('OpenCode supervisor stopped')
+      acpConnection = null
       if (readinessTimer) {
         clearTimeout(readinessTimer)
         readinessTimer = null
@@ -953,6 +1199,9 @@ export function createOpencodeSupervisor(
       currentCfg = nextCfg
       currentOpencodeConfigDir = nextOpencodeConfigDir
       if (nextProjectEnv) currentProjectEnv = nextProjectEnv
+      transport = resolveOpenCodeTransport(
+        nextProjectEnv ? mergeProjectEnv(process.env, nextProjectEnv) : process.env,
+      )
       state = 'starting'
       logger.info('[opencode] reconfigured', {
         projectId: nextCfg.projectId,
@@ -974,6 +1223,14 @@ export function createOpencodeSupervisor(
 
     getState() {
       return state
+    },
+
+    getTransport() {
+      return transport
+    },
+
+    getAcpConnection() {
+      return acpConnection
     },
 
     markReady,

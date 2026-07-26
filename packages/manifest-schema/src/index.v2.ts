@@ -119,6 +119,8 @@ export interface AgentBlockV2 {
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
+  /** Sandbox template slug for sessions that start with this agent. */
+  sandbox?: string;
   connectors?: GrantSetV2;
   /** Which project secrets this agent may receive as sandbox env (and read via
    *  the secrets API) — a list of secret IDENTIFIERS (project_secrets.identifier),
@@ -388,6 +390,17 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });
+  }
+
+  if (entry.sandbox !== undefined) {
+    const sandbox = typeof entry.sandbox === 'string' ? entry.sandbox.trim() : '';
+    if (!sandbox || !SLUG_RE.test(sandbox)) {
+      issues.push({
+        path: `${where}.sandbox`,
+        message: 'sandbox must be a valid template slug.',
+        severity: 'error',
+      });
+    }
   }
 
   // v1's grant-set name — renamed to `secrets` in v2 (spec §2.2/§2.4).

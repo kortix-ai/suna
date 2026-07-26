@@ -605,6 +605,13 @@ export const projectSessions = kortixSchema.table(
       table.projectId,
       table.sessionId,
     ),
+    uniqueIndex('idx_project_sessions_one_available_warm')
+      .on(table.projectId, table.createdBy)
+      .where(
+        sql`${table.createdBy} is not null
+          and ${table.metadata}->'warm_session'->>'state' = 'available'
+          and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
+      ),
     // NOTE: a partial composite index `idx_project_sessions_account_active`
     // ((account_id) WHERE status IN active-set) ALSO exists — created by the
     // hand-written migration drizzle/20260617102106_account_active_session_index.sql
@@ -1108,6 +1115,35 @@ export const chatTurnStreams = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_chat_turn_streams_expiry').on(table.expiresAt)],
+);
+
+/**
+ * The shared transcript of a live voice call — written by the realtime provider
+ * as speech happens, read back by the Kortix session through `voice_read`.
+ *
+ * `cursor` (bigserial) is what makes the read non-blocking: the agent loop is
+ * single-threaded and can never sit on a stream, so it asks "what is new since
+ * X" and gets an answer immediately. Ordering is on the cursor, never
+ * created_at — two turns can land in the same millisecond and a wall-clock tie
+ * would silently drop one on the next poll.
+ */
+export const voiceCallTurns = kortixSchema.table(
+  'voice_call_turns',
+  {
+    cursor: bigint('cursor', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    callId: text('call_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    /** 'user' (a human in the call) | 'agent' (the voice agent speaking). */
+    role: varchar('role', { length: 16 }).notNull(),
+    speaker: text('speaker'),
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_voice_call_turns_call_cursor').on(table.callId, table.cursor),
+    index('idx_voice_call_turns_session').on(table.sessionId, table.cursor),
+  ],
 );
 
 export const teamsPendingUploads = kortixSchema.table(

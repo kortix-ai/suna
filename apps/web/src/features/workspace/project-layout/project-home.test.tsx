@@ -10,4 +10,8 @@ describe('ProjectHome sidebar toggle', () => {
     expect(source).toContain('peekEnter');
     expect(source).toContain('peekLeave');
   });
+
+  test('does not send the project default as an explicit session sandbox override', () => {
+    expect(source).not.toContain('sandbox_slug: activeSlug');
+  });
 });

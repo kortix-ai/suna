@@ -49,6 +49,18 @@
  * caller can alarm — a GC that silently can't keep up is how this failed the first
  * time. The real remedy at that point is capacity (raise the org snapshot quota) or
  * gating the warm bake; GC can only buy time.
+ *
+ * ── Template scoping (ppwarm-names.ts FORMAT MIGRATION) ─────────────────────
+ * A ppwarm name is scoped to (project, template): `kortix-ppwarm-<proj8>-<tpl8>-
+ * <hash12>` for names minted after that migration, `kortix-ppwarm-<proj8>-
+ * <hash12>` (no tpl8) for names minted before it. `ppwarmProj8` matches both
+ * shapes (every rule below that only needs "is this a ppwarm tip" is unaffected);
+ * `ppwarmTpl8` distinguishes them for the one rule that groups tips against each
+ * other (rule 2, superseded-tip pruning) — grouping by proj8 ALONE there would
+ * let one template's bake prune another template's live tip out from under it.
+ * Old-format names (no tpl8) are never treated as impossible to reap: they still
+ * pass through the idle-time (rule 3) and LRU-budget (rule 6) sweeps below, same
+ * as before this migration — those never needed tpl8 to begin with.
  */
 
 /** The Daytona org-wide snapshot cap. Counts every snapshot, ours or not. */
@@ -158,12 +170,32 @@ export function isManaged(name: string): boolean {
   return MANAGED_PREFIXES.some((p) => name.startsWith(p));
 }
 
-/** proj8 scope key of a ppwarm name: `kortix-ppwarm-<proj8>-<hash12>`. */
+/**
+ * proj8 scope key of a ppwarm name. Matches BOTH shapes — old
+ * `kortix-ppwarm-<proj8>-<hash12>` and new (template-scoped)
+ * `kortix-ppwarm-<proj8>-<tpl8>-<hash12>` — proj8 is always the first segment
+ * regardless of format, so every rule keyed only on "is this project's ppwarm
+ * cache" (idle sweep, LRU budget) is unaffected by the format migration.
+ */
 export function ppwarmProj8(name: string): string | null {
   if (!name.startsWith(PPWARM_PREFIX)) return null;
   const rest = name.slice(PPWARM_PREFIX.length);
   const proj8 = rest.split('-')[0];
   return proj8 || null;
+}
+
+/**
+ * tpl8 scope key of a ppwarm name, or null for an OLD-format name that predates
+ * the template-scoping migration — see ppwarm-names.ts's FORMAT MIGRATION note
+ * (mirrored here, not imported, because this module deliberately imports
+ * nothing). Distinguished by segment count: old names have exactly 2
+ * dash-delimited segments after the prefix (proj8, hash12); new names have 3
+ * (proj8, tpl8, hash12).
+ */
+export function ppwarmTpl8(name: string): string | null {
+  if (!name.startsWith(PPWARM_PREFIX)) return null;
+  const segments = name.slice(PPWARM_PREFIX.length).split('-');
+  return segments.length >= 3 ? (segments[1] || null) : null;
 }
 
 function lastTouch(s: SnapshotLike): number {
@@ -227,18 +259,26 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     claim(s, `state=${s.state}`);
   }
 
-  // 2. Superseded ppwarm tips: exactly one tip per project is live. The on-bake
-  //    reaper already does this, but it misses stragglers when a bake fails midway.
-  const byProj = new Map<string, SnapshotLike[]>();
+  // 2. Superseded ppwarm tips: exactly one tip per (project, template) is live.
+  //    The on-bake reaper already does this, but it misses stragglers when a
+  //    bake fails midway. Grouped by (proj8, tpl8) — NOT proj8 alone — so a
+  //    second template's tip is never compared against, and never "supersedes",
+  //    the default's; see ppwarm-names.ts's FORMAT MIGRATION note. OLD-format
+  //    tips (tpl8 = null) all share the SAME empty tpl8 slot for a given proj8,
+  //    so they still group and supersede each other exactly as before this
+  //    change — the migration only ADDS separation for template-scoped names,
+  //    it never removes the pre-existing proj8-only grouping for legacy ones.
+  const byScope = new Map<string, SnapshotLike[]>();
   for (const s of pool) {
     if (s.name.includes('__deleted')) continue; // soft-delete tombstone; not quota-counting
     const proj8 = ppwarmProj8(s.name);
     if (!proj8) continue;
-    const group = byProj.get(proj8);
+    const scopeKey = `${proj8}|${ppwarmTpl8(s.name) ?? ''}`;
+    const group = byScope.get(scopeKey);
     if (group) group.push(s);
-    else byProj.set(proj8, [s]);
+    else byScope.set(scopeKey, [s]);
   }
-  for (const [proj8, group] of byProj) {
+  for (const group of byScope.values()) {
     if (group.length < 2) continue;
     const [, ...superseded] = [...group].sort(byFreshestFirst);
     for (const s of superseded) {
@@ -249,7 +289,9 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
       // PPWARM_REAP_PROTECT_MS (ppwarm-names.ts) for the incident writeup.
       const t = lastTouch(s);
       if (Number.isFinite(t) && now - t < QUOTA_GC_PPWARM_FRESH_PROTECT_MS) continue;
-      claim(s, `superseded ppwarm tip for project ${proj8}`);
+      const proj8 = ppwarmProj8(s.name);
+      const tpl8 = ppwarmTpl8(s.name);
+      claim(s, `superseded ppwarm tip for project ${proj8}${tpl8 ? ` (template ${tpl8})` : ''}`);
     }
   }
 

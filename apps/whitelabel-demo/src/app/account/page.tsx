@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { AccountDetailCard } from '@/components/account/account-detail-card';
 import { AccountSwitcher } from '@/components/account/account-switcher';
 import { InvitesSection } from '@/components/account/invites-section';
@@ -13,7 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useWrapperMode } from '../providers';
@@ -37,8 +39,8 @@ function WrapperAccountNotice() {
         <BrandMark className="mx-auto mb-4" />
         <h1 className="text-lg font-semibold tracking-tight">Not available in wrapper mode</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          This app&apos;s wrapper backend manages the underlying Kortix account on your behalf —
-          end users don&apos;t get direct account administration. See{' '}
+          This app&apos;s wrapper backend manages the underlying Kortix account on your behalf — end
+          users don&apos;t get direct account administration. See{' '}
           <Link href="/usage" className="underline">
             Usage
           </Link>{' '}
@@ -61,7 +63,7 @@ function DirectAccountPage() {
   if (ready === null) {
     return (
       <div className="grid min-h-dvh place-items-center bg-background">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loading className="size-5 text-muted-foreground" />
       </div>
     );
   }

@@ -4,7 +4,9 @@ import { isSessionFresh } from '../../http/fresh-sessions';
 import {
   createProjectSession,
   createSessionPublicShare,
+  claimWarmProjectSession,
   deleteProjectSession,
+  ensureWarmProjectSession,
   getProjectSession,
   getSessionAudit,
   getSessionPreviewCandidates,
@@ -141,6 +143,40 @@ test('createProjectSession defaults the body to {} when no input is given', asyn
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');
   expect(last().body).toEqual({});
+});
+
+test('ensureWarmProjectSession POSTs the server-owned warm-session request', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-1' },
+      reused: true,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  const result = await ensureWarmProjectSession('P1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({});
+  expect(result.session.session_id).toBe('WARM-1');
+  expect(result.reused).toBe(true);
+});
+
+test('claimWarmProjectSession POSTs the selected warm session and create options', async () => {
+  nextResponse = { status: 200, body: { session_id: 'WARM-1' } };
+  const result = await claimWarmProjectSession('P1', {
+    session_id: 'WARM-1',
+    agent_name: 'reviewer',
+    sandbox_slug: 'large',
+  });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm/claim');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    session_id: 'WARM-1',
+    agent_name: 'reviewer',
+    sandbox_slug: 'large',
+  });
+  expect(result.session_id).toBe('WARM-1');
 });
 
 test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showErrors', async () => {

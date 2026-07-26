@@ -7,6 +7,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
@@ -182,6 +183,7 @@ export async function restartSession(input: {
       providerName,
       baseRef: session.baseRef ?? loaded.row.defaultBranch,
       agentName: session.agentName ?? 'default',
+      sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
       runtimeMetadata,
       sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
       buildEnvVars: () =>

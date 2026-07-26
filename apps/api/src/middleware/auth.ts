@@ -216,7 +216,13 @@ export async function supabaseAuth(c: Context, next: Next) {
     // The seed daemon fetches the org model catalog at PARK with its sandbox
     // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
     // full picker. Catalog is the non-secret model list — safe for a sandbox token.
-    path.endsWith('/llm-catalog');
+    path.endsWith('/llm-catalog') ||
+    // The daemon relays its own in-guest boot timeline here at runtime-ready, so
+    // the ~11-15s of in-guest boot latency becomes queryable alongside the host
+    // marks in provider_events instead of dying with the sandbox. Write-only
+    // telemetry about the caller's OWN boot, and the handler re-checks that the
+    // token's sandboxId matches the session it claims to be reporting for.
+    path.endsWith('/boot-timeline');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {

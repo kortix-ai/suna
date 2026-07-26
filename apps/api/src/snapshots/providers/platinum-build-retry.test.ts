@@ -36,6 +36,10 @@ describe('Platinum build-error retry classifier', () => {
       'template never registered (stuck on "missing")',
       new Error('Platinum template kortix-default-3e3906a27df1 did not become ready (last state: missing)'),
     ],
+    [
+      'per-org mutation RATE limit (transient, self-clears)',
+      new Error('platinum POST /v1/templates/from-build -> 429 {"error":"rate limited","code":"rate_limited"}'),
+    ],
   ])('retries %s', (_label, err) => {
     expect(isRetryablePlatinumBuildError(err)).toBe(true);
   });
@@ -51,6 +55,14 @@ describe('Platinum build-error retry classifier', () => {
       new Error('Platinum template kortix-default-abc123 did not become ready (last state: building)'),
     ],
     ['unrelated application error', new Error('unexpected token in JSON')],
+    // ALSO a 429, but the opposite of transient: the per-org template COUNT cap.
+    // Nothing frees a template row on its own and Kortix has no org-wide GC for
+    // Platinum, so retrying burns BUILD_ATTEMPTS against a wall and buries the
+    // one error an operator needs to see.
+    [
+      'per-org template COUNT quota (permanent until a template is deleted)',
+      new Error('platinum POST /v1/templates/from-build -> 429 {"error":"org template quota reached (500/500); delete an existing template first","code":"org_template_quota_exceeded","quota":500,"used":500}'),
+    ],
   ])('does not retry %s', (_label, err) => {
     expect(isRetryablePlatinumBuildError(err)).toBe(false);
   });

@@ -10,6 +10,7 @@ import type { QuestionInfo } from './slack/types';
 import * as teamsQuestions from './teams/questions';
 import * as teamsReview from './teams/review';
 import * as teams from './teams/turn';
+import * as voice from './voice/turn';
 
 interface StepOpts {
   detail?: string;
@@ -17,7 +18,19 @@ interface StepOpts {
   sourcesForPrev?: Array<{ url: string; text: string }>;
 }
 
-async function platformFor(sessionId: string): Promise<'slack' | 'teams'> {
+type Platform = 'slack' | 'teams' | 'voice';
+
+/**
+ * Voice is resolved FIRST, and not from chatTurnStreams: a live call lives in
+ * the runtime's in-process registry, not in a DB row. It also wins when a
+ * session is reachable on two surfaces at once (spawned from Slack, now on a
+ * call) because the call is where a human is actually waiting for an answer.
+ *
+ * Anything unrecognised still falls back to Slack, which is the historical
+ * default — so a future platform renders as Slack blocks until it is added here.
+ */
+async function platformFor(sessionId: string): Promise<Platform> {
+  if (voice.hasLiveCall(sessionId)) return 'voice';
   const [row] = await db
     .select({ channelRef: chatTurnStreams.channelRef })
     .from(chatTurnStreams)
@@ -27,14 +40,26 @@ async function platformFor(sessionId: string): Promise<'slack' | 'teams'> {
   return platform === 'teams' ? 'teams' : 'slack';
 }
 
-export async function relayTurnStep(sessionId: string, title: string, opts: StepOpts = {}): Promise<boolean> {
-  return (await platformFor(sessionId)) === 'teams'
+export async function relayTurnStep(
+  sessionId: string,
+  title: string,
+  opts: StepOpts = {},
+): Promise<boolean> {
+  const platform = await platformFor(sessionId);
+  if (platform === 'voice') return voice.relayTurnStep(sessionId, title, opts);
+  return platform === 'teams'
     ? teams.relayTurnStep(sessionId, title, opts)
     : slack.relayTurnStep(sessionId, title, opts);
 }
 
-export async function relayTurnAnswer(sessionId: string, text: string, blocks?: unknown[]): Promise<boolean> {
-  return (await platformFor(sessionId)) === 'teams'
+export async function relayTurnAnswer(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<boolean> {
+  const platform = await platformFor(sessionId);
+  if (platform === 'voice') return voice.relayTurnAnswer(sessionId, text, blocks);
+  return platform === 'teams'
     ? teams.relayTurnAnswer(sessionId, text)
     : slack.relayTurnAnswer(sessionId, text, blocks);
 }
@@ -44,7 +69,9 @@ export async function relayTurnEnd(
   status: 'idle' | 'error' = 'idle',
   errorInfo?: TurnErrorInfo,
 ): Promise<boolean> {
-  return (await platformFor(sessionId)) === 'teams'
+  const platform = await platformFor(sessionId);
+  if (platform === 'voice') return voice.relayTurnEnd(sessionId, status, errorInfo);
+  return platform === 'teams'
     ? teams.relayTurnEnd(sessionId, status, errorInfo)
     : slack.relayTurnEnd(sessionId, status, errorInfo);
 }
@@ -53,7 +80,9 @@ export async function relayTurnQuestion(
   sessionId: string,
   questions: QuestionInfo[],
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
-  return (await platformFor(sessionId)) === 'teams'
+  const platform = await platformFor(sessionId);
+  if (platform === 'voice') return voice.relayTurnQuestion(sessionId, questions);
+  return platform === 'teams'
     ? teamsQuestions.postTeamsQuestion(sessionId, questions)
     : slackQuestions.postQuestion(sessionId, questions);
 }
@@ -62,7 +91,9 @@ export async function relayReviewCard(
   sessionId: string,
   item: ReviewCardItem,
 ): Promise<{ ok: boolean; error?: string }> {
-  return (await platformFor(sessionId)) === 'teams'
+  const platform = await platformFor(sessionId);
+  if (platform === 'voice') return voice.relayReviewCard(sessionId, item);
+  return platform === 'teams'
     ? teamsReview.postTeamsReviewCard(sessionId, item)
     : slackReview.postReviewCard(sessionId, item);
 }

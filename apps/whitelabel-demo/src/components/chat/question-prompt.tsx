@@ -13,7 +13,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { answerQuestion, type KortixSendError } from '@kortix/sdk/react';
+import type { KortixSendError } from '@kortix/sdk/react';
 import { MessageCircleQuestion, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -22,11 +22,11 @@ type AnyQuestion = Record<string, any>;
 
 export function QuestionPrompt({
   request,
-  onResolved,
+  onAnswer,
   onCancel,
 }: {
   request: Record<string, any>;
-  onResolved: () => void;
+  onAnswer: (requestId: string, answers: string[][]) => Promise<void>;
   onCancel: () => void;
 }) {
   const questions: AnyQuestion[] = request.questions ?? [];
@@ -58,8 +58,7 @@ export function QuestionPrompt({
       // Only removed from the pending store once the server has confirmed the
       // reply — so a failed send leaves the question visible for a retry
       // instead of quietly hanging the run.
-      await answerQuestion(request.id, answers);
-      onResolved();
+      await onAnswer(request.id, answers);
     } catch (err) {
       // `answerQuestion` already classifies its own failure via
       // `classifySendError` and throws the typed `KortixSendError`.
@@ -75,15 +74,17 @@ export function QuestionPrompt({
         <span className="flex-1 text-xs font-medium text-foreground">
           {questions.length > 1 ? `${questions.length} questions` : 'The agent has a question'}
         </span>
-        <button
+        <Button
           type="button"
           onClick={onCancel}
-          className="text-muted-foreground hover:text-foreground"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground"
           aria-label="Cancel"
           title="Stop & cancel"
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       </div>
 
       <div className="space-y-4 p-3">
@@ -97,15 +98,16 @@ export function QuestionPrompt({
                 {options.map((opt, oi) => {
                   const picked = selected[qi].includes(opt.label);
                   return (
-                    <button
+                    <Button
                       key={oi}
                       type="button"
+                      variant="outline"
                       disabled={sending}
                       onClick={() =>
                         autoSingle ? submit([[opt.label]]) : pick(qi, opt.label, multiple)
                       }
                       className={cn(
-                        'flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors',
+                        'h-auto w-full items-start justify-start gap-2.5 whitespace-normal rounded-lg px-3 py-2 text-left',
                         picked
                           ? 'border-foreground/40 bg-accent'
                           : 'border-border bg-card hover:bg-accent',
@@ -115,7 +117,9 @@ export function QuestionPrompt({
                         className={cn(
                           'mt-0.5 grid size-4 shrink-0 place-items-center border',
                           multiple ? 'rounded-[4px]' : 'rounded-full',
-                          picked ? 'border-foreground bg-foreground text-background' : 'border-border',
+                          picked
+                            ? 'border-foreground bg-foreground text-background'
+                            : 'border-border',
                         )}
                       >
                         {picked && <span className="size-1.5 rounded-full bg-current" />}
@@ -128,7 +132,7 @@ export function QuestionPrompt({
                           </span>
                         )}
                       </span>
-                    </button>
+                    </Button>
                   );
                 })}
                 {q.custom && (

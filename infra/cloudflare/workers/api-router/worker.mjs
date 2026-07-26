@@ -1,8 +1,8 @@
 // Kortix API + gateway router — the blue/green cutover switch in front of both
 // public services. One worker per env handles BOTH hostnames:
 //
-//   api.kortix.com          → API      → EKS | ECS-Fargate   (ACTIVE_BACKEND)
-//   gateway.kortix.com      → gateway  → EKS | ECS-Fargate   (GATEWAY_ACTIVE_BACKEND)
+//   api.kortix.com          → API      → EKS | EU ECS | US ECS   (ACTIVE_BACKEND)
+//   gateway.kortix.com      → gateway  → EKS | EU ECS | US ECS   (GATEWAY_ACTIVE_BACKEND)
 //   (staging-/dev- variants route to the "staging"/"dev" worker envs)
 //
 // The service is chosen by hostname (anything containing "gateway" is the LLM
@@ -27,8 +27,16 @@ export default {
 
     const active = (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'eks';
     const backends = isGateway
-      ? { eks: env.GATEWAY_BACKEND_EKS, 'ecs-fargate': env.GATEWAY_BACKEND_ECS_FARGATE }
-      : { eks: env.BACKEND_EKS, 'ecs-fargate': env.BACKEND_ECS_FARGATE };
+      ? {
+          eks: env.GATEWAY_BACKEND_EKS,
+          'ecs-fargate': env.GATEWAY_BACKEND_ECS_FARGATE,
+          'us-east-2': env.GATEWAY_BACKEND_US_EAST_2,
+        }
+      : {
+          eks: env.BACKEND_EKS,
+          'ecs-fargate': env.BACKEND_ECS_FARGATE,
+          'us-east-2': env.BACKEND_US_EAST_2,
+        };
 
     const backendUrl = backends[active];
     if (!backendUrl) {

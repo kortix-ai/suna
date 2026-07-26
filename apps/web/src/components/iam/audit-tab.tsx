@@ -14,17 +14,24 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Download, Search } from 'lucide-react';
+import { Download, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -34,36 +41,73 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { listAuditEvents, type IamAuditEvent } from '@/lib/iam-client';
+import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
+import { cn } from '@/lib/utils';
 import { downloadAccountAudit, listAccountMembers } from '@kortix/sdk';
 import {
+  type HumanizedAuditAction,
   formatResourcePill,
   humanizeAuditAction,
-  type HumanizedAuditAction,
 } from './audit-display-helpers';
 
-// ─── Quick filters ─────────────────────────────────────────────────────────
+// ─── Filters ────────────────────────────────────────────────────────────────
 
-interface QuickFilter {
-  label: string;
-  /** Action prefix sent to the API; null = no action filter. */
-  action: string | null;
-  /** Days back from now; null = no since filter. */
-  daysBack: number | null;
+interface AuditFilterState {
+  /** Action prefix sent to the API; '' = no action filter. */
+  action: string;
+  /** actor user_id, or '' for everyone. */
+  actor: string;
+  /** resource_type prefix, or '' for any. */
+  resourceType: string;
+  /** Free-text search over action / resource_type / resource_id. */
+  q: string;
+  /** ISO datetime, or '' for unbounded. */
+  since: string;
+  until: string;
 }
 
+const EMPTY_FILTER: AuditFilterState = {
+  action: '',
+  actor: '',
+  resourceType: '',
+  q: '',
+  since: '',
+  until: '',
+};
+
+// Action-kind shortcuts. Clicking one presets `action` (and clears the
+// conflicting bits) — the structured filter row still lets you refine on
+// top. Kept as chips because they're the 80% "what kind of thing" question.
+interface QuickFilter {
+  label: string;
+  action: string;
+}
 const QUICK_FILTERS: QuickFilter[] = [
-  { label: 'All events', action: null, daysBack: null },
-  { label: 'IAM only', action: 'iam.', daysBack: null },
-  { label: 'Group changes', action: 'iam.group', daysBack: null },
-  { label: 'Project access', action: 'iam.project.group', daysBack: null },
-  { label: 'Super-admin grants', action: 'iam.member.super_admin', daysBack: null },
-  { label: 'Last 24 hours', action: null, daysBack: 1 },
-  { label: 'Last 7 days', action: null, daysBack: 7 },
-  { label: 'Last 30 days', action: null, daysBack: 30 },
+  { label: 'All events', action: '' },
+  { label: 'IAM only', action: 'iam.' },
+  { label: 'Group changes', action: 'iam.group' },
+  { label: 'Project access', action: 'iam.project.group' },
+  { label: 'Super-admin grants', action: 'iam.member.super_admin' },
+  { label: 'Sessions', action: 'POST /v1/projects' },
+  { label: 'Secrets', action: 'projects' },
+];
+
+// resource_type buckets the UI offers as a dropdown. '' = any. These are the
+// high-cardinality categories a reviewer actually slices by; the API accepts
+// any prefix so a caller could pass more.
+const RESOURCE_TYPES: { label: string; value: string }[] = [
+  { label: 'Any resource', value: '' },
+  { label: 'Project', value: 'project' },
+  { label: 'Session', value: 'project_session' },
+  { label: 'Secret', value: 'project_secret' },
+  { label: 'Group', value: 'group' },
+  { label: 'Account', value: 'account' },
+  { label: 'Audit webhook', value: 'audit_webhook' },
+  { label: 'Service account', value: 'service_account' },
+  { label: 'Trigger', value: 'trigger' },
 ];
 
 // Leading kind-dot per action kind — kortix tokens only (no raw palette).
@@ -80,8 +124,22 @@ const KIND_DOT_TOKEN: Record<HumanizedAuditAction['kind'], string> = {
   other: 'bg-muted-foreground/30',
 };
 
-function daysAgoIso(days: number): string {
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+// Convert an ISO datetime (the API's filter format) to the value a
+// <input type="datetime-local"> expects (local time, no timezone suffix).
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  // datetime-local is "YYYY-MM-DDTHH:mm" in the USER's local zone; toISOString
+  // gives UTC, so we read the local components instead.
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Reverse: a datetime-local value (local) → ISO string. '' → '' (no filter).
+function fromLocalInput(local: string): string {
+  if (!local) return '';
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 }
 
 // ─── Component ────────────────────────────────────────────────────────────
@@ -92,14 +150,39 @@ interface AuditTabProps {
 
 export function AuditTab({ accountId }: AuditTabProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [filterIndex, setFilterIndex] = useState(0);
+  const [filter, setFilter] = useState<AuditFilterState>(EMPTY_FILTER);
   const [exporting, setExporting] = useState(false);
-  const active = QUICK_FILTERS[filterIndex];
+  const [qInput, setQInput] = useState('');
+
+  const hasFilter = !!(
+    filter.action ||
+    filter.actor ||
+    filter.resourceType ||
+    filter.q ||
+    filter.since ||
+    filter.until
+  );
+
+  // Resolve actor user_ids → emails using the account-members query. Cached
+  // by other pages so this is free in practice. Falls back to the raw
+  // user_id for actors who aren't current members (deleted users, system).
+  const membersQuery = useQuery({
+    queryKey: ['account-members', accountId],
+    queryFn: () => listAccountMembers(accountId),
+    staleTime: 30_000,
+  });
+  const emailByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of membersQuery.data ?? []) {
+      if (m.email) map.set(m.user_id, m.email);
+    }
+    return map;
+  }, [membersQuery.data]);
 
   // Streams the export with the active filter, triggers a browser download.
   // We use raw fetch instead of backendApi because the response is a file
   // (text/csv or application/x-ndjson), not the JSON wrapper the client
-  // helpers assume.
+  // helpers assume. Mirrors the list query's filter shape exactly.
   async function exportEvents(format: 'csv' | 'jsonl') {
     setExporting(true);
     try {
@@ -108,19 +191,26 @@ export function AuditTab({ accountId }: AuditTabProps) {
         errorToast('Not signed in');
         return;
       }
-      const result = await downloadAccountAudit(accountId, {
-        format,
-        action: active.action ?? undefined,
-        since: active.daysBack ? daysAgoIso(active.daysBack) : undefined,
-      }, {
-        backendUrl: getEnv().BACKEND_URL ?? '',
-        accessToken: token,
-      });
+      const result = await downloadAccountAudit(
+        accountId,
+        {
+          format,
+          action: filter.action || undefined,
+          actor: filter.actor || undefined,
+          resource_type: filter.resourceType || undefined,
+          q: filter.q || undefined,
+          since: filter.since || undefined,
+          until: filter.until || undefined,
+        },
+        {
+          backendUrl: getEnv().BACKEND_URL ?? '',
+          accessToken: token,
+        },
+      );
 
       const downloadUrl = URL.createObjectURL(result.blob);
       const filename =
-        result.filename ??
-        `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
+        result.filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = filename;
@@ -143,34 +233,24 @@ export function AuditTab({ accountId }: AuditTabProps) {
     }
   }
 
+  // Debounce the free-text search by only committing `qInput` into the query
+  // key on Enter / blur — keeps the infinite query from refiring per keystroke.
   const query = useInfiniteQuery({
-    queryKey: ['audit', accountId, active.action, active.daysBack],
+    queryKey: ['audit', accountId, filter],
     queryFn: ({ pageParam }) =>
       listAuditEvents(accountId, {
-        action: active.action ?? undefined,
-        since: active.daysBack ? daysAgoIso(active.daysBack) : undefined,
+        action: filter.action || undefined,
+        actor: filter.actor || undefined,
+        resource_type: filter.resourceType || undefined,
+        q: filter.q || undefined,
+        since: filter.since || undefined,
+        until: filter.until || undefined,
         cursor: pageParam,
         limit: 50,
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-
-  // Resolve actor user_ids → emails using the account-members query. Cached
-  // by other pages so this is free in practice. Falls back to the raw
-  // user_id for actors who aren't current members (deleted users, system).
-  const membersQuery = useQuery({
-    queryKey: ['account-members', accountId],
-    queryFn: () => listAccountMembers(accountId),
-    staleTime: 30_000,
-  });
-  const emailByUserId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of membersQuery.data ?? []) {
-      if (m.email) map.set(m.user_id, m.email);
-    }
-    return map;
-  }, [membersQuery.data]);
 
   const allEvents: IamAuditEvent[] = useMemo(
     () => (query.data?.pages ?? []).flatMap((p) => p.events),
@@ -191,14 +271,16 @@ export function AuditTab({ accountId }: AuditTabProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="sm" disabled={exporting} className="gap-1.5">
-              {exporting ? <Loading className="size-4 shrink-0" /> : <Download className="size-4" />}
+              {exporting ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <Download className="size-4" />
+              )}
               Export
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onSelect={() => exportEvents('csv')}>
-              Download CSV
-            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => exportEvents('csv')}>Download CSV</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => exportEvents('jsonl')}>
               Download JSONL
             </DropdownMenuItem>
@@ -206,17 +288,101 @@ export function AuditTab({ accountId }: AuditTabProps) {
         </DropdownMenu>
       </div>
 
+      {/* Quick chips — preset the action kind; the structured row below refines. */}
       <FilterBar className="h-auto flex-wrap justify-start">
-        {QUICK_FILTERS.map((f, i) => (
-          <FilterBarItem
-            key={f.label}
-            onClick={() => setFilterIndex(i)}
-            data-state={filterIndex === i ? 'active' : 'inactive'}
-          >
-            {f.label}
-          </FilterBarItem>
-        ))}
+        {QUICK_FILTERS.map((f) => {
+          const activeChip = filter.action === f.action && (f.action !== '' || !hasFilter);
+          return (
+            <FilterBarItem
+              key={f.label}
+              onClick={() => setFilter((s) => ({ ...s, action: f.action }))}
+              data-state={activeChip ? 'active' : 'inactive'}
+            >
+              {f.label}
+            </FilterBarItem>
+          );
+        })}
       </FilterBar>
+
+      {/* Structured filter row — actor, resource type, free-text, date range. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
+          <Input
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setFilter((s) => ({ ...s, q: qInput.trim() }));
+            }}
+            onBlur={() => setFilter((s) => ({ ...s, q: qInput.trim() }))}
+            placeholder="Search actions, resources, IDs…"
+            className="h-9 pl-8"
+          />
+        </div>
+
+        <Select
+          value={filter.actor || 'all'}
+          onValueChange={(v) => setFilter((s) => ({ ...s, actor: v === 'all' ? '' : v }))}
+        >
+          <SelectTrigger size="sm" className="h-9 w-[180px]">
+            <SelectValue placeholder="Actor" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Everyone</SelectItem>
+            {(membersQuery.data ?? []).map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {m.email ?? m.user_id.slice(0, 8)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={filter.resourceType || 'any'}
+          onValueChange={(v) => setFilter((s) => ({ ...s, resourceType: v === 'any' ? '' : v }))}
+        >
+          <SelectTrigger size="sm" className="h-9 w-[160px]">
+            <SelectValue placeholder="Resource" />
+          </SelectTrigger>
+          <SelectContent>
+            {RESOURCE_TYPES.map((r) => (
+              <SelectItem key={r.value || 'any'} value={r.value || 'any'}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Input
+          type="datetime-local"
+          value={filter.since ? toLocalInput(filter.since) : ''}
+          onChange={(e) => setFilter((s) => ({ ...s, since: fromLocalInput(e.target.value) }))}
+          aria-label="From"
+          className="h-9 w-[200px]"
+        />
+        <Input
+          type="datetime-local"
+          value={filter.until ? toLocalInput(filter.until) : ''}
+          onChange={(e) => setFilter((s) => ({ ...s, until: fromLocalInput(e.target.value) }))}
+          aria-label="To"
+          className="h-9 w-[200px]"
+        />
+
+        {hasFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 gap-1.5"
+            onClick={() => {
+              setFilter(EMPTY_FILTER);
+              setQInput('');
+            }}
+          >
+            <X className="size-4" />
+            Clear
+          </Button>
+        )}
+      </div>
 
       {query.isError && (
         <ErrorState

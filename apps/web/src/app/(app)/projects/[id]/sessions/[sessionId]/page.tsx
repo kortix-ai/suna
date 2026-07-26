@@ -19,10 +19,6 @@ import { isAutoResuming, isSandboxResumable } from '@/features/session/session-r
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { isUnmaterializedSessionFailure } from '@/features/session/session-terminal-state';
 import { useAccountState } from '@/hooks/billing';
-import {
-  clearRuntimeEnsureGuard,
-  useCanonicalRuntimeSession,
-} from '@kortix/sdk/react';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
@@ -41,6 +37,7 @@ import {
   sessionStartKey,
 } from '@kortix/sdk';
 import {
+  clearRuntimeEnsureGuard,
   migrateStash,
   readStartStash,
   useSession,
@@ -239,7 +236,20 @@ export default function ProjectSessionPage() {
   // first message — the instant shell is the typing surface until then.
   const mountChat = canMountChat && (!isFresh || shellSubmitted);
 
-  const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
+  // `sandbox_id` is nullable on the wire: the `/start` path always serves a
+  // non-null id (it serializes the `session_sandboxes` uuid PK), but the
+  // optimistic cache seed (`projectSessionStartSeed`, fed by the
+  // `project_sessions` row) can carry a `null` `sandbox_id` — e.g. a legacy
+  // Suna-migration session whose `project_sessions.sandbox_id` was minted null
+  // and never back-filled by provisioning (which only writes `sandbox_url`).
+  // The `SessionCacheWarmer` seeds that into React Query, so `useSession` can
+  // hand us a truthy `sandbox` whose `sandbox_id` is null; guard the `.slice`
+  // so a null id degrades to the bare label instead of crashing the page
+  // (Better Stack pattern e6d0e044 — `Cannot read properties of null (reading
+  // 'slice')` on this exact line).
+  const sandboxLabel = sandbox?.sandbox_id
+    ? `session ${sandbox.sandbox_id.slice(0, 8)}`
+    : undefined;
   const inner = (() => {
     if (sessionSwitchLoading) {
       return (
@@ -377,7 +387,6 @@ export default function ProjectSessionPage() {
                 <ActiveSessionChat
                   projectId={projectId}
                   sessionId={sessionId}
-                  pinFromStart={session.opencodeSessionId}
                   sessionState={session}
                   onChatReady={() => setChatReady(true)}
                 />
@@ -458,20 +467,17 @@ function InlineSessionError({
 
 /**
  * Renders SessionLayout + SessionChat against this project session's sandbox.
- * useSession (at the page level) already resolved the canonical pin; this still
- * calls useCanonicalRuntimeSession to surface the live OpenCode session LIST for
- * ?oc deep-links + sub-session rendering (React Query dedupes the shared queries).
+ * `useSession` owns the canonical runtime session and the optional REST session
+ * list used by legacy `?oc` deep links.
  */
 function ActiveSessionChat({
   projectId,
   sessionId,
-  pinFromStart,
   sessionState,
   onChatReady,
 }: {
   projectId: string;
   sessionId: string;
-  pinFromStart: string | null;
   sessionState: UseSessionResult;
   onChatReady?: () => void;
 }) {
@@ -484,13 +490,11 @@ function ActiveSessionChat({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const {
-    rootSessionId,
-    sessions: opencodeSessions,
-    isLoading: sessionsLoading,
-    listed: sessionsListed,
-    error: runtimeError,
-  } = useCanonicalRuntimeSession({ projectId, sessionId, pinFromStart });
+  const rootSessionId = sessionState.opencodeSessionId;
+  const runtimeSessions = sessionState.runtimeSessions;
+  const sessionsLoading = sessionState.runtimeSessionsLoading;
+  const sessionsListed = sessionState.runtimeSessionsListed;
+  const runtimeError = sessionState.runtimeError;
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
@@ -516,7 +520,7 @@ function ActiveSessionChat({
 
   const selectedOpenCodeSessionId = searchParams.get('oc');
   const selectedSession = selectedOpenCodeSessionId
-    ? opencodeSessions.find((session) => session.id === selectedOpenCodeSessionId)
+    ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
   const pinRef = useRef<{ sid: string; id: string | null }>({ sid: sessionId, id: null });
   if (pinRef.current.sid !== sessionId) pinRef.current = { sid: sessionId, id: null };

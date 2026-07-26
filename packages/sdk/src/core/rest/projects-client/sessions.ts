@@ -125,6 +125,25 @@ export interface CreateProjectSessionInput {
   secrets?: string[];
 }
 
+export interface WarmProjectSessionWorkspaceRefresh {
+  status: 'skipped' | 'unchanged' | 'updated' | 'failed';
+  before_sha?: string | null;
+  after_sha?: string | null;
+  error?: string;
+}
+
+export interface WarmProjectSessionResult {
+  session: ProjectSession;
+  reused: boolean;
+  workspace_refresh: WarmProjectSessionWorkspaceRefresh;
+}
+
+export interface ClaimWarmProjectSessionInput {
+  session_id: string;
+  agent_name?: string;
+  sandbox_slug?: string;
+}
+
 export interface ProjectOpenCodeSession {
   id: string;
   title: string | null;
@@ -261,6 +280,31 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   if (!input?.initial_prompt) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
+  return session;
+}
+
+export async function ensureWarmProjectSession(projectId: string) {
+  const result = unwrap(
+    await backendApi.post<WarmProjectSessionResult>(
+      `/projects/${projectId}/sessions/warm`,
+      {},
+    ),
+  );
+  markSessionFresh(result.session.session_id);
+  return result;
+}
+
+export async function claimWarmProjectSession(
+  projectId: string,
+  input: ClaimWarmProjectSessionInput,
+) {
+  const session = unwrap(
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions/warm/claim`,
+      input,
+    ),
+  );
+  markSessionFresh(session.session_id);
   return session;
 }
 

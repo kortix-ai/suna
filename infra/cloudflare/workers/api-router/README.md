@@ -3,11 +3,11 @@
 Cloudflare Worker that fronts the public API hostnames and forwards to whichever
 backend `ACTIVE_BACKEND` names. One source (`worker.mjs`), three envs (`wrangler.toml`):
 
-| Env    | Custom domain        | Worker script           | `eks` backend          | `ecs-fargate` backend          |
-| ------ | -------------------- | ----------------------- | ---------------------- | ------------------------------ |
-| `prod` | `api.kortix.com`     | `api-kortix-router`     | `api-eks.kortix.com`     | `api-ecs-fargate.kortix.com`     |
-| `staging` | `staging-api.kortix.com` | `staging-api-kortix-router` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` |
-| `dev`  | `dev-api.kortix.com` | `dev-api-kortix-router` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` |
+| Env    | Custom domain        | Worker script           | `eks` backend          | `ecs-fargate` backend          | `us-east-2` backend |
+| ------ | -------------------- | ----------------------- | ---------------------- | ------------------------------ | ------------------- |
+| `prod` | `api.kortix.com`     | `api-kortix-router`     | `api-eks.kortix.com`     | `api-ecs-fargate.kortix.com`     | `api-use2-shadow.kortix.com` |
+| `staging` | `staging-api.kortix.com` | `staging-api-kortix-router` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` | — |
+| `dev`  | `dev-api.kortix.com` | `dev-api-kortix-router` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` | — |
 
 **ECS Fargate is the ACTIVE backend for prod and dev** (`ACTIVE_BACKEND` /
 `GATEWAY_ACTIVE_BACKEND` = `ecs-fargate` since PR #4683); EKS is the warm
@@ -50,6 +50,10 @@ with the `X-Backend` response header on `/v1/health`:
 ```bash
 curl -s -D - https://api.kortix.com/v1/health -o /dev/null | grep -i x-backend
 ```
+
+The prepared production cutover value is `us-east-2`. Set both
+`ACTIVE_BACKEND` and `GATEWAY_ACTIVE_BACKEND` during the maintenance window.
+The checked-in values remain `ecs-fargate` until that cutover.
 
 ## Backend hostnames (proxied CNAMEs → ALBs, Full-strict TLS)
 

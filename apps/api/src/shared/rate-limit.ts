@@ -164,6 +164,7 @@ const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_sha
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
+const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter('project_webhook_manifest_refresh');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
@@ -335,6 +336,17 @@ export function createProjectWebhookRateLimitMiddleware() {
   };
 }
 
+/**
+ * Bound forced Git mirror refreshes by project, independent of source IP.
+ * Each API replica owns a local mirror, so each replica needs its own budget.
+ */
+export function consumeProjectWebhookManifestRefreshBudget(projectId: string): boolean {
+  return projectWebhookManifestRefreshLimiter.check(projectId, {
+    limit: 1,
+    windowMs: 30_000,
+  }).allowed;
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
@@ -342,5 +354,6 @@ export function resetRateLimiters() {
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
+  projectWebhookManifestRefreshLimiter.reset();
   sessionLlmLimiter.reset();
 }

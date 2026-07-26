@@ -131,13 +131,12 @@ export interface GatewayDeps {
    * streams transcript/chat back to us. Null when no public URL is configured or
    * the call isn't session-scoped. The sandbox never builds this callback.
    */
-  resolveMeetJoinContext?(
+  resolveVoiceJoinContext?(
     projectId: string,
     sessionId: string | null,
   ): Promise<{
     metadata: Record<string, unknown>;
-    realtimeEndpoints: unknown[];
-    automaticAudioOutput: unknown;
+    outputMedia: unknown;
     botName: string;
   } | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
@@ -427,29 +426,28 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   let executionArgs = emailExecution.args;
   const executionSecret = usable.secret;
 
-  // Meet (Recall.ai) live relay: on join, inject the realtime webhook + bot
-  // metadata server-side so Recall streams transcript/chat back to us, tagged
-  // with this session. Merges with the recording_config the caller already set.
+  // Voice (Recall.ai): on join, point the bot at the audio bridge page and tag it
+  // with this session, server-side. Recall streams that page's audio into the call
+  // and the page relays the room's audio back, which is how the realtime provider
+  // hears and speaks. Note output_media and automatic_audio_output are mutually
+  // exclusive in Recall — a caller-supplied one would silence the agent, so the
+  // bridge wins.
   if (
     connector.provider === 'channel' &&
-    connector.platform === 'meet' &&
+    connector.platform === 'voice' &&
     input.actionPath === 'join_meeting' &&
-    deps.resolveMeetJoinContext
+    deps.resolveVoiceJoinContext
   ) {
-    const ctx = await deps.resolveMeetJoinContext(input.projectId, input.sessionId ?? null);
+    const ctx = await deps.resolveVoiceJoinContext(input.projectId, input.sessionId ?? null);
     if (ctx) {
-      const rc = { ...((executionArgs.recording_config as Record<string, unknown>) ?? {}) };
-      const existing = Array.isArray(rc.realtime_endpoints) ? rc.realtime_endpoints : [];
-      rc.realtime_endpoints = [...existing, ...ctx.realtimeEndpoints];
+      const { automatic_audio_output: _dropped, ...rest } = executionArgs;
       executionArgs = {
-        ...executionArgs,
-        recording_config: rc,
+        ...rest,
+        output_media: ctx.outputMedia,
         metadata: {
           ...((executionArgs.metadata as Record<string, unknown>) ?? {}),
           ...ctx.metadata,
         },
-        // Enable the bot to speak (output_audio) unless the caller set its own.
-        automatic_audio_output: executionArgs.automatic_audio_output ?? ctx.automaticAudioOutput,
         // The project's configured bot display name, unless the caller passed one.
         bot_name: executionArgs.bot_name ?? ctx.botName,
       };

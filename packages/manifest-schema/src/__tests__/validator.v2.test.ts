@@ -191,6 +191,65 @@ describe('validateManifest — kortix_version 2 happy path', () => {
   });
 });
 
+describe('validateManifest — per-agent sandbox templates', () => {
+  test('accepts a declared template and the reserved platform default', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: researcher
+sandbox:
+  default: node
+  templates:
+    - slug: node
+      name: Node
+      image: node:22
+    - slug: ml
+      name: ML
+      image: python:3.12
+agents:
+  researcher:
+    sandbox: ml
+  fallback:
+    sandbox: default
+`);
+    expect(valid).toBe(true);
+    expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('accepts a valid dashboard-managed template slug', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: researcher
+sandbox:
+  templates:
+    - slug: node
+      name: Node
+      image: node:22
+agents:
+  researcher:
+    sandbox: missing
+`);
+    expect(valid).toBe(true);
+    expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('rejects an invalid agent sandbox slug', () => {
+    const { valid, issues } = summarize(`
+kortix_version: 2
+default_agent: researcher
+agents:
+  researcher:
+    sandbox: "Not Valid!"
+`);
+    expect(valid).toBe(false);
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        path: 'agents.researcher.sandbox',
+        severity: 'error',
+      }),
+    );
+  });
+});
+
 describe('validateManifest — kortix_version 2 format gate', () => {
   test('kortix_version 2 in a TOML file is a validation error pointing at kortix.yaml', () => {
     const { valid, errorPaths, issues } = summarize(

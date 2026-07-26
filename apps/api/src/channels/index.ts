@@ -67,4 +67,3 @@ export { telegramWebhookApp } from "./telegram-webhook";
 export { slackOauthApp, buildSlackInstallUrl } from "./slack-oauth";
 export { slackIdentityApp } from "./slack/identity-routes";
 export { slackOauthMode } from "./slack-oauth-mode";
-export { meetWebhookApp } from "./meet-webhook";

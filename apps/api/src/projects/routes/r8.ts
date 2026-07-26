@@ -26,6 +26,7 @@ import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp }
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
+import { resolveProjectRuntimeTransport } from '../../experimental/features';
 import {
   refreshCrTips,
 } from './shared';
@@ -88,7 +89,13 @@ projectsApp.openapi(
     const waitMsRaw = Number(c.req.query('wait_ms'));
     const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
     const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId, waitMs });
-    return c.json(result.start, 200);
+    return c.json(
+      {
+        ...result.start,
+        runtime_transport: resolveProjectRuntimeTransport(loaded.row.metadata),
+      },
+      200,
+    );
   },
 );
 

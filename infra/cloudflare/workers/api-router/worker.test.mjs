@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import worker from './worker.mjs';
 
 const env = {
   ACTIVE_BACKEND: 'eks',
   BACKEND_EKS: 'https://api-eks.kortix.com',
   BACKEND_ECS_FARGATE: 'https://api-fargate.kortix.com',
+  BACKEND_US_EAST_2: 'https://api-use2-shadow.kortix.com',
   // Gateway is deliberately on a DIFFERENT active backend than the API, to prove
   // the two services flip independently.
   GATEWAY_ACTIVE_BACKEND: 'ecs-fargate',
   GATEWAY_BACKEND_EKS: 'https://gateway-eks.kortix.com',
   GATEWAY_BACKEND_ECS_FARGATE: 'https://gateway-fargate.kortix.com',
+  GATEWAY_BACKEND_US_EAST_2: 'https://gateway-use2-shadow.kortix.com',
 };
 
 const originalFetch = globalThis.fetch;
@@ -19,6 +22,40 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
+  test('keeps the staging API on EKS in config and deployment metadata', () => {
+    const wrangler = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
+    const deployWorkflow = readFileSync(
+      new URL('../../../../.github/workflows/deploy-staging.yml', import.meta.url),
+      'utf8',
+    );
+
+    const stagingVars = wrangler.match(
+      /\[env\.staging\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+    expect(stagingVars).toContain('ACTIVE_BACKEND = "eks"');
+    expect(deployWorkflow).toContain(
+      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"}',
+    );
+  });
+
+  test('keeps the prepared US East 2 origins inactive in production config', () => {
+    const wrangler = readFileSync(new URL('./wrangler.toml', import.meta.url), 'utf8');
+    const productionVars = wrangler.match(
+      /\[env\.prod\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+
+    expect(productionVars).toContain('ACTIVE_BACKEND = "ecs-fargate"');
+    expect(productionVars).toContain('GATEWAY_ACTIVE_BACKEND = "ecs-fargate"');
+    expect(productionVars).toContain(
+      'BACKEND_US_EAST_2 = "https://api-use2-shadow.kortix.com"',
+    );
+    expect(productionVars).toContain(
+      'GATEWAY_BACKEND_US_EAST_2 = "https://gateway-use2-shadow.kortix.com"',
+    );
+    expect(productionVars).not.toContain('us-west-2');
+    expect(productionVars).not.toContain('usw2');
+  });
+
   test('redirects plaintext API requests to HTTPS before proxying', async () => {
     let fetched = false;
     globalThis.fetch = async () => {
@@ -75,6 +112,35 @@ describe('api-router worker', () => {
     expect(proxiedUrl).toBe('https://gateway-fargate.kortix.com/health/live');
     expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
     expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+  });
+
+  test('routes API and gateway requests to the prepared us-east-2 origins', async () => {
+    const use2Env = {
+      ...env,
+      ACTIVE_BACKEND: 'us-east-2',
+      GATEWAY_ACTIVE_BACKEND: 'us-east-2',
+    };
+    const proxiedUrls = [];
+    globalThis.fetch = async (request) => {
+      proxiedUrls.push(request.url);
+      return new Response('ok', { status: 200 });
+    };
+
+    const apiResponse = await worker.fetch(
+      new Request('https://api.kortix.com/v1/health'),
+      use2Env,
+    );
+    const gatewayResponse = await worker.fetch(
+      new Request('https://gateway.kortix.com/health/live'),
+      use2Env,
+    );
+
+    expect(proxiedUrls).toEqual([
+      'https://api-use2-shadow.kortix.com/v1/health',
+      'https://gateway-use2-shadow.kortix.com/health/live',
+    ]);
+    expect(apiResponse.headers.get('X-Backend')).toBe('us-east-2');
+    expect(gatewayResponse.headers.get('X-Backend')).toBe('us-east-2');
   });
 
   test('gateway HTTPS redirect keeps the gateway hostname', async () => {
