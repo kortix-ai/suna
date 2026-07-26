@@ -2155,7 +2155,7 @@ function ReasoningNote({ parts }: { parts: ReasoningPart[] }) {
 
 function TurnWorkLine({
   entries,
-  children: runChildren,
+  runChildren,
   reasoningParts,
   sessionId,
   disableNavigation,
@@ -2165,7 +2165,7 @@ function TurnWorkLine({
 }: {
   entries: ActivityEntry[];
   /** Reasoning + steps in the order they happened. */
-  children: import('@/features/session/activity/activity-model').NarrativeRunChild[];
+  runChildren: import('@/features/session/activity/activity-model').NarrativeRunChild[];
   reasoningParts: ReasoningPart[];
   sessionId: string;
   disableNavigation?: boolean;
@@ -3197,7 +3197,7 @@ function SessionTurn({
                   <TurnWorkLine
                     key={item.key}
                     entries={run.entries}
-                    children={run.children}
+                    runChildren={run.children}
                     reasoningParts={run.reasoningParts}
                     sessionId={sessionId}
                     disableNavigation={disableToolNavigation}
