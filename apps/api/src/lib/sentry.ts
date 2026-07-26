@@ -69,6 +69,24 @@ export const SENTRY_IGNORE_ERRORS = [
   'cannot be parsed as a URL',
   // Expected HTTP errors (auth failures, not found, etc.)
   'HTTPException',
+  // Supabase pooler / PgBouncer session-mode pool exhaustion — the
+  // `postgres` driver surfaces it as a `PostgresError` whose message reads
+  // `(EMAXCONNSESSION) max clients reached in session mode - max clients are
+  // limited to pool_size: 20`. This is a TRANSIENT pool-saturation class on
+  // the us-east-2 shadow deployment (the `FreeTierRotation`/`YearlyRotation`
+  // cron ticks + `llm-gateway` catalog loads + user `GET /v1/projects`
+  // contending for the pooler's 20-session pool), NOT a code bug — `pool_size`
+  // is a Supabase-pooler config, not in this codebase. It resolves when load
+  // drops, and is a sibling of the Daytona transient class (#5167/#5175) and
+  // the bare-timeout filter (#4709). The stable, deploy-agnostic substring is
+  // `max clients reached in session mode` (the `pool_size: 20` suffix is
+  // pooler-config-specific and may change); `EMAXCONNSESSION` is added as a
+  // second entry for robustness across driver versions. Defense in depth: the
+  // `index.ts` DB-error handler also guards its DIRECT `captureException`
+  // call (a direct call bypasses this `ignoreErrors` list). Better Stack
+  // patterns 721b7efe… (API) + b38179c5… (frontend symptom).
+  'max clients reached in session mode',
+  'EMAXCONNSESSION',
 ] as const;
 
 /**

@@ -1,6 +1,6 @@
 // ─── Observability (must be first — instruments before other imports) ────────
 import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
+import { captureException, flushSentry, addBreadcrumb, isSentryIgnoredError } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
 import {
@@ -981,20 +981,39 @@ app.onError((err, c) => {
     (err as any).code?.match?.(/^[0-9]{5}$/);
   if (isDbError) {
     const pgErr = err as any;
-    captureException(err, {
-      method,
-      path,
-      errorType: 'database',
-      pgCode: pgErr.code,
-      table: pgErr.table,
-      schema: pgErr.schema_name || pgErr.schema,
-    });
+    // Pool-exhaustion (Supabase pooler / PgBouncer session-mode saturation on
+    // the us-east-2 shadow deployment) is a TRANSIENT infra/pooler-capacity
+    // class, NOT a code bug — `(EMAXCONNSESSION) max clients reached in
+    // session mode - max_size: 20` fires when the `FreeTierRotation`/
+    // `YearlyRotation` cron ticks + `llm-gateway` catalog loads + a user
+    // `GET /v1/projects` contend for the pooler's 20-session pool. It
+    // resolves when load drops. Reusing `isSentryIgnoredError` keeps the
+    // classification in one place (mirrors the #4709 ignore list + the
+    // #5167/#5175 Daytona transient no-capture pattern). The DIRECT
+    // `captureException` below would otherwise page Sentry despite
+    // `ignoreErrors` (a direct call bypasses that list); skip it but STILL
+    // log + STILL 500 so the client sees the error and retries. The infra
+    // follow-up (raise the shadow pooler's `pool_size` / move to transaction
+    // mode) is a human-owned external action recorded in the sweep ledger.
+    // Better Stack patterns 721b7efe… (API) + b38179c5… (frontend symptom).
+    const isPoolExhaustion = isSentryIgnoredError(errName, err.message);
+    if (!isPoolExhaustion) {
+      captureException(err, {
+        method,
+        path,
+        errorType: 'database',
+        pgCode: pgErr.code,
+        table: pgErr.table,
+        schema: pgErr.schema_name || pgErr.schema,
+      });
+    }
     appLogger.error(
       `${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`,
       {
         method,
         path,
-        errorType: 'database',
+        errorType: isPoolExhaustion ? 'database-pool-exhaustion' : 'database',
+        transient: isPoolExhaustion || undefined,
         pgCode: pgErr.code,
         table: pgErr.table,
         hint: pgErr.hint,
