@@ -25,7 +25,7 @@ import {
   type TaskCursor,
   type TaskStatus,
 } from './wire';
-import { agiTasks } from '@kortix/db/schema';
+import { agiTasks } from '@kortix/db';
 import {
   and,
   desc,

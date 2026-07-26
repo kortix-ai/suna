@@ -7,7 +7,7 @@
  * routes are then a thin shell: parse, reject, query, serialize.
  */
 import { UUID_V4_REGEX } from '../../projects/lib/serializers';
-import type { agiTasks } from '@kortix/db/schema';
+import type { agiTasks } from '@kortix/db';
 
 export type AgiTaskRow = typeof agiTasks.$inferSelect;
 

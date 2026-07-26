@@ -115,6 +115,7 @@ import {
   commitManifest,
   draftToSpec,
   fireGitTrigger,
+  goalTriggersEnabled,
   loadManifestForEdit,
   loadTriggersForResponse,
   markGitTriggerFired,
@@ -956,6 +957,11 @@ projectsApp.openapi(
     } catch (err) {
       return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
+    // Deliberately WITHOUT `{ goals: true }`: this handler writes the spec it
+    // finds back into the manifest's authored `triggers:` list, so seeing a
+    // goal-derived trigger here would materialize a duplicate of something that
+    // is supposed to be recomputed from the `goals:` block on every read. A
+    // derived slug is simply not editable — it 404s, and the goal is the edit.
     const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
     if (!current) return c.json({ error: 'Not found' }, 404);
 
@@ -1047,6 +1053,8 @@ projectsApp.openapi(
     } catch (err) {
       return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
+    // Goals-off for the same reason as the PATCH above: `removeTriggerFromManifest`
+    // edits the authored `triggers:` list, which a derived trigger is not in.
     if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
       return c.json({ error: 'Not found' }, 404);
     }
@@ -3075,7 +3083,11 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     );
 
-    const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
+    // A goal's push is a normal trigger here too — firing it by hand is how you
+    // advance a goal on demand rather than waiting for its cron.
+    const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row), {
+      goals: goalTriggersEnabled(loaded.row.metadata),
+    });
     const spec = specs.find((s) => s.slug === slug);
     if (!spec) return c.json({ error: 'Not found' }, 404);
 

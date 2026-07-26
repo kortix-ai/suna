@@ -6,7 +6,12 @@ mode="${1:-default}"
 
 case "$mode" in
   integration)
-    exec dotenvx run -- bun test src/__tests__/integration-*.test.ts
+    # Discovered with the same recursive `find` as `default` (which excludes
+    # exactly this set). A flat glob on src/__tests__ silently dropped
+    # integration tests that live next to the code they cover, so they ran in
+    # neither bucket.
+    files=$(find src -name 'integration-*.test.ts' | sort)
+    exec dotenvx run -- bun test $files
     ;;
   live)
     exec env RUN_LIVE_LLM_TESTS=1 dotenvx run -- bun test src/llm-gateway/__tests__/gateway.live.test.ts

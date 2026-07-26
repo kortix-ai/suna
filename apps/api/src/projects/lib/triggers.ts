@@ -5,6 +5,7 @@ import { Cron } from 'croner';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
@@ -329,6 +330,20 @@ export function nextCronRun(schedule: string, from: Date, timezone?: string): Da
  */
 export function triggersPausedForProject(metadata: unknown): boolean {
   return isPlainObject(metadata) && (metadata as Record<string, unknown>).triggers_paused === true;
+}
+
+/**
+ * Whether a project's `goals:` block contributes its desugared cron triggers
+ * (R-8) to everything that reads triggers.
+ *
+ * A named predicate rather than an inline check at each call site for the same
+ * reason `triggersPausedForProject` is one: three callers (the sweep, the
+ * listing, the manual fire) must agree, and the manifest-editing routes must
+ * keep NOT agreeing — they write the authored `triggers:` list, which a derived
+ * trigger is deliberately not part of.
+ */
+export function goalTriggersEnabled(metadata: unknown): boolean {
+  return resolveExperimentalFeature(metadata, 'agi');
 }
 
 export function withTriggersPaused(metadata: unknown, paused: boolean): Record<string, unknown> {
@@ -980,7 +995,13 @@ export async function runGitTriggerSweep(
       // Time-bound the mirror load: a hung clone/fetch for one project must not
       // stall the sweep for everyone else.
       const loaded = await withTimeout(
-        loadProjectTriggers(await withProjectGitAuth(project)),
+        loadProjectTriggers(await withProjectGitAuth(project), {
+          // R-8: a goal's `push:` desugars to a cron trigger fired by THIS
+          // sweep — there is no second scheduler. Opted in per project because
+          // the `agi` flag lives in the database, which the manifest parser
+          // cannot see.
+          goals: goalTriggersEnabled(project.metadata),
+        }),
         triggerLoadTimeoutMs(),
         `load triggers ${project.projectId}`,
       );
@@ -1168,7 +1189,12 @@ export async function loadTriggersForResponse(
   projectId: string,
   project: ProjectRow,
 ): Promise<TriggerList> {
-  const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
+  // Goal-derived triggers are listed like any other (including the disabled
+  // ones a non-active goal produces) so a workspace with `agi` on can see what
+  // the sweep will actually fire.
+  const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project), {
+    goals: goalTriggersEnabled(project.metadata),
+  });
   const runtimeRows =
     specs.length === 0
       ? []

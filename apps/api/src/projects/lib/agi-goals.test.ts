@@ -27,6 +27,7 @@ import {
   goalTriggerSlug,
   isGoalTriggerSlug,
 } from './agi-goals';
+import { goalTriggersEnabled } from './triggers';
 
 const parse = (yaml: string) => parseManifestString(yaml, 'yaml', MANIFEST_FILENAME_YAML);
 
@@ -248,6 +249,28 @@ describe('extractTriggers — goal desugaring is opt-in (the `agi` gate)', () =>
     const { specs, errors } = extractTriggers(manifest, { goals: true });
     expect(specs.map((s) => s.slug)).toEqual(['goal-oil']);
     expect(errors.map((e) => e.slug)).toEqual(['(top-level)']);
+  });
+
+  // The option above is inert until a caller opts in. `goalTriggersEnabled` is
+  // the single decision the sweep, the listing and the manual fire all share —
+  // R-8 is only live because it answers true for an agi project.
+  test('goalTriggersEnabled reads the `agi` experimental key off project metadata', () => {
+    expect(goalTriggersEnabled({ experimental: { agi: true } })).toBe(true);
+    expect(goalTriggersEnabled({ experimental: { agi: false } })).toBe(false);
+    // platformDefault is false (R-44), so absent metadata means no goal triggers
+    expect(goalTriggersEnabled({})).toBe(false);
+    expect(goalTriggersEnabled(null)).toBe(false);
+    expect(goalTriggersEnabled(undefined)).toBe(false);
+    expect(goalTriggersEnabled({ experimental: { other_flag: true } })).toBe(false);
+  });
+
+  test('the predicate is what decides whether a goal contributes a trigger', () => {
+    const manifest = parse(MANIFEST);
+    for (const metadata of [{ experimental: { agi: true } }, {}]) {
+      const enabled = goalTriggersEnabled(metadata);
+      const { specs } = extractTriggers(manifest, { goals: enabled });
+      expect(specs.some((s) => s.slug === 'goal-oil-desk')).toBe(enabled);
+    }
   });
 });
 

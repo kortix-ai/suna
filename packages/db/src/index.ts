@@ -75,6 +75,9 @@ export {
   kortixApiKeys,
   accountTokens,
   workerLeaderLease,
+  // AGI (experimental — gated on the `agi` feature key)
+  agiTasks,
+  agiTasksRelations,
   // Relations
   projectsRelations,
   projectGitConnectionsRelations,

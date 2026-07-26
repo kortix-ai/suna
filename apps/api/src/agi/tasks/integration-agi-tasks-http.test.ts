@@ -1,7 +1,6 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
-import { agiTasks } from '@kortix/db/schema';
+import { accountMembers, accounts, agiTasks, projectMembers, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { app } from '../../index';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -149,6 +148,31 @@ describe('experimental gate (R-44)', () => {
     for (const workspace of [WORKSPACE, WORKSPACE_OFF]) {
       const res = await req('GET', tasksPath(workspace), outsiderToken);
       expect(res.status).toBe(403);
+    }
+  });
+
+  // The two-workspace cases above compare two rows; this one flips ONE row and
+  // asserts both directions on it. That is what catches the gate reading a
+  // cached/boot-time feature set instead of the project's current metadata —
+  // a bug under which turning `agi` off would leave the surface reachable.
+  test('flipping the flag on one project takes effect immediately, both ways', async () => {
+    const setAgi = (on: boolean) =>
+      db
+        .update(projects)
+        .set({ metadata: on ? { experimental: { agi: true } } : {} })
+        .where(eq(projects.projectId, WORKSPACE_OFF));
+
+    try {
+      await setAgi(true);
+      const on = await req('GET', tasksPath(WORKSPACE_OFF), ownerToken);
+      expect(on.status).toBe(200);
+
+      await setAgi(false);
+      const off = await req('GET', tasksPath(WORKSPACE_OFF), ownerToken);
+      expect(off.status).toBe(404);
+      expect((await off.json()).error).toBe('AGI is not enabled for this project');
+    } finally {
+      await setAgi(false);
     }
   });
 });
