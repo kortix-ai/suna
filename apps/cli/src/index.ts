@@ -11,6 +11,7 @@ import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
+import { runGoals } from './commands/goals.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
 import { runAgi } from './commands/agi.ts';
@@ -30,6 +31,7 @@ import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runSkills } from './commands/skills.ts';
+import { runTasks } from './commands/tasks.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -216,6 +218,8 @@ const TIERS: readonly CommandTier[] = [
           },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
+          { name: 'goals', args: '<subcommand>', blurb: 'List, inspect, and push goals' },
+          { name: 'tasks', args: '<subcommand>', blurb: 'List, claim, and close tasks' },
         ],
       },
       {
@@ -410,6 +414,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
   }
+  if (argv[0] === 'goals') {
+    return runGoals(argv.slice(1));
+  }
+  if (argv[0] === 'tasks') {
+    return runTasks(argv.slice(1));
+  }
   if (argv[0] === 'channels') {
     return runChannels(argv.slice(1));
   }
@@ -486,6 +496,8 @@ const KNOWN_COMMANDS = [
   'files',
   'cr',
   'triggers',
+  'goals',
+  'tasks',
   'connectors',
   'secrets',
   'providers',
