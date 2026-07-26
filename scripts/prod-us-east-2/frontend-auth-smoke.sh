@@ -37,9 +37,9 @@ target_secret_json="$(
 target_database_url="$(
   jq -er '.target_database_url // .DATABASE_URL' <<<"$target_secret_json"
 )"
-target_supabase_url="$(
+target_supabase_url="${TARGET_SUPABASE_URL_OVERRIDE:-$(
   jq -er '.target_supabase_url // .SUPABASE_URL' <<<"$target_secret_json"
-)"
+)}"
 target_anon_key="$(
   jq -er '.target_anon_key // .SUPABASE_ANON_KEY' <<<"$target_secret_json"
 )"

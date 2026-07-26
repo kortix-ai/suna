@@ -372,6 +372,7 @@ jobs:
           set -euo pipefail
           TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
           TARGET_AWS_REGION="$AWS_REGION" \
+          TARGET_SUPABASE_URL_OVERRIDE="https://uhrwvisbqjfxhxjvoofd.supabase.co" \
           TARGET_API_URL="$API_URL" \
           TARGET_FRONTEND_URL="https://us.kortix.com" \
           TARGET_AUTH_SEQUENCE_HEADROOM="100000000" \
@@ -402,6 +403,7 @@ jobs:
           set -euo pipefail
           TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
           TARGET_AWS_REGION="$AWS_REGION" \
+          TARGET_SUPABASE_URL_OVERRIDE="https://uhrwvisbqjfxhxjvoofd.supabase.co" \
           TARGET_API_URL="$API_URL/v1" \
           TARGET_FRONTEND_URL="https://us.kortix.com" \
           TARGET_AUTH_SEQUENCE_HEADROOM="100000000" \
