@@ -17,6 +17,13 @@ const functionBody = (name, nextName) => {
   return match[1];
 };
 
+test("operator can override the target database endpoint", () => {
+  assert.match(
+    script,
+    /target_database_url="\$\{TARGET_DATABASE_URL_OVERRIDE:-\$\(jq -er '\.target_database_url' <<<"\$target_secret_json"\)\}"/,
+  );
+});
+
 test("reconciliation PL/pgSQL reads psql inputs through transaction settings", () => {
   const functions = [
     functionBody("write_counts", "reconcile_counts"),
@@ -57,4 +64,51 @@ test("reconciliation PL/pgSQL reads psql inputs through transaction settings", (
       /:'(?:database_side|publication|subscription)'/,
     );
   }
+});
+
+test("shadow repair disables statement timeout and restores the full credit account row", () => {
+  const body = functionBody(
+    "repair_shadow_mutations",
+    "backfill_target_precision_columns",
+  );
+
+  assert.match(body, /SET LOCAL statement_timeout = 0;/);
+  assert.match(
+    body,
+    /SELECT \$credit_account_columns FROM kortix\.credit_accounts ORDER BY account_id/,
+  );
+  assert.match(
+    body,
+    /CREATE TEMP TABLE repair_credit_accounts AS SELECT %s FROM kortix\.credit_accounts WITH NO DATA/,
+  );
+  assert.match(body, /attname <> 'account_id'/);
+  assert.match(body, /ROW\(%3\$s\) IS DISTINCT FROM ROW\(%2\$s\)/);
+  assert.match(body, /balance_precise = source\.balance/);
+});
+
+test("shadow repair exit trap uses captured cleanup arguments", () => {
+  const body = functionBody(
+    "repair_shadow_mutations",
+    "backfill_target_precision_columns",
+  );
+
+  assert.match(
+    body,
+    /printf -v cleanup_trap 'cleanup_shadow_repair %q %q'/,
+  );
+  assert.match(body, /trap "\$cleanup_trap" EXIT/);
+  assert.doesNotMatch(body, /subscription_disabled/);
+});
+
+test("precision backfill enables replica triggers and verifies all four tables", () => {
+  const body = functionBody("backfill_target_precision_columns", "write_counts");
+
+  assert.match(body, /ENABLE ALWAYS TRIGGER sync_credit_account_precision_columns/);
+  assert.match(body, /ENABLE ALWAYS TRIGGER sync_credit_ledger_precision_columns/);
+  assert.match(body, /ENABLE ALWAYS TRIGGER sync_gateway_request_log_cost_precision/);
+  assert.match(body, /ENABLE ALWAYS TRIGGER sync_usage_event_cost_precision/);
+  assert.match(body, /'kortix\.credit_accounts' AS relation/);
+  assert.match(body, /'kortix\.credit_ledger'/);
+  assert.match(body, /'kortix\.gateway_request_logs'/);
+  assert.match(body, /'kortix\.usage_events'/);
 });
