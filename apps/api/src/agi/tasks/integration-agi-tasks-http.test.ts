@@ -587,9 +587,314 @@ describe('read', () => {
     ['cursor=zzz', 'Invalid cursor'],
     ['parent=nope', 'Invalid parent'],
     ['blocked_by=nope', 'Invalid blocked_by'],
+    ['priority=critical', 'Invalid priority'],
+    ['priority=', 'Invalid priority'],
+    ['priority=high,critical', 'Invalid priority'],
+    ['ready=yes', 'Invalid ready'],
+    ['idle_days=0', 'Invalid idle_days'],
+    ['idle_days=', 'Invalid idle_days'],
+    ['idle_days=-1', 'Invalid idle_days'],
   ])('%s is a 400', async (query, message) => {
     const res = await req('GET', `${tasksPath()}?${query}`, ownerToken);
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe(message);
+  });
+});
+
+// ── Ordering ────────────────────────────────────────────────────────────────
+// The defect these cover: with created_at DESC as the only ordering, three weeks
+// of unfinished work sinks below whatever was invented this morning, so the
+// oldest stuck tasks are never on page 1 and never get picked up.
+
+/** Backdate a row the way real age accrues — the API has no way to set
+ *  created_at, and waiting for wall-clock is not a test. */
+async function backdate(taskId: string, days: number): Promise<void> {
+  await db
+    .update(agiTasks)
+    .set({ createdAt: sql`now() - make_interval(days => ${days}::int)` })
+    .where(eq(agiTasks.taskId, taskId));
+}
+
+async function idsFor(query: string): Promise<string[]> {
+  const res = await req('GET', `${tasksPath()}?${query}`, ownerToken);
+  expect(res.status).toBe(200);
+  return (await res.json()).tasks.map((t: any) => t.task_id);
+}
+
+describe('ordering', () => {
+  /** Five tasks in one goal spanning three priority bands and three ages. */
+  async function seedQueue(): Promise<{ goal: string; expected: string[] }> {
+    const goal = `order-${crypto.randomUUID().slice(0, 8)}`;
+    const urgentOld = await newTask({ title: 'urgent stuck', goal_slug: goal, priority: 'urgent' });
+    const urgentNew = await newTask({ title: 'urgent fresh', goal_slug: goal, priority: 'urgent' });
+    const mediumOld = await newTask({ title: 'medium stuck', goal_slug: goal, priority: 'medium' });
+    const mediumNew = await newTask({ title: 'medium fresh', goal_slug: goal, priority: 'medium' });
+    const low = await newTask({ title: 'low fresh', goal_slug: goal, priority: 'low' });
+    await backdate(urgentOld.task_id, 21);
+    await backdate(mediumOld.task_id, 30);
+    return {
+      goal,
+      expected: [
+        urgentOld.task_id,
+        urgentNew.task_id,
+        mediumOld.task_id,
+        mediumNew.task_id,
+        low.task_id,
+      ],
+    };
+  }
+
+  test('open work sorts by priority, then oldest first — a stuck task RISES', async () => {
+    const { goal, expected } = await seedQueue();
+    expect(await idsFor(`goal=${goal}`)).toEqual(expected);
+  });
+
+  test('the oldest low-priority task still sorts under a fresh urgent one', async () => {
+    const goal = `band-${crypto.randomUUID().slice(0, 8)}`;
+    const ancientLow = await newTask({ title: 'ancient chore', goal_slug: goal, priority: 'low' });
+    await backdate(ancientLow.task_id, 400);
+    const freshUrgent = await newTask({ title: 'incident', goal_slug: goal, priority: 'urgent' });
+    // Age lifts a task WITHIN its band; it does not promote it between bands.
+    expect(await idsFor(`goal=${goal}`)).toEqual([freshUrgent.task_id, ancientLow.task_id]);
+  });
+
+  test('the keyset walks the whole priority-ordered queue without a repeat or a gap', async () => {
+    const { goal, expected } = await seedQueue();
+
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 10; page += 1) {
+      const suffix = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+      const res = await req('GET', `${tasksPath()}?goal=${goal}&limit=2${suffix}`, ownerToken);
+      const body: any = await res.json();
+      walked.push(...body.tasks.map((t: any) => t.task_id));
+      cursor = body.next_cursor;
+      if (cursor === null) break;
+    }
+
+    // Same rows, same order, one page at a time — no OFFSET drift, no dupes.
+    expect(walked).toEqual(expected);
+  });
+
+  // Rows created inside the same millisecond are the case the cursor token
+  // cannot express: it serializes created_at at millisecond precision while
+  // Postgres stores microseconds. Pinning every row to ONE timestamp forces the
+  // tie-break onto task_id and proves the walk is still exact.
+  test('a page boundary inside a single timestamp neither repeats nor skips', async () => {
+    const goal = `tie-${crypto.randomUUID().slice(0, 8)}`;
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i += 1) ids.push((await newTask({ title: `tie ${i}`, goal_slug: goal })).task_id);
+    await db
+      .update(agiTasks)
+      .set({ createdAt: sql`timestamptz '2026-01-01 00:00:00.123456+00'` })
+      .where(inArray(agiTasks.taskId, ids));
+
+    const first = await (await req('GET', `${tasksPath()}?goal=${goal}&limit=2`, ownerToken)).json();
+    const second = await (
+      await req(
+        'GET',
+        `${tasksPath()}?goal=${goal}&limit=2&cursor=${encodeURIComponent(first.next_cursor)}`,
+        ownerToken,
+      )
+    ).json();
+
+    const walked = [...first.tasks, ...second.tasks].map((t: any) => t.task_id);
+    expect(new Set(walked).size).toBe(4);
+    expect([...walked].sort()).toEqual([...ids].sort());
+  });
+
+  test('a terminal-only listing stays newest-first, because history is not a queue', async () => {
+    const goal = `hist-${crypto.randomUUID().slice(0, 8)}`;
+    const older = await newTask({ title: 'shipped last month', goal_slug: goal });
+    const newer = await newTask({ title: 'shipped today', goal_slug: goal });
+    await backdate(older.task_id, 30);
+    for (const id of [older.task_id, newer.task_id]) {
+      await req('PATCH', `${tasksPath()}/${id}`, ownerToken, { status: 'done' });
+    }
+    expect(await idsFor(`goal=${goal}&status=done`)).toEqual([newer.task_id, older.task_id]);
+    // A mixed listing can contain open work, so it takes the queue ordering.
+    expect(await idsFor(`goal=${goal}&status=all`)).toEqual([older.task_id, newer.task_id]);
+  });
+});
+
+// ── Finding work ────────────────────────────────────────────────────────────
+
+describe('priority filter', () => {
+  test('narrows to the named bands and unions a comma list', async () => {
+    const goal = `pri-${crypto.randomUUID().slice(0, 8)}`;
+    const urgent = await newTask({ title: 'urgent', goal_slug: goal, priority: 'urgent' });
+    const high = await newTask({ title: 'high', goal_slug: goal, priority: 'high' });
+    await newTask({ title: 'low', goal_slug: goal, priority: 'low' });
+
+    expect(await idsFor(`goal=${goal}&priority=urgent`)).toEqual([urgent.task_id]);
+    expect(await idsFor(`goal=${goal}&priority=urgent,high`)).toEqual([urgent.task_id, high.task_id]);
+    // Repeats collapse rather than multiplying the row out.
+    expect(await idsFor(`goal=${goal}&priority=high,high`)).toEqual([high.task_id]);
+  });
+});
+
+describe('ready view (R-17)', () => {
+  test('a task whose only blocker is DONE is ready; a cancelled blocker is not', async () => {
+    const goal = `ready-${crypto.randomUUID().slice(0, 8)}`;
+    const finished = await newTask({ title: 'finished blocker', goal_slug: goal });
+    const abandoned = await newTask({ title: 'abandoned blocker', goal_slug: goal });
+    const afterDone = await newTask({
+      title: 'waits on finished',
+      goal_slug: goal,
+      status: 'blocked',
+      blocked_by: [finished.task_id],
+    });
+    const afterCancel = await newTask({
+      title: 'waits on abandoned',
+      goal_slug: goal,
+      status: 'blocked',
+      blocked_by: [abandoned.task_id],
+    });
+
+    await req('PATCH', `${tasksPath()}/${finished.task_id}`, ownerToken, { status: 'done' });
+    await req('PATCH', `${tasksPath()}/${abandoned.task_id}`, ownerToken, { status: 'cancelled' });
+
+    const ready = await idsFor(`goal=${goal}&ready=1`);
+    expect(ready).toContain(afterDone.task_id);
+    // R-17 is the trap: "terminal" would make a cancelled blocker release its
+    // dependent, and this task would be handed out as workable when it is not.
+    expect(ready).not.toContain(afterCancel.task_id);
+    expect(ready).not.toContain(abandoned.task_id);
+  });
+
+  test('an unfinished or unresolvable blocker keeps a task out of the view', async () => {
+    const goal = `ready2-${crypto.randomUUID().slice(0, 8)}`;
+    const open = await newTask({ title: 'still open blocker', goal_slug: goal });
+    const waiting = await newTask({
+      title: 'waits on open work',
+      goal_slug: goal,
+      blocked_by: [open.task_id],
+    });
+    const dangling = await newTask({ title: 'dangling edge', goal_slug: goal });
+    // Only a hand-written edge can dangle: the API refuses an unknown blocker.
+    await db
+      .update(agiTasks)
+      .set({ blockedBy: [crypto.randomUUID()] })
+      .where(eq(agiTasks.taskId, dangling.task_id));
+
+    const ready = await idsFor(`goal=${goal}&ready=1`);
+    expect(ready).toEqual([open.task_id]);
+    expect(ready).not.toContain(waiting.task_id);
+    expect(ready).not.toContain(dangling.task_id);
+  });
+
+  test('a live claim hides a task; an expired one hands it back', async () => {
+    const goal = `ready3-${crypto.randomUUID().slice(0, 8)}`;
+    const held = await newTask({ title: 'someone is on it', goal_slug: goal });
+    const crashed = await newTask({ title: 'holder crashed', goal_slug: goal });
+    for (const id of [held.task_id, crashed.task_id]) {
+      await req('POST', `${tasksPath()}/${id}/claim`, ownerToken, { session_id: `ses_${id}` });
+    }
+    await db
+      .update(agiTasks)
+      .set({ claimExpiresAt: sql`now() - interval '1 minute'` })
+      .where(eq(agiTasks.taskId, crashed.task_id));
+
+    const ready = await idsFor(`goal=${goal}&ready=1`);
+    expect(ready).toEqual([crashed.task_id]);
+  });
+
+  test('ready narrows a caller filter and never widens it', async () => {
+    const goal = `ready4-${crypto.randomUUID().slice(0, 8)}`;
+    const done = await newTask({ title: 'already shipped', goal_slug: goal });
+    await req('PATCH', `${tasksPath()}/${done.task_id}`, ownerToken, { status: 'done' });
+    // Terminal rows are open work by no definition, so the intersection is empty
+    // rather than the view quietly overriding the caller's status.
+    expect(await idsFor(`goal=${goal}&ready=1&status=done`)).toEqual([]);
+    // ready=0 is the absence of the view, not a second filter of its own.
+    expect(await idsFor(`goal=${goal}&ready=0&status=all`)).toEqual([done.task_id]);
+  });
+});
+
+describe('idle_days', () => {
+  test('surfaces only rows untouched for that long', async () => {
+    const goal = `idle-${crypto.randomUUID().slice(0, 8)}`;
+    const stale = await newTask({ title: 'nobody has touched this', goal_slug: goal });
+    await newTask({ title: 'moved this morning', goal_slug: goal });
+    await db
+      .update(agiTasks)
+      .set({ updatedAt: sql`now() - interval '9 days'` })
+      .where(eq(agiTasks.taskId, stale.task_id));
+
+    expect(await idsFor(`goal=${goal}&idle_days=7`)).toEqual([stale.task_id]);
+    expect(await idsFor(`goal=${goal}&idle_days=30`)).toEqual([]);
+  });
+});
+
+// ── Blocker edges ───────────────────────────────────────────────────────────
+
+describe('completing a blocker (R-17)', () => {
+  async function blockedOn(goal: string, blockers: string[]): Promise<Record<string, any>> {
+    return newTask({ title: 'downstream', goal_slug: goal, status: 'blocked', blocked_by: blockers });
+  }
+
+  const load = async (taskId: string) =>
+    (await (await req('GET', `${tasksPath()}/${taskId}`, ownerToken)).json()).task;
+
+  test('a DONE blocker drops its edge and releases the task; other edges stay', async () => {
+    const goal = `edge-${crypto.randomUUID().slice(0, 8)}`;
+    const first = await newTask({ title: 'blocker one', goal_slug: goal });
+    const second = await newTask({ title: 'blocker two', goal_slug: goal });
+    const task = await blockedOn(goal, [first.task_id, second.task_id]);
+
+    await req('PATCH', `${tasksPath()}/${first.task_id}`, ownerToken, { status: 'done' });
+    const partway = await load(task.task_id);
+    expect(partway.blocked_by).toEqual([second.task_id]);
+    expect(partway.status).toBe('blocked');
+
+    await req('PATCH', `${tasksPath()}/${second.task_id}`, ownerToken, { status: 'done' });
+    const released = await load(task.task_id);
+    expect(released.blocked_by).toEqual([]);
+    // An empty blocked_by while still sitting in `blocked` would be a lie about
+    // why the task is not moving.
+    expect(released.status).toBe('todo');
+  });
+
+  test('a CANCELLED blocker leaves the edge exactly where it was', async () => {
+    const goal = `edge2-${crypto.randomUUID().slice(0, 8)}`;
+    const blocker = await newTask({ title: 'never happening', goal_slug: goal });
+    const task = await blockedOn(goal, [blocker.task_id]);
+
+    await req('PATCH', `${tasksPath()}/${blocker.task_id}`, ownerToken, { status: 'cancelled' });
+    const after = await load(task.task_id);
+    expect(after.blocked_by).toEqual([blocker.task_id]);
+    expect(after.status).toBe('blocked');
+  });
+
+  test('finishing through release resolves edges the same way a patch does', async () => {
+    const goal = `edge3-${crypto.randomUUID().slice(0, 8)}`;
+    const blocker = await newTask({ title: 'worked in a session', goal_slug: goal });
+    const task = await blockedOn(goal, [blocker.task_id]);
+
+    await req('POST', `${tasksPath()}/${blocker.task_id}/claim`, ownerToken, {
+      session_id: 'ses_finisher',
+    });
+    await req('POST', `${tasksPath()}/${blocker.task_id}/release`, ownerToken, {
+      session_id: 'ses_finisher',
+      status: 'done',
+    });
+
+    expect((await load(task.task_id)).blocked_by).toEqual([]);
+  });
+
+  test('a task in another workspace waiting on the same id keeps its edge', async () => {
+    const blocker = await newTask({ title: 'shared id' });
+    const foreign = await newTask({ title: 'foreign waiter' }, OTHER_WORKSPACE);
+    // Cross-workspace edges cannot be created through the API; write one
+    // directly to prove the prune is workspace-scoped like every other statement.
+    await db
+      .update(agiTasks)
+      .set({ blockedBy: [blocker.task_id] })
+      .where(eq(agiTasks.taskId, foreign.task_id));
+
+    await req('PATCH', `${tasksPath()}/${blocker.task_id}`, ownerToken, { status: 'done' });
+
+    const [row] = await db.select().from(agiTasks).where(eq(agiTasks.taskId, foreign.task_id));
+    expect(row.blockedBy).toEqual([blocker.task_id]);
   });
 });

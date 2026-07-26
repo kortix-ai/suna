@@ -16,18 +16,23 @@
  */
 import { db } from '../../shared/db';
 import {
+  OPEN_TASK_STATUSES,
+  TASK_PRIORITIES,
   TERMINAL_TASK_STATUSES,
+  isTerminalTaskStatus,
   type AgiTaskRow,
   type AssigneeFilter,
   type ClaimFilter,
   type NullableFilter,
   type StatusFilter,
   type TaskCursor,
+  type TaskPriority,
   type TaskStatus,
 } from './wire';
 import { agiTasks } from '@kortix/db';
 import {
   and,
+  asc,
   desc,
   eq,
   inArray,
@@ -38,9 +43,11 @@ import {
   or,
   sql,
   type SQL,
+  type SQLWrapper,
 } from 'drizzle-orm';
 
 const TERMINAL = [...TERMINAL_TASK_STATUSES];
+const OPEN = [...OPEN_TASK_STATUSES];
 
 /** Server clock, always. A client-supplied "now" would let a caller declare
  *  another session's live claim expired. */
@@ -48,6 +55,11 @@ const NOW = sql`now()`;
 
 export interface TaskListFilters {
   status: StatusFilter;
+  priorities?: TaskPriority[];
+  /** The work-finding view: open, every blocker completed, claim free. */
+  ready?: boolean;
+  /** Open and untouched for at least this many days — the stalled-task signal. */
+  idleDays?: number;
   goal?: NullableFilter;
   project?: NullableFilter;
   assignee?: AssigneeFilter;
@@ -57,6 +69,45 @@ export interface TaskListFilters {
   claim?: ClaimFilter;
   cursor?: TaskCursor;
   limit: number;
+}
+
+/**
+ * Queue rank for a priority value. TASK_PRIORITIES is declared most- to
+ * least-urgent, so the array index IS the rank and the two can never drift.
+ * Anything the CHECK constraint does not know sorts LAST: an unrecognized
+ * priority must not be able to jump the queue.
+ *
+ * Takes the column rather than closing over `agi_tasks.priority` because the
+ * cursor comparison needs the same expression over a DIFFERENT alias, where an
+ * unqualified reference would silently resolve to the outer row.
+ */
+function priorityRank(column: SQLWrapper): SQL {
+  const branches = TASK_PRIORITIES.map(
+    (priority, index) => sql`when ${priority} then ${sql.raw(String(index))}`,
+  );
+  const last = sql.raw(String(TASK_PRIORITIES.length));
+  return sql`(case ${column} ${sql.join(branches, sql` `)} else ${last} end)`;
+}
+
+const QUEUE_RANK = priorityRank(agiTasks.priority);
+
+/**
+ * Two orderings, chosen by what the caller asked for rather than by a parameter.
+ *
+ *   queue   — priority first, then OLDEST first. A task nobody has finished must
+ *             RISE toward page 1 as it ages, never sink under whatever was
+ *             invented this morning. This is the ordering the loop reads.
+ *   history — newest first, the natural reading order for a listing that can
+ *             only contain finished work.
+ */
+type ListOrder = 'queue' | 'history';
+
+function listOrder(status: StatusFilter): ListOrder {
+  const terminalOnly =
+    status.kind === 'in' &&
+    status.statuses.length > 0 &&
+    status.statuses.every((s) => isTerminalTaskStatus(s));
+  return terminalOnly ? 'history' : 'queue';
 }
 
 function assigneeCondition(filter: AssigneeFilter): SQL {
@@ -81,6 +132,89 @@ function claimCondition(filter: ClaimFilter): SQL {
     : (and(isNotNull(agiTasks.claimSessionId), sql`${agiTasks.claimExpiresAt} >= now()`) as SQL);
 }
 
+/**
+ * R-17, the query half: every blocker id is contained in the set of this task's
+ * blockers that genuinely COMPLETED.
+ *
+ * Only `done` counts. A CANCELLED blocker does not satisfy the dependency, and
+ * neither does an id that no longer resolves — both leave the task unready,
+ * which is the whole point of R-17 and the trap this predicate exists to avoid.
+ * An empty `blocked_by` is contained by the empty set, so an unblocked task is
+ * ready by construction.
+ *
+ * This is authoritative on its own: `resolveCompletedBlocker` prunes satisfied
+ * edges as bookkeeping, but readiness never depends on that prune having run.
+ */
+const BLOCKERS_SATISFIED = sql`${agiTasks.blockedBy} <@ coalesce((
+    select array_agg(resolved.task_id)
+      from kortix.agi_tasks resolved
+     where resolved.workspace_id = ${agiTasks.workspaceId}
+       and resolved.task_id = any(${agiTasks.blockedBy})
+       and resolved.status = 'done'
+  ), '{}'::uuid[])`;
+
+/** The `--ready` view, as three ANDed predicates rather than a mode: composed
+ *  with a caller's own filters it narrows, and can never widen them. */
+function readyConditions(): SQL[] {
+  return [inArray(agiTasks.status, OPEN), claimCondition('free'), BLOCKERS_SATISFIED];
+}
+
+/**
+ * One component of the keyset comparison value, read back from the cursor ROW.
+ *
+ * The token is `created_at|task_id`, which is enough to IDENTIFY the row but not
+ * to compare against it: it carries no priority at all, and `toISOString()`
+ * truncates the timestamp to milliseconds while Postgres stores microseconds.
+ * Comparing against the truncated value duplicates rows in an ascending keyset
+ * and, worse, silently SKIPS them in a descending one. So the token names the
+ * row and the row supplies its own exact sort key — still one indexed lookup,
+ * one row comparison, and no OFFSET.
+ *
+ * `fallback` covers a cursor whose row is gone. Both fallbacks are chosen to
+ * re-emit already-seen rows rather than skip unseen ones: for a work queue,
+ * duplicates are recoverable and omissions are not. (No route deletes a task;
+ * cancelling is a status.)
+ */
+function cursorField(
+  workspaceId: string,
+  cursor: TaskCursor,
+  select: SQL,
+  fallback: SQL,
+): SQL {
+  return sql`coalesce((
+      select ${select}
+        from kortix.agi_tasks cursor_row
+       where cursor_row.task_id = ${cursor.taskId}::uuid
+         and cursor_row.workspace_id = ${workspaceId}::uuid
+    ), ${fallback})`;
+}
+
+/**
+ * Keyset continuation, in the same shape as the ORDER BY it accompanies.
+ * History pages on (created_at, task_id); the queue pages on the FULL sort key,
+ * because a two-column keyset under a three-column ordering skips rows.
+ */
+function cursorCondition(workspaceId: string, cursor: TaskCursor, order: ListOrder): SQL {
+  const createdAt = cursorField(
+    workspaceId,
+    cursor,
+    sql`cursor_row.created_at`,
+    sql`${cursor.createdAt}::timestamptz`,
+  );
+  if (order === 'history') {
+    return sql`(${agiTasks.createdAt}, ${agiTasks.taskId}) < (${createdAt}, ${cursor.taskId}::uuid)`;
+  }
+  // Rank 0 is the most urgent band: an unresolvable cursor restarts at the top
+  // of the queue from that timestamp rather than skipping every band above it.
+  const rank = cursorField(
+    workspaceId,
+    cursor,
+    priorityRank(sql`cursor_row.priority`),
+    sql`0`,
+  );
+  return sql`(${QUEUE_RANK}, ${agiTasks.createdAt}, ${agiTasks.taskId}) > (${rank}, ${createdAt}, ${cursor.taskId}::uuid)`;
+}
+
 export async function listTasks(
   workspaceId: string,
   filters: TaskListFilters,
@@ -92,6 +226,17 @@ export async function listTasks(
     // inArray with [] is invalid SQL in some dialects, so short-circuit it.
     if (filters.status.statuses.length === 0) return [];
     conditions.push(inArray(agiTasks.status, filters.status.statuses));
+  }
+  if (filters.priorities) {
+    if (filters.priorities.length === 0) return [];
+    conditions.push(inArray(agiTasks.priority, filters.priorities));
+  }
+  if (filters.ready) conditions.push(...readyConditions());
+  // Idle is measured from updated_at: the last time ANYTHING about the task
+  // changed. A row that has not moved in a week has no answer to R-28's "what
+  // moves this forward next?" and must be visible rather than paged away.
+  if (filters.idleDays !== undefined) {
+    conditions.push(sql`${agiTasks.updatedAt} < now() - make_interval(days => ${filters.idleDays}::int)`);
   }
   if (filters.goal) {
     conditions.push(
@@ -119,18 +264,20 @@ export async function listTasks(
   }
   if (filters.trigger) conditions.push(eq(agiTasks.triggerSlug, filters.trigger));
   if (filters.claim) conditions.push(claimCondition(filters.claim));
-  if (filters.cursor) {
-    conditions.push(
-      sql`(${agiTasks.createdAt}, ${agiTasks.taskId}) < (${filters.cursor.createdAt}::timestamptz, ${filters.cursor.taskId}::uuid)`,
-    );
-  }
 
-  return db
+  const order = listOrder(filters.status);
+  if (filters.cursor) conditions.push(cursorCondition(workspaceId, filters.cursor, order));
+
+  const query = db
     .select()
     .from(agiTasks)
-    .where(and(...conditions))
-    .orderBy(desc(agiTasks.createdAt), desc(agiTasks.taskId))
-    .limit(filters.limit);
+    .where(and(...conditions));
+
+  return order === 'history'
+    ? query.orderBy(desc(agiTasks.createdAt), desc(agiTasks.taskId)).limit(filters.limit)
+    : query
+        .orderBy(sql`${QUEUE_RANK} asc`, asc(agiTasks.createdAt), asc(agiTasks.taskId))
+        .limit(filters.limit);
 }
 
 export async function loadTask(workspaceId: string, taskId: string): Promise<AgiTaskRow | null> {
@@ -298,6 +445,50 @@ export type TaskPatch = Partial<{
   triggerSlug: string | null;
 }>;
 
+/**
+ * R-17, the resolving half. A blocker that genuinely COMPLETED satisfies the
+ * dependency, so its edge is dropped from every task that was waiting on it —
+ * otherwise a finished blocker leaves the edge forever and every daily push has
+ * to hand-resolve it.
+ *
+ * A CANCELLED blocker is deliberately NOT pruned. "The work happened" and "the
+ * work will never happen" are different answers, and only the first one releases
+ * whatever was waiting; R-17 says that edge stays unresolved until a human
+ * removes or replaces it. That is why this is keyed on `done` alone and why no
+ * caller may pass the status in.
+ *
+ * Dropping the last edge also moves `blocked` → `todo`, the same rule
+ * `kortix tasks block` applies when it removes an edge: a task with an empty
+ * `blocked_by` still sitting in `blocked` is a lie about why it is not moving.
+ *
+ * One-way: re-opening a completed blocker does not restore the edges it
+ * released. Whoever re-opens it is re-stating the dependency, not undoing a
+ * bookkeeping step.
+ */
+export async function resolveCompletedBlocker(
+  workspaceId: string,
+  blockerId: string,
+): Promise<number> {
+  // `blocked_by` on the right-hand side is the pre-update value, so the CASE and
+  // the assignment see the same array — one statement, no read-then-write.
+  const result = await db.execute(sql`
+    update kortix.agi_tasks
+       set blocked_by = array_remove(blocked_by, ${blockerId}::uuid),
+           status = case
+                      when status = 'blocked'
+                       and array_remove(blocked_by, ${blockerId}::uuid) = '{}'::uuid[]
+                      then 'todo'
+                      else status
+                    end,
+           updated_at = now()
+     where workspace_id = ${workspaceId}::uuid
+       and blocked_by @> array[${blockerId}::uuid]
+    returning task_id
+  `);
+  const rows = (result as unknown as { rows?: unknown[] }).rows ?? (result as unknown as unknown[]);
+  return rows.length;
+}
+
 export async function patchTask(
   workspaceId: string,
   taskId: string,
@@ -317,7 +508,17 @@ export async function patchTask(
     })
     .where(and(eq(agiTasks.taskId, taskId), eq(agiTasks.workspaceId, workspaceId)))
     .returning();
-  return row ?? null;
+  if (!row) return null;
+  await pruneEdgesIfCompleted(workspaceId, row);
+  return row;
+}
+
+/** Runs off the WRITTEN row rather than the patch, so it also heals edges left
+ *  behind by an already-done task — the prune is idempotent and readiness never
+ *  depended on it having run. */
+async function pruneEdgesIfCompleted(workspaceId: string, row: AgiTaskRow): Promise<void> {
+  if (row.status !== 'done') return;
+  await resolveCompletedBlocker(workspaceId, row.taskId);
 }
 
 /**
@@ -387,5 +588,9 @@ export async function releaseTask(input: {
       ),
     )
     .returning();
-  return row ?? null;
+  // A release may carry `status: done` (R-16's finish-and-hand-back), which is
+  // the same completion event as a PATCH and resolves edges the same way.
+  if (!row) return null;
+  await pruneEdgesIfCompleted(input.workspaceId, row);
+  return row;
 }

@@ -5,12 +5,15 @@ import {
   assigneeLabel,
   blockedStatusChange,
   buildTaskListQuery,
+  formatAge,
   mergeBlockedBy,
   parseAssigneeSpec,
+  renderTaskTable,
   requireTaskId,
   runTasks,
   shortId,
   surfaceConflict,
+  type AgiTask,
 } from '../commands/tasks.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -175,6 +178,77 @@ test('a bare --help on a subcommand prints usage instead of being read as an id'
   const { code, out } = await capture(['show', '--help']);
   expect(code).toBe(0);
   expect(out).toContain('kortix tasks');
+});
+
+test('the ready view serializes to the one param the API reads', () => {
+  expect(buildTaskListQuery({ ready: true })).toBe('?ready=1');
+  // Absence IS "not the ready view" — never `ready=0`, which would be a second
+  // filter the caller did not ask for.
+  expect(buildTaskListQuery({ ready: false })).toBe('');
+  expect(buildTaskListQuery({ ready: true, status: 'open' })).toBe('?status=open&ready=1');
+});
+
+test('priority filters accept the vocabulary as a list and nothing outside it', () => {
+  expect(buildTaskListQuery({ priority: 'urgent' })).toBe('?priority=urgent');
+  expect(buildTaskListQuery({ priority: 'urgent,high' })).toBe('?priority=urgent%2Chigh');
+  expect(buildTaskListQuery({ priority: ' urgent , high ' })).toBe('?priority=urgent%2Chigh');
+  expect(() => buildTaskListQuery({ priority: 'critical' })).toThrow('--priority');
+  expect(() => buildTaskListQuery({ priority: 'high,critical' })).toThrow('--priority');
+});
+
+test('--idle is a whole number of days and maps to the API param name', () => {
+  expect(buildTaskListQuery({ idle: '7' })).toBe('?idle_days=7');
+  expect(() => buildTaskListQuery({ idle: '0' })).toThrow('--idle');
+  expect(() => buildTaskListQuery({ idle: '-3' })).toThrow('--idle');
+  expect(() => buildTaskListQuery({ idle: '1.5' })).toThrow('--idle');
+});
+
+test('age renders at the resolution that matters, from seconds to years', () => {
+  const now = new Date('2026-07-26T12:00:00.000Z');
+  expect(formatAge('2026-07-26T11:59:31.000Z', now)).toBe('now');
+  expect(formatAge('2026-07-26T11:45:00.000Z', now)).toBe('15m');
+  expect(formatAge('2026-07-26T04:00:00.000Z', now)).toBe('8h');
+  expect(formatAge('2026-07-05T12:00:00.000Z', now)).toBe('21d');
+  expect(formatAge('2025-07-26T12:00:00.000Z', now)).toBe('365d');
+  // A clock skew that puts the row in the future must not render as negative.
+  expect(formatAge('2026-07-26T12:05:00.000Z', now)).toBe('now');
+  expect(formatAge('not a date', now)).toBe('-');
+});
+
+test('the table carries an IDLE column so a stalled task is visible in the list', () => {
+  const now = new Date('2026-07-26T12:00:00.000Z');
+  const task: AgiTask = {
+    task_id: A,
+    workspace_id: B,
+    parent_id: null,
+    goal_slug: 'ship-v1',
+    project: null,
+    title: 'nobody has touched this',
+    body: null,
+    status: 'todo',
+    priority: 'high',
+    agent: null,
+    assignee_user_id: null,
+    blocked_by: [],
+    trigger_slug: null,
+    claim_session_id: null,
+    claimed_at: null,
+    claim_expires_at: null,
+    claimed: false,
+    origin: 'agi',
+    origin_fingerprint: null,
+    created_at: '2026-06-01T12:00:00.000Z',
+    updated_at: '2026-07-04T12:00:00.000Z',
+  };
+  const table = renderTaskTable([task], now);
+  expect(table).toContain('IDLE');
+  expect(table).toContain('22d');
+});
+
+test('`ready` is a list view, so it validates list flags before any network call', async () => {
+  const { code, err } = await capture(['ready', '--priority', 'critical']);
+  expect(code).toBe(2);
+  expect(err).toContain('--priority');
 });
 
 test('no subcommand exits 2, an unknown one exits 2 with the help text', async () => {

@@ -101,8 +101,14 @@ Work the AGI task queue for the linked workspace — the shared board sessions
 claim work from. Tasks live in the cloud (not kortix.yaml); goals do the
 opposite. Every subcommand takes --json for machine-readable output.
 
+Open work is listed priority-first and then OLDEST first, so a task nobody has
+finished rises toward the top instead of sinking under today's new ones. The
+IDLE column is the time since the task last changed.
+
 Subcommands:
   ls [options]             List tasks. Defaults to open ones.
+  ready [options]          Work that can be started right now: open, every
+                           blocker completed, claim free. Start here.
   show <task-id>           One task in full: blockers, children, body.
   new <title...>           Create a task.
   claim <task-id>          Take exclusive ownership for a session (atomic).
@@ -110,6 +116,11 @@ Subcommands:
   block <task-id>          Add/remove blockers (--on/--off).
 
 List options:
+  --ready                  Only startable work — same as the \`ready\`
+                           subcommand. A CANCELLED blocker does not count as
+                           satisfied, so its task stays out.
+  --priority <list>        Comma-separated: urgent|high|medium|low.
+  --idle <days>            Only tasks untouched for that many days.
   --status <list>          Comma-separated statuses, or \`open\`/\`all\`
                            (default open).
   --goal <slug>            Filter by goal slug, or \`none\`.
@@ -186,6 +197,7 @@ export async function runTasks(argv: string[]): Promise<number> {
   let keepStatus = false;
   let doing = false;
   let review = false;
+  let ready = false;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   const f: Record<string, string | undefined> = {};
@@ -197,6 +209,7 @@ export async function runTasks(argv: string[]): Promise<number> {
     keepStatus = takeFlagBool(rest, ['--keep-status']);
     doing = takeFlagBool(rest, ['--doing']);
     review = takeFlagBool(rest, ['--review']);
+    ready = takeFlagBool(rest, ['--ready']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     f.status = takeFlagValue(rest, ['--status']);
@@ -207,6 +220,7 @@ export async function runTasks(argv: string[]): Promise<number> {
     f.parent = takeFlagValue(rest, ['--parent']);
     f.trigger = takeFlagValue(rest, ['--trigger']);
     f.claim = takeFlagValue(rest, ['--claim']);
+    f.idle = takeFlagValue(rest, ['--idle']);
     f.limit = takeFlagValue(rest, ['--limit']);
     f.body = takeFlagValue(rest, ['--body']);
     f.priority = takeFlagValue(rest, ['--priority']);
@@ -227,24 +241,29 @@ export async function runTasks(argv: string[]): Promise<number> {
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
   const positional = rest.filter((a) => !a.startsWith('-'));
 
+  const listFilters: TaskListFilters = {
+    status: f.status,
+    priority: f.priority,
+    ready,
+    idle: f.idle,
+    goal: f.goal,
+    label: f.label,
+    assignee: f.assignee,
+    parent: f.parent,
+    blockedBy: blockedBy[0],
+    trigger: f.trigger,
+    claim: f.claim,
+    limit: f.limit,
+  };
+
   switch (sub) {
     case 'ls':
     case 'list':
-      return tasksLs(
-        ctxOpts,
-        {
-          status: f.status,
-          goal: f.goal,
-          label: f.label,
-          assignee: f.assignee,
-          parent: f.parent,
-          blockedBy: blockedBy[0],
-          trigger: f.trigger,
-          claim: f.claim,
-          limit: f.limit,
-        },
-        json,
-      );
+      return tasksLs(ctxOpts, listFilters, json);
+    // The daily push's entry point: `ready` is `ls --ready`, named so the one
+    // query that finds startable work does not depend on remembering a flag.
+    case 'ready':
+      return tasksLs(ctxOpts, { ...listFilters, ready: true }, json);
     case 'show':
     case 'info':
       return tasksShow(positional[0], ctxOpts, json);
@@ -295,7 +314,16 @@ async function tasksLs(opts: CtxOpts, filters: TaskListFilters, json = false): P
   }
 
   if (resp.tasks.length === 0) {
-    process.stdout.write(`${status.info('No tasks.')}\n`);
+    // An empty ready view is ambiguous in a way an empty list is not: it means
+    // either nothing is open OR everything open is waiting on something. Saying
+    // "No tasks." would read as an empty board.
+    process.stdout.write(
+      `${status.info(
+        filters.ready
+          ? 'No ready work (nothing open, or every open task is blocked or claimed).'
+          : 'No tasks.',
+      )}\n`,
+    );
     return 0;
   }
   process.stdout.write(`\n${renderTaskTable(resp.tasks)}`);
@@ -345,6 +373,7 @@ async function tasksShow(
   line('trigger', t.trigger_slug ?? '—');
   line('origin', t.origin);
   line('created', t.created_at);
+  line('idle', `${formatAge(t.updated_at)} (last change ${t.updated_at})`);
   line(
     'claim',
     t.claim_session_id
@@ -604,6 +633,9 @@ async function tasksBlock(
 
 export interface TaskListFilters {
   status?: string;
+  priority?: string;
+  ready?: boolean;
+  idle?: string;
   goal?: string;
   label?: string;
   assignee?: string;
@@ -613,6 +645,8 @@ export interface TaskListFilters {
   claim?: string;
   limit?: string;
 }
+
+const PRIORITIES = ['urgent', 'high', 'medium', 'low'];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -642,6 +676,23 @@ export function parseAssigneeSpec(spec: string): string {
 export function buildTaskListQuery(f: TaskListFilters): string {
   const params = new URLSearchParams();
   if (f.status) params.set('status', f.status);
+  if (f.priority) {
+    const bands = f.priority.split(',').map((part) => part.trim());
+    if (bands.some((band) => !PRIORITIES.includes(band))) {
+      throw new Error(`--priority must be one of ${PRIORITIES.join(', ')}`);
+    }
+    params.set('priority', bands.join(','));
+  }
+  // Only ever sent as `1`: the API rejects anything it cannot read as a
+  // boolean, and an omitted param is what "not the ready view" means.
+  if (f.ready) params.set('ready', '1');
+  if (f.idle) {
+    const days = Number(f.idle);
+    if (!Number.isInteger(days) || days < 1) {
+      throw new Error('--idle must be a positive integer number of days');
+    }
+    params.set('idle_days', String(days));
+  }
   if (f.goal) params.set('goal', f.goal);
   if (f.label) params.set('project', f.label);
   if (f.assignee) params.set('assignee', parseAssigneeSpec(f.assignee));
@@ -704,23 +755,42 @@ export function assigneeLabel(task: Pick<AgiTask, 'agent' | 'assignee_user_id'>)
   return '-';
 }
 
+/**
+ * Time since `iso`, in one compact cell. Measured from `updated_at`, so it
+ * answers the only question the queue cannot answer by ordering alone: has
+ * anyone touched this at all? Sub-minute precision would be noise — a task is
+ * interesting here at days, not seconds.
+ */
+export function formatAge(iso: string, now: Date = new Date()): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '-';
+  const minutes = Math.max(0, Math.floor((now.getTime() - then) / 60_000));
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 /** The shared task table — `tasks ls`, `tasks show`'s children, and
  *  `goals show`'s open tasks all render identical columns. */
-export function renderTaskTable(tasks: AgiTask[]): string {
+export function renderTaskTable(tasks: AgiTask[], now: Date = new Date()): string {
   const idW = 8;
+  const age = new Map(tasks.map((t) => [t.task_id, formatAge(t.updated_at, now)]));
   const statusW = Math.max(...tasks.map((t) => t.status.length), 6);
   const priW = Math.max(...tasks.map((t) => t.priority.length), 3);
+  const idleW = Math.max(...tasks.map((t) => age.get(t.task_id)!.length), 4);
   const asgW = Math.max(...tasks.map((t) => assigneeLabel(t).length), 8);
   const goalW = Math.max(...tasks.map((t) => (t.goal_slug ?? '-').length), 4);
-  const fixed = 2 + idW + 3 + statusW + 3 + priW + 3 + asgW + 3 + goalW + 3;
+  const fixed = 2 + idW + 3 + statusW + 3 + priW + 3 + idleW + 3 + asgW + 3 + goalW + 3;
   const titleW = Math.max(20, terminalWidth() - fixed);
 
   const rows = [
-    `  ${C.dim}${pad('ID', idW)}   ${pad('STATUS', statusW)}   ${pad('PRI', priW)}   ${pad('ASSIGNEE', asgW)}   ${pad('GOAL', goalW)}   TITLE${C.reset}`,
+    `  ${C.dim}${pad('ID', idW)}   ${pad('STATUS', statusW)}   ${pad('PRI', priW)}   ${pad('IDLE', idleW)}   ${pad('ASSIGNEE', asgW)}   ${pad('GOAL', goalW)}   TITLE${C.reset}`,
   ];
   for (const t of tasks) {
     rows.push(
-      `  ${pad(shortId(t.task_id), idW)}   ${pad(t.status, statusW)}   ${pad(t.priority, priW)}   ${pad(assigneeLabel(t), asgW)}   ${pad(t.goal_slug ?? '-', goalW)}   ${truncate(t.title, titleW)}`,
+      `  ${pad(shortId(t.task_id), idW)}   ${pad(t.status, statusW)}   ${pad(t.priority, priW)}   ${pad(age.get(t.task_id)!, idleW)}   ${pad(assigneeLabel(t), asgW)}   ${pad(t.goal_slug ?? '-', goalW)}   ${truncate(t.title, titleW)}`,
     );
   }
   return `${rows.join('\n')}\n`;

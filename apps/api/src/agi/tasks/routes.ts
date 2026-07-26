@@ -46,6 +46,7 @@ import {
   TASK_RELATION_CAP,
   decodeTaskCursor,
   encodeTaskCursor,
+  isTaskPriority,
   isTerminalTaskStatus,
   orderBlockers,
   parseAssigneeFilter,
@@ -54,6 +55,7 @@ import {
   parseNullableFilter,
   parseStatusFilter,
   serializeAgiTask,
+  type TaskPriority,
 } from './wire';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
@@ -62,6 +64,34 @@ import { createRoute, z } from '@hono/zod-openapi';
 
 const ProjectParams = z.object({ projectId: z.string() });
 const TaskParams = z.object({ projectId: z.string(), taskId: z.string() });
+
+/** Longest idle window a caller may ask for. Ten years is not a real query — it
+ *  is the bound that keeps `make_interval` away from anything pathological. */
+const IDLE_DAYS_MAX = 3650;
+
+/** Comma-separated priorities, union-ed — the same shape as `status`, so a
+ *  caller who learned one has learned the other. */
+function parsePriorityFilter(raw: string): TaskPriority[] | null {
+  const parts = raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) return null;
+  const priorities: TaskPriority[] = [];
+  for (const part of parts) {
+    if (!isTaskPriority(part)) return null;
+    if (!priorities.includes(part)) priorities.push(part);
+  }
+  return priorities;
+}
+
+/** Only the two spellings a shell produces. Anything else is a caller who
+ *  believes they disabled the view when they enabled it. */
+function parseBooleanParam(raw: string): boolean | null {
+  if (raw === '1' || raw === 'true') return true;
+  if (raw === '0' || raw === 'false') return false;
+  return null;
+}
 
 // ─── GET /:projectId/agi/tasks ──────────────────────────────────────────────
 
@@ -79,6 +109,9 @@ agiApp.openapi(
       query: z
         .object({
           status: z.string(),
+          priority: z.string(),
+          ready: z.string(),
+          idle_days: z.string(),
           goal: z.string(),
           project: z.string(),
           assignee: z.string(),
@@ -115,6 +148,27 @@ agiApp.openapi(
 
     const filters: TaskListFilters = { status, limit };
 
+    if (query.priority !== undefined) {
+      const priorities = parsePriorityFilter(query.priority);
+      if (!priorities) return c.json({ error: 'Invalid priority' }, 400);
+      filters.priorities = priorities;
+    }
+    if (query.ready !== undefined) {
+      const ready = parseBooleanParam(query.ready);
+      if (ready === null) return c.json({ error: 'Invalid ready' }, 400);
+      filters.ready = ready;
+    }
+    if (query.idle_days !== undefined) {
+      // Fallback 0 is out of range on purpose: it turns an empty `idle_days=`
+      // into the same 400 as `idle_days=nonsense` rather than a silent no-op.
+      const idleDays = parseBoundedInteger(query.idle_days, {
+        min: 1,
+        max: IDLE_DAYS_MAX,
+        fallback: 0,
+      });
+      if (!idleDays) return c.json({ error: 'Invalid idle_days' }, 400);
+      filters.idleDays = idleDays;
+    }
     if (query.goal !== undefined) {
       const goal = parseNullableFilter(query.goal);
       if (!goal) return c.json({ error: 'Invalid goal' }, 400);
