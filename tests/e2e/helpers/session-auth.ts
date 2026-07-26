@@ -137,6 +137,18 @@ export async function installBrowserSession(
   }
 
   await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
+  await page.waitForFunction(
+    () => {
+      const form = document.querySelector('form');
+      if (!form) return false;
+      const reactPropsKey = Object.keys(form).find((key) => key.startsWith('__reactProps$'));
+      if (!reactPropsKey) return false;
+      const reactProps = (form as unknown as Record<string, { onSubmit?: unknown }>)[reactPropsKey];
+      return typeof reactProps?.onSubmit === 'function';
+    },
+    null,
+    { timeout: 30_000 },
+  );
   const signInTab = page.getByRole('tab', { name: /^Sign in$/i });
   if (await signInTab.isVisible().catch(() => false)) {
     await signInTab.click();
