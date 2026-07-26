@@ -74,6 +74,25 @@ only the manifest load is I/O.
 Loader failure now throws `SecretGrantResolutionError` instead of collapsing to
 an unrestricted grant.
 
+This required opening up a layer below. `loadProjectAgents` **never throws** by
+design: `readManifest` (`projects/triggers.ts`) wraps the git I/O in a blanket
+`catch { return null; }`, and `loadProjectAgents` answers `null` with
+`synthesizeBlankManifest` — which grants the conventional `kortix` agent
+`secrets: 'all'`. So a transient git-proxy 429 or mirror-refresh failure was
+**indistinguishable from "blank project"** and silently granted every secret,
+on an ordinary prompt with no agent switch at all. A parse error was equally
+fail-open on the other side: it produces an error-carrying `LoadedAgents`, which
+`grantFromLoadedAgents` resolves to `null` (unrestricted) for the `default`
+sentinel.
+
+`readManifestFromRepo` already distinguishes the two — it returns `null` only
+for a genuinely absent file and throws on read failure — so both now take an
+opt-in `rethrowReadErrors` flag that preserves the distinction up to
+`resolveSessionSecretGrant`. Every other caller keeps the old null-on-error
+behavior. `secret-grant.fail-closed.test.ts` exercises the real
+`loadProjectAgents → readManifest → readManifestFromRepo` chain; without the flag
+three of its six cases resolve to `'all'` instead of refusing.
+
 - **Boot** — the provision fails. A session that cannot prove what it may read is
   not created.
 - **Hot push** — the prompt fails with `503 AGENT_SECRET_GRANT_UNRESOLVED`. 503,
@@ -107,12 +126,43 @@ So a switch whose `secrets` grant differs from the session's is refused:
 
 This is deliberately **narrower than `KORTIX_ENFORCE_SESSION_AGENT_LOCK`**, which
 409s on any name change and is gated off precisely because it false-positived on
-ordinary flows. Switching between agents with the *same* grant stays free, so
-this reintroduces none of that breakage.
+ordinary flows. Switching between agents with the *same* grant stays free.
 
-The web client is unaffected: it already treats sessions as agent-immutable and
-binds the agent at creation (`new-session-create.ts`, `use-new-project-session.ts`),
-documenting the 409 as expected behavior.
+### User-visible consequence
+
+The web client's comments claim sessions are agent-immutable
+(`new-session-create.ts`, `use-new-project-session.ts`), but **that lock is not
+actually active**: `SESSION_AGENT_LOCK_ENABLED` is hardcoded `false`
+(`composer-chat-input.tsx:103`, `session-chat.tsx:3760`), so `lockedAgentName` is
+always null and `agentSelectorLocked` is always false. Users *can* switch agents
+inside an open session today.
+
+So this does change behavior for one population: **projects that declare
+different `secrets` grants per agent**. A mid-session switch across that boundary
+now returns 409 where it previously succeeded. That is the boundary those
+projects declared, so enforcing it is the point — but the UI currently surfaces
+it as a generic error rather than a designed "start a new session" flow.
+
+Everyone else is unaffected: a project with no `agents:` map, or with uniform
+grants, never trips it (see the `undefined ≡ 'all'` note below).
+
+Making this a designed experience means flipping `SESSION_AGENT_LOCK_ENABLED` to
+true so the selector greys out inside a bound session. That is a product
+decision, not a security one, and is deliberately not bundled here.
+
+### `undefined` and `'all'` are one authority
+
+`grantFromLoadedAgents` returns `null` (→ `undefined` env) for an ungoverned
+project and for the non-binding `default` sentinel, but `'all'` for an agent that
+declares `secrets: all` or omits the key. Downstream they are identical —
+`resolveGrantedSecretEnv` (`projects/secrets.ts`) computes
+`allowAll = grant === undefined || grant === 'all'` and both take the same branch.
+
+Comparing them as distinct authorities therefore protects nothing and produces
+false 409s on the most ordinary shape there is: a session bound to `default`
+prompting with a concrete agent that omits `secrets`. `grantEnvKey` collapses
+them. An explicit list stays distinct from both — that is a declared narrowing,
+and the project's secret set can change under it.
 
 ### Kill switch
 
@@ -126,7 +176,11 @@ refusal for a soft narrowing; the original widening is not reachable either way.
 | File | Change |
 |---|---|
 | `projects/lib/secret-grant.ts` | New — the single resolver + pure policy |
-| `projects/lib/secret-grant.test.ts` | New — 24 tests |
+| `projects/lib/secret-grant.test.ts` | New — pure policy |
+| `projects/lib/secret-grant.fail-closed.test.ts` | New — fail-closed through the real loader chain |
+| `projects/triggers.ts` | `readManifest` opt-in `rethrowReadErrors` |
+| `projects/agents.ts` | `loadProjectAgents` threads it through |
+| `sandbox-proxy/routes/preview.test.ts` | Covers the 409 / 503 mapping |
 | `projects/lib/sessions.ts` | Boot uses the shared resolver; no `.catch(() => null)` |
 | `projects/lib/sandbox-env-sync.ts` | Hot push resolves from the running agent |
 | `sandbox-proxy/routes/preview.ts` | Threads `requestedAgent`; maps errors to 409 / 503 |

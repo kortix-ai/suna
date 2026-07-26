@@ -89,13 +89,25 @@ export function effectiveRunningAgent(
   return requested;
 }
 
-/** Normalized comparison key for a resolved grant's `env` list. `undefined`
- *  (unrestricted) and `'all'` are distinct from any explicit list, including an
- *  explicit list that happens to name every secret — the point is whether the
- *  DECLARED authority differs, not whether today's secret set makes them equal. */
+/**
+ * Normalized comparison key for a resolved grant's `env` list.
+ *
+ * `undefined` and `'all'` collapse to the SAME key: they are the same authority
+ * everywhere it is actually applied — `resolveGrantedSecretEnv` (../secrets.ts)
+ * computes `allowAll = grant === undefined || grant === 'all'` and the two take
+ * an identical branch. They only differ in where they come from
+ * (`grantFromLoadedAgents` returns null → `undefined` for an ungoverned project
+ * or the non-binding `default` sentinel, and `'all'` for an agent that declares
+ * `secrets: all` or omits the key). Treating them as distinct produced spurious
+ * 409s on the most ordinary shape there is: a session bound to `default`
+ * (→ `undefined`) sending a prompt naming a concrete agent that omits `secrets`
+ * (→ `'all'`) — no privilege change whatsoever.
+ *
+ * An explicit list stays distinct from both, even one naming every secret today:
+ * that is a DECLARED narrowing, and the secret set can change under it.
+ */
 function grantEnvKey(env: string[] | 'all' | undefined): string {
-  if (env === undefined) return '*unrestricted*';
-  if (env === 'all') return '*all*';
+  if (env === undefined || env === 'all') return '*all*';
   return [...new Set(env.map((id) => id.toUpperCase()))].sort().join(',');
 }
 
@@ -168,13 +180,22 @@ export async function resolveSessionSecretGrant(
 
   let loaded: LoadedAgents;
   try {
-    loaded = await loadProjectAgents({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    });
+    // `rethrowReadErrors` is what makes this catch reachable AT ALL. By default
+    // loadProjectAgents never throws: it swallows an unreadable manifest into a
+    // SYNTHESIZED one that grants `secrets: 'all'`, and an unparseable one into
+    // a result that resolves to unrestricted for the `default` sentinel. Either
+    // would hand an ordinary prompt every project secret on a transient git
+    // blip — the exact fail-open this module exists to close.
+    loaded = await loadProjectAgents(
+      {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      { rethrowReadErrors: true },
+    );
   } catch (err) {
     throw new SecretGrantResolutionError(runningAgent, err);
   }

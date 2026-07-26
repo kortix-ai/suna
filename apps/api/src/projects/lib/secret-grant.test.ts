@@ -81,10 +81,15 @@ describe('secretGrantEnvDiffers', () => {
     expect(secretGrantEnvDiffers(['A', 'A', 'B'], ['B', 'A'])).toBe(false);
   });
 
-  test('unrestricted, all, and empty are three distinct authorities', () => {
-    expect(secretGrantEnvDiffers(undefined, 'all')).toBe(true);
+  test('unrestricted and all are the same authority, since every consumer treats them alike', () => {
+    expect(secretGrantEnvDiffers(undefined, 'all')).toBe(false);
+    expect(secretGrantEnvDiffers('all', undefined)).toBe(false);
+  });
+
+  test('an explicit list is a declared narrowing, distinct from both', () => {
     expect(secretGrantEnvDiffers(undefined, [])).toBe(true);
     expect(secretGrantEnvDiffers('all', [])).toBe(true);
+    expect(secretGrantEnvDiffers('all', ['STRIPE'])).toBe(true);
   });
 
   test('the same authority does not differ from itself', () => {
@@ -128,6 +133,11 @@ describe('secretGrantEnvForRunningAgent', () => {
     expect(() => secretGrantEnvForRunningAgent(l, 'kortix', 'ghost')).toThrow(
       AgentSecretGrantMismatchError,
     );
+  });
+
+  test('an ungoverned session switching to an all-granted agent is not a privilege change', () => {
+    const l = loaded([spec('kortix', 'all')], 'kortix');
+    expect(secretGrantEnvForRunningAgent(l, 'default', 'kortix')).toBe('all');
   });
 
   test('the kill switch degrades to the running agent grant instead of the session one', () => {
