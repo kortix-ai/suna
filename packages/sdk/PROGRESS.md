@@ -197,6 +197,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`. | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input. | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector` |
 | B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback. | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account. | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement` |
 | B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing). | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green |
+| B16 | **Expose the production maintenance read and write contracts through the SDK.** The web maintenance store imports two names that the root SDK does not export. | Live `/api/maintenance` returned automatic blocking while `/v1/system/maintenance` returned `level=none`; `typeof sdk.getMaintenanceConfig` and `typeof sdk.setMaintenanceConfig` both returned `undefined`. | **IN PROGRESS 2026-07-26** — session `maintenance-prod-hotfix`; RED test, additive SDK transport, full SDK gates, release, and live production proof required |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1555,3 +1556,19 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. Staging deployment,
 live session CRUD, provider execution, and the production release gate remain
 part of the parent release lifecycle.
+
+---
+
+### 2026-07-26 — session `maintenance-prod-hotfix` (B16 claim)
+
+Claimed the additive maintenance read and write SDK contract after production
+`0.10.16` exposed a missing root export. The web maintenance store imports two
+undefined SDK functions. This makes the public maintenance route enter automatic
+blocking while the production API remains healthy.
+
+The change will add typed host-boundary transport functions for `GET` and `PUT
+/system/maintenance`. Existing exported names and fields remain unchanged.
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
