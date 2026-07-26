@@ -1,6 +1,9 @@
 'use client';
 
 import { useMaintenanceConfig } from '@/hooks/edge-flags';
+import { isMaintenanceProductRoute } from '@/lib/maintenance-client';
+import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { MaintenanceBanner } from './maintenance-banner';
 
@@ -15,6 +18,15 @@ import { MaintenanceBanner } from './maintenance-banner';
  */
 export function MaintenanceBannerHost() {
   const { data: config } = useMaintenanceConfig();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (config?.level !== 'blocking' || !isMaintenanceProductRoute(pathname)) return;
+
+    const from = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/maintenance?from=${encodeURIComponent(from)}`);
+  }, [config?.level, pathname]);
+
   if (!config) return null;
   return <MaintenanceBanner config={config} />;
 }

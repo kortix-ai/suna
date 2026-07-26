@@ -1,0 +1,259 @@
+name: Cut Over Prod US East 2
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Exact production routing change.
+        required: true
+        type: choice
+        options:
+          - maintenance-on
+          - dns-target
+          - backend-target
+          - backend-source
+          - dns-source
+          - maintenance-off-target
+          - maintenance-off-source
+      confirm:
+        description: Enter "<action>:prod-us-east-2".
+        required: true
+        type: string
+
+concurrency:
+  group: cutover-prod-us-east-2
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cloudflare:
+    name: Apply guarded Cloudflare production change
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+      MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+      ACTION: ${{ inputs.action }}
+      CONFIRM: ${{ inputs.confirm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate production confirmation and credentials
+        run: |
+          set -euo pipefail
+          expected="${ACTION}:prod-us-east-2"
+          if [ "$CONFIRM" != "$expected" ]; then
+            echo "::error::confirm must equal '$expected'."
+            exit 64
+          fi
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Using the scoped Cloudflare API token."
+            exit 0
+          fi
+          if [ -z "${CLOUDFLARE_API_KEY:-}" ] || [ -z "${CLOUDFLARE_EMAIL:-}" ]; then
+            echo "::error::Cloudflare credentials are not configured."
+            exit 1
+          fi
+          echo "Using the Cloudflare global API key fallback."
+
+      - name: Switch supa.kortix.com CNAME
+        if: inputs.action == 'dns-target' || inputs.action == 'dns-source'
+        run: |
+          set -euo pipefail
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            auth_headers=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          else
+            auth_headers=(
+              -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}"
+              -H "X-Auth-Key: ${CLOUDFLARE_API_KEY}"
+            )
+          fi
+
+          cloudflare_request() {
+            curl -fsS \
+              "${auth_headers[@]}" \
+              -H "Content-Type: application/json" \
+              "$@"
+          }
+
+          zone_response="$(
+            cloudflare_request \
+              "https://api.cloudflare.com/client/v4/zones?name=kortix.com&status=active"
+          )"
+          zone_id="$(jq -er '.result | select(length == 1) | .[0].id' <<<"$zone_response")"
+          record_response="$(
+            cloudflare_request \
+              "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?type=CNAME&name=supa.kortix.com"
+          )"
+          record_id="$(
+            jq -er '.result | select(length == 1) | .[0].id' <<<"$record_response"
+          )"
+
+          case "$ACTION" in
+            dns-target)
+              destination="uhrwvisbqjfxhxjvoofd.supabase.co"
+              ;;
+            dns-source)
+              destination="jbriwassebxdwoieikga.supabase.co"
+              ;;
+            *)
+              echo "::error::Unsupported DNS action: $ACTION"
+              exit 64
+              ;;
+          esac
+
+          update_response="$(
+            jq -nc \
+              --arg content "$destination" \
+              '{
+                type: "CNAME",
+                name: "supa.kortix.com",
+                content: $content,
+                ttl: 1,
+                proxied: false
+              }' \
+              | cloudflare_request \
+                  --request PUT \
+                  --data @- \
+                  "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}"
+          )"
+          jq -e \
+            --arg content "$destination" \
+            '.success == true
+              and .result.name == "supa.kortix.com"
+              and .result.content == $content
+              and .result.proxied == false' \
+            <<<"$update_response" >/dev/null
+          echo "supa.kortix.com now points to $destination."
+
+      - name: Install Node.js
+        if: inputs.action == 'maintenance-on' || inputs.action == 'backend-target' || inputs.action == 'backend-source' || inputs.action == 'maintenance-off-target' || inputs.action == 'maintenance-off-source'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Switch API and gateway backends
+        if: inputs.action == 'maintenance-on' || inputs.action == 'backend-target' || inputs.action == 'backend-source' || inputs.action == 'maintenance-off-target' || inputs.action == 'maintenance-off-source'
+        working-directory: infra/cloudflare/workers/api-router
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            maintenance-on)
+              backend="ecs-fargate"
+              maintenance="blocking"
+              ;;
+            backend-target)
+              backend="us-east-2"
+              maintenance="blocking"
+              ;;
+            backend-source)
+              backend="ecs-fargate"
+              maintenance="blocking"
+              ;;
+            maintenance-off-target)
+              backend="us-east-2"
+              maintenance="none"
+              ;;
+            maintenance-off-source)
+              backend="ecs-fargate"
+              maintenance="none"
+              ;;
+            *)
+              echo "::error::Unsupported Worker action: $ACTION"
+              exit 64
+              ;;
+          esac
+
+          npx --yes wrangler@4.34.0 deploy \
+            --env prod \
+            --var "ACTIVE_BACKEND:${backend}" \
+            --var "GATEWAY_ACTIVE_BACKEND:${backend}" \
+            --var "MAINTENANCE_LEVEL_OVERRIDE:${maintenance}"
+
+          verify_backend() {
+            url="$1"
+            for attempt in $(seq 1 30); do
+              headers="$(curl -fsS --max-time 15 -D - -o /dev/null "$url" || true)"
+              live_backend="$(
+                awk 'BEGIN { IGNORECASE=1 } /^x-backend:/ {
+                  gsub("\r", "");
+                  print $2
+                }' <<<"$headers" | tail -1
+              )"
+              if [ "$live_backend" = "$backend" ]; then
+                echo "$url: X-Backend=$live_backend"
+                return
+              fi
+              echo "$url: attempt $attempt/30 returned X-Backend=${live_backend:-missing}"
+              sleep 5
+            done
+            echo "::error::$url did not switch to $backend."
+            exit 1
+          }
+
+          verify_backend "https://api.kortix.com/v1/health"
+          verify_backend "https://gateway.kortix.com/health/live"
+
+          if [ "$maintenance" = "blocking" ]; then
+            maintenance_body="$(
+              jq -nc '{
+                level: "blocking",
+                title: "Scheduled maintenance",
+                message: "Kortix is moving production services to US East 2.",
+                startTime: (now | todateiso8601),
+                endTime: null,
+                statusUrl: null,
+                affectedServices: ["app", "api", "authentication"]
+              }'
+            )"
+          else
+            maintenance_body="$(
+              jq -nc '{
+                level: "none",
+                title: "",
+                message: "",
+                startTime: null,
+                endTime: null,
+                statusUrl: null,
+                affectedServices: []
+              }'
+            )"
+          fi
+
+          maintenance_response="$(
+            curl -fsS --max-time 30 \
+              -X PUT \
+              -H "Authorization: Bearer ${MAINTENANCE_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "$maintenance_body" \
+              https://kortix.com/api/maintenance
+          )"
+          jq -e --arg level "$maintenance" '.level == $level' <<<"$maintenance_response" >/dev/null
+
+          if [ "$maintenance" = "blocking" ]; then
+            write_status="$(
+              curl -sS --max-time 15 \
+                -o /tmp/maintenance-write-response \
+                -w '%{http_code}' \
+                -X POST \
+                -H "Content-Type: application/json" \
+                --data '{}' \
+                https://api.kortix.com/v1/projects
+            )"
+            if [ "$write_status" != "503" ]; then
+              echo "::error::The edge maintenance gate returned HTTP $write_status, expected 503."
+              cat /tmp/maintenance-write-response
+              exit 1
+            fi
+          fi
+
+      - name: Summary
+        run: |
+          {
+            echo "### Production US East 2 cutover control"
+            echo "- Action: \`$ACTION\`"
+            echo "- Confirmation: accepted"
+          } >> "$GITHUB_STEP_SUMMARY"
