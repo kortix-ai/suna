@@ -99,6 +99,13 @@
       "when": 1784942492106,
       "tag": "20260725012132_gateway_cost_precision_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785097149786,
+      "tag": "20260726201909_agi_tasks",
+      "breakpoints": true
     }
   ]
 }

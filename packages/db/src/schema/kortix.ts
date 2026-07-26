@@ -4064,3 +4064,161 @@ export const executorProjectSettingsRelations = relations(executorProjectSetting
     references: [projects.projectId],
   }),
 }));
+
+// AGI autonomous operations — the task table (docs/specs/2026-07-26-agi-autonomous-operations.md §5).
+//
+// Tasks are GENERATED state (R-3): produced by agents mid-run, contended by
+// concurrent sessions, and never the system of record for anything durable
+// (R-5) — the residue a task leaves behind is written back to the repository.
+// Goals, by contrast, are AUTHORED state and live in kortix.yaml; they are
+// referenced here only by `goal_slug`, deliberately without a foreign key, so
+// deleting a goal from the manifest cannot delete history.
+//
+// The whole surface is gated by the `agi` experimental key. Tables do not gate;
+// every route/service touching this one must call
+// resolveExperimentalFeature(project.metadata, 'agi') first.
+//
+// Physical naming departs from the spec's §5 sketch in three places, all
+// deliberate: the table is gate-prefixed (`agi_tasks`, so an experimental
+// feature does not squat `kortix.tasks`), the pk follows the house
+// `<thing>_id` idiom, and three column TYPES are corrected to the ones that
+// actually join in this database (see the per-column comments).
+export const agiTasks = kortixSchema.table(
+  'agi_tasks',
+  {
+    taskId: uuid('task_id').defaultRandom().primaryKey(),
+    // "Workspace" is the product-level name for the linked cloud project
+    // (spec §2); the physical parent is still kortix.projects. NOT the same
+    // thing as the `project` label column below — that one is the deferred
+    // grouping dimension and the two must never be conflated.
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // STRUCTURE, never dependency (R-15). It explains why a task exists and
+    // enables rollup; a parent that must WAIT on its children lists them in
+    // `blocked_by` instead. Self-referencing FK is declared below because
+    // drizzle cannot express a self-reference inline.
+    parentId: uuid('parent_id'),
+    // Which authored goal this serves. Intentionally no FK: goals live in
+    // kortix.yaml, not the database.
+    goalSlug: text('goal_slug'),
+    // Reserved for the deferred grouping dimension (R-26) so grouping can land
+    // without a migration. Unset by default; nothing reads it in v1.
+    project: text('project'),
+    title: text('title').notNull(),
+    body: text('body'),
+    // text + CHECK rather than pg enums: these vocabularies are expected to move
+    // while `agi` is experimental, and a CHECK constraint can be dropped where an
+    // enum value can never be removed from a Postgres enum.
+    status: text('status').default('backlog').notNull(),
+    priority: text('priority').default('medium').notNull(),
+    // At most one assignee, agent OR human, never both (R-14) — enforced by
+    // agi_tasks_single_assignee_check, not by convention.
+    agent: text('agent'),
+    // uuid, not the spec sketch's `text`: every user id in this database is a
+    // uuid, and a text column could not be compared against project_members.user_id
+    // without a cast.
+    assigneeUserId: uuid('assignee_user_id'),
+    // DEPENDENCY (R-16). A cancelled blocker does NOT satisfy the edge (R-17),
+    // so resolution is a status lookup on the referenced rows, never array
+    // emptiness alone. No FK — Postgres cannot enforce referential integrity on
+    // array elements; dangling ids are treated as unresolved.
+    blockedBy: uuid('blocked_by').array().default([]).notNull(),
+    // Set when this task was created by a trigger fire (R-22): recurrence is a
+    // trigger property, never a task property.
+    triggerSlug: text('trigger_slug'),
+    // The claim (R-18). `claim_session_id` is text because project_sessions.session_id
+    // is text, and it carries NO foreign key on purpose: the claim must be
+    // decidable by the single conditional UPDATE alone, so a claimant id that no
+    // longer resolves fails the same expiry test as any other stale claim rather
+    // than raising a cross-table integrity error.
+    claimSessionId: text('claim_session_id'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    // The claim's deadline. Never null while a claim is held (see
+    // agi_tasks_claim_coherent_check) — a null here would make the
+    // `claim_expires_at < now()` half of the claim predicate evaluate to NULL and
+    // strand the row as permanently unclaimable.
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    origin: text('origin').notNull(),
+    // Idempotency key for generated work (R-20): a trigger firing twice for the
+    // same logical event must not produce two tasks. Unique per workspace, and
+    // only where present — see uq_agi_tasks_origin_fingerprint.
+    originFingerprint: text('origin_fingerprint'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.taskId],
+      name: 'agi_tasks_parent_id_fk',
+    }).onDelete('set null'),
+    // Hot read 1: the open queue for a workspace, newest-intent first. Partial on
+    // the open set because done/cancelled rows accumulate forever and are never
+    // scanned by the loop.
+    index('idx_agi_tasks_workspace_open')
+      .on(table.workspaceId, table.priority, table.createdAt.desc())
+      .where(sql`status not in ('done', 'cancelled')`),
+    // Hot read 2: open tasks for one goal — what every `push` fire reads first (R-11).
+    index('idx_agi_tasks_goal_open')
+      .on(table.workspaceId, table.goalSlug, table.createdAt.desc())
+      .where(sql`status not in ('done', 'cancelled') and goal_slug is not null`),
+    // Claimable work: unclaimed or expired open tasks, the scan that precedes the
+    // atomic claim.
+    index('idx_agi_tasks_claimable')
+      .on(table.workspaceId, table.claimExpiresAt)
+      .where(sql`status not in ('done', 'cancelled')`),
+    index('idx_agi_tasks_parent').on(table.parentId),
+    index('idx_agi_tasks_agent').on(table.workspaceId, table.agent).where(sql`agent is not null`),
+    index('idx_agi_tasks_assignee_user')
+      .on(table.workspaceId, table.assigneeUserId)
+      .where(sql`assignee_user_id is not null`),
+    // Reverse dependency lookup: "which open tasks does this one block?" — a
+    // containment query on the array, which only a GIN index can serve.
+    index('idx_agi_tasks_blocked_by').using('gin', table.blockedBy),
+    // R-20. Partial because the fingerprint is nullable and unfingerprinted tasks
+    // (a human typing `kortix tasks new`) must never collide with each other.
+    uniqueIndex('uq_agi_tasks_origin_fingerprint')
+      .on(table.workspaceId, table.originFingerprint)
+      .where(sql`origin_fingerprint is not null`),
+    check(
+      'agi_tasks_status_check',
+      sql`${table.status} in ('backlog', 'todo', 'doing', 'blocked', 'review', 'done', 'cancelled')`,
+    ),
+    check(
+      'agi_tasks_priority_check',
+      sql`${table.priority} in ('urgent', 'high', 'medium', 'low')`,
+    ),
+    check('agi_tasks_origin_check', sql`${table.origin} in ('human', 'agi', 'session', 'trigger')`),
+    // R-14: agent OR human, never both.
+    check(
+      'agi_tasks_single_assignee_check',
+      sql`${table.agent} is null or ${table.assigneeUserId} is null`,
+    ),
+    // The claim is a three-column atom: all set or all null. This is what makes
+    // `claim_session_id is null or claim_expires_at < now()` a total predicate,
+    // which is what makes the claim a single UPDATE (R-18).
+    check(
+      'agi_tasks_claim_coherent_check',
+      sql`(${table.claimSessionId} is null and ${table.claimedAt} is null and ${table.claimExpiresAt} is null) or (${table.claimSessionId} is not null and ${table.claimedAt} is not null and ${table.claimExpiresAt} is not null)`,
+    ),
+    // Structure cannot be its own parent; the rollup walk must terminate.
+    check(
+      'agi_tasks_parent_not_self_check',
+      sql`${table.parentId} is distinct from ${table.taskId}`,
+    ),
+  ],
+);
+
+export const agiTasksRelations = relations(agiTasks, ({ one, many }) => ({
+  workspace: one(projects, {
+    fields: [agiTasks.workspaceId],
+    references: [projects.projectId],
+  }),
+  parent: one(agiTasks, {
+    fields: [agiTasks.parentId],
+    references: [agiTasks.taskId],
+    relationName: 'agi_task_children',
+  }),
+  children: many(agiTasks, { relationName: 'agi_task_children' }),
+}));

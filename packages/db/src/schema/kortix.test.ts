@@ -32,6 +32,7 @@ import {
   usageEvents,
   gatewayRequestLogs,
   accountSsoProviders,
+  agiTasks,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -415,5 +416,112 @@ describe('accountSsoProviders table', () => {
     expect(col).toBeDefined();
     expect(col?.notNull).toBe(true);
     expect(col?.default).toBe(false);
+  });
+});
+
+describe('agi_tasks table', () => {
+  const cfg = getTableConfig(agiTasks);
+  const checkNames = cfg.checks.map((c) => c.name);
+  const column = (name: string) => cfg.columns.find((c) => c.name === name);
+  const index = (name: string) => cfg.indexes.find((i) => i.config.name === name);
+
+  test('lives in the kortix schema under the gate-prefixed name', () => {
+    expect(cfg.name).toBe('agi_tasks');
+    expect(cfg.schema).toBe('kortix');
+    expect(primaryColumn(agiTasks)).toBe('task_id');
+  });
+
+  test('carries every column from spec section 5', () => {
+    expect(columnNames(agiTasks)).toEqual(
+      expect.arrayContaining([
+        'task_id',
+        'workspace_id',
+        'parent_id',
+        'goal_slug',
+        'project',
+        'title',
+        'body',
+        'status',
+        'priority',
+        'agent',
+        'assignee_user_id',
+        'blocked_by',
+        'trigger_slug',
+        'claim_session_id',
+        'claimed_at',
+        'claim_expires_at',
+        'origin',
+        'origin_fingerprint',
+        'created_at',
+        'updated_at',
+      ]),
+    );
+  });
+
+  test('cascades from the workspace project and self-references parent_id', () => {
+    const targets = cfg.foreignKeys.map((f) => ({
+      table: getTableConfig(f.reference().foreignTable).name,
+      columns: f.reference().columns.map((c) => c.name),
+    }));
+    expect(targets).toContainEqual({ table: 'projects', columns: ['workspace_id'] });
+    expect(targets).toContainEqual({ table: 'agi_tasks', columns: ['parent_id'] });
+  });
+
+  test('R-14: a check constraint, not convention, forbids two assignees', () => {
+    expect(checkNames).toContain('agi_tasks_single_assignee_check');
+    expect(column('agent')?.notNull).toBe(false);
+    expect(column('assignee_user_id')?.notNull).toBe(false);
+  });
+
+  test('R-15/R-16: structure and dependency are separate columns', () => {
+    expect(column('parent_id')?.getSQLType()).toBe('uuid');
+    expect(column('blocked_by')?.getSQLType()).toBe('uuid[]');
+    expect(column('blocked_by')?.notNull).toBe(true);
+    expect(column('blocked_by')?.default).toEqual([]);
+  });
+
+  test('R-18: the claim is a three-column atom so the predicate is total', () => {
+    // A null claim_expires_at under a held claim would make
+    // `claim_expires_at < now()` evaluate to NULL, stranding the row as
+    // permanently unclaimable — the coherence check is what rules that out.
+    expect(checkNames).toContain('agi_tasks_claim_coherent_check');
+    for (const name of ['claim_session_id', 'claimed_at', 'claim_expires_at']) {
+      expect(column(name)?.notNull).toBe(false);
+    }
+    // Must join project_sessions.session_id, which is text.
+    expect(column('claim_session_id')?.getSQLType()).toBe('text');
+  });
+
+  test('R-20: origin_fingerprint is unique per workspace only where present', () => {
+    const fingerprint = index('uq_agi_tasks_origin_fingerprint');
+    expect(fingerprint?.config.unique).toBe(true);
+    const fingerprintColumns = fingerprint?.config.columns.map(
+      (c) => (c as { name?: string }).name,
+    );
+    expect(fingerprintColumns).toEqual(['workspace_id', 'origin_fingerprint']);
+    expect(fingerprint?.config.where).toBeDefined();
+  });
+
+  test('indexes the two hot reads: open tasks per workspace and per goal', () => {
+    expect(index('idx_agi_tasks_workspace_open')?.config.where).toBeDefined();
+    expect(index('idx_agi_tasks_goal_open')?.config.where).toBeDefined();
+    expect(index('idx_agi_tasks_claimable')?.config.where).toBeDefined();
+  });
+
+  test('reverse dependency lookup is served by a gin index on blocked_by', () => {
+    expect(index('idx_agi_tasks_blocked_by')?.config.method).toBe('gin');
+  });
+
+  test('status, priority, and origin are constrained vocabularies', () => {
+    expect(checkNames).toContain('agi_tasks_status_check');
+    expect(checkNames).toContain('agi_tasks_priority_check');
+    expect(checkNames).toContain('agi_tasks_origin_check');
+    expect(column('status')?.default).toBe('backlog');
+    expect(column('priority')?.default).toBe('medium');
+    expect(column('origin')?.notNull).toBe(true);
+  });
+
+  test('a task cannot be its own parent', () => {
+    expect(checkNames).toContain('agi_tasks_parent_not_self_check');
   });
 });
