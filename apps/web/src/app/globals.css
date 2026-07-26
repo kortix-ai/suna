@@ -1816,3 +1816,4 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
 .dark .border-overlay {
   outline-color: rgba(255, 255, 255, 0.1);
 }
+

@@ -1,0 +1,17 @@
+{
+  "name": "@kortix/marketing-video",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Remotion compositions for Kortix marketing videos (not part of the app build).",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.499",
+    "@remotion/google-fonts": "^4.0.499",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "remotion": "^4.0.499"
+  }
+}

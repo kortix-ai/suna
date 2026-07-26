@@ -24,6 +24,7 @@ const SELF_HOST_MARKETING_ONLY = [
   '/contact',
   '/developers',
   '/enterprise',
+  '/landing',
   '/pricing',
   '/use-cases',
   '/solutions',
@@ -66,6 +67,7 @@ const PUBLIC_ROUTES = [
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
+  '/landing', // Rebuilt marketing landing page (staged; replaces / once signed off)
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public

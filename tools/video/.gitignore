@@ -1,0 +1,8 @@
+node_modules/
+out/
+
+# Assets are copied in from apps/web at setup time (see README) rather than
+# duplicated in git — fonts and screenshots already live there.
+public/fonts/
+public/shots/
+public/nebula-dark.jpg
