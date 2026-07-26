@@ -10,8 +10,8 @@ import {
 } from '../../projects/lib/secret-grant';
 import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
-import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -326,7 +326,10 @@ function isConnectionRefusedError(err: unknown): boolean {
   return /econnrefused|connection refused|failed to connect|unable to connect/i.test(message);
 }
 
-function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): string | null {
+function requestedPromptAgent(
+  body: ArrayBuffer | undefined,
+  incomingHeaders: Headers,
+): string | null {
   if (!body) return null;
   const contentType = incomingHeaders.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return null;
@@ -338,13 +341,51 @@ function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: He
   }
 }
 
-function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string, origin?: string): Response {
-  return jsonProxyError({
-    error: 'agent switch requires a new session',
-    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-    expected_agent: expectedAgent,
-    requested_agent: requestedAgent,
-  }, 409, origin);
+function agentSwitchConflictResponse(
+  expectedAgent: string,
+  requestedAgent: string,
+  origin?: string,
+): Response {
+  return jsonProxyError(
+    {
+      error: 'agent switch requires a new session',
+      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+      expected_agent: expectedAgent,
+      requested_agent: requestedAgent,
+    },
+    409,
+    origin,
+  );
+}
+
+/**
+ * Map a secret-grant failure from the pre-prompt env sync onto its response, or
+ * null when the error is an ordinary env-sync failure the caller should handle
+ * with its existing retry/502 logic.
+ *
+ * Both cases refuse the prompt rather than forwarding it: the sandbox's env is
+ * provisioned for ONE agent's grant, so a prompt we can't prove is entitled to
+ * that env must not reach OpenCode. See projects/lib/secret-grant.ts.
+ */
+export function secretGrantErrorResponse(err: unknown, origin?: string): Response | null {
+  // The prompt asked for an agent whose grant differs from the session's. 409,
+  // matching the existing agent-immutability contract the web client already
+  // codes against — re-scoping now cannot un-read what the session's agent
+  // already pulled into the box.
+  if (err instanceof AgentSecretGrantMismatchError) {
+    return agentSwitchConflictResponse(err.sessionAgent, err.requestedAgent, origin);
+  }
+  // We could not establish what this agent may read. 503 rather than 502: the
+  // sandbox is fine, our ability to VERIFY entitlement is what failed, and
+  // retrying is the correct client response.
+  if (err instanceof SecretGrantResolutionError) {
+    return jsonProxyError(
+      { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
+      503,
+      origin,
+    );
+  }
+  return null;
 }
 
 // The sentinel name a session carries when it isn't bound to a *concrete* agent.
@@ -381,7 +422,10 @@ function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: st
 // `default_agent`. Used for non-concrete ('default') sessions: the box must
 // always run the agent it booted with — the one the executor token was minted
 // for — regardless of which concrete name the client speculatively echoed.
-function bodyWithoutPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): ArrayBuffer | undefined {
+function bodyWithoutPromptAgent(
+  body: ArrayBuffer | undefined,
+  incomingHeaders: Headers,
+): ArrayBuffer | undefined {
   if (!body) return body;
   const contentType = incomingHeaders.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return body;
@@ -402,9 +446,7 @@ function bodyWithoutPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: 
 // proxy edges use it: the path-based Hono route below and the subdomain handler
 // (src/sandbox-proxy/subdomain.ts).
 
-export type PreviewProxyAccess =
-  | { kind: 'principal'; userId: string }
-  | { kind: 'public_share' };
+export type PreviewProxyAccess = { kind: 'principal'; userId: string } | { kind: 'public_share' };
 
 function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
@@ -451,7 +493,7 @@ export async function forwardToSandbox(
   origin: string,
   // URL prefix that maps to this sandbox port, used to rewrite redirects.
   // Defaults to the path-based form; subdomain callers pass '' (root-relative).
-  redirectPrefix: string = `/v1/p/${sandboxId}/${port}`,
+  redirectPrefix = `/v1/p/${sandboxId}/${port}`,
   // Public origin (scheme://host) the client used to reach this sandbox port.
   // Combined with `redirectPrefix` to form X-Forwarded-Prefix — the full public
   // base URL the sandbox needs so the static-web <base> tag and OpenAPI server
@@ -469,8 +511,8 @@ export async function forwardToSandbox(
   }
   const userId = principalUserId(access);
   if (
-    access.kind === 'principal'
-    && !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+    access.kind === 'principal' &&
+    !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
   ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
@@ -642,24 +684,14 @@ export async function forwardToSandbox(
             requestedAgent,
           });
         } catch (err) {
-          // A switch that would change which secrets are in scope is refused,
-          // not silently re-scoped: the sandbox's env was provisioned for the
-          // session's grant and the previous agent has already read it.
-          if (err instanceof AgentSecretGrantMismatchError) {
-            return agentSwitchConflictResponse(err.sessionAgent, err.requestedAgent, origin);
-          }
-          // Fail closed: we could not establish what this agent may read, so we
-          // refuse rather than push a wider env. 503 (not 502) — it's a
-          // transient inability to verify, and retrying is the right client move.
-          if (err instanceof SecretGrantResolutionError) {
+          // Fail closed on anything to do with the secret grant: refuse the
+          // prompt rather than forwarding it against an env we can't vouch for.
+          const grantResponse = secretGrantErrorResponse(err, origin);
+          if (grantResponse) {
             console.warn(
-              `[PREVIEW] Secret grant unresolved for ${sandboxId}:${port}: ${err.message}`,
+              `[PREVIEW] Secret grant refused prompt for ${sandboxId}:${port}: ${errorMessage(err, 'secret grant error')}`,
             );
-            return jsonProxyError(
-              { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
-              503,
-              origin,
-            );
+            return grantResponse;
           }
           const message = errorMessage(err, 'project env sync failed');
           if (isRetryableEnvSyncFailure(message)) {
@@ -806,7 +838,10 @@ export async function forwardToSandbox(
       //   503 — sandbox service temporarily unavailable
       // Retry with auto-wake so users don't see errors during the boot window.
       if (upstream.status === 503) {
-        const bodyText = await upstream.clone().text().catch(() => '');
+        const bodyText = await upstream
+          .clone()
+          .text()
+          .catch(() => '');
         if (bodyText.includes('opencode not ready')) {
           void markSandboxUsed(sandboxId);
           const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
@@ -919,10 +954,7 @@ export async function forwardToSandbox(
       // the friendly unreachable response below. (The Daytona "no IP / no runner"
       // 400 branch — a rejection before opencode — retries in the response path
       // above, which is safe.)
-      if (
-        isPromptDelivery(method, port, remainingPath) &&
-        !isConnectionRefusedError(err)
-      ) {
+      if (isPromptDelivery(method, port, remainingPath) && !isConnectionRefusedError(err)) {
         break;
       }
 
@@ -1041,7 +1073,7 @@ export async function resolvePreviewWsUpstream(opts: {
 preview.all('/:sandboxId/:port/*', async (c) => {
   const sandboxId = c.req.param('sandboxId');
   const portStr = c.req.param('port');
-  const port = parseInt(portStr, 10);
+  const port = Number.parseInt(portStr, 10);
 
   if (isNaN(port) || port < 1 || port > 65535) {
     throw new HTTPException(400, { message: `Invalid port: ${portStr}` });
@@ -1074,8 +1106,15 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   const publicOrigin = `${proto}://${host}`;
 
   return forwardToSandbox(
-    sandboxId, port, { kind: 'principal', userId }, method, remainingPath, queryString,
-    c.req.raw.headers, body, origin,
+    sandboxId,
+    port,
+    { kind: 'principal', userId },
+    method,
+    remainingPath,
+    queryString,
+    c.req.raw.headers,
+    body,
+    origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
   );

@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { longTurnTimeoutResponse, shouldAutoResumeStoppedSandbox } from './preview';
+import {
+  AgentSecretGrantMismatchError,
+  SecretGrantResolutionError,
+} from '../../projects/lib/secret-grant';
+import {
+  longTurnTimeoutResponse,
+  secretGrantErrorResponse,
+  shouldAutoResumeStoppedSandbox,
+} from './preview';
 
 // The data-path proxy may only wake a stopped box on ACTIVE user traffic to the
 // OpenCode daemon (port 8000, principal). Everything else must still 503 so we
@@ -58,5 +66,44 @@ describe('longTurnTimeoutResponse', () => {
   test('omits CORS headers when there is no Origin', () => {
     const res = longTurnTimeoutResponse('');
     expect(res.headers.has('Access-Control-Allow-Origin')).toBe(false);
+  });
+});
+
+describe('secretGrantErrorResponse', () => {
+  test('a grant-changing agent switch is a 409 the web client already codes against', async () => {
+    const res = secretGrantErrorResponse(new AgentSecretGrantMismatchError('narrow', 'broad'), '');
+    expect(res).not.toBeNull();
+    expect(res?.status).toBe(409);
+    const body = (await res?.json()) as {
+      code: string;
+      expected_agent: string;
+      requested_agent: string;
+    };
+    expect(body.code).toBe('AGENT_SWITCH_REQUIRES_NEW_SESSION');
+    expect(body.expected_agent).toBe('narrow');
+    expect(body.requested_agent).toBe('broad');
+  });
+
+  test('an unresolvable grant is a 503, not the generic unreachable 502', async () => {
+    const res = secretGrantErrorResponse(
+      new SecretGrantResolutionError('kortix', new Error('git unreachable')),
+      '',
+    );
+    expect(res?.status).toBe(503);
+    const body = (await res?.json()) as { code: string };
+    expect(body.code).toBe('AGENT_SECRET_GRANT_UNRESOLVED');
+  });
+
+  test('an ordinary env-sync failure is left to the existing retry path', () => {
+    expect(secretGrantErrorResponse(new Error('env sync failed: 502'), '')).toBeNull();
+    expect(secretGrantErrorResponse(undefined, '')).toBeNull();
+  });
+
+  test('reflects CORS origin like every other proxy response', () => {
+    const res = secretGrantErrorResponse(
+      new AgentSecretGrantMismatchError('a', 'b'),
+      'https://app.kortix.ai',
+    );
+    expect(res?.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
   });
 });
