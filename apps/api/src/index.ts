@@ -700,6 +700,13 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+// AGI goals/tasks share the /v1/projects prefix but live in their own app: the
+// whole surface is gated per project by the `agi` experimental key (R-44), so it
+// stays removable as a unit. No path collides with projectsApp.
+{
+  const { agiApp } = await import('./agi');
+  app.route('/v1/projects', agiApp); // /v1/projects/:projectId/agi/tasks[/:taskId[/claim|/release]]
+}
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
