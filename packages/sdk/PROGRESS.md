@@ -259,6 +259,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B28 | **Keep an explicit project-composer agent selection through asynchronous project-default hydration.**                                                                                                                                                                                                                                                                                                                                               | The deployed US two-test session suite clicked `memory-reflector`, then `useOpenCodeLocal()` changed its selection scope when `defaultAgentName` hydrated to `kortix`. The picker reset to `kortix` for 30 seconds.                                                                                          | **DONE 2026-07-27** — PR #5533, merge `ee45f55fa`; SDK tests `1283/0`, typecheck, packed-install smoke, and deployed US two-test suite `2/2` pass; both sessions returned exact `PONG`, and the mismatch fallback emitted no global error                                                                                                                                    |
 | B29 | **Preserve ACP upstream message boundaries in the projected transcript.**                                                                                                                                                                                                                                                                                                                                                                              | Dev session `ee41f742-9384-4f34-88e7-63ae3d765cae` emitted distinct `session/update.messageId` values for assistant steps, but `src/core/acp/projection.ts` discarded `messageId` and appended every text or reasoning chunk to one generated assistant message.                                                                                      | **DONE 2026-07-27** — implementation `60b06c6e4`; focused projection/controller tests `27/0`, full SDK tests `1299/0`, typecheck, packed-install smoke, supplied-transcript replay, and local ACP Chromium flow pass                                                                                                                                                                                          |
 | B30 | **Expose message-based session rewind and restore through both REST and ACP transports.** Editing an earlier user message must rewind the same canonical session instead of creating a fork. The removed path must remain recoverable until the replacement prompt commits.                                                                                                                                                                      | `apps/web/src/features/session/session-chat.tsx` contains `TODO(session-rewind)`. OpenCode exposes `/session/{sessionID}/revert` and `/unrevert`; ACP has no standard rewind method and needs a Kortix bridge extension plus transcript reload.                                                               | **DONE 2026-07-27** — implementation `eab4eef0f`; PR #5619 merged as `9e90e8ed7`. Deploy Dev run `30293660760` deployed source `e548c6a8fc9ee1d5a92db66d6feb912d4442ebeb`, which contains the merge. Dev session `7feb4e84-072f-4b71-987f-dc25dd542890` kept canonical OpenCode session `ses_05b075d25ffe7PBkZ632pcVAlW` across ACP and REST rewind, restore, replacement commit, reconnect, and file rollback. ACP produced `DEPLOYED_ACP_REPLACEMENT`; REST produced `DEPLOYED_REST_REPLACEMENT`; cleanup removed `26/26` probe sessions and restored ACP runtime overrides. SDK tests `1309/0`, daemon tests `306/0`, web source contract `5/0`, local ACP Playwright `1/0`, and local real ACP plus REST smoke pass. Shippable to production: **YES** for protocol behavior. Deployed UI interaction remains unverified because Browser discovery returned `[]`. |
+| B31 | **Allow a page-scoped ACP query override and settle completed ACP prompts that contain stale running tools.**                                                                                                                                                                                                                                                                                                                                     | `?acp` has no SDK transport override. Dev session `5322fa59-7a73-4fea-9f1a-9da59c2a0b5a` rendered the final assistant response while an older tool part remained `running`; `hasProjectionBlockers()` then kept the composer busy and blocked the queued prompt.                                                                 | **IN PROGRESS 2026-07-27** — session `acp-idle-query-override`; RED tests, SDK fix, web query wiring, full SDK gates, local Chromium proof, PR merge, Deploy Dev, deployed SHA proof, and deployed ACP-only proof required |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -3444,3 +3445,23 @@ Live local REST and ACP proof used one disposable canonical OpenCode session:
 
 **Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
 and deployed REST, ACP, and web verification remain.
+
+---
+
+### 2026-07-27 — session `acp-idle-query-override` (B31 claim)
+
+Claimed the ACP page override and stale-tool settlement defect.
+
+`?acp` will override the server-selected runtime transport for one session page.
+It will not mutate `experimental.acp_runtime`.
+The SDK will keep genuine active tools busy.
+The SDK will settle stale running tools after a newer assistant message and the
+final prompt result.
+Queued prompts will dispatch after settlement.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are focused SDK and web tests, full SDK typecheck, full SDK suite,
+packed-install smoke, local Chromium ACP proof, PR merge, Deploy Dev, deployed SHA
+proof, and deployed ACP-only network proof.
+
+**Status:** IN PROGRESS.
