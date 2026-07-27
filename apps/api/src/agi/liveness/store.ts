@@ -236,10 +236,19 @@ export async function loadRecoveryTask(input: {
 /**
  * Hand a continuation row to a human (R-32's escalation).
  *
- * The `agent is not null` predicate makes this idempotent in SQL rather than in
- * the caller: two concurrent sweeps observing the same repeat stall both try, one
- * matches zero rows, and neither can flip an already-escalated row back. Clearing
- * `agent` in the same statement keeps R-14's single-assignee CHECK satisfied.
+ * The `assignee_user_id is null` predicate makes this idempotent in SQL rather
+ * than in the caller: two concurrent sweeps observing the same repeat stall both
+ * try, one matches zero rows, and neither can flip an already-escalated row back.
+ * Clearing `agent` in the same statement keeps R-14's single-assignee CHECK
+ * satisfied.
+ *
+ * It guards on the assignee and NOT on `agent is not null`, which is the same
+ * trick read off the wrong column. A continuation inherits `agent` from its
+ * parent, and the canonical create the AGI is told to use — `kortix tasks new
+ * ... --goal <slug>` — names no agent, so `agent` is null on every task the AGI
+ * actually makes. The old predicate therefore matched zero rows on the FIRST
+ * escalation, and the caller reported `escalated` anyway: the one mechanism that
+ * pushes a stall at a human silently did nothing for the entire board.
  */
 export async function escalateRecoveryTask(input: {
   workspaceId: string;
@@ -260,11 +269,27 @@ export async function escalateRecoveryTask(input: {
       and(
         eq(agiTasks.taskId, input.taskId),
         eq(agiTasks.workspaceId, input.workspaceId),
-        sql`${agiTasks.agent} is not null`,
+        sql`${agiTasks.assigneeUserId} is null`,
       ),
     )
     .returning();
   return row ?? null;
+}
+
+/** Who currently owns an already-escalated continuation. Read only on the
+ *  zero-rows path, so the caller can name the real assignee instead of guessing
+ *  the account owner — reporting a human who was never assigned is how an
+ *  escalation that did nothing reads as one that worked. */
+export async function loadRecoveryTaskAssignee(input: {
+  workspaceId: string;
+  taskId: string;
+}): Promise<string | null> {
+  const [row] = await db
+    .select({ assigneeUserId: agiTasks.assigneeUserId })
+    .from(agiTasks)
+    .where(and(eq(agiTasks.taskId, input.taskId), eq(agiTasks.workspaceId, input.workspaceId)))
+    .limit(1);
+  return row?.assigneeUserId ?? null;
 }
 
 /** The human R-32 escalates to: the account owner, the same principal

@@ -213,6 +213,8 @@ export interface AgiTaskLiveness {
     | 'dead_blocker'
     | 'no_live_path'
     | 'request_undelivered'
+    | 'request_unanswered'
+    | 'abandoned_in_flight'
     | 'blocked_without_cause'
     | null;
   claim_session_state: 'active' | 'terminal' | 'unknown' | null;
@@ -228,7 +230,12 @@ export interface AgiTaskLiveness {
     responder_user_id: string | null;
     delivered: boolean;
     delivered_via: string | null;
+    delivered_at?: string | null;
   } | null;
+  /** How long a delivered-but-unanswered ask has gone unanswered, and the
+   *  threshold that turns it into a stall. Both absent on older APIs. */
+  request_unanswered_for_ms?: number | null;
+  request_unanswered_after_ms?: number | null;
 }
 
 export interface AgiLivenessView {
@@ -1537,6 +1544,23 @@ export function stallGuidance(view: AgiLivenessView): StallGuidance {
           'kortix tasks waiting --undelivered',
         ],
       };
+    case 'request_unanswered': {
+      const hours = liveness.request_unanswered_for_ms
+        ? Math.floor(liveness.request_unanswered_for_ms / 3_600_000)
+        : null;
+      return {
+        what: `a human was asked for "${liveness.request?.need ?? 'something'}" and it was delivered${hours === null ? '' : ` ${hours}h ago`}, but nobody answered — there is no second nag`,
+        next: [
+          'kortix tasks waiting',
+          `kortix tasks answer ${id} --note "<what you decided>"`,
+        ],
+      };
+    }
+    case 'abandoned_in_flight':
+      return {
+        what: 'left in `doing` with no claimant at all — someone started it and dropped it, and a future trigger fire only re-derives the same half-finished state',
+        next: [`kortix tasks claim ${id} --doing`, 'kortix tasks sweep'],
+      };
     case 'blocked_without_cause':
       return {
         what: 'marked `blocked` with no blocked_by edge and no pending ask — whatever it is waiting on exists only as prose, and prose is not a control-plane act',
@@ -1570,7 +1594,12 @@ export function isSweepable(view: AgiLivenessView): boolean {
   // An ask that reached nobody is never continued or escalated: adding a row
   // nobody was told about, or handing it to an assignee, would convert "we
   // could not reach anyone" into "someone owns this".
-  if (liveness.reason === 'request_undelivered') return false;
+  // Same for an ask that WAS delivered and simply went unanswered: no
+  // manufactured task can perform the human act, and escalating it would
+  // convert "nobody answered" into "someone owns this".
+  if (liveness.reason === 'request_undelivered' || liveness.reason === 'request_unanswered') {
+    return false;
+  }
   return task.claim_session_id !== null || liveness.recovery !== null;
 }
 

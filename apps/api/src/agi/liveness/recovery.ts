@@ -39,7 +39,12 @@ import {
   type RecoveryStep,
   type StallReason,
 } from './wire';
-import { escalateRecoveryTask, loadAccountOwner, loadRecoveryTask } from './store';
+import {
+  escalateRecoveryTask,
+  loadAccountOwner,
+  loadRecoveryTask,
+  loadRecoveryTaskAssignee,
+} from './store';
 
 export interface BoundedRecoveryInput {
   workspaceId: string;
@@ -149,13 +154,19 @@ export async function applyBoundedRecovery(
     title: continuationTitle(input.task.title, true),
   });
 
+  // Zero rows back means a concurrent sweep escalated first — same end state,
+  // reported honestly rather than as a second escalation. Read who actually
+  // holds it rather than naming `owner`, which would report a human who may
+  // never have been assigned.
+  const escalatedTo = escalated
+    ? escalated.assigneeUserId
+    : await loadRecoveryTaskAssignee({ workspaceId: input.workspaceId, taskId: existing.taskId });
+
   return {
     taskId: input.task.taskId,
     fingerprint,
-    // Zero rows back means a concurrent sweep escalated first — same end state,
-    // reported honestly rather than as a second escalation.
     step: escalated ? 'escalated' : 'already_escalated',
     recoveryTaskId: existing.taskId,
-    escalatedTo: escalated?.assigneeUserId ?? owner,
+    escalatedTo,
   };
 }

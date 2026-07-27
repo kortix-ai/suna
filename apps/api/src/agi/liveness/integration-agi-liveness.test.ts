@@ -348,6 +348,47 @@ describe('bounded recovery (R-32)', () => {
     expect(continuation.body).toContain(sessionId);
   });
 
+  // The regression that survived 178 tests: escalation used to guard its UPDATE
+  // on `agent is not null`, and every fixture above inherits the helper's
+  // `agent: 'trader'`. But the canonical create the AGI is told to use names no
+  // agent, so `agent` was null on every task it actually made, the UPDATE matched
+  // zero rows, and the caller reported `escalated` regardless — the one mechanism
+  // that pushes a stall at a human did nothing for the whole board. This is the
+  // A/B: same stall twice, differing only in `agent`.
+  test('escalates a task with no agent — the shape the AGI actually creates', async () => {
+    const created = await task({ agent: null, goalSlug: 'platinum-seo' });
+
+    const first = await session({ status: 'stopped' });
+    await claimTask({
+      workspaceId: WORKSPACE,
+      taskId: created.taskId,
+      sessionId: first,
+      ttlSeconds: 900,
+      status: 'doing',
+    });
+    await recordSessionOutcome({ sessionId: first });
+
+    const second = await session({ status: 'failed' });
+    await claimTask({
+      workspaceId: WORKSPACE,
+      taskId: created.taskId,
+      sessionId: second,
+      ttlSeconds: 900,
+    });
+    const outcome = await recordSessionOutcome({ sessionId: second });
+
+    expect(outcome.claims[0].recovery).toBe('escalated');
+
+    // The row must actually carry a human. Reporting `escalated` while the
+    // continuation still belongs to nobody is the exact failure being guarded.
+    const [child] = await db
+      .select()
+      .from(agiTasks)
+      .where(eq(agiTasks.parentId, created.taskId));
+    expect(child.assigneeUserId).toBe(OWNER);
+    expect(child.priority).toBe('urgent');
+  });
+
   test('identical repeated evidence escalates instead of continuing again', async () => {
     const sessionId = await session({ status: 'stopped' });
     const created = await task();
