@@ -264,8 +264,28 @@ async function goalsPush(
     emitJson(resp);
     return 0;
   }
-  process.stdout.write(`${status.ok(`pushed ${slug}  session ${resp.session_id}`)}\n`);
+  process.stdout.write(`${renderPushResult(slug, resp)}\n`);
   return 0;
+}
+
+/**
+ * A push is a trigger fire, so it has all three trigger outcomes and only one of
+ * them has a session. Same shape `kortix triggers fire` renders, because it is
+ * the same event reached through the goal.
+ */
+export function renderPushResult(slug: string, resp: AgiGoalPushResponse): string {
+  const suffix = resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : '';
+  if (resp.status === 'queued') {
+    // No session id, and that is correct rather than missing: the prompt is on
+    // the lifecycle queue and the session it lands on is chosen at delivery.
+    const queued = resp.command_id ? `${C.dim} (command ${resp.command_id})${C.reset}` : '';
+    return status.info(`queued ${C.bold}${slug}${C.reset}${queued}${suffix}`);
+  }
+  if (resp.status === 'deduped' || resp.deduped) {
+    return status.info(`already pushed ${C.bold}${slug}${C.reset}${suffix}`);
+  }
+  const session = resp.session_id ? `  session ${C.dim}${resp.session_id}${C.reset}` : '';
+  return status.ok(`pushed ${C.bold}${slug}${C.reset}${session}`);
 }
 
 /**

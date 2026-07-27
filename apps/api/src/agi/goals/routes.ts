@@ -105,10 +105,10 @@ agiApp.openapi(
           metrics.get(goal.slug) ?? [],
         ),
       ),
-      // A malformed goal is REPORTED, never omitted. It is otherwise invisible
-      // in every surface: `extractGoals` returns it here, but the trigger
-      // desugaring drops these errors, so a goal with a typo'd `done_when`
-      // silently stops existing.
+      // A malformed goal is REPORTED, never omitted — a goal with a typo'd
+      // `done_when` must not silently stop existing. The trigger list reports
+      // the same errors (see `desugarGoalTriggers`); this is the surface that
+      // also carries the entry's ordinal, which is all a slug-less entry has.
       errors: goalIssues(loaded),
     });
   },

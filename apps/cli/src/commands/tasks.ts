@@ -133,9 +133,21 @@ export interface AgiObserveResponse {
   observation: AgiObservation;
 }
 
+/**
+ * The result of firing a goal's derived push trigger. It is the ordinary trigger
+ * fire result, so it has the ordinary trigger outcomes: a push is not always a
+ * session. `queued` means the prompt went onto the lifecycle command queue for a
+ * session that is not ready yet, and it legitimately carries NO session id —
+ * rendering `session_id` unconditionally printed "session null".
+ */
 export interface AgiGoalPushResponse {
-  session_id: string;
+  status: 'fired' | 'queued' | 'deduped';
   trigger_slug: string;
+  session_id: string | null;
+  command_id: string | null;
+  deduped: boolean;
+  /** Why it was queued or deduped, when the API has one. */
+  reason: string | null;
 }
 
 /** A pending human request attached to a task — spec §4.3 (R-12g). There is no

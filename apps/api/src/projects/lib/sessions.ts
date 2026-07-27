@@ -6,6 +6,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { recordSessionOutcomeBestEffort } from '../../agi/liveness';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
@@ -1204,6 +1205,14 @@ export async function createProjectSession(input: {
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }
+      // R-33. Today this session is too young to hold an AGI claim — a task is
+      // claimed from INSIDE the sandbox, which never came up — so the writeback
+      // resolves to `no_claims` and writes nothing. It is hooked anyway because
+      // the rule is "every terminal transition reports", not "every terminal
+      // transition we currently believe can hold a claim": the day a task is
+      // claimed at dispatch instead of in-sandbox, this is the path that would
+      // silently strand it. Best-effort, and gated on `agi` inside.
+      recordSessionOutcomeBestEffort(sessionId);
       // Surface the failure to the originating channel (Slack) so the thread
       // doesn't sit on a ⏳ until the 30-min GC. No-op for non-channel sessions.
       notifySessionProvisioningFailed(sessionId, message);

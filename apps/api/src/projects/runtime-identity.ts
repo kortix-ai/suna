@@ -1,6 +1,7 @@
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
+import { recordSessionOutcomeBestEffort } from '../agi/liveness';
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
 import type { ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
@@ -230,6 +231,15 @@ export async function preserveEstablishedRuntime(
   }
 
   if (!preserved) return null;
+
+  // R-33. `preserved` is non-null only when the transaction above actually
+  // flipped the session to 'stopped', so this fires exactly once per real
+  // transition — including for every caller that reaches it indirectly
+  // (the reaper's removed-box branch, the webhook, restart, open, wake).
+  // A runtime declared unavailable is the WORST case for a claim: the session
+  // is gone and its sandbox will never come back, so the task it holds is
+  // stranded until the lease expires unless it is released here.
+  recordSessionOutcomeBestEffort(row.sessionId);
 
   console.error('[runtime-identity] preserved unavailable sandbox identity', {
     sessionId: row.sessionId,

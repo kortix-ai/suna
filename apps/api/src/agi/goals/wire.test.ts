@@ -1,12 +1,11 @@
 /**
  * The pure half of the goal surface.
  *
- * The weight is on `goalIssues`, because it is the piece with a real problem to
- * solve: a broken goal has to be REPORTED (that is the whole point of the list's
- * `errors` array), but the parser's error record carries no ordinal, so the
- * ordinal is recovered here. Getting that wrong turns "goal 2 is missing
- * done_when" into "goal -1 is missing done_when", which is worse than useless in
- * a file with five goals.
+ * The weight is on `goalIssues`, because a broken goal has to be REPORTED (that
+ * is the whole point of the list's `errors` array) and an entry with no usable
+ * slug has nothing but its ordinal to be addressed by. Getting that wrong turns
+ * "goal 2 is missing done_when" into "goal -1 is missing done_when", which is
+ * worse than useless in a file with five goals.
  *
  * Pure: no DB, no git, no manifest I/O beyond `parseManifestString`.
  */
@@ -18,18 +17,13 @@ import {
   goalIssues,
   openTaskCount,
   parseGoalStatusFilter,
-  rawGoalEntries,
   serializeAgiGoal,
 } from './wire';
 
 const parse = (yaml: string) => parseManifestString(yaml, 'yaml', MANIFEST_FILENAME_YAML);
 
 /** The manifest → issues path end to end, which is how the route uses both. */
-const issuesFor = (yaml: string) => {
-  const manifest = parse(yaml);
-  const { specs, errors } = extractGoals(manifest);
-  return goalIssues({ rawEntries: rawGoalEntries(manifest.raw), specs, errors });
-};
+const issuesFor = (yaml: string) => goalIssues(extractGoals(parse(yaml)));
 
 const GOOD = `kortix_version: 2
 
@@ -192,21 +186,17 @@ goals:
   test('a manifest-level failure the store synthesizes reports the same way', () => {
     expect(
       goalIssues({
-        rawEntries: [],
-        specs: [],
-        errors: [{ slug: '(manifest)', path: 'kortix.yaml', error: 'bad indentation' }],
+        errors: [{ index: -1, slug: '(manifest)', path: 'kortix.yaml', error: 'bad indentation' }],
       }),
     ).toEqual([{ index: -1, slug: null, message: 'bad indentation', path: 'kortix.yaml' }]);
   });
 
-  test('an error whose entry cannot be located degrades to -1 rather than lying', () => {
+  test('the parser ordinal is carried through verbatim, never re-derived', () => {
     expect(
       goalIssues({
-        rawEntries: [],
-        specs: [],
-        errors: [{ slug: 'ghost', path: 'kortix.yaml#goals.ghost', error: 'nope' }],
+        errors: [{ index: 7, slug: 'ghost', path: 'kortix.yaml#goals.ghost', error: 'nope' }],
       }),
-    ).toEqual([{ index: -1, slug: 'ghost', message: 'nope', path: 'kortix.yaml#goals.ghost' }]);
+    ).toEqual([{ index: 7, slug: 'ghost', message: 'nope', path: 'kortix.yaml#goals.ghost' }]);
   });
 
   test('a valid goal alongside a broken one is still parsed — errors never blank the list', () => {
@@ -218,22 +208,10 @@ goals:
   - slug: fine
     done_when: Done.
 `);
-    const { specs, errors } = extractGoals(manifest);
+    const loaded = extractGoals(manifest);
 
-    expect(specs.map((spec) => spec.slug)).toEqual(['fine']);
-    expect(
-      goalIssues({ rawEntries: rawGoalEntries(manifest.raw), specs, errors }).map(
-        (issue) => issue.index,
-      ),
-    ).toEqual([0]);
-  });
-});
-
-describe('rawGoalEntries', () => {
-  test('a missing or non-list goals block yields no entries rather than throwing', () => {
-    expect(rawGoalEntries(parse('kortix_version: 2\n').raw)).toEqual([]);
-    expect(rawGoalEntries(parse('kortix_version: 2\ngoals:\n  oil: yes\n').raw)).toEqual([]);
-    expect(rawGoalEntries(null)).toEqual([]);
+    expect(loaded.specs.map((spec) => spec.slug)).toEqual(['fine']);
+    expect(goalIssues(loaded).map((issue) => issue.index)).toEqual([0]);
   });
 });
 

@@ -150,6 +150,35 @@ describe('extractGoals', () => {
     expect(specs).toHaveLength(1);
     expect(specs[0].title).toBe('First');
     expect(errors[0].error).toContain('Duplicate goal slug');
+    // The SECOND declaration is the offending one — index 0 parsed cleanly.
+    expect(errors[0].index).toBe(1);
+  });
+
+  // The ordinal is the only handle a malformed entry has: three of the four
+  // rejection shapes below produce no usable slug, so "goal #N" is the whole
+  // address. Carried from the parser rather than reconstructed downstream.
+  test('every error carries the ordinal of the entry it came from', () => {
+    const { errors } = extractGoals(
+      parse(`kortix_version: 2
+
+goals:
+  - slug: fine
+    done_when: Done.
+  - title: nameless
+    done_when: Done.
+  - just-a-string
+  - slug: broken
+    title: No criteria
+`),
+    );
+
+    expect(errors.map((e) => e.index)).toEqual([1, 2, 3]);
+    expect(errors.map((e) => e.slug)).toEqual(['(index-1)', '(invalid)', 'broken']);
+  });
+
+  test('a block-level error has no entry to point at and says so with -1', () => {
+    const { errors } = extractGoals(parse('kortix_version: 2\ngoals:\n  oil: yes\n'));
+    expect(errors[0].index).toBe(-1);
   });
 
   test('a goals block that is not a list is one clear top-level error', () => {
@@ -279,6 +308,41 @@ describe('R-8 — push desugars to exactly one cron trigger', () => {
     expect(errors[0].slug).toBe('goal-oil');
     expect(errors[0].error).toContain('already declared in `triggers`');
   });
+
+  // The defect this closes: a goal that fails to parse has no derived trigger,
+  // so dropping its parse error made it invisible here — the goals route
+  // reported the broken goal and the trigger list showed neither an entry nor a
+  // complaint.
+  test('a goal that fails to parse is reported, not silently absent', () => {
+    const { specs, errors } = desugarGoalTriggers(
+      parse(`kortix_version: 2
+
+goals:
+  - slug: fine
+    done_when: Done.
+    push: "0 0 9 * * *"
+  - slug: broken
+    title: No criteria
+  - slug: fine
+    done_when: Also done.
+`),
+    );
+
+    expect(specs.map((s) => s.slug)).toEqual(['goal-fine']);
+    expect(errors.map((e) => e.slug)).toEqual(['broken', 'fine']);
+    expect(errors[0].error).toContain('done_when');
+    expect(errors[1].error).toContain('Duplicate goal slug');
+    // The path is what tells a reader looking at TRIGGERS that the complaint
+    // came out of the goals block.
+    expect(errors[0].path).toBe('kortix.yaml#goals.broken');
+  });
+
+  test('a goals block that is not a list surfaces as a trigger-list error too', () => {
+    const { specs, errors } = desugarGoalTriggers(parse('kortix_version: 2\ngoals:\n  oil: yes\n'));
+    expect(specs).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].error).toContain('must be a list');
+  });
 });
 
 describe('extractTriggers — goal desugaring is opt-in (the `agi` gate)', () => {
@@ -310,6 +374,21 @@ describe('extractTriggers — goal desugaring is opt-in (the `agi` gate)', () =>
     const { specs, errors } = extractTriggers(manifest, { goals: true });
     expect(specs.map((s) => s.slug)).toEqual(['goal-oil']);
     expect(errors.map((e) => e.slug)).toEqual(['(top-level)']);
+  });
+
+  test('a broken goal reaches the trigger list as an error, and only when opted in', () => {
+    const manifest = parse(
+      'kortix_version: 2\ngoals:\n  - slug: broken\n    title: No criteria\n',
+    );
+
+    // With `agi` off a project behaves exactly as it did before goals existed —
+    // including reporting nothing about a `goals:` block it does not read.
+    expect(extractTriggers(manifest).errors).toEqual([]);
+
+    const { errors } = extractTriggers(manifest, { goals: true });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].slug).toBe('broken');
+    expect(errors[0].error).toContain('done_when');
   });
 
   // The option above is inert until a caller opts in. `goalTriggersEnabled` is

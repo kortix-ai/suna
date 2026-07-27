@@ -21,7 +21,7 @@ import {
   type GitTriggerSpec,
   type ParsedManifest,
 } from '../../projects/triggers';
-import { emptyGoalTaskCounts, rawGoalEntries, type GoalTaskCounts } from './wire';
+import { emptyGoalTaskCounts, type GoalTaskCounts } from './wire';
 import { agiTasks } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
@@ -31,9 +31,6 @@ export interface LoadedProjectGoals {
   manifest: ParsedManifest | null;
   specs: GoalSpec[];
   errors: GoalParseError[];
-  /** The `goals:` entries exactly as authored. Only used to recover the ordinal
-   *  of a malformed entry, which {@link GoalParseError} does not carry. */
-  rawEntries: unknown[];
 }
 
 /**
@@ -52,18 +49,19 @@ export async function loadProjectGoals(project: ProjectRow): Promise<LoadedProje
       specs: [],
       errors: [
         {
+          // Block-level: the file never parsed, so there is no entry to point at.
+          index: -1,
           slug: '(manifest)',
           path: project.manifestPath || MANIFEST_FILENAME_YAML,
           error: (err as Error).message || 'Failed to read manifest',
         },
       ],
-      rawEntries: [],
     };
   }
-  if (!manifest) return { manifest: null, specs: [], errors: [], rawEntries: [] };
+  if (!manifest) return { manifest: null, specs: [], errors: [] };
 
   const { specs, errors } = extractGoals(manifest);
-  return { manifest, specs, errors, rawEntries: rawGoalEntries(manifest.raw) };
+  return { manifest, specs, errors };
 }
 
 /**

@@ -85,6 +85,14 @@ export interface GoalSpec {
 }
 
 export interface GoalParseError {
+  /** Ordinal of the offending entry in the `goals:` list, or -1 when the problem
+   *  is with the block as a whole (`goals` is not a list, the manifest never
+   *  parsed). Carried from the parser, which already iterates with it: the
+   *  alternative is reconstructing it downstream by matching errors back against
+   *  the raw entries, which is a guess that happens to be right. A malformed
+   *  entry frequently has no usable slug, so this ordinal is the only thing that
+   *  makes it addressable. */
+  index: number;
   slug: string;
   path: string;
   error: string;
@@ -220,6 +228,7 @@ export function extractGoals(manifest: ParsedManifest): LoadedGoals {
       specs: [],
       errors: [
         {
+          index: -1,
           slug: '(top-level)',
           path: filename,
           error:
@@ -242,7 +251,10 @@ export function extractGoals(manifest: ParsedManifest): LoadedGoals {
       return;
     }
     if (seenSlugs.has(result.spec.slug)) {
+      // The SECOND declaration is the error, so the ordinal is this entry's —
+      // the first one parsed cleanly and is the goal that actually exists.
       errors.push({
+        index,
         slug: result.spec.slug,
         path: result.spec.path,
         error: `Duplicate goal slug "${result.spec.slug}" — slugs must be unique within a project`,
@@ -267,15 +279,28 @@ export function extractGoals(manifest: ParsedManifest): LoadedGoals {
  *
  * Never writes to the manifest. Re-deriving on every read is what makes a
  * re-ship idempotent by construction: there is no accumulation path.
+ *
+ * A goal that FAILED to parse is reported here too. It has no derived trigger to
+ * appear as, so dropping its error made it invisible in every trigger surface —
+ * the trigger list showed no complaint and no entry, and a goal with a typo'd
+ * `done_when` silently stopped existing for anyone reading triggers. The error's
+ * `path` (`<manifest>#goals.<slug>`) is what tells a reader the complaint came
+ * out of the goals block rather than `triggers:`.
  */
 export function desugarGoalTriggers(
   manifest: ParsedManifest,
   reservedSlugs: ReadonlySet<string> = new Set(),
 ): { specs: GitTriggerSpec[]; errors: GitTriggerParseError[] } {
   const filename = manifest.path || 'kortix.yaml';
-  const { specs: goals } = extractGoals(manifest);
+  const { specs: goals, errors: goalErrors } = extractGoals(manifest);
   const specs: GitTriggerSpec[] = [];
-  const errors: GitTriggerParseError[] = [];
+  // `index` is deliberately dropped: GitTriggerParseError is the trigger
+  // subsystem's contract and these ordinals are positions in a DIFFERENT list.
+  const errors: GitTriggerParseError[] = goalErrors.map((error) => ({
+    slug: error.slug,
+    path: error.path,
+    error: error.error,
+  }));
 
   for (const goal of goals) {
     const spec = goalTriggerSpec(goal, filename);
@@ -310,7 +335,7 @@ function parseGoalEntry(
 ): GoalParseOk | GoalParseErr {
   const err = (slug: string, message: string): GoalParseErr => ({
     ok: false,
-    error: { slug, path: `${filename}#goals.${slug}`, error: message },
+    error: { index, slug, path: `${filename}#goals.${slug}`, error: message },
   });
 
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {

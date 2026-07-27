@@ -10,6 +10,7 @@ import {
   measurabilityNotice,
   renderGoalTable,
   renderMetricTable,
+  renderPushResult,
   renderSeries,
   runGoals,
 } from '../commands/goals.ts';
@@ -197,6 +198,71 @@ test('observe with a slug but no metric is a usage error, not a round trip', asy
   const { code, err } = await capture(['observe', 'seo']);
   expect(code).toBe(2);
   expect(err).toContain('--metric is required');
+});
+
+// A push is an ordinary trigger fire, and only ONE of its three outcomes has a
+// session. Rendering `session_id` unconditionally printed the literal
+// "session null" for the queued case, which is the case that happens under
+// backpressure — exactly when a reader needs to be told something true.
+test('a queued push renders the queue, not "session null"', () => {
+  const queued = stripAnsi(
+    renderPushResult('oil-desk', {
+      status: 'queued',
+      trigger_slug: 'goal-oil-desk',
+      session_id: null,
+      command_id: 'cmd-42',
+      deduped: false,
+      reason: 'provisioning sessions at capacity',
+    }),
+  );
+  expect(queued).toContain('queued oil-desk');
+  expect(queued).toContain('cmd-42');
+  expect(queued).toContain('provisioning sessions at capacity');
+  expect(queued).not.toContain('null');
+});
+
+test('a fired push names the session; a deduped one says so instead', () => {
+  const fired = stripAnsi(
+    renderPushResult('oil-desk', {
+      status: 'fired',
+      trigger_slug: 'goal-oil-desk',
+      session_id: 'ses-1',
+      command_id: null,
+      deduped: false,
+      reason: null,
+    }),
+  );
+  expect(fired).toContain('pushed oil-desk');
+  expect(fired).toContain('ses-1');
+
+  const deduped = stripAnsi(
+    renderPushResult('oil-desk', {
+      status: 'deduped',
+      trigger_slug: 'goal-oil-desk',
+      session_id: 'ses-1',
+      command_id: null,
+      deduped: true,
+      reason: 'already queued for this slot',
+    }),
+  );
+  expect(deduped).toContain('already pushed oil-desk');
+  expect(deduped).toContain('already queued for this slot');
+});
+
+// Belt and braces: `fired` with no session id is not a shape the API produces
+// today, but the renderer must never print the word null if it ever does.
+test('a fired push with no session id degrades to the bare line', () => {
+  const rendered = stripAnsi(
+    renderPushResult('oil-desk', {
+      status: 'fired',
+      trigger_slug: 'goal-oil-desk',
+      session_id: null,
+      command_id: null,
+      deduped: false,
+      reason: null,
+    }),
+  );
+  expect(rendered).toBe('  ✓  pushed oil-desk');
 });
 
 test('show and push without a slug are usage errors before any network call', async () => {

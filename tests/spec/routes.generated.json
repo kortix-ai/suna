@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 501,
+  "count": 519,
   "routes": [
     {
       "method": "GET",
@@ -951,6 +951,10 @@
       "path": "/v1/platform"
     },
     {
+      "method": "POST",
+      "path": "/v1/platform/boot-timeline"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/platform/github-app"
     },
@@ -1073,6 +1077,70 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/agents/:agentName/scope"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/goals"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/goals/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/goals/:slug/observations"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/goals/:slug/observations"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/goals/:slug/push"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/liveness"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/liveness/sweep"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/requests/:requestId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/tasks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/tasks"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agi/tasks/:taskId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/agi/tasks/:taskId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/tasks/:taskId/claim"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/tasks/:taskId/release"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/agi/tasks/:taskId/requests"
     },
     {
       "method": "GET",
@@ -1321,6 +1389,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connector-profiles/me"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/:slug/oauth2/profile"
     },
     {
       "method": "PUT",

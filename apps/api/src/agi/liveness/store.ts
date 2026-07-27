@@ -125,8 +125,20 @@ export async function loadTasksClaimedBySession(input: {
     );
 }
 
-/** How many tasks were created underneath `taskId` after the claim landed —
- *  R-33's "creating any task", scoped to work this claim can be credited with. */
+/**
+ * How many tasks were created underneath `taskId` after the claim landed —
+ * R-33's "creating any task", scoped to work this claim can be credited with.
+ *
+ * Recovery continuations are EXCLUDED, and that exclusion is load-bearing. R-32
+ * inserts a continuation with `parent_id` = the stalled task, so from the second
+ * sweep onward a task that has done nothing at all has a child created after its
+ * claim — and reports `progressed: true` on the strength of an artifact recovery
+ * itself produced. The bound still held and escalation still fired, but the
+ * evidence was self-referential, and a genuinely dead task would read as alive
+ * to anyone scanning `no_progress_count`. A recovery row is bookkeeping about a
+ * stall, never work: the same reason {@link resolveWorkspaceLiveness} filters it
+ * out of the stall surface.
+ */
 export async function countChildrenCreatedAfter(input: {
   workspaceId: string;
   taskId: string;
@@ -140,6 +152,12 @@ export async function countChildrenCreatedAfter(input: {
         eq(agiTasks.workspaceId, input.workspaceId),
         eq(agiTasks.parentId, input.taskId),
         gt(agiTasks.createdAt, input.after),
+        // Prefix match on `origin_fingerprint`, the same complete-and-exact
+        // filter `loadRecoveryTasks` uses: nothing but a recovery row ever
+        // carries an `agi-stall:v1:` fingerprint. `is null` is kept explicitly
+        // because `not like` is NULL for a NULL column, and an ordinary child
+        // has no fingerprint at all.
+        sql`(${agiTasks.originFingerprint} is null or ${agiTasks.originFingerprint} not like ${`${STALL_FINGERPRINT_PREFIX}:%`})`,
       ),
     );
   return row?.count ?? 0;

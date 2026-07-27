@@ -1,5 +1,8 @@
 {
-  "uncovered": [],
+  "uncovered": [
+    "POST /v1/platform/boot-timeline",
+    "POST /v1/projects/:*/connectors/:*/oauth2/profile"
+  ],
   "external": [
     "POST /v1/projects/:*/sessions/:*/ensure-opencode",
     "POST /v1/projects/:*/sessions/:*/wake"

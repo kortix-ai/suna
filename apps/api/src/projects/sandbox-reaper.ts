@@ -43,6 +43,7 @@ import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
 import { hasActiveExecutionLease } from './execution-lease';
 import { preserveEstablishedRuntime } from './runtime-identity';
+import { recordSessionOutcomeBestEffort } from '../agi/liveness';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;
@@ -203,6 +204,10 @@ async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boo
     .set({ status: 'stopped', updatedAt: now })
     .where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(row.externalId);
+  // R-33. The idle reaper is how MOST unattended sessions end — nobody presses
+  // stop on a 07:00 cron push. Without this hook a task it claimed only came
+  // back on claim-TTL lapse, hours after the session that held it went away.
+  recordSessionOutcomeBestEffort(row.sessionId);
 }
 
 export interface ReapResult {
@@ -537,7 +542,14 @@ export async function reconcileStuckActiveSessions(
           inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         ))
         .returning({ sessionId: projectSessions.sessionId });
-      if (updated.length) result.reconciled += 1;
+      // Only when the UPDATE actually transitioned the row: a zero-row result
+      // means a concurrent open won and the session is NOT terminal, and the
+      // writeback would (correctly) refuse anyway — but not calling it keeps the
+      // "we flipped it, so we report it" rule readable at every hook site.
+      if (updated.length) {
+        result.reconciled += 1;
+        recordSessionOutcomeBestEffort(c.sessionId);
+      }
     } catch (err) {
       result.errors += 1;
       console.warn('[reaper] stuck-session reconcile failed:', { sessionId: c.sessionId, error: err instanceof Error ? err.message : err });
@@ -615,6 +627,9 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
+  // R-33, on the webhook fast path — the same terminal transition the reaper
+  // sweep makes, reached from the provider's own event.
+  recordSessionOutcomeBestEffort(row.sessionId);
   return true;
 }
 

@@ -90,85 +90,27 @@ export interface AgiGoalIssue {
   path: string;
 }
 
-/** Slugs the goal parser emits when the entry has no usable slug of its own.
- *  They are diagnostics, not identities, so they go out as `slug: null`. */
-const NOT_A_TABLE = '(invalid)';
-const MISSING_SLUG = /^\(index-(\d+)\)$/;
-const BLOCK_LEVEL = new Set(['(top-level)', '(manifest)']);
+/** Placeholder slugs the goal parser emits when the entry has no usable slug of
+ *  its own. They are diagnostics, not identities, so they go out as `slug: null`
+ *  and the caller addresses the entry by its {@link AgiGoalIssue.index}. */
+const SYNTHETIC_SLUG = /^\((invalid|top-level|manifest)\)$|^\(index-\d+\)$/;
 
 /**
- * Attach an ordinal to every parse error so a broken goal is addressable in the
- * list where it has no slug to be addressed by.
+ * Parse errors → the wire shape, so a broken goal is addressable in the list
+ * where it has no slug to be addressed by.
  *
- * The ordinal has to be recovered here because {@link GoalParseError} carries
- * only slug/path/message — the parser drops the index it iterated with. Matching
- * back against the raw entries is exact for the cases that matter: an entry with
- * a slug is found by slug, the two slug-less shapes are found positionally, and
- * an index is never handed out twice.
- *
- * The successfully-parsed specs are claimed FIRST, which is what makes a
- * duplicate-slug error land on the second declaration rather than the first —
- * the first one is the entry that actually became a goal.
+ * The ordinal is read straight off {@link GoalParseError}: the parser iterates
+ * with it and now carries it. This used to reconstruct it by matching each error
+ * back against the raw `goals:` entries — exact for every case that came up, but
+ * a reconstruction of a fact the producer already had.
  */
-export function goalIssues(loaded: {
-  rawEntries: readonly unknown[];
-  specs: readonly Pick<GoalSpec, 'slug'>[];
-  errors: readonly GoalParseError[];
-}): AgiGoalIssue[] {
-  const { rawEntries, specs, errors } = loaded;
-  const claimed = new Set<number>();
-
-  const takeFirst = (predicate: (entry: unknown) => boolean): number => {
-    for (let index = 0; index < rawEntries.length; index += 1) {
-      if (claimed.has(index) || !predicate(rawEntries[index])) continue;
-      claimed.add(index);
-      return index;
-    }
-    return -1;
-  };
-
-  for (const spec of specs) takeFirst((entry) => rawEntrySlug(entry) === spec.slug);
-
-  return errors.map((error) => {
-    // `goals` itself is not a list, or the manifest never parsed — there are no
-    // entries to point at, and -1 says exactly that.
-    if (BLOCK_LEVEL.has(error.slug)) {
-      return { index: -1, slug: null, message: error.error, path: error.path };
-    }
-    const missingSlug = MISSING_SLUG.exec(error.slug);
-    if (missingSlug) {
-      const index = Number(missingSlug[1]);
-      claimed.add(index);
-      return { index, slug: null, message: error.error, path: error.path };
-    }
-    if (error.slug === NOT_A_TABLE) {
-      return {
-        index: takeFirst((entry) => !entry || typeof entry !== 'object' || Array.isArray(entry)),
-        slug: null,
-        message: error.error,
-        path: error.path,
-      };
-    }
-    return {
-      index: takeFirst((entry) => rawEntrySlug(entry) === error.slug),
-      slug: error.slug,
-      message: error.error,
-      path: error.path,
-    };
-  });
-}
-
-function rawEntrySlug(entry: unknown): string | null {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-  const slug = (entry as Record<string, unknown>).slug;
-  return typeof slug === 'string' ? slug.trim() : null;
-}
-
-/** The `goals:` entries as authored, or [] when the block is absent or not a
- *  list. Only ever read to recover ordinals — never to re-parse a goal. */
-export function rawGoalEntries(raw: Record<string, unknown> | null | undefined): unknown[] {
-  const goals = raw?.goals;
-  return Array.isArray(goals) ? goals : [];
+export function goalIssues(loaded: { errors: readonly GoalParseError[] }): AgiGoalIssue[] {
+  return loaded.errors.map((error) => ({
+    index: error.index,
+    slug: SYNTHETIC_SLUG.test(error.slug) ? null : error.slug,
+    message: error.error,
+    path: error.path,
+  }));
 }
 
 /** `?status=` — one goal status, or null for "invalid" which the route reports

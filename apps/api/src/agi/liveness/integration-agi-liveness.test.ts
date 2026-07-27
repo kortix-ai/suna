@@ -486,6 +486,72 @@ describe('the stall surface', () => {
     expect(body.stalled[0].liveness.recovery.task_id).toBeTruthy();
   });
 
+  // The defect this closes: recovery inserts its continuation with
+  // `parent_id` = the stalled task, and "tasks created under it after the claim"
+  // is a progress signal. So from the second sweep on, a task that has done
+  // nothing reported progressed:true on the strength of an artifact recovery
+  // itself produced. The bound still held and escalation still fired, but the
+  // evidence was circular, and a genuinely dead task read as alive to anyone
+  // scanning for no-progress.
+  //
+  // `claim_expired` is the shape that exposes it: the sweep only RELEASES a
+  // claim whose session is terminal, so an expired lease held by a live session
+  // keeps `claimed_at` on the row across sweeps — and the continuation is
+  // created after it.
+  test('a recovery continuation is not counted as its own parent making progress', async () => {
+    const sessionId = await session({ status: 'running' });
+    const created = await task({ status: 'doing' });
+    await claimTask({
+      workspaceId: WORKSPACE,
+      taskId: created.taskId,
+      sessionId,
+      ttlSeconds: 30,
+    });
+    // Expire the lease without releasing it: `claimed_at` stays, which is what
+    // the progress window is measured from.
+    await db
+      .update(agiTasks)
+      .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(agiTasks.taskId, created.taskId));
+
+    const first = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    const firstOutcome = first.body.outcomes.find((o: any) => o.task_id === created.taskId);
+    expect(firstOutcome.reason).toBe('claim_expired');
+    expect(firstOutcome.progressed).toBe(false);
+    expect(firstOutcome.recovery.step).toBe('continued');
+
+    const second = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    const secondOutcome = second.body.outcomes.find((o: any) => o.task_id === created.taskId);
+    // The continuation now exists underneath this task and was created after the
+    // claim. It must not read as the task having moved.
+    expect(
+      await db.select().from(agiTasks).where(eq(agiTasks.parentId, created.taskId)),
+    ).toHaveLength(1);
+    expect(secondOutcome.progressed).toBe(false);
+  });
+
+  test('a REAL child created after the claim still counts as progress', async () => {
+    const sessionId = await session({ status: 'running' });
+    const created = await task({ status: 'doing' });
+    await claimTask({
+      workspaceId: WORKSPACE,
+      taskId: created.taskId,
+      sessionId,
+      ttlSeconds: 30,
+    });
+    await db
+      .update(agiTasks)
+      .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(agiTasks.taskId, created.taskId));
+    // Ordinary work, no stall fingerprint — the positive control that proves the
+    // exclusion above is narrow and did not just delete the signal.
+    await task({ parentId: created.taskId, title: 'Wire the exchange adapter' });
+
+    const { body } = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    const outcome = body.outcomes.find((o: any) => o.task_id === created.taskId);
+    expect(outcome.progressed).toBe(true);
+  });
+
   test('an invalid limit is a 400, not a silent default', async () => {
     const res = await get(`/v1/projects/${WORKSPACE}/agi/liveness?limit=0`);
     expect(res.status).toBe(400);
