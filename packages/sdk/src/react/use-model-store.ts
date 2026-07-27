@@ -21,6 +21,7 @@ import {
 } from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { createModelLookup } from './model-lookup';
+import { shouldSetSessionAgentName } from './session-agent-name-guard';
 
 // ============================================================================
 // Types
@@ -505,6 +506,15 @@ export function useModelStore(
 
   const setSessionAgentName = useCallback((sessionId: string, name: string | undefined) => {
     const s = getStore();
+    // Read-then-write idempotency guard: `setSessionAgentName` writes to a
+    // `useSyncExternalStore`-backed store whose snapshot identity changes on
+    // every write. Without this guard, any render/effect path that re-fires the
+    // setter with the SAME value drives an infinite render loop (React #185,
+    // "Maximum update depth exceeded"). The loop was reported by Better Stack
+    // as `Object.setSessionAgentName` on the co-worker session page (pattern
+    // 351da943…). See `shouldSetSessionAgentName` for the rationale.
+    const current = s.sessionAgentName?.[sessionId];
+    if (!shouldSetSessionAgentName(current, name)) return;
     const next = { ...s.sessionAgentName };
     if (name) {
       next[sessionId] = name;
