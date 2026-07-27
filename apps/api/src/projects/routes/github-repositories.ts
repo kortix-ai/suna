@@ -12,11 +12,16 @@ import { resolveProjectAccount } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { getAccountGitHubInstallation } from '../lib/git';
 import {
+  PAT_MANAGED_GIT_INSTALLATION_ID,
+  normalizeString,
+  serializeGitHubRepo,
+} from '../lib/serializers';
+import {
   GitHubCredentialResolutionError,
-  resolveAccountGithubCredential,
+  withFreshAccountGithubRead,
 } from '../nango/account-credential';
 import { enforcePatImportMode } from '../nango/credential-mode';
-import { PAT_MANAGED_GIT_INSTALLATION_ID, normalizeString, serializeGitHubRepo } from '../lib/serializers';
+import { GitHubRepositoryValidationError } from '../nango/repository-operations';
 import { mapGitHubOperationError } from './github-errors';
 import { createRoute, z } from '@hono/zod-openapi';
 
@@ -125,18 +130,22 @@ projectsApp.openapi(
           '',
         );
       }
-      const { installation, credential } =
-        await resolveAccountGithubCredential({
+      const { installation, repos } = await withFreshAccountGithubRead(
+        {
           accountId: scope.accountId,
           installationId: resolvedInstallationId,
-        });
-      const repos = await listOwnerRepositories({
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType === 'User' ? 'User' : 'Organization',
-        auth: { token: credential.userToken },
-        search,
-        limit,
-      });
+        },
+        async ({ installation, credential }) => ({
+          installation,
+          repos: await listOwnerRepositories({
+            owner: installation.ownerLogin,
+            ownerType: installation.ownerType === 'User' ? 'User' : 'Organization',
+            auth: { token: credential.userToken },
+            search,
+            limit,
+          }),
+        }),
+      );
       return c.json({
         account_id: scope.accountId,
         installation_id: installation.installationId,
@@ -182,25 +191,23 @@ projectsApp.openapi(
     }
 
     try {
-      const { installation, credential } =
-        await resolveAccountGithubCredential({
+      const { installation, repo, branches } = await withFreshAccountGithubRead(
+        {
           accountId: scope.accountId,
           installationId,
-        });
-      if (owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-        return c.json(
-          {
-            error: 'The selected GitHub repository or branch no longer exists.',
-            code: 'github_repository_not_found',
-          },
-          404,
-        );
-      }
-      const authContext = { token: credential.userToken };
-      const [repo, branches] = await Promise.all([
-        getRepo({ owner, repo: repoName, auth: authContext }),
-        listRepositoryBranches({ owner, repo: repoName, auth: authContext }),
-      ]);
+        },
+        async ({ installation, credential }) => {
+          if (owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
+            throw new GitHubRepositoryValidationError('github_repository_not_found', 404);
+          }
+          const authContext = { token: credential.userToken };
+          const [repo, branches] = await Promise.all([
+            getRepo({ owner, repo: repoName, auth: authContext }),
+            listRepositoryBranches({ owner, repo: repoName, auth: authContext }),
+          ]);
+          return { installation, repo, branches };
+        },
+      );
       if (repo.full_name.toLowerCase() !== `${owner}/${repoName}`.toLowerCase()) {
         return c.json(
           {

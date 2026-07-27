@@ -31,9 +31,11 @@ const execFileAsync = promisify(execFile);
 // this through `await import('../lib/git')`; mocking the module keeps its heavy
 // transitive imports (db, github, …) out of the unit test entirely.
 const resolverCalls: string[] = [];
+let resolverError: Error | null = null;
 mock.module('../projects/lib/git', () => ({
   resolveProjectGitAccessById: async (projectId: string) => {
     resolverCalls.push(projectId);
+    if (resolverError) throw resolverError;
     return { repoUrl: upstream, token: 'resolved-sentinel-token', headers: {} };
   },
 }));
@@ -59,6 +61,7 @@ async function git(args: string[], cwd: string) {
 
 beforeEach(async () => {
   resolverCalls.length = 0;
+  resolverError = null;
   workdir = await mkdtemp(join(tmpdir(), 'mirror-auth-'));
   upstream = join(workdir, 'upstream');
   cacheDir = join(workdir, 'cache');
@@ -108,5 +111,22 @@ describe('refreshMirror auth self-sufficiency', () => {
 
     expect(resolverCalls).not.toContain(project.projectId);
     expect(existsSync(join(repoPath, 'HEAD'))).toBe(true);
+  });
+
+  test('a credential-resolution failure does not fall back to an anonymous clone', async () => {
+    const project = {
+      projectId: 'cccccccc-0000-0000-0000-000000000003',
+      repoUrl: upstream,
+      defaultBranch: 'main',
+      manifestPath: '',
+    };
+    resolverError = Object.assign(new Error('Reconnect GitHub.'), {
+      code: 'github_reconnect_required',
+      status: 409,
+    });
+
+    await expect(refreshMirror(project as never)).rejects.toBe(resolverError);
+    expect(resolverCalls).toEqual([project.projectId]);
+    expect(existsSync(repoCachePath(project as never))).toBe(false);
   });
 });

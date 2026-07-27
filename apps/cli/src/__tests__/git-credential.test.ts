@@ -54,6 +54,7 @@ describe('Git credential protocol', () => {
       requestUrl: 'https://dev-api.kortix.com/v1/git/proj_1.git',
       project: project({
         git_origin_url: 'https://dev-api.kortix.com/v1/git/proj_1.git',
+        metadata: { git: { auth_method: 'nango' } },
       }),
       kortixToken: 'kortix_pat_test',
       mintManagedToken: async () => {

@@ -2,27 +2,27 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { basename } from 'node:path';
 
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
-import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
-import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
-import { selectFromList } from '../tui-select.ts';
+import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
+import type {
+  AccountMembership,
+  MeResponse,
+  ProjectSecretsResponse,
+  ProjectSummary,
+} from '../api/types.ts';
+import { openInBrowser } from '../browser.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { type EnvSpec, type LocalManifest, lintManifest, loadLocalManifest } from '../manifest.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
-import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import {
   configureProjectGitAuth,
-  projectIsManaged,
   resolveProjectGitTarget,
   type ProjectGitTarget,
 } from '../project-git.ts';
+import { isKortixProject, loadLink, resolveProjectId, saveLink } from '../project-link.ts';
 import { C, help, status } from '../style.ts';
+import { selectFromList } from '../tui-select.ts';
 import { projectWebUrl } from '../web-url.ts';
-import type {
-  ProjectSummary,
-  MeResponse,
-  AccountMembership,
-  ProjectSecretsResponse,
-} from '../api/types.ts';
 
 const HELP = help`Usage: kortix ship [options]
 
@@ -496,17 +496,73 @@ interface LinkRepoResponse {
   project: ProjectSummary;
 }
 
+interface GitHubConsentErrorBody {
+  code: 'github_connection_required' | 'github_reconnect_required';
+  account_id?: string;
+  installation_id?: string;
+  requires_human_oauth?: boolean;
+  sdk_action?: string;
+}
+
+interface GitHubConnectSessionResponse {
+  token: string;
+  expires_at: string;
+  connect_link: string;
+}
+
+export class GitHubConsentRequiredError extends Error {
+  readonly code: GitHubConsentErrorBody['code'];
+  readonly connectLink: string;
+  readonly accountId: string;
+  readonly installationId?: string;
+  readonly requiresHumanOauth = true;
+
+  constructor(input: {
+    code: GitHubConsentErrorBody['code'];
+    connectLink: string;
+    accountId: string;
+    installationId?: string;
+  }) {
+    super('GitHub authorization requires human consent.');
+    this.name = 'GitHubConsentRequiredError';
+    this.code = input.code;
+    this.connectLink = input.connectLink;
+    this.accountId = input.accountId;
+    this.installationId = input.installationId;
+  }
+}
+
+function githubConsentBody(error: unknown): GitHubConsentErrorBody | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const body = error.body;
+  if (!body || typeof body !== 'object') return null;
+  const candidate = body as Partial<GitHubConsentErrorBody>;
+  if (
+    candidate.code !== 'github_connection_required' &&
+    candidate.code !== 'github_reconnect_required'
+  ) {
+    return null;
+  }
+  if (candidate.requires_human_oauth !== true) return null;
+  return candidate as GitHubConsentErrorBody;
+}
+
 /**
  * Link an existing GitHub repo to a new cloud project — the same import the
- * web UI does, from your terminal. Default path is the one-click GitHub App
- * install (no secret to manage): if the app isn't installed yet, we print the
- * install link, you authorize, and we retry. `--github-token <PAT>` skips the
- * app entirely (the App-free fallback — handy where the app can't be installed,
- * e.g. local dev whose callback points at prod).
+ * web UI does, from your terminal. The default path creates a Nango Connect
+ * session and leaves GitHub consent to a human. `--github-token <PAT>` remains
+ * a deprecated rollout fallback while the API runs in nango_preferred mode.
  */
 export async function linkGitHubBackedProject(
   client: ApiClient,
   opts: { repoUrl: string; name: string; accountId: string; githubToken?: string; yes: boolean },
+  dependencies: {
+    openBrowser(url: string): boolean;
+    confirm(message: string, defaultValue: boolean): Promise<boolean>;
+  } = {
+    openBrowser: openInBrowser,
+    confirm,
+  },
 ): Promise<ProjectSummary> {
   const body = (token?: string) => ({
     repo_url: opts.repoUrl,
@@ -530,6 +586,37 @@ export async function linkGitHubBackedProject(
       const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
       return res.project;
     } catch (err) {
+      const consent = githubConsentBody(err);
+      if (consent) {
+        const installationId = consent.installation_id?.trim();
+        const sessionPath =
+          consent.code === 'github_reconnect_required' && installationId
+            ? `/projects/github/installations/${encodeURIComponent(installationId)}/reconnect-session`
+            : '/projects/github/connect-session';
+        const session = await client.post<GitHubConnectSessionResponse>(sessionPath, {
+          account_id: opts.accountId,
+        });
+        const required = new GitHubConsentRequiredError({
+          code: consent.code,
+          connectLink: session.connect_link,
+          accountId: opts.accountId,
+          ...(installationId ? { installationId } : {}),
+        });
+
+        if (opts.yes) throw required;
+
+        process.stdout.write(
+          `\n  ${status.warn('GitHub authorization is required.')}\n` +
+            `  ${C.dim}Complete the GitHub prompts in your browser:${C.reset}\n` +
+            `  ${C.cyan}${session.connect_link}${C.reset}\n\n`,
+        );
+        dependencies.openBrowser(session.connect_link);
+        if (!(await dependencies.confirm('Connected GitHub? Retry the link', true))) {
+          throw required;
+        }
+        continue;
+      }
+
       const installUrl =
         err instanceof ApiError && err.status === 409
           ? ((err.body as { install_url?: string } | null)?.install_url ?? null)
@@ -877,46 +964,15 @@ function pushCurrentBranch(
   return branch;
 }
 
-/**
- * Push the current branch, with ONE fallback transport.
- *
- * The proxy origin is the right default — it works whatever a host's managed
- * git is configured with, and no provider credential ever reaches the client.
- * But the CLI talks to hosts it wasn't shipped with: an older API authorizes
- * the proxy on ACCOUNT OWNERSHIP alone, so a token bound to a different account
- * of the same user is refused there while POST /git-token (which gates on the
- * per-project `gitops.push` capability) would still serve it. So when a proxy
- * push fails on a managed repo, retry once against the raw upstream with a
- * minted repo-scoped token before giving up: either transport being unavailable
- * is survivable, only both failing is a real error. Returns the branch, or null.
- */
+/** Push one branch through the selected transport. Pack requests are never replayed. */
 async function pushProjectBranch(
-  client: ApiClient,
-  project: ProjectSummary,
+  _client: ApiClient,
+  _project: ProjectSummary,
   target: ProjectGitTarget,
   pushToken: string | null,
   pushUsername: string,
 ): Promise<string | null> {
-  const canRetry = target.credentialMode === 'kortix-token' && projectIsManaged(project);
-  const pushed = pushCurrentBranch(target.repoUrl, pushToken, pushUsername, {
-    quietOnFailure: canRetry,
-  });
-  if (pushed || !canRetry) return pushed;
-
-  let minted: GitTokenResponse;
-  try {
-    minted = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
-  } catch {
-    // No second transport available — report the push failure we swallowed.
-    process.stderr.write(`\n${status.err('git push failed.')}\n`);
-    return null;
-  }
-  process.stdout.write(
-    `  ${status.warn('Proxy push rejected — retrying against the managed upstream.')}\n`,
-  );
-  const upstreamUrl = minted.repo_url || project.repo_url;
-  setOrigin(upstreamUrl);
-  return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername);
+  return pushCurrentBranch(target.repoUrl, pushToken, pushUsername);
 }
 
 /** `-c http.<scheme>://<host>/.extraheader=AUTHORIZATION: basic <b64>` —
@@ -1072,6 +1128,19 @@ function explainLinkedProjectError(err: unknown, projectId: string, auth: Auth):
 }
 
 function surface(err: unknown): number {
+  if (err instanceof GitHubConsentRequiredError) {
+    process.stderr.write(
+      `${JSON.stringify({
+        error: err.code,
+        requires_human_oauth: true,
+        account_id: err.accountId,
+        ...(err.installationId ? { installation_id: err.installationId } : {}),
+        connect_link: err.connectLink,
+        action: 'Open connect_link in a browser, authorize GitHub, then retry the command.',
+      })}\n`,
+    );
+    return 1;
+  }
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err('Token rejected. Run `kortix login`.')}\n`);

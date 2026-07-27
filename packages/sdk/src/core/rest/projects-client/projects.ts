@@ -246,6 +246,10 @@ export async function validateProjectManifest(
   );
 }
 
+/**
+ * @deprecated Use the project's `git_origin_url` with the Kortix Git proxy.
+ * Nango-backed projects do not expose provider credentials.
+ */
 export interface ProjectGitToken {
   push_token: string;
   /** Provider-selected HTTP Basic username (`x-access-token` for GitHub, `t` for Code Storage). */
@@ -254,10 +258,44 @@ export interface ProjectGitToken {
   repo_url: string | null;
 }
 
+export interface ProjectGitProxyRequiredDetails {
+  code: 'git_proxy_required';
+  git_origin_url: string;
+  minimum_cli_version: string;
+  message?: string;
+}
+
+export type ProjectGitProxyRequiredError = Error & {
+  status: 409;
+  code: 'git_proxy_required';
+  details: ProjectGitProxyRequiredDetails;
+};
+
+export function isProjectGitProxyRequiredError(
+  error: unknown,
+): error is ProjectGitProxyRequiredError {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as {
+    status?: unknown;
+    code?: unknown;
+    details?: Partial<ProjectGitProxyRequiredDetails> | null;
+  };
+  return (
+    candidate.status === 409 &&
+    candidate.code === 'git_proxy_required' &&
+    candidate.details?.code === 'git_proxy_required' &&
+    typeof candidate.details.git_origin_url === 'string' &&
+    typeof candidate.details.minimum_cli_version === 'string'
+  );
+}
+
 /**
  * Mint a fresh scoped git push token for a *managed* project (so the CLI can
  * `kortix ship` without persisting credentials in git config). Throws (409)
  * for BYO projects — they push with the user's own git remote auth.
+ *
+ * @deprecated Use the project's `git_origin_url` with the Kortix Git proxy.
+ * Nango-backed projects reject this call with `git_proxy_required`.
  */
 export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
   return unwrap(

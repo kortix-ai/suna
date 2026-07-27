@@ -3552,3 +3552,42 @@ Local verification:
 **Shippable to production: NOT YET.** The account `github-app-oauth`
 integration has zero authorized connections. Live repository list, branch,
 import, and create proof remains pending.
+
+---
+
+### 2026-07-27 — session `nango-github-migration` (U6 implementation)
+
+Routed runtime Git operations through Nango-backed project connections.
+
+- Runtime Git resolves a fresh Nango credential from the persisted account
+  connection.
+- Repository-list and branch reads retry once after an upstream GitHub `401`.
+- Git pack streams use one upstream request and do not replay.
+- The Git proxy maps typed Nango and GitHub errors to stable HTTP responses.
+- Nango projects return `git_proxy_required` from the deprecated `/git-token`
+  route.
+- `kortix ship --yes` returns machine-readable Nango consent guidance without
+  mutating the project or local Git state.
+- Marketplace requests no longer use the managed GitHub credential.
+
+Local verification:
+
+- Focused API suites: **89 pass / 0 fail** with **210** assertions.
+- API typecheck: exit 0.
+- CLI suite: **549 pass / 0 fail** with **1950** assertions across **51**
+  files.
+- CLI typecheck: exit 0.
+- SDK suite: **1312 pass / 0 fail** with **5786** assertions across **111**
+  files.
+- SDK typecheck: exit 0.
+- SDK packed-install smoke: pass.
+- Focused sandbox Git suites: **45 pass / 0 fail** with **144** assertions.
+- Sandbox typecheck: exit 0.
+- The full sandbox suite did not complete. PTY WebSocket tests outside the
+  changed Git paths hung on macOS. The process was terminated after 60 seconds.
+
+**Status:** LOCAL IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** The account `github-app-oauth`
+integration still has zero authorized connections. U7, U8, PR merge, Deploy
+Dev, deployed SHA proof, and deployed Nango verification remain.

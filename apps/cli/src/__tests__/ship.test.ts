@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ApiClient } from '../api/client.ts';
+import { type ApiClient, ApiError } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
 import {
   authHeaderArgs,
@@ -93,6 +93,142 @@ describe('GitHub-backed project linking', () => {
           name: 'Demo',
           account_id: 'acct_1',
         },
+      },
+    ]);
+  });
+
+  test('opens a Nango Connect session and retries after interactive consent', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const opened: string[] = [];
+    let linkAttempts = 0;
+    const client = {
+      apiBase: 'https://api.kortix.test',
+      post: async <T>(path: string, body?: unknown) => {
+        calls.push({ path, body });
+        if (path === '/projects/link-repository') {
+          linkAttempts += 1;
+          if (linkAttempts === 1) {
+            throw new ApiError(409, 'A GitHub connection is required.', {
+              code: 'github_connection_required',
+              account_id: 'acct_1',
+              requires_human_oauth: true,
+              sdk_action: 'createGitHubConnectSession',
+            });
+          }
+          return { project: project() } as T;
+        }
+        return {
+          token: 'connect-session-token',
+          expires_at: '2026-07-27T21:00:00.000Z',
+          connect_link: 'https://connect.nango.dev/session/test',
+        } as T;
+      },
+    } as unknown as ApiClient;
+
+    const linked = await (
+      linkGitHubBackedProject as unknown as (
+        client: ApiClient,
+        options: {
+          repoUrl: string;
+          name: string;
+          accountId: string;
+          yes: boolean;
+        },
+        dependencies: {
+          openBrowser(url: string): boolean;
+          confirm(message: string, defaultValue: boolean): Promise<boolean>;
+        },
+      ) => Promise<ProjectSummary>
+    )(
+      client,
+      {
+        repoUrl: 'https://github.com/acme/demo.git',
+        name: 'Demo',
+        accountId: 'acct_1',
+        yes: false,
+      },
+      {
+        openBrowser: (url) => {
+          opened.push(url);
+          return true;
+        },
+        confirm: async () => true,
+      },
+    );
+
+    expect(linked.project_id).toBe('proj_1');
+    expect(opened).toEqual(['https://connect.nango.dev/session/test']);
+    expect(calls).toEqual([
+      {
+        path: '/projects/link-repository',
+        body: {
+          repo_url: 'https://github.com/acme/demo.git',
+          name: 'Demo',
+          account_id: 'acct_1',
+        },
+      },
+      {
+        path: '/projects/github/connect-session',
+        body: { account_id: 'acct_1' },
+      },
+      {
+        path: '/projects/link-repository',
+        body: {
+          repo_url: 'https://github.com/acme/demo.git',
+          name: 'Demo',
+          account_id: 'acct_1',
+        },
+      },
+    ]);
+  });
+
+  test('returns structured Nango guidance without retrying in non-interactive mode', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const client = {
+      apiBase: 'https://api.kortix.test',
+      post: async <T>(path: string, body?: unknown) => {
+        calls.push({ path, body });
+        if (path === '/projects/link-repository') {
+          throw new ApiError(409, 'A GitHub connection is required.', {
+            code: 'github_connection_required',
+            account_id: 'acct_1',
+            requires_human_oauth: true,
+            sdk_action: 'createGitHubConnectSession',
+          });
+        }
+        return {
+          token: 'connect-session-token',
+          expires_at: '2026-07-27T21:00:00.000Z',
+          connect_link: 'https://connect.nango.dev/session/test',
+        } as T;
+      },
+    } as unknown as ApiClient;
+
+    await expect(
+      linkGitHubBackedProject(client, {
+        repoUrl: 'https://github.com/acme/demo.git',
+        name: 'Demo',
+        accountId: 'acct_1',
+        yes: true,
+      }),
+    ).rejects.toMatchObject({
+      name: 'GitHubConsentRequiredError',
+      code: 'github_connection_required',
+      connectLink: 'https://connect.nango.dev/session/test',
+      requiresHumanOauth: true,
+    });
+    expect(calls).toEqual([
+      {
+        path: '/projects/link-repository',
+        body: {
+          repo_url: 'https://github.com/acme/demo.git',
+          name: 'Demo',
+          account_id: 'acct_1',
+        },
+      },
+      {
+        path: '/projects/github/connect-session',
+        body: { account_id: 'acct_1' },
       },
     ]);
   });
@@ -220,4 +356,16 @@ test('ship reconciles the remote manifest independently of connector prompts', a
       body: undefined,
     },
   ]);
+});
+
+test('a failed proxy push is not replayed with a provider token', async () => {
+  const source = await Bun.file(new URL('../commands/ship.ts', import.meta.url)).text();
+  const start = source.indexOf('async function pushProjectBranch');
+  const end = source.indexOf('/** `-c http.', start);
+  const functionSource = source.slice(start, end);
+
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  expect(functionSource).not.toContain('/git-token');
+  expect(functionSource).not.toContain('retrying against the managed upstream');
 });

@@ -722,20 +722,39 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // This endpoint hands back a RAW git push credential. project.write is
-  // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
-  // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
-  // can withhold it, and the agent fold requires it in the token's grant.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // This endpoint hands back a RAW git push credential. project.write is
+    // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
+    // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
+    // can withhold it, and the agent fold requires it in the token's grant.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
 
-  const connection = await getProjectGitConnection(projectId);
-  const remote = getProjectGitRemote(loaded.row, connection);
-  if (!remote.managed) {
-    return c.json({ error: 'Project is not a managed repo' }, 409);
-  }
+    const connection = await getProjectGitConnection(projectId);
+    const remote = getProjectGitRemote(loaded.row, connection);
+    if (remote.provider === 'github' && remote.authMethod === 'nango') {
+      return c.json(
+        {
+          error:
+            'This project uses Nango-backed GitHub credentials. Provider tokens are never exported. ' +
+            'Push through git_origin_url with a Kortix token.',
+          code: 'git_proxy_required',
+          git_origin_url: serializeProject(loaded.row).git_origin_url,
+          minimum_cli_version: '0.10.16',
+        },
+        409,
+      );
+    }
+    if (!remote.managed) {
+      return c.json({ error: 'Project is not a managed repo' }, 409);
+    }
 
   // Provider-agnostic: resolve a fresh push credential through the backend seam
   // (the managed GitHub backend mints an installation token). Never persisted

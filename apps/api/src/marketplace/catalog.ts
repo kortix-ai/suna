@@ -717,9 +717,8 @@ async function externalRefs(): Promise<ExternalRef[]> {
 // unauthenticated 60 req/hr scan ceiling to 5,000/hr so many marketplaces can be
 // browsed + installed without rate-limiting. Kept out of @kortix/registry (which
 // stays pure) — injected here as a fetch wrapper via the loader's fetchImpl.
-const GITHUB_TOKEN =
-  process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || "";
-const GITHUB_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_HOSTS = new Set(['api.github.com', 'raw.githubusercontent.com']);
 const githubFetch: typeof fetch = !GITHUB_TOKEN
   ? fetch
   : (((

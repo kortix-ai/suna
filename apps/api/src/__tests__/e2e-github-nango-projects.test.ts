@@ -4,6 +4,7 @@ import type { accountGithubInstallations } from '@kortix/db';
 import {
   GitHubCredentialResolutionError,
   resolveAccountGithubCredential,
+  withFreshAccountGithubRead,
 } from '../projects/nango/account-credential';
 import type { NangoConnection } from '../projects/nango/client';
 
@@ -13,6 +14,63 @@ const USER_ID = '33333333-3333-4333-8333-333333333333';
 const INSTALLATION_ID = '73101';
 const CONNECTION_ID = 'account-connection-73101';
 const INTEGRATION_ID = 'github-app-oauth';
+
+type ProjectNangoGitResolver = (
+  input: {
+    project: {
+      projectId: string;
+      accountId: string;
+      repoUrl: string;
+    };
+    remote: {
+      provider: string;
+      authMethod: string;
+      ref: string | null;
+      installationId: string | null;
+      repoOwner: string | null;
+      repoName: string | null;
+    };
+    mode: 'nango_preferred' | 'nango_only';
+  },
+  dependencies: {
+    resolveAccountCredential(input: {
+      accountId: string;
+      installationId: string;
+    }): Promise<{
+      installation: typeof accountGithubInstallations.$inferSelect;
+      credential: {
+        connectionId: string;
+        installationId: string;
+        installationToken: string;
+      };
+    }>;
+  },
+) => Promise<{
+  auth: {
+    token: string;
+    source: 'nango';
+    owner?: string;
+    ownerType?: 'User' | 'Organization';
+    installationId?: string;
+  };
+  authSource: 'nango';
+} | null>;
+
+type ProjectGitAccessResolver = (
+  projectId: string,
+  dependencies: {
+    getProject(projectId: string): Promise<Record<string, unknown> | null>;
+    resolveProject(project: Record<string, unknown>): Promise<{
+      repoUrl: string;
+      gitAuthToken: string | null;
+      gitAuthHeaders: Record<string, string>;
+    }>;
+  },
+) => Promise<{
+  repoUrl: string;
+  token: string | null;
+  headers: Record<string, string>;
+} | null>;
 
 function installationRow(
   overrides: Partial<typeof accountGithubInstallations.$inferSelect> = {},
@@ -192,5 +250,225 @@ describe('account GitHub Nango credential resolution', () => {
       code: 'github_provider_failed',
       status: 502,
     });
+  });
+
+  test('re-resolves once after a 401 from an idempotent GitHub read', async () => {
+    const tokens = ['stale-token', 'fresh-token'];
+    let resolutionCalls = 0;
+    const operationTokens: string[] = [];
+
+    const result = await withFreshAccountGithubRead(
+      { accountId: ACCOUNT_ID, installationId: INSTALLATION_ID },
+      async ({ credential }) => {
+        operationTokens.push(credential.userToken);
+        if (credential.userToken === 'stale-token') {
+          throw Object.assign(new Error('Bad credentials'), { status: 401 });
+        }
+        return 'ok';
+      },
+      {
+        resolveCredential: async () => {
+          const token = tokens[resolutionCalls] as string;
+          resolutionCalls += 1;
+          return {
+            installation: installationRow(),
+            credential: {
+              mode: 'account',
+              connectionId: CONNECTION_ID,
+              integrationId: INTEGRATION_ID,
+              installationId: INSTALLATION_ID,
+              userToken: token,
+              installationToken: 'installation-token',
+              permissions: {},
+              tags: {},
+            },
+          };
+        },
+      },
+    );
+
+    expect(result).toBe('ok');
+    expect(resolutionCalls).toBe(2);
+    expect(operationTokens).toEqual(['stale-token', 'fresh-token']);
+  });
+
+  test('does not retry a failed idempotent read more than once', async () => {
+    let resolutionCalls = 0;
+    let operationCalls = 0;
+    const unauthorized = Object.assign(new Error('Bad credentials'), { status: 401 });
+
+    await expect(
+      withFreshAccountGithubRead(
+        { accountId: ACCOUNT_ID, installationId: INSTALLATION_ID },
+        async () => {
+          operationCalls += 1;
+          throw unauthorized;
+        },
+        {
+          resolveCredential: async () => {
+            resolutionCalls += 1;
+            return {
+              installation: installationRow(),
+              credential: {
+                mode: 'account',
+                connectionId: CONNECTION_ID,
+                integrationId: INTEGRATION_ID,
+                installationId: INSTALLATION_ID,
+                userToken: `token-${resolutionCalls}`,
+                installationToken: 'installation-token',
+                permissions: {},
+                tags: {},
+              },
+            };
+          },
+        },
+      ),
+    ).rejects.toBe(unauthorized);
+    expect(resolutionCalls).toBe(2);
+    expect(operationCalls).toBe(2);
+  });
+});
+
+describe('project runtime GitHub Nango credential resolution', () => {
+  const project = {
+    projectId: '66666666-6666-4666-8666-666666666666',
+    accountId: ACCOUNT_ID,
+    repoUrl: 'https://github.com/acme/demo.git',
+  };
+  const remote = {
+    provider: 'github',
+    authMethod: 'nango',
+    ref: CONNECTION_ID,
+    installationId: INSTALLATION_ID,
+    repoOwner: 'acme',
+    repoName: 'demo',
+  };
+
+  async function resolver(): Promise<ProjectNangoGitResolver> {
+    const gitModule = await import('../projects/lib/git');
+    const candidate = (
+      gitModule as unknown as {
+        resolveNangoProjectGitAuth?: ProjectNangoGitResolver;
+      }
+    ).resolveNangoProjectGitAuth;
+    expect(typeof candidate).toBe('function');
+    return candidate as ProjectNangoGitResolver;
+  }
+
+  test('uses the installation token at the runtime Git operation boundary', async () => {
+    const calls: Array<{ accountId: string; installationId: string }> = [];
+    const resolve = await resolver();
+    const result = await resolve(
+      { project, remote, mode: 'nango_preferred' },
+      {
+        resolveAccountCredential: async (input) => {
+          calls.push(input);
+          return {
+            installation: installationRow(),
+            credential: {
+              connectionId: CONNECTION_ID,
+              installationId: INSTALLATION_ID,
+              installationToken: 'installation-token',
+            },
+          };
+        },
+      },
+    );
+
+    expect(calls).toEqual([{ accountId: ACCOUNT_ID, installationId: INSTALLATION_ID }]);
+    expect(result).toEqual({
+      auth: {
+        token: 'installation-token',
+        source: 'nango',
+        owner: 'acme',
+        ownerType: 'Organization',
+        installationId: INSTALLATION_ID,
+      },
+      authSource: 'nango',
+    });
+    expect(JSON.stringify(result)).not.toContain('user-token');
+  });
+
+  test('rejects a project connection bound to another Nango connection', async () => {
+    const resolve = await resolver();
+
+    await expect(
+      resolve(
+        { project, remote, mode: 'nango_preferred' },
+        {
+          resolveAccountCredential: async () => ({
+            installation: installationRow(),
+            credential: {
+              connectionId: 'different-connection',
+              installationId: INSTALLATION_ID,
+              installationToken: 'installation-token',
+            },
+          }),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'github_reconnect_required',
+      status: 409,
+      accountId: ACCOUNT_ID,
+      installationId: INSTALLATION_ID,
+    });
+  });
+
+  test('allows legacy fallback only in nango_preferred mode', async () => {
+    const resolve = await resolver();
+    const legacyRemote = {
+      ...remote,
+      authMethod: 'github_app',
+      ref: null,
+    };
+    let nangoCalls = 0;
+    const dependencies = {
+      resolveAccountCredential: async () => {
+        nangoCalls += 1;
+        return {
+          installation: installationRow(),
+          credential: {
+            connectionId: CONNECTION_ID,
+            installationId: INSTALLATION_ID,
+            installationToken: 'installation-token',
+          },
+        };
+      },
+    };
+
+    expect(
+      await resolve({ project, remote: legacyRemote, mode: 'nango_preferred' }, dependencies),
+    ).toBeNull();
+    await expect(
+      resolve({ project, remote: legacyRemote, mode: 'nango_only' }, dependencies),
+    ).rejects.toMatchObject({
+      code: 'github_reconnect_required',
+      status: 409,
+    });
+    expect(nangoCalls).toBe(0);
+  });
+
+  test('propagates reconnect errors instead of returning anonymous Git access', async () => {
+    const gitModule = await import('../projects/lib/git');
+    const resolve = (
+      gitModule as unknown as {
+        resolveProjectGitAccessById: ProjectGitAccessResolver;
+      }
+    ).resolveProjectGitAccessById;
+    const reconnectError = new GitHubCredentialResolutionError(
+      'github_reconnect_required',
+      409,
+      ACCOUNT_ID,
+      INSTALLATION_ID,
+    );
+
+    await expect(
+      resolve(project.projectId, {
+        getProject: async () => project,
+        resolveProject: async () => {
+          throw reconnectError;
+        },
+      }),
+    ).rejects.toBe(reconnectError);
   });
 });

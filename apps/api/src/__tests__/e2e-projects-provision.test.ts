@@ -31,6 +31,8 @@ let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
 let managedPat: string | null;
 let provisionedInitialToken: string | null;
+let existingAuthMethod: string;
+let existingCredentialRef: string | null;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -96,6 +98,7 @@ mock.module('../projects/git-backends', () => ({
   hasBackend: (provider: string) => provider === 'github',
   getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
   getDefaultManagedBackend: () => stubBackend,
+  getDefaultManagedProvider: () => 'github',
   githubBackend: stubBackend,
   managedGithubInstallId: () => INSTALL_ID,
   managedGithubOwner: () => REPO_OWNER,
@@ -271,28 +274,30 @@ mock.module('../shared/db', () => ({
                 return [existingProjectRow()];
               }
               if (table === projectGitConnections) {
-                return [{
-                  accountId: ACCOUNT_ID,
-                  projectId: PROJECT_ID,
-                  provider: 'github',
-                  repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
-                  upstreamUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
-                  managed: true,
-                  repoOwner: REPO_OWNER,
-                  repoName: 'existing-managed',
-                  externalRepoId: EXTERNAL_REPO_ID,
-                  defaultBranch: 'main',
-                  authMethod: 'github_app',
-                  installationId: INSTALL_ID,
-                  credentialRef: null,
-                  permissions: {},
-                  visibility: 'private',
-                  webhookId: null,
-                  status: 'connected',
-                  metadata: {},
-                  createdAt: new Date('2026-01-01T00:00:00Z'),
-                  updatedAt: new Date('2026-01-01T00:00:00Z'),
-                }];
+                return [
+                  {
+                    accountId: ACCOUNT_ID,
+                    projectId: PROJECT_ID,
+                    provider: 'github',
+                    repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                    upstreamUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                    managed: true,
+                    repoOwner: REPO_OWNER,
+                    repoName: 'existing-managed',
+                    externalRepoId: EXTERNAL_REPO_ID,
+                    defaultBranch: 'main',
+                    authMethod: existingAuthMethod,
+                    installationId: INSTALL_ID,
+                    credentialRef: existingCredentialRef,
+                    permissions: {},
+                    visibility: 'private',
+                    webhookId: null,
+                    status: 'connected',
+                    metadata: {},
+                    createdAt: new Date('2026-01-01T00:00:00Z'),
+                    updatedAt: new Date('2026-01-01T00:00:00Z'),
+                  },
+                ];
               }
               return [];
             },
@@ -377,6 +382,8 @@ describe('POST /v1/projects/provision (managed git)', () => {
     backendConfigured = true;
     managedPat = null;
     provisionedInitialToken = PUSH_TOKEN;
+    existingAuthMethod = 'github_app';
+    existingCredentialRef = null;
   });
 
   test('provisions a managed repo + scoped token and registers the project', async () => {
@@ -465,6 +472,27 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.git_origin_url).toBeTruthy();
   });
 
+  test('git-token returns a deterministic proxy upgrade contract for Nango projects', async () => {
+    existingAuthMethod = 'nango';
+    existingCredentialRef = 'managed-nango-connection';
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/git-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      code: 'git_proxy_required',
+      minimum_cli_version: '0.10.16',
+    });
+    expect(body.git_origin_url).toContain(`/v1/git/${PROJECT_ID}.git`);
+    expect(body.push_token).toBeUndefined();
+  });
+
   test('rejects an explicit account the caller has no membership in', async () => {
     canonicalMembership = false;
 
@@ -505,6 +533,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     });
 
     expect(res.status).toBe(201);
+    const body = await res.json();
     expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
     // No lock is ever produced — the engine that wrote it is deleted.
@@ -531,7 +560,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // never applied (see llm-gateway/resolution/default-model.ts). Provision
     // must now stamp the mirror at creation time.
     expect(updatedProjectSets).toHaveLength(1);
-    expect(updatedProjectSets[0]).toMatchObject({ metadata: { default_agent: 'kortix' } });
+    expect(body.metadata).toMatchObject({ default_agent: 'kortix' });
   });
 
   test('returns 503 when managed git is not configured', async () => {

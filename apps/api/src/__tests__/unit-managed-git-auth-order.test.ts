@@ -18,4 +18,10 @@ describe("managed GitHub authentication order", () => {
       resolver.indexOf("createInstallationToken("),
     );
   });
+
+  test('does not reuse managed Git credentials for marketplace reads', async () => {
+    const source = await Bun.file(new URL('../marketplace/catalog.ts', import.meta.url)).text();
+
+    expect(source).not.toContain('process.env.MANAGED_GIT_GITHUB_TOKEN');
+  });
 });

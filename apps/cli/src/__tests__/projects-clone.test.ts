@@ -33,8 +33,11 @@ describe("project clone target", () => {
   test("uses the Kortix proxy with the logged-in token when available", () => {
     expect(
       resolveProjectCloneTarget(
-        project({ git_origin_url: "https://api.kortix.com/v1/git/proj_1.git" }),
-        "kortix_pat_test",
+        project({
+          git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
+          metadata: { git: { auth_method: 'nango' } },
+        }),
+        'kortix_pat_test',
       ),
     ).toEqual({
       repoUrl: "https://api.kortix.com/v1/git/proj_1.git",

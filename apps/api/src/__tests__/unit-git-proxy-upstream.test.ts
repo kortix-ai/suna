@@ -10,7 +10,11 @@
  * idempotent ref-discovery body so the mid-stream socket close is caught here.
  */
 import { describe, expect, mock, test } from 'bun:test';
-import { fetchUpstreamBuffered, isTransientUpstreamError } from '../git-proxy/upstream';
+import {
+  fetchUpstreamBuffered,
+  fetchUpstreamStreamed,
+  isTransientUpstreamError,
+} from '../git-proxy/upstream';
 
 describe('isTransientUpstreamError', () => {
   test('classifies Bun socket-close + common transient network errors', () => {
@@ -136,5 +140,42 @@ describe('fetchUpstreamBuffered', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('000eversion 2');
     expect(callCount).toBe(2);
+  });
+});
+
+describe('fetchUpstreamStreamed', () => {
+  test.each([
+    new Error('The socket connection was closed unexpectedly'),
+    new Error('connect ETIMEDOUT'),
+  ])('attempts a pack request once when fetch fails with %s', async (error) => {
+    const fetchImpl = mock(() => Promise.reject(error));
+
+    await expect(
+      fetchUpstreamStreamed(
+        'https://upstream/repo.git/git-receive-pack',
+        { method: 'POST', body: 'pack-body' },
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).rejects.toBe(error);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('returns the original streaming response without buffering its body', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('pack-response'));
+        controller.close();
+      },
+    });
+    const upstream = new Response(stream, { status: 200 });
+
+    const response = await fetchUpstreamStreamed(
+      'https://upstream/repo.git/git-upload-pack',
+      { method: 'POST', body: 'pack-body' },
+      { fetchImpl: mock(() => Promise.resolve(upstream)) as unknown as typeof fetch },
+    );
+
+    expect(response).toBe(upstream);
+    expect(response.body).toBe(stream);
   });
 });

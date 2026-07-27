@@ -187,16 +187,19 @@ value/credential. `projects-client/setup-links.ts` ✅; facade
 | mint a secret-entry link | `POST /v1/projects/:id/secret-requests` |
 | mint a Pipedream Quick Connect link | `POST /v1/projects/:id/connect-requests` |
 
-### 13e. Manifest validate + git token  ✅
+### 13e. Manifest validate + legacy git token  ✅
 Two small project-scoped mutations, added to `projects-client/projects.ts`:
 - `project(id).validateManifest(raw)` → `POST /v1/projects/:id/manifest/validate`
   (validates a `kortix.yaml` — or legacy `kortix.toml` — manifest's raw text
   server-side, format auto-resolved from the project's manifest path; same
   schema `kortix ship`/`kortix validate`/the CR-merge gate use; always
   resolves with `{valid, issues}`, never throws on an invalid manifest).
-- `project(id).gitToken()` → `POST /v1/projects/:id/git-token` (mints a
-  fresh scoped git push token for a *managed* project; throws/409s for BYO
-  repos).
+- `project(id).gitToken()` → `POST /v1/projects/:id/git-token` is deprecated.
+  Nango-backed projects return `409` with `code: "git_proxy_required"`,
+  `git_origin_url`, and `minimum_cli_version`. Use the project's
+  `git_origin_url` with the Kortix Git proxy. The
+  `isProjectGitProxyRequiredError()` guard narrows this response. Legacy
+  managed projects can still receive a scoped push token during rollout.
 
 ### 14. Sandbox lifecycle  ✅ / 🟡
 - session-sandbox status/metrics/instances → `projects-client/{sandbox,session-sandbox}.ts` ✅

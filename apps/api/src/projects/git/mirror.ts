@@ -36,7 +36,8 @@ const lastRefreshAt = new Map<string, number>();
  * Guarantee a token before any network git op: if the caller didn't pass one,
  * resolve it lazily from the project's stored credentials. Dynamic import keeps
  * this leaf module free of a static dependency on `../lib/git` (which transitively
- * pulls in the mirror), and the resolver itself never throws.
+ * pulls in the mirror). Credential-resolution failures propagate so private
+ * repositories never fall back to anonymous Git access.
  */
 interface ResolvedMirrorAccess {
   repoUrl: string;
@@ -52,16 +53,9 @@ async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMi
       headers: project.gitAuthHeaders ?? {},
     };
   }
-  try {
-    const { resolveProjectGitAccessById } = await import('../lib/git');
-    const resolved = await resolveProjectGitAccessById(project.projectId);
-    if (resolved) return resolved;
-  } catch (err) {
-    console.warn(
-      `[git-mirror] lazy auth resolve failed for ${project.projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
+  const { resolveProjectGitAccessById } = await import('../lib/git');
+  const resolved = await resolveProjectGitAccessById(project.projectId);
+  if (resolved) return resolved;
   return { repoUrl: project.repoUrl, token: null, headers: {} };
 }
 

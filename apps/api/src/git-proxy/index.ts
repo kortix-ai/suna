@@ -23,8 +23,12 @@ import {
   resolveProjectUpstream,
   type GitProxyAuth,
 } from '../projects';
-import type { GitScope } from '../projects/git-backends';
 import { deriveRequestContext } from '../iam/cache';
+import { makeOpenApiApp } from '../openapi';
+import type { GitScope } from '../projects/git-backends';
+import { loadGitProject } from '../projects/lib/git';
+import { mapGitHubOperationError } from '../projects/routes/github-errors';
+import { kickProjectWarmPrebake } from '../snapshots/builder';
 import {
   FORWARD_REQUEST_HEADERS,
   STRIP_RESPONSE_HEADERS,
@@ -33,10 +37,7 @@ import {
   normalizeProjectId,
   scopeForService,
 } from './parse';
-import { fetchUpstreamBuffered } from './upstream';
-import { makeOpenApiApp } from '../openapi';
-import { loadGitProject } from '../projects/lib/git';
-import { kickProjectWarmPrebake } from '../snapshots/builder';
+import { fetchUpstreamBuffered, fetchUpstreamStreamed } from './upstream';
 
 export const gitProxyApp = makeOpenApiApp();
 
@@ -56,7 +57,10 @@ const gitResponses = {
   },
   403: { description: 'Token not authorized for the requested scope' },
   404: { description: 'Project not found' },
+  409: { description: 'GitHub connection or reconnect required' },
+  429: { description: 'GitHub or credential broker rate limited the request' },
   502: { description: 'No upstream configured / upstream unreachable' },
+  503: { description: 'Credential broker unavailable' },
 } as const;
 
 /** Loose path-param doc; handlers keep their own raw param reads + `.git` stripping. */
@@ -103,7 +107,16 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
     return c.text(auth.message, auth.status);
   }
 
-  const upstream = await resolveProjectUpstream(auth.project, scope);
+  let upstream;
+  try {
+    upstream = await resolveProjectUpstream(auth.project, scope);
+  } catch (error) {
+    const mapped = mapGitHubOperationError(error);
+    if (mapped.retryAfter) c.header('Retry-After', mapped.retryAfter);
+    // Hono's runtime accepts every documented status above. Its generic
+    // overload cannot narrow a status selected from the shared error mapper.
+    return c.json(mapped.body, mapped.status as 403 | 404 | 409 | 429 | 502 | 503);
+  }
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
   }
@@ -136,7 +149,7 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
         decompress: false,
       });
     } else {
-      res = await fetch(target, {
+      res = await fetchUpstreamStreamed(target, {
         method,
         headers,
         body: c.req.raw.body,

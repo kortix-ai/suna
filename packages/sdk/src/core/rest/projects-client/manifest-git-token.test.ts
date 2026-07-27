@@ -5,7 +5,11 @@
 
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { getProjectGitToken, validateProjectManifest } from './projects';
+import {
+  getProjectGitToken,
+  isProjectGitProxyRequiredError,
+  validateProjectManifest,
+} from './projects';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -52,4 +56,28 @@ test('getProjectGitToken posts to git-token and returns the push token', async (
 test('getProjectGitToken throws on a 409 (BYO project, not managed)', async () => {
   nextResponse = { status: 409, body: { message: 'Project is not a managed repo' } };
   await expect(getProjectGitToken('P1')).rejects.toThrow();
+});
+
+test('isProjectGitProxyRequiredError narrows the Nango proxy-upgrade response', async () => {
+  nextResponse = {
+    status: 409,
+    body: {
+      code: 'git_proxy_required',
+      message: 'Use the project Git proxy.',
+      git_origin_url: 'http://test.local/v1/git/P1/repository.git',
+      minimum_cli_version: '0.10.16',
+    },
+  };
+
+  try {
+    await getProjectGitToken('P1');
+    throw new Error('Expected getProjectGitToken to reject');
+  } catch (error) {
+    expect(isProjectGitProxyRequiredError(error)).toBe(true);
+    if (!isProjectGitProxyRequiredError(error)) throw error;
+    expect(error.status).toBe(409);
+    expect(error.code).toBe('git_proxy_required');
+    expect(error.details.git_origin_url).toBe('http://test.local/v1/git/P1/repository.git');
+    expect(error.details.minimum_cli_version).toBe('0.10.16');
+  }
 });

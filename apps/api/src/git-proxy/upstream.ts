@@ -19,6 +19,18 @@ export function isTransientUpstreamError(err: unknown): boolean {
 }
 
 /**
+ * Send one streamed git pack request. The request body can be non-replayable,
+ * and receive-pack mutates the repository. Never retry or buffer this call.
+ */
+export async function fetchUpstreamStreamed(
+  target: string,
+  init: RequestInit,
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<Response> {
+  return (opts.fetchImpl ?? fetch)(target, init);
+}
+
+/**
  * Fetch the git upstream, BUFFERING the (small) response body inside a bounded
  * retry loop. Used ONLY for idempotent ref discovery (`GET /info/refs`), whose
  * body is a tiny pkt-line ref list — buffering it lets a transient mid-stream

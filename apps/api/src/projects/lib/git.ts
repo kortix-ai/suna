@@ -7,8 +7,10 @@ import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import {
+  type AccountGithubCredentialResolution,
   GitHubCredentialResolutionError,
   resolveAccountGithubCredential,
+  withFreshAccountGithubRead,
 } from '../nango/account-credential';
 import { validateNangoRepositoryImport } from '../nango/repository-operations';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
@@ -442,18 +444,121 @@ export function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote
 
 export async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
-  if (remote.provider === 'github' && remote.authMethod === 'github_app') {
+  if (
+    remote.provider === 'github' &&
+    (remote.authMethod === 'github_app' || remote.authMethod === 'nango')
+  ) {
     return true;
   }
   return false;
 }
 
+export interface ProjectNangoGitAuthDependencies {
+  resolveAccountCredential(input: {
+    accountId: string;
+    installationId: string;
+  }): Promise<AccountGithubCredentialResolution>;
+}
+
+export async function resolveNangoProjectGitAuth(
+  input: {
+    project: Pick<ProjectRow, 'projectId' | 'accountId' | 'repoUrl'>;
+    remote: Pick<
+      ProjectGitRemote,
+      'provider' | 'authMethod' | 'ref' | 'installationId' | 'repoOwner' | 'repoName'
+    >;
+    mode: 'nango_preferred' | 'nango_only';
+  },
+  dependencies: ProjectNangoGitAuthDependencies = {
+    resolveAccountCredential: resolveAccountGithubCredential,
+  },
+): Promise<{
+  auth: GitHubAuthContext;
+  authSource: 'nango';
+} | null> {
+  if (input.remote.provider !== 'github') return null;
+
+  if (input.remote.authMethod !== 'nango') {
+    if (input.mode === 'nango_only') {
+      throw new GitHubCredentialResolutionError(
+        'github_reconnect_required',
+        409,
+        input.project.accountId,
+        input.remote.installationId ?? '',
+      );
+    }
+    return null;
+  }
+
+  const installationId = input.remote.installationId?.trim();
+  const connectionId = input.remote.ref?.trim();
+  if (!installationId || !connectionId) {
+    throw new GitHubCredentialResolutionError(
+      'github_reconnect_required',
+      409,
+      input.project.accountId,
+      installationId ?? '',
+    );
+  }
+
+  const resolved = await dependencies.resolveAccountCredential({
+    accountId: input.project.accountId,
+    installationId,
+  });
+  if (
+    resolved.credential.connectionId !== connectionId ||
+    resolved.credential.installationId !== installationId
+  ) {
+    throw new GitHubCredentialResolutionError(
+      'github_reconnect_required',
+      409,
+      input.project.accountId,
+      installationId,
+    );
+  }
+
+  const parsedRepo = parseGitHubRepoUrl(input.project.repoUrl);
+  if (
+    (input.remote.repoOwner &&
+      parsedRepo &&
+      input.remote.repoOwner.toLowerCase() !== parsedRepo.owner.toLowerCase()) ||
+    (input.remote.repoName &&
+      parsedRepo &&
+      input.remote.repoName.toLowerCase() !== parsedRepo.repo.toLowerCase()) ||
+    (parsedRepo &&
+      resolved.installation.ownerLogin.toLowerCase() !== parsedRepo.owner.toLowerCase())
+  ) {
+    throw new GitHubCredentialResolutionError(
+      'github_provider_failed',
+      502,
+      input.project.accountId,
+      installationId,
+    );
+  }
+
+  return {
+    auth: {
+      token: resolved.credential.installationToken,
+      source: 'nango',
+      owner: resolved.installation.ownerLogin,
+      ownerType: resolved.installation.ownerType,
+      installationId,
+    },
+    authSource: 'nango',
+  };
+}
 
 export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
-  authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
+  authSource: 'nango' | 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+  const nango = await resolveNangoProjectGitAuth({
+    project,
+    remote,
+    mode: config.GITHUB_CREDENTIAL_RESOLUTION,
+  });
+  if (nango) return nango;
 
   // Managed GitHub repos use the server PAT first. The managed GitHub App can
   // exist without access to every repository. Repeated failed token minting
@@ -754,45 +859,49 @@ export async function resolveGitHubImport(input: {
       '',
     );
   }
-  const resolved = await resolveAccountGithubCredential({
-    accountId: input.accountId,
-    installationId: resolvedInstallationId,
-  });
-  const installation = resolved.installation;
-  if (parsed.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-    throw new GitHubCredentialResolutionError(
-      'github_connection_required',
-      409,
-      input.accountId,
-      installation.installationId,
-    );
-  }
-
-  const auth: GitHubAuthContext = {
-    token: resolved.credential.userToken,
-    source: 'nango',
-    owner: installation.ownerLogin,
-    ownerType: installation.ownerType,
-    installationId: installation.installationId,
-  };
-  const repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth });
-  const validation = await validateNangoRepositoryImport(
+  return withFreshAccountGithubRead(
     {
-      expectedOwner: parsed.owner,
-      expectedName: parsed.repo,
-      expectedRepositoryId: input.repositoryId,
-      requestedBranch: input.defaultBranch,
-      repo,
-      auth,
+      accountId: input.accountId,
+      installationId: resolvedInstallationId,
     },
-    { getBranch: getRepositoryBranch },
+    async (resolved) => {
+      const installation = resolved.installation;
+      if (parsed.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
+        throw new GitHubCredentialResolutionError(
+          'github_connection_required',
+          409,
+          input.accountId,
+          installation.installationId,
+        );
+      }
+
+      const auth: GitHubAuthContext = {
+        token: resolved.credential.userToken,
+        source: 'nango',
+        owner: installation.ownerLogin,
+        ownerType: installation.ownerType,
+        installationId: installation.installationId,
+      };
+      const repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth });
+      const validation = await validateNangoRepositoryImport(
+        {
+          expectedOwner: parsed.owner,
+          expectedName: parsed.repo,
+          expectedRepositoryId: input.repositoryId,
+          requestedBranch: input.defaultBranch,
+          repo,
+          auth,
+        },
+        { getBranch: getRepositoryBranch },
+      );
+      return {
+        repo,
+        installation,
+        auth,
+        defaultBranch: validation.defaultBranch,
+      };
+    },
   );
-  return {
-    repo,
-    installation,
-    auth,
-    defaultBranch: validation.defaultBranch,
-  };
 }
 
 
@@ -857,32 +966,40 @@ export async function loadGitProject(loaded: { row: ProjectRow }) {
   };
 }
 
+export interface ProjectGitAccessDependencies {
+  getProject(projectId: string): Promise<ProjectRow | null>;
+  resolveProject(project: ProjectRow): Promise<
+    ProjectRow & {
+      gitAuthToken: string | null;
+      gitAuthHeaders: Record<string, string>;
+    }
+  >;
+}
+
 /** Lazy provider-neutral mirror access resolution from only a project id. */
-export async function resolveProjectGitAccessById(projectId: string): Promise<{
+export async function resolveProjectGitAccessById(
+  projectId: string,
+  dependencies?: ProjectGitAccessDependencies,
+): Promise<{
   repoUrl: string;
   token: string | null;
   headers: Record<string, string>;
 } | null> {
-  try {
-    const [row] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1);
-    if (!row) return null;
-    const resolved = await withProjectGitAuth(row);
-    return {
-      repoUrl: resolved.repoUrl,
-      token: resolved.gitAuthToken,
-      headers: resolved.gitAuthHeaders,
-    };
-  } catch (err) {
-    console.warn(
-      `[projects] lazy git-access resolve failed for ${projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return null;
-  }
+  const resolvedDependencies = dependencies ?? {
+    getProject: async (id: string) => {
+      const [row] = await db.select().from(projects).where(eq(projects.projectId, id)).limit(1);
+      return row ?? null;
+    },
+    resolveProject: withProjectGitAuth,
+  };
+  const row = await resolvedDependencies.getProject(projectId);
+  if (!row) return null;
+  const resolved = await resolvedDependencies.resolveProject(row);
+  return {
+    repoUrl: resolved.repoUrl,
+    token: resolved.gitAuthToken,
+    headers: resolved.gitAuthHeaders,
+  };
 }
 
 /**
@@ -900,9 +1017,8 @@ export async function resolveProjectGitAccessById(projectId: string): Promise<{
  * here guarantees the network git op is authenticated whenever a credential
  * exists, regardless of which caller won the refresh lock.
  *
- * Returns null when the project is gone or has no resolvable git auth. Never
- * throws — a resolution failure must degrade to "no token" (caller behaves
- * exactly as before this hook existed), never crash the mirror refresh.
+ * Returns null when the project is gone. Credential-resolution failures
+ * propagate so a private repository never falls back to anonymous Git access.
  */
 export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
   return (await resolveProjectGitAccessById(projectId))?.token ?? null;

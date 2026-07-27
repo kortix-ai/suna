@@ -164,3 +164,38 @@ export async function resolveAccountGithubCredential(
 
   return { installation, credential };
 }
+
+export interface AccountGithubReadDependencies {
+  resolveCredential(input: {
+    accountId: string;
+    installationId: string;
+  }): Promise<AccountGithubCredentialResolution>;
+}
+
+function isGithubUnauthorized(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'status' in error && error.status === 401;
+}
+
+/**
+ * Run one idempotent GitHub read with a fresh Nango credential. A GitHub 401
+ * triggers one forced Nango refresh and one replay. Other failures are not
+ * replayed. Mutations and Git pack streams must not use this helper.
+ */
+export async function withFreshAccountGithubRead<T>(
+  input: { accountId: string; installationId: string },
+  operation: (resolution: AccountGithubCredentialResolution) => Promise<T>,
+  dependencies: AccountGithubReadDependencies = {
+    resolveCredential: resolveAccountGithubCredential,
+  },
+): Promise<T> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const resolution = await dependencies.resolveCredential(input);
+    try {
+      return await operation(resolution);
+    } catch (error) {
+      if (attempt === 0 && isGithubUnauthorized(error)) continue;
+      throw error;
+    }
+  }
+  throw new Error('Unreachable GitHub credential refresh state');
+}
