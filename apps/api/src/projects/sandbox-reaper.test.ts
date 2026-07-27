@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
+import { accounts, projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
 let usageRows: Array<{ sessionId: string; last: string }> = [];
+let accountRows: Array<{ accountId: string }> = [];
+let throwOnAccountLookup = false;
 let throwOnUsageLookup = false;
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
 let stopErrorByExternal: Record<string, Error> = {};
@@ -53,17 +55,21 @@ mock.module('../shared/db', () => ({
       from: (table: unknown) => {
         const builder = {
           innerJoin: () => builder,
-          where: () =>
-            hybrid(
+          where: () => {
+            if (table === accounts && throwOnAccountLookup) return Promise.reject(new Error('db down'));
+            return hybrid(
               table === sessionSandboxes
                 ? candidates
                 : table === usageEvents
                   ? usageRows
                   : table === projectSessions
                     ? stuckSessions
-                    : [],
+                    : table === accounts
+                      ? accountRows
+                      : [],
               table === usageEvents && throwOnUsageLookup,
-            ),
+            );
+          },
         };
         return builder;
       },
@@ -126,6 +132,11 @@ const TTL = 15 * 60_000;
 beforeEach(() => {
   candidates = [];
   usageRows = [];
+  // Default candidate() below is accountId 'acct-1' — keep it a LIVE account by
+  // default so every pre-existing test (lease veto, busy veto, etc.) keeps its
+  // original behavior; orphan-account tests override this explicitly.
+  accountRows = [{ accountId: 'acct-1' }];
+  throwOnAccountLookup = false;
   throwOnUsageLookup = false;
   statusByExternal = {};
   stopErrorByExternal = {};
@@ -492,6 +503,91 @@ describe('reapAndReconcileSandboxes', () => {
 
     expect(r.stopped).toBe(1);
     expect(stops).toEqual(['ext-1']);
+  });
+
+  // ── orphan-account bypass: deleted account → both protections lifted ───────
+  describe('orphan-account bypass', () => {
+    test('orphan account + live execution lease IS reaped', async () => {
+      accountRows = []; // acct-1 no longer exists
+      candidates = [candidate({ metadata: { executionLeaseUntil: new Date(NOW.getTime() + 60_000).toISOString() } })];
+      statusByExternal['ext-1'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(r.stopped).toBe(1);
+      expect(r.busyVetoed).toBe(0);
+      expect(stops).toEqual(['ext-1']);
+      expect(pausedCompute).toEqual(['sb-1']);
+    });
+
+    test('orphan account reporting busy IS reaped', async () => {
+      accountRows = []; // acct-1 no longer exists
+      candidates = [candidate()];
+      statusByExternal['ext-1'] = 'running';
+      busyByExternal['ext-1'] = 'busy';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(r.stopped).toBe(1);
+      expect(r.busyVetoed).toBe(0);
+      expect(stops).toEqual(['ext-1']);
+    });
+
+    test('REGRESSION GUARD: non-orphan account with a live execution lease is NOT reaped', async () => {
+      // accountRows keeps the default 'acct-1' — a live account.
+      candidates = [candidate({ metadata: { executionLeaseUntil: new Date(NOW.getTime() + 60_000).toISOString() } })];
+      statusByExternal['ext-1'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(r.busyVetoed).toBe(1);
+      expect(r.stopped).toBe(0);
+      expect(stops).toEqual([]);
+    });
+
+    test('REGRESSION GUARD: non-orphan account reporting busy is NOT reaped', async () => {
+      candidates = [candidate()];
+      statusByExternal['ext-1'] = 'running';
+      busyByExternal['ext-1'] = 'busy';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(r.busyVetoed).toBe(1);
+      expect(r.stopped).toBe(0);
+      expect(stops).toEqual([]);
+    });
+
+    test('account lookup failure fails safe — no bypass, normal protections apply', async () => {
+      throwOnAccountLookup = true;
+      candidates = [candidate({ metadata: { executionLeaseUntil: new Date(NOW.getTime() + 60_000).toISOString() } })];
+      statusByExternal['ext-1'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(r.busyVetoed).toBe(1);
+      expect(r.stopped).toBe(0);
+      expect(stops).toEqual([]);
+    });
+
+    test('env flag off → orphan account still protected by lease/busy checks', async () => {
+      const prev = process.env.KORTIX_ORPHAN_ACCOUNT_REAP_ENABLED;
+      process.env.KORTIX_ORPHAN_ACCOUNT_REAP_ENABLED = 'false';
+      try {
+        accountRows = []; // acct-1 no longer exists
+        candidates = [candidate()];
+        statusByExternal['ext-1'] = 'running';
+        busyByExternal['ext-1'] = 'busy';
+
+        const r = await reapAndReconcileSandboxes(NOW);
+
+        expect(r.busyVetoed).toBe(1);
+        expect(r.stopped).toBe(0);
+        expect(stops).toEqual([]);
+      } finally {
+        if (prev === undefined) delete process.env.KORTIX_ORPHAN_ACCOUNT_REAP_ENABLED;
+        else process.env.KORTIX_ORPHAN_ACCOUNT_REAP_ENABLED = prev;
+      }
+    });
   });
 });
 

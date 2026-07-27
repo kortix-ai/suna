@@ -3,9 +3,11 @@
  *
  * Built for the request-path authorization lookups (actor resolve, account
  * membership, project roles): the frontend fires 10+ parallel requests per
- * page that each repeat the exact same principal queries, and prod pays a
- * cross-region roundtrip (~150ms) for every one of them. Collapsing the
- * burst to one lookup per (key, TTL window) removes most of that cost.
+ * page that each repeat the exact same principal queries. Each is a fast,
+ * same-region indexed lookup (~3ms measured, DB and API both in eu-west-2 —
+ * not the cross-region roundtrip this comment used to claim), but they still
+ * add up across a burst of duplicate queries. Collapsing the burst to one
+ * lookup per (key, TTL window) removes most of that redundant query volume.
  *
  * Semantics:
  *  - Concurrent callers with the same key share one in-flight promise.

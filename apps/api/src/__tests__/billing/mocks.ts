@@ -150,6 +150,33 @@ export function registerGlobalMocks() {
       mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
   }));
 
+  // account-deletion.ts's stopAccountSandboxes reads active sandboxes and stops
+  // them via the provider before tearing down the account. None of the
+  // deletion-flow tests in this directory exercise sandbox-stopping, so the
+  // default here is simply "no active sandboxes" — a harmless no-op for every
+  // existing test, and enough for stopAccountSandboxes' static imports to
+  // resolve without needing a real DB/provider.
+  mock.module('../../shared/db', () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }),
+    },
+  }));
+
+  mock.module('../../platform/providers', () => ({
+    getProvider: (_name: string) => ({
+      stop: async (_externalId: string) => undefined,
+    }),
+  }));
+
+  mock.module('../../projects/sandbox-reaper', () => ({
+    isAlreadyNotRunning: (_err: unknown) => false,
+    reconcileSandboxStoppedByExternalId: async (_externalId: string) => true,
+  }));
+
   mock.module('../../billing/repositories/account-deletion', () => ({
     getActiveDeletionRequest: async (id: string) =>
       mockRegistry.getActiveDeletionRequest ? mockRegistry.getActiveDeletionRequest(id) : null,

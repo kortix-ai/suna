@@ -49,7 +49,7 @@ export function connectorConfig(
         // The credential is the platform install token (resolved server-side); the
         // connector carries the platform's API base + its auth placement so
         // authOf()/baseUrlOf() resolve and executeCall attaches the credential.
-        // Slack/email → `Bearer <token>`; meet (Recall.ai) → `Authorization: Token <key>`.
+        // Slack/Teams/email all authenticate with `Bearer <token>`.
         return {
           platform: spec.platform,
           baseUrl: channelApiBase(spec.platform ?? ''),

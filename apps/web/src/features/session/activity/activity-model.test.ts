@@ -321,3 +321,46 @@ describe('isRunLive — only one run may spin', () => {
     expect(isRunLive({ hasRunningStep: false, turnWorking: false, isLatest: true })).toBe(false);
   });
 });
+
+describe('partitionForNarrative — order is preserved', () => {
+  const reasoning = (value: string): Part =>
+    ({ id: `r-${(seq += 1)}`, type: 'reasoning', text: value }) as unknown as Part;
+
+  test('a run interleaves reasoning and steps as they happened', () => {
+    // The wire shape the runtime actually emits, per a captured transcript:
+    //   step-start → reasoning → tool → step-finish, repeated.
+    const items = buildActivityItems(
+      wrap([
+        step('start'),
+        reasoning('Let me check memory.'),
+        tool('bash'),
+        step('finish'),
+        step('start'),
+        reasoning('Now list the sessions.'),
+        tool('bash'),
+        step('finish'),
+      ]),
+      { density: 'simple' },
+    );
+    const fold = partitionForNarrative(items);
+    expect(fold.runs).toHaveLength(1);
+
+    // Bucketing reasoning separately from steps produced
+    // [reasoning, reasoning, step, step] — thinking detached from the work.
+    expect(fold.runs[0].children.map((c) => c.kind)).toEqual([
+      'reasoning',
+      'step',
+      'reasoning',
+      'step',
+    ]);
+  });
+
+  test('children and entries agree on the step count', () => {
+    const items = buildActivityItems(
+      wrap([reasoning('thinking'), tool('bash'), tool('bash')]),
+      { density: 'simple' },
+    );
+    const run = partitionForNarrative(items).runs[0];
+    expect(run.children.filter((c) => c.kind === 'step')).toHaveLength(run.entries.length);
+  });
+});

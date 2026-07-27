@@ -9,37 +9,30 @@ import { Paperclip } from 'lucide-react';
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
-import { useReasoningEffortControl } from '../reasoning-effort-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';
 import { VoiceRecorder } from '../voice-recorder';
 import { AgentSelector } from './agent-selector';
-import { ComposerOverflowMenu } from './composer-overflow-menu';
-import { hasComposerOverflowContent } from './composer-overflow';
 import { SendStopControl } from './send-stop-control';
 import { TokenProgress } from './token-progress';
 import { VariantSelector } from './variant-selector';
 
 /**
- * The composer's bottom toolbar — the piece the "make it feel like ChatGPT
- * Work / Claude Cowork" brief is about. ONE layout, for everyone:
+ * The composer's bottom toolbar — the familiar one.
  *
- *  - LEFT: attach + a single low-emphasis overflow control. Agent, model,
- *    variant and reasoning effort all live behind that overflow — see
- *    composer-overflow-menu.tsx for the agent-vs-model hierarchy inside it.
- *  - RIGHT: token progress (ambient, no label — see token-progress.tsx),
- *    voice, and send/stop.
+ *  - LEFT: attach, agent, model, variant, reasoning effort — all inline, all
+ *    always visible, each showing its current value at rest.
+ *  - RIGHT: token progress (ambient, no label), voice, send/stop.
  *
- * There used to be a second 'advanced' mode — the original dense inline
- * toolbar — behind a "Show all controls in toolbar" switch in the overflow
- * menu. It was removed because it was a ONE-WAY DOOR: advanced mode did not
- * render the overflow menu, so turning it on hid the only control that could
- * turn it off. It was also redundant; the switch changed only WHERE the same
- * four controls lived, while both paths reach them in one click. Two ways to
- * do one thing is the complexity this brief exists to remove.
+ * Two earlier passes are recorded here so they are not re-attempted:
  *
- * Voice and token progress are NOT power-user surfaces by the brief's own
- * carve-out (voice is an alternate input modality on par with attach; token
- * progress is a quiet ambient ring) — both stay on the right in both modes.
+ *  1. A second 'advanced' mode behind a "Show all controls in toolbar" switch.
+ *     Removed: it was a ONE-WAY DOOR — advanced mode did not render the menu
+ *     holding the switch, so turning it on hid its own off-switch.
+ *  2. Hiding agent/model/variant/effort behind a "…" overflow popover.
+ *     Removed: it traded a glanceable row for a click and a guess, and the two
+ *     most-changed controls stopped showing which agent and model were active
+ *     without opening a menu. Simplifying the TRANSCRIPT was the goal; the
+ *     composer was already fine.
  */
 export interface ComposerToolbarProps {
   onAttachClick: () => void;
@@ -133,17 +126,6 @@ export function ComposerToolbar({
   const showAgent = agents.length > 0 && !!(onAgentChange || agentSelectorLocked);
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
   const showVariant = variants.length > 0 && !!onVariantChange;
-  // Same live capability check ReasoningEffortSelector uses internally —
-  // computed here too so the overflow trigger doesn't render on a model with
-  // no reasoning knob and an otherwise-empty overflow.
-  const reasoning = useReasoningEffortControl(selectedModel, projectId);
-
-  const showOverflow = hasComposerOverflowContent({
-    showAgent,
-    showModel,
-    showVariant,
-    showReasoningEffort: reasoning.visible,
-  });
 
   return (
     <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
@@ -165,32 +147,39 @@ export function ComposerToolbar({
           </TooltipContent>
         </Tooltip>
 
-        {/* One composer. The dense inline toolbar used to be a second mode
-            behind a switch in this menu — but `advanced` did not render the
-            menu, so flipping it hid its own off-switch. Everything it exposed
-            is one click away in here instead. */}
-        {showOverflow && (
-          <ComposerOverflowMenu
-              agents={agents}
-              selectedAgent={selectedAgent}
-              onAgentChange={onAgentChange ?? (() => {})}
-              agentSelectorLocked={agentSelectorLocked}
-              showAgent={showAgent}
-              models={models}
-              selectedModel={selectedModel}
-              onModelChange={onModelChange ?? (() => {})}
-              modelDefaultControls={modelDefaultControls}
-              providers={providers}
-              showModel={showModel}
-              variants={variants}
-              selectedVariant={selectedVariant}
-              onVariantChange={onVariantChange ?? (() => {})}
-              showVariant={showVariant}
-              reasoningModel={selectedModel}
-              projectId={projectId}
-            showReasoningEffort={reasoning.visible}
+        {/* Agent, model, variant and reasoning effort sit INLINE, always
+            visible — the composer people already know. An earlier pass hid
+            them behind a "…" popover; that traded one glanceable row for a
+            click and a guess, and the two most-changed controls (agent and
+            model) stopped showing their current value at rest. */}
+        {showAgent && (
+          <AgentSelector
+            agents={agents}
+            selectedAgent={selectedAgent}
+            onSelect={onAgentChange ?? (() => {})}
+            disabled={agentSelectorLocked}
           />
         )}
+        {showModel && (
+          <ModelSelector
+            models={models}
+            modelsLoading={modelsLoading}
+            selectedModel={selectedModel}
+            onSelect={onModelChange!}
+            providers={providers}
+            defaultControls={modelDefaultControls}
+          />
+        )}
+        {showVariant && (
+          <VariantSelector
+            variants={variants}
+            selectedVariant={selectedVariant}
+            onSelect={onVariantChange!}
+          />
+        )}
+        {/* Capability-gated internally: renders nothing unless the selected
+            model actually exposes a reasoning-effort knob. */}
+        <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
       </div>
 
       {/* RIGHT: ambient token progress, any slot content, voice, send/stop. */}

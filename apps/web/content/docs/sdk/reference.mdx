@@ -346,10 +346,10 @@ A routing policy holds a default model, a vision model, and an ordered
 fallback chain, each model attempted at most once; `fallbackOn` is
 `transient` or `any-error`.
 
-#### `p.channels` — Slack / email / Meet
+#### `p.channels` — Slack / email / voice
 
 Integration surfaces that let an agent act as a Slack app, an email address,
-or a meeting bot.
+or join a realtime voice call.
 
 | method | what |
 | --- | --- |
@@ -358,8 +358,7 @@ or a meeting bot.
 | `slack.getFile(url)` · `slack.uploadFile(input)` | download · upload a file via the server proxy |
 | `email.installation(connectorSlug?)` · `email.mode()` | current install · mode |
 | `email.connect(input)` · `email.disconnect(...)` · `email.updatePolicy(input)` | connect · disconnect · update the send/reply policy |
-| `meet.voices()` · `meet.setVoice(voice)` · `meet.previewVoice(voiceId)` | list · set · preview a bot voice |
-| `meet.setBotName(name)` · `meet.speak(botId, text, voice?)` | rename the bot · make it speak in a live meeting |
+| `voice.setBotName(name)` | rename the bot in a live call |
 
 #### `p.modelDefaults` — default model preferences
 

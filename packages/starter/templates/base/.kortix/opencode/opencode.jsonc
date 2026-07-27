@@ -8,23 +8,7 @@
   // Kortix sessions are already sandboxed (isolated VM, ephemeral branch),
   // so the agent has full access by default. Tighten per-tool here if you
   // want a stricter policy. Docs: https://opencode.ai/docs/permissions/
-  "permission": "allow",
+  "permission": "allow"
   // Local tools in `tools/` and plugins in `plugins/` are auto-discovered.
   // Install optional tools/plugins through the Kortix marketplace.
-  "mcp": {
-    // Live voice calls. Spawns a realtime voice agent bound to THIS session,
-    // which then holds a spoken conversation and calls back into the session
-    // when it needs real work. Every tool returns immediately — see the
-    // kortix-voice skill for why a blocking read would wedge the agent loop.
-    // Served by the Kortix API (not baked in), so its tools can change without
-    // re-baking the sandbox image.
-    "kortix-voice": {
-      "type": "remote",
-      "url": "{env:KORTIX_API_URL}/v1/projects/{env:KORTIX_PROJECT_ID}/mcp/voice",
-      "enabled": true,
-      "headers": {
-        "Authorization": "Bearer {env:KORTIX_CLI_TOKEN}"
-      }
-    }
-  }
 }

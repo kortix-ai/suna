@@ -264,10 +264,10 @@ Provider-specific fields:
 | `postman` | `spec` | A Collection JSON URL or path, a `.postman/api` manifest, or a Postman workspace URL. |
 | `graphql` | `endpoint` | `spec` optional (SDL). |
 | `http` | `base_url` | `spec` optional. |
-| `channel` | `platform` | `slack`, `teams`, `email`, or `meet`. |
+| `channel` | `platform` | `slack`, `teams`, `email`, or `voice`. |
 | `computer` | — | Synth-only. You cannot declare it by hand — it appears when a machine connects. See [Computers](/docs/connect/computers). |
 
-`channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_meet`, and `computer` are platform-owned; using one with a different provider is a validation error.
+`channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_voice`, and `computer` are platform-owned; using one with a different provider is a validation error.
 
 `connectors.auth`: optional, for providers other than `pipedream`. `type` is `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls`, or `none` (default). `oauth1` is restricted to `openapi`, `postman`, and `http` providers. `in` is `header` (default), `query`, or `cookie`. `name` is required when `type` is `custom` or `api_key`.
 
@@ -277,7 +277,7 @@ Provider-specific fields:
 
 ## Channels
 
-v2 removes `channels:` from the schema. Channel-to-agent routing (Slack, Microsoft Teams, email, and meeting bots today) is live operational state, not declarative config. You set it from the dashboard's Channels page or from chat commands, the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Slack & channels](/docs/connect/slack). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/project/legacy-toml).
+v2 removes `channels:` from the schema. Channel-to-agent routing (Slack, Microsoft Teams, email, and voice today) is live operational state, not declarative config. You set it from the dashboard's Channels page or from chat commands, the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Slack & channels](/docs/connect/slack). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/project/legacy-toml).
 
 ## `agents:`
 
@@ -307,7 +307,7 @@ agents:
 | `secrets` | `none` | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`. |
 | `kortix_cli` | `none` | Which Kortix CLI and API actions this agent may perform. `all` means everything the launching user can do — an agent can never exceed its launcher. |
 | `skills` | `none` | Which skills this agent may load. |
-| `workspace` | — | Reserved for future git-boundary controls. Not yet enforced. |
+| `workspace` | — | Git-boundary mode: `runtime`, `read`, or `branch`. Validated against the enum; any other value is rejected. |
 
 v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `skills` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
 

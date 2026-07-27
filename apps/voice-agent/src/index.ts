@@ -1,16 +1,25 @@
 /**
- * The LiveKit agent worker — the voice of a Kortix agent inside a live
- * meeting. STT -> LLM -> TTS pipeline (all OpenAI today; see the stt note) with
- * hosted turn detection, per the LiveKit agents-js 1.5.5 API
- * (see README.md for exactly how this was verified against the pinned
- * package versions rather than docs/memory).
+ * The LiveKit agent worker — the voice of a Kortix agent inside a live call.
  *
- * Run with `bun run src/index.ts dev` against a local LiveKit server — see
- * README.md.
+ * This is the ONLY part of voice that has to be a separate process. apps/api
+ * talks to LiveKit's CONTROL plane (livekit-server-sdk: create a room, mint a
+ * token, dispatch an agent, send a data message) which is plain stateless HTTP
+ * and lives happily in a route handler. This file is the MEDIA plane: it joins
+ * the room as a participant, receives audio frames, and runs STT -> LLM -> TTS.
+ * `cli.runApp()` below takes over the process and forks a child per call, so it
+ * cannot be called from an HTTP handler.
+ *
+ * It is deployed to LiveKit Cloud's managed agent hosting (`lk agent deploy`),
+ * not to our own infrastructure — see README.md. LiveKit injects LIVEKIT_URL /
+ * LIVEKIT_API_KEY / LIVEKIT_API_SECRET automatically, and every model below runs
+ * through LiveKit Inference, so this worker needs NO third-party API keys and no
+ * secrets of its own. Everything else it needs (project, session, call id, the
+ * Kortix API URL and a per-call token) arrives in the room metadata.
+ *
+ * Run locally with `bun run src/index.ts dev`.
  */
 import { fileURLToPath } from 'node:url';
 import { ServerOptions, cli, defineAgent, inference, voice } from '@livekit/agents';
-import * as openai from '@livekit/agents-plugin-openai';
 import { type CallContext, resolveCallContext } from './call-context';
 import { wireInboundReplies } from './inbound-replies';
 import { buildInstructions } from './instructions';
@@ -44,8 +53,11 @@ export default defineAgent({
       //    demonstrably hearing and answering. Deepgram Flux does its own
       //    endpointing and emits transcripts server-side.
       stt: new inference.STT({ model: 'deepgram/flux-general-en' }),
-      llm: new openai.LLM({ model: 'gpt-4.1-mini' }),
-      tts: new openai.TTS({ model: 'gpt-4o-mini-tts', voice: 'alloy' }),
+      // LLM and TTS go through Inference too, for the same reason as STT: the
+      // LiveKit credential covers them, so this worker carries no vendor keys.
+      // That is what lets it deploy to LiveKit Cloud with an empty secret set.
+      llm: new inference.LLM({ model: 'openai/gpt-4.1-mini' }),
+      tts: new inference.TTS({ model: 'cartesia/sonic-2' }),
       // Turn detection is LiveKit's hosted VAD + TurnDetector, NOT a local
       // silero plugin. Running silero in-process was the original choice — one
       // less network hop — but its inference has to keep up with realtime, and
@@ -70,101 +82,15 @@ export default defineAgent({
       tools: [send_prompt, run_command],
     });
 
-    // --- TEMP DIAGNOSTIC INSTRUMENTATION (does the agent hear anything?) ---
-    // Three official per-instance Agent hooks (NOT AgentSessionEventTypes —
-    // see the "never enumerate" gotcha; these are documented override points
-    // on the Agent class itself, one method each, and each delegates to the
-    // real default implementation so behavior is unchanged):
-    //  - sttNode: taps the AudioFrame stream that RoomIO feeds INTO the STT.
-    //    If this never logs a frame, remote audio is not reaching the STT
-    //    stage at all (transport/subscription problem, not an STT problem).
-    //  - llmNode: logs the exact chat context content the LLM is about to see,
-    //    right before the real call. If sttNode gets frames but this never
-    //    fires, the deaf point is STT-or-turn-detection, not the LLM.
-    //  - onUserTurnCompleted: the single most authoritative signal — the SDK
-    //    only calls this with a committed final transcript once its own turn
-    //    detector believes the user finished speaking. This is what
-    //    `session.history` / ConversationItemAdded ultimately derive from.
-    const originalSttNode = agent.sttNode.bind(agent);
-    agent.sttNode = async (audio, modelSettings) => {
-      let frameCount = 0;
-      let peakAmplitudeSinceLog = 0;
-      const tapped = (async function* () {
-        for await (const frame of audio as AsyncIterable<{
-          sampleRate: number;
-          samplesPerChannel: number;
-          data?: Int16Array;
-        }>) {
-          frameCount++;
-          if (frame.data) {
-            for (let i = 0; i < frame.data.length; i++) {
-              const abs = Math.abs(frame.data[i]!);
-              if (abs > peakAmplitudeSinceLog) peakAmplitudeSinceLog = abs;
-            }
-          }
-          if (frameCount === 1) {
-            console.log(
-              `[voice-debug] STT_INPUT first frame sampleRate=${frame.sampleRate} samplesPerChannel=${frame.samplesPerChannel} hasData=${!!frame.data}`,
-            );
-          }
-          if (frameCount % 100 === 0) {
-            // peak int16 amplitude in the last 100 frames — near 0 means the
-            // audio is effectively silent regardless of frame COUNT.
-            console.log(`[voice-debug] STT_INPUT frames=${frameCount} peakAmplitude(last100)=${peakAmplitudeSinceLog}`);
-            peakAmplitudeSinceLog = 0;
-          }
-          yield frame;
-        }
-        console.log(`[voice-debug] STT_INPUT stream ended, total frames=${frameCount}`);
-      })();
-      const result = await originalSttNode(tapped as typeof audio, modelSettings);
-      if (!result) return result;
-      // Tap the STT OUTPUT too — does deepgram/flux ever emit a SpeechEvent at
-      // all for this audio, and with what type/text? sttNode's INPUT tap above
-      // only proves frames reach the STT stage; it says nothing about whether
-      // the STT service itself recognizes speech in them.
-      const reader = (result as ReadableStream<unknown>).getReader();
-      return new ReadableStream<unknown>({
-        async pull(controller) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
-            return;
-          }
-          const ev = value as { type?: number; alternatives?: Array<{ text?: string }> };
-          console.log('[voice-debug] STT_OUTPUT', {
-            type: ev?.type,
-            text: ev?.alternatives?.[0]?.text,
-          });
-          controller.enqueue(value);
-        },
-      }) as unknown as typeof result;
-    };
-
-    const originalLlmNode = agent.llmNode.bind(agent);
-    agent.llmNode = async (chatCtx, toolCtx, modelSettings) => {
-      const items = (chatCtx as { items?: readonly unknown[] }).items ?? [];
-      const lastUser = [...items]
-        .reverse()
-        .find((i) => (i as { type?: string; role?: string }).type === 'message' && (i as { role?: string }).role === 'user');
-      console.log('[voice-debug] LLM_INVOKED', {
-        itemCount: items.length,
-        lastUserContent: lastUser ? (lastUser as { content?: unknown }).content : null,
-      });
-      return originalLlmNode(chatCtx, toolCtx, modelSettings);
-    };
-
     // This is the REAL user-side transcript capture, not diagnostic-only —
     // see transcripts.ts's file header for why this hook, and not
     // ConversationItemAdded/session.history/UserInputTranscribed, is the one
     // that actually fires for the user's side of a real conversation.
     const originalOnUserTurnCompleted = agent.onUserTurnCompleted.bind(agent);
     agent.onUserTurnCompleted = async (chatCtx, newMessage) => {
-      console.log('[voice-debug] USER_TURN_COMPLETED', { content: newMessage.content });
       postUserTurn(callContext, chatCtx, newMessage);
       return originalOnUserTurnCompleted(chatCtx, newMessage);
     };
-    // --- END TEMP DIAGNOSTIC INSTRUMENTATION ---
 
     await session.start({ agent, room: ctx.room });
     await ctx.connect();
@@ -174,6 +100,20 @@ export default defineAgent({
     // for data messages on.
     wireInboundReplies(ctx.room, session, callContext);
 
+    // NOTE: a `session.on(AgentSessionEventTypes.Close, …)` listener was tried
+    // here to shut the job down with its session (a closed session leaves the
+    // process connected to the room as a participant that can no longer act on
+    // `kortix` data messages). Adding it correlated with ConversationItemAdded
+    // never firing again — the agent spoke, but nothing reached
+    // voice_call_turns — which is the same failure mode this codebase has
+    // already hit once from subscribing to AgentSessionEventTypes. Do not
+    // re-add it without proving transcripts still land afterwards.
+    //
+    // The zombie it was meant to prevent is handled where it actually matters:
+    // runtime.ts's `startCall` checks `roomHasAgent` before reusing a call, so
+    // a room whose worker has gone is rebuilt and re-dispatched rather than
+    // handed out as live.
+
     session.generateReply({
       instructions:
         'Greet the room in one short, natural sentence. Do not mention tools or being an AI.',
@@ -181,4 +121,23 @@ export default defineAgent({
   },
 });
 
-cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url) }));
+/**
+ * `agentName` opts this worker OUT of LiveKit's automatic dispatch and into
+ * EXPLICIT dispatch — the API names this worker when it starts a call (see
+ * apps/api/src/channels/voice/livekit.ts `createRoom`). That trade is
+ * deliberate. Automatic dispatch fires once, on room CREATION, and is
+ * unobservable when it doesn't happen: `createRoom` no-ops on an existing
+ * room, a room implicitly recreated by a rejoining participant gets no job,
+ * and the only symptom is a registered worker that silently never receives
+ * one. Explicit dispatch is a request with a response — it either returns a
+ * dispatch id or throws, so a call that cannot get an agent fails loudly at
+ * spawn time instead of handing the user a link to an empty room.
+ *
+ * This name is a contract with the API. Changing it on one side alone means
+ * every dispatch targets a worker that does not exist.
+ */
+export const VOICE_AGENT_NAME = 'kortix-voice';
+
+cli.runApp(
+  new ServerOptions({ agent: fileURLToPath(import.meta.url), agentName: VOICE_AGENT_NAME }),
+);

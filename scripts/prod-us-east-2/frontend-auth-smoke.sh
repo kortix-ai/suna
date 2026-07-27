@@ -37,9 +37,9 @@ target_secret_json="$(
 target_database_url="$(
   jq -er '.target_database_url // .DATABASE_URL' <<<"$target_secret_json"
 )"
-target_supabase_url="$(
+target_supabase_url="${TARGET_SUPABASE_URL_OVERRIDE:-$(
   jq -er '.target_supabase_url // .SUPABASE_URL' <<<"$target_secret_json"
-)"
+)}"
 target_anon_key="$(
   jq -er '.target_anon_key // .SUPABASE_ANON_KEY' <<<"$target_secret_json"
 )"
@@ -51,6 +51,7 @@ target_service_role_key="$(
 smoke_email="use2-browser-smoke-$(date +%s)-$(openssl rand -hex 4)@invalid.kortix.test"
 smoke_password="$(openssl rand -base64 36 | tr -d '\n')aA1!"
 smoke_user_id=""
+smoke_account_ids="{}"
 original_webhook_url="$(
   psql "$target_database_url" -X -qAt -v ON_ERROR_STOP=1 \
     -c "SELECT backend_url FROM public.webhook_config WHERE id = 1"
@@ -73,6 +74,27 @@ cleanup() {
     return
   fi
 
+  if [[ "$smoke_account_ids" == "{}" ]]; then
+    smoke_account_ids="$(
+      psql "$target_database_url" -X -qAt -v ON_ERROR_STOP=1 \
+        -v smoke_user_id="$smoke_user_id" <<'SQL'
+SELECT COALESCE(
+  array_agg(account_id ORDER BY account_id),
+  ARRAY[]::uuid[]
+)
+FROM (
+  SELECT account_id
+  FROM kortix.account_members
+  WHERE user_id = :'smoke_user_id'::uuid
+  UNION
+  SELECT account_id
+  FROM kortix.accounts
+  WHERE account_id = :'smoke_user_id'::uuid
+) AS smoke_accounts;
+SQL
+    )"
+  fi
+
   curl -sS -o /dev/null \
     -X DELETE \
     -H "Authorization: Bearer $target_service_role_key" \
@@ -81,13 +103,20 @@ cleanup() {
 
   psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
     -v smoke_user_id="$smoke_user_id" \
+    -v smoke_account_ids="$smoke_account_ids" \
     -v sequence_headroom="$TARGET_AUTH_SEQUENCE_HEADROOM" \
     >/dev/null <<'SQL' || true
 DELETE FROM kortix.audit_events
 WHERE actor_user_id = :'smoke_user_id'::uuid;
 
+DELETE FROM kortix.credit_ledger
+WHERE account_id = ANY(:'smoke_account_ids'::uuid[]);
+
+DELETE FROM kortix.credit_accounts
+WHERE account_id = ANY(:'smoke_account_ids'::uuid[]);
+
 DELETE FROM kortix.accounts
-WHERE account_id = :'smoke_user_id'::uuid;
+WHERE account_id = ANY(:'smoke_account_ids'::uuid[]);
 
 DELETE FROM auth.audit_log_entries
 WHERE payload::text LIKE '%' || :'smoke_user_id' || '%';
@@ -102,7 +131,8 @@ DELETE FROM auth.mfa_factors
 WHERE user_id = :'smoke_user_id'::uuid;
 
 DELETE FROM auth.flow_state
-WHERE referrer LIKE '%kortix_use2_oauth_smoke%'
+WHERE user_id = :'smoke_user_id'::uuid
+   OR referrer LIKE '%kortix_use2_oauth_smoke%'
    OR referrer LIKE '%kortix_use2_github_oauth_smoke%';
 
 DELETE FROM auth.identities
@@ -179,16 +209,25 @@ for attempt in 1 2 3; do
   cleanup
   cleanup_rows="$(
     psql "$target_database_url" -X -qAt -v ON_ERROR_STOP=1 \
-      -v smoke_user_id="$smoke_user_id" <<'SQL'
+      -v smoke_user_id="$smoke_user_id" \
+      -v smoke_account_ids="$smoke_account_ids" <<'SQL'
 SELECT
   (SELECT count(*) FROM auth.audit_log_entries
     WHERE payload::text LIKE '%' || :'smoke_user_id' || '%')
   + (SELECT count(*) FROM auth.users
     WHERE id = :'smoke_user_id'::uuid)
-  + (SELECT count(*) FROM kortix.accounts
-    WHERE account_id = :'smoke_user_id'::uuid)
+  + (SELECT count(*) FROM auth.flow_state
+    WHERE user_id = :'smoke_user_id'::uuid)
   + (SELECT count(*) FROM kortix.audit_events
-    WHERE actor_user_id = :'smoke_user_id'::uuid);
+    WHERE actor_user_id = :'smoke_user_id'::uuid)
+  + (SELECT count(*) FROM kortix.accounts
+    WHERE account_id = ANY(:'smoke_account_ids'::uuid[]))
+  + (SELECT count(*) FROM kortix.account_members
+    WHERE account_id = ANY(:'smoke_account_ids'::uuid[]))
+  + (SELECT count(*) FROM kortix.credit_accounts
+    WHERE account_id = ANY(:'smoke_account_ids'::uuid[]))
+  + (SELECT count(*) FROM kortix.credit_ledger
+    WHERE account_id = ANY(:'smoke_account_ids'::uuid[]));
 SQL
   )"
   if [[ "$cleanup_rows" == "0" ]]; then

@@ -262,47 +262,6 @@ export async function updateEmailPolicy(
 // The voice itself now comes from the realtime provider, not a per-project
 // ElevenLabs pick, so the name is all that's left to configure here.
 
-/** @deprecated Realtime voice channels do not expose a selectable voice catalog. */
-export interface MeetVoice {
-  id: string;
-  name: string;
-  desc: string;
-}
-
-/** @deprecated Realtime voice channels do not expose a selectable voice catalog. */
-export interface MeetVoicesResponse {
-  selected: string;
-  bot_name: string;
-  default_bot_name: string;
-  speak_enabled: boolean;
-  voices: MeetVoice[];
-}
-
-/** @deprecated Realtime voice channels do not expose a selectable voice catalog. */
-export async function getMeetVoices(projectId: string): Promise<MeetVoicesResponse | null> {
-  const res = await backendApi.get<MeetVoicesResponse>(
-    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices`,
-    { showErrors: false },
-  );
-  if (!res.success) return null;
-  return res.data ?? null;
-}
-
-/** @deprecated Realtime voice channels select their voice at the provider. */
-export async function setMeetVoice(
-  projectId: string,
-  voice: string,
-): Promise<{ selected: string }> {
-  return unwrap(
-    await backendApi.put<{ selected: string }>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/voice`,
-      { voice },
-      { showErrors: false },
-    ),
-    'Failed to save voice',
-  );
-}
-
 export async function setMeetBotName(
   projectId: string,
   name: string,
@@ -314,40 +273,6 @@ export async function setMeetBotName(
       { showErrors: false },
     ),
     'Failed to save name',
-  );
-}
-
-/** @deprecated Realtime voice channels do not expose provider voice previews. */
-export async function previewMeetVoice(projectId: string, voiceId: string): Promise<string | null> {
-  const res = await backendApi.post<{ b64: string }>(
-    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices/${encodeURIComponent(voiceId)}/preview`,
-    {},
-    { showErrors: false },
-  );
-  if (!res.success || !res.data?.b64) return null;
-  return res.data.b64;
-}
-
-/** @deprecated Realtime voice channels speak through their live media session. */
-export interface SpeakInMeetingResult {
-  ok: boolean;
-  voice: string;
-}
-
-/** @deprecated Realtime voice channels speak through their live media session. */
-export async function speakInMeeting(
-  projectId: string,
-  botId: string,
-  text: string,
-  voice?: string,
-): Promise<SpeakInMeetingResult> {
-  return unwrap(
-    await backendApi.post<SpeakInMeetingResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/speak`,
-      { bot_id: botId, text, voice },
-      { showErrors: false },
-    ),
-    'Failed to speak in meeting',
   );
 }
 

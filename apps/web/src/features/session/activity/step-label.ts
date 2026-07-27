@@ -78,3 +78,47 @@ export function stepLabel(part: Pick<ToolPart, 'tool' | 'state'>): string {
   const pretty = name.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
   return arg ? `${pretty} · ${shorten(arg)}` : pretty;
 }
+
+/**
+ * The EXPANDED reading of a step — concrete, not summarised.
+ *
+ * `stepLabel` answers "what kind of thing was this" and is right for a
+ * collapsed summary. Inside an opened run it is actively bad: a run of shell
+ * calls with no model-authored description renders as "Ran a command" eleven
+ * times, and the reader cannot tell the rows apart or find the one they want.
+ *
+ * So an expanded row shows the argument that identifies the step — the command
+ * itself, the file, the pattern — in mono, exactly as the transcript did before
+ * this work. The verb stays as a plain-language prefix where it adds meaning,
+ * and is dropped for shell (the `$` says it).
+ */
+export interface StepDetail {
+  /** Plain-language prefix; '' for shell, where `$` carries it. */
+  verb: string;
+  /** The identifying argument, rendered monospace. May be ''. */
+  mono: string;
+  /** True for shell steps, which get a `$` gutter. */
+  shell: boolean;
+}
+
+export function stepDetail(part: Pick<ToolPart, 'tool' | 'state'>): StepDetail {
+  const input = ((part.state as { input?: Record<string, unknown> })?.input ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const name = normalizeActivityToolName(part.tool);
+
+  if (name === 'bash') {
+    const command = ((input.command as string) ?? '').trim();
+    // First line only — a heredoc or a && chain would otherwise blow the row's
+    // height open. The full text is one more click away in the tool output.
+    const firstLine = command.split('\n')[0] ?? '';
+    return { verb: '', mono: firstLine, shell: true };
+  }
+
+  const arg = firstPathArg(input);
+  const verb = TOOL_VERBS[name] ?? name.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  // Full path, not just the basename: in an expanded list two files can share
+  // a name, and the folder is what tells them apart.
+  return { verb, mono: arg ?? '', shell: false };
+}

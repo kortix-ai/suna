@@ -3,11 +3,11 @@
 Cloudflare Worker that fronts the public API hostnames and forwards to whichever
 backend `ACTIVE_BACKEND` names. One source (`worker.mjs`), three envs (`wrangler.toml`):
 
-| Env    | Custom domain        | Worker script           | `eks` backend          | `ecs-fargate` backend          | `us-east-2` backend |
-| ------ | -------------------- | ----------------------- | ---------------------- | ------------------------------ | ------------------- |
-| `prod` | `api.kortix.com`     | `api-kortix-router`     | `api-eks.kortix.com`     | `api-ecs-fargate.kortix.com`     | `api-use2-shadow.kortix.com` |
-| `staging` | `staging-api.kortix.com` | `staging-api-kortix-router` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` | — |
-| `dev`  | `dev-api.kortix.com` | `dev-api-kortix-router` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` | — |
+| Env       | Custom domain            | Worker script               | `eks` backend                | `ecs-fargate` backend                | `us-east-2` backend          |
+| --------- | ------------------------ | --------------------------- | ---------------------------- | ------------------------------------ | ---------------------------- |
+| `prod`    | `api.kortix.com`         | `api-kortix-router`         | `api-eks.kortix.com`         | `api-ecs-fargate.kortix.com`         | `api-use2-shadow.kortix.com` |
+| `staging` | `staging-api.kortix.com` | `staging-api-kortix-router` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` | —                            |
+| `dev`     | `dev-api.kortix.com`     | `dev-api-kortix-router`     | `dev-api-eks.kortix.com`     | `dev-api-ecs-fargate.kortix.com`     | —                            |
 
 **ECS Fargate is the ACTIVE backend for prod and dev** (`ACTIVE_BACKEND` /
 `GATEWAY_ACTIVE_BACKEND` = `ecs-fargate` since PR #4683); EKS is the warm
@@ -54,6 +54,20 @@ curl -s -D - https://api.kortix.com/v1/health -o /dev/null | grep -i x-backend
 The prepared production cutover value is `us-east-2`. Set both
 `ACTIVE_BACKEND` and `GATEWAY_ACTIVE_BACKEND` during the maintenance window.
 The checked-in values remain `ecs-fargate` until that cutover.
+
+## Independent maintenance gate
+
+Production reads `MAINTENANCE_STATE_URL` from Vercel Edge Config through
+`https://kortix.com/api/maintenance/edge`. The Worker caches this state for two
+seconds.
+
+When the level is `blocking`, the Worker returns `503 MAINTENANCE_MODE` for
+mutating API and gateway requests. `GET`, `HEAD`, and `OPTIONS` remain
+available. The API origin and production database do not serve this state.
+
+`GET /v1/system/maintenance` returns the same independent state directly from
+the Worker. The Worker activates automatic blocking maintenance if the state
+endpoint or active origin is unavailable.
 
 ## Backend hostnames (proxied CNAMEs → ALBs, Full-strict TLS)
 

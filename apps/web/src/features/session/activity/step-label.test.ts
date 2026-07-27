@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ToolPart } from '@/ui';
-import { stepLabel } from './step-label';
+import { stepDetail, stepLabel } from './step-label';
 
 function part(tool: string, input: Record<string, unknown> = {}): Pick<ToolPart, 'tool' | 'state'> {
   return { tool, state: { status: 'completed', input } } as unknown as Pick<
@@ -62,5 +62,39 @@ describe('stepLabel', () => {
     );
     expect(label).not.toContain('/workspace');
     expect(label).not.toContain('&&');
+  });
+});
+
+describe('stepDetail (the EXPANDED reading)', () => {
+  test('a shell step shows the command itself, not "Ran a command"', () => {
+    // Eleven rows of "Ran a command" are indistinguishable — the reason this
+    // exists separately from stepLabel.
+    const d = stepDetail(part('bash', { command: 'kortix executor call gmail find_email' }));
+    expect(d.shell).toBe(true);
+    expect(d.verb).toBe('');
+    expect(d.mono).toBe('kortix executor call gmail find_email');
+  });
+
+  test('a multi-line command is cut to its first line so a row keeps its height', () => {
+    const d = stepDetail(part('bash', { command: "cat <<'EOF'\nline two\nline three\nEOF" }));
+    expect(d.mono).toBe("cat <<'EOF'");
+  });
+
+  test("the model's description does NOT replace the command here", () => {
+    // stepLabel prefers the description; the expanded row must stay concrete.
+    const d = stepDetail(part('bash', { description: 'Check the inbox', command: 'ls -la' }));
+    expect(d.mono).toBe('ls -la');
+  });
+
+  test('file steps keep the FULL path — two files can share a basename', () => {
+    const d = stepDetail(part('read', { filePath: 'src/app/page.tsx' }));
+    expect(d.verb).toBe('Read');
+    expect(d.mono).toBe('src/app/page.tsx');
+    expect(d.shell).toBe(false);
+  });
+
+  test('a step with no argument still names itself', () => {
+    expect(stepDetail(part('read')).verb).toBe('Read');
+    expect(stepDetail(part('read')).mono).toBe('');
   });
 });

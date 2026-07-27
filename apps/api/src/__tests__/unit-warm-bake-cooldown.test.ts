@@ -17,7 +17,6 @@ setTestEnv('DAYTONA_SERVER_URL', 'https://daytona.example.test');
 setTestEnv('DAYTONA_TARGET', 'test-target');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
-setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 
 const { warmBakeCooldownGate, warmBakeScopeId, perProjectWarmEligible, DEFAULT_SANDBOX_SLUG } = await import(
   '../snapshots/builder'

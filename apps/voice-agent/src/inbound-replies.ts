@@ -78,6 +78,23 @@ export function wireInboundReplies(
     // instruction ("mention this briefly", "say this in your own words"),
     // and generateReply() is what actually turns it into natural speech
     // instead of reciting it.
-    session.generateReply({ instructions: text });
+    //
+    // generateReply() THROWS `AgentSession is not running` once the session has
+    // closed, and because this is an event handler nobody awaits, that throw
+    // surfaced only as an unhandled rejection in the worker log — the call
+    // looked healthy and the hand-off silently never reached the room. A job
+    // whose session has closed can still be connected to the room (it holds the
+    // participant until shutdown), so it keeps RECEIVING these messages while
+    // being incapable of acting on them. Drop them explicitly instead of
+    // throwing into the void; onSessionClosed in index.ts is what stops the
+    // dead job from squatting the room in the first place.
+    try {
+      const reply = session.generateReply({ instructions: text });
+      void Promise.resolve(reply).catch((err) => {
+        console.error('[voice] generateReply failed for kortix_reply', err);
+      });
+    } catch (err) {
+      console.error('[voice] dropped kortix_reply — session not running', err);
+    }
   });
 }

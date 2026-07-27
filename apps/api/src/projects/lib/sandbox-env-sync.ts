@@ -12,7 +12,8 @@ import {
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
-import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
+import { DEFAULT_AGENT_SENTINEL } from '../agents';
+import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
@@ -45,6 +46,7 @@ export interface SandboxEnvSnapshot {
 async function resolveOwnerRawEnv(
   projectId: string,
   sessionId: string | null,
+  requestedAgent?: string | null,
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
@@ -58,10 +60,18 @@ async function resolveOwnerRawEnv(
     .limit(1);
   if (!row?.createdBy) return null;
 
-  // Resolve the running agent's `secrets` grant (by identifier) — the SAME gate
-  // applied at sandbox boot (buildSessionSandboxEnvVars). A hot-push must not
-  // deliver an identifier a scoped agent isn't granted; back-compat/no-git-
-  // context sessions default to 'all' (undefined).
+  // Resolve the RUNNING agent's `secrets` grant (by identifier) — the SAME gate
+  // applied at sandbox boot (buildSessionSandboxEnvVars), through the SAME
+  // resolver (lib/secret-grant.ts), so boot and hot push can never disagree.
+  //
+  // `requestedAgent` is the agent the prompt actually asked to run, which is
+  // NOT necessarily `row.agentName`: in-session agent switching is allowed and
+  // nothing ever updates that column. Resolving from the stale column let a
+  // session created under a broad agent run a narrow one while still being
+  // re-pushed the broad agent's full env on every turn. A switch that would
+  // change the grant now throws AgentSecretGrantMismatchError (→ 409) rather
+  // than quietly re-scoping, because a later narrowing cannot un-read what the
+  // previous agent already pulled into the box.
   const [project] = await db
     .select({
       repoUrl: projects.repoUrl,
@@ -72,18 +82,15 @@ async function resolveOwnerRawEnv(
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  let grantEnv: string[] | 'all' | undefined;
-  if (project?.defaultBranch) {
-    const loadedAgents = await loadProjectAgents({
-      projectId,
-      repoUrl: project.repoUrl ?? '',
-      defaultBranch: project.defaultBranch,
-      manifestPath: project.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    }).catch(() => null);
-    const grant = loadedAgents ? grantFromLoadedAgents(row.agentName ?? '', loadedAgents) : null;
-    grantEnv = grant?.env;
-  }
+  const grantEnv = await resolveSessionSecretGrant({
+    projectId,
+    repoUrl: project?.repoUrl ?? '',
+    defaultBranch: project?.defaultBranch,
+    manifestPath: project?.manifestPath,
+    sessionAgent: row.agentName ?? DEFAULT_AGENT_SENTINEL,
+    requestedAgent,
+    enforceGrantLock: config.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
+  });
 
   // THE CLOBBER FIX: apply the SAME per-session secrets narrowing as boot
   // (buildSessionSandboxEnvVars). Without this, the first prompt's env sync (and
@@ -96,8 +103,9 @@ async function resolveOwnerRawEnv(
 export async function resolveSandboxEnvSnapshot(
   projectId: string,
   sessionId: string | null,
+  requestedAgent?: string | null,
 ): Promise<SandboxEnvSnapshot | null> {
-  const raw = await resolveOwnerRawEnv(projectId, sessionId);
+  const raw = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent);
   if (!raw) return null;
   const { env, names } = sanitizeSandboxEnv(raw);
   return { env, names, revision: projectSecretsRevision(env) };
@@ -183,9 +191,17 @@ export async function syncSandboxEnvForPrompt(args: {
    *  the call site) — needed to resolve the LLM-gateway base URL onto the
    *  RIGHT origin for a same-machine provider. */
   providerName: ProviderName;
+  /** The agent this prompt asked to run (the body's `agent` field). The secret
+   *  grant is resolved from THIS, not from the session's create-time agent —
+   *  see resolveOwnerRawEnv. Null/'default' means "the session's own agent". */
+  requestedAgent?: string | null;
 }): Promise<void> {
   if (!args.serviceKey) return;
-  const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
+  const snapshot = await resolveSandboxEnvSnapshot(
+    args.projectId,
+    args.sessionId,
+    args.requestedAgent,
+  );
   if (!snapshot) return;
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
   const { opencodeState } = await postEnvToDaemon({

@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 /**
- * FULL-FLOW harness for the voice product path — provision a user, flip on the
- * connector, boot a sandbox, drive the voice MCP the way an in-sandbox agent
- * does, join the live call and actually speak into it, and assert on durable
- * signals (DB rows, HTTP statuses, audio frames) at every hop. One PASS/FAIL/
- * WARN/SKIP line per step; non-zero exit on any FAIL.
+ * FULL-FLOW harness for the voice product path — provision a user, flip on
+ * the experimental flag, boot a sandbox, drive the voice MCP the way an
+ * in-sandbox agent does, join the call it spawns and actually speak into it,
+ * and assert on durable signals (DB rows, HTTP statuses, audio frames) at
+ * every hop. One PASS/FAIL/WARN/SKIP line per step; non-zero exit on any FAIL.
  *
  * Usage (fresh run, does everything — KORTIX_URL is required by apps/api's
  * own config validation, same as running the API itself):
@@ -14,64 +14,45 @@
  * Usage (iterate against an already-provisioned call):
  *   KORTIX_URL=http://localhost:15608 \
  *     dotenvx run -f apps/api/.env --quiet -- bun scripts/voice-full-flow.ts \
- *     --skip-provision --call <sessionId> [--skip-connector --skip-session]
+ *     --skip-provision --call <sessionId> [--skip-voice-flag --skip-session]
  *
  * Run `bun scripts/voice-full-flow.ts --help` for the full flag list.
  *
- * ── Two things this file does that are NOT obvious from the task list ──────
+ * ── One thing this file does that is NOT obvious from the task list ────────
  *
- * 1. MODULE RESOLUTION. This file lives in the repo-root `scripts/` workspace,
- *    which has neither `livekit-server-sdk` (an apps/api dependency) nor
- *    `@livekit/rtc-node` (an apps/voice-agent dependency) reachable via a plain
- *    `import` — Node/Bun resolve bare specifiers relative to the IMPORTING
- *    FILE's own node_modules chain, and this file's chain is the root
- *    workspace's. (`apps/api/src/**` imports resolve fine here because *they*
- *    are the importing file once loaded — same reason scripts/voice-live-test.ts
- *    can `import { startCall } from '../apps/api/src/channels/voice/runtime'`.)
- *    `loadFrom()` below works around this with `Bun.resolveSync` rooted at the
- *    owning workspace, then a dynamic `import()` of the resolved path. No
- *    existing file needed editing (no new root dependency) to make this work.
+ * MODULE RESOLUTION. This file lives in the repo-root `scripts/` workspace,
+ * which has neither `livekit-server-sdk` (an apps/api dependency) nor
+ * `@livekit/rtc-node` (an apps/voice-agent dependency) reachable via a plain
+ * `import` — Node/Bun resolve bare specifiers relative to the IMPORTING
+ * FILE's own node_modules chain, and this file's chain is the root
+ * workspace's. (`apps/api/src/**` imports resolve fine here because *they*
+ * are the importing file once loaded — same reason scripts/voice-live-test.ts
+ * can `import { startCall } from '../apps/api/src/channels/voice/runtime'`.)
+ * `loadFrom()` below works around this with `Bun.resolveSync` rooted at the
+ * owning workspace, then a dynamic `import()` of the resolved path. No
+ * existing file needed editing (no new root dependency) to make this work.
  *
- * 2. THE SIMULATED SPAWN'S BLAST RADIUS. `voice_spawn` always dispatches a
- *    real Recall bot at a real meeting_url (routes.ts's ctx.spawn -> the
- *    executor gateway -> Recall's /bot/) — there is no dry-run mode. Step 4
- *    below therefore does NOT call the MCP tool; it imports `startCall`
- *    straight from apps/api/src/channels/voice/runtime and calls it in
- *    *this script's own process*. That's a real LiveKit room with a real
- *    dispatched worker — good enough for steps 6-7 (speak + transcript, which
- *    read straight from Postgres). But runtime.ts's call registry is
- *    deliberately per-process ("a call is pinned to whichever API instance
- *    handled its voice_spawn"), so the REAL running API server (the one
- *    apps/voice-agent's worker calls back into over HTTP) never learns this
- *    call exists. Concretely:
- *      - POST .../voice/turns does NOT require a registry entry (routes.ts
- *        says so explicitly) -> works fine, step 7 is a clean signal.
- *      - POST .../voice/prompt and .../voice/run-command DO require one ->
- *        they will 404 against the live API server even when the worker
- *        correctly attempts them. Step 8 therefore asserts on the API's
- *        access log (a POST reaching the route at all), never on the HTTP
- *        status, and step 10 closes the room via the same direct-import path
- *        it was opened with rather than through the (here, inevitably
- *        "not live") MCP voice_end call.
- *    None of this is a bug in the product; it's this harness trading one
- *    known, documented gap for the ability to run at all without spending
- *    Recall bot-minutes on a real meeting. Every place it matters says so
- *    inline when it prints its result.
+ * Step 4 below calls the REAL `voice_spawn` MCP tool, over HTTP, exactly the
+ * way an in-sandbox agent would — there is no external meeting to join or
+ * bot-minutes to spend, so there is no need for the direct-import workaround
+ * an earlier version of this harness used. That also means the call this
+ * step opens is registered on the REAL running API server (the one
+ * apps/voice-agent's worker calls back into), so steps 8 and 10 need no
+ * cross-process caveat either.
  */
 
 // ── apps/api internals, imported straight from source ──────────────────────
-// These resolve fine (see file header point 1): each of these files' OWN
-// imports (drizzle-orm, @kortix/db, livekit-server-sdk, ...) are resolved
-// relative to THAT file's location inside apps/api, not this one.
+// These resolve fine (see file header): each of these files' OWN imports
+// (drizzle-orm, @kortix/db, livekit-server-sdk, ...) are resolved relative to
+// THAT file's location inside apps/api, not this one.
 import { db } from '../apps/api/src/shared/db';
 import { config } from '../apps/api/src/config';
-import { startCall, endCall, readTurns } from '../apps/api/src/channels/voice/runtime';
+import { readTurns } from '../apps/api/src/channels/voice/runtime';
 import { roomNameForCall, mintAccessToken } from '../apps/api/src/channels/voice/livekit';
-import { resolveProjectBotName } from '../apps/api/src/channels/voice-identity';
 import { runCommandInSandbox } from '../apps/api/src/channels/voice/run-command';
 
-// ── workspace-scoped packages this file cannot `import` directly (see header
-// point 1) — includes drizzle-orm/@kortix/db, which are apps/api dependencies
+// ── workspace-scoped packages this file cannot `import` directly (see file
+// header) — includes drizzle-orm/@kortix/db, which are apps/api dependencies
 // too, not root ones, even though the schema TYPES flow through fine above
 // via `db`'s own inferred type. ──────────────────────────────────────────
 const ROOT_DIR = new URL('../', import.meta.url).pathname;
@@ -94,8 +75,8 @@ const {
   TrackPublishOptions,
   TrackSource,
 } = await loadFrom('@livekit/rtc-node', VOICE_AGENT_DIR);
-const { and, eq } = await loadFrom('drizzle-orm', API_DIR);
-const { executorConnectors, projectSessions } = await loadFrom('@kortix/db', API_DIR);
+const { eq } = await loadFrom('drizzle-orm', API_DIR);
+const { projectSessions } = await loadFrom('@kortix/db', API_DIR);
 
 // ── constants ────────────────────────────────────────────────────────────
 const API = process.env.KE2E_API_URL || 'http://localhost:15608/v1';
@@ -139,9 +120,9 @@ function printHelp() {
   --run-command-say "<text>" phrase spoken in step 8 to trigger run_command
   --api-log <path>          API access-log path checked in step 8 (default: ${DEFAULT_API_LOG})
 
-  --skip-connector          skip the experimental-flag + connector-materialize check
+  --skip-voice-flag         skip enabling the voice experimental flag
   --skip-session            skip session creation (only meaningful with --skip-provision)
-  --skip-spawn              skip opening the LiveKit room (runtime.startCall)
+  --skip-spawn              skip calling voice_spawn (opening the LiveKit room)
   --skip-mcp-list           skip the tools/list MCP assertion
   --skip-speak              skip joining + speaking into the room
   --skip-transcript         skip the voice_call_turns user+agent row assertion
@@ -405,44 +386,30 @@ async function main() {
     record('1-provision', 'SKIP', `reusing project=${projectId} call=${sessionId}`);
   }
 
-  // ── step 2: enable the voice experimental flag + assert the connector ──
-  if (flag('skip-connector')) {
-    record('2-connector', 'SKIP');
+  // ── step 2: enable the voice experimental flag ─────────────────────────
+  // voice_spawn is not connector-backed any more, so there is nothing to
+  // materialize and wait on — the flag itself, read back off the same PATCH
+  // response, is the only thing to assert.
+  if (flag('skip-voice-flag')) {
+    record('2-voice-flag', 'SKIP');
+  } else if (!userJwt) {
+    record('2-voice-flag', 'SKIP', 'no fresh user token (reusing a project)');
   } else {
     try {
-      if (userJwt) {
-        const res = await fetch(`${API}/projects/${projectId}/experimental`, {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${userJwt}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ feature: 'voice', enabled: true }),
-        });
-        if (!res.ok) console.log(`  [warn] PATCH /experimental → ${res.status} ${(await res.text()).slice(0, 200)}`);
-      } else {
-        console.log('  [info] no fresh user token (reusing a project) — checking materialization only');
-      }
-      // reconcileChannelConnectors runs fire-and-forget off the PATCH; poll.
-      let foundEnabled = false;
-      for (let i = 0; i < 12; i++) {
-        const rows = await db
-          .select({ enabled: executorConnectors.enabled })
-          .from(executorConnectors)
-          .where(and(eq(executorConnectors.projectId, projectId!), eq(executorConnectors.slug, 'kortix_voice')))
-          .limit(1);
-        if (rows.length && rows[0]!.enabled) {
-          foundEnabled = true;
-          break;
-        }
-        await sleep(1500);
-      }
+      const res = await fetch(`${API}/projects/${projectId}/experimental`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${userJwt}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ feature: 'voice', enabled: true }),
+      });
+      const body = await j(res);
+      const enabled = body?.experimental?.voice === true;
       record(
-        '2-connector',
-        foundEnabled ? 'PASS' : 'FAIL',
-        foundEnabled
-          ? 'kortix_voice connector row present + enabled'
-          : 'kortix_voice connector row not found — check the voice experimental flag and RECALL_API_KEY',
+        '2-voice-flag',
+        res.ok && enabled ? 'PASS' : 'FAIL',
+        `HTTP ${res.status} experimental.voice=${body?.experimental?.voice}`,
       );
     } catch (err) {
-      record('2-connector', 'FAIL', err instanceof Error ? err.message : String(err));
+      record('2-voice-flag', 'FAIL', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -483,32 +450,32 @@ async function main() {
     }
   }
 
-  // ── step 4: "spawn" — open the LiveKit room WITHOUT dispatching Recall ──
+  // ── step 4: spawn — the REAL voice_spawn MCP tool ──────────────────────
   let roomOpened = false;
+  let joinUrl: string | undefined;
   if (flag('skip-spawn')) {
     record('4-spawn', 'SKIP');
+  } else if (!executorToken) {
+    record('4-spawn', 'SKIP', 'no session token available');
   } else {
-    console.log(
-      '  [info] voice_spawn was NOT called over MCP — it always dispatches a real Recall\n' +
-        '         bot into a real meeting_url, with no dry-run mode (routes.ts ctx.spawn ->\n' +
-        '         executor gateway -> Recall /bot/). This step instead imports runtime.startCall\n' +
-        '         directly and calls it in-process, which opens a real LiveKit room and gets a\n' +
-        '         real worker dispatched into it, simulating what voice_spawn would have done\n' +
-        '         minus the Recall leg. See this file\'s header for the cross-process caveat\n' +
-        '         this creates for steps 8 and 10.',
-    );
     try {
-      const botName = await resolveProjectBotName(projectId!).catch(() => 'Kortix');
-      const call = await startCall({
-        callId: sessionId!,
-        projectId: projectId!,
-        sessionId: sessionId!,
-        botId: null,
-        botName,
-        voice: null,
-      });
-      roomOpened = true;
-      record('4-spawn', 'PASS', `room=${call.room}`);
+      const { status, body } = await mcpCall(
+        projectId!,
+        sessionId!,
+        executorToken,
+        'tools/call',
+        { name: 'voice_spawn', arguments: {} },
+        4,
+      );
+      const result = body?.result;
+      const structured = result?.structuredContent;
+      if (status !== 200 || result?.isError || !structured?.join_url) {
+        record('4-spawn', 'FAIL', `HTTP ${status} ${JSON.stringify(body).slice(0, 300)}`);
+      } else {
+        joinUrl = structured.join_url as string;
+        roomOpened = true;
+        record('4-spawn', 'PASS', `call_id=${structured.call_id} join_url=${joinUrl.slice(0, 70)}…`);
+      }
     } catch (err) {
       abort('4-spawn', err);
     }
@@ -607,11 +574,7 @@ async function main() {
         record(
           '8-run-command',
           'WARN',
-          `cannot read API log at ${logPath} (pass --api-log <path>). NOTE per this file's header: ` +
-            'because step 4 opened the room via a direct runtime.startCall() import in THIS process, ' +
-            'the real API server never registered this call, so even a correctly-firing worker POST to ' +
-            '.../voice/run-command will 404 there — log evidence of the POST reaching the route is the ' +
-            'only reliable signal here, not the HTTP status.',
+          `cannot read API log at ${logPath} (pass --api-log <path>) — no other signal available for this step.`,
         );
       } else {
         const delta = await fileDelta(logPath, offsetBefore);
@@ -670,24 +633,10 @@ async function main() {
   // ── step 10: voice_end — assert the room actually closes ──────────────
   if (flag('skip-end')) {
     record('10-end', 'SKIP');
+  } else if (!executorToken) {
+    record('10-end', 'SKIP', 'no session token available');
   } else {
     try {
-      if (executorToken) {
-        // Informational only — expected to report "not live" for the same
-        // cross-process reason documented at the top of this file. The
-        // authoritative close below uses the same process that opened the
-        // room in step 4.
-        const { status, body } = await mcpCall(
-          projectId!,
-          sessionId!,
-          executorToken,
-          'tools/call',
-          { name: 'voice_end', arguments: { call_id: sessionId } },
-          10,
-        );
-        console.log(`  [info] MCP voice_end → HTTP ${status} ${JSON.stringify(body).slice(0, 150)}`);
-      }
-
       const roomName = roomNameForCall(sessionId!);
       const svc = new RoomServiceClient(
         config.LIVEKIT_URL.replace(/^ws/i, 'http'),
@@ -695,7 +644,15 @@ async function main() {
         config.LIVEKIT_API_SECRET,
       );
       const before = await svc.listRooms([roomName]).catch(() => []);
-      const closed = await endCall(sessionId!);
+      const { status, body } = await mcpCall(
+        projectId!,
+        sessionId!,
+        executorToken,
+        'tools/call',
+        { name: 'voice_end', arguments: { call_id: sessionId } },
+        10,
+      );
+      const ended = status === 200 && !body?.result?.isError;
       await sleep(1500);
       const after = await svc.listRooms([roomName]).catch(() => []);
 
@@ -703,7 +660,11 @@ async function main() {
         record('10-end', 'WARN', 'room did not exist before voice_end — was step 4 skipped?');
       } else {
         const roomGone = after.length === 0;
-        record('10-end', closed && roomGone ? 'PASS' : 'FAIL', `registryClosed=${closed} roomBefore=${before.length} roomAfter=${after.length}`);
+        record(
+          '10-end',
+          ended && roomGone ? 'PASS' : 'FAIL',
+          `mcpEnded=${ended} roomBefore=${before.length} roomAfter=${after.length}`,
+        );
       }
     } catch (err) {
       record('10-end', 'FAIL', err instanceof Error ? err.message : String(err));

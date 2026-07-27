@@ -352,11 +352,24 @@ export function formatActivityDuration(ms: number): string {
 // Narrative fold
 // ============================================================================
 
+/** One child of a run, in the order it actually happened. */
+export type NarrativeRunChild =
+  | { kind: 'reasoning'; key: string; parts: ReasoningPart[] }
+  | { kind: 'step'; key: string; entry: ActivityEntry };
+
 export interface NarrativeRun {
   /** Key of the run's FIRST item — the slot that paints the work line, so the
    *  line keeps its place in the narrative. */
   key: string;
+  /** Reasoning and steps INTERLEAVED, in wire order. The runtime emits
+   *  `step-start → reasoning → tool → step-finish`, so a run genuinely reads
+   *  "thought, did, thought, did". Collecting all reasoning into one block and
+   *  all steps into another — which this used to do — showed the model's
+   *  thinking detached from the work it produced. */
+  children: NarrativeRunChild[];
+  /** Steps only, for the summary line (count, duration, liveness). */
   entries: ActivityEntry[];
+  /** @deprecated Use `children` to render in order. Kept for the summary. */
   reasoningParts: ReasoningPart[];
 }
 
@@ -410,7 +423,7 @@ export function partitionForNarrative(
 
   const open = (key: string) => {
     if (current) return current;
-    current = { key, entries: [], reasoningParts: [] };
+    current = { key, children: [], entries: [], reasoningParts: [] };
     runs.push(current);
     runByKey.set(key, current);
     return current;
@@ -426,16 +439,24 @@ export function partitionForNarrative(
 
     if (item.type === 'group') {
       if (item.entries.every(canFold)) {
-        open(item.key).entries.push(...item.entries);
+        const run = open(item.key);
+        run.entries.push(...item.entries);
+        for (const entry of item.entries) {
+          run.children.push({ kind: 'step', key: entry.part.id, entry });
+        }
         folded = true;
       }
     } else if (item.type === 'tool') {
       if (canFold(item.entry)) {
-        open(item.key).entries.push(item.entry);
+        const run = open(item.key);
+        run.entries.push(item.entry);
+        run.children.push({ kind: 'step', key: item.entry.part.id, entry: item.entry });
         folded = true;
       }
     } else if (item.type === 'reasoning') {
-      open(item.key).reasoningParts.push(...item.parts);
+      const run = open(item.key);
+      run.reasoningParts.push(...item.parts);
+      run.children.push({ kind: 'reasoning', key: item.key, parts: item.parts });
       folded = true;
     }
 

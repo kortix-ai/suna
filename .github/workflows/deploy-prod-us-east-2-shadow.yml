@@ -189,7 +189,7 @@ jobs:
             and .KORTIX_WORKERS_ENABLED == "false"
             and .SCHEDULER_ENABLED == "false"
             and .CHANNELS_ENABLED == "false"
-            and .KORTIX_MANAGED_PROVIDER_ENABLED == "false"
+            and .KORTIX_MANAGED_PROVIDER_ENABLED == "true"
             and .KORTIX_PRERESUME_ENABLED == "false"
             and .KORTIX_PROJECT_MAINTENANCE_ENABLED == "false"
             and .KORTIX_TRIGGER_SCHEDULER_ENABLED == "false"
@@ -295,34 +295,40 @@ jobs:
             container="$3"
             expected_image="$4"
 
-            service_json="$(
-              aws ecs describe-services \
-                --region "$AWS_REGION" \
-                --cluster "$cluster" \
-                --services "$service"
-            )"
-            desired="$(jq -r '.services[0].desiredCount' <<<"$service_json")"
-            running="$(jq -r '.services[0].runningCount' <<<"$service_json")"
-            rollout="$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY") | .rolloutState' <<<"$service_json")"
-            failed="$(jq -r '[.services[0].deployments[].failedTasks] | add' <<<"$service_json")"
-            task_definition="$(jq -r '.services[0].taskDefinition' <<<"$service_json")"
-            live_image="$(
-              aws ecs describe-task-definition \
-                --region "$AWS_REGION" \
-                --task-definition "$task_definition" \
-                --query "taskDefinition.containerDefinitions[?name=='$container'].image | [0]" \
-                --output text
-            )"
+            for attempt in $(seq 1 60); do
+              service_json="$(
+                aws ecs describe-services \
+                  --region "$AWS_REGION" \
+                  --cluster "$cluster" \
+                  --services "$service"
+              )"
+              desired="$(jq -r '.services[0].desiredCount' <<<"$service_json")"
+              running="$(jq -r '.services[0].runningCount' <<<"$service_json")"
+              rollout="$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY") | .rolloutState' <<<"$service_json")"
+              failed="$(jq -r '[.services[0].deployments[].failedTasks] | add' <<<"$service_json")"
+              task_definition="$(jq -r '.services[0].taskDefinition' <<<"$service_json")"
+              live_image="$(
+                aws ecs describe-task-definition \
+                  --region "$AWS_REGION" \
+                  --task-definition "$task_definition" \
+                  --query "taskDefinition.containerDefinitions[?name=='$container'].image | [0]" \
+                  --output text
+              )"
 
-            if [ "$desired" -lt 2 ] \
-              || [ "$running" != "$desired" ] \
-              || [ "$rollout" != "COMPLETED" ] \
-              || [ "$failed" != "0" ] \
-              || [ "$live_image" != "$expected_image" ]; then
-              echo "::error::$service failed verification: desired=$desired running=$running rollout=$rollout failed=$failed image=$live_image"
-              exit 1
-            fi
-            echo "$service: $running/$desired tasks, rollout=$rollout, image=$live_image"
+              echo "$service attempt $attempt/60: desired=$desired running=$running rollout=$rollout failed=$failed image=$live_image"
+              if [ "$desired" -ge 2 ] \
+                && [ "$running" = "$desired" ] \
+                && [ "$rollout" = "COMPLETED" ] \
+                && [ "$failed" = "0" ] \
+                && [ "$live_image" = "$expected_image" ]; then
+                echo "$service verified: $running/$desired tasks, rollout=$rollout, image=$live_image"
+                return
+              fi
+              sleep 10
+            done
+
+            echo "::error::$service failed verification after 10 minutes: desired=$desired running=$running rollout=$rollout failed=$failed image=$live_image"
+            exit 1
           }
 
           verify_service \
@@ -372,6 +378,7 @@ jobs:
           set -euo pipefail
           TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
           TARGET_AWS_REGION="$AWS_REGION" \
+          TARGET_SUPABASE_URL_OVERRIDE="https://uhrwvisbqjfxhxjvoofd.supabase.co" \
           TARGET_API_URL="$API_URL" \
           TARGET_FRONTEND_URL="https://us.kortix.com" \
           TARGET_AUTH_SEQUENCE_HEADROOM="100000000" \
@@ -402,6 +409,7 @@ jobs:
           set -euo pipefail
           TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
           TARGET_AWS_REGION="$AWS_REGION" \
+          TARGET_SUPABASE_URL_OVERRIDE="https://uhrwvisbqjfxhxjvoofd.supabase.co" \
           TARGET_API_URL="$API_URL/v1" \
           TARGET_FRONTEND_URL="https://us.kortix.com" \
           TARGET_AUTH_SEQUENCE_HEADROOM="100000000" \

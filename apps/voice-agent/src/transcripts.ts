@@ -20,6 +20,16 @@
  * confirmed empirically across every test run: this event fires 1:1 with
  * every real spoken agent reply, no misses, no dupes.
  *
+ * It is NO LONGER the only record of the agent side, though, and must not be
+ * treated as one. It is an event in THIS process, and it was observed not
+ * firing for a programmatic `generateReply` with nobody else in the room —
+ * which meant everything Kortix said into a call could be missing from
+ * voice_call_turns entirely. apps/api now writes its own line the moment it
+ * hands an utterance to the room (channels/voice/runtime.ts's
+ * `recordKortixUtterance`), so a silent event here costs fidelity, not the
+ * record. Keep this wiring anyway: it is the only thing that captures what the
+ * voice ACTUALLY said, including the greeting and every reply to a human.
+ *
  * What this file explicitly does NOT do any more, and why:
  *  - `ConversationItemAdded` for role==='user': per source
  *    (`agent_activity.ts:2857-2862`), the user-role insert into
@@ -93,6 +103,14 @@ export function wireTranscripts(session: voice.AgentSession<CallContext>, ctx: C
 
     // Fire-and-forget: a transcript write must never delay or interrupt the
     // live conversation (see kortix-client.ts's postTranscriptTurn doc).
-    void postTranscriptTurn(ctx, 'agent', text);
+    //
+    // Named with the bot's own display name, not left anonymous. apps/api now
+    // ALSO writes role:'agent' lines for everything Kortix hands into the call
+    // (channels/voice/utterance.ts's KORTIX_SPEAKER), because this event is a
+    // client-side signal that has been seen not to fire. Both are the agent
+    // side, but they are different events — what Kortix asked the room to hear
+    // versus what this voice actually said — and a reader has to be able to
+    // tell them apart.
+    void postTranscriptTurn(ctx, 'agent', text, ctx.botName);
   });
 }

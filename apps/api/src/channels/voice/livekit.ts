@@ -1,7 +1,7 @@
 /**
  * LiveKit wiring for the voice channel — the ONLY module that touches
  * LiveKit's control plane (room admin, access tokens, the room data channel).
- * Everything above this (runtime.ts, mcp.ts, voice-join.ts) deals in call ids
+ * Everything above this (runtime.ts, mcp.ts, routes.ts) deals in call ids
  * and room names, never in raw LiveKit credentials, for the same reason
  * provider.ts drew a hard line around the old realtime WebSocket: a
  * compromised caller must never get to mint its own room access.
@@ -11,7 +11,12 @@
  * written against for the exact gotchas (toJwt() is async in 2.x;
  * RoomServiceClient wants an http(s) host, not the ws(s) LIVEKIT_URL).
  */
-import { AccessToken, DataPacket_Kind, RoomServiceClient } from 'livekit-server-sdk';
+import {
+  AccessToken,
+  AgentDispatchClient,
+  DataPacket_Kind,
+  RoomServiceClient,
+} from 'livekit-server-sdk';
 import { config } from '../../config';
 
 /**
@@ -62,29 +67,50 @@ export async function mintAccessToken(input: MintAccessTokenInput): Promise<stri
 }
 
 /**
- * Create the room before anything tries to join it. Deliberately NO explicit
- * `agents: [{ agentName }]` dispatch: apps/voice-agent (the actual deployed
- * worker — see its README) registers itself with `ServerOptions({ agent })`
- * and does not set `LIVEKIT_AGENT_NAME`, so it runs UNNAMED and only receives
- * LiveKit's default AUTOMATIC dispatch. An explicit named dispatch entry here
- * would opt this room OUT of automatic dispatch and the unnamed worker would
- * never be sent to it — the room would sit empty. If a named worker is ever
- * introduced, add `agents` back here with the matching name at the same time.
- * `metadata` carries everything a freshly dispatched worker needs to
- * bootstrap itself — see runtime.ts's `VoiceRoomMetadata` — so it never has
- * to call back into the API just to learn who it's talking to.
+ * The worker's registered name — must match `VOICE_AGENT_NAME` in
+ * apps/voice-agent/src/index.ts. A mismatch means every dispatch below targets
+ * a worker that does not exist, and calls start with nobody on the other end.
+ */
+export const VOICE_AGENT_NAME = 'kortix-voice';
+
+let _dispatchClient: AgentDispatchClient | null = null;
+function dispatchClient(): AgentDispatchClient {
+  if (!_dispatchClient) {
+    _dispatchClient = new AgentDispatchClient(
+      config.LIVEKIT_URL.replace(/^ws/i, 'http'),
+      config.LIVEKIT_API_KEY,
+      config.LIVEKIT_API_SECRET,
+    );
+  }
+  return _dispatchClient;
+}
+
+/**
+ * Create the room, then EXPLICITLY dispatch the voice worker into it.
+ *
+ * The explicit dispatch is the whole point. LiveKit's automatic dispatch fires
+ * only on room CREATION and gives no signal when it doesn't happen: a room that
+ * already exists makes `createRoom` a no-op, a participant rejoining after
+ * `departureTimeout` recreates the room implicitly with no job and no metadata,
+ * and both failures look identical from here — a registered worker that just
+ * never gets work, discovered only when someone opens the link and talks to an
+ * empty room. `createDispatch` replaces that silence with a call that either
+ * returns a dispatch id or throws, so `startCall` fails at spawn time rather
+ * than handing out a dead link.
+ *
+ * `metadata` carries everything a freshly dispatched worker needs to bootstrap
+ * — see runtime.ts's `VoiceRoomMetadata`. It is passed BOTH as room metadata
+ * and as dispatch metadata: the worker reads it from the room today, and the
+ * dispatch copy is what survives a room the worker joins late or rejoins.
  */
 export async function createRoom(room: string, metadata: string): Promise<void> {
   const svc = roomService();
 
-  // Delete any existing room of this name FIRST. LiveKit's automatic agent
-  // dispatch fires on room CREATION, and createRoom() is a no-op on a room that
-  // already exists — so re-spawning a call for a session whose room is still
-  // alive (departureTimeout keeps it for 15min) silently produces a room with
-  // NO agent in it. That was the intermittent "worker registered but never got
-  // a job" failure: it only ever worked when the previous room happened to have
-  // expired first. Deleting is safe — a room worth keeping has a live call in
-  // it, and that call owns this same name.
+  // Delete any existing room of this name first so the call starts from a clean
+  // slate — stale metadata on a surviving room outlives the call that wrote it,
+  // and `createRoom` will not overwrite it (updateRoomMetadata is deliberately
+  // not used here; see the note below). Safe: a room worth keeping has a live
+  // call in it, and that call owns this same name.
   await svc.deleteRoom(room).catch(() => {
     // Room did not exist; that is the normal path.
   });
@@ -106,11 +132,49 @@ export async function createRoom(room: string, metadata: string): Promise<void> 
 
   // NOTE: an explicit updateRoomMetadata() call was tried here to cover the
   // case where a room already exists (createRoom no-ops, so its metadata would
-  // stay empty). It failed on every call AND correlated exactly with agent jobs
-  // no longer being dispatched, so it is deliberately not done. departureTimeout
-  // above is the real fix for the vanishing-room problem it was meant to patch.
-  // If the pre-existing-room case ever bites, delete the room first rather than
-  // trying to mutate it.
+  // stay empty). It failed on every call, so it is deliberately not done — the
+  // deleteRoom above is the fix for the pre-existing-room case instead.
+
+  // Deliberately NOT caught. A call whose agent could not be dispatched is a
+  // dead call, and the caller needs to learn that here — while it can still
+  // report a failure — rather than by handing someone a link to an empty room.
+  await dispatchClient().createDispatch(room, VOICE_AGENT_NAME, { metadata });
+}
+
+/**
+ * Whether a dispatched voice worker is actually present in the room.
+ *
+ * The worker joins under an `agent-*` identity (LiveKit assigns it from the job
+ * id), which is the only thing distinguishing it from the humans on the call.
+ * Used to answer "is there anyone to hear this?" before claiming a prompt was
+ * delivered — see runtime.ts's `promptVoiceAgentChecked`.
+ */
+export async function roomHasAgent(room: string): Promise<boolean> {
+  const participants = await roomService()
+    .listParticipants(room)
+    .catch(() => [] as Awaited<ReturnType<RoomServiceClient['listParticipants']>>);
+  return participants.some((p) => p.identity.startsWith('agent-'));
+}
+
+/**
+ * The `kortix_api_url` a live room's metadata was created with, or null if the
+ * room is gone / has no usable metadata.
+ *
+ * Used to decide whether an existing room is still reusable: the worker
+ * bootstraps entirely from this metadata, so a room pointing at an API that no
+ * longer answers produces an agent that talks but cannot act.
+ */
+export async function roomCallbackUrl(room: string): Promise<string | null> {
+  const [existing] = await roomService()
+    .listRooms([room])
+    .catch(() => [] as Awaited<ReturnType<RoomServiceClient['listRooms']>>);
+  if (!existing?.metadata) return null;
+  try {
+    const parsed = JSON.parse(existing.metadata) as { kortix_api_url?: unknown };
+    return typeof parsed.kortix_api_url === 'string' ? parsed.kortix_api_url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Best-effort — an empty room times out on its own via `emptyTimeout` anyway. */
@@ -121,18 +185,26 @@ export async function deleteRoom(room: string): Promise<void> {
 }
 
 /**
- * The page Recall renders inside the bot, now a plain LiveKit client instead
- * of a raw-audio-WebSocket page. URL shape is fixed by that page
- * (apps/web/src/app/(public)/voice/[token]/page.tsx, out of scope to edit
- * here): the LAST PATH SEGMENT is the raw LiveKit access token itself — not a
- * room name; the token's own grant already encodes which room it joins — and
- * the LiveKit server URL rides in the `url` query param, since the page can't
- * guess LIVEKIT_URL from window.location (Recall's browser runs on infra with
- * no relationship to either the API's or the frontend's own origin).
+ * The join link a human opens directly in their own browser — a plain
+ * LiveKit client page (apps/web/src/app/(public)/voice/[token]/page.tsx, out
+ * of scope to edit here beyond what its own file documents). The LAST PATH
+ * SEGMENT is a short, ungessable, server-resolved token (see join-links.ts's
+ * `mintJoinLink`) — NOT a LiveKit access token and NOT a room name. The page
+ * exchanges it for a freshly-minted LiveKit token + server URL via
+ * `GET /v1/public/voice-join/:token` (public-join-routes.ts) rather than
+ * having either one handed to it directly in the URL.
+ *
+ * This used to embed the raw ~300-character signed LiveKit JWT itself (plus
+ * the server URL in a `?url=` query param). That link was fragile by
+ * construction: one character corrupted in transit between minting and the
+ * browser (chat/speech/UI all get to mangle a URL this long) breaks the JWT
+ * signature, and the failure mode is an opaque "could not establish signal
+ * connection: invalid token" with nothing to retry. A short id can't corrupt
+ * the same way, and resolving it server-side means a fresh, short-TTL
+ * credential is minted at OPEN time rather than at spawn time.
  */
-export function bridgePageUrl(frontendUrl: string, token: string): string {
-  const qs = new URLSearchParams({ url: config.LIVEKIT_URL });
-  return `${frontendUrl.replace(/\/+$/, '')}/voice/${encodeURIComponent(token)}?${qs.toString()}`;
+export function joinPageUrl(frontendUrl: string, joinToken: string): string {
+  return `${frontendUrl.replace(/\/+$/, '')}/voice/${encodeURIComponent(joinToken)}`;
 }
 
 /**

@@ -26,7 +26,7 @@ import type { ToolPart } from '@/ui';
 import { ChevronRight, PanelRight } from 'lucide-react';
 import { useContext, useState } from 'react';
 import { formatActivityDuration, isPartRunning } from './activity-model';
-import { stepLabel } from './step-label';
+import { stepDetail } from './step-label';
 
 function durationOf(part: ToolPart): string {
   const time = (part.state as { time?: { start?: number; end?: number } } | undefined)?.time;
@@ -48,13 +48,16 @@ export function WorkStepRow({
   const onActivate = useContext(ToolActivateContext);
   const [open, setOpen] = useState(false);
 
-  const label = stepLabel(part);
+  const detail = stepDetail(part);
   const running = isPartRunning(part);
   const duration = running ? '' : durationOf(part);
   const failed = (part.state as { status?: string } | undefined)?.status === 'error';
 
   const rowClass = cn(
-    'group/step -mx-1.5 flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1',
+    // Same clipping fix as the work line: a negative RIGHT margin pushes the
+    // hover background past the parent box, where an overflow-hidden ancestor
+    // shears it off.
+    'group/step -ml-1.5 flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm py-1 pr-2 pl-1.5',
     'text-left text-xs transition-colors select-none',
     failed
       ? 'text-kortix-red/80 hover:text-kortix-red hover:bg-kortix-red/5'
@@ -63,7 +66,20 @@ export function WorkStepRow({
 
   const body = (
     <>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {/* Concrete, not summarised. A collapsed run says "Ran 11 commands";
+          opening it must show WHICH eleven, or the reader cannot find the one
+          they want. Mono for the argument, matching the pre-refactor
+          transcript. */}
+      {detail.shell && (
+        <span className="text-muted-foreground/50 shrink-0 font-mono select-none">$</span>
+      )}
+      {detail.verb && detail.mono && <span className="shrink-0">{detail.verb}</span>}
+      <span
+        className={cn('min-w-0 flex-1 truncate', detail.mono && 'font-mono')}
+        title={detail.mono || undefined}
+      >
+        {detail.mono || detail.verb}
+      </span>
       {duration && (
         <span className="text-muted-foreground/40 shrink-0 font-mono tabular-nums">{duration}</span>
       )}

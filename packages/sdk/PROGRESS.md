@@ -252,6 +252,11 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B21 | **Serialize ACP sends with runtime restart reloads.** A send that starts while OpenCode restarts can wait forever on `session/set_config_option` and never send `session/prompt`.                                                                                                                                                                                                                                                               | Deployed cold Chromium sent `session/set_config_option` at `13:36:20.250Z`, received `kortix/runtime_ready`, then sent `session/load` at `13:36:20.640Z`; `POST_RESTART_PONG` never produced `session/prompt`.                                                                                              | **DONE 2026-07-25** — implementation `d8537fa2c`; RED tests, full SDK gates, and test-harness typecheck pass                                                                                                                                                                                                                          |
 | B22 | **Expose server-owned warm project-session ensure and claim operations.** The project index needs one reusable empty session without owning session selection or deduplication in app code.                                                                                                                                                                                                                                                   | `apps/web/src/app/(app)/projects/[id]/page.tsx` creates a session only after send. `packages/sdk/src/core/rest/projects-client/sessions.ts` exposes create and list, but no atomic warm-session operation.                                                                                              | **DONE 2026-07-26** — implementation `13167d7cf`; RED tests, full SDK gates, live API/SDK lifecycle, workspace refresh, and maintenance retention proof pass                                                                                                                                                                           |
 | B23 | **Prevent ACP prompt results from exposing a false idle window before late protocol updates settle.**                                                                                                                                                                                                                                                                                                                                          | The deployed white-label parity screenshot rendered 4 ACP tool cards and `Agent is working…`, while REST rendered 26 completed tool cards. `applyAcpEnvelope()` marks the projection idle on the prompt result, and later tool or text updates can mark it busy again.                                                                                                  | **IN PROGRESS 2026-07-26** — session `whitelabel-acp-stable-completion`; RED test, SDK fix, strengthened parity gate, merge, Deploy Dev, and deployed proof required                                                                                                                            |
+| B24 | **Accept a server-authorized initial OpenCode session pin in `useSession`.** The SDK must hydrate the cached transcript before runtime readiness without making the initial pin authoritative over the `/start` result.                                                                                                                                                                                                                          | Existing sessions wait for `/start` before `useSessionSync` can hydrate IndexedDB history. The preserved `session-load-latency` work proved the additive option and pin precedence.                                                                                                                       | **IN PROGRESS 2026-07-26** — session `api-latency-refactor`; RED test, implementation port, full SDK gates, browser proof, merge, and Deploy Dev proof required                                                                                                                               |
+| B25 | **Start project model-picker and project-detail reads in parallel.** Gateway projects must not wait for project detail before the SDK starts the compact model-picker request.                                                                                                                                                                                                                                                                   | `src/react/use-opencode-sessions/providers.ts` enables the model query only after `projectDetailQuery.isSuccess`, which creates a sequential request waterfall on project load.                                                                                                                          | **IN PROGRESS 2026-07-26** — session `api-latency-refactor`; RED test, implementation, full SDK gates, browser network proof, merge, and Deploy Dev proof required                                                                                                                            |
+| B26 | **Do not report an expected warm-session configuration mismatch as a global API error.** The web client catches `WARM_SESSION_CONFIGURATION_MISMATCH` and creates a normal session.                                                                                                                                                                                                                                                               | `src/core/rest/projects-client/sessions.ts` calls `/sessions/warm/claim` with the default `showErrors: true`, so the recoverable `409` still reaches the host error handler.                                                                                                                                | **DONE 2026-07-26** — PR #5529, merge `5c0ae97ec`; SDK tests `1280/0`; deployed US proof observed the typed `409`, normal-session fallback, exact `PONG`, and no global mismatch error                                                                                                      |
+| B27 | **Retry the transient IAM policy read that caused the all-account project query failure.** The projects page can issue one query per account.                                                                                                                                                                                                                                                                                                     | Live US shadow evidence at `2026-07-26T20:03:20Z`: one IAM-backed `GET /projects` returned `500`; the identical retry returned `200` after `1.4s`. The wrapped `DrizzleQueryError` hid the nested PostgreSQL cause from logs.                                                                                  | **DONE 2026-07-26** — PR #5529, merge `5c0ae97ec`; one bounded transient read retry fails closed; wrapped PostgreSQL details are logged; API tests `40/0`; US API rollout completed with `2/2` tasks                                                                                             |
+| B28 | **Keep an explicit project-composer agent selection through asynchronous project-default hydration.**                                                                                                                                                                                                                                                                                                                                               | The deployed US two-test session suite clicked `memory-reflector`, then `useOpenCodeLocal()` changed its selection scope when `defaultAgentName` hydrated to `kortix`. The picker reset to `kortix` for 30 seconds.                                                                                          | **DONE 2026-07-27** — PR #5533, merge `ee45f55fa`; SDK tests `1283/0`, typecheck, packed-install smoke, and deployed US two-test suite `2/2` pass; both sessions returned exact `PONG`, and the mismatch fallback emitted no global error                                                                                                                                    |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -2794,6 +2799,168 @@ and deployed ACP plus REST parity remain.
 
 ---
 
+### 2026-07-26 — session `use2-session-readiness` (B26 and B27 claim)
+
+Claimed two notification regressions found during live US shadow verification.
+
+- Warm-session configuration mismatches must remain recoverable without a
+  global error notification.
+- All-account project queries must let React Query retry transient failures
+  without a global error notification.
+
+Implementation will follow RED -> GREEN -> REFACTOR. Required gates are focused
+SDK tests, full SDK typecheck, suite, packed-install smoke, web lint, PR merge,
+Deploy Dev SHA proof, and US shadow verification.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-26 — session `api-latency-refactor` (B24 and B25 claims)
+
+Claimed two additive React SDK changes.
+
+B24 adds an optional server-authorized initial OpenCode session pin. The pin
+starts IndexedDB transcript hydration before `/start` completes. The `/start`
+pin remains authoritative.
+
+B25 starts the compact project model-picker request in parallel with project
+detail. Native projects continue to wait for runtime readiness.
+
+Implementation follows RED -> GREEN -> REFACTOR. Required gates are SDK
+typecheck, the full SDK suite, packed-install smoke, focused web tests, local
+browser proof, PR merge, Deploy Dev, deployed SHA proof, and deployed browser
+proof.
+
+**Status:** IN PROGRESS.
+
+**Shippable to production: NOT YET.**
+
+---
+
+### 2026-07-26 — session `api-latency-refactor` (B24 and B25 local completion)
+
+Completed the additive initial-session pin and parallel model-picker changes.
+
+RED evidence:
+
+- The initial-pin test failed because `resolveSessionPin()` did not exist.
+- The provider plan test failed because the model-picker waited for project
+  detail.
+- The web session-load test failed because cached transcript content could not
+  mount before the runtime switch completed.
+- The provider-loading test failed because the modal waited for runtime
+  provider discovery after project detail and secrets had resolved.
+
+Post-rebase gates:
+
+- SDK typecheck: exit 0.
+- SDK suite: **1275 pass / 0 fail** with **5669** assertions across **107**
+  files.
+- SDK packed-install smoke: pass.
+- Web suite: **2207 pass / 0 fail** with **5970** assertions across **244**
+  files.
+- Focused web ESLint: exit 0.
+- API typecheck: exit 0.
+- Focused isolated API tests: **67 pass / 0 fail**.
+- Sandbox-agent typecheck: exit 0.
+- Sandbox-agent suite: **298 pass / 0 fail** with **720** assertions.
+
+Live local execution-lease proof:
+
+- `acquire`: HTTP 200 in **33.9 ms**. The response and database stored the same
+  `executionLeaseUntil`.
+- `renew`: HTTP 200 in **20.8 ms**. The response and database stored the same
+  `executionLeaseUntil`.
+- `release`: HTTP 200 in **21.3 ms**. The database stored
+  `executionLeaseUntil = null`.
+
+Browser discovery returned no available browser. Local DOM and browser-network
+verification remains open.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
+and deployed browser verification remain open.
+
+---
+
+### 2026-07-26 — session `api-latency-refactor` (B24 and B25 delivery completion)
+
+PR #5490 merged into `main`.
+The merge commit is `4f46e3aafdd02d43bbb022a28fd17fcfb94baeb5`.
+All PR checks passed.
+
+Deploy Dev run `30204286487` completed successfully.
+The run head is the full merge commit.
+The API EKS and ECS rollouts used image tag `dev-4f46e3aa`.
+The frontend retag used the full merge commit.
+The live API health response reports `0.10.16-dev.4f46e3aa`.
+
+Deployed API contract proof:
+
+- An unauthenticated `POST /v1/projects/x/execution-lease` returned `401`.
+- The disposable live verifier returned `200` for `acquire`, `renew`, and
+  `release`.
+- The verifier measured **2807.1 ms**, **598.4 ms**, and **534.0 ms**.
+- Acquire and renew response timestamps matched `executionLeaseUntil` in the
+  dev database.
+- Release stored `executionLeaseUntil = null`.
+
+Deployed sandbox-agent proof used Daytona snapshot
+`kortix-default-631f50320491`.
+Disposable session `07729779-f350-4af0-b46f-f727d91859f6` entered `busy` after
+a real OpenRouter prompt.
+CloudWatch recorded:
+
+- One bootstrap-pin `turn-stream` request: `200` in **885 ms**.
+- One lease `acquire` request: `200` in **793 ms**.
+- One lease `release` request: `200` in **266 ms**.
+- The gateway completed the model request with `200` in **2521 ms** and
+  returned **808 tokens**.
+
+CloudWatch Insights query
+`dd8a17dd-bc08-4fdc-bc83-b0e8bfa21be5` covers the post-deploy window beginning
+at `2026-07-26T13:44:00Z`.
+It found **6** `execution-lease` requests across **3** disposable projects:
+**266 ms p50**, **2005 ms p95**, **2005 ms p99**, and **603.2 ms average**.
+
+CloudWatch Insights query
+`874b0176-dc50-44ab-ab70-efdee3ac7268` covers the same window.
+It found **227** `turn-stream` requests across **5** projects:
+**260.9 ms p50**, **2006.6 ms p95**, **3001.9 ms p99**, and **593.0 ms
+average**.
+Three pre-existing sandboxes continued the legacy 20-second heartbeat.
+New sandboxes use `execution-lease`; existing sandboxes retain their old daemon
+until they stop or restart.
+
+The deployed infrastructure-only session smoke completed **20 passes / 1
+failure**.
+The deployed busy-turn smoke completed **22 passes / 3 failures**.
+Both smokes provisioned a real managed repository, built or reused the new
+Daytona snapshot, started a real sandbox, reached OpenCode, and cleaned up.
+The shared failures were `POST /git-token` returning `503`.
+The busy-turn smoke also found no assistant text in the OpenCode message
+response, although the gateway completed the model request with `200`.
+
+Cleanup proof:
+
+- Both disposable projects have status `archived`.
+- Both disposable sessions have status `stopped` and a `deletedAt` timestamp.
+- Both disposable sandboxes have status `archived` and a `stoppedAt` timestamp.
+- Both disposable Supabase users were deleted with status `200`.
+
+Browser discovery returned `[]` after troubleshooting.
+Deployed DOM and browser-network verification remains open.
+
+**Status:** MERGED AND DEPLOYED TO DEV.
+
+**Shippable to production: NOT YET.** The deployed lease path passes.
+Deployed browser verification, the `git-token` `503`, and the missing
+assistant-text result remain open.
+
+---
+
 ### 2026-07-26 — session `whitelabel-acp-stable-completion` (B23 delivery completion)
 
 Merged B23 in PR #5477.
@@ -3127,3 +3294,40 @@ Post-rebase live ACP and REST presentation plus question parity:
 
 **Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
 and deployed ACP plus REST parity remain.
+
+---
+
+### 2026-07-26 — session `use2-session-readiness` (B26 and B27 completion)
+
+Completed both US shadow readiness fixes in PR #5529.
+
+- `claimWarmProjectSession()` keeps the recoverable configuration `409` out of
+  the global error sink.
+- The IAM custom-policy read retries one transient database failure.
+- Database error logging extracts the nested PostgreSQL cause from a wrapped
+  `DrizzleQueryError`.
+- The US shadow deployment requires managed models.
+
+Verification:
+
+- Merge commit: `5c0ae97ec7676f3cd439f7f19db154b53602feda`.
+- Deploy Dev run `30222230764`: success for the exact merge commit.
+- SDK typecheck: exit 0.
+- SDK suite: **1280 pass / 0 fail** with **5707** assertions.
+- SDK packed-install smoke: pass.
+- API typecheck: exit 0.
+- Focused API tests: **40 pass / 0 fail** with **82** assertions.
+- US API: `0.10.16-dev.5c0ae97e`.
+- US ECS API: task definition revision `11`, desired `2`, running `2`,
+  pending `0`, rollout `COMPLETED`.
+- US frontend: Vercel deployment
+  `dpl_DSe54pvhXpCgUyG7wVWnb7VdNm9M`.
+- Deployed real runtime flow: exact `PONG` and Files view loaded.
+- Deployed warm mismatch flow: typed `409`, normal session creation, exact
+  `PONG`, no global mismatch error, **27.4 seconds**.
+
+Production routing and production data were unchanged.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.**

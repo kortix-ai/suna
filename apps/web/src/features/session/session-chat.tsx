@@ -56,7 +56,6 @@ import {
 import { WorkStepRow } from '@/features/session/activity/work-step-row';
 import {
   ChatDetailProvider,
-  ChatDetailToggle,
   densityForDetail,
   useChatDetail,
 } from '@/features/session/activity/chat-detail';
@@ -2103,8 +2102,60 @@ function ShellStepRow({
  * What deliberately does NOT fold in here (handled by the caller): errors,
  * permission-locked calls, deliverables, todos and questions.
  */
+/**
+ * A thought inside an expanded work line. Collapsed to one quiet line by
+ * default: the raw reasoning is often several paragraphs, and rendered as
+ * body text it dwarfed the steps around it and read as the agent's answer
+ * rather than as its scratchpad.
+ */
+function ReasoningNote({ parts }: { parts: ReasoningPart[] }) {
+  const [open, setOpen] = useState(false);
+  const text = useMemo(
+    () =>
+      parts
+        .map((p) => p.text ?? '')
+        .join('\n\n')
+        .trim(),
+    [parts],
+  );
+  const preview = useMemo(() => text.split('\n').find((l) => l.trim())?.trim() ?? '', [text]);
+  if (!text) return null;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'group/think -ml-1.5 flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm py-1 pr-2 pl-1.5',
+            'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50',
+            'text-left text-xs transition-colors select-none',
+          )}
+        >
+          <Brain className="size-3 shrink-0 opacity-70" />
+          <span className="min-w-0 flex-1 truncate italic">{preview || 'Thought about it'}</span>
+          <ChevronRight
+            className={cn(
+              'text-muted-foreground/40 size-3 shrink-0 transition-transform',
+              open ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/think:opacity-100',
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-border/40 my-1 ml-1 border-l pl-3">
+          <div className="text-muted-foreground/60 space-y-2 text-xs leading-relaxed italic [&_.kortix-markdown]:italic">
+            <UnifiedMarkdown content={text} />
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function TurnWorkLine({
   entries,
+  runChildren,
   reasoningParts,
   sessionId,
   disableNavigation,
@@ -2113,6 +2164,8 @@ function TurnWorkLine({
   statusText,
 }: {
   entries: ActivityEntry[];
+  /** Reasoning + steps in the order they happened. */
+  runChildren: import('@/features/session/activity/activity-model').NarrativeRunChild[];
   reasoningParts: ReasoningPart[];
   sessionId: string;
   disableNavigation?: boolean;
@@ -2185,7 +2238,10 @@ function TurnWorkLine({
       <CollapsibleTrigger asChild>
         <div
           className={cn(
-            'group/work -mx-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1',
+            // -ml only: the pill's left edge lines up with the prose, but a
+            // negative RIGHT margin pushed it past the parent's content box and
+            // an overflow-hidden ancestor sheared the hover background off.
+            'group/work -ml-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 pl-1.5',
             'text-muted-foreground/45 hover:text-muted-foreground hover:bg-muted/40',
             'text-xs transition-colors select-none',
           )}
@@ -2206,23 +2262,21 @@ function TurnWorkLine({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="border-border/40 mt-1.5 mb-1 ml-1 space-y-0.5 border-l pl-3">
-          {reasoningText && (
-            <div className="text-muted-foreground/60 mb-1.5 space-y-2 text-xs leading-relaxed italic [&_.kortix-markdown]:italic">
-              <UnifiedMarkdown content={reasoningText} />
-            </div>
+          {/* IN ORDER — a thought, then the step it produced, then the next
+              thought. Rendering all reasoning first and all steps after
+              detached the model's thinking from the work it explains. */}
+          {runChildren.map((child) =>
+            child.kind === 'reasoning' ? (
+              <ReasoningNote key={child.key} parts={child.parts} />
+            ) : (
+              <WorkStepRow
+                key={child.key}
+                part={child.entry.part}
+                sessionId={sessionId}
+                disableNavigation={disableNavigation}
+              />
+            ),
           )}
-          {/* Every step is actionable — clicking opens it in the side panel
-              (or expands the real output inline where there is no panel).
-              A step you can only read is a dead end, which defeats the whole
-              point of expanding the line. */}
-          {entries.map(({ part }) => (
-            <WorkStepRow
-              key={part.id}
-              part={part}
-              sessionId={sessionId}
-              disableNavigation={disableNavigation}
-            />
-          ))}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -3143,6 +3197,7 @@ function SessionTurn({
                   <TurnWorkLine
                     key={item.key}
                     entries={run.entries}
+                    runChildren={run.children}
                     reasoningParts={run.reasoningParts}
                     sessionId={sessionId}
                     disableNavigation={disableToolNavigation}
@@ -5572,14 +5627,6 @@ export function SessionChat({
                     >
                       {isLoadingOlder ? <Loading /> : 'Load older messages'}
                     </Button>
-                  </div>
-                )}
-                {/* The offer to see everything. Lives with the transcript,
-                    not in a settings panel — the decision to look closer is
-                    made while reading. */}
-                {turns.length > 0 && (
-                  <div className="mb-2 flex justify-end">
-                    <ChatDetailToggle />
                   </div>
                 )}
                 <ToolActivateContext.Provider value={toolActivate}>

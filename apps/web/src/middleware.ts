@@ -78,7 +78,7 @@ const PUBLIC_ROUTES = [
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
   '/chat-variants', // Session-chat variant explorations — fixture data only, public so it is shareable without login
-  '/voice', // Audio bridge page rendered inside a Recall meeting bot — token-gated, MUST load with no login
+  '/voice', // Direct join page for a live voice call — token-gated, MUST load with no login
   ...locales.flatMap((locale) =>
     MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),
   ),

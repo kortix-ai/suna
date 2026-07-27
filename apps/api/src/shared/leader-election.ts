@@ -84,6 +84,7 @@ export function shouldDemote(
  * (unset) = owner, so single-node / self-host is unaffected.
  */
 export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.KORTIX_WORKERS_ENABLED === 'false') return false;
   const on = (v: string | undefined) => v !== 'false';
   return (
     on(env.KORTIX_TRIGGER_SCHEDULER_ENABLED) ||

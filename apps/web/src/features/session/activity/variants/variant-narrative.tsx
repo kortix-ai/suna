@@ -73,7 +73,7 @@ function WorkLine({
         <div
           className={cn(
             'group/work text-muted-foreground/45 hover:text-muted-foreground hover:bg-muted/40',
-            '-mx-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs',
+            '-ml-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 pl-1.5 text-xs',
             'select-none transition-[color,background-color]',
           )}
         >

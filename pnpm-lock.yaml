@@ -645,15 +645,6 @@ importers:
       '@livekit/agents':
         specifier: 1.5.5
         version: 1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76)
-      '@livekit/agents-plugin-deepgram':
-        specifier: 1.5.5
-        version: 1.5.5(@livekit/agents@1.5.5)(@livekit/rtc-node@0.13.31)
-      '@livekit/agents-plugin-openai':
-        specifier: 1.5.5
-        version: 1.5.5(@livekit/agents@1.5.5)(@livekit/rtc-node@0.13.31)(zod@3.25.76)
-      '@livekit/agents-plugin-silero':
-        specifier: 1.5.5
-        version: 1.5.5(@livekit/agents@1.5.5)(@livekit/rtc-node@0.13.31)
       '@livekit/rtc-node':
         specifier: ^0.13.31
         version: 0.13.31
@@ -982,6 +973,9 @@ importers:
       '@vercel/analytics':
         specifier: ^1.5.0
         version: 1.6.1(next@15.5.21)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39)
+      '@vercel/edge-config':
+        specifier: ^1.4.0
+        version: 1.4.3(@opentelemetry/api@1.9.0)(next@15.5.21)
       '@vercel/speed-insights':
         specifier: ^1.2.0
         version: 1.3.1(next@15.5.21)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39)
@@ -1450,6 +1444,9 @@ importers:
 
   packages/manifest-schema:
     dependencies:
+      croner:
+        specifier: ^9.1.0
+        version: 9.1.0
       smol-toml:
         specifier: ^1.4.2
         version: 1.7.0
@@ -5541,56 +5538,6 @@ packages:
       ts-invariant: 0.10.3
     transitivePeerDependencies:
       - supports-color
-    dev: false
-
-  /@livekit/agents-plugin-deepgram@1.5.5(@livekit/agents@1.5.5)(@livekit/rtc-node@0.13.31):
-    resolution: {integrity: sha512-eIBuihpDKp8Z6DgfH10LYjKdkR1srKRMeWX4U8SFWKF+5TJHzlMET3sf2atTM4JP0LoVXULIb5xA9+ZjeM9RuQ==}
-    peerDependencies:
-      '@livekit/agents': 1.5.5
-      '@livekit/rtc-node': ^0.13.31
-    dependencies:
-      '@livekit/agents': 1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76)
-      '@livekit/rtc-node': 0.13.31
-      ws: 8.21.0
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-    dev: false
-
-  /@livekit/agents-plugin-openai@1.5.5(@livekit/agents@1.5.5)(@livekit/rtc-node@0.13.31)(zod@3.25.76):
-    resolution: {integrity: sha512-b64YDnka5XPsvIndKc0czF/u5NSXRz64mtYXBkP2iR8p+9PG5dNko1IYbp6Iu+45PnptCOGEbDh3hPxCCXeDzw==}
-    peerDependencies:
-      '@livekit/agents': 1.5.5
-      '@livekit/rtc-node': ^0.13.31
-      zod: ^3.25.76 || ^4.1.8
-    dependencies:
-      '@livekit/agents': 1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76)
-      '@livekit/mutex': 1.1.1
-      '@livekit/rtc-node': 0.13.31
-      openai: 6.49.0(ws@8.21.0)(zod@3.25.76)
-      ws: 8.21.0
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@aws-sdk/credential-provider-node'
-      - '@smithy/hash-node'
-      - '@smithy/signature-v4'
-      - bufferutil
-      - utf-8-validate
-    dev: false
-
-  /@livekit/agents-plugin-silero@1.5.5(@livekit/agents@1.5.5)(@livekit/rtc-node@0.13.31):
-    resolution: {integrity: sha512-wyk6XB61TSiqvsKijpD3c8y1UeV6PcbJmoH/XgqBuA3BIjSDJWxe7hC2H3/UhJ7JqG+I4FGoRooL73kkFzz5gg==}
-    peerDependencies:
-      '@livekit/agents': 1.5.5
-      '@livekit/rtc-node': ^0.13.31
-    dependencies:
-      '@livekit/agents': 1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76)
-      '@livekit/rtc-node': 0.13.31
-      onnxruntime-node: 1.24.3
-      ws: 8.21.0
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
     dev: false
 
   /@livekit/agents@1.5.5(@livekit/rtc-node@0.13.31)(typescript@5.9.3)(zod@3.25.76):
@@ -12479,6 +12426,27 @@ packages:
       vue: 3.5.39(typescript@5.9.3)
     dev: false
 
+  /@vercel/edge-config-fs@0.1.0:
+    resolution: {integrity: sha512-NRIBwfcS0bUoUbRWlNGetqjvLSwgYH/BqKqDN7vK1g32p7dN96k0712COgaz6VFizAm9b0g6IG6hR6+hc0KCPg==}
+    dev: false
+
+  /@vercel/edge-config@1.4.3(@opentelemetry/api@1.9.0)(next@15.5.21):
+    resolution: {integrity: sha512-8vTDATodRrH49wMzKEjZ8/5H2qs1aPkD0uRK585f/Fx4YN2wfHfY/3td9OFrh+gdnCq07z8A5f0hoY6xhBcPkg==}
+    engines: {node: '>=14.6'}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+      next: 15.5.21
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
+      next:
+        optional: true
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@vercel/edge-config-fs': 0.1.0
+      next: 15.5.21(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
+    dev: false
+
   /@vercel/oidc@3.2.0:
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
     engines: {node: '>= 20'}
@@ -12820,11 +12788,6 @@ packages:
     resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
     engines: {node: '>=0.4.0'}
     hasBin: true
-
-  /adm-zip@0.5.18:
-    resolution: {integrity: sha512-ufJnssQGbxzLNS1Ho9bCtX4rQKCCvoVuDLHoJyc3F9dOGDB4BkWs2Ci0kv53lqocAEQ/Cbi+I2XCsNYGqVYqng==}
-    engines: {node: '>=12.0'}
-    dev: false
 
   /ag-charts-types@13.3.1:
     resolution: {integrity: sha512-m37eUe4g//swvGh8PWMlYQH3gknjSsPeW4sQwBhM3/auGAHmN0wvxEWlrdAn98pBPg4HoKbtOy+yf7gPCYsnvQ==}
@@ -13635,6 +13598,8 @@ packages:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
     requiresBuild: true
+    dev: true
+    optional: true
 
   /bowser@2.14.1:
     resolution: {integrity: sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg==}
@@ -15051,6 +15016,8 @@ packages:
   /detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
     requiresBuild: true
+    dev: true
+    optional: true
 
   /devalue@5.8.1:
     resolution: {integrity: sha512-4CXDYRBGqN+57wVJkuXBYmpAVUSg3L6JAQa/DFqm238G73E1wuyc/JhGQJzN7vUf/CMphYau2zXbfWzDR5aTEw==}
@@ -15706,6 +15673,8 @@ packages:
   /es6-error@4.1.1:
     resolution: {integrity: sha512-Um/+FxMr9CISWh0bi5Zv0iOD+4cFh5qLeks1qhAopKVAJw3drgKbKySikp7wGhDL0HPeaja0P5ULZrxLkniUVg==}
     requiresBuild: true
+    dev: true
+    optional: true
 
   /esast-util-from-estree@2.0.0:
     resolution: {integrity: sha512-4CyanoAudUSBAn5K13H4JhsMH6L9ZP7XbLVe/dKybkxMO7eDyLsT8UHl9TRNrU2Gr9nz+FovfSIjuXWJ81uVwQ==}
@@ -17663,6 +17632,8 @@ packages:
       roarr: 2.15.4
       semver: 7.8.5
       serialize-error: 7.0.1
+    dev: true
+    optional: true
 
   /globals@14.0.0:
     resolution: {integrity: sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==}
@@ -17675,6 +17646,7 @@ packages:
     dependencies:
       define-properties: 1.2.1
       gopd: 1.2.0
+    dev: true
 
   /globby@11.1.0:
     resolution: {integrity: sha512-jhIXaOzy1sb8IyocaruWSn1TjmnBVs8Ayhcy83rmxNJ8q2uWKCAj3CnJY+KpGSXCueAPc0i05kVvVKtP1t9S3g==}
@@ -18928,6 +18900,8 @@ packages:
   /json-stringify-safe@5.0.1:
     resolution: {integrity: sha512-ZClg6AaYvamvYEE82d3Iyd3vSSIjQ+odgjaTzRuO3s7toCdFKczob2i0zCh7JE8kWn17yvAWhUVxvqGwUalsRA==}
     requiresBuild: true
+    dev: true
+    optional: true
 
   /json5@1.0.2:
     resolution: {integrity: sha512-g1MWMLBiz8FKi1e4w0UyVL3w+iJceWAFBAaBnnGKOpNa5f8TLktkbre1+s6oICydWAm+HRUGTmI+//xv2hvXYA==}
@@ -19669,6 +19643,8 @@ packages:
     requiresBuild: true
     dependencies:
       escape-string-regexp: 4.0.0
+    dev: true
+    optional: true
 
   /math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -21477,20 +21453,6 @@ packages:
       oniguruma-parser: 0.12.2
       regex: 6.1.0
       regex-recursion: 6.0.2
-
-  /onnxruntime-common@1.24.3:
-    resolution: {integrity: sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==}
-    dev: false
-
-  /onnxruntime-node@1.24.3:
-    resolution: {integrity: sha512-JH7+czbc8ALA819vlTgcV+Q214/+VjGeBHDjX81+ZCD0PCVCIFGFNtT0V4sXG/1JXypKPgScQcB3ij/hk3YnTg==}
-    os: [win32, darwin, linux]
-    requiresBuild: true
-    dependencies:
-      adm-zip: 0.5.18
-      global-agent: 3.0.0
-      onnxruntime-common: 1.24.3
-    dev: false
 
   /open@7.4.2:
     resolution: {integrity: sha512-MVHddDVweXZF3awtlAS+6pgKLlm/JgxZ90+/NBurBoQctVOOB/zDdVjcyPzQ+0laDGbsWgrRkflI65sQeOgT9Q==}
@@ -24013,6 +23975,8 @@ packages:
       json-stringify-safe: 5.0.1
       semver-compare: 1.0.0
       sprintf-js: 1.1.3
+    dev: true
+    optional: true
 
   /robust-predicates@3.0.3:
     resolution: {integrity: sha512-NS3levdsRIUOmiJ8FZWCP7LG3QpJyrs/TE0Zpf1yvZu8cAJJ6QMW92H1c7kWpdIHo8RvmLxN/o2JXTKHp74lUA==}
@@ -24187,6 +24151,8 @@ packages:
   /semver-compare@1.0.0:
     resolution: {integrity: sha512-YM3/ITh2MJ5MtzaM429anh+x2jiLVjqILF4m4oyQB18W7Ggea7BfqdH/wGMK7dDiMghv/6WG7znWMwUDzJiXow==}
     requiresBuild: true
+    dev: true
+    optional: true
 
   /semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
@@ -24243,6 +24209,8 @@ packages:
     requiresBuild: true
     dependencies:
       type-fest: 0.13.1
+    dev: true
+    optional: true
 
   /serialize-error@8.1.0:
     resolution: {integrity: sha512-3NnuWfM6vBYoy5gZFvHiYsVbafvI9vZv/+jlIigFn4oP4zjNPK3LhcY0xSCgeb1a5L8jO71Mit9LlNoi2UfDDQ==}
@@ -24628,6 +24596,8 @@ packages:
   /sprintf-js@1.1.3:
     resolution: {integrity: sha512-Oo+0REFV59/rz3gfJNKQiBlwfHaSESl1pcGyABQsnnIfWOFt6JNj5gCog2U6MLZ//IGYD+nA8nI+mTShREReaA==}
     requiresBuild: true
+    dev: true
+    optional: true
 
   /sql.js@1.14.1:
     resolution: {integrity: sha512-gcj8zBWU5cFsi9WUP+4bFNXAyF1iRpA3LLyS/DP5xlrNzGmPIizUeBggKa8DbDwdqaKwUcTEnChtd2grWo/x/A==}
@@ -25472,6 +25442,8 @@ packages:
     resolution: {integrity: sha512-34R7HTnG0XIJcBSn5XhDd7nNFPRcXYRZrBB2O2jdKqYODldSzBAqzsWoZYYvduky73toYS/ESqxPvkDf/F0XMg==}
     engines: {node: '>=10'}
     requiresBuild: true
+    dev: true
+    optional: true
 
   /type-fest@0.20.2:
     resolution: {integrity: sha512-Ne+eE4r0/iWnpAxD852z3A+N0Bt5RN//NjJwRd2VFHEmrywxf5vsZlh4R6lixl6B+wz/8d+maTSAkN1FIkI3LQ==}

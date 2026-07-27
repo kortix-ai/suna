@@ -19,14 +19,12 @@
  * surfaces `stderr` on a non-zero exit, and a real PTY-merged command's only
  * output IS in that stream — leaving `stderr` empty would silently drop it).
  *
- * Two callers, two different bounds: the Kortix-agent-facing MCP tool
- * (mcp.ts) needs "returns in milliseconds, no follow/tail/wait tool" bounded
- * only by OVERALL_TIMEOUT_MS. apps/voice-agent's `run_command` tool
- * (kortix-client.ts) additionally times out CLIENT-side at 12s — this file's
- * OVERALL_TIMEOUT_MS is set safely under that so a slow provider call here
- * degrades to `timedOut: true` well before the worker's own timeout would
- * otherwise turn the whole request into a bare network error instead of a
- * readable result.
+ * One caller: mcp.ts's `run_command` tool, invoked by apps/voice-agent's
+ * `run_command` tool (kortix-client.ts) over the voice MCP. That worker call
+ * additionally times out CLIENT-side at 12s — this file's OVERALL_TIMEOUT_MS
+ * is set safely under that so a slow provider call here degrades to
+ * `timedOut: true` well before the worker's own timeout would otherwise turn
+ * the whole request into a bare network error instead of a readable result.
  */
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';

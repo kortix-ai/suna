@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 503,
+  "count": 507,
   "routes": [
     {
       "method": "GET",
@@ -1323,6 +1323,10 @@
       "path": "/v1/projects/:projectId/detail"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/execution-lease"
+    },
+    {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/experimental"
     },
@@ -1469,10 +1473,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/mcp/voice"
     },
     {
       "method": "DELETE",
@@ -1631,6 +1631,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/previews"
     },
@@ -1667,16 +1671,8 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice/prompt"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice/run-command"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice/turns"
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
     },
     {
       "method": "POST",
@@ -1807,6 +1803,14 @@
       "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
+      "method": "GET",
+      "path": "/v1/public/voice-join/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/voice-join/:token/transcript"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/chat/completions"
     },
@@ -1845,6 +1849,18 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/skills"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/skills/:name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/skills/:name/file"
     },
     {
       "method": "POST",

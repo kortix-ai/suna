@@ -16,7 +16,10 @@ re-install, no image re-bake):
 - `kortix skills` — list the Kortix system skills.
 - `kortix skills get <name>` — print one skill's current SKILL.md body.
 - `kortix skills get <name> --full` — also include its referenced files.
-- `kortix skills --all` — list every Kortix skill (not just the system floor).
+
+(On a newer CLI the same command is also spelled `kortix system-skills`; both
+work. Optional, non-system skills are marketplace items, not system skills —
+browse them with `kortix marketplace list --type skill`.)
 
 Before answering anything about Kortix internals — the executor/connectors,
 project memory, Slack/channels, reaching a connected computer, or sending a

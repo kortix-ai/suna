@@ -21,16 +21,17 @@ interface StepOpts {
 type Platform = 'slack' | 'teams' | 'voice';
 
 /**
- * Voice is resolved FIRST, and not from chatTurnStreams: a live call lives in
- * the runtime's in-process registry, not in a DB row. It also wins when a
- * session is reachable on two surfaces at once (spawned from Slack, now on a
- * call) because the call is where a human is actually waiting for an answer.
+ * Voice is resolved FIRST, and not from chatTurnStreams: a live call has no row
+ * of its own — liveness is whether a worker is currently in the call's LiveKit
+ * room. It also wins when a session is reachable on two surfaces at once
+ * (spawned from Slack, now on a call) because the call is where a human is
+ * actually waiting for an answer.
  *
  * Anything unrecognised still falls back to Slack, which is the historical
  * default — so a future platform renders as Slack blocks until it is added here.
  */
 async function platformFor(sessionId: string): Promise<Platform> {
-  if (voice.hasLiveCall(sessionId)) return 'voice';
+  if (await voice.hasLiveCall(sessionId)) return 'voice';
   const [row] = await db
     .select({ channelRef: chatTurnStreams.channelRef })
     .from(chatTurnStreams)

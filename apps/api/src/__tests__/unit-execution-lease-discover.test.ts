@@ -39,13 +39,23 @@ const chainable = {
   where: () => chainable,
   limit: () => leaseRow,
 };
+const updateChainable = {
+  set: () => updateChainable,
+  where: () => updateChainable,
+  returning: () => leaseRow,
+};
 mock.module('../shared/db', () => ({
   db: {
     select: () => chainable,
+    update: () => updateChainable,
   },
 }));
 
-const { discoverExecutionKeepAliveEndpoint } = await import('../projects/execution-lease');
+const {
+  acquireExecutionLease,
+  discoverExecutionKeepAliveEndpoint,
+  renewExecutionLease,
+} = await import('../projects/execution-lease');
 
 beforeEach(() => {
   resolveEndpointThrow = null;
@@ -64,6 +74,7 @@ describe('discoverExecutionKeepAliveEndpoint Daytona 429 guard', () => {
       sandboxId: 'sb-1',
       sessionId: 'ses-1',
       projectId: 'proj-1',
+      accountId: 'acct-1',
     });
     expect(result).toBeNull();
     expect(resolveEndpointCalls).toBe(1);
@@ -78,6 +89,7 @@ describe('discoverExecutionKeepAliveEndpoint Daytona 429 guard', () => {
       sandboxId: 'sb-1',
       sessionId: 'ses-1',
       projectId: 'proj-1',
+      accountId: 'acct-1',
     });
     expect(result).toBeNull();
   });
@@ -87,6 +99,7 @@ describe('discoverExecutionKeepAliveEndpoint Daytona 429 guard', () => {
       sandboxId: 'sb-1',
       sessionId: 'ses-1',
       projectId: 'proj-1',
+      accountId: 'acct-1',
     });
     expect(result).not.toBeNull();
     expect(result?.url).toBe('https://upstream.example.test');
@@ -94,5 +107,31 @@ describe('discoverExecutionKeepAliveEndpoint Daytona 429 guard', () => {
     // contract preserved across the guard.
     expect(result?.headers.authorization).toBeUndefined();
     expect(result?.headers['x-test']).toBe('1');
+  });
+
+  it('renews the database lease without resolving or touching the provider', async () => {
+    const result = await renewExecutionLease({
+      sandboxId: 'sb-1',
+      sessionId: 'ses-1',
+      projectId: 'proj-1',
+      accountId: 'acct-1',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.providerUrl).toBeNull();
+    expect(result.providerHeaders).toBeNull();
+    expect(resolveEndpointCalls).toBe(0);
+  });
+
+  it('resolves the provider endpoint once when the lease is acquired', async () => {
+    const result = await acquireExecutionLease({
+      sandboxId: 'sb-1',
+      sessionId: 'ses-1',
+      projectId: 'proj-1',
+      accountId: 'acct-1',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.providerUrl).toBe('https://upstream.example.test');
+    expect(result.providerHeaders).toEqual({ 'x-test': '1' });
+    expect(resolveEndpointCalls).toBe(1);
   });
 });

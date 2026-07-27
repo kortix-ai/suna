@@ -2,7 +2,10 @@
 
 **Date:** 2026-07-25
 
-**Status:** Approved by direct user request
+**Status:** Historical design
+
+The implemented current state is documented in
+[`docs/specs/2026-07-26-acp-runtime-status-quo.md`](../../specs/2026-07-26-acp-runtime-status-quo.md).
 
 ## Objective
 

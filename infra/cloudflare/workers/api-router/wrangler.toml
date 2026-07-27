@@ -43,6 +43,15 @@ GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
 GATEWAY_BACKEND_EKS = "https://gateway-eks.kortix.com"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-ecs-fargate.kortix.com"
 GATEWAY_BACKEND_US_EAST_2 = "https://gateway-use2-shadow.kortix.com"
+# Vercel Edge Config is exposed through this web route. The Worker caches it
+# for two seconds and blocks mutating API/gateway requests at the edge when the
+# level is "blocking". The API origin and database are not part of this read.
+MAINTENANCE_STATE_URL = "https://kortix.com/api/maintenance/edge"
+# The cutover workflow sets this to "blocking" before the final database drain.
+# It keeps the edge write gate closed if Vercel is unavailable during cutover.
+MAINTENANCE_LEVEL_OVERRIDE = "none"
+MAINTENANCE_TITLE_OVERRIDE = "Scheduled maintenance"
+MAINTENANCE_MESSAGE_OVERRIDE = "Kortix is moving production services to US East 2."
 
 # ── STAGING: staging-api.kortix.com + gateway-staging.kortix.com ──────────────
 [env.staging]

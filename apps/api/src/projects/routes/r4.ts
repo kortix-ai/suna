@@ -67,6 +67,7 @@ import {
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
+import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
@@ -85,6 +86,7 @@ import {
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import {
+  acquireExecutionLease,
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
   renewExecutionLease,
@@ -119,6 +121,7 @@ import {
 import { listProjectSecretsSnapshot } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
+import { turnStreamKindField } from './r4-turn-stream-kind';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -1911,6 +1914,87 @@ function agentMailConnectErrorBody(stage: 'inbox_create' | 'webhook_create', err
   };
 }
 
+// POST /v1/projects/:projectId/execution-lease
+// The sandbox agent reports active OpenCode work through this bounded JSON
+// route. Acquire returns the provider endpoint once. Renew and release each
+// execute one conditional database update.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/execution-lease',
+    tags: ['projects'],
+    summary: 'POST /:projectId/execution-lease',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              action: z.enum(['acquire', 'renew', 'release']),
+              session_id: z.string().min(1),
+              lease_ttl_seconds: z.number().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z
+          .object({
+            ok: z.boolean(),
+            lease_until: z.string().nullable().optional(),
+            provider_url: z.string().nullable().optional(),
+            provider_headers: z.record(z.string(), z.string()).nullable().optional(),
+          })
+          .passthrough(),
+        'Lease operation result',
+      ),
+      ...errors(400, 403),
+    },
+  }),
+  async (c: any) => {
+    const authType = c.get('authType') as string | undefined;
+    const apiKeyType = c.get('apiKeyType') as string | undefined;
+    const accountId = c.get('accountId') as string | undefined;
+    const sandboxId = c.get('sandboxId') as string | undefined;
+    if (
+      authType !== 'apiKey' ||
+      apiKeyType !== 'sandbox' ||
+      !accountId ||
+      !sandboxId
+    ) {
+      return c.json({ error: 'execution lease requires a sandbox token' }, 403);
+    }
+    const projectId = c.req.param('projectId');
+    const body = c.req.valid('json') as {
+      action: 'acquire' | 'renew' | 'release';
+      session_id: string;
+      lease_ttl_seconds?: number;
+    };
+    const target = {
+      sandboxId,
+      sessionId: body.session_id.trim(),
+      projectId,
+      accountId,
+    };
+    if (body.action === 'release') {
+      return c.json({ ok: await releaseExecutionLease(target) });
+    }
+    const result =
+      body.action === 'acquire'
+        ? await acquireExecutionLease(target, body.lease_ttl_seconds)
+        : await renewExecutionLease(target, body.lease_ttl_seconds);
+    return c.json({
+      ok: result.ok,
+      lease_until: result.leaseUntil,
+      provider_url: result.providerUrl,
+      provider_headers: result.providerHeaders,
+    });
+  },
+);
+
 // POST /v1/projects/:projectId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
 // kind=answer finalizes the turn's streamed message with the agent's reply.
@@ -1928,25 +2012,84 @@ projectsApp.openapi(
     },
     responses: {
       200: {
-        description: 'Event stream',
-        content: { 'text/event-stream': { schema: z.any() } },
+        description: 'Relay result',
+        content: { 'application/json': { schema: z.any() } },
       },
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
+    let body: {
+      session_id?: string;
+      kind?: string;
+      text?: string;
+      detail?: string;
+      output?: string;
+      sources?: Array<{ url?: string; text?: string }>;
+      blocks?: unknown[];
+      status?: string;
+      opencode_session_id?: string;
+      // Turn-end error detail (opencode AssistantMessage.error / session.error),
+      // so Slack can render "out of credits" / rate-limit / the real error.
+      error_name?: string;
+      error_message?: string;
+      error_status?: number;
+      error_retryable?: boolean;
+      error_provider?: string;
+      lease_ttl_seconds?: number;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    setContextField('kind', turnStreamKindField(body.kind));
+    const sessionId = body.session_id?.trim();
+    if (!sessionId) {
+      return c.json({ error: 'session_id is required' }, 400);
+    }
 
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get('authType') as string | undefined;
+    const apiKeyType = (c as any).get('apiKeyType') as string | undefined;
+    const legacyExecutionLeaseKind =
+      body.kind === 'execution_heartbeat' ||
+      body.kind === 'execution_lease_release' ||
+      body.kind === 'execution_lease_discover';
+    if (legacyExecutionLeaseKind && (authType !== 'apiKey' || apiKeyType !== 'sandbox')) {
+      return c.json({ error: 'execution lease requires a sandbox token' }, 403);
+    }
     let authenticatedSandboxId: string | null = null;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (authType === 'apiKey' && apiKeyType === 'sandbox') {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
         return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
+      }
+      if (legacyExecutionLeaseKind) {
+        const target = { sandboxId, sessionId, projectId, accountId };
+        if (body.kind === 'execution_lease_release') {
+          return c.json({ ok: await releaseExecutionLease(target) });
+        }
+        if (body.kind === 'execution_lease_discover') {
+          const provider = await discoverExecutionKeepAliveEndpoint(target);
+          return c.json({
+            ok: provider !== null,
+            provider_url: provider?.url ?? null,
+            provider_headers: provider?.headers ?? null,
+          });
+        }
+        const result = await renewExecutionLease(target, body.lease_ttl_seconds);
+        return c.json({
+          ok: result.ok,
+          lease_until: result.leaseUntil,
+          provider_url: null,
+          provider_headers: null,
+          provider_touched: false,
+        });
       }
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
@@ -1974,35 +2117,6 @@ projectsApp.openapi(
         projectId,
         PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
       );
-    }
-
-    let body: {
-      session_id?: string;
-      kind?: string;
-      text?: string;
-      detail?: string;
-      output?: string;
-      sources?: Array<{ url?: string; text?: string }>;
-      blocks?: unknown[];
-      status?: string;
-      opencode_session_id?: string;
-      // Turn-end error detail (opencode AssistantMessage.error / session.error),
-      // so Slack can render "out of credits" / rate-limit / the real error.
-      error_name?: string;
-      error_message?: string;
-      error_status?: number;
-      error_retryable?: boolean;
-      error_provider?: string;
-      lease_ttl_seconds?: number;
-    };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
-    }
-    const sessionId = body.session_id?.trim();
-    if (!sessionId) {
-      return c.json({ error: 'session_id is required' }, 400);
     }
 
     if (authenticatedSandboxId) {
@@ -2033,34 +2147,6 @@ projectsApp.openapi(
       .limit(1);
     if (!turnStreamSession) {
       return c.json({ error: 'Not found' }, 404);
-    }
-
-    if (
-      body.kind === 'execution_heartbeat' ||
-      body.kind === 'execution_lease_release' ||
-      body.kind === 'execution_lease_discover'
-    ) {
-      if (!authenticatedSandboxId)
-        return c.json({ error: 'execution lease requires a sandbox token' }, 403);
-      const target = { sandboxId: authenticatedSandboxId, sessionId, projectId };
-      if (body.kind === 'execution_lease_release')
-        return c.json({ ok: await releaseExecutionLease(target) });
-      if (body.kind === 'execution_lease_discover') {
-        const provider = await discoverExecutionKeepAliveEndpoint(target);
-        return c.json({
-          ok: provider !== null,
-          provider_url: provider?.url ?? null,
-          provider_headers: provider?.headers ?? null,
-        });
-      }
-      const result = await renewExecutionLease(target, body.lease_ttl_seconds);
-      return c.json({
-        ok: result.ok,
-        lease_until: result.leaseUntil,
-        provider_url: result.providerUrl,
-        provider_headers: result.providerHeaders,
-        provider_touched: result.providerUrl !== null,
-      });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn

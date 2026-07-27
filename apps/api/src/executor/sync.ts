@@ -361,10 +361,23 @@ export async function syncProjectConnectors(
       // network catalog fetch. The DB row's cheap fields (name/enabled/
       // policies) are still reconciled inside upsertConnector. `force` (manual
       // sync) always re-fetches; error rows always retry.
+      //
+      // EXCEPT for channel connectors, which are never skipped. Their catalog is
+      // not fetched at all — `resolveCatalog` builds it locally from
+      // `channelCatalog(platform)`, i.e. from OUR OWN CODE — so there is no
+      // network cost to save, and `manifestHashForConnector` deliberately hashes
+      // only the spec (provider/platform/auth/...), which a code-side action
+      // change does not touch. Skipping therefore froze every existing channel
+      // connector's action list at whatever shipped the day it materialized:
+      // adding `read_transcript`/`send_prompt` to voice reached only brand-new
+      // projects, and the same was true of any Slack/Teams/email action ever
+      // added. Re-resolving locally on every sync is free and keeps deployed
+      // projects honest.
       const catalogUnchanged =
         !opts.force &&
         !!ex &&
         ex.status !== 'error' &&
+        spec.provider !== 'channel' &&
         ex.manifestHash === manifestHashForConnector(spec);
       const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);

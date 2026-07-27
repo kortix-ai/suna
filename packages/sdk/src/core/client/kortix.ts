@@ -593,15 +593,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         voice: {
           setBotName: (name: string) => P.setMeetBotName(projectId, name),
         },
-        /** @deprecated Use `channels.voice`. Retained for SDK compatibility. */
-        meet: {
-          voices: () => P.getMeetVoices(projectId),
-          setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
-          setBotName: (name: string) => P.setMeetBotName(projectId, name),
-          previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
-          speak: (botId: string, text: string, voice?: string) =>
-            P.speakInMeeting(projectId, botId, text, voice),
-        },
       },
 
       /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
@@ -834,6 +825,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
+      voiceTranscript: (options?: Parameters<typeof P.getVoiceTranscript>[2]) =>
+        P.getVoiceTranscript(projectId, sessionId, options),
 
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the

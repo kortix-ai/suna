@@ -65,6 +65,7 @@ export {
 // Trigger + manifest helpers (consumed by channels / executor / the boot
 // sequence in src/index.ts).
 export {
+  drainTriggerExecutionQueue,
   runProjectTriggerSweep,
   resolveGitTriggerActor,
   startProjectTriggerScheduler,

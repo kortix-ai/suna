@@ -862,11 +862,81 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
+    // Materialized schedule catalog. The repo manifest remains the source of
+    // truth, but the timing path reads only these indexed columns. Nullable
+    // columns keep mixed-version deploys safe while existing rows are cataloged.
+    triggerType: varchar('trigger_type', { length: 16 }),
+    enabled: boolean('enabled'),
+    scheduleCron: text('schedule_cron'),
+    scheduleRunAt: timestamp('schedule_run_at', { withTimezone: true }),
+    scheduleTimezone: varchar('schedule_timezone', { length: 128 }),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }),
+    scheduleSpec: jsonb('schedule_spec').$type<Record<string, unknown>>(),
+    nextFireAt: timestamp('next_fire_at', { withTimezone: true }),
+    lastScheduledFor: timestamp('last_scheduled_for', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
+    index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/**
+ * Durable execution queue for materialized cron slots.
+ *
+ * A unique project/slug/revision/slot key prevents duplicate execution across
+ * scheduler ticks, pod restarts, and concurrent leaders. The schedule catalog
+ * advances in the same transaction that inserts this row.
+ */
+export const projectTriggerExecutions = kortixSchema.table(
+  'project_trigger_executions',
+  {
+    executionId: uuid('execution_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }).notNull(),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 32 }).default('queued').notNull(),
+    spec: jsonb('spec').notNull().$type<Record<string, unknown>>(),
+    payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    sessionId: text('session_id'),
+    commandId: uuid('command_id'),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+      name: 'project_trigger_exec_project_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_trigger_exec_session_fk',
+    }).onDelete('set null'),
+    uniqueIndex('idx_project_trigger_executions_slot').on(
+      table.projectId,
+      table.slug,
+      table.scheduleRevision,
+      table.scheduledFor,
+    ),
+    index('idx_project_trigger_executions_due').on(
+      table.status,
+      table.availableAt,
+      table.lockedUntil,
+    ),
+    index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
   ],
 );
 
@@ -1134,7 +1204,9 @@ export const voiceCallTurns = kortixSchema.table(
     callId: text('call_id').notNull(),
     projectId: uuid('project_id').notNull(),
     sessionId: text('session_id').notNull(),
-    /** 'user' (a human in the call) | 'agent' (the voice agent speaking). */
+    /** 'user' (a human in the call) | 'agent' (the voice agent speaking) |
+     *  'tool' (an ask_kortix/run_command call the worker made through the
+     *  voice MCP — see mcp.ts's callTool). CHECK constraint enforces this set. */
     role: varchar('role', { length: 16 }).notNull(),
     speaker: text('speaker'),
     text: text('text').notNull(),
@@ -1144,6 +1216,61 @@ export const voiceCallTurns = kortixSchema.table(
     index('idx_voice_call_turns_call_cursor').on(table.callId, table.cursor),
     index('idx_voice_call_turns_session').on(table.sessionId, table.cursor),
   ],
+);
+
+/**
+ * The Kortix agent's read position in a call's transcript — the state that lets
+ * a bare `read_transcript {}` mean "only what I have not been shown yet".
+ *
+ * Cursor-paging was already incremental, but only for an agent that threaded the
+ * returned cursor back on every call; one that forgot passed 0 and re-read the
+ * whole conversation. Keeping the position here makes the cheap path the DEFAULT
+ * path and removes the agent's obligation to remember anything.
+ *
+ * `cursor` is the highest `voice_call_turns.cursor` actually handed over, and it
+ * only ever moves forward (the upsert's `setWhere` refuses to lower it) — a race
+ * between two reads in one call must not rewind it. Exactly one writer: the
+ * agent-side `read_transcript`. The call page's poll (r7.ts,
+ * public-join-routes.ts) passes its own explicit cursor and never touches this
+ * row, so a human scrolling the transcript cannot consume the agent's unread.
+ */
+export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors', {
+  /** The call — which is also the session id. */
+  callId: text('call_id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  cursor: bigint('cursor', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Short, ungessable join links that resolve server-side to a fresh LiveKit
+ * access token — see `apps/api/src/channels/voice/join-links.ts`. Replaces
+ * handing out the raw ~300-char LiveKit JWT itself in `voice_spawn`'s
+ * `join_url` (fragile in transit: one corrupted character breaks the
+ * signature and the browser gets "invalid token").
+ *
+ * `token_hash` (sha256 of the raw token), never the raw token, is the primary
+ * key — same posture as `project_session_public_shares.token_hash`: a DB dump
+ * should not itself be a bag of live capability tokens.
+ *
+ * DB-backed rather than a stateless encrypted envelope (compare
+ * `setup-links/token.ts`) for the one property a self-contained token cannot
+ * give: revocation. A live call can end while a copy of its link is still
+ * sitting in someone's chat history, and that link must stop working the
+ * moment the call does (`revoked_at`, set by `endCall`) -- not just whenever
+ * its TTL happens to lapse.
+ */
+export const voiceJoinLinks = kortixSchema.table(
+  'voice_join_links',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    callId: text('call_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_voice_join_links_call').on(table.callId)],
 );
 
 export const teamsPendingUploads = kortixSchema.table(

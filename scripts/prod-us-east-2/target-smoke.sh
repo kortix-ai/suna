@@ -24,9 +24,9 @@ TARGET_DATABASE_URL="$(
   jq -er '.target_database_url // .DATABASE_URL' <<<"$target_secret_json"
 )"
 export TARGET_SUPABASE_URL
-TARGET_SUPABASE_URL="$(
+TARGET_SUPABASE_URL="${TARGET_SUPABASE_URL_OVERRIDE:-$(
   jq -er '.target_supabase_url // .SUPABASE_URL' <<<"$target_secret_json"
-)"
+)}"
 export TARGET_ANON_KEY
 TARGET_ANON_KEY="$(
   jq -er '.target_anon_key // .SUPABASE_ANON_KEY' <<<"$target_secret_json"

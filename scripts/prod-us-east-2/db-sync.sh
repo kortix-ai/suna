@@ -17,7 +17,7 @@ require_command() {
   }
 }
 
-for command_name in aws jq node psql supabase; do
+for command_name in aws jq node psql; do
   require_command "$command_name"
 done
 
@@ -37,11 +37,13 @@ target_secret_json="$(
 )"
 
 source_database_url="$(jq -er '.DATABASE_URL' <<<"$source_secret_json")"
-target_database_url="$(jq -er '.target_database_url' <<<"$target_secret_json")"
+target_database_url="${TARGET_DATABASE_URL_OVERRIDE:-$(jq -er '.target_database_url' <<<"$target_secret_json")}"
 replication_username="$(jq -er '.replication_username' <<<"$target_secret_json")"
 replication_password="$(jq -er '.replication_password' <<<"$target_secret_json")"
 
 prepare_source() {
+  require_command supabase
+
   supabase postgres-config update \
     --experimental \
     --project-ref jbriwassebxdwoieikga \
@@ -465,33 +467,58 @@ repair_shadow_mutations() {
   fi
 
   local temporary_directory
-  local subscription_disabled=false
+  local subscription_was_enabled
+  local cleanup_trap
+  local credit_account_columns
   temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/kortix-use2-shadow-repair.XXXXXX")"
+  subscription_was_enabled="$(
+    psql "$target_database_url" -X -qAt -v ON_ERROR_STOP=1 \
+      -v subscription="$SUBSCRIPTION" <<'SQL'
+SELECT subenabled
+FROM pg_subscription
+WHERE subname = :'subscription';
+SQL
+  )"
 
   cleanup_shadow_repair() {
-    if [[ "$subscription_disabled" == "true" ]]; then
+    local directory="$1"
+    local should_enable_subscription="$2"
+    if [[ "$should_enable_subscription" == "t" ]]; then
       psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
         -v subscription="$SUBSCRIPTION" <<'SQL' || true
 SELECT format('ALTER SUBSCRIPTION %I ENABLE', :'subscription')
 \gexec
 SQL
     fi
-    find "$temporary_directory" -type f -exec unlink {} + 2>/dev/null || true
-    rmdir "$temporary_directory" 2>/dev/null || true
+    find "$directory" -type f -exec unlink {} \; 2>/dev/null || true
+    rmdir "$directory" 2>/dev/null || true
   }
-  trap cleanup_shadow_repair EXIT
+  printf -v cleanup_trap 'cleanup_shadow_repair %q %q' \
+    "$temporary_directory" "$subscription_was_enabled"
+  trap "$cleanup_trap" EXIT
 
-  psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
-    -v subscription="$SUBSCRIPTION" <<'SQL'
+  if [[ "$subscription_was_enabled" == "t" ]]; then
+    psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
+      -v subscription="$SUBSCRIPTION" <<'SQL'
 SELECT format('ALTER SUBSCRIPTION %I DISABLE', :'subscription')
 \gexec
 SQL
-  subscription_disabled=true
+  fi
+
+  credit_account_columns="$(
+    psql "$source_database_url" -X -qAt -v ON_ERROR_STOP=1 <<'SQL'
+SELECT string_agg(format('%I', column_name), ', ' ORDER BY ordinal_position)
+FROM information_schema.columns
+WHERE table_schema = 'kortix'
+  AND table_name = 'credit_accounts'
+  AND is_generated = 'NEVER';
+SQL
+  )"
 
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
     -c "\\copy (SELECT key_id, last_used_at FROM kortix.api_keys ORDER BY key_id) TO '$temporary_directory/api_keys.csv' WITH (FORMAT csv)"
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
-    -c "\\copy (SELECT account_id, reconciliation_discrepancy FROM kortix.credit_accounts ORDER BY account_id) TO '$temporary_directory/credit_accounts.csv' WITH (FORMAT csv)"
+    -c "\\copy (SELECT $credit_account_columns FROM kortix.credit_accounts ORDER BY account_id) TO '$temporary_directory/credit_accounts.csv' WITH (FORMAT csv)"
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
     -c "\\copy (SELECT session_id, last_used_at, metadata, updated_at FROM kortix.session_sandboxes ORDER BY session_id COLLATE \"C\") TO '$temporary_directory/session_sandboxes.csv' WITH (FORMAT csv)"
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
@@ -507,15 +534,12 @@ SQL
 
   {
     cat <<'SQL'
-BEGIN;
-SET LOCAL session_replication_role = replica;
+	BEGIN;
+	SET LOCAL statement_timeout = 0;
+	SET LOCAL session_replication_role = replica;
 CREATE TEMP TABLE repair_api_keys (
   key_id uuid PRIMARY KEY,
   last_used_at timestamptz
-) ON COMMIT DROP;
-CREATE TEMP TABLE repair_credit_accounts (
-  account_id uuid PRIMARY KEY,
-  reconciliation_discrepancy numeric
 ) ON COMMIT DROP;
 CREATE TEMP TABLE repair_session_sandboxes (
   session_id text PRIMARY KEY,
@@ -527,6 +551,8 @@ CREATE TEMP TABLE repair_audit_event_ids (
   event_id uuid PRIMARY KEY
 ) ON COMMIT DROP;
 SQL
+    printf "CREATE TEMP TABLE repair_credit_accounts AS SELECT %s FROM kortix.credit_accounts WITH NO DATA;\n" \
+      "$credit_account_columns"
     printf "\\copy repair_api_keys FROM '%s/api_keys.csv' WITH (FORMAT csv)\n" "$temporary_directory"
     printf "\\copy repair_credit_accounts FROM '%s/credit_accounts.csv' WITH (FORMAT csv)\n" "$temporary_directory"
     printf "\\copy repair_session_sandboxes FROM '%s/session_sandboxes.csv' WITH (FORMAT csv)\n" "$temporary_directory"
@@ -538,12 +564,87 @@ FROM repair_api_keys AS source
 WHERE target.key_id = source.key_id
   AND target.last_used_at IS DISTINCT FROM source.last_used_at;
 
+	DO $do$
+DECLARE
+  all_column_list text;
+  column_list text;
+  source_column_list text;
+  target_column_list text;
+BEGIN
+  SELECT
+    string_agg(format('%I', attname), ', ' ORDER BY attnum),
+    string_agg(format('%I', attname), ', ' ORDER BY attnum)
+      FILTER (WHERE attname <> 'account_id'),
+    string_agg(format('source.%I', attname), ', ' ORDER BY attnum)
+      FILTER (WHERE attname <> 'account_id'),
+    string_agg(format('target.%I', attname), ', ' ORDER BY attnum)
+      FILTER (WHERE attname <> 'account_id')
+  INTO all_column_list, column_list, source_column_list, target_column_list
+  FROM pg_attribute
+  WHERE attrelid = 'repair_credit_accounts'::regclass
+    AND attnum > 0
+    AND NOT attisdropped;
+
+  EXECUTE format(
+	    'UPDATE kortix.credit_accounts AS target
+	       SET (%1$s) = (%2$s)
+	      FROM repair_credit_accounts AS source
+	     WHERE target.account_id = source.account_id
+	       AND ROW(%3$s) IS DISTINCT FROM ROW(%2$s)',
+	    column_list,
+	    source_column_list,
+    target_column_list
+  );
+
+  EXECUTE format(
+    'INSERT INTO kortix.credit_accounts (%1$s)
+     SELECT %1$s
+       FROM repair_credit_accounts AS source
+      WHERE NOT EXISTS (
+        SELECT 1
+          FROM kortix.credit_accounts AS target
+         WHERE target.account_id = source.account_id
+      )',
+    all_column_list
+  );
+END
+$do$;
+
 UPDATE kortix.credit_accounts AS target
-SET reconciliation_discrepancy = source.reconciliation_discrepancy
+SET
+  balance_precise = source.balance,
+  lifetime_granted_precise = source.lifetime_granted,
+  lifetime_purchased_precise = source.lifetime_purchased,
+  lifetime_used_precise = source.lifetime_used,
+  expiring_credits_precise = source.expiring_credits,
+  non_expiring_credits_precise = source.non_expiring_credits,
+  daily_credits_balance_precise = source.daily_credits_balance
 FROM repair_credit_accounts AS source
 WHERE target.account_id = source.account_id
-  AND target.reconciliation_discrepancy
-    IS DISTINCT FROM source.reconciliation_discrepancy;
+  AND ROW(
+    target.balance_precise,
+    target.lifetime_granted_precise,
+    target.lifetime_purchased_precise,
+    target.lifetime_used_precise,
+    target.expiring_credits_precise,
+    target.non_expiring_credits_precise,
+    target.daily_credits_balance_precise
+  ) IS DISTINCT FROM ROW(
+    source.balance,
+    source.lifetime_granted,
+    source.lifetime_purchased,
+    source.lifetime_used,
+    source.expiring_credits,
+    source.non_expiring_credits,
+    source.daily_credits_balance
+  );
+
+	DELETE FROM kortix.credit_accounts AS target
+	WHERE NOT EXISTS (
+	  SELECT 1
+	  FROM repair_credit_accounts AS source
+	  WHERE source.account_id = target.account_id
+	);
 
 UPDATE kortix.session_sandboxes AS target
 SET
@@ -575,16 +676,135 @@ SQL
   } | psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
     -v shadow_audit_start_at="$SHADOW_AUDIT_START_AT"
 
-  psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
-    -v subscription="$SUBSCRIPTION" <<'SQL'
+  if [[ "$subscription_was_enabled" == "t" ]]; then
+    psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
+      -v subscription="$SUBSCRIPTION" <<'SQL'
 SELECT format('ALTER SUBSCRIPTION %I ENABLE', :'subscription')
 \gexec
 SQL
-  subscription_disabled=false
+  fi
 
   trap - EXIT
-  cleanup_shadow_repair
-  echo "Replaced target-only shadow mutations and resumed replication."
+  cleanup_shadow_repair "$temporary_directory" "f"
+  echo "Replaced target-only shadow mutations and restored the prior replication state."
+}
+
+backfill_target_precision_columns() {
+  if [[ "${ALLOW_TARGET_PRECISION_BACKFILL:-}" != "1" ]]; then
+    echo "Set ALLOW_TARGET_PRECISION_BACKFILL=1 to backfill target-only precision columns." >&2
+    exit 64
+  fi
+
+  psql "$target_database_url" -X -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SET LOCAL statement_timeout = 0;
+
+ALTER TABLE kortix.credit_accounts
+  ENABLE ALWAYS TRIGGER sync_credit_account_precision_columns;
+ALTER TABLE kortix.credit_ledger
+  ENABLE ALWAYS TRIGGER sync_credit_ledger_precision_columns;
+ALTER TABLE kortix.gateway_request_logs
+  ENABLE ALWAYS TRIGGER sync_gateway_request_log_cost_precision;
+ALTER TABLE kortix.usage_events
+  ENABLE ALWAYS TRIGGER sync_usage_event_cost_precision;
+
+UPDATE kortix.credit_accounts
+SET
+  balance_precise = balance,
+  lifetime_granted_precise = lifetime_granted,
+  lifetime_purchased_precise = lifetime_purchased,
+  lifetime_used_precise = lifetime_used,
+  expiring_credits_precise = expiring_credits,
+  non_expiring_credits_precise = non_expiring_credits,
+  daily_credits_balance_precise = daily_credits_balance
+WHERE ROW(
+  balance_precise,
+  lifetime_granted_precise,
+  lifetime_purchased_precise,
+  lifetime_used_precise,
+  expiring_credits_precise,
+  non_expiring_credits_precise,
+  daily_credits_balance_precise
+) IS DISTINCT FROM ROW(
+  balance,
+  lifetime_granted,
+  lifetime_purchased,
+  lifetime_used,
+  expiring_credits,
+  non_expiring_credits,
+  daily_credits_balance
+);
+
+UPDATE kortix.credit_ledger
+SET
+  amount_precise = amount,
+  balance_after_precise = balance_after
+WHERE ROW(amount_precise, balance_after_precise)
+  IS DISTINCT FROM ROW(amount, balance_after);
+
+UPDATE kortix.gateway_request_logs
+SET
+  upstream_cost_precise = upstream_cost,
+  final_cost_precise = final_cost
+WHERE ROW(upstream_cost_precise, final_cost_precise)
+  IS DISTINCT FROM ROW(upstream_cost, final_cost);
+
+UPDATE kortix.usage_events
+SET cost_usd_precise = cost_usd
+WHERE cost_usd_precise IS DISTINCT FROM cost_usd;
+
+COMMIT;
+
+SELECT relation, mismatches
+FROM (
+  SELECT
+    'kortix.credit_accounts' AS relation,
+    count(*) FILTER (
+      WHERE ROW(
+        balance_precise,
+        lifetime_granted_precise,
+        lifetime_purchased_precise,
+        lifetime_used_precise,
+        expiring_credits_precise,
+        non_expiring_credits_precise,
+        daily_credits_balance_precise
+      ) IS DISTINCT FROM ROW(
+        balance,
+        lifetime_granted,
+        lifetime_purchased,
+        lifetime_used,
+        expiring_credits,
+        non_expiring_credits,
+        daily_credits_balance
+      )
+    ) AS mismatches
+  FROM kortix.credit_accounts
+  UNION ALL
+  SELECT
+    'kortix.credit_ledger',
+    count(*) FILTER (
+      WHERE ROW(amount_precise, balance_after_precise)
+        IS DISTINCT FROM ROW(amount, balance_after)
+    )
+  FROM kortix.credit_ledger
+  UNION ALL
+  SELECT
+    'kortix.gateway_request_logs',
+    count(*) FILTER (
+      WHERE ROW(upstream_cost_precise, final_cost_precise)
+        IS DISTINCT FROM ROW(upstream_cost, final_cost)
+    )
+  FROM kortix.gateway_request_logs
+  UNION ALL
+  SELECT
+    'kortix.usage_events',
+    count(*) FILTER (
+      WHERE cost_usd_precise IS DISTINCT FROM cost_usd
+    )
+  FROM kortix.usage_events
+) AS precision_state
+ORDER BY relation;
+SQL
 }
 
 write_counts() {
@@ -1243,6 +1463,7 @@ Commands:
   status             Show subscriber state, errors, slot state, and retained WAL.
   repair-public-rls  Repair public control tables skipped by RLS during initial copy.
   repair-shadow-mutations Replace target-only mutations made during shadow verification.
+  backfill-target-precision Backfill target-only precision columns and keep them synchronized during replication.
   reconcile-counts   Compare exact source and target row counts.
   reconcile-key-hashes Compare primary-key and replica-identity set hashes.
   reconcile-critical-hashes Compare full-row hashes for critical relations.
@@ -1266,6 +1487,9 @@ case "${1:-}" in
     ;;
   repair-shadow-mutations)
     repair_shadow_mutations
+    ;;
+  backfill-target-precision)
+    backfill_target_precision_columns
     ;;
   reconcile-counts)
     reconcile_counts

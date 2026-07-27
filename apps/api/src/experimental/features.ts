@@ -103,13 +103,13 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     key: 'voice',
     name: 'Voice',
     description:
-      'Let the agent join your calls — Google Meet, Zoom, or Microsoft Teams — and hold a real spoken conversation: it listens continuously, answers in its own voice, and hands work off to itself in the background while you keep talking. Powered by Recall.ai for the call and a realtime speech model for the conversation.',
+      'Give the agent a live voice call it can start and hold a real spoken conversation in: it listens continuously, answers in its own voice, and hands work off to itself in the background while the call continues. The agent spawns the call and shares a join link with whoever should be on it — it does not join a meeting itself.',
     stability: 'experimental',
     // Always listable; a project turns it on in Settings like any other
-    // experiment. Credentials (RECALL_API_KEY, LIVEKIT_*) are still resolved
-    // server-side per project and a missing one surfaces as a connector error
-    // at spawn time — which is the right place to find out, rather than the
-    // feature silently not existing.
+    // experiment. Credentials (LIVEKIT_*) are still resolved server-side per
+    // project and a missing one surfaces as an error at spawn time — which is
+    // the right place to find out, rather than the feature silently not
+    // existing.
     available: () => true,
     // Explicit opt-in: a project enables voice in Settings.
     platformDefault: () => false,

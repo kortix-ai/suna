@@ -125,8 +125,11 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
   return { success: true };
 }
 
-export async function getAutoTopupSettings(accountId: string) {
-  const account = await getCreditAccount(accountId);
+export async function getAutoTopupSettings(
+  accountId: string,
+  prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
+) {
+  const account = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
   if (!account) return { enabled: true, threshold: AUTO_TOPUP_DEFAULT_THRESHOLD, amount: AUTO_TOPUP_DEFAULT_AMOUNT };
 
   return {

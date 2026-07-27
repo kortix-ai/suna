@@ -96,6 +96,9 @@ function appWithProbe() {
   app.get('/v1/projects/:projectId', (c) =>
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
+  app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
+  app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
   return app;
 }
 
@@ -149,6 +152,42 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.projectId).toBe(PROJECT_A);
+  });
+
+  // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and
+  // enforceTokenProjectScope is default-deny. /v1/skills shipped without an
+  // allowlist entry, so the one caller the system skills exist for — an agent
+  // in a sandbox running the `kortix skills get <name>` that every baked image
+  // seeds — got a 403. Nothing caught it: the routes' own unit test mounts the
+  // app WITHOUT combinedAuth, and the e2e flow only exercises ANON and a
+  // Supabase-JWT owner. These are that regression guard.
+  test('project-scoped PAT CAN list the system skills (the in-sandbox agent)', async () => {
+    const res = await appWithProbe().request('/v1/skills', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  test('project-scoped PAT CAN read a system skill body and a reference file', async () => {
+    const body = await appWithProbe().request('/v1/skills/kortix-system', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(body.status).toBe(200);
+
+    const file = await appWithProbe().request(
+      '/v1/skills/kortix-system/file?path=references/capabilities.md',
+      { headers: { Authorization: 'Bearer kortix_pat_project_a' } },
+    );
+    expect(file.status).toBe(200);
+  });
+
+  test('the /v1/skills allowlist does not leak to a lookalike prefix', async () => {
+    const res = await appWithProbe().request('/v1/skillsomething', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
   });
 
   test('account-scoped PAT (no project binding) reaches the sandbox proxy unchanged', async () => {

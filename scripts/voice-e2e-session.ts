@@ -66,8 +66,8 @@ async function main() {
   if (!projectId) throw new Error(`project create failed: ${JSON.stringify(proj).slice(0, 400)}`);
   console.log(`     project ${projectId}`);
 
-  // The voice channel is connector-backed and experimental-gated; without this
-  // the kortix_voice connector never materializes and voice_spawn cannot join.
+  // voice_spawn checks this flag directly; without it enabled the MCP tool
+  // refuses to start a call.
   console.log('4/5  enabling the voice experimental flag…');
   const flagRes = await fetch(`${API}/projects/${projectId}/experimental`, {
     method: 'PATCH',

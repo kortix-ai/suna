@@ -11,24 +11,10 @@ export const uncoveredAllow: AllowEntry[] = [
     reason:
       "sandbox-only telemetry sink called by the in-guest boot relay with a sandbox token; not an end-user API route",
   },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/sessions/:*/voice/prompt",
-    reason:
-      "worker-only HMAC callback from the realtime voice worker; the end-user voice action is exposed through the flow-covered voice MCP",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/sessions/:*/voice/run-command",
-    reason:
-      "worker-only HMAC callback from the realtime voice worker; the end-user voice action is exposed through the flow-covered voice MCP",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/sessions/:*/voice/turns",
-    reason:
-      "worker-only HMAC transcript sink called by the realtime voice worker; not an end-user API route",
-  },
+  // The three worker-only voice callbacks that used to be allowlisted here
+  // (/voice/prompt, /voice/run-command, /voice/turns) no longer exist: the
+  // worker now speaks JSON-RPC to a single MCP route, POST /v1/projects/:*/
+  // sessions/:*/mcp/voice, which VOICE-2 covers at its auth boundary.
   {
     method: "PUT",
     path: "/v1/executor/projects/:*/connectors/:*/sensitive",

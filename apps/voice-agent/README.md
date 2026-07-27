@@ -38,11 +38,11 @@ resolve a `CallContext` from room metadata, since there is no room — see
 below).
 
 To actually exercise a call end-to-end you need something in the room to
-trigger dispatch: either point Recall's rendered meeting page at this
-LiveKit server as a client (the real integration — see "How this fits" below)
-or, for a bare smoke test, join the same room name as a human participant
-with any LiveKit client (e.g. the [Agents Playground](https://agents-playground.livekit.io/)
-pointed at your local server) and talk to it.
+trigger dispatch: either open the `/voice/[token]` page (apps/web) pointed at
+this LiveKit server (the real integration), or, for a bare smoke test, join
+the same room name as a human participant with any LiveKit client (e.g. the
+[Agents Playground](https://agents-playground.livekit.io/) pointed at your
+local server) and talk to it.
 
 **Required env vars** (see `src/call-context.ts` for the full explanation of
 why call-specific values come from room metadata, not env vars):
@@ -94,7 +94,7 @@ Defined in `src/tools.ts`, described to the model in `src/instructions.ts`:
 - **`send_prompt`** — fire-and-forget hand-off to the Kortix agent session,
   for anything needing real project knowledge, files, connectors, or
   actions. Mirrors the old in-process `ask_kortix` → `continueSession()`
-  path, but now over HTTP (`POST /voice/prompt`, see below) since this
+  path, but now over the voice MCP's `ask_kortix` tool (see below) since this
   process is no longer inside `apps/api`. Returns the instant the request is
   queued; the instructions tell the model to say one short sentence that it's
   checking and then stop talking rather than invent an answer.
@@ -120,32 +120,36 @@ extra plumbing is needed on this side beyond the listener.
 ## Transcripts
 
 `src/transcripts.ts` posts every finalized turn (`voice.AgentSessionEventTypes.ConversationItemAdded`,
-one event per committed chat item, both roles) to `POST /voice/turns`,
-fire-and-forget — mirroring the old in-process `appendTurn()` write to
-`voice_call_turns`.
+one event per committed chat item, both roles) via the voice MCP's
+`post_turn` tool, fire-and-forget — mirroring the old in-process
+`appendTurn()` write to `voice_call_turns`.
 
 ## The `apps/api` contract this app expects
 
 This app is scoped to the LiveKit worker only — it does not touch
-`apps/api`. It expects three endpoints under
-`/v1/projects/:projectId/sessions/:sessionId/voice/`, each authenticated with
-`Authorization: Bearer <kortix_api_token>` (the per-call token from room
-metadata), none of which exist yet:
+`apps/api`. It expects ONE endpoint,
+`POST /v1/projects/:projectId/sessions/:sessionId/mcp/voice` — a JSON-RPC 2.0
+voice MCP (`apps/api/src/channels/voice/mcp.ts` + `routes.ts`), authenticated
+with `Authorization: Bearer <kortix_api_token>` (the per-call token from room
+metadata). Every call is a `tools/call` request; the tool surface is:
 
-| Endpoint | Body | Behavior |
+| Tool | Args | Behavior |
 |---|---|---|
-| `POST .../voice/prompt` | `{ call_id, text }` | Fire-and-forget; relays into the Kortix session the same way the old `ask_kortix` → `continueSession()` did. Responds quickly; the actual agent turn runs in the background. |
-| `POST .../voice/run-command` | `{ call_id, command, cwd? }` | Runs `command` in the session's sandbox, capped server-side well under this app's 12s client-side timeout, and returns `{ stdout, stderr, exit_code, timed_out }`. |
-| `POST .../voice/turns` | `{ call_id, role, text, speaker? }` | Persists one transcript line to `voice_call_turns`, same shape as the old `appendTurn()`. |
+| `ask_kortix` | `{ request }` | Fire-and-forget; relays into the Kortix session the same way the old `ask_kortix` → `continueSession()` did. Responds instantly; the actual agent turn runs in the background. |
+| `run_command` | `{ command, cwd? }` | Runs `command` in the session's sandbox, capped server-side well under this app's 12s client-side timeout, and returns `{ stdout, stderr, exit_code, timed_out }`. |
+| `post_turn` | `{ role, text, speaker? }` | Persists one transcript line to `voice_call_turns`, same shape as the old `appendTurn()`. |
+
+`call_id`/`project_id`/`session_id` are never in the tool arguments — the MCP
+route resolves them from the URL path (and the HMAC proves the caller owns
+that call), the same way the three REST endpoints this MCP replaced used to.
 
 Plus the reply channel above (`RoomServiceClient.sendData` on the `kortix`
 topic) and setting `kortix_api_token`/`project_id`/`session_id` in room
 metadata at room-creation time.
 
-`src/kortix-client.ts` implements the client side of all three calls now —
-real `fetch()` requests, correctly shaped, with client-side timeouts and
-defensive error handling — so wiring up the `apps/api` side is a matter of
-implementing the contract above, not touching this app again.
+`src/kortix-client.ts` implements the client side of all three tool calls —
+real `fetch()` requests against the MCP endpoint, correctly shaped, with
+client-side timeouts and defensive error handling.
 
 ## Package versions
 

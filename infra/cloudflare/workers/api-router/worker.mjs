@@ -13,6 +13,30 @@
 // single global DB lease — see apps/api/src/shared/leader-election.ts — so only
 // one side ever runs cron). Flipping is instant and instantly reversible.
 const STRICT_TRANSPORT_SECURITY = 'max-age=31536000';
+const MAINTENANCE_LEVELS = new Set([
+  'none',
+  'info',
+  'warning',
+  'critical',
+  'blocking',
+]);
+const DEFAULT_MAINTENANCE = {
+  level: 'none',
+  title: '',
+  message: '',
+  startTime: null,
+  endTime: null,
+  statusUrl: null,
+  affectedServices: [],
+  updatedAt: new Date(0).toISOString(),
+};
+const AUTOMATIC_MAINTENANCE = {
+  ...DEFAULT_MAINTENANCE,
+  level: 'blocking',
+  title: 'Service maintenance',
+  message:
+    'Kortix is temporarily unavailable. Service will resume automatically.',
+};
 
 function addSecurityHeaders(response) {
   response.headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
@@ -20,12 +44,100 @@ function addSecurityHeaders(response) {
   return response;
 }
 
+function isReadOnlyRequest(request) {
+  return (
+    request.method === 'GET' ||
+    request.method === 'HEAD' ||
+    request.method === 'OPTIONS'
+  );
+}
+
+async function readMaintenanceConfig(env) {
+  if (env.MAINTENANCE_LEVEL_OVERRIDE === 'blocking') {
+    return {
+      ...DEFAULT_MAINTENANCE,
+      level: 'blocking',
+      title: env.MAINTENANCE_TITLE_OVERRIDE || 'Scheduled maintenance',
+      message:
+        env.MAINTENANCE_MESSAGE_OVERRIDE ||
+        'Kortix is temporarily unavailable for maintenance.',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  if (!env.MAINTENANCE_STATE_URL) return null;
+
+  try {
+    const response = await fetch(env.MAINTENANCE_STATE_URL, {
+      headers: { Accept: 'application/json' },
+      cf: { cacheEverything: true, cacheTtl: 2 },
+    });
+    if (!response.ok) {
+      return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    }
+
+    const config = await response.json();
+    if (!config || !MAINTENANCE_LEVELS.has(config.level)) {
+      return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    }
+    return { ...DEFAULT_MAINTENANCE, ...config };
+  } catch {
+    return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+  }
+}
+
+function maintenanceResponse(config, active, isGateway, request) {
+  const origin = request.headers.get('Origin');
+  const headers = new Headers({
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/json',
+    'Retry-After': '30',
+    'X-Backend': active,
+    'X-Backend-Service': isGateway ? 'gateway' : 'api',
+    'X-Maintenance-Mode': 'blocking',
+  });
+  if (origin) {
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Vary', 'Origin');
+  }
+
+  return addSecurityHeaders(
+    new Response(
+      JSON.stringify({
+        error: 'MAINTENANCE_MODE',
+        message:
+          config.message ||
+          'Kortix is temporarily unavailable for maintenance.',
+        maintenance: config,
+      }),
+      { status: 503, headers },
+    ),
+  );
+}
+
+function maintenanceConfigResponse(config, active, source) {
+  return addSecurityHeaders(
+    new Response(JSON.stringify(config), {
+      status: 200,
+      headers: {
+        'Cache-Control': 'public, max-age=2, must-revalidate',
+        'Content-Type': 'application/json',
+        'X-Backend': active,
+        'X-Backend-Service': 'router',
+        'X-Maintenance-Source': source,
+      },
+    }),
+  );
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const isGateway = url.hostname.includes('gateway');
 
-    const active = (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'eks';
+    const active =
+      (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'eks';
     const backends = isGateway
       ? {
           eks: env.GATEWAY_BACKEND_EKS,
@@ -41,7 +153,9 @@ export default {
     const backendUrl = backends[active];
     if (!backendUrl) {
       const svc = isGateway ? 'gateway' : 'api';
-      return new Response(`Invalid ${svc} backend configuration: ${active}`, { status: 500 });
+      return new Response(`Invalid ${svc} backend configuration: ${active}`, {
+        status: 500,
+      });
     }
 
     if (url.protocol !== 'https:') {
@@ -55,6 +169,59 @@ export default {
     }
 
     const targetUrl = new URL(url.pathname + url.search, backendUrl);
+    const isMaintenanceConfigRead =
+      !isGateway &&
+      request.method === 'GET' &&
+      url.pathname === '/v1/system/maintenance';
+
+    if (isMaintenanceConfigRead) {
+      try {
+        const primaryResponse = await fetch(
+          new Request(targetUrl, {
+            method: 'GET',
+            headers: request.headers,
+            redirect: 'manual',
+            signal: AbortSignal.timeout(2_000),
+          }),
+        );
+        if (primaryResponse.ok) {
+          const primaryConfig = await primaryResponse.json();
+          if (primaryConfig && MAINTENANCE_LEVELS.has(primaryConfig.level)) {
+            return maintenanceConfigResponse(
+              { ...DEFAULT_MAINTENANCE, ...primaryConfig },
+              active,
+              'database',
+            );
+          }
+        }
+      } catch {
+        // The independent store or automatic blocking response is returned below.
+      }
+
+      const fallback = await readMaintenanceConfig(env);
+      if (fallback?.level === 'blocking') {
+        return maintenanceConfigResponse(fallback, active, 'edge-config');
+      }
+      return maintenanceConfigResponse(
+        { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() },
+        active,
+        'automatic',
+      );
+    }
+
+    const maintenance = await readMaintenanceConfig(env);
+    const isMaintenanceConfigWrite =
+      !isGateway &&
+      request.method === 'PUT' &&
+      url.pathname === '/v1/system/maintenance';
+
+    if (
+      maintenance?.level === 'blocking' &&
+      !isReadOnlyRequest(request) &&
+      !isMaintenanceConfigWrite
+    ) {
+      return maintenanceResponse(maintenance, active, isGateway, request);
+    }
 
     // `manual` so backend 3xx responses are passed straight through to the
     // browser. With `follow`, the worker would chase a browser-facing redirect
@@ -69,7 +236,29 @@ export default {
       redirect: 'manual',
     });
 
-    const response = await fetch(modifiedRequest);
+    let response;
+    try {
+      response = await fetch(modifiedRequest);
+    } catch {
+      return maintenanceResponse(
+        { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() },
+        active,
+        isGateway,
+        request,
+      );
+    }
+    if (
+      response.status === 502 ||
+      response.status === 503 ||
+      response.status === 504
+    ) {
+      return maintenanceResponse(
+        { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() },
+        active,
+        isGateway,
+        request,
+      );
+    }
     // Cloudflare attaches the accepted socket to response.webSocket. Creating
     // a new Response drops that non-standard property and breaks the upgrade.
     if (response.status === 101 || response.webSocket) {
