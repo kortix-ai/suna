@@ -67,6 +67,7 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
+  isLeader,
   startLeaderElection,
   stopLeaderElection,
   runsSingletonWorkers,
@@ -80,6 +81,7 @@ import {
   projectsApp,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
+  getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
@@ -357,6 +359,11 @@ const HealthSchema = z
     timestamp: z.string(),
     environment: z.string(),
     version: z.string(),
+    commit: z.string(),
+    started_at: z.string(),
+    instance: z.string(),
+    scheduler_leader: z.boolean(),
+    trigger_scheduler: z.record(z.string(), z.unknown()),
   })
   .openapi('Health');
 
@@ -367,6 +374,11 @@ const healthHandler = (c: any) =>
     timestamp: new Date().toISOString(),
     environment: config.INTERNAL_KORTIX_ENV,
     version: API_VERSION,
+    commit: API_COMMIT,
+    started_at: STARTED_AT,
+    instance: API_INSTANCE,
+    scheduler_leader: isLeader(),
+    trigger_scheduler: getTriggerSchedulerHealth(),
   });
 
 app.openapi(

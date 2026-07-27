@@ -369,13 +369,6 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = "maybe"\n',
   },
   {
-    name: 'trigger timezone: an invalid IANA zone is a warning only, still valid',
-    format: 'toml',
-    valid: true,
-    input:
-      'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"\n',
-  },
-  {
     name: 'trigger session_mode accepts "reuse" (and its sessionMode alias)',
     format: 'toml',
     valid: true,

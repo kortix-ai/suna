@@ -566,7 +566,7 @@ const envSchema = z.object({
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
-  KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(60_000),
+  KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
 
   // ── Version / GitHub (optional) ───────────────────────────────────────────
   SANDBOX_VERSION: optStr, // dev override: skip npm registry lookup for latest version

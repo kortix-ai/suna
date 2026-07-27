@@ -862,11 +862,81 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
+    // Materialized schedule catalog. The repo manifest remains the source of
+    // truth, but the timing path reads only these indexed columns. Nullable
+    // columns keep mixed-version deploys safe while existing rows are cataloged.
+    triggerType: varchar('trigger_type', { length: 16 }),
+    enabled: boolean('enabled'),
+    scheduleCron: text('schedule_cron'),
+    scheduleRunAt: timestamp('schedule_run_at', { withTimezone: true }),
+    scheduleTimezone: varchar('schedule_timezone', { length: 128 }),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }),
+    scheduleSpec: jsonb('schedule_spec').$type<Record<string, unknown>>(),
+    nextFireAt: timestamp('next_fire_at', { withTimezone: true }),
+    lastScheduledFor: timestamp('last_scheduled_for', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
+    index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/**
+ * Durable execution queue for materialized cron slots.
+ *
+ * A unique project/slug/revision/slot key prevents duplicate execution across
+ * scheduler ticks, pod restarts, and concurrent leaders. The schedule catalog
+ * advances in the same transaction that inserts this row.
+ */
+export const projectTriggerExecutions = kortixSchema.table(
+  'project_trigger_executions',
+  {
+    executionId: uuid('execution_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }).notNull(),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 32 }).default('queued').notNull(),
+    spec: jsonb('spec').notNull().$type<Record<string, unknown>>(),
+    payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    sessionId: text('session_id'),
+    commandId: uuid('command_id'),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+      name: 'project_trigger_exec_project_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_trigger_exec_session_fk',
+    }).onDelete('set null'),
+    uniqueIndex('idx_project_trigger_executions_slot').on(
+      table.projectId,
+      table.slug,
+      table.scheduleRevision,
+      table.scheduledFor,
+    ),
+    index('idx_project_trigger_executions_due').on(
+      table.status,
+      table.availableAt,
+      table.lockedUntil,
+    ),
+    index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
   ],
 );
 

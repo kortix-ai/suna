@@ -41,6 +41,7 @@ export {
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
 	  projectTriggerRuntime,
+	  projectTriggerExecutions,
 	  sessionLifecycleCommands,
 	  chatChannelBindings,
   chatInstalls,

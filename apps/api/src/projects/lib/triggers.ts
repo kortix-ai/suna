@@ -6,7 +6,6 @@ import {
   projectTriggerRuntime,
   projects,
 } from '@kortix/db';
-import { Cron } from 'croner';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
@@ -24,6 +23,18 @@ import {
   sessionBackpressureState,
 } from '../session-lifecycle';
 import {
+  type TriggerExecutionRow,
+  claimDueScheduleSlots,
+  claimTriggerExecutions,
+  countUncatalogedTriggerProjects,
+  markTriggerExecutionDispatched,
+  markTriggerExecutionFailed,
+  markTriggerExecutionSkipped,
+  markTriggerExecutionSucceeded,
+} from '../trigger-execution-store';
+import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
+import {
   GIT_TRIGGER_SESSION_MODES,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
@@ -36,7 +47,6 @@ import {
   synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
-import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import {
   type ProjectRow,
@@ -170,6 +180,7 @@ export const globalForProjectTriggers = globalThis as typeof globalThis & {
 export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
 export let triggerSweepRunning = false;
+let triggerExecutionDrainRunning = false;
 
 // In-memory heartbeat for the trigger scheduler, surfaced at /health so an
 // operator can tell at a glance whether the leader's sweep is alive and what
@@ -189,6 +200,29 @@ export interface TriggerSchedulerHealth {
     skipped: number;
   } | null;
   lastError: string | null;
+  catalogPendingProjects: number | null;
+  lastCatalogSweepCompletedAt: string | null;
+  lastCatalogSweepResult: {
+    scanned: number;
+    synced: number;
+    errors: number;
+  } | null;
+  lastCatalogSweepError: string | null;
+  catalogCursor: string | null;
+  discoveryCursor: string | null;
+  catalogCycleCompletedAt: string | null;
+  discoveryCycleCompletedAt: string | null;
+  lastClaimLagMs: number | null;
+  maxObservedClaimLagMs: number | null;
+  lastExecutionDrainStartedAt: string | null;
+  lastExecutionDrainCompletedAt: string | null;
+  lastExecutionResult: {
+    fired: number;
+    queued: number;
+    failed: number;
+    skipped: number;
+  } | null;
+  lastExecutionError: string | null;
 }
 const schedulerHealth: TriggerSchedulerHealth = {
   lastSweepStartedAt: null,
@@ -196,6 +230,20 @@ const schedulerHealth: TriggerSchedulerHealth = {
   lastSweepDurationMs: null,
   lastResult: null,
   lastError: null,
+  catalogPendingProjects: null,
+  lastCatalogSweepCompletedAt: null,
+  lastCatalogSweepResult: null,
+  lastCatalogSweepError: null,
+  catalogCursor: null,
+  discoveryCursor: null,
+  catalogCycleCompletedAt: null,
+  discoveryCycleCompletedAt: null,
+  lastClaimLagMs: null,
+  maxObservedClaimLagMs: null,
+  lastExecutionDrainStartedAt: null,
+  lastExecutionDrainCompletedAt: null,
+  lastExecutionResult: null,
+  lastExecutionError: null,
 };
 export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
   return schedulerHealth;
@@ -213,23 +261,6 @@ export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
 export function triggerFireTimeoutMs(): number {
   const raw = Number(process.env.KORTIX_TRIGGER_FIRE_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 45_000;
-}
-/** Hard cap on loading one project's manifest from its git mirror. */
-export function triggerLoadTimeoutMs(): number {
-  const raw = Number(process.env.KORTIX_TRIGGER_LOAD_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30_000;
-}
-
-/** Hard cap on resolving git credentials for one project. */
-export function triggerAuthTimeoutMs(): number {
-  const raw = Number(process.env.KORTIX_TRIGGER_AUTH_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 15_000;
-}
-
-/** Number of projects whose trigger manifests can load in parallel. */
-export function triggerProjectConcurrency(): number {
-  const raw = Number(process.env.KORTIX_TRIGGER_PROJECT_CONCURRENCY);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
 }
 
 /** Number of project manifests the connector reconciler processes in parallel. */
@@ -362,12 +393,17 @@ export function connectorSweepIntervalMs() {
 
 export function triggerSchedulerIntervalMs() {
   const raw = Number((config as any).KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60_000;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1_000;
 }
 
-export function nextCronRun(schedule: string, from: Date, timezone?: string): Date | null {
-  const job = new Cron(schedule, { paused: true, ...(timezone ? { timezone } : {}) });
-  return job.nextRun(from);
+export function triggerScheduleClaimLimit(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_SCHEDULE_CLAIM_LIMIT);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 250;
+}
+
+export function triggerExecutionConcurrency(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_EXECUTION_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
 }
 
 /**
@@ -446,12 +482,14 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
     schedulerHealth.lastSweepDurationMs = Date.now() - startedMs;
     schedulerHealth.lastResult = result;
     triggerSweepRunning = false;
-    console.log('[project-triggers] sweep completed', {
-      status,
-      durationMs: schedulerHealth.lastSweepDurationMs,
-      ...result,
-      error: schedulerHealth.lastError,
-    });
+    if (status === 'failed' || result.scanned > 0) {
+      console.log('[project-triggers] schedule claim completed', {
+        status,
+        durationMs: schedulerHealth.lastSweepDurationMs,
+        ...result,
+        error: schedulerHealth.lastError,
+      });
+    }
   }
 }
 
@@ -461,24 +499,6 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
  * UI CRUD and `kortix ship` reconcile inline. The discovery batch catches raw
  * git pushes. The catalog batch refreshes known trigger and connector projects.
  */
-
-/** Select only active projects that have at least one trigger catalog row. */
-async function selectTriggerCatalogProjects(): Promise<ProjectRow[]> {
-  return db
-    .select()
-    .from(projects)
-    .where(
-      and(
-        eq(projects.status, 'active'),
-        sql`exists (
-          select 1
-          from ${projectTriggerRuntime}
-          where ${projectTriggerRuntime.projectId} = ${projects.projectId}
-        )`,
-      ),
-    )
-    .orderBy(projects.projectId);
-}
 
 let manifestCatalogCursor: string | null = null;
 
@@ -551,12 +571,16 @@ export async function runProjectConnectorSweep(): Promise<{
   const startedMs = Date.now();
   const out = { scanned: 0, synced: 0, errors: 0 };
   let status: 'completed' | 'failed' = 'completed';
+  let catalogCycleCompleted = false;
+  let discoveryCycleCompleted = false;
   try {
     const { syncProjectConnectors } = await import('../../executor/sync');
     const [catalogProjects, discoveryProjects] = await Promise.all([
       selectManifestCatalogProjects(),
       selectManifestDiscoveryProjects(),
     ]);
+    catalogCycleCompleted = manifestCatalogCursor === null;
+    discoveryCycleCompleted = manifestDiscoveryCursor === null;
     const uniqueProjects = new Map<string, ProjectRow>();
     for (const project of [...catalogProjects, ...discoveryProjects]) {
       uniqueProjects.set(project.projectId, project);
@@ -589,15 +613,29 @@ export async function runProjectConnectorSweep(): Promise<{
       out.synced += result.synced;
       out.errors += result.errors;
     }
+    schedulerHealth.catalogPendingProjects = await countUncatalogedTriggerProjects();
+    schedulerHealth.lastCatalogSweepError = null;
     return out;
   } catch (error) {
     status = 'failed';
     out.errors += 1;
+    schedulerHealth.lastCatalogSweepError = error instanceof Error ? error.message : String(error);
     console.error('[project-connectors] sweep failed', {
       error: error instanceof Error ? error.message : String(error),
     });
     return out;
   } finally {
+    const completedAt = new Date().toISOString();
+    schedulerHealth.lastCatalogSweepCompletedAt = completedAt;
+    schedulerHealth.lastCatalogSweepResult = out;
+    schedulerHealth.catalogCursor = manifestCatalogCursor;
+    schedulerHealth.discoveryCursor = manifestDiscoveryCursor;
+    if (status === 'completed' && catalogCycleCompleted) {
+      schedulerHealth.catalogCycleCompletedAt = completedAt;
+    }
+    if (status === 'completed' && discoveryCycleCompleted) {
+      schedulerHealth.discoveryCycleCompletedAt = completedAt;
+    }
     connectorSweepRunning = false;
     console.log('[project-connectors] sweep completed', {
       status,
@@ -692,29 +730,6 @@ export async function attributeFiredTriggerSession(input: {
       agentName: input.agentName,
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-export function isGitCronSpecDue(
-  spec: GitTriggerSpec,
-  lastFiredAt: Date | null,
-  now: Date,
-): boolean {
-  // One-off ("run once") schedules: fire exactly once at/after `runAt`. The
-  // last_fired_at stamp written on the first fire keeps it dormant forever
-  // after — no cron, no self-disable needed.
-  if (spec.runAt) {
-    if (lastFiredAt) return false;
-    const at = Date.parse(spec.runAt);
-    return !Number.isNaN(at) && at <= now.getTime();
-  }
-  if (!spec.cron) return false;
-  try {
-    const baseline = lastFiredAt ?? new Date(0);
-    const next = nextCronRun(spec.cron, baseline, spec.timezone);
-    return Boolean(next && next.getTime() <= now.getTime());
-  } catch {
-    return false;
   }
 }
 
@@ -1101,15 +1116,6 @@ export function summarizeTriggerPayload(payload: Record<string, unknown>): Recor
   return rest;
 }
 
-/**
- * Walk all active projects, load their git-backed triggers, and fire any
- * cron triggers that are due. Runtime state (last_fired_at) lives in
- * `project_trigger_runtime`, keyed by project + slug.
- *
- * We swallow per-project errors so one busted repo can't break the sweep
- * for everyone else.
- */
-
 export async function runGitTriggerSweep(
   now: Date,
   accumulator: {
@@ -1122,166 +1128,126 @@ export async function runGitTriggerSweep(
     skipped: number;
   },
 ): Promise<void> {
-  const projectsForSweep = await selectTriggerCatalogProjects();
-  const results = await mapWithConcurrency(
-    projectsForSweep,
-    triggerProjectConcurrency(),
-    (project) => runGitTriggerProject(project, now),
-  );
+  const claimedSlots = await claimDueScheduleSlots({
+    now,
+    limit: triggerScheduleClaimLimit(),
+  });
+  if (claimedSlots.length > 0) {
+    const batchMaxClaimLagMs = Math.max(
+      ...claimedSlots.map((slot) =>
+        Math.max(0, now.getTime() - slot.execution.scheduledFor.getTime()),
+      ),
+    );
+    schedulerHealth.lastClaimLagMs = batchMaxClaimLagMs;
+    schedulerHealth.maxObservedClaimLagMs = Math.max(
+      schedulerHealth.maxObservedClaimLagMs ?? 0,
+      batchMaxClaimLagMs,
+    );
+  }
+  accumulator.scanned += claimedSlots.length;
+  accumulator.projects += new Set(claimedSlots.map((slot) => slot.execution.projectId)).size;
+}
 
-  for (const result of results) {
-    accumulator.projects += 1;
-    accumulator.projectFailures += result.projectFailures;
-    accumulator.scanned += result.scanned;
-    accumulator.fired += result.fired;
-    accumulator.queued += result.queued;
-    accumulator.failed += result.failed;
-    accumulator.skipped += result.skipped;
+async function executeTriggerExecution(
+  row: TriggerExecutionRow,
+): Promise<'fired' | 'queued' | 'failed' | 'skipped'> {
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, row.projectId))
+    .limit(1);
+  if (!project || project.status !== 'active' || triggersPausedForProject(project.metadata)) {
+    const reason = !project
+      ? 'project not found'
+      : project.status !== 'active'
+        ? 'project is not active'
+        : 'project triggers are paused';
+    await markTriggerExecutionSkipped({
+      row,
+      skippedAt: new Date(),
+      reason,
+    });
+    return 'skipped';
+  }
+
+  const spec = row.spec as unknown as GitTriggerSpec;
+  const payload = row.payload as Record<string, unknown>;
+  const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+  const idempotencyKey = `trigger:cron:${row.projectId}:${row.slug}:${row.scheduleRevision}:${row.scheduledFor.toISOString()}`;
+  try {
+    await markTriggerExecutionDispatched({ row, dispatchedAt: new Date() });
+    const result = await withTimeout(
+      fireGitTrigger({
+        spec,
+        project,
+        payload,
+        renderedPrompt,
+        source: 'cron',
+        idempotencyKey,
+      }),
+      triggerFireTimeoutMs(),
+      `execute scheduled trigger ${row.executionId}`,
+    );
+    const completedAt = new Date();
+    if (result.status === 'fired' || result.status === 'queued') {
+      await Promise.all([
+        markTriggerExecutionSucceeded({
+          row,
+          completedAt,
+          sessionId: result.sessionId,
+          commandId: result.commandId,
+        }),
+        markGitTriggerFired(
+          row.projectId,
+          row.slug,
+          completedAt,
+          result.status === 'queued' ? 'queued' : 'fired',
+        ),
+      ]);
+      return result.status;
+    }
+    const error = result.error ?? result.reason ?? 'scheduled trigger execution failed';
+    const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
+    return state === 'queued' ? 'queued' : 'failed';
+  } catch (error) {
+    const failedAt = new Date();
+    const message = error instanceof Error ? error.message : String(error);
+    const state = await markTriggerExecutionFailed({ row, failedAt, error: message });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, failedAt, message).catch(() => {});
+    return state === 'queued' ? 'queued' : 'failed';
   }
 }
 
-export async function runGitTriggerProject(
-  project: ProjectRow,
-  now: Date,
-): Promise<{
-  projectFailures: number;
-  scanned: number;
-  fired: number;
-  queued: number;
-  failed: number;
-  skipped: number;
-}> {
-  const out = {
-    projectFailures: 0,
-    scanned: 0,
-    fired: 0,
-    queued: 0,
-    failed: 0,
-    skipped: 0,
-  };
-
-  if (triggersPausedForProject(project.metadata)) return out;
-
-  let specs: GitTriggerSpec[];
+export async function drainTriggerExecutionQueue(
+  now = new Date(),
+): Promise<{ fired: number; queued: number; failed: number; skipped: number }> {
+  if (triggerExecutionDrainRunning) {
+    return { fired: 0, queued: 0, failed: 0, skipped: 0 };
+  }
+  triggerExecutionDrainRunning = true;
+  schedulerHealth.lastExecutionDrainStartedAt = now.toISOString();
   try {
-    const gitProject = await withTimeout(
-      withProjectGitAuth(project),
-      triggerAuthTimeoutMs(),
-      `resolve git auth ${project.projectId}`,
-    );
-    const manifest = await withTimeout(
-      readManifest(gitProject),
-      triggerLoadTimeoutMs(),
-      `load manifest ${project.projectId}`,
-    );
-    if (!manifest) {
-      throw new Error('kortix manifest not found or unreadable');
-    }
-
-    const loaded = extractTriggers(manifest);
-    specs = loaded.specs;
-    await reconcileProjectTriggerRuntime(project.projectId, specs);
-
-    for (const error of loaded.errors) {
-      console.warn('[project-triggers/git] parse error', {
-        projectId: project.projectId,
-        slug: error.slug,
-        error: error.error,
-      });
-      if (/^[a-z0-9][a-z0-9_-]{0,127}$/.test(error.slug)) {
-        await markGitTriggerAttemptFailed(
-          project.projectId,
-          error.slug,
-          now,
-          `parse error: ${error.error}`,
-        );
-      }
-    }
-  } catch (error) {
-    out.projectFailures = 1;
-    console.warn('[project-triggers/git] manifest load failed', {
-      projectId: project.projectId,
-      error: error instanceof Error ? error.message : String(error),
+    const rows = await claimTriggerExecutions({
+      now,
+      workerId: `trigger-execution:${process.pid}:${now.getTime()}`,
+      limit: triggerScheduleClaimLimit(),
     });
-    return out;
+    const outcomes = await mapWithConcurrency(rows, triggerExecutionConcurrency(), (row) =>
+      executeTriggerExecution(row),
+    );
+    const result = { fired: 0, queued: 0, failed: 0, skipped: 0 };
+    for (const outcome of outcomes) result[outcome] += 1;
+    schedulerHealth.lastExecutionResult = result;
+    schedulerHealth.lastExecutionError = null;
+    return result;
+  } catch (error) {
+    schedulerHealth.lastExecutionError = error instanceof Error ? error.message : String(error);
+    throw error;
+  } finally {
+    schedulerHealth.lastExecutionDrainCompletedAt = new Date().toISOString();
+    triggerExecutionDrainRunning = false;
   }
-
-  const runtimeRows = await db
-    .select()
-    .from(projectTriggerRuntime)
-    .where(eq(projectTriggerRuntime.projectId, project.projectId));
-  const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
-
-  for (const spec of specs) {
-    if (spec.type !== 'cron' || !spec.enabled) continue;
-    out.scanned += 1;
-
-    const lastFired = runtimeBySlug.get(spec.slug)?.lastFiredAt ?? null;
-    if (!isGitCronSpecDue(spec, lastFired, now)) {
-      out.skipped += 1;
-      continue;
-    }
-
-    const payload = {
-      cron: {
-        schedule: spec.cron ?? spec.runAt,
-        timezone: spec.timezone,
-        fired_at: now.toISOString(),
-        last_fired_at: lastFired?.toISOString() ?? null,
-      },
-      trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
-    };
-    const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
-    const scheduledAt = now.toISOString();
-    const dueSlotKey =
-      (spec.cron
-        ? nextCronRun(spec.cron, lastFired ?? new Date(0), spec.timezone)?.toISOString()
-        : spec.runAt) ?? scheduledAt;
-
-    let result: Awaited<ReturnType<typeof fireGitTrigger>>;
-    try {
-      result = await withTimeout(
-        fireGitTrigger({
-          spec,
-          project,
-          payload,
-          renderedPrompt,
-          source: 'cron',
-          idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${dueSlotKey}`,
-        }),
-        triggerFireTimeoutMs(),
-        `fire ${spec.slug} ${project.projectId}`,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('[project-triggers/git] fire failed', {
-        projectId: project.projectId,
-        slug: spec.slug,
-        error: message,
-      });
-      await markGitTriggerAttemptFailed(project.projectId, spec.slug, now, message).catch(() => {});
-      out.failed += 1;
-      continue;
-    }
-
-    if (result.status === 'fired') {
-      await markGitTriggerFired(project.projectId, spec.slug, now, 'fired');
-      out.fired += 1;
-    } else if (result.status === 'queued') {
-      await markGitTriggerFired(project.projectId, spec.slug, now, 'queued');
-      out.queued += 1;
-    } else {
-      await markGitTriggerAttemptFailed(
-        project.projectId,
-        spec.slug,
-        now,
-        result.error ?? result.reason ?? 'trigger fire failed',
-      );
-      out.failed += 1;
-    }
-  }
-
-  return out;
 }
 
 export function startProjectTriggerScheduler(): void {
@@ -1314,8 +1280,14 @@ export function startProjectTriggerScheduler(): void {
       });
 
     runProjectTriggerSweep()
+      .then(() => drainTriggerExecutionQueue())
+      .then((result) => {
+        if (result.fired || result.queued || result.failed || result.skipped) {
+          console.log('[project-triggers] execution drain completed', result);
+        }
+      })
       .catch((error) => {
-        console.error('[project-triggers] sweep failed:', error);
+        console.error('[project-triggers] scheduler tick failed:', error);
       });
 
     // Connector reconcile backstop — slower cadence than the trigger sweep so
@@ -1324,7 +1296,21 @@ export function startProjectTriggerScheduler(): void {
     if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
       lastConnectorSweepAt = Date.now();
       runProjectConnectorSweep()
+        .then((result) => {
+          const initialCatalogBackfillIncomplete =
+            schedulerHealth.catalogCycleCompletedAt === null ||
+            schedulerHealth.discoveryCycleCompletedAt === null ||
+            (schedulerHealth.catalogPendingProjects ?? 1) > 0;
+          if (initialCatalogBackfillIncomplete || result.errors > 0) {
+            // On a new scheduler release, drain the bounded catalog batches
+            // continuously instead of waiting two minutes between each batch.
+            // Once both cursors complete a full cycle with no pending rows, the
+            // normal connector cadence resumes.
+            lastConnectorSweepAt = 0;
+          }
+        })
         .catch((error) => {
+          lastConnectorSweepAt = 0;
           console.error('[project-connectors] sweep failed:', error);
         });
     }
@@ -1526,6 +1512,8 @@ export function parseTriggerDraft(
 
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
+    const timezoneError = validateTriggerTimezone(timezone);
+    if (timezoneError) return { error: timezoneError };
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
     const runAtRaw = normalizeString((body as any).run_at ?? (body as any).runAt);
     if (runAtRaw) {
@@ -1554,6 +1542,8 @@ export function parseTriggerDraft(
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
     if (!cron)
       return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
+    const cronError = validateTriggerCron(cron, timezone);
+    if (cronError) return { error: cronError };
     return {
       slug,
       name,
