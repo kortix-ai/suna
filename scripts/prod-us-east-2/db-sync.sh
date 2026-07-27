@@ -658,20 +658,18 @@ WHERE target.key_id = source.key_id
 
 	DO $do$
 DECLARE
-  all_column_list text;
   column_list text;
   source_column_list text;
   target_column_list text;
 BEGIN
   SELECT
-    string_agg(format('%I', attname), ', ' ORDER BY attnum),
     string_agg(format('%I', attname), ', ' ORDER BY attnum)
       FILTER (WHERE attname <> 'account_id'),
     string_agg(format('source.%I', attname), ', ' ORDER BY attnum)
       FILTER (WHERE attname <> 'account_id'),
     string_agg(format('target.%I', attname), ', ' ORDER BY attnum)
       FILTER (WHERE attname <> 'account_id')
-  INTO all_column_list, column_list, source_column_list, target_column_list
+  INTO column_list, source_column_list, target_column_list
   FROM pg_attribute
   WHERE attrelid = 'repair_credit_accounts'::regclass
     AND attnum > 0
@@ -686,18 +684,6 @@ BEGIN
 	    column_list,
 	    source_column_list,
     target_column_list
-  );
-
-  EXECUTE format(
-    'INSERT INTO kortix.credit_accounts (%1$s)
-     SELECT %1$s
-       FROM repair_credit_accounts AS source
-      WHERE NOT EXISTS (
-        SELECT 1
-          FROM kortix.credit_accounts AS target
-         WHERE target.account_id = source.account_id
-      )',
-    all_column_list
   );
 END
 $do$;

@@ -178,6 +178,8 @@ jobs:
           PGOPTIONS='-c statement_timeout=0' \
           ALLOW_TARGET_AUTH_SHADOW_REPAIR=1 \
             bash scripts/prod-us-east-2/auth-sync.sh repair-shadow-mutations
+          bash scripts/prod-us-east-2/db-sync.sh start
+          bash scripts/prod-us-east-2/auth-sync.sh start
           bash scripts/prod-us-east-2/db-sync.sh wait-caught-up
           bash scripts/prod-us-east-2/auth-sync.sh wait-caught-up
 
