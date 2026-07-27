@@ -162,6 +162,37 @@ export function getTraceHeaders(): Record<string, string> {
  * Get loggable fields from the current context.
  * Returns only defined fields (no undefined values cluttering logs).
  */
+/**
+ * Diagnostic fields that are safe to put in the plain request-completion log
+ * line — i.e. in CloudWatch.
+ *
+ * `getContextFields()` deliberately carries identity (`userId`, `userEmail`,
+ * `accountId`), which is fine for Better Stack but must NOT be written to
+ * CloudWatch. This is an explicit allowlist of non-identifying, aggregate-only
+ * measurements, so adding a field to the request context can never silently
+ * start logging PII. Keep it that way: only add keys here that carry no user or
+ * account identity.
+ */
+const CLOUDWATCH_SAFE_FIELDS = ['kind', 'provider_get_ms', 'preview_link_ms'] as const;
+
+/**
+ * The allowlisted subset of the request context, for the completion log line.
+ * Without this, per-request diagnostics (notably turn-stream `kind`) reach only
+ * Better Stack and are invisible to CloudWatch Logs Insights, which is where
+ * route-level analysis actually happens.
+ */
+export function getDiagnosticFields(): Record<string, string> {
+  const ctx = storage.getStore();
+  if (!ctx) return {};
+
+  const fields: Record<string, string> = {};
+  for (const key of CLOUDWATCH_SAFE_FIELDS) {
+    const value = (ctx as Record<string, string | undefined>)[key];
+    if (value !== undefined) fields[key] = value;
+  }
+  return fields;
+}
+
 export function getContextFields(): Record<string, string> {
   const ctx = storage.getStore();
   if (!ctx) return {};

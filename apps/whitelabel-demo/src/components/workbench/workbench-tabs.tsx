@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { AgentPicker } from '@/components/chat/agent-picker';
 import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
@@ -19,7 +21,7 @@ import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Loader2, RotateCw, Sparkles } from 'lucide-react';
+import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -66,7 +68,7 @@ export function WorkbenchTabs({
 /**
  * The chat thread. Reads everything off the single `useSession` result — messages,
  * optimistic send, interactive prompts, the model/agent picks, and the runtime
- * phase. No useChat, no useCanonicalOpenCodeSession, no sandbox wiring.
+ * phase. No second chat hook, provider-session resolver, or infrastructure wiring.
  */
 function Thread({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -129,25 +131,13 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     return () => clearInterval(id);
   }, [c.isBusy]);
 
-  // The OpenCode root id is resolved inside useSession; show a connect state
-  // until it lands (the chat can't address a session without it).
-  if (!c.opencodeSessionId) {
-    return (
-      <div className="grid flex-1 place-items-center">
-        <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Connecting to the agent…
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
           {c.isLoading && (
             <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Loading conversation…
+              <Loading className="size-4" /> Loading conversation…
             </div>
           )}
           {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
@@ -175,14 +165,14 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             <PermissionPrompt
               key={(p as { id: string }).id}
               request={p}
-              onResolved={() => c.removePermission((p as { id: string }).id)}
+              onAnswer={c.answerPermission}
             />
           ))}
           {c.questions.map((q) => (
             <QuestionPrompt
               key={(q as { id: string }).id}
               request={q}
-              onResolved={() => c.removeQuestion((q as { id: string }).id)}
+              onAnswer={c.answerQuestion}
               onCancel={c.cancel}
             />
           ))}
@@ -190,7 +180,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
           {c.isBusy && !c.hasPending && (
             <Marker className="py-1">
               <MarkerIcon>
-                <Loader2 className="animate-spin" />
+                <Loading />
               </MarkerIcon>
               <MarkerContent className="shimmer text-sm">
                 {c.pending ? 'Sending…' : 'Agent is working…'}
@@ -217,7 +207,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
                 onClick={() => restart.mutate()}
                 disabled={restart.isPending}
               >
-                <RotateCw className={cn('size-3.5', restart.isPending && 'animate-spin')} />
+                {restart.isPending ? (
+                  <Loading className="size-3.5" />
+                ) : (
+                  <RotateCw className="size-3.5" />
+                )}
                 Restart
               </Button>
             </div>

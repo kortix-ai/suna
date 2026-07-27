@@ -34,7 +34,7 @@ export function ApiKeyConnectForm({
   projectId: string;
   provider: LlmProviderEntry;
   onBack: () => void;
-  onConnected: () => void;
+  onConnected: (providerId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -56,7 +56,7 @@ export function ApiKeyConnectForm({
       successToast(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
       refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
-      onConnected();
+      onConnected(provider.id);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
   });

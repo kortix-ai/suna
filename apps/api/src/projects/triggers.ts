@@ -42,6 +42,7 @@ import {
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
 import { desugarGoalTriggers } from './lib/agi-goals';
+import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
  *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
@@ -221,7 +222,10 @@ export interface LoadedTriggers {
  * resolved file + format ride along on the ParsedManifest so the commit path
  * writes back to the exact same file in the same format.
  */
-export async function readManifest(project: GitBackedProject): Promise<ParsedManifest | null> {
+export async function readManifest(
+  project: GitBackedProject,
+  opts?: { rethrowReadErrors?: boolean },
+): Promise<ParsedManifest | null> {
   let found: { path: string; content: string } | null;
   try {
     // manifest_path can still say kortix.toml (an older project, or a stale
@@ -232,7 +236,16 @@ export async function readManifest(project: GitBackedProject): Promise<ParsedMan
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     found = await readManifestFromRepo(project, candidates, project.defaultBranch);
-  } catch {
+  } catch (err) {
+    // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
+    // THROWS when the read itself failed (mirror refresh, git-proxy hop,
+    // ls-tree/show). Collapsing both to null is fine for callers that just want
+    // "is there a manifest?", but it is unsafe for security decisions: a
+    // transient git failure then looks identical to "blank project", which
+    // `loadProjectAgents` answers with a synthesized `secrets: 'all'` manifest.
+    // Callers that must fail CLOSED on an unreadable manifest opt into the
+    // distinction here. See projects/lib/secret-grant.ts.
+    if (opts?.rethrowReadErrors) throw err;
     return null;
   }
   if (!found) return null;
@@ -411,8 +424,24 @@ export function extractTriggers(
   // written back to the manifest, so re-shipping cannot accumulate duplicates.
   if (options.goals) {
     const derived = desugarGoalTriggers(manifest, seenSlugs);
-    specs.push(...derived.specs);
     errors.push(...derived.errors);
+    for (const spec of derived.specs) {
+      // A derived spec goes through the SAME schedule validation an authored
+      // entry does (above). It is not decoration: the runtime catalog computes
+      // `next_fire_at` at reconcile time and `nextTriggerScheduleSlot` THROWS on
+      // an unparseable cron/timezone — so an unvalidated `push:` expression
+      // would not merely fail to fire, it would abort the reconcile for every
+      // OTHER trigger in the project. Surfacing it as an ordinary parse error
+      // keeps a malformed goal contained to its own row.
+      const scheduleError =
+        validateTriggerTimezone(spec.timezone) ??
+        (spec.cron ? validateTriggerCron(spec.cron, spec.timezone) : null);
+      if (scheduleError) {
+        errors.push({ slug: spec.slug, path: spec.path, error: scheduleError });
+        continue;
+      }
+      specs.push(spec);
+    }
   }
 
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -515,20 +544,6 @@ interface ParseOk {
 interface ParseErr {
   ok: false;
   error: GitTriggerParseError;
-}
-
-// A bad IANA timezone (typo, or an abbreviation like "PST") otherwise slips
-// through parsing and only fails later inside the cron due-check, where it's
-// swallowed to `false` — the trigger then silently never fires. Catch it at
-// parse time so it surfaces as a visible trigger error instead.
-function isValidTimeZone(tz: string): boolean {
-  if (tz === 'UTC') return true;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function parseTriggerEntry(entry: unknown, index: number, filename: string = MANIFEST_FILENAME): ParseOk | ParseErr {
@@ -666,12 +681,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
           : '';
     const timezone =
       typeof row.timezone === 'string' && row.timezone.trim() ? row.timezone.trim() : 'UTC';
-    if (!isValidTimeZone(timezone)) {
-      return err(
-        slug,
-        `timezone must be a valid IANA name like "UTC" or "America/New_York" (got "${timezone}")`,
-      );
-    }
+    const timezoneError = validateTriggerTimezone(timezone);
+    if (timezoneError) return err(slug, timezoneError);
 
     // A one-off ("run once") schedule carries `run_at` instead of `cron`.
     if (runAtRaw) {
@@ -704,6 +715,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
 
     if (!cron)
       return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
+    const cronError = validateTriggerCron(cron, timezone);
+    if (cronError) return err(slug, cronError);
     return {
       ok: true,
       spec: {

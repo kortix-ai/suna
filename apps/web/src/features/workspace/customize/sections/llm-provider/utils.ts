@@ -74,7 +74,7 @@ export function pickInitialTab(
   if (defaultTab === 'catalog') return 'catalog';
   if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
   if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';
-  return hasConnections ? 'connected' : 'catalog';
+  return 'catalog';
 }
 
 export function helpHostnameFromUrl(helpUrl: string | null): string | null {

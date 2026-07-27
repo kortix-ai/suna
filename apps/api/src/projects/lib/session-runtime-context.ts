@@ -6,6 +6,28 @@ import { db } from '../../shared/db';
 /** The only environment variable a public runtime_context request can create. */
 export const SESSION_RUNTIME_CONTEXT_ENV_NAME = 'KORTIX_SESSION_CONTEXT';
 
+/** The end-user a backend (KaaB) session acts for — derived server-side from the
+ *  validated `origin_ref`, never from caller-supplied env. */
+export const SESSION_END_USER_REF_ENV_NAME = 'KORTIX_END_USER_REF';
+/**
+ * @deprecated Renamed to {@link SESSION_END_USER_REF_ENV_NAME}. Still SET on
+ * every session with the same value — agent code inside sandboxes may already
+ * read it, and that code is not ours to migrate.
+ */
+export const SESSION_ORIGIN_REF_ENV_NAME = 'KORTIX_ORIGIN_REF';
+
+/**
+ * Env vars the SERVER owns end to end. Each is derived from validated,
+ * origin-gated request fields, so a later `extraEnvVars` merge must never be
+ * able to forge or erase one — otherwise the attribution the sandbox sees
+ * (and anything a wrapper reasons about from it) stops being trustworthy.
+ */
+const SERVER_OWNED_ENV_NAMES = [
+  SESSION_RUNTIME_CONTEXT_ENV_NAME,
+  SESSION_END_USER_REF_ENV_NAME,
+  SESSION_ORIGIN_REF_ENV_NAME,
+] as const;
+
 export function parseSessionRuntimeContext(
   value: unknown,
 ): { ok: true; context: SessionRuntimeContext | undefined } | { ok: false; error: string } {
@@ -84,10 +106,14 @@ export function mergeSessionSandboxEnv(
 ): Record<string, string> {
   if (!extra) return base;
   const merged = { ...base, ...extra };
-  if (base[SESSION_RUNTIME_CONTEXT_ENV_NAME] !== undefined) {
-    merged[SESSION_RUNTIME_CONTEXT_ENV_NAME] = base[SESSION_RUNTIME_CONTEXT_ENV_NAME];
-  } else {
-    delete merged[SESSION_RUNTIME_CONTEXT_ENV_NAME];
+  // Re-pin every server-owned var AFTER the spread: `extra` may legitimately add
+  // provider/channel env, but it must never override the server's own identity
+  // envelope. Absent in `base` means the server decided this session has none,
+  // so a supplied value is deleted rather than honoured (forging a
+  // KORTIX_ORIGIN_REF on a session that has none would fabricate attribution).
+  for (const name of SERVER_OWNED_ENV_NAMES) {
+    if (base[name] !== undefined) merged[name] = base[name];
+    else delete merged[name];
   }
   return merged;
 }

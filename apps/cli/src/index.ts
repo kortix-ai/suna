@@ -15,7 +15,6 @@ import { runGateway } from './commands/gateway.ts';
 import { runGoals } from './commands/goals.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
-import { runAgi } from './commands/agi.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
@@ -31,7 +30,7 @@ import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
-import { runSkills } from './commands/skills.ts';
+import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTasks } from './commands/tasks.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
@@ -40,7 +39,14 @@ import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
-import { getUpdateNotice } from './update-check.ts';
+import { confirm } from './prompts.ts';
+import {
+  getUpdateNotice,
+  isUpdateSnoozed,
+  renderUpdateBox,
+  resolveUpdateStatus,
+  snoozeUpdate,
+} from './update-check.ts';
 
 // CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
 // unified X.Y.Z on release, X.Y.Z-dev.<sha> on dev). This fallback only applies
@@ -70,6 +76,26 @@ interface CommandTier {
 // You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
 // and open SESSIONS in the project. Order + membership here IS the layout.
 const TIERS: readonly CommandTier[] = [
+  // Deliberately the first band on the screen. An agent in any harness that
+  // holds only this binary and a token has to be able to find, unprompted, the
+  // one command that teaches it the platform — so it leads, and its blurb says
+  // what it is for in plain words rather than naming a noun ("skills") the
+  // reader does not have a definition for yet.
+  {
+    label: 'Start here',
+    sections: [
+      {
+        title: '',
+        commands: [
+          {
+            name: 'system-skills',
+            args: '[get <name>]',
+            blurb: 'Learn how to drive Kortix — the platform docs, served live by your host',
+          },
+        ],
+      },
+    ],
+  },
   {
     label: 'Where you are  (host › account › project › session)',
     sections: [
@@ -95,10 +121,6 @@ const TIERS: readonly CommandTier[] = [
       {
         title: 'Account — within the host',
         commands: [
-          {
-            name: 'agi',
-            blurb: 'Start Kortix AGI — the control agent that runs above your projects',
-          },
           {
             name: 'accounts',
             args: '<subcommand>',
@@ -196,11 +218,6 @@ const TIERS: readonly CommandTier[] = [
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
-          },
-          {
-            name: 'skills',
-            args: '<subcommand>',
-            blurb: 'Load Kortix system skills (how Kortix works) live from the CLI',
           },
           {
             name: 'executor',
@@ -307,13 +324,71 @@ function printVersion(): void {
 // notice → the grouped command list. `kortix help` and `kortix --help` render
 // EXACTLY this, and bare `kortix` falls back to it whenever there is no agent
 // picker to show, so there's no "which one shows the banner/context" surprise.
-async function printLanding(): Promise<void> {
+// The one difference is that the BARE fallback may stop at the update notice to
+// ask (see offerInteractiveUpdate) — an explicit help request stays a pure,
+// non-blocking render, and `offerInteractiveUpdate` itself only ever prompts on
+// a TTY, so the bare path stays non-blocking for a piped/CI/agent caller too.
+async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
   printBanner();
   // Always surface what host/account/project commands will act on.
   process.stdout.write(`${renderContext()}\n`);
-  const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
-  if (notice) process.stdout.write(`${notice}\n`);
+  if (opts.offerUpdate) {
+    if (await offerInteractiveUpdate()) return; // binary replaced — this help is stale
+  } else {
+    const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
+    if (notice) process.stdout.write(`${notice}\n`);
+  }
   process.stdout.write(renderHelp());
+}
+
+/** Can we actually ask a question here? `resolveUpdateStatus` already rules out
+ *  CI and a non-TTY stdout; a prompt additionally needs a readable stdin, and
+ *  an explicit opt-out for anyone who wants the notice without the question. */
+function canPromptForUpdate(): boolean {
+  if (process.env.KORTIX_NO_UPDATE_PROMPT) return false;
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+/**
+ * Bare `kortix` on a terminal: show the update box and offer to install it on
+ * the spot, so being out of date takes a deliberate "no" rather than the
+ * inertia of never getting around to `kortix update`.
+ *
+ * Returns true when the binary was replaced — the caller then skips the help
+ * screen, which came from the version that no longer exists on disk.
+ */
+async function offerInteractiveUpdate(): Promise<boolean> {
+  const status = await resolveUpdateStatus(VERSION, { allowFetch: true });
+  if (!status) return false;
+
+  const askable = canPromptForUpdate() && !isUpdateSnoozed(status.latestTag);
+  process.stdout.write(`${renderUpdateBox(status, askable)}\n`);
+  if (!askable) return false;
+
+  let accepted: boolean;
+  try {
+    // Defaults to yes on Enter — the point is to make staying behind the
+    // deliberate choice. But a stream that just ENDS is nobody answering, and
+    // that must never self-trigger a binary-replacing install.
+    accepted = await confirm(`  Update to ${status.latestDisplay} now?`, true, {
+      onEndOfInput: false,
+    });
+  } catch {
+    return false; // not really interactive after all — leave the box standing
+  }
+  if (!accepted) {
+    // Remember the "no" so we ask once per release, not once per invocation.
+    snoozeUpdate(status.latestTag);
+    process.stdout.write(
+      `  ${C.dim}Skipped. Run ${C.reset}${C.cyan}kortix update${C.reset}${C.dim} whenever you're ready.${C.reset}\n`,
+    );
+    return false;
+  }
+
+  process.stdout.write('\n');
+  if ((await runUpdate([])) !== 0) return false;
+  process.stdout.write(`  ${C.dim}Run ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again to pick it up.${C.reset}\n\n`);
+  return true;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -334,11 +409,15 @@ async function main(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     const outcome = await runAgentPicker();
     if (outcome !== 'banner') return outcome;
-    await printLanding();
+    // Only this bare fallback offers to update: `kortix --help` is what people
+    // (and scripts) reach for to READ something, and it must never block on a
+    // question. The offer itself is TTY-gated, so the non-TTY callers that land
+    // here via the picker's 'banner' short-circuit still never see a prompt.
+    await printLanding({ offerUpdate: true });
     return 0;
   }
   if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
-    await printLanding();
+    await printLanding({ offerUpdate: false });
     return 0;
   }
   if (argv[0] === 'version') {
@@ -358,9 +437,6 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] !== 'executor') {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
-  }
-  if (argv[0] === 'agi') {
-    return runAgi(argv.slice(1));
   }
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
@@ -444,8 +520,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
   }
-  if (argv[0] === 'skills') {
-    return runSkills(argv.slice(1));
+  // `system-skills` is the canonical name; `skills` stays a permanent alias
+  // because every already-baked sandbox image seeds a kortix-system skill whose
+  // live pointer says `kortix skills get <name>`. Both hand the invoked name
+  // down so every hint the command prints matches how it was called.
+  if (argv[0] === SYSTEM_SKILLS_COMMAND || argv[0] === 'skills') {
+    return runSystemSkills(argv.slice(1), argv[0]);
   }
   if (argv[0] === 'registry') {
     process.stderr.write(
@@ -489,7 +569,6 @@ async function main(argv: string[]): Promise<number> {
 }
 
 const KNOWN_COMMANDS = [
-  'agi',
   'init',
   'ship',
   'deploy',
@@ -518,6 +597,7 @@ const KNOWN_COMMANDS = [
   'channels',
   'sandboxes',
   'marketplace',
+  'system-skills',
   'skills',
   'executor',
   'registry',

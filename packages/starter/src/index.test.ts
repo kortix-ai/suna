@@ -194,7 +194,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-computer',
       'kortix-executor',
       'kortix-marketplace',
-      'kortix-meet',
+      'kortix-voice',
       'kortix-memory',
       'kortix-onboarding',
       'kortix-slack',
@@ -207,6 +207,33 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect(isKortixManagedSkillName('kortix')).toBe(false);
     expect(isKortixManagedSkillName('memory-reflector')).toBe(false);
     expect(isKortixManagedSkillName('web_search')).toBe(false);
+  });
+
+  /**
+   * Being LISTED as managed does not inject anything. `scripts/write-managed-skills.ts`
+   * builds the baked `/opt/kortix/managed-skills` set from
+   * `getStarterFiles({ template: 'general-knowledge-worker' })` — base +
+   * general-knowledge-worker, NOT marketplace — so a managed skill whose SKILL.md
+   * lives under `templates/marketplace/` is declared managed and reaches no sandbox
+   * at all. That is exactly what happened to `kortix-voice`, silently, for its whole
+   * life: it was in this list and had never once been injected.
+   */
+  test('every managed skill is actually in the injected set (bar the known gap)', () => {
+    const prefix = '.kortix/opencode/skills/';
+    const injected = new Set<string>();
+    for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
+      if (!f.path.startsWith(prefix)) continue;
+      const name = f.path.slice(prefix.length).split('/')[0];
+      if (name && isKortixManagedSkillName(name)) injected.add(name);
+    }
+
+    expect(injected.has('kortix-voice')).toBe(true);
+
+    // `kortix-computer` is the one still stranded under templates/marketplace/.
+    // When it moves to base, delete it from here rather than widening this test —
+    // the point is that the gap is named, not that it is tolerated.
+    const missing = KORTIX_MANAGED_SKILL_NAMES.filter((n) => !injected.has(n));
+    expect(missing).toEqual(['kortix-computer']);
   });
 });
 

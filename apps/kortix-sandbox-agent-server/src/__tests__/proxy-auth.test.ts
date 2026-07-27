@@ -593,6 +593,30 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('malformed')
   })
 
+  it('lets the API service bearer reach /kortix/refresh', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/refresh?base=1&restart=0', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+    })
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { error: string; message: string }
+    expect(body.error).toBe('refresh failed')
+    expect(body.message).toContain('not materialized')
+  })
+
+  it('rejects an invalid base_sha before Git execution', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/refresh?base=1&base_sha=main', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: 'invalid base_sha',
+    })
+  })
+
   it('rejects /kortix/abort without a signed user context', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/abort', { method: 'POST' })
@@ -671,6 +695,108 @@ describe('daemon proxy auth gate', () => {
       const body = (await res.json()) as { ok: boolean; repo: { before: { commit: string }; after: { commit: string } } }
       expect(body.ok).toBe(true)
       expect(body.repo.before.commit).not.toBe(body.repo.after.commit)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('skips the base fetch when the workspace already matches base_sha', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-unchanged-'))
+    try {
+      const worktree = join(root, 'worktree')
+      mkdirSync(worktree)
+      git(['init'], worktree)
+      git(['checkout', '-b', 'session-branch'], worktree)
+      writeFileSync(join(worktree, 'README.md'), 'current\n')
+      git(['add', 'README.md'], worktree)
+      git(
+        ['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'current'],
+        worktree,
+      )
+      const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })
+
+      const app = buildOpencodeApp(
+        baseConfig({
+          projectTarget: worktree,
+          repoUrl: join(root, 'missing-remote.git'),
+          defaultBranch: 'main',
+          branchName: 'session-branch',
+        }),
+        fakeOpencode('ok'),
+        Date.now(),
+      )
+      const res = await app.request(
+        `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+        },
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        ok: true,
+        repo: {
+          before: { commit: baseSha },
+          after: { commit: baseSha },
+        },
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('checks out the requested base_sha without restarting opencode', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-base-sha-'))
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const worktree = join(root, 'worktree')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'v1\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v1'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      git(['clone', remote, worktree])
+
+      writeFileSync(join(seed, 'README.md'), 'v2\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v2'], seed)
+      git(['push', 'origin', 'main'], seed)
+      const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: seed })
+
+      writeFileSync(join(seed, 'README.md'), 'v3\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v3'], seed)
+      git(['push', 'origin', 'main'], seed)
+
+      let restartCalls = 0
+      const app = buildOpencodeApp(
+        baseConfig({
+          projectTarget: worktree,
+          repoUrl: remote,
+          defaultBranch: 'main',
+          branchName: 'session-branch',
+        }),
+        fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+        Date.now(),
+      )
+      const res = await app.request(
+        `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+        },
+      )
+
+      expect(res.status).toBe(200)
+      expect(readFileSync(join(worktree, 'README.md'), 'utf8')).toBe('v2\n')
+      expect(gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })).toBe(baseSha)
+      expect(restartCalls).toBe(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

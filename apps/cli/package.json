@@ -5,8 +5,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "kortix": "./bin/kortix",
-    "kortixagi": "./bin/kortixagi"
+    "kortix": "./bin/kortix"
   },
   "scripts": {
     "cli": "bun run src/index.ts",

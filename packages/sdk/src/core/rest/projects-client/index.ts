@@ -31,6 +31,7 @@ export * from './presentations';
 export * from './review';
 export * from './sandbox-shares';
 export * from './public-session-shares';
+export * from './public-voice-join';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';

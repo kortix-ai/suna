@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -10,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import type { ProjectSecret } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GitBranch, KeyRound, Loader2, Trash2, UserCog } from 'lucide-react';
+import { GitBranch, KeyRound, Trash2, UserCog } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -90,7 +92,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
             className="min-w-[10rem] flex-1 font-mono"
           />
           <Button type="submit" disabled={!name.trim() || !value || upsert.isPending}>
-            {upsert.isPending && <Loader2 className="size-4 animate-spin" />}
+            {upsert.isPending && <Loading className="size-4" />}
             Save
           </Button>
         </form>
@@ -139,7 +141,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
             className="min-w-[12rem] flex-1 font-mono"
           />
           <Button type="submit" disabled={!gitToken.trim() || setGitCredential.isPending}>
-            {setGitCredential.isPending && <Loader2 className="size-4 animate-spin" />}
+            {setGitCredential.isPending && <Loading className="size-4" />}
             Save credential
           </Button>
         </form>

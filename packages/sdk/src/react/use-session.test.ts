@@ -4,14 +4,26 @@ import { describe, expect, test, beforeEach, mock } from 'bun:test';
 // OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
 // `promptOpenCodeMessage` run for real, matching session.test.ts's approach of
 // stubbing the boundary rather than the wrapper.
-let permissionReplyImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-let questionReplyImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-let questionRejectImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
-let sessionPromptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
-  async () => ({ data: {} });
+let permissionReplyImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
+let questionReplyImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
+let questionRejectImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
+let sessionPromptImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
   constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
@@ -41,12 +53,19 @@ import {
   answerPermission,
   classifySendError,
   buildSessionCommandInput,
+  beginRestPromptObservation,
+  endRestPromptObservation,
   sendStateOnStart,
   sendStateOnError,
   shouldRetrySessionStart,
 } from './use-session';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError } from '../core/rest/projects-client';
+import { useSyncStore } from '../browser/stores/sync-store';
+import {
+  getSessionSyncController,
+  resetSessionSyncControllers,
+} from '../browser/session-sync/session-sync-registry';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
   useOpenCodePendingStore.getState().addQuestion({
@@ -68,6 +87,7 @@ function seedPermission(id: string, sessionID = 'sess-1') {
 }
 
 beforeEach(() => {
+  resetSessionSyncControllers();
   useOpenCodePendingStore.getState().clear();
   permissionReplyImpl = async () => ({ data: {} });
   questionReplyImpl = async () => ({ data: {} });
@@ -121,7 +141,9 @@ describe('rejectQuestion', () => {
     seedQuestion('q1');
     questionRejectImpl = async () => ({ error: { message: 'nope' } });
 
-    await expect(rejectQuestion('q1')).rejects.toMatchObject({ kind: 'runtime-error' });
+    await expect(rejectQuestion('q1')).rejects.toMatchObject({
+      kind: 'runtime-error',
+    });
     expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
   });
 });
@@ -137,15 +159,23 @@ describe('answerPermission', () => {
 
     await answerPermission('p1', 'once', 'go ahead');
 
-    expect(captured).toEqual({ requestID: 'p1', reply: 'once', message: 'go ahead' });
+    expect(captured).toEqual({
+      requestID: 'p1',
+      reply: 'once',
+      message: 'go ahead',
+    });
     expect(useOpenCodePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed error', async () => {
     seedPermission('p1');
-    permissionReplyImpl = async () => ({ error: { message: 'denied by server' } });
+    permissionReplyImpl = async () => ({
+      error: { message: 'denied by server' },
+    });
 
-    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({ kind: 'runtime-error' });
+    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
+      kind: 'runtime-error',
+    });
     expect(useOpenCodePendingStore.getState().permissions['p1']).toBeDefined();
   });
 });
@@ -164,7 +194,10 @@ describe('classifySendError', () => {
   });
 
   test('classifies a 402-shaped error as billing', () => {
-    const err = new Error('Payment Required') as Error & { status?: number; data?: unknown };
+    const err = new Error('Payment Required') as Error & {
+      status?: number;
+      data?: unknown;
+    };
     err.status = 402;
     err.data = { message: 'Insufficient credits. Balance: $-0.06' };
 
@@ -212,6 +245,24 @@ describe('classifySendError', () => {
 });
 
 describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
+  test('REST prompt observation keeps reconciliation busy until completion', () => {
+    const sessionId = 'sess-rest-observation';
+    const controller = getSessionSyncController(sessionId);
+    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+
+    beginRestPromptObservation(sessionId);
+    expect(useSyncStore.getState().sessionStatus[sessionId]).toEqual({
+      type: 'busy',
+    });
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    endRestPromptObservation(sessionId);
+    expect(useSyncStore.getState().sessionStatus[sessionId]).toEqual({
+      type: 'idle',
+    });
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+  });
+
   test('a send failure with a 402-shaped error clears pending and yields a billing sendError', async () => {
     sessionPromptImpl = async () => ({
       error: { data: { message: 'Insufficient credits. Balance: $-0.06' } },

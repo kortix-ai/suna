@@ -258,44 +258,9 @@ export async function updateEmailPolicy(
   return normalizeEmailInstallation(installation);
 }
 
-// ── Meet — the bot voice + display name a project's Google/Zoom Meet channel uses ──
-
-export interface MeetVoice {
-  id: string;
-  name: string;
-  desc: string;
-}
-
-export interface MeetVoicesResponse {
-  selected: string;
-  bot_name: string;
-  default_bot_name: string;
-  speak_enabled: boolean;
-  voices: MeetVoice[];
-}
-
-export async function getMeetVoices(projectId: string): Promise<MeetVoicesResponse | null> {
-  const res = await backendApi.get<MeetVoicesResponse>(
-    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices`,
-    { showErrors: false },
-  );
-  if (!res.success) return null;
-  return res.data ?? null;
-}
-
-export async function setMeetVoice(
-  projectId: string,
-  voice: string,
-): Promise<{ selected: string }> {
-  return unwrap(
-    await backendApi.put<{ selected: string }>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/voice`,
-      { voice },
-      { showErrors: false },
-    ),
-    'Failed to save voice',
-  );
-}
+// ── Voice — the display name the bot uses when it joins a call ──
+// The voice itself now comes from the realtime provider, not a per-project
+// ElevenLabs pick, so the name is all that's left to configure here.
 
 export async function setMeetBotName(
   projectId: string,
@@ -309,17 +274,6 @@ export async function setMeetBotName(
     ),
     'Failed to save name',
   );
-}
-
-/** Returns a base64-encoded audio sample for the given voice, or null on failure. */
-export async function previewMeetVoice(projectId: string, voiceId: string): Promise<string | null> {
-  const res = await backendApi.post<{ b64: string }>(
-    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices/${encodeURIComponent(voiceId)}/preview`,
-    {},
-    { showErrors: false },
-  );
-  if (!res.success || !res.data?.b64) return null;
-  return res.data.b64;
 }
 
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──
@@ -393,30 +347,5 @@ export async function updateChannelBinding(
       { showErrors: false },
     ),
     'Failed to update channel binding',
-  );
-}
-
-export interface SpeakInMeetingResult {
-  ok: boolean;
-  voice: string;
-}
-
-/**
- * Make the meeting bot speak: text → ElevenLabs (project voice) → Recall
- * `output_audio`, both keys kept server-side. Backs `meet speak`.
- */
-export async function speakInMeeting(
-  projectId: string,
-  botId: string,
-  text: string,
-  voice?: string,
-): Promise<SpeakInMeetingResult> {
-  return unwrap(
-    await backendApi.post<SpeakInMeetingResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/speak`,
-      { bot_id: botId, text, voice },
-      { showErrors: false },
-    ),
-    'Failed to speak in meeting',
   );
 }

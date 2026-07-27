@@ -1,17 +1,18 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { setContextField } from '../lib/request-context';
 import { type ProviderName, getProvider } from '../platform/providers';
 import { db } from '../shared/db';
 
 export const DEFAULT_EXECUTION_LEASE_SECONDS = 120;
 export const MIN_EXECUTION_LEASE_SECONDS = 30;
 export const MAX_EXECUTION_LEASE_SECONDS = 300;
-const PROVIDER_TOUCH_TIMEOUT_MS = 5_000;
 
 export interface ExecutionLeaseTarget {
   sandboxId: string;
   sessionId: string;
   projectId: string;
+  accountId: string;
 }
 
 export interface ExecutionKeepAliveEndpoint {
@@ -61,6 +62,7 @@ async function loadLeaseSandbox(target: ExecutionLeaseTarget) {
         eq(sessionSandboxes.sandboxId, target.sandboxId),
         eq(sessionSandboxes.sessionId, target.sessionId),
         eq(sessionSandboxes.projectId, target.projectId),
+        eq(sessionSandboxes.accountId, target.accountId),
         inArray(sessionSandboxes.status, ['provisioning', 'active']),
       ),
     )
@@ -80,11 +82,15 @@ export async function discoverExecutionKeepAliveEndpoint(
   // provider 429 must NOT bubble up to `app.onError` → Sentry → Better Stack
   // (the recurring `ec26b248…` fingerprint). Degrade to `null` — the caller
   // treats null as "no keep-alive endpoint yet" and the DB lease remains
-  // authoritative, exactly like `touchProvider`'s own catch below.
+  // authoritative.
   try {
-    const endpoint = await getProvider(row.provider as ProviderName).resolveEndpoint(
-      row.externalId,
-    );
+    const providerGetStart = Date.now();
+    const provider = getProvider(row.provider as ProviderName);
+    const providerGetMs = Date.now() - providerGetStart;
+    const previewLinkStart = Date.now();
+    const endpoint = await provider.resolveEndpoint(row.externalId);
+    setContextField('provider_get_ms', String(providerGetMs));
+    setContextField('preview_link_ms', String(Date.now() - previewLinkStart));
     return keepAliveEndpoint(endpoint.url, endpoint.headers);
   } catch (err) {
     console.warn(
@@ -95,36 +101,39 @@ export async function discoverExecutionKeepAliveEndpoint(
   }
 }
 
-async function touchProvider(
+async function resolveKeepAliveEndpoint(
   provider: ProviderName,
   externalId: string,
 ): Promise<ExecutionKeepAliveEndpoint | null> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const endpoint = await getProvider(provider).resolveEndpoint(externalId);
-      const keepAlive = keepAliveEndpoint(endpoint.url, endpoint.headers);
-      const response = await fetch(`${keepAlive.url}/kortix/health`, {
-        headers: endpoint.headers,
-        signal: AbortSignal.timeout(PROVIDER_TOUCH_TIMEOUT_MS),
-      });
-      if (response.ok || response.status === 503) return keepAlive;
-    } catch {
-      /* the next heartbeat retries; the DB lease remains authoritative */
-    }
+  // Instrumented: preview_link_ms isolates the provider resolveEndpoint cost,
+  // which prior analysis could only infer. Purely additive observability.
+  try {
+    const providerGetStart = Date.now();
+    const providerInstance = getProvider(provider);
+    const providerGetMs = Date.now() - providerGetStart;
+    const previewLinkStart = Date.now();
+    const endpoint = await providerInstance.resolveEndpoint(externalId);
+    setContextField('provider_get_ms', String(providerGetMs));
+    setContextField('preview_link_ms', String(Date.now() - previewLinkStart));
+    return keepAliveEndpoint(endpoint.url, endpoint.headers);
+  } catch (err) {
+    console.warn(
+      `[execution-lease] resolve keep-alive endpoint failed for sandbox ${externalId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
   }
-  return null;
 }
 
-export async function renewExecutionLease(
+async function writeExecutionLease(
   target: ExecutionLeaseTarget,
   requestedTtlSeconds?: number,
   now = new Date(),
 ): Promise<{
-  ok: boolean;
-  leaseUntil: string | null;
-  providerUrl: string | null;
-  providerHeaders: Record<string, string> | null;
-}> {
+  leaseUntil: string;
+  provider: string;
+  externalId: string | null;
+} | null> {
   const leaseUntil = new Date(
     now.getTime() + clampLeaseSeconds(requestedTtlSeconds) * 1_000,
   ).toISOString();
@@ -145,21 +154,55 @@ export async function renewExecutionLease(
         eq(sessionSandboxes.sandboxId, target.sandboxId),
         eq(sessionSandboxes.sessionId, target.sessionId),
         eq(sessionSandboxes.projectId, target.projectId),
+        eq(sessionSandboxes.accountId, target.accountId),
         inArray(sessionSandboxes.status, ['provisioning', 'active']),
       ),
     )
     .returning({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId });
+  return row ? { ...row, leaseUntil } : null;
+}
+
+export async function acquireExecutionLease(
+  target: ExecutionLeaseTarget,
+  requestedTtlSeconds?: number,
+  now = new Date(),
+): Promise<{
+  ok: boolean;
+  leaseUntil: string | null;
+  providerUrl: string | null;
+  providerHeaders: Record<string, string> | null;
+}> {
+  const row = await writeExecutionLease(target, requestedTtlSeconds, now);
   if (!row) {
     return { ok: false, leaseUntil: null, providerUrl: null, providerHeaders: null };
   }
   const providerEndpoint = row.externalId
-    ? await touchProvider(row.provider as ProviderName, row.externalId)
+    ? await resolveKeepAliveEndpoint(row.provider as ProviderName, row.externalId)
     : null;
   return {
     ok: true,
-    leaseUntil,
+    leaseUntil: row.leaseUntil,
     providerUrl: providerEndpoint?.url ?? null,
     providerHeaders: providerEndpoint?.headers ?? null,
+  };
+}
+
+export async function renewExecutionLease(
+  target: ExecutionLeaseTarget,
+  requestedTtlSeconds?: number,
+  now = new Date(),
+): Promise<{
+  ok: boolean;
+  leaseUntil: string | null;
+  providerUrl: null;
+  providerHeaders: null;
+}> {
+  const row = await writeExecutionLease(target, requestedTtlSeconds, now);
+  return {
+    ok: row !== null,
+    leaseUntil: row?.leaseUntil ?? null,
+    providerUrl: null,
+    providerHeaders: null,
   };
 }
 
@@ -179,6 +222,7 @@ export async function releaseExecutionLease(
         eq(sessionSandboxes.sandboxId, target.sandboxId),
         eq(sessionSandboxes.sessionId, target.sessionId),
         eq(sessionSandboxes.projectId, target.projectId),
+        eq(sessionSandboxes.accountId, target.accountId),
       ),
     )
     .returning({ sandboxId: sessionSandboxes.sandboxId });

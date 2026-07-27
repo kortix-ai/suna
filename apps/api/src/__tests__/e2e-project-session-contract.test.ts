@@ -879,6 +879,66 @@ describe('project session API contract', () => {
 
   beforeEach(() => resetState());
 
+  test('sandbox token acquires, renews, and releases the execution lease route', async () => {
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+    const request = (action: 'acquire' | 'renew' | 'release', token: string) =>
+      app.request(`/v1/projects/${PROJECT_ID}/execution-lease`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          session_id: SESSION_ID,
+          lease_ttl_seconds: 180,
+        }),
+      });
+
+    const acquire = await request('acquire', PROJECT_SANDBOX_TOKEN);
+    expect(acquire.status).toBe(200);
+    expect(await acquire.json()).toMatchObject({
+      ok: true,
+      provider_url: null,
+      provider_headers: null,
+    });
+
+    const renew = await request('renew', PROJECT_SANDBOX_TOKEN);
+    expect(renew.status).toBe(200);
+    expect(await renew.json()).toMatchObject({
+      ok: true,
+      provider_url: null,
+      provider_headers: null,
+    });
+
+    const release = await request('release', PROJECT_SANDBOX_TOKEN);
+    expect(release.status).toBe(200);
+    expect(await release.json()).toEqual({ ok: true });
+
+    const forbidden = await request('renew', PROJECT_RUNTIME_PAT);
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({
+      error: 'execution lease requires a sandbox token',
+    });
+  });
+
   test('GET project session inventory rejects callers without project.session.read', async () => {
     deniedIamAction = 'project.session.read';
     const app = createApp();

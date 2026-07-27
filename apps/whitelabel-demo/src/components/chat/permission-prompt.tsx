@@ -10,17 +10,20 @@
  */
 
 import { Button } from '@/components/ui/button';
-import { answerPermission, type KortixSendError } from '@kortix/sdk/react';
+import type { KortixSendError } from '@kortix/sdk/react';
 import { ShieldQuestion } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
 export function PermissionPrompt({
   request,
-  onResolved,
+  onAnswer,
 }: {
   request: Record<string, any>;
-  onResolved: () => void;
+  onAnswer: (
+    requestId: string,
+    decision: 'once' | 'always' | 'reject',
+  ) => Promise<void>;
 }) {
   const [sending, setSending] = useState(false);
   const label = String(request.permission ?? 'this action').replace(/[._-]/g, ' ');
@@ -29,8 +32,7 @@ export function PermissionPrompt({
     if (sending) return;
     setSending(true);
     try {
-      await answerPermission(request.id, decision);
-      onResolved();
+      await onAnswer(request.id, decision);
     } catch (err) {
       // `answerPermission` already classifies its own failure via
       // `classifySendError` and throws the typed `KortixSendError`.

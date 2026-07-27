@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { platformAgentCopy, platformOwnedAgentNames, splitPlatformAgents } from './platform-agents';
 
 const dir = import.meta.dir;
-const selectorSource = readFileSync(join(dir, 'session-chat-input.tsx'), 'utf8');
+// `AgentSelector` was extracted out of session-chat-input.tsx into
+// ./composer/agent-selector.tsx (and the toolbar around it into
+// ./composer/composer-toolbar.tsx); the elevation moved with it.
+const selectorSource = readFileSync(join(dir, 'composer/agent-selector.tsx'), 'utf8');
+const toolbarSource = readFileSync(join(dir, 'composer/composer-toolbar.tsx'), 'utf8');
+const chatInputSource = readFileSync(join(dir, 'session-chat-input.tsx'), 'utf8');
 const composerSource = readFileSync(join(dir, 'composer-chat-input.tsx'), 'utf8');
 
 const AGI = {
@@ -136,5 +141,13 @@ describe('agent picker wiring', () => {
   test('the composer feeds the marker straight from the project config', () => {
     expect(composerSource).toContain('platformOwnedAgentNames(projectConfig)');
     expect(composerSource).toContain('platformAgentNames={platformAgentNames}');
+  });
+
+  // The marker crosses two extracted components before it reaches the picker:
+  // SessionChatInput -> ComposerToolbar -> AgentSelector. Either hop silently
+  // dropping the prop demotes the AGI back into the workspace roster.
+  test('the marker is threaded through the extracted toolbar to the picker', () => {
+    expect(chatInputSource).toContain('platformAgentNames={platformAgentNames}');
+    expect(toolbarSource).toContain('platformAgentNames={platformAgentNames}');
   });
 });

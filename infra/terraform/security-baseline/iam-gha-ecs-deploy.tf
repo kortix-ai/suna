@@ -13,7 +13,7 @@
 #   - ECS resources region-wildcarded (dev/staging = us-west-2, prod = eu-west-2)
 #   - PassRole for the task+exec roles of all production release services:
 #     kortix-{dev,staging,prod} (api) and kortix-{dev,staging,prod}-gateway
-#     plus the pre-cutover kortix-prod-usw2 API and gateway shadow services
+#     plus the pre-cutover US East 2 API and gateway shadow services
 #     (the ecs-api TF module names roles "<service>-exec"/"<service>-task")
 #   - Secrets Manager read of every kortix-<env>-env blob (the task-def renderer
 #     wires each blob key as a container secret)
@@ -137,10 +137,10 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-usw2-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]

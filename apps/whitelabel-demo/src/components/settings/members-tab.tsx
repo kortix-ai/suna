@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,7 +24,7 @@ import type {
   ProjectGroupGrant,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, Mail, Send, Trash2, Users, X } from 'lucide-react';
+import { Check, Mail, Send, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -166,7 +168,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
             </SelectContent>
           </Select>
           <Button type="submit" disabled={!email.trim() || invite.isPending}>
-            {invite.isPending && <Loader2 className="size-4 animate-spin" />}
+            {invite.isPending && <Loading className="size-4" />}
             Invite
           </Button>
         </form>

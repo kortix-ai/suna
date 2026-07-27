@@ -16,7 +16,7 @@ import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
 import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../executor/share';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -47,13 +47,25 @@ export async function canAccessSandboxSession(input: {
   projectId: string;
   accountId: string;
   userId: string;
+  /** The caller's own session when the credential is bound to one, or null.
+   *  REQUIRED — an omitted binding would fail open. */
+  callerSessionId: string | null;
 }): Promise<boolean> {
-  const key = `${input.sessionId}|${input.userId}`;
+  // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
+  // shares one `userId` (the wrapper credential), so without it end-user A and
+  // end-user B collide on one entry for the same target session — and the first
+  // `true` would be served to everyone else for the whole TTL, silently
+  // defeating the isolation check below.
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}`;
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
   const [row] = await db
-    .select({ visibility: projectSessions.visibility, createdBy: projectSessions.createdBy })
+    .select({
+      visibility: projectSessions.visibility,
+      createdBy: projectSessions.createdBy,
+      origin: projectSessions.origin,
+    })
     .from(projectSessions)
     .where(
       and(
@@ -73,6 +85,11 @@ export async function canAccessSandboxSession(input: {
       row.createdBy,
       grants,
       subject,
+      {
+        origin: row.origin ?? null,
+        sessionId: input.sessionId,
+        callerSessionId: input.callerSessionId,
+      },
     );
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
@@ -102,6 +119,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 async function resolveSandboxRef(
   previewSandboxId: string,
 ): Promise<{ sandboxId: string; accountId: string; projectId: string } | null> {
+  const columns = {
+    sandboxId: sessionSandboxes.sandboxId,
+    accountId: sessionSandboxes.accountId,
+    projectId: sessionSandboxes.projectId,
+  };
+
   const idCondition = UUID_RE.test(previewSandboxId)
     ? or(
         eq(sessionSandboxes.externalId, previewSandboxId),
@@ -109,17 +132,29 @@ async function resolveSandboxRef(
       )
     : eq(sessionSandboxes.externalId, previewSandboxId);
 
-  const [row] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      accountId: sessionSandboxes.accountId,
-      projectId: sessionSandboxes.projectId,
-    })
+  const [row] = await db.select(columns).from(sessionSandboxes).where(idCondition).limit(1);
+  if (row) return row;
+
+  // Case-insensitive fallback — REQUIRED for subdomain previews.
+  //
+  // `external_id` is an uppercase ULID (`sbx_01KYCZ…`), but the subdomain form
+  // `p{port}-{sandboxId}.{host}` carries it in a HOSTNAME, and hostnames are
+  // case-insensitive: the browser lowercases them before the Host header is
+  // ever sent, so the proxy can only ever see `sbx_01kycz…`. An exact `eq`
+  // therefore never matched and every subdomain preview 401'd with
+  // `{"error":"Unauthorized"}`, while the path-based `/v1/p/{id}/{port}` route
+  // — whose id lives in a case-PRESERVING path segment — worked fine. That
+  // asymmetry is what made this look like a token bug rather than a lookup bug.
+  //
+  // The exact match above stays the indexed fast path; this only runs on a miss,
+  // and the result is cached by `getOrCompute`.
+  const [ciRow] = await db
+    .select(columns)
     .from(sessionSandboxes)
-    .where(idCondition)
+    .where(sql`lower(${sessionSandboxes.externalId}) = lower(${previewSandboxId})`)
     .limit(1);
 
-  return row ?? null;
+  return ciRow ?? null;
 }
 
 /**

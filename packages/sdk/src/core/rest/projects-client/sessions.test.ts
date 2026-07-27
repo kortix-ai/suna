@@ -4,11 +4,14 @@ import { isSessionFresh } from '../../http/fresh-sessions';
 import {
   createProjectSession,
   createSessionPublicShare,
+  claimWarmProjectSession,
   deleteProjectSession,
+  ensureWarmProjectSession,
   getProjectSession,
   getSessionAudit,
   getSessionPreviewCandidates,
   getSessionTranscript,
+  getVoiceTranscript,
   listProjectSessions,
   listSessionPublicShares,
   restartProjectSession,
@@ -143,6 +146,71 @@ test('createProjectSession defaults the body to {} when no input is given', asyn
   expect(last().body).toEqual({});
 });
 
+test('ensureWarmProjectSession POSTs the server-owned warm-session request', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-1' },
+      reused: true,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  const result = await ensureWarmProjectSession('P1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({});
+  expect(result.session.session_id).toBe('WARM-1');
+  expect(result.reused).toBe(true);
+});
+
+test('claimWarmProjectSession POSTs the selected warm session and create options', async () => {
+  nextResponse = { status: 200, body: { session_id: 'WARM-1' } };
+  const result = await claimWarmProjectSession('P1', {
+    session_id: 'WARM-1',
+    agent_name: 'reviewer',
+    sandbox_slug: 'large',
+  });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm/claim');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    session_id: 'WARM-1',
+    agent_name: 'reviewer',
+    sandbox_slug: 'large',
+  });
+  expect(result.session_id).toBe('WARM-1');
+});
+
+test('claimWarmProjectSession keeps recoverable claim conflicts out of the global error sink', async () => {
+  const onError = mock(() => {});
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError,
+  });
+  nextResponse = {
+    status: 409,
+    body: {
+      message: 'The warm session does not match the selected agent or sandbox',
+      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+    },
+  };
+
+  try {
+    await expect(
+      claimWarmProjectSession('P1', {
+        session_id: 'WARM-1',
+        agent_name: 'reviewer',
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+    });
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
 test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showErrors', async () => {
   nextResponse = { status: 200, body: { session_id: 'S1' } };
   await getProjectSession('P1', 'S1', { showErrors: false });
@@ -169,6 +237,19 @@ test('getSessionTranscript builds the query string from limit/chars options', as
 
   await getSessionTranscript('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/transcript');
+});
+
+test('getVoiceTranscript hits GET .../voice-transcript and builds the query string from cursor/limit', async () => {
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', call_id: 'S1', live: true, cursor: 3, count: 0, turns: [] },
+  };
+  await getVoiceTranscript('P1', 'S1', { cursor: 12, limit: 50 });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript?cursor=12&limit=50');
+  expect(last().method).toBe('GET');
+
+  await getVoiceTranscript('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript');
 });
 
 test('updateProjectSession PATCHes the name/metadata input', async () => {

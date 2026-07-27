@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'tests/e2e'
 
 # --- supply-chain hardening ---------------------------------------------------
 # These mirror pnpm 11 defaults and are duplicated here for clarity / older clients.

@@ -88,7 +88,7 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   test('a prompt POST that 502s is delivered to the sandbox at most once', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }));
     const res = await forwardToSandbox(
-      'sb-1', 8000, { kind: 'principal', userId: 'u1' },
+      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null },
       'POST', '/session/sess-1/message', '', jsonHeaders(), PROMPT_BODY, 'http://app.local',
     );
     // Exactly ONE upstream attempt — the 502 is passed straight through, never retried.
@@ -99,7 +99,7 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   test('a prompt POST that succeeds is forwarded once (happy path unchanged)', async () => {
     queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
     const res = await forwardToSandbox(
-      'sb-1', 8000, { kind: 'principal', userId: 'u1' },
+      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null },
       'POST', '/session/sess-1/message', '', jsonHeaders(), PROMPT_BODY, 'http://app.local',
     );
     expect(fetchCalls).toBe(1);
@@ -109,7 +109,7 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   test('a duplicate inbound prompt under the same Idempotency-Key short-circuits', async () => {
     queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
     const args = [
-      'sb-1', 8000, { kind: 'principal', userId: 'u1' } as const,
+      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null } as const,
       'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': 'dup-1' }),
       PROMPT_BODY, 'http://app.local',
     ] as const;
@@ -130,7 +130,7 @@ describe('forwardToSandbox — idempotent GET retry is unchanged', () => {
       new Response('ok', { status: 200 }),
     );
     const res = await forwardToSandbox(
-      'sb-1', 8000, { kind: 'principal', userId: 'u1' },
+      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null },
       'GET', '/session', '', new Headers(), undefined, 'http://app.local',
     );
     expect(fetchCalls).toBe(2);

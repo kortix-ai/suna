@@ -361,13 +361,21 @@ Read-only discovery of marketplace items. Installing an item into a project is a
 
 Options: `--query <text>`, `--type <type>`, `--source <source>`, `--host <name>`, `--json`.
 
-### Skills
+### System skills
+
+The Kortix system skills are the platform's own documentation — sessions, sandboxes, the executor, memory, channels. The API serves them live, so they always match the version of Kortix you are signed into. The binary and a token are all any agent needs to learn how to drive Kortix: no repo checkout, no baked image.
 
 | Command | Effect |
 | --- | --- |
-| `kortix skills list` | List skills available to the project. Default subcommand. |
-| `kortix skills get <name> [--full]` | Show one skill. |
-| `kortix skills path [name]` | Print a skill's file path. |
+| `kortix system-skills list` | List the Kortix system skills. Default subcommand. |
+| `kortix system-skills get <name> [--full]` | Print one skill's current `SKILL.md`. `--full` adds its referenced files. |
+| `kortix system-skills path [name]` | Print a skill's on-disk directory in this project. |
+
+Options: `--host <name>`, `--json`.
+
+`kortix skills` is a permanent alias for the same command.
+
+This list is always the system skills, never a mix. Optional skills live in the marketplace: `kortix marketplace list --type skill`.
 
 ### Executor
 

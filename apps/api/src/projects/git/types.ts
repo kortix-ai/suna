@@ -42,6 +42,7 @@ export interface ProjectConfigSummary {
      *  edit/scope/delete them. Absent (or false) = an ordinary workspace agent.
      *  This is the ONLY field a client may branch on — never the agent's name. */
     platform_owned?: boolean;
+    sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`

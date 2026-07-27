@@ -9,8 +9,8 @@
 #                   rollout, so every user sees it for the whole window.
 #   off             clear it (level none) — only called AFTER the rollout is green.
 #
-# It writes the same maintenance config the admin console does, via
-# `PUT /v1/system/maintenance` (platform-admin bearer required).
+# It writes the same dual database + Vercel Edge Config state the admin console
+# uses, via `PUT /api/maintenance` on the web app.
 #
 # SAFETY — it never clobbers a human-set incident banner. Since the rollout banner
 # is itself `critical` now, "ours" is identified by its title, not its level:
@@ -20,16 +20,15 @@
 #           and `critical` level); if an admin changed it mid-rollout, we leave it.
 #
 # Env:
-#   MAINTENANCE_TOKEN     (required) platform-admin bearer (kortix_pat_/kortix_sa_ or JWT)
-#   MAINTENANCE_API_BASE  (optional) API base incl. /v1, default https://api.kortix.com/v1
+#   MAINTENANCE_TOKEN     (required) platform-admin bearer
+#   MAINTENANCE_URL       (optional) full endpoint, default https://kortix.com/api/maintenance
 #
 # Best-effort: the caller runs this with continue-on-error so a banner hiccup
 # never fails the release.
 
 set -euo pipefail
 
-API_BASE="${MAINTENANCE_API_BASE:-https://api.kortix.com/v1}"
-ENDPOINT="${API_BASE%/}/system/maintenance"
+ENDPOINT="${MAINTENANCE_URL:-https://kortix.com/api/maintenance}"
 ROLLOUT_TITLE="Release in progress"
 
 CMD="${1:-}"

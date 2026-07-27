@@ -184,7 +184,7 @@ describe('bare `kortix` on a non-TTY', () => {
     for (const tier of ['Where you are', 'The linked project', 'CLI']) {
       expect(result.stdout).toContain(`\n  ${tier}`);
     }
-    for (const command of ['agi', 'sessions', 'projects', 'chat']) {
+    for (const command of ['goals', 'tasks', 'sessions', 'projects', 'chat']) {
       expect(result.stdout).toContain(command);
     }
   }, 20_000);

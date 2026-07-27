@@ -18,7 +18,8 @@ type PendingRequest = {
 
 type PendingClientRequest = {
   handle(response: JsonRpcEnvelope): Promise<void>
-  timer: ReturnType<typeof setTimeout>
+  envelope: JsonRpcEnvelope
+  timer: ReturnType<typeof setTimeout> | null
 }
 
 type Subscriber = {
@@ -128,6 +129,8 @@ export class AcpConnection {
   private readonly input: Writable
   private readonly pending = new Map<string, PendingRequest>()
   private readonly pendingClientRequests = new Map<string, PendingClientRequest>()
+  private readonly completedClientRequestIds = new Set<string>()
+  private readonly completedClientRequestOrder: string[] = []
   private readonly subscribers = new Set<Subscriber>()
   private readonly replay: AcpStreamEvent[] = []
   private readonly requestTimeoutMs: number
@@ -268,11 +271,13 @@ export class AcpConnection {
       const key = rpcIdKey(envelope.id)
       const pending = this.pendingClientRequests.get(key)
       if (pending) {
-        clearTimeout(pending.timer)
+        if (pending.timer) clearTimeout(pending.timer)
         this.pendingClientRequests.delete(key)
+        this.rememberCompletedClientRequest(key)
         await pending.handle(envelope)
         return
       }
+      if (this.completedClientRequestIds.has(key)) return
     }
     await this.write(envelope)
   }
@@ -282,16 +287,38 @@ export class AcpConnection {
     params: unknown,
     id: string | number,
     handle: (response: JsonRpcEnvelope) => Promise<void>,
+    options: { timeoutMs?: number | null } = {},
   ): void {
     if (this.closed) throw new AcpProtocolError('ACP output closed')
     const key = rpcIdKey(id)
-    if (this.pendingClientRequests.has(key)) return
-    const timer = setTimeout(() => {
-      this.pendingClientRequests.delete(key)
-      this.onDiagnostic(`timed out waiting for ACP client response to id ${key}`)
-    }, this.requestTimeoutMs)
-    this.pendingClientRequests.set(key, { handle, timer })
-    this.publish({ jsonrpc: '2.0', id, method, params })
+    if (
+      this.pendingClientRequests.has(key) ||
+      this.completedClientRequestIds.has(key)
+    ) {
+      return
+    }
+    const envelope: JsonRpcEnvelope = {
+      jsonrpc: '2.0',
+      id,
+      method,
+      params,
+    }
+    const timeoutMs =
+      options.timeoutMs === undefined
+        ? this.requestTimeoutMs
+        : options.timeoutMs
+    const timer =
+      timeoutMs === null
+        ? null
+        : setTimeout(() => {
+            this.pendingClientRequests.delete(key)
+            this.rememberCompletedClientRequest(key)
+            this.onDiagnostic(
+              `timed out waiting for ACP client response to id ${key}`,
+            )
+          }, timeoutMs)
+    this.pendingClientRequests.set(key, { handle, envelope, timer })
+    this.publish(envelope)
   }
 
   notifyClient(method: string, params?: unknown): void {
@@ -307,8 +334,26 @@ export class AcpConnection {
     event: Subscriber['event'],
     close: Subscriber['close'] = () => {},
   ): () => void {
+    const replayedPendingRequests = new Set<string>()
     for (const replayed of this.replay) {
-      if (replayed.id > afterEventId) event(replayed)
+      if (replayed.id <= afterEventId) continue
+      event(replayed)
+      if (
+        Object.prototype.hasOwnProperty.call(replayed.envelope, 'id') &&
+        'method' in replayed.envelope
+      ) {
+        const key = rpcIdKey(replayed.envelope.id)
+        if (this.pendingClientRequests.has(key)) {
+          replayedPendingRequests.add(key)
+        }
+      }
+    }
+    for (const [key, pending] of this.pendingClientRequests) {
+      if (replayedPendingRequests.has(key)) continue
+      event({
+        id: this.nextEventId++,
+        envelope: pending.envelope,
+      })
     }
     if (this.closed) {
       close()
@@ -375,6 +420,16 @@ export class AcpConnection {
     for (const subscriber of this.subscribers) subscriber.event(event)
   }
 
+  private rememberCompletedClientRequest(key: string): void {
+    if (this.completedClientRequestIds.has(key)) return
+    this.completedClientRequestIds.add(key)
+    this.completedClientRequestOrder.push(key)
+    while (this.completedClientRequestOrder.length > this.maxReplayEvents) {
+      const oldest = this.completedClientRequestOrder.shift()
+      if (oldest !== undefined) this.completedClientRequestIds.delete(oldest)
+    }
+  }
+
   private close(error: Error): void {
     if (this.closed) return
     this.closed = true
@@ -385,9 +440,11 @@ export class AcpConnection {
     }
     this.pending.clear()
     for (const pending of this.pendingClientRequests.values()) {
-      clearTimeout(pending.timer)
+      if (pending.timer) clearTimeout(pending.timer)
     }
     this.pendingClientRequests.clear()
+    this.completedClientRequestIds.clear()
+    this.completedClientRequestOrder.length = 0
     for (const subscriber of this.subscribers) subscriber.close()
     this.subscribers.clear()
   }

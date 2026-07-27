@@ -211,7 +211,13 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v32: accept uv's release target metadata in `uv --version`. uv 0.11.30 emits
 // `uv 0.11.30 (x86_64-unknown-linux-gnu)`, so v31's exact comparison failed
 // every cold image build. The version bump invalidates any cached v31 image.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v32';
+// v33: the `meet` CLI becomes `voice` and loses `speak` — the agent no longer
+// reads replies aloud one at a time; a realtime model holds the conversation and
+// calls back into the session. This bump MUST roll out before the API-side meet
+// routes are removed: a sandbox baked at =<v32 still runs `meet speak`, and its
+// skill tells it never to fall back to a raw API, so it would report a retired
+// feature as a transient provider failure mid-call.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v33';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

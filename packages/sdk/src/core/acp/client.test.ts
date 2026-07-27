@@ -96,6 +96,66 @@ describe('ACP HTTP/SSE client', () => {
     ]);
   });
 
+  test('does not apply the generic RPC timeout to a long-running session prompt', async () => {
+    const encoder = new TextEncoder();
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+    let promptRequestId: string | null = null;
+    const client = createAcpClient({
+      endpoint: 'https://runtime.test/kortix/acp/session',
+      requestTimeoutMs: 10,
+      fetch: (async (_input, init) => {
+        if (!init?.method) {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                streamController = controller;
+                controller.enqueue(
+                  encoder.encode(
+                    'id: 0\ndata: {"jsonrpc":"2.0","method":"kortix/cursor"}\n\n',
+                  ),
+                );
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        }
+        const body = JSON.parse(String(init.body)) as {
+          id?: string;
+          method?: string;
+        };
+        if (body.method === 'session/prompt') promptRequestId = body.id ?? null;
+        return new Response(null, { status: 202 });
+      }) as typeof fetch,
+    });
+    const stream = client.connect({ onEvent() {} });
+    await stream.ready;
+
+    const prompt = client.prompt('ses_1', [{ type: 'text', text: 'long task' }]);
+    const earlyOutcome = await Promise.race([
+      prompt.then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      ),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 30)),
+    ]);
+
+    expect(earlyOutcome).toBe('pending');
+    expect(promptRequestId).not.toBeNull();
+    const controller =
+      streamController as ReadableStreamDefaultController<Uint8Array> | null;
+    controller?.enqueue(
+      encoder.encode(
+        `id: 1\ndata: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: promptRequestId,
+          result: { stopReason: 'end_turn' },
+        })}\n\n`,
+      ),
+    );
+    await expect(prompt).resolves.toEqual({ stopReason: 'end_turn' });
+    stream.close();
+  });
+
   test('removes a slash-heavy endpoint suffix before the request', async () => {
     const urls: string[] = [];
     const client = createAcpClient({

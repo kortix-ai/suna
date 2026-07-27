@@ -48,6 +48,7 @@ import {
   type AgentGrantSetV2,
   listConnectors,
   listProjectSecrets,
+  listProjectSandboxTemplates,
   type RuntimeAgentConfig,
   type ProjectConfigSummary,
 } from '@kortix/sdk';
@@ -106,6 +107,11 @@ function AgentEditorModal({
     queryFn: () => listConnectors(projectId),
     staleTime: 30_000,
   });
+  const sandboxesQuery = useQuery({
+    queryKey: ['project-sandbox-templates', projectId],
+    queryFn: () => listProjectSandboxTemplates(projectId),
+    staleTime: 30_000,
+  });
   const secretOptions = useMemo(
     () =>
       [...new Set((secretsQuery.data?.items ?? []).map((s) => s.identifier))]
@@ -120,6 +126,16 @@ function AgentEditorModal({
         .sort((a, b) => a.label.localeCompare(b.label)),
     [connectorsQuery.data],
   );
+  const sandboxOptions = useMemo(() => {
+    const options = new Map<string, string>([['default', 'Platform default']]);
+    for (const template of sandboxesQuery.data?.items ?? []) {
+      options.set(template.slug, template.is_default ? 'Platform default' : template.name);
+    }
+    if (initial.sandbox && !options.has(initial.sandbox)) {
+      options.set(initial.sandbox, initial.sandbox);
+    }
+    return [...options].map(([id, label]) => ({ id, label }));
+  }, [initial.sandbox, sandboxesQuery.data]);
 
   // No governance field is a plain string anymore (that was `description`/
   // `model`, both moved to the OpenCode layer) — clearing is undefined-only.
@@ -180,6 +196,7 @@ function AgentEditorModal({
               skillsOptions={skillsOptions}
               connectorOptions={connectorOptions}
               secretOptions={secretOptions}
+              sandboxOptions={sandboxOptions}
             />
           </div>
 
@@ -327,6 +344,14 @@ export function AgentConfigEditor({
       </div>
 
       <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
+            Environment
+          </span>
+          <Badge variant="outline" size="xs" className="font-mono">
+            {block.sandbox ?? 'Project default'}
+          </Badge>
+        </div>
         {summaries.map((s) => {
           const sum = grantSummary(s.grant);
           return (

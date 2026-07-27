@@ -110,9 +110,8 @@ function iamGet<T>(path: string) {
 // ─── Groups ────────────────────────────────────────────────────────────────
 
 export async function listGroups(accountId: string) {
-  return unwrap(
-    await iamGet<{ groups: AccountGroup[] }>(`/accounts/${accountId}/iam/groups`),
-  ).groups;
+  return unwrap(await iamGet<{ groups: AccountGroup[] }>(`/accounts/${accountId}/iam/groups`))
+    .groups;
 }
 
 export async function getGroup(accountId: string, groupId: string) {
@@ -353,8 +352,7 @@ export async function bulkImportPolicies(accountId: string, policies: BulkImport
 // ─── Roles ─────────────────────────────────────────────────────────────────
 
 export async function listRoles(accountId: string) {
-  return unwrap(await iamGet<{ roles: IamRole[] }>(`/accounts/${accountId}/iam/roles`))
-    .roles;
+  return unwrap(await iamGet<{ roles: IamRole[] }>(`/accounts/${accountId}/iam/roles`)).roles;
 }
 
 /** Auto-provisioned agent (service-account) identities — the principal picker for
@@ -368,9 +366,7 @@ export interface AgentIdentity {
 
 export async function listAgentIdentities(accountId: string) {
   return unwrap(
-    await iamGet<{ agents: AgentIdentity[] }>(
-      `/accounts/${accountId}/iam/agent-identities`,
-    ),
+    await iamGet<{ agents: AgentIdentity[] }>(`/accounts/${accountId}/iam/agent-identities`),
   ).agents;
 }
 
@@ -486,9 +482,8 @@ export interface CreatedScimToken
 }
 
 export async function listScimTokens(accountId: string) {
-  return unwrap(
-    await iamGet<{ tokens: ScimToken[] }>(`/accounts/${accountId}/iam/scim/tokens`),
-  ).tokens;
+  return unwrap(await iamGet<{ tokens: ScimToken[] }>(`/accounts/${accountId}/iam/scim/tokens`))
+    .tokens;
 }
 
 export async function createScimToken(
@@ -579,9 +574,7 @@ export interface SsoGroupMapping {
 
 export async function getSsoProvider(accountId: string) {
   return unwrap(
-    await iamGet<{ provider: SsoProvider | null }>(
-      `/accounts/${accountId}/iam/sso/provider`,
-    ),
+    await iamGet<{ provider: SsoProvider | null }>(`/accounts/${accountId}/iam/sso/provider`),
   ).provider;
 }
 
@@ -643,9 +636,7 @@ export async function deleteSsoProvider(accountId: string) {
 
 export async function listSsoGroupMappings(accountId: string) {
   return unwrap(
-    await iamGet<{ mappings: SsoGroupMapping[] }>(
-      `/accounts/${accountId}/iam/sso/mappings`,
-    ),
+    await iamGet<{ mappings: SsoGroupMapping[] }>(`/accounts/${accountId}/iam/sso/mappings`),
   ).mappings;
 }
 
@@ -701,9 +692,8 @@ export async function updateSessionPolicy(accountId: string, patch: Partial<Sess
 }
 
 export async function listAccountSessions(accountId: string) {
-  return unwrap(
-    await iamGet<{ sessions: ActiveSession[] }>(`/accounts/${accountId}/iam/sessions`),
-  ).sessions;
+  return unwrap(await iamGet<{ sessions: ActiveSession[] }>(`/accounts/${accountId}/iam/sessions`))
+    .sessions;
 }
 
 export async function revokeAccountSession(accountId: string, sessionId: string) {
@@ -879,8 +869,16 @@ export interface ListAuditFilter {
   /** Prefix or exact match on action string ("iam.policy" matches every
    *  iam.policy.* event; "iam.policy.create" matches exact). */
   action?: string;
+  /** Only events performed by this user_id. */
+  actor?: string;
+  /** Prefix match on resource_type (e.g. "project_session"). */
+  resource_type?: string;
   /** ISO datetime — events at or after. */
   since?: string;
+  /** ISO datetime — events at or before. */
+  until?: string;
+  /** Case-insensitive substring over action / resource_type / resource_id. */
+  q?: string;
   /** Cursor from a previous response's next_cursor. */
   cursor?: string;
   /** 1..200, default 50. */
@@ -890,7 +888,11 @@ export interface ListAuditFilter {
 export async function listAuditEvents(accountId: string, filter: ListAuditFilter = {}) {
   const params = new URLSearchParams();
   if (filter.action) params.set('action', filter.action);
+  if (filter.actor) params.set('actor', filter.actor);
+  if (filter.resource_type) params.set('resource_type', filter.resource_type);
   if (filter.since) params.set('since', filter.since);
+  if (filter.until) params.set('until', filter.until);
+  if (filter.q) params.set('q', filter.q);
   if (filter.cursor) params.set('cursor', filter.cursor);
   if (filter.limit) params.set('limit', String(filter.limit));
   const qs = params.toString();
@@ -969,9 +971,8 @@ export async function probeEffectivePermissions(
 // unlocks the enterprise features for evaluation — NOT a real Enterprise plan.
 
 export async function getEnterpriseDemo(accountId: string): Promise<boolean> {
-  return unwrap(
-    await iamGet<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`),
-  ).enabled;
+  return unwrap(await iamGet<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`))
+    .enabled;
 }
 
 export async function setEnterpriseDemo(accountId: string, enabled: boolean): Promise<boolean> {

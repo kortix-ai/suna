@@ -32,6 +32,7 @@ import {
   type AgentGrant,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
@@ -112,10 +113,12 @@ export function deriveEffectiveProjectRole(
 
 // ─── DB lookups ────────────────────────────────────────────────────────────
 //
-// LATENCY NOTE (prod incident, 2026-06-12): every DB statement from the prod
-// fleet pays a cross-region roundtrip, and these principal lookups run on
-// every single authed request — often 10+ times in parallel during one page
-// load. Two levers keep that off the floor of every request:
+// LATENCY NOTE (prod incident, 2026-06-12; measurement corrected 2026-07-26):
+// every DB statement from the prod fleet is a fast same-region roundtrip
+// (~3ms measured — DB and API both sit in eu-west-2, not the cross-region
+// cost originally assumed here), and these principal lookups run on every
+// single authed request — often 10+ times in parallel during one page load.
+// Two levers keep that off the floor of every request:
 //   1. Independent queries run via Promise.all (depth, not count, costs time).
 //   2. Results are memoized for a short TTL (IAM_CACHE_TTL_MS, default 15s) —
 //      *positive* results only, so a freshly granted member sees access
@@ -174,37 +177,39 @@ async function resolveActorV2Uncached(
       .select({ groupId: accountGroupMembers.groupId })
       .from(accountGroupMembers)
       .where(eq(accountGroupMembers.userId, userId)),
-    db
-      .select({
-        scopeType: iamPolicies.scopeType,
-        scopeId: iamPolicies.scopeId,
-        action: iamRoleActions.action,
-      })
-      .from(iamPolicies)
-      .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
-      .where(
-        and(
-          eq(iamPolicies.accountId, accountId),
-          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
-          or(
-            and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
-            and(
-              eq(iamPolicies.principalType, 'group'),
-              inArray(
-                iamPolicies.principalId,
-                db
-                  .select({ gid: accountGroupMembers.groupId })
-                  .from(accountGroupMembers)
-                  .where(eq(accountGroupMembers.userId, userId)),
+    retryTransientDatabaseRead(async () =>
+      db
+        .select({
+          scopeType: iamPolicies.scopeType,
+          scopeId: iamPolicies.scopeId,
+          action: iamRoleActions.action,
+        })
+        .from(iamPolicies)
+        .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
+        .where(
+          and(
+            eq(iamPolicies.accountId, accountId),
+            or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+            or(
+              and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
+              and(
+                eq(iamPolicies.principalType, 'group'),
+                inArray(
+                  iamPolicies.principalId,
+                  db
+                    .select({ gid: accountGroupMembers.groupId })
+                    .from(accountGroupMembers)
+                    .where(eq(accountGroupMembers.userId, userId)),
+                ),
               ),
+              // Service-account principal: a token policy keyed on this id. Harmless
+              // for a human request (SA ids and user ids are disjoint uuids, so this
+              // matches nothing), load-bearing for an SA request (its standing role).
+              and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
             ),
-            // Service-account principal: a token policy keyed on this id. Harmless
-            // for a human request (SA ids and user ids are disjoint uuids, so this
-            // matches nothing), load-bearing for an SA request (its standing role).
-            and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
           ),
         ),
-      ),
+    ),
   ]);
   const customActions: CustomAction[] = policyRows.map((r) => ({
     scopeType: r.scopeType,

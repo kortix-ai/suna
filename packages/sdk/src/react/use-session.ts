@@ -28,6 +28,11 @@ import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compactio
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { useSyncStore } from '../browser/stores/sync-store';
+import {
+  beginSessionPromptObservation,
+  endSessionPromptObservation,
+} from '../browser/session-sync/session-sync-registry';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import {
   isSessionStartError,
@@ -225,6 +230,26 @@ export function sendStateOnError(error: unknown): SendState {
   return { pending: null, sendError: classifySendError(error) };
 }
 
+/**
+ * Keep the REST compatibility transcript reconciler active after
+ * `promptAsync()` accepts a prompt.
+ *
+ * The runtime can accept the prompt before the browser receives its first SSE
+ * status event. Without this optimistic busy state, the 10-second liveness
+ * reconciliation never starts. The transcript can then stay at the user
+ * message even though the agent completed the turn.
+ */
+export function beginRestPromptObservation(sessionId: string): void {
+  beginSessionPromptObservation(sessionId);
+  useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+}
+
+/** Clear the optimistic REST busy state when the prompt never starts or stops. */
+export function endRestPromptObservation(sessionId: string): void {
+  endSessionPromptObservation(sessionId);
+  useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Permission/question replies. Standalone (not closures over hook state) since
 // they only need the global runtime client + the global pending store — both
@@ -287,6 +312,14 @@ export interface UseSessionOptions {
    */
   enabled?: boolean;
   /**
+   * A server-authorized OpenCode session pin already associated with this
+   * Kortix session. The hook uses it only to hydrate cached transcript content
+   * while `/start` runs. The pin returned by `/start` remains authoritative.
+   *
+   * Do not accept this value from an untrusted browser tenant selector.
+   */
+  initialOpenCodeSessionId?: string | null;
+  /**
    * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
    * todos, including its 10s busy-poll SSE-stall fallback) and `useQuestionSelfHeal`
    * (the 2s missed-`question.asked` self-heal poll) — on top of the boot/lifecycle
@@ -328,7 +361,13 @@ const DISABLED_CHAT_ENGINE_SYNC = {
 };
 
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
-  const { waitMs = 15_000, replayStartStash = true, enabled = true, chatEngine = true } = options;
+  const {
+    waitMs = 15_000,
+    replayStartStash = true,
+    enabled = true,
+    chatEngine = true,
+    initialOpenCodeSessionId = null,
+  } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const start = useQuery({
@@ -402,6 +441,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
+    initialPin: initialOpenCodeSessionId,
     listRuntimeSessions: runtimePolicy.listOpenCodeSessions,
   });
   const { rootSessionId } = canonicalSession;
@@ -566,8 +606,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   ) => {
     if (!ocSessionId) return;
     pendingBaseCount.current = userMsgCount;
+    if (!usesAcp) beginRestPromptObservation(ocSessionId);
     setSendState(sendStateOnStart(text));
     void sendParts([{ type: 'text', text }], override).catch((error) => {
+      if (!usesAcp) endRestPromptObservation(ocSessionId);
       setSendState(sendStateOnError(error));
     });
   };
@@ -594,7 +636,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const cancel = () => {
     if (ocSessionId) {
       if (usesAcp) void acpRuntime.cancel();
-      else abortMutation.mutate(ocSessionId);
+      else {
+        endRestPromptObservation(ocSessionId);
+        abortMutation.mutate(ocSessionId);
+      }
     }
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
@@ -723,7 +768,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // server-side capabilities (pre-runtime)
     models,
     agents,
-    defaultAgent: config?.open_code_default_agent ?? null,
+    defaultAgent: config?.default_agent ?? config?.open_code_default_agent ?? null,
     commands: config?.commands ?? [],
     picks,
 

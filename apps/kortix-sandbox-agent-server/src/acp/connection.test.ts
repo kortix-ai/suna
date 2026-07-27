@@ -272,6 +272,102 @@ describe('ACP NDJSON connection', () => {
     expect(harness.writes).toEqual([])
   })
 
+  test('reissues a pending client request to a fresh subscriber at the event tail', () => {
+    const harness = createHarness()
+    const request = {
+      jsonrpc: '2.0' as const,
+      id: 'kortix:question:q1',
+      method: 'session/request_input',
+      params: {
+        sessionId: 'session',
+        questions: [{ question: 'Choose one', options: ['Alpha', 'Beta'] }],
+      },
+    }
+
+    harness.connection.requestClient(
+      request.method,
+      request.params,
+      request.id,
+      async () => {},
+      { timeoutMs: null },
+    )
+    const tail = harness.connection.lastEventId
+    const events: AcpStreamEvent[] = []
+
+    harness.connection.subscribe(tail, (event) => events.push(event))
+
+    expect(events).toEqual([
+      {
+        id: tail + 1,
+        envelope: request,
+      },
+    ])
+    expect(harness.connection.lastEventId).toBe(tail + 1)
+  })
+
+  test('keeps an explicit no-timeout client request pending until the browser responds', async () => {
+    const harness = createHarness({ requestTimeoutMs: 10 })
+    const handled: JsonRpcEnvelope[] = []
+
+    harness.connection.requestClient(
+      'session/request_input',
+      { sessionId: 'session', questions: [] },
+      'kortix:question:slow',
+      async (response) => {
+        handled.push(response)
+      },
+      { timeoutMs: null },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    await harness.connection.post({
+      jsonrpc: '2.0',
+      id: 'kortix:question:slow',
+      result: { action: 'accept', content: { answers: [['Beta']] } },
+    })
+
+    expect(handled).toEqual([
+      {
+        jsonrpc: '2.0',
+        id: 'kortix:question:slow',
+        result: { action: 'accept', content: { answers: [['Beta']] } },
+      },
+    ])
+    expect(harness.diagnostics).toEqual([])
+  })
+
+  test('accepts only the first response when two subscribers answer one client request', async () => {
+    const harness = createHarness()
+    const handled: JsonRpcEnvelope[] = []
+    const requestId = 'kortix:question:race'
+
+    harness.connection.requestClient(
+      'session/request_input',
+      { sessionId: 'session', questions: [] },
+      requestId,
+      async (response) => {
+        handled.push(response)
+      },
+      { timeoutMs: null },
+    )
+    harness.connection.subscribe(harness.connection.lastEventId, () => {})
+    harness.connection.subscribe(harness.connection.lastEventId, () => {})
+
+    const response: JsonRpcEnvelope = {
+      jsonrpc: '2.0',
+      id: requestId,
+      result: { action: 'accept', content: { answers: [['Beta']] } },
+    }
+    await Promise.all([
+      harness.connection.post(response),
+      harness.connection.post(response),
+    ])
+    await nextTick()
+
+    expect(handled).toEqual([response])
+    expect(harness.writes).toEqual([])
+  })
+
   test('forwards browser requests immediately and publishes their responses', async () => {
     const harness = createHarness()
     const events: unknown[] = []

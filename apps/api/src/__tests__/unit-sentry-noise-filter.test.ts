@@ -29,6 +29,8 @@
  * coverage so a future refactor can't silently re-enable the paging.
  */
 import { describe, test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { SENTRY_IGNORE_ERRORS, isSentryIgnoredError } from '../lib/sentry';
 
 describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
@@ -87,5 +89,79 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
   test('empty type/message is not filtered (never swallow unknown errors)', () => {
     expect(isSentryIgnoredError(undefined, undefined)).toBe(false);
     expect(isSentryIgnoredError('', '')).toBe(false);
+  });
+
+  // ── Regression: BS pattern 721b7efe… (API) + b38179c5… (frontend symptom)
+  // — Supabase pooler / PgBouncer session-mode pool exhaustion on the
+  // us-east-2 shadow deployment. The `postgres@3.4.9` driver surfaces it as a
+  // `PostgresError` whose message reads
+  // `(EMAXCONNSESSION) max clients reached in session mode - max clients are
+  // limited to pool_size: 20`. It is a TRANSIENT pool-saturation class (the
+  // `FreeTierRotation`/`YearlyRotation` cron ticks + `llm-gateway` catalog
+  // loads + a user `GET /v1/projects` contending for the 20-session pool),
+  // NOT a code bug — `pool_size` is a Supabase-pooler config. The
+  // `index.ts` DB-error handler unconditionally `captureException`d it → paged
+  // Sentry → the frontend surfaced the 500 as `ApiError: Internal server
+  // error`. The fix classifies it as transient (skip Sentry capture) while
+  // STILL logging + STILL 500. Mirrors #5167/#5175 (Daytona transient
+  // no-capture) + #4709 (ignore list).
+  test('the Supabase pool-exhaustion PostgresError is filtered (exact prod message)', () => {
+    // Exact message from the prod Sentry event (Better Stack 721b7efe…).
+    expect(
+      isSentryIgnoredError(
+        'PostgresError',
+        '(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 20',
+      ),
+    ).toBe(true);
+    // Stable, deploy-agnostic substring (pool_size suffix is config-specific).
+    expect(isSentryIgnoredError('PostgresError', 'max clients reached in session mode')).toBe(true);
+    // Driver code anchor (robust across driver versions).
+    expect(isSentryIgnoredError('PostgresError', 'EMAXCONNSESSION')).toBe(true);
+    // Also covered when only the message is present (string-coerced reason).
+    expect(isSentryIgnoredError(undefined, 'max clients reached in session mode')).toBe(true);
+  });
+
+  test('the pool-exhaustion patterns are registered in SENTRY_IGNORE_ERRORS', () => {
+    expect(SENTRY_IGNORE_ERRORS).toContain('max clients reached in session mode');
+    expect(SENTRY_IGNORE_ERRORS).toContain('EMAXCONNSESSION');
+  });
+
+  test('a real DB schema/SQL bug is NOT filtered (do not over-match PostgresError)', () => {
+    // Guards against an over-broad filter: a genuine PostgresError (missing
+    // relation, syntax error) must still page Sentry via the DB-error handler.
+    expect(isSentryIgnoredError('PostgresError', 'relation "kortix.foo" does not exist')).toBe(
+      false,
+    );
+    expect(isSentryIgnoredError('PostgresError', 'syntax error at or near "SELECT"')).toBe(false);
+  });
+});
+
+// ── Source-level guard: the `index.ts` DB-error handler must skip
+// `captureException` for pool-exhaustion (the DIRECT call bypasses the
+// `ignoreErrors` list, which only filters automatic/unhandled captures).
+// Mirrors the repo's existing source-guard test convention (e.g. the
+// `seedDraft` source-structure pin). Asserts the guard structure is present so
+// a future refactor can't silently re-enable the paging.
+describe('index.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', () => {
+  const indexSrc = readFileSync(
+    fileURLToPath(new URL('../index.ts', import.meta.url)),
+    'utf8',
+  );
+
+  test('imports isSentryIgnoredError from lib/sentry', () => {
+    expect(indexSrc).toContain('isSentryIgnoredError');
+    expect(indexSrc).toMatch(/import\s*\{[^}]*\bisSentryIgnoredError\b[^}]*\}\s*from\s*['"]\.\/lib\/sentry['"]/);
+  });
+
+  test('the DB-error handler guards captureException with isSentryIgnoredError', () => {
+    // The guard must classify via isSentryIgnoredError and conditionally skip
+    // the captureException call (defense in depth — the ignoreErrors list
+    // alone does NOT stop a direct captureException).
+    expect(indexSrc).toContain("const isPoolExhaustion = isSentryIgnoredError(errName, err.message)");
+    expect(indexSrc).toContain('if (!isPoolExhaustion)');
+    // The structured log still fires (transient: true / errorType tag) so the
+    // event stays observable without paging.
+    expect(indexSrc).toContain("'database-pool-exhaustion'");
+    expect(indexSrc).toContain('transient: isPoolExhaustion');
   });
 });

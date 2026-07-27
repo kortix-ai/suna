@@ -49,7 +49,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  meet: z.boolean(),
+  voice: z.boolean(),
   llm_gateway: z.boolean(),
   acp_runtime: z.boolean(),
   review_center: z.boolean(),
@@ -295,8 +295,12 @@ export type ConnectionProfile = z.infer<typeof ConnectionProfileSchema>;
 export const ReconcileConnectionProfileInputSchema = z
   .object({
     connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
-    owner_type: ConnectionProfileOwnerTypeSchema,
-    owner_id: z.string().trim().min(1).max(512),
+    // `project` = a TEAM-shared connection (several are allowed per connector,
+    // distinguished by label); it takes no owner_id. Every other owner type
+    // requires one. Creating a team connection needs the profiles-manage
+    // capability — enforced at the route.
+    owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+    owner_id: z.string().trim().min(1).max(512).optional(),
     label: z.string().trim().min(1).max(255),
     metadata: ConnectionProfileMetadataSchema.optional(),
   })
@@ -537,10 +541,29 @@ export const SessionCreateInputSchema = z
     // inherits the project DEFAULT profile — never another owner's — so it is not
     // origin-gated (any caller may set it).
     inherit_unbound: z.boolean().optional(),
+    // Interactive-only: require each named connector to resolve to the ACTING
+    // USER's OWN connected account for this session. Like connector_bindings but
+    // BY ALIAS — the server finds the caller's member profile for each. If the
+    // user hasn't connected one, session-create is refused with a structured
+    // CONNECTOR_CONNECTION_REQUIRED (409) naming the connector, so the UI can
+    // prompt them to connect it. Implies inherit_unbound (other connectors keep
+    // their project defaults). Rejected for backend/service-account origin — a
+    // backend caller has no single "current user"; it uses connector_bindings.
+    require_connectors: z
+      .array(z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'))
+      .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
+      .optional(),
     // Backend-only: the wrapper's opaque end-user handle this session acts for.
     // Accepted only from a backend-origin caller (an account API key / PAT or a
     // service-account bearer); any other origin supplying it is rejected 403
     // (see resolveSessionOrigin / canOverride).
+    end_user_ref: z.string().trim().min(1).max(256).optional(),
+    /**
+     * @deprecated Renamed to `end_user_ref`. Still accepted, and will stay
+     * accepted — this is a published wire field. Sending both is fine only if
+     * they agree; disagreeing values are rejected 400 END_USER_REF_CONFLICT
+     * rather than silently picking one and misattributing the usage rows.
+     */
     origin_ref: z.string().trim().min(1).max(256).optional(),
     // Backend-only: narrow which project secrets (by identifier) this session's
     // sandbox receives, from the default agent-grant set down to this list. `[]`
@@ -594,6 +617,8 @@ export const ProjectSessionSchema = z.object({
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
   /** Backend wrapper's end-user handle; non-null only for backend sessions. */
+  end_user_ref: z.string().nullable(),
+  /** @deprecated Renamed to `end_user_ref`. Echoed with the same value. */
   origin_ref: z.string().nullable(),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
@@ -611,6 +636,41 @@ export const ProjectSessionSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+
+export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
+  status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
+  before_sha: z.string().nullable().optional(),
+  after_sha: z.string().nullable().optional(),
+  error: z.string().optional(),
+});
+export type WarmProjectSessionWorkspaceRefresh = z.infer<
+  typeof WarmProjectSessionWorkspaceRefreshSchema
+>;
+
+export const WarmProjectSessionResultSchema = z.object({
+  session: ProjectSessionSchema,
+  reused: z.boolean(),
+  workspace_refresh: WarmProjectSessionWorkspaceRefreshSchema,
+});
+export type WarmProjectSessionResult = z.infer<
+  typeof WarmProjectSessionResultSchema
+>;
+
+export const ClaimWarmProjectSessionInputSchema = z
+  .object({
+    session_id: z
+      .string()
+      .regex(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        'session_id must be an RFC 4122 v4 UUID',
+      ),
+    agent_name: z.string().min(1).optional(),
+    sandbox_slug: z.string().min(1).optional(),
+  })
+  .strict();
+export type ClaimWarmProjectSessionInput = z.infer<
+  typeof ClaimWarmProjectSessionInputSchema
+>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',

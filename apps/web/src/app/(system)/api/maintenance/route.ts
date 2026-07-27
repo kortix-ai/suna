@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import {
   getMaintenanceConfig,
   setMaintenanceConfig,
   type MaintenanceConfig,
   type MaintenanceLevel,
 } from '@/lib/maintenance-store';
+import { createClient } from '@/lib/supabase/server';
 import { getUserRolesWithToken } from '@kortix/sdk';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -24,7 +24,12 @@ export async function GET() {
   } catch (err) {
     console.error('[api/maintenance] GET error:', err);
     return NextResponse.json(
-      { level: 'none', title: '', message: '', updatedAt: new Date().toISOString() },
+      {
+        level: 'blocking',
+        title: 'Service maintenance',
+        message: 'Kortix is temporarily unavailable. Service will resume automatically.',
+        updatedAt: new Date().toISOString(),
+      },
       { status: 200 },
     );
   }
@@ -37,19 +42,31 @@ export async function GET() {
 const VALID_LEVELS: MaintenanceLevel[] = ['none', 'info', 'warning', 'critical', 'blocking'];
 
 export async function PUT(request: NextRequest) {
-  // Authenticate: require a valid Supabase session
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  const bearerToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || null;
+  let accessToken = bearerToken;
 
-  if (authError || !user) {
+  if (!accessToken) {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    accessToken = session?.access_token ?? null;
+  }
+
+  if (!accessToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Check admin role via the backend API
-  const isAdmin = await checkAdminRole(request);
+  const isAdmin = await checkAdminRole(accessToken);
   if (!isAdmin) {
     return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 });
   }
@@ -78,18 +95,13 @@ export async function PUT(request: NextRequest) {
     startTime: body.startTime !== undefined ? body.startTime : current.startTime,
     endTime: body.endTime !== undefined ? body.endTime : current.endTime,
     statusUrl: body.statusUrl !== undefined ? body.statusUrl : current.statusUrl,
-    affectedServices: body.affectedServices !== undefined ? body.affectedServices : current.affectedServices,
+    affectedServices:
+      body.affectedServices !== undefined ? body.affectedServices : current.affectedServices,
     updatedAt: new Date().toISOString(),
   };
 
-  // Forward the admin's access token — the API enforces the admin role on the write.
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
-    const saved = await setMaintenanceConfig(updated, session.access_token);
+    const saved = await setMaintenanceConfig(updated, accessToken);
     return NextResponse.json(saved);
   } catch (err) {
     console.error('[api/maintenance] PUT error:', err);
@@ -105,23 +117,13 @@ export async function PUT(request: NextRequest) {
  * Check admin role by forwarding the user's auth cookies to the backend
  * /user-roles endpoint, matching the client-side useAdminRole hook logic.
  */
-async function checkAdminRole(request: NextRequest): Promise<boolean> {
+async function checkAdminRole(accessToken: string): Promise<boolean> {
   try {
-    // Forward the authorization header from the original request if present,
-    // otherwise extract the Supabase access token from the cookie.
-    const supabase = await createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session?.access_token) return false;
-
-    const backendUrl =
-      process.env.BACKEND_URL ||
-      process.env.NEXT_PUBLIC_BACKEND_URL ||
-      '';
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
     const data = await getUserRolesWithToken<{ isAdmin?: boolean }>({
       backendUrl,
-      accessToken: session.access_token,
+      accessToken,
     });
     return data.isAdmin === true;
   } catch {

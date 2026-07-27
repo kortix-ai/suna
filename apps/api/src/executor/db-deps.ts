@@ -1,4 +1,5 @@
 import {
+  executorConnectionPolicies,
   executorConnectionProfiles,
   executorConnectorActions,
   executorConnectorPolicies,
@@ -25,19 +26,23 @@ import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
   loadAgentMailInstall,
-  loadMeetInstall,
-  loadMeetTokenForProject,
   loadSlackInstall,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsInstall,
   loadTeamsTenantForProject,
 } from '../channels/install-store';
-import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
-import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
+import { resolveProjectBotName } from '../channels/voice-identity';
+import { joinPageUrl } from '../channels/voice/livekit';
+import { mintJoinLink } from '../channels/voice/join-links';
+import { endCall, isCallLive, promptVoiceAgent, startCall } from '../channels/voice/runtime';
+import { readTranscriptForAgent } from '../channels/voice/transcript-read';
+import { kortixSay } from '../channels/voice/utterance';
+import { config } from '../config';
 import { authorize } from '../iam';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import type { ChannelPlatform } from '../projects/connectors';
+import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
 import {
   publicConnectorAlias,
@@ -83,7 +88,13 @@ import {
   runPipedreamProxy,
   verifyWebhookSig,
 } from './pipedream';
-import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
+import {
+  type DefaultMode,
+  type EffectiveResolveResult,
+  type Policy,
+  type PolicyAction,
+  resolveEffectiveAction,
+} from './policy';
 import type {
   AdminConnectorView,
   CatalogConnector,
@@ -94,6 +105,9 @@ import { resolveShareSubject } from './share';
 import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
+
+/** Which policy scope decided an action — surfaced so the editor can say so. */
+type EffectiveSource = EffectiveResolveResult['source'];
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -358,7 +372,6 @@ async function channelToken(
   }
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
-  if (platform === 'meet') return loadMeetTokenForProject(projectId);
   return null;
 }
 
@@ -372,7 +385,6 @@ async function channelInstalled(
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'email')
     return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
-  if (platform === 'meet') return (await loadMeetInstall(projectId).catch(() => null)) != null;
   return false;
 }
 
@@ -532,22 +544,10 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
       resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
-    resolveMeetJoinContext: async (projectId, sessionId) => {
-      if (!sessionId) return null;
-      const botName = await resolveProjectBotName(projectId);
-      const patch = meetRealtimeJoinPatch(projectId, sessionId, deriveWakeWord(botName), botName);
-      return patch
-        ? {
-            metadata: patch.metadata,
-            realtimeEndpoints: patch.realtimeEndpoints,
-            automaticAudioOutput: patch.automaticAudioOutput,
-            botName,
-          }
-        : null;
-    },
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
+    loadConnectionPolicies: loadConnectionPoliciesFor,
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(executorExecutions)
@@ -584,6 +584,89 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     // selector, scoped to this account.
     executeComputerCall: ({ accountId, selector, method, args }) =>
       executeComputerCall({ accountId, selector, method, args }),
+    // Voice channel: `spawn_room` creates the LiveKit room + human join token
+    // (the same logic voice/routes.ts used to inline before it went through
+    // the gateway); `join_gmeet`/`join_zoom` are declared but not implemented
+    // yet, so they fail loud with what to do instead rather than pretending.
+    executeVoiceCall: async ({ projectId, sessionId, op, args }) => {
+      if (op === 'join_gmeet' || op === 'join_zoom') {
+        const platform = op === 'join_gmeet' ? 'Google Meet' : 'Zoom';
+        return {
+          ok: false,
+          kind: 'not_implemented',
+          message: `joining an existing ${platform} is not supported yet — use spawn_room and share the join link instead`,
+        };
+      }
+      // The call id IS the session id, so every action below addresses "this
+      // session's call" without the agent having to carry a call id around.
+      if (op === 'read_transcript') {
+        if (!sessionId) {
+          return { ok: false, kind: 'error', message: 'read_transcript requires a session' };
+        }
+        // Mode resolution, the per-call read position, the page shape and the
+        // unread count all live in channels/voice/transcript-read.ts — read its
+        // header for why a bare call is the cheap one, and for what happens to
+        // "unread" turns when a turn dies mid-read. Everything except liveness,
+        // which is a LiveKit question, not a transcript one.
+        const read = await readTranscriptForAgent({ callId: sessionId, projectId, args });
+        return { ok: true, data: { ...read, live: await isCallLive(sessionId) } };
+      }
+
+      if (op === 'send_prompt') {
+        if (!sessionId) {
+          return { ok: false, kind: 'error', message: 'send_prompt requires a session' };
+        }
+        const text = typeof args.text === 'string' ? args.text.trim() : '';
+        if (!text) {
+          return { ok: false, kind: 'error', message: 'send_prompt requires `text`' };
+        }
+        // `kortixSay` carries both halves of this utterance: the framing the
+        // voice model needs (it is handed the text as INSTRUCTIONS, so raw text
+        // reads as an unattributed order — that is what made the call answer
+        // statements as questions) AND the plain line that gets written to
+        // voice_call_turns, so what this agent says into the call is actually in
+        // the call's record. `projectId` is passed because we have it here; the
+        // in-call paths (turn.ts, answer-watch.ts) look it up instead.
+        const result = await promptVoiceAgent(sessionId, kortixSay(text), { projectId });
+        if (!result.delivered) {
+          // Deliberately an error, not a silent success: an agent that believes
+          // it spoke and did not will carry on as though the room heard it.
+          return { ok: false, kind: 'error', message: result.reason ?? 'could not reach the call' };
+        }
+        return { ok: true, data: { spoken: true } };
+      }
+
+      if (op === 'end_call') {
+        if (!sessionId) {
+          return { ok: false, kind: 'error', message: 'end_call requires a session' };
+        }
+        await endCall(sessionId);
+        return { ok: true, data: { ended: true } };
+      }
+
+      if (op !== 'spawn_room') {
+        return { ok: false, kind: 'error', message: `unknown voice action "${op}"` };
+      }
+      if (!sessionId) {
+        return { ok: false, kind: 'error', message: 'spawn_room requires a session' };
+      }
+      const voice = typeof args.voice === 'string' ? args.voice : null;
+      const botName = await resolveProjectBotName(projectId);
+      // The call id IS the session id — one live call per session.
+      const callId = sessionId;
+      // Start the room BEFORE minting the human's join link. If a person opens
+      // the page first it would try to join a room that does not exist yet,
+      // and that join is rejected with nothing to retry against.
+      await startCall({ callId, projectId, sessionId, botName, voice });
+      // Hand out a short, ungessable link that resolves to a freshly-minted
+      // LiveKit access token server-side (public-join-routes.ts), rather than
+      // embedding the ~300-char signed JWT itself in the URL — see
+      // join-links.ts's header for why (a single corrupted character in
+      // transit used to break the signature with no way to retry).
+      const { token: joinToken } = await mintJoinLink({ callId, projectId });
+      const joinUrl = joinPageUrl(config.FRONTEND_URL, joinToken);
+      return { ok: true, data: { call_id: callId, join_url: joinUrl } };
+    },
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
@@ -595,6 +678,16 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
     .from(executorConnectorPolicies)
     .where(eq(executorConnectorPolicies.connectorId, connectorId));
   return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+}
+
+/** Rules attached to ONE connection (profile), the scope between project and connector. */
+async function loadConnectionPoliciesFor(profileId: string): Promise<Policy[]> {
+  const rows = await db
+    .select()
+    .from(executorConnectionPolicies)
+    .where(eq(executorConnectionPolicies.profileId, profileId))
+    .orderBy(executorConnectionPolicies.position);
+  return rows.map((r) => ({ match: r.match, action: r.action as PolicyAction, position: r.position }));
 }
 
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
@@ -940,17 +1033,67 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
 async function getConnectorPolicies(
   projectId: string,
   slug: string,
-): Promise<{ policies: Array<{ match: string; action: string }> } | null> {
-  const fromManifest = await getConnectorPoliciesFromManifest(projectId, slug);
-  if (fromManifest) return fromManifest;
-  const [row] = await db
-    .select({ connectorId: executorConnectors.connectorId })
-    .from(executorConnectors)
-    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
-    .limit(1);
-  if (!row) return null;
-  const policies = await loadConnectorPoliciesFor(row.connectorId);
-  return { policies: policies.map((p) => ({ match: p.match, action: p.action })) };
+): Promise<{
+  policies: Array<{ match: string; action: string }>;
+  effective: Array<{ path: string; action: PolicyAction; source: EffectiveSource }>;
+  project_policies: Array<{ match: string; action: string }>;
+  default_mode: DefaultMode;
+} | null> {
+  const [fromManifest, [row]] = await Promise.all([
+    getConnectorPoliciesFromManifest(projectId, slug),
+    db
+      .select({ connectorId: executorConnectors.connectorId, config: executorConnectors.config })
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+      .limit(1),
+  ]);
+  if (!fromManifest && !row) return null;
+
+  const policies = fromManifest
+    ? fromManifest.policies
+    : (await loadConnectorPoliciesFor(row.connectorId)).map((p) => ({
+        match: p.match,
+        action: p.action as string,
+      }));
+
+  // The editor also needs to know WHICH scope decides each tool. A project-scope
+  // rule is evaluated first and cannot be overridden here (see policy.ts), so
+  // without this the panel would happily show a connector rule the runtime is
+  // ignoring. Resolve every action through the same function the call gate uses.
+  if (!row) {
+    return { policies, effective: [], project_policies: [], default_mode: 'allow_all' };
+  }
+  const [projectPolicies, defaultMode, actions] = await Promise.all([
+    loadProjectPoliciesFor(projectId),
+    loadDefaultModeFor(projectId),
+    db
+      .select()
+      .from(executorConnectorActions)
+      .where(eq(executorConnectorActions.connectorId, row.connectorId)),
+  ]);
+  const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
+  const connectorPolicies: Policy[] = policies.map((p) => ({
+    match: p.match,
+    action: p.action as PolicyAction,
+  }));
+  const effective = actions.map((a) => {
+    const resolved = resolveEffectiveAction({
+      fullPath: `${slug}.${a.path}`,
+      relPath: a.path,
+      projectPolicies,
+      connectorPolicies,
+      risk: a.risk,
+      defaultMode,
+      sensitive,
+    });
+    return { path: a.path, action: resolved.action, source: resolved.source };
+  });
+  return {
+    policies,
+    effective,
+    project_policies: projectPolicies.map((p) => ({ match: p.match, action: p.action })),
+    default_mode: defaultMode,
+  };
 }
 
 /**
@@ -999,8 +1142,10 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listConnectors,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
-  syncConnectors: (projectId, accountId) =>
-    syncProjectConnectors(projectId, accountId, { force: true }),
+  syncConnectors: (projectId, accountId) => {
+    invalidateProjectMirror(projectId);
+    return syncProjectConnectors(projectId, accountId, { force: true });
+  },
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),

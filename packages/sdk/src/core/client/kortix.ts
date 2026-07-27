@@ -396,6 +396,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorSensitive(projectId, ...a),
         profiles: {
           list: () => P.listConnectionProfiles(projectId),
+          listAll: () => P.listAllConnectionProfiles(projectId),
           reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
             P.reconcileConnectionProfile(projectId, ...a),
           reconcileMember: (
@@ -408,6 +409,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.revokeConnectionProfile(projectId, ...a),
           activate: (...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>) =>
             P.activateConnectionProfile(projectId, ...a),
+          setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnectionProfile>>) =>
+            P.setDefaultConnectionProfile(projectId, ...a),
           pipedreamConnect: (
             ...a: DropFirst<Parameters<typeof P.pipedreamConnectConnectionProfile>>
           ) => P.pipedreamConnectConnectionProfile(projectId, ...a),
@@ -506,6 +509,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
+        ensureWarm: () => P.ensureWarmProjectSession(projectId),
+        claimWarm: (input: Parameters<typeof P.claimWarmProjectSession>[1]) =>
+          P.claimWarmProjectSession(projectId, input),
       },
 
       /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
@@ -587,14 +593,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
             P.updateEmailPolicy(projectId, ...a),
         },
-        meet: {
-          voices: () => P.getMeetVoices(projectId),
-          setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
+        voice: {
           setBotName: (name: string) => P.setMeetBotName(projectId, name),
-          previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
-          /** Make the meeting bot speak text (text → ElevenLabs → Recall `output_audio`). */
-          speak: (botId: string, text: string, voice?: string) =>
-            P.speakInMeeting(projectId, botId, text, voice),
         },
       },
 
@@ -828,6 +828,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
+      voiceTranscript: (options?: Parameters<typeof P.getVoiceTranscript>[2]) =>
+        P.getVoiceTranscript(projectId, sessionId, options),
 
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the

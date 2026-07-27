@@ -59,7 +59,8 @@ describe('selectSessionRowsForViewer', () => {
       canManageProject: true,
       subject,
       grantsBySession: new Map(),
-      runtimeStatusBySession: new Map(),
+      callerSessionId: null,
+    runtimeStatusBySession: new Map(),
     });
 
     expect(selected.authorized).toBe(true);
@@ -90,7 +91,8 @@ describe('selectSessionRowsForViewer', () => {
       canManageProject: false,
       subject,
       grantsBySession: new Map(),
-      runtimeStatusBySession: new Map(),
+      callerSessionId: null,
+    runtimeStatusBySession: new Map(),
     });
 
     expect(selected).toEqual({ authorized: false, items: [] });
@@ -111,7 +113,8 @@ describe('selectSessionRowsForViewer', () => {
       canManageProject: false,
       subject,
       grantsBySession: new Map(),
-      runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
+      callerSessionId: null,
+    runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
     });
 
     expect(selected.authorized).toBe(true);

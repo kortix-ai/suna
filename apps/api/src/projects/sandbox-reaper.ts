@@ -32,7 +32,7 @@
  */
 
 import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { accounts, projectSessions, sessionSandboxes } from '@kortix/db';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
@@ -181,6 +181,7 @@ interface ReapCandidate {
   provider: ProviderName;
   externalId: string;
   metadata: Record<string, unknown> | null;
+  warmState: string | null;
   createdAt: Date;
 }
 
@@ -229,38 +230,46 @@ type RunningBoxOutcome = 'stopped' | 'busyVetoed' | 'idleArmed' | 'skipped' | 'e
  * stops. `fallbackLastMeaningful` is null when this pass's usage lookup
  * failed — then an unreachable box cannot be judged at all and is skipped
  * (never act on uncertainty).
+ *
+ * `bypassBusyProbe` skips the busy check entirely and goes straight to the
+ * stop. Set ONLY for the orphan-account sweep below — the account that owns
+ * the box no longer exists, so there is no customer whose in-flight turn a
+ * busy-probe veto would be protecting. Never set for a live account.
  */
 async function reapRunningBox(
   row: ReapCandidate,
-  opts: { now: Date; ttlMs: number; fallbackLastMeaningful: Date | null },
+  opts: { now: Date; ttlMs: number; fallbackLastMeaningful: Date | null; bypassBusyProbe?: boolean },
 ): Promise<RunningBoxOutcome> {
-  const { now, ttlMs, fallbackLastMeaningful } = opts;
-  const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
+  const { now, ttlMs, fallbackLastMeaningful, bypassBusyProbe } = opts;
 
-  if (busyState === 'busy') {
-    // A running process — disarm the countdown, stamp the activity.
-    await db
-      .update(sessionSandboxes)
-      .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString(), idleObservedAt: null }) })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-    return 'busyVetoed';
-  }
+  if (!bypassBusyProbe) {
+    const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
 
-  if (busyState === 'idle') {
-    const confirm = decideIdleConfirm({ idleObservedAt: idleObservedAtOf(row.metadata), now, ttlMs });
-    if (confirm === 'arm') {
+    if (busyState === 'busy') {
+      // A running process — disarm the countdown, stamp the activity.
       await db
         .update(sessionSandboxes)
-        .set({ updatedAt: now, metadata: mergeMetadata({ idleObservedAt: now.toISOString() }) })
+        .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString(), idleObservedAt: null }) })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-      return 'idleArmed';
+      return 'busyVetoed';
     }
-    if (confirm === 'wait') return 'skipped';
-    // 'stop' — observed idle for the full TTL → fall through to the stop.
-  } else {
-    // 'unknown' — box unreachable / legacy image: activity-clock fallback.
-    if (!fallbackLastMeaningful) return 'skipped';
-    if (now.getTime() - fallbackLastMeaningful.getTime() <= ttlMs) return 'skipped';
+
+    if (busyState === 'idle') {
+      const confirm = decideIdleConfirm({ idleObservedAt: idleObservedAtOf(row.metadata), now, ttlMs });
+      if (confirm === 'arm') {
+        await db
+          .update(sessionSandboxes)
+          .set({ updatedAt: now, metadata: mergeMetadata({ idleObservedAt: now.toISOString() }) })
+          .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+        return 'idleArmed';
+      }
+      if (confirm === 'wait') return 'skipped';
+      // 'stop' — observed idle for the full TTL → fall through to the stop.
+    } else {
+      // 'unknown' — box unreachable / legacy image: activity-clock fallback.
+      if (!fallbackLastMeaningful) return 'skipped';
+      if (now.getTime() - fallbackLastMeaningful.getTime() <= ttlMs) return 'skipped';
+    }
   }
 
   try {
@@ -278,15 +287,57 @@ async function reapRunningBox(
 }
 
 /**
+ * Which of the given account ids are ORPHANED — no longer present in
+ * kortix.accounts, the app's native accounts table (basejump.accounts is
+ * retired; app code no longer reads or writes it, see
+ * 20260706120000000_retire_basejump.sql). An orphaned account has no
+ * customer who could be mid-turn, so its boxes are exempt from the
+ * lease/busy protections below. Returns null on a lookup FAILURE so the
+ * caller fails safe (never bypass a protection on a guess); an empty set =
+ * looked up fine, none of the given ids are orphaned.
+ */
+async function loadOrphanAccountIds(accountIds: string[]): Promise<Set<string> | null> {
+  const distinct = [...new Set(accountIds.filter((id): id is string => !!id))];
+  if (distinct.length === 0) return new Set();
+  try {
+    const existing = await db
+      .select({ accountId: accounts.accountId })
+      .from(accounts)
+      .where(inArray(accounts.accountId, distinct));
+    const existingIds = new Set(existing.map((r) => r.accountId));
+    return new Set(distinct.filter((id) => !existingIds.has(id)));
+  } catch (err) {
+    console.warn(
+      '[reaper] orphan-account lookup failed — failing safe (no bypass this cycle):',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
  * One reaper pass over active session sandboxes. For each:
  *   - ask the provider its REAL state,
  *   - reconcile our row + close billing if it is not running,
  *   - otherwise apply the running-box rule (probe → busy alive / idle countdown).
  * Bounded concurrency so a batch of provider round-trips doesn't serialize.
+ *
+ * ORPHAN-ACCOUNT BYPASS: a box whose owning account has been deleted keeps
+ * heartbeating forever otherwise — the execution-lease renewal and the
+ * busy-veto path both stamp `lastTurnAt`/clear `idleObservedAt` (see the
+ * module header), so the idle clock can never accumulate and the box is
+ * never even probed. There is no customer behind a deleted account whose
+ * in-flight tool call this would interrupt, so for orphaned rows ONLY this
+ * pass skips the lease short-circuit and tells `reapRunningBox` to skip the
+ * busy probe too, going straight to `provider.stop()`. Every non-orphan row
+ * keeps the full lease + busy-probe protection unchanged. Gated by
+ * KORTIX_ORPHAN_ACCOUNT_REAP_ENABLED (default on); a failed account lookup
+ * fails safe to "no orphans this pass" rather than guessing.
  */
 export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapResult> {
   const ttlMs = autoStopTtlMs();
   const triggerTtlMs = triggerAutoStopTtlMs();
+  const orphanAccountBypassEnabled = process.env.KORTIX_ORPHAN_ACCOUNT_REAP_ENABLED !== 'false';
 
   const rows = (await db
     .select({
@@ -296,9 +347,16 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
       provider: sessionSandboxes.provider,
       externalId: sessionSandboxes.externalId,
       metadata: sessionSandboxes.metadata,
+      warmState: sql<string | null>`
+        ${projectSessions.metadata}->'warm_session'->>'state'
+      `,
       createdAt: sessionSandboxes.createdAt,
     })
     .from(sessionSandboxes)
+    .innerJoin(
+      projectSessions,
+      eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+    )
     .where(and(
       eq(sessionSandboxes.status, 'active'),
       isNotNull(sessionSandboxes.externalId),
@@ -312,16 +370,33 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
   // Only consulted for boxes the probe can't reach; null = the lookup itself
   // failed this pass, and unreachable boxes are then skipped (fail safe).
   const lastUsageBySession = await loadLastUsageBySession(rows.map((r) => r.sessionId));
+  // Batched, once per pass (bounded by REAP_BATCH_SIZE like everything else
+  // here — the shared REAP_CONCURRENCY cap keeps any resulting stop() calls
+  // from hammering the provider even if every row in the batch is an orphan).
+  const orphanAccountIds = orphanAccountBypassEnabled
+    ? await loadOrphanAccountIds(rows.map((r) => r.accountId))
+    : new Set<string>();
+
+  let orphanCandidates = 0;
+  let orphanStopped = 0;
 
   let cursor = 0;
   const worker = async () => {
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
+        if (row.warmState === 'available') {
+          result.skipped += 1;
+          continue;
+        }
+
         const providerStatus: SandboxStatus = await getProvider(row.provider).getStatus(row.externalId);
 
         if (providerStatus === 'running') {
-          if (hasActiveExecutionLease(row.metadata, now)) {
+          const isOrphanAccount = !!row.accountId && orphanAccountIds !== null && orphanAccountIds.has(row.accountId);
+          if (isOrphanAccount) orphanCandidates += 1;
+
+          if (!isOrphanAccount && hasActiveExecutionLease(row.metadata, now)) {
             result.busyVetoed += 1;
             continue;
           }
@@ -335,9 +410,13 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             now,
             ttlMs: isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs,
             fallbackLastMeaningful,
+            bypassBusyProbe: isOrphanAccount,
           });
           result[outcome] += 1;
-          if (outcome === 'stopped') result.billingClosed += 1;
+          if (outcome === 'stopped') {
+            result.billingClosed += 1;
+            if (isOrphanAccount) orphanStopped += 1;
+          }
           continue;
         }
 
@@ -373,6 +452,9 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
   };
 
   await Promise.all(Array.from({ length: Math.min(REAP_CONCURRENCY, rows.length) }, worker));
+  if (orphanCandidates > 0) {
+    console.log('[reaper] orphan-account sweep', { candidates: orphanCandidates, stopped: orphanStopped });
+  }
   return result;
 }
 

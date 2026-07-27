@@ -103,22 +103,78 @@
     {
       "idx": 14,
       "version": "7",
+      "when": 1784942520000,
+      "tag": "20260725012200_voice_call_turns",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785024428383,
+      "tag": "20260726000708_project_sessions_one_available_warm",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785078159762,
+      "tag": "20260726150239_voice_join_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
       "when": 1785097149786,
       "tag": "20260726201909_agi_tasks",
       "breakpoints": true
     },
     {
-      "idx": 15,
+      "idx": 18,
       "version": "7",
       "when": 1785108528911,
       "tag": "20260726232848_agi_observations",
       "breakpoints": true
     },
     {
-      "idx": 16,
+      "idx": 19,
       "version": "7",
       "when": 1785110298725,
       "tag": "20260726235818_agi_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785114368302,
+      "tag": "20260727010608_exact_trigger_scheduler",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785144061558,
+      "tag": "20260727092101_multi_connections_per_connector",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785151590373,
+      "tag": "20260727112630_usage_events_origin_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785152081893,
+      "tag": "20260727113441_project_sessions_origin_active_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785160455055,
+      "tag": "20260727135415_connection_policies",
       "breakpoints": true
     }
   ]

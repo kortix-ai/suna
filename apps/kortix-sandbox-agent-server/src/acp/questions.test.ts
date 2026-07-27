@@ -9,10 +9,17 @@ describe('OpenCode question ACP compatibility bridge', () => {
       method: string
       params: unknown
       id: string | number
+      options: { timeoutMs?: number | null }
     }> = []
     const connection = {
-      requestClient(method: string, params: unknown, id: string | number) {
-        calls.push({ method, params, id })
+      requestClient(
+        method: string,
+        params: unknown,
+        id: string | number,
+        _handle: (response: JsonRpcEnvelope) => Promise<void>,
+        options: { timeoutMs?: number | null } = {},
+      ) {
+        calls.push({ method, params, id, options })
       },
     }
 
@@ -39,6 +46,7 @@ describe('OpenCode question ACP compatibility bridge', () => {
       {
         method: 'session/request_input',
         id: 'kortix:question:question-1',
+        options: { timeoutMs: null },
         params: {
           sessionId: 'session-1',
           questions: [

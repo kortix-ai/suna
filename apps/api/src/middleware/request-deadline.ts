@@ -71,7 +71,6 @@ const EXEMPT_PREFIXES = [
 // can exceed the deadline while behaving correctly. Enumerated from 7 days of
 // prod duration data (2026-06-12).
 const EXEMPT_FRAGMENTS = [
-  '/turn-stream',
   '/turn-question',
   '/provision-stream',
   '/provision',               // managed repo create + sandbox boot

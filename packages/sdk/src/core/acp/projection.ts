@@ -11,6 +11,7 @@ import type {
   ToolPart,
 } from '@opencode-ai/sdk/v2/client';
 
+import { normalizeToolName, toolInfo } from '../turns/tool-registry';
 import type { AcpEnvelope, AcpJsonRpcId } from './types';
 
 export interface AcpMessageWithParts {
@@ -49,6 +50,45 @@ function stringifyOutput(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function toolOutput(value: unknown): string {
+  if (!isObject(value) || !Object.prototype.hasOwnProperty.call(value, 'output')) {
+    return stringifyOutput(value);
+  }
+  return stringifyOutput(value.output);
+}
+
+const ACP_KIND_TOOL: Record<string, string> = {
+  execute: 'bash',
+  read: 'read',
+  edit: 'edit',
+  delete: 'edit',
+  move: 'edit',
+  search: 'grep',
+  fetch: 'webfetch',
+};
+
+function looksLikeToolName(value: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value);
+}
+
+function nativeToolName(
+  update: Record<string, unknown>,
+  previous: ToolPart | null,
+): string {
+  if (previous) return previous.tool;
+  const title = asString(update.title);
+  if (title && looksLikeToolName(title)) return title;
+  const kind = asString(update.kind) ?? 'other';
+  return ACP_KIND_TOOL[kind] ?? kind;
+}
+
+function projectedToolTitle(tool: string, title: string | null): string {
+  if (!title || normalizeToolName(title) === normalizeToolName(tool)) {
+    return toolInfo(tool).label;
+  }
+  return title;
 }
 
 function nextGeneratedId(state: AcpProjection, prefix: string): string {
@@ -195,10 +235,15 @@ function projectTool(
       ? update.rawInput
       : previous?.state.input ?? {};
     const status = asString(update.status) ?? previous?.state.status ?? 'pending';
-    const tool = asString(update.kind) ?? previous?.tool ?? 'other';
-    const title = asString(update.title) ?? undefined;
+    const tool = nativeToolName(update, previous);
+    const title = projectedToolTitle(tool, asString(update.title));
     const previousTitle =
       previous?.state.status === 'running' ? previous.state.title : undefined;
+    const rawOutput = update.rawOutput;
+    const outputMetadata =
+      isObject(rawOutput) && isObject(rawOutput.metadata)
+        ? rawOutput.metadata
+        : {};
     const now = Date.now();
     let part: ToolPart;
     if (status === 'completed') {
@@ -212,9 +257,9 @@ function projectTool(
         state: {
           status: 'completed',
           input,
-          output: stringifyOutput(update.rawOutput),
+          output: toolOutput(rawOutput),
           title: title ?? previousTitle ?? tool,
-          metadata: {},
+          metadata: outputMetadata,
           time: {
             start:
               previous?.state.status === 'running'
@@ -235,7 +280,7 @@ function projectTool(
         state: {
           status: 'error',
           input,
-          error: stringifyOutput(update.rawOutput) || title || 'Tool call failed',
+          error: toolOutput(rawOutput) || title || 'Tool call failed',
           time: {
             start:
               previous?.state.status === 'running'
@@ -256,7 +301,7 @@ function projectTool(
         state: {
           status: 'running',
           input,
-          ...(title ? { title } : {}),
+          title,
           time: {
             start:
               previous?.state.status === 'running'

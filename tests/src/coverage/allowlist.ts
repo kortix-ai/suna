@@ -6,6 +6,16 @@ export interface AllowEntry {
 
 export const uncoveredAllow: AllowEntry[] = [
   {
+    method: "POST",
+    path: "/v1/platform/boot-timeline",
+    reason:
+      "sandbox-only telemetry sink called by the in-guest boot relay with a sandbox token; not an end-user API route",
+  },
+  // The three worker-only voice callbacks that used to be allowlisted here
+  // (/voice/prompt, /voice/run-command, /voice/turns) no longer exist: the
+  // worker now speaks JSON-RPC to a single MCP route, POST /v1/projects/:*/
+  // sessions/:*/mcp/voice, which VOICE-2 covers at its auth boundary.
+  {
     method: "PUT",
     path: "/v1/executor/projects/:*/connectors/:*/sensitive",
     reason:

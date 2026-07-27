@@ -1144,10 +1144,21 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
  * safe because a fresh session has no local work yet. No opencode restart
  * needed; opencode's file watcher picks up the changed files.
  */
-export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoInfo; after: RepoInfo }> {
+export async function syncWorkspaceToBase(
+  cfg: Config,
+  baseSha?: string,
+): Promise<{ before: RepoInfo; after: RepoInfo }> {
   const target = cfg.projectTarget
   const before = await readRepoInfo(target)
   if (!before) throw new Error('project repo is not materialized')
+  if (baseSha && before.commit === baseSha) {
+    logger.info('[git] workspace already matches base', {
+      base: cfg.defaultBranch,
+      branch: before.branch,
+      commit: before.commit,
+    })
+    return { before, after: before }
+  }
 
   const cloneCredential = await resolveCloneCredential(cfg)
   const base = cfg.defaultBranch
@@ -1157,8 +1168,9 @@ export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoIn
   if (fetched.code !== 0) throw new Error(`git fetch base failed: ${fetched.stderr}`)
 
   const branch = cfg.branchName || before.branch || base
+  const targetRef = baseSha ?? `refs/remotes/origin/${base}`
   const reset = await gitWithAuth(cloneCredential, cfg.repoUrl, [
-    '-C', target, 'checkout', '-B', branch, `refs/remotes/origin/${base}`,
+    '-C', target, 'checkout', '-B', branch, targetRef,
   ])
   if (reset.code !== 0) throw new Error(`git reset to base failed: ${reset.stderr}`)
 

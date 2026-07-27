@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 /**
  * The "Commits" tab of the workbench changes panel: the "Commit session changes"
  * box (`session.commit`), branches (`git.branches`), the commit list
@@ -26,7 +28,7 @@ import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import type { ProjectBranch, ProjectCommit } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, GitBranch, GitCommitHorizontal, Loader2, Scale } from 'lucide-react';
+import { Check, GitBranch, GitCommitHorizontal, Scale } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DiffStat, DiffView } from './diff-view';
@@ -118,7 +120,7 @@ export function CommitsView({
               disabled={commitSession.isPending}
             >
               {commitSession.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loading className="size-3.5" />
               ) : (
                 <Check className="size-3.5" />
               )}
@@ -142,7 +144,7 @@ export function CommitsView({
               onClick={() => setComparing(true)}
               disabled={!defaultBranch || versionDiff.isFetching}
             >
-              {versionDiff.isFetching ? <Loader2 className="size-3 animate-spin" /> : null}
+              {versionDiff.isFetching ? <Loading className="size-3" /> : null}
               Compare
             </Button>
           </CardTitle>
@@ -222,10 +224,12 @@ export function CommitsView({
             </div>
           ) : (
             commitItems.map((c) => (
-              <button
+              <Button
                 key={c.hash}
+                type="button"
+                variant="outline"
                 onClick={() => setOpenSha(c.hash)}
-                className="flex w-full items-start gap-2 rounded-lg border border-border bg-card/50 px-2.5 py-2 text-left transition-colors hover:bg-card"
+                className="h-auto w-full items-start justify-start gap-2 whitespace-normal rounded-lg bg-card/50 px-2.5 py-2 text-left hover:bg-card"
               >
                 <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
@@ -238,7 +242,7 @@ export function CommitsView({
                     <span>{relativeTime(c.committed_at ?? c.authored_at)}</span>
                   </div>
                 </div>
-              </button>
+              </Button>
             ))
           )}
         </div>

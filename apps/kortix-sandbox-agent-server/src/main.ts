@@ -384,7 +384,6 @@ async function startSessionRuntime(
 ): Promise<void> {
   const leaseContext = executionLeaseContextFromEnv()
   const executionLease = leaseContext ? new ExecutionLeaseReporter(leaseContext) : null
-  executionLease?.discover()
   const onSessionStatus = (opencodeSessionId: string, status: string) => {
     if (status === 'busy' || status === 'retry') executionLease?.markBusy(opencodeSessionId)
     else if (status === 'idle') executionLease?.markInactive(opencodeSessionId)
@@ -414,7 +413,6 @@ async function startSessionRuntime(
   // and this reconcile collapse to a single finalize; a reconnect after the turn
   // relayed is a no-op.
   const onConnected = () => {
-    executionLease?.discover()
     void reconcileExecutionLease(opencode, cfg, executionLease).catch((err) =>
       logger.warn('[execution-lease] status reconcile failed', { err: (err as Error).message }),
     )

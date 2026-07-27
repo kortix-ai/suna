@@ -211,6 +211,7 @@ export async function supabaseAuth(c: Context, next: Next) {
   const path = c.req.path;
   const sandboxTokenPathAllowed =
     path.endsWith('/git/clone-credential') ||
+    path.endsWith('/execution-lease') ||
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
@@ -691,6 +692,18 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
   // "what project/session/agent am I bound to?".
   if (path === '/v1/accounts/me') return;
+
+  // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
+  // This function is default-deny, and the in-sandbox `KORTIX_CLI_TOKEN` is
+  // exactly a project+session-scoped PAT, so without this branch the ONE caller
+  // these routes exist for gets a 403: every baked sandbox seeds a kortix-system
+  // skill telling the agent to run `kortix skills get <name>`.
+  // Safe to allow — the content is static template text that is byte-identical
+  // for every caller, carries no account or project data, and is served from the
+  // shipped @kortix/starter package rather than any per-tenant store. There is
+  // no scope to enforce here; the token gate is authentication, not
+  // authorization.
+  if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
 
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {

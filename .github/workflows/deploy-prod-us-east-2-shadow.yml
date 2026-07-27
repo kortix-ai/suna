@@ -1,0 +1,463 @@
+name: Deploy Prod US East 2 Shadow
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Runtime version reported by the image.
+        required: true
+        type: string
+      image_tag:
+        description: Immutable image tag. Defaults to the runtime version.
+        required: false
+        default: ""
+        type: string
+      source_sha:
+        description: Release source commit stored in the images.
+        required: true
+        type: string
+      synchronize_database:
+        description: Apply migrations and refresh application replication.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        description: DNS edit token for the `kortix.com` zone.
+        required: false
+      CLOUDFLARE_GLOBAL_API_KEY:
+        description: Global API key fallback.
+        required: false
+      CLOUDFLARE_EMAIL:
+        description: Account email for the global API key fallback.
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Runtime version reported by the image.
+        required: true
+        type: string
+      image_tag:
+        description: Immutable image tag. Defaults to the runtime version.
+        required: false
+        default: ""
+        type: string
+      source_sha:
+        description: Expected image commit. Leave empty only for a legacy image.
+        required: false
+        type: string
+      synchronize_database:
+        description: Apply migrations and refresh application replication.
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-prod-us-east-2-shadow
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  infrastructure:
+    name: Apply US East 2 shadow Terraform
+    runs-on: ubuntu-latest
+    environment: prod-use2-shadow
+    env:
+      AWS_REGION: us-east-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-prod-use2-terraform
+      TF_ROOT: infra/terraform/environments/prod-us-east-2-shadow
+      TARGET_ENV_BLOB: kortix-prod-us-east-2-env
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require Cloudflare credentials
+        run: |
+          set -euo pipefail
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Using CLOUDFLARE_API_TOKEN."
+            exit 0
+          fi
+          if [ -z "${CLOUDFLARE_API_KEY:-}" ] || [ -z "${CLOUDFLARE_EMAIL:-}" ]; then
+            echo "::error::Set CLOUDFLARE_API_TOKEN or both CLOUDFLARE_GLOBAL_API_KEY and CLOUDFLARE_EMAIL."
+            exit 1
+          fi
+          echo "Using CLOUDFLARE_GLOBAL_API_KEY with CLOUDFLARE_EMAIL."
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.9.8
+
+      - name: Load Terraform secret inputs
+        run: |
+          set -euo pipefail
+          secret_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$TARGET_ENV_BLOB" \
+              --region "$AWS_REGION" \
+              --query SecretString \
+              --output text
+          )"
+          secret_arn="$(
+            aws secretsmanager describe-secret \
+              --secret-id "$TARGET_ENV_BLOB" \
+              --region "$AWS_REGION" \
+              --query ARN \
+              --output text
+          )"
+          printf 'TF_VAR_secret_arn=%s\n' "$secret_arn" >> "$GITHUB_ENV"
+          printf 'TF_VAR_secret_keys=%s\n' "$(jq -c 'keys' <<<"$secret_json")" >> "$GITHUB_ENV"
+
+      - name: Plan create-only infrastructure changes
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_ROOT" init -input=false
+          terraform -chdir="$TF_ROOT" plan -input=false -out=shadow.tfplan
+          terraform -chdir="$TF_ROOT" show -json shadow.tfplan > /tmp/shadow-plan.json
+          blocked_destructive_changes="$(
+            jq '[
+              .resource_changes[]
+              | select(.change.actions | index("delete"))
+              | select(
+                  (
+                    .address != "module.api.aws_ecs_task_definition.this"
+                    and .address != "module.gateway.aws_ecs_task_definition.this"
+                  )
+                  or (
+                    .change.actions != ["delete", "create"]
+                    and .change.actions != ["create", "delete"]
+                  )
+                )
+            ] | length' /tmp/shadow-plan.json
+          )"
+          task_definition_replacements="$(
+            jq '[
+              .resource_changes[]
+              | select(
+                  .address == "module.api.aws_ecs_task_definition.this"
+                  or .address == "module.gateway.aws_ecs_task_definition.this"
+                )
+              | select(
+                  .change.actions == ["delete", "create"]
+                  or .change.actions == ["create", "delete"]
+                )
+            ] | length' /tmp/shadow-plan.json
+          )"
+          if [ "$blocked_destructive_changes" != "0" ]; then
+            echo "::error::US East 2 shadow plan contains $blocked_destructive_changes blocked destructive changes."
+            exit 1
+          fi
+          echo "Allowed immutable ECS task-definition replacements: $task_definition_replacements."
+          jq -r '
+            [.resource_changes[].change.actions | join(",")]
+            | group_by(.)
+            | map({action:.[0], count:length})
+          ' /tmp/shadow-plan.json
+
+      - name: Apply US East 2 infrastructure
+        run: terraform -chdir="$TF_ROOT" apply -input=false -auto-approve shadow.tfplan
+
+  deploy:
+    name: Deploy API and gateway to US shadow
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    env:
+      AWS_REGION: us-east-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      VERSION: ${{ inputs.version }}
+      IMAGE_TAG: ${{ inputs.image_tag || inputs.version }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      SOURCE_SECRET_ID: kortix-prod-env
+      TARGET_ENV_BLOB: kortix-prod-us-east-2-env
+      API_URL: https://api-use2-shadow.kortix.com
+      GATEWAY_URL: https://gateway-use2-shadow.kortix.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-staging\.[0-9a-f]{8})?$'; then
+            echo "::error::version must use X.Y.Z or X.Y.Z-staging.<sha8> format."
+            exit 1
+          fi
+          if ! printf '%s' "$IMAGE_TAG" | grep -Eq '^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$'; then
+            echo "::error::image_tag is not a valid Docker tag."
+            exit 1
+          fi
+          if [ -n "${SOURCE_SHA:-}" ] && ! printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::source_sha must be an empty value or a 40-character lowercase Git SHA."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate shadow runtime controls
+        run: |
+          set -euo pipefail
+          secret_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$TARGET_ENV_BLOB" \
+              --region "$AWS_REGION" \
+              --query SecretString \
+              --output text
+          )"
+          jq -e '
+            .ENV_MODE == "cloud"
+            and .INTERNAL_KORTIX_ENV == "prod"
+            and .KORTIX_BILLING_INTERNAL_ENABLED == "true"
+            and .KORTIX_WORKERS_ENABLED == "false"
+            and .SCHEDULER_ENABLED == "false"
+            and .CHANNELS_ENABLED == "false"
+            and .KORTIX_MANAGED_PROVIDER_ENABLED == "true"
+            and .KORTIX_PRERESUME_ENABLED == "false"
+            and .KORTIX_PROJECT_MAINTENANCE_ENABLED == "false"
+            and .KORTIX_TRIGGER_SCHEDULER_ENABLED == "false"
+            and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
+            and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
+            and .KORTIX_WARM_POOL_ENABLED == "false"
+            and .KORTIX_WARM_SNAPSHOT_ENABLED == "false"
+            and .TUNNEL_ENABLED == "false"
+            and .POOL_ENABLED == "false"
+          ' <<<"$secret_json" >/dev/null
+          echo "US shadow runtime controls match the prepared cutover state."
+
+      - name: Keep shadow DNS proxied
+        run: bash scripts/prod-us-east-2/ensure-shadow-dns.sh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+
+      - name: Install database dependencies
+        if: inputs.synchronize_database
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Load source and target database URLs
+        if: inputs.synchronize_database
+        run: |
+          set -euo pipefail
+          source_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$SOURCE_SECRET_ID" \
+              --region eu-west-2 \
+              --query SecretString \
+              --output text
+          )"
+          target_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$TARGET_ENV_BLOB" \
+              --region "$AWS_REGION" \
+              --query SecretString \
+              --output text
+          )"
+          source_database_url="$(jq -er '.DATABASE_URL' <<<"$source_json")"
+          target_database_url="$(jq -er '.DATABASE_URL' <<<"$target_json")"
+          echo "::add-mask::$source_database_url"
+          echo "::add-mask::$target_database_url"
+          printf 'SOURCE_DATABASE_URL=%s\n' "$source_database_url" >> "$GITHUB_ENV"
+          printf 'TARGET_DATABASE_URL=%s\n' "$target_database_url" >> "$GITHUB_ENV"
+
+      - name: Apply migrations to the US shadow database
+        if: inputs.synchronize_database
+        run: |
+          set -euo pipefail
+          migration_database_url="$(
+            DATABASE_URL="$TARGET_DATABASE_URL" \
+              node scripts/prod-us-east-2/node-pg-database-url.mjs
+          )"
+          echo "::add-mask::$migration_database_url"
+          DATABASE_URL="$migration_database_url" pnpm --filter @kortix/db migrate
+
+      - name: Refresh application replication
+        if: inputs.synchronize_database
+        run: bash scripts/prod-us-east-2/refresh-replication.sh
+        env:
+          ALLOW_REPLICATION_REFRESH: "1"
+
+      - name: Synchronize current avatar objects
+        if: inputs.synchronize_database
+        run: TARGET_SECRET_ID="$TARGET_ENV_BLOB" bash scripts/prod-us-east-2/storage-sync.sh
+
+      - name: Deploy released images
+        run: |
+          set -euo pipefail
+          bash infra/scripts/ecs-deploy.sh \
+            prod-use2-shadow \
+            "kortix/kortix-api:${IMAGE_TAG}" \
+            --version "$VERSION"
+          bash infra/scripts/ecs-deploy.sh \
+            prod-use2-shadow \
+            "kortix/kortix-gateway:${IMAGE_TAG}" \
+            --service gateway \
+            --version "$VERSION"
+
+      - name: Verify ECS capacity and task images
+        run: |
+          set -euo pipefail
+          verify_service() {
+            cluster="$1"
+            service="$2"
+            container="$3"
+            expected_image="$4"
+
+            for attempt in $(seq 1 60); do
+              service_json="$(
+                aws ecs describe-services \
+                  --region "$AWS_REGION" \
+                  --cluster "$cluster" \
+                  --services "$service"
+              )"
+              desired="$(jq -r '.services[0].desiredCount' <<<"$service_json")"
+              running="$(jq -r '.services[0].runningCount' <<<"$service_json")"
+              rollout="$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY") | .rolloutState' <<<"$service_json")"
+              failed="$(jq -r '[.services[0].deployments[].failedTasks] | add' <<<"$service_json")"
+              task_definition="$(jq -r '.services[0].taskDefinition' <<<"$service_json")"
+              live_image="$(
+                aws ecs describe-task-definition \
+                  --region "$AWS_REGION" \
+                  --task-definition "$task_definition" \
+                  --query "taskDefinition.containerDefinitions[?name=='$container'].image | [0]" \
+                  --output text
+              )"
+
+              echo "$service attempt $attempt/60: desired=$desired running=$running rollout=$rollout failed=$failed image=$live_image"
+              if [ "$desired" -ge 2 ] \
+                && [ "$running" = "$desired" ] \
+                && [ "$rollout" = "COMPLETED" ] \
+                && [ "$failed" = "0" ] \
+                && [ "$live_image" = "$expected_image" ]; then
+                echo "$service verified: $running/$desired tasks, rollout=$rollout, image=$live_image"
+                return
+              fi
+              sleep 10
+            done
+
+            echo "::error::$service failed verification after 10 minutes: desired=$desired running=$running rollout=$rollout failed=$failed image=$live_image"
+            exit 1
+          }
+
+          verify_service \
+            kortix-prod-use2 \
+              kortix-prod-use2 \
+              api \
+              "kortix/kortix-api:${IMAGE_TAG}"
+            verify_service \
+              kortix-prod-use2-gateway \
+              kortix-prod-use2-gateway \
+              gateway \
+              "kortix/kortix-gateway:${IMAGE_TAG}"
+
+      - name: Verify shadow endpoints
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            api_body="$(curl -fsS --max-time 10 "$API_URL/v1/health" 2>/dev/null || true)"
+            gateway_live="$(curl -fsS --max-time 10 "$GATEWAY_URL/health/live" 2>/dev/null || true)"
+            gateway_health="$(curl -fsS --max-time 10 "$GATEWAY_URL/health" 2>/dev/null || true)"
+            api_version="$(jq -r '.version // empty' <<<"$api_body" 2>/dev/null || true)"
+            gateway_version="$(jq -r '.version // empty' <<<"$gateway_live" 2>/dev/null || true)"
+            gateway_commit="$(jq -r '.commit // empty' <<<"$gateway_live" 2>/dev/null || true)"
+            api_dependency="$(jq -r '.checks.api.status // empty' <<<"$gateway_health" 2>/dev/null || true)"
+            commit_ok=1
+            if [ -n "${SOURCE_SHA:-}" ] && [ "$gateway_commit" != "$SOURCE_SHA" ]; then
+              commit_ok=0
+            fi
+
+            if [ "$api_version" = "$VERSION" ] \
+              && [ "$gateway_version" = "$VERSION" ] \
+              && [ "$api_dependency" = "up" ] \
+              && [ "$commit_ok" = "1" ]; then
+              echo "US shadow verified: API=$api_version gateway=$gateway_version commit=${gateway_commit:-unavailable} dependency=$api_dependency"
+              exit 0
+            fi
+
+            echo "Shadow verification $attempt/40: API=${api_version:-unreachable} gateway=${gateway_version:-unreachable} commit=${gateway_commit:-unavailable} dependency=${api_dependency:-unavailable}"
+            sleep 15
+          done
+
+          echo "::error::US shadow endpoints did not pass within 10 minutes."
+          exit 1
+
+      - name: Verify target Auth, API, OAuth, MFA, and Storage
+        run: |
+          set -euo pipefail
+          TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
+          TARGET_AWS_REGION="$AWS_REGION" \
+          TARGET_SUPABASE_URL_OVERRIDE="https://uhrwvisbqjfxhxjvoofd.supabase.co" \
+          TARGET_API_URL="$API_URL" \
+          TARGET_FRONTEND_URL="https://us.kortix.com" \
+          TARGET_AUTH_SEQUENCE_HEADROOM="100000000" \
+          KEEP_TARGET_AUTH_SEQUENCE_HEADROOM="1" \
+            bash scripts/prod-us-east-2/target-smoke.sh
+
+      - name: Install frontend Auth smoke dependencies
+        run: |
+          set -euo pipefail
+          cd tests
+          bun install --frozen-lockfile --ignore-scripts
+          bunx playwright install --with-deps chromium
+
+      - name: Verify public API contracts
+        run: |
+          set -euo pipefail
+          cd tests
+          KE2E_API_URL="$API_URL/v1" \
+          KE2E_BASE_URL="https://us.kortix.com" \
+          KE2E_GATEWAY_URL="$GATEWAY_URL" \
+          KE2E_TARGET="custom" \
+            bun bin/ke2e.ts run \
+              --id ACC-1,ACC-2,ACC-4,DOCS-1,SYS-1,SYS-2,SYS-4,SYS-5,SYS-6,SYS-8 \
+              --workers 1
+
+      - name: Verify frontend password login and authenticated shell
+        run: |
+          set -euo pipefail
+          TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
+          TARGET_AWS_REGION="$AWS_REGION" \
+          TARGET_SUPABASE_URL_OVERRIDE="https://uhrwvisbqjfxhxjvoofd.supabase.co" \
+          TARGET_API_URL="$API_URL/v1" \
+          TARGET_FRONTEND_URL="https://us.kortix.com" \
+          TARGET_AUTH_SEQUENCE_HEADROOM="100000000" \
+            bash scripts/prod-us-east-2/frontend-auth-smoke.sh
+
+      - name: Summary
+        run: |
+          {
+            echo "### US East 2 production shadow"
+            echo "- API: \`kortix/kortix-api:${IMAGE_TAG}\` reports \`${VERSION}\`"
+            echo "- Gateway: \`kortix/kortix-gateway:${IMAGE_TAG}\` reports \`${VERSION}\`"
+            echo "- API tasks: 2 or more"
+            echo "- Gateway tasks: 2 or more"
+            echo "- Production traffic: unchanged"
+            echo "- Workers and schedulers: disabled in \`kortix-prod-us-east-2-env\`"
+          } >> "$GITHUB_STEP_SUMMARY"

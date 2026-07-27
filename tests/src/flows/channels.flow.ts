@@ -496,24 +496,26 @@ flow(
 );
 
 // CHN-20 — send-primitive IAM gate (project.connector.write). The Slack file
-// upload proxy and the meet/speak proxy POST to a channel using the project's
-// own bot credentials; the IAM enforcement audit found both were gated by
-// nothing but project-READ, so ANY project-read caller could post arbitrary
-// files to Slack / make the meeting bot speak. They now assert
+// upload proxy POSTs to a channel using the project's own bot credentials; the
+// IAM enforcement audit found it was gated by nothing but project-READ, so ANY
+// project-read caller could post arbitrary files to Slack. It now asserts
 // project.connector.write (the same leaf that gates connect/disconnect and the
 // channel-bindings route). Proven black-box: a floor MEMBER (project.read, no
-// connector.write) is rejected 403 BEFORE any Slack/ElevenLabs call, while an
-// EDITOR (holds connector.write) passes the gate (fails later on missing
-// install/keys, never 403). The scoped-agent-token variant (agent grants are
-// server-minted at session start, not reachable over HTTP here) is proven at
-// the API layer in integration-project-read-leaf-gates-http.test.ts.
+// connector.write) is rejected 403 BEFORE any Slack call, while an EDITOR
+// (holds connector.write) passes the gate (fails later on missing install,
+// never 403). The scoped-agent-token variant (agent grants are server-minted at
+// session start, not reachable over HTTP here) is proven at the API layer in
+// integration-project-read-leaf-gates-http.test.ts.
+//
+// The meet/speak proxy was the other primitive here; it went away with the
+// notetaker (see §VOICE) — the voice channel has no send primitive reachable
+// over user auth at all.
 flow(
   "CHN-20",
   {
     domain: "channels",
     routes: [
       "POST /v1/projects/:projectId/channels/slack/file/upload",
-      "POST /v1/projects/:projectId/channels/meet/speak",
     ],
   },
   async (ctx) => {
@@ -529,11 +531,6 @@ flow(
         name: "slack file upload",
         path: "/v1/projects/:projectId/channels/slack/file/upload",
         body: { channel: "C1", filename: "a.txt", content_base64: "eA==" },
-      },
-      {
-        name: "meet speak",
-        path: "/v1/projects/:projectId/channels/meet/speak",
-        body: { bot_id: "bot_x", text: "hi" },
       },
     ] as const;
 

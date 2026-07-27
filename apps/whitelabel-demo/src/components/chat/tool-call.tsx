@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 /**
  * One agent tool call, rendered as a tidy collapsible card: an icon + humanized
  * name + a one-line summary, a live status indicator, and (expanded) a
@@ -36,7 +38,6 @@ import {
   FileText,
   FolderSearch,
   Globe,
-  Loader2,
   type LucideIcon,
   Pencil,
   SquareTerminal,
@@ -55,7 +56,7 @@ const CATEGORY_ICON: Record<ToolCategory, LucideIcon> = {
 
 function StatusDot({ status }: { status: ToolView['status'] }) {
   if (status === 'running' || status === 'pending')
-    return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />;
+    return <Loading className="size-3.5 shrink-0 text-muted-foreground" />;
   if (status === 'error') return <CircleAlert className="size-3.5 shrink-0 text-destructive" />;
   return <Check className="size-3.5 shrink-0 text-emerald-500" />;
 }
@@ -76,7 +77,9 @@ function summaryFor(vm: ToolViewModel): string {
     case 'task':
       return vm.description;
     case 'todo':
-      return vm.items.length > 0 ? `${vm.items.length} item${vm.items.length === 1 ? '' : 's'}` : '';
+      return vm.items.length > 0
+        ? `${vm.items.length} item${vm.items.length === 1 ? '' : 's'}`
+        : '';
     case 'question':
       return vm.questions[0]?.question ?? '';
     case 'generic':
@@ -265,7 +268,12 @@ function QuestionBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'question' }>
   );
 }
 
-function GenericBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'generic' }>; isError: boolean }) {
+function GenericBody({
+  vm,
+}: {
+  vm: Extract<ToolViewModel, { kind: 'generic' }>;
+  isError: boolean;
+}) {
   return (
     <div className="space-y-2">
       {vm.inputPretty && (
@@ -316,14 +324,12 @@ export function ToolCall({ tool }: { tool: ToolView }) {
   const summary = summaryFor(vm);
   const isError = tool.status === 'error';
 
-  const hasDetail =
-    vm.kind !== 'generic' ||
-    !!vm.inputPretty ||
-    !!vm.outputPretty ||
-    !!summary;
+  const hasDetail = vm.kind !== 'generic' || !!vm.inputPretty || !!vm.outputPretty || !!summary;
 
   return (
     <Collapsible
+      data-slot="tool-call"
+      data-tool-status={tool.status}
       className={cn(
         'rounded-lg border bg-card/50',
         isError ? 'border-destructive/30 bg-destructive/[0.03]' : 'border-border',
@@ -334,7 +340,10 @@ export function ToolCall({ tool }: { tool: ToolView }) {
         className="group flex w-full items-center gap-2 px-2.5 py-2 text-left disabled:cursor-default"
       >
         <Icon
-          className={cn('size-3.5 shrink-0', isError ? 'text-destructive' : 'text-muted-foreground')}
+          className={cn(
+            'size-3.5 shrink-0',
+            isError ? 'text-destructive' : 'text-muted-foreground',
+          )}
         />
         <span
           className={cn(

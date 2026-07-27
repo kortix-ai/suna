@@ -69,16 +69,16 @@ export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
-export const MEET_RESERVED_SLUG = 'kortix_meet';
+export const VOICE_RESERVED_SLUG = 'kortix_voice';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
-  'meet',
+  'voice',
   ...Object.keys(RESERVED_SLUG_PROVIDERS),
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'meet';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'voice';
 
 type ConnectorAuthType =
   | 'bearer'

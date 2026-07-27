@@ -21,7 +21,7 @@ export interface AcpClientOptions {
 type PendingRequest = {
   resolve(value: unknown): void;
   reject(error: Error): void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | null;
 };
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
@@ -98,13 +98,24 @@ export class AcpClient {
   }
 
   async request<T = unknown>(method: string, params?: unknown): Promise<T> {
+    return this.requestWithTimeout<T>(method, params, this.requestTimeoutMs);
+  }
+
+  private async requestWithTimeout<T>(
+    method: string,
+    params: unknown,
+    timeoutMs: number | null,
+  ): Promise<T> {
     const id = `${this.idPrefix}-${++this.nextId}`;
     const key = JSON.stringify(id);
     const result = new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(key);
-        reject(new Error(`Timed out waiting for ACP response to ${method}`));
-      }, this.requestTimeoutMs);
+      const timer =
+        timeoutMs === null
+          ? null
+          : setTimeout(() => {
+              this.pending.delete(key);
+              reject(new Error(`Timed out waiting for ACP response to ${method}`));
+            }, timeoutMs);
       this.pending.set(key, {
         resolve: (value) => resolve(value as T),
         reject,
@@ -127,7 +138,7 @@ export class AcpClient {
     } catch (error) {
       const pending = this.pending.get(key);
       if (pending) {
-        clearTimeout(pending.timer);
+        if (pending.timer) clearTimeout(pending.timer);
         this.pending.delete(key);
         pending.reject(error instanceof Error ? error : new Error(String(error)));
       }
@@ -163,10 +174,10 @@ export class AcpClient {
   }
 
   prompt(sessionId: string, prompt: AcpContentBlock[]) {
-    return this.request<{
+    return this.requestWithTimeout<{
       stopReason: string;
       usage?: Record<string, unknown>;
-    }>('session/prompt', { sessionId, prompt });
+    }>('session/prompt', { sessionId, prompt }, null);
   }
 
   cancel(sessionId: string) {
@@ -300,7 +311,7 @@ export class AcpClient {
     const key = JSON.stringify(response.id);
     const pending = this.pending.get(key);
     if (!pending) return;
-    clearTimeout(pending.timer);
+    if (pending.timer) clearTimeout(pending.timer);
     this.pending.delete(key);
     if (response.error) {
       pending.reject(

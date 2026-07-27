@@ -32,6 +32,7 @@ export function publishQuestionRequest(
     },
     `kortix:question:${request.id}`,
     handle,
+    { timeoutMs: null },
   )
 }
 

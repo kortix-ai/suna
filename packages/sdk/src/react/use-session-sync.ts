@@ -23,6 +23,7 @@ const EMPTY_MESSAGES: MessageWithParts[] = [];
 const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_TODOS: Todo[] = [];
 const IDLE_STATUS = { type: 'idle' } as SessionStatus;
+const BUSY_STATUS = { type: 'busy' } as SessionStatus;
 const MESSAGE_CACHE_MAX = 20;
 const messageCache = new Map<
   string,
@@ -99,9 +100,11 @@ export function useSessionSync(sessionId: string) {
     buildMessages(sessionId, state.messages[sessionId], state.parts),
   );
 
-  const status = useSyncStore(
+  const runtimeStatus = useSyncStore(
     (state) => state.sessionStatus[sessionId] ?? IDLE_STATUS,
   ) as SessionStatus;
+  const status =
+    sync.isPromptObservedBusy && runtimeStatus.type === 'idle' ? BUSY_STATUS : runtimeStatus;
   const diffs = useSyncStore((state) => state.diffs[sessionId]) as FileDiff[] | undefined;
   const todos = useSyncStore((state) => state.todos[sessionId]) as Todo[] | undefined;
 

@@ -11,7 +11,7 @@ import { Segmented } from './agent-editor-primitives';
 import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
 import { cn } from '@/lib/utils';
 import type { AgentGrantSetV2 } from '@kortix/sdk';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 type GrantMode = 'all' | 'pick' | 'none';
 
@@ -80,12 +80,19 @@ export function GrantSetField({
   options,
   emptyLabel,
   allLabel,
+  rowAccessory,
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
   options: { id: string; label: string }[];
   emptyLabel: string;
   allLabel: string;
+  /** Optional control rendered BESIDE each granted row (e.g. the connectors
+   *  field's "personal" toggle). The row itself is a `<button>`, so an
+   *  interactive accessory cannot be nested inside it — when this returns a
+   *  node the row is wrapped in a flex container and the accessory becomes a
+   *  sibling. Fields that pass nothing render exactly as before. */
+  rowAccessory?: (id: string, isSelected: boolean) => ReactNode;
 }) {
   return (
     <GrantModeField
@@ -105,14 +112,16 @@ export function GrantSetField({
             {rows.map((o) => {
               const isSel = selected.has(o.id);
               const isOrphan = !optionIds.has(o.id);
-              return (
+              const accessory = rowAccessory?.(o.id, isSel);
+              const row = (
                 <button
                   key={o.id}
                   type="button"
                   aria-pressed={isSel}
                   onClick={() => toggle(o.id)}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-[color,background-color,transform] active:scale-[0.96]',
+                    'flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-[color,background-color,transform] active:scale-[0.96]',
+                    accessory ? 'min-w-0 flex-1' : 'w-full',
                     isSel ? 'bg-secondary' : 'hover:bg-muted/50',
                   )}
                 >
@@ -127,6 +136,14 @@ export function GrantSetField({
                   <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
                   {isOrphan && <span className="text-kortix-orange">missing</span>}
                 </button>
+              );
+              return accessory ? (
+                <div key={o.id} className="flex items-center gap-1">
+                  {row}
+                  {accessory}
+                </div>
+              ) : (
+                row
               );
             })}
           </div>

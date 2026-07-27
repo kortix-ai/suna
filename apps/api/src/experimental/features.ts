@@ -100,15 +100,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => false,
   },
   {
-    key: 'meet',
-    name: 'Meetings',
+    key: 'voice',
+    name: 'Voice',
     description:
-      'Send a notetaker bot to your calls — Google Meet, Zoom, or Microsoft Teams — to record, transcribe with speaker labels, answer when addressed, and speak back in a voice you choose. Powered by Recall.ai; the agent drives it through the `meet` channel CLI.',
+      'Give the agent a live voice call it can start and hold a real spoken conversation in: it listens continuously, answers in its own voice, and hands work off to itself in the background while the call continues. The agent spawns the call and shares a join link with whoever should be on it — it does not join a meeting itself.',
     stability: 'experimental',
-    // Master kill switch (the global gate): when off, Meet disappears platform-wide
-    // and every project falls back to no meeting bot — mirrors LLM Gateway.
-    available: () => config.MEET_ENABLED,
-    // Explicit opt-in: a project enables Meet in Settings.
+    // Always listable; a project turns it on in Settings like any other
+    // experiment. Credentials (LIVEKIT_*) are still resolved server-side per
+    // project and a missing one surfaces as an error at spawn time — which is
+    // the right place to find out, rather than the feature silently not
+    // existing.
+    available: () => true,
+    // Explicit opt-in: a project enables voice in Settings.
     platformDefault: () => false,
   },
   {
@@ -129,7 +132,7 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     key: 'acp_runtime',
     name: 'ACP Runtime',
     description:
-      'Use the Agent Client Protocol for this project session interface. Disable this experiment to return to the OpenCode REST client.',
+      'Use the Agent Client Protocol for this project session interface. Disable this experiment to use the compatibility transport.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

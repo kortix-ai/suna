@@ -20,6 +20,7 @@ import {
   accountMembers,
   projects,
   projectMembers,
+  projectSessions,
   projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
@@ -148,6 +149,23 @@ describe('sandbox compute provider attribution', () => {
     expect(indexNames(sandboxComputeSessions)).toContain(
       'idx_sandbox_compute_sessions_provider_time',
     );
+  });
+});
+
+describe('warm project session uniqueness', () => {
+  test('allows one available warm session per project and creator', () => {
+    const index = getTableConfig(projectSessions).indexes.find(
+      (candidate) =>
+        candidate.config.name === 'idx_project_sessions_one_available_warm',
+    );
+
+    expect(index).toBeDefined();
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.columns.map((column: any) => column.name)).toEqual([
+      'project_id',
+      'created_by',
+    ]);
+    expect(index?.config.where).toBeDefined();
   });
 });
 

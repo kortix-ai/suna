@@ -28,8 +28,17 @@ import { persist } from 'zustand/middleware';
 // 'actions' = tool calls · 'browser' = internal browser · 'explorer' = in-sandbox
 // file explorer + preview · 'terminal' = live PTY shell into the sandbox ·
 // 'files' = git changes for this session · 'audit' = governed-action trail +
-// pending approvals for this session.
-export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'terminal' | 'files' | 'audit';
+// pending approvals for this session · 'voice' = the live/past voice-call
+// transcript for this session (spoken turns + ask_kortix/run_command calls
+// the voice-agent worker made — see session-voice-transcript-shared.ts).
+export type SessionPanelView =
+  | 'actions'
+  | 'browser'
+  | 'explorer'
+  | 'terminal'
+  | 'files'
+  | 'audit'
+  | 'voice';
 
 /**
  * A pending "reveal this file in the Files explorer" request for a session.
