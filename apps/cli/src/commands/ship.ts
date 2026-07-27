@@ -131,6 +131,80 @@ export function resolveProvisionShipGitTarget(project: ProvisionResponse): ShipG
   };
 }
 
+/**
+ * A managed project can only be pushed with an exported provider token when the
+ * host's managed-git backend is a GitHub App installation. Hosts backed by a
+ * server-global PAT deliberately refuse to hand that credential out (the API
+ * answers 503 / 409 on `/git-token`) because it is not repo-scoped.
+ *
+ * That refusal is correct, but it is not fatal: the project's own authenticated
+ * git proxy (`git_origin_url`) accepts the caller's Kortix token and is already
+ * scoped to this project. Prefer it over failing the ship.
+ */
+export function isManagedTokenExportUnavailable(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 503 || err.status === 409);
+}
+
+export function resolveManagedProxyFallback(project: {
+  git_origin_url?: string | null;
+}): ShipGitTarget | null {
+  if (!isGitProxyUrl(project.git_origin_url)) return null;
+  return {
+    repoUrl: project.git_origin_url!,
+    credentialMode: 'kortix-token',
+  };
+}
+
+export interface ManagedPushPlan {
+  repoUrl: string;
+  pushToken: string | null;
+  pushUsername: string;
+  viaProxy: boolean;
+}
+
+/**
+ * Resolve the credential + upstream for a managed push: mint a repo-scoped
+ * provider token when the host can, otherwise fall back to the project git
+ * proxy. Never falls back to a server-global PAT — the API still refuses to
+ * export one; we simply stop treating that refusal as an unrecoverable error.
+ */
+export async function resolveManagedPushPlan(
+  client: Pick<ApiClient, 'post'>,
+  project: { project_id: string; repo_url: string; git_origin_url?: string | null },
+  kortixToken: string,
+  seed?: { pushToken?: string | null; pushUsername?: string | null },
+): Promise<ManagedPushPlan> {
+  if (seed?.pushToken) {
+    return {
+      repoUrl: project.repo_url,
+      pushToken: seed.pushToken,
+      pushUsername: seed.pushUsername ?? 'x-access-token',
+      viaProxy: false,
+    };
+  }
+
+  try {
+    const tok = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
+    return {
+      repoUrl: project.repo_url,
+      pushToken: tok.push_token,
+      pushUsername: tok.git_username ?? 'x-access-token',
+      viaProxy: false,
+    };
+  } catch (err) {
+    const fallback = isManagedTokenExportUnavailable(err)
+      ? resolveManagedProxyFallback(project)
+      : null;
+    if (!fallback) throw err;
+    return {
+      repoUrl: fallback.repoUrl,
+      pushToken: kortixToken,
+      pushUsername: 'x-access-token',
+      viaProxy: true,
+    };
+  }
+}
+
 export function resolveExistingShipGitTarget(project: ProjectSummary): ShipGitTarget {
   if (projectIsManaged(project)) {
     return {
@@ -645,18 +719,22 @@ async function shipFirstTime(
     project = prov;
     const target = resolveProvisionShipGitTarget(prov);
     repoUrl = target.repoUrl;
-    pushToken = prov.push_token;
-    pushUsername = prov.git_username ?? pushUsername;
     // Older/self-hosted provision responses may omit an exportable token even
     // though the managed project can mint a repo-scoped App token afterward.
     // Heal that boundary before attempting git push; never fall back to a
-    // server-global PAT.
-    if (!pushToken) {
-      const tok = await client.post<GitTokenResponse>(
-        `/projects/${project.project_id}/git-token`,
+    // server-global PAT — when the host cannot export one at all, push through
+    // the project's own authenticated git proxy instead of failing the ship.
+    const plan = await resolveManagedPushPlan(client, prov, auth.token, {
+      pushToken: prov.push_token,
+      pushUsername: prov.git_username ?? pushUsername,
+    });
+    repoUrl = plan.repoUrl;
+    pushToken = plan.pushToken;
+    pushUsername = plan.pushUsername;
+    if (plan.viaProxy) {
+      process.stdout.write(
+        `  ${C.dim}managed push token unavailable on this host — pushing through the project git proxy${C.reset}\n`,
       );
-      pushToken = tok.push_token;
-      pushUsername = tok.git_username ?? pushUsername;
     }
     setOrigin(repoUrl);
   }
@@ -721,19 +799,28 @@ async function shipExisting(
   // managed upstream URL. Non-managed proxy pushes use the Kortix CLI token.
   let pushToken: string | null = null;
   let pushUsername = 'x-access-token';
+  let repoUrlForPush = repoUrl;
+  let pushedViaProxy = false;
   if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
   } else if (target.credentialMode === 'managed-git-token') {
-    const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
-    pushToken = tok.push_token;
-    pushUsername = tok.git_username ?? pushUsername;
+    const plan = await resolveManagedPushPlan(client, project, auth.token);
+    pushToken = plan.pushToken;
+    pushUsername = plan.pushUsername;
+    repoUrlForPush = plan.repoUrl;
+    pushedViaProxy = plan.viaProxy;
+    if (plan.viaProxy) {
+      process.stdout.write(
+        `  ${C.dim}managed push token unavailable on this host — pushing through the project git proxy${C.reset}\n`,
+      );
+    }
   }
   // Managed projects own the remote URL, so keep origin aligned with the
   // upstream that matches the freshly minted provider token. BYO repos may
   // have lost their remote (fresh clone of a linked repo); heal only when
   // missing so user-managed credentials stay untouched.
-  if (managed) setOrigin(repoUrl);
-  else ensureOrigin(repoUrl);
+  if (managed) setOrigin(repoUrlForPush);
+  else ensureOrigin(repoUrlForPush);
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
@@ -1029,7 +1116,8 @@ function surface(err: unknown): number {
     } else if (err.status === 503) {
       process.stderr.write(
         `${status.err(err.message)}\n` +
-          `  ${C.dim}Managed git isn't configured on this host. Pass ${C.reset}${C.cyan}--origin <git-url>${C.reset}${C.dim} to use your own remote.${C.reset}\n`,
+          `  ${C.dim}This host can't export a managed git push credential, and this project has no git proxy origin to fall back to.${C.reset}\n` +
+          `  ${C.dim}Pass ${C.reset}${C.cyan}--origin <git-url>${C.reset}${C.dim} to use your own remote.${C.reset}\n`,
       );
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
