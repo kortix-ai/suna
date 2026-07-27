@@ -14,6 +14,12 @@ const frontendSmoke = readFileSync(
   new URL("./frontend-auth-smoke.sh", import.meta.url),
   "utf8",
 );
+const nestedE2ePackage = JSON.parse(
+  readFileSync(
+    new URL("../../tests/e2e/package.json", import.meta.url),
+    "utf8",
+  ),
+);
 const shadowWorkflow = readFileSync(
   new URL(
     "../../.github/workflows/deploy-prod-us-east-2-shadow.yml",
@@ -96,6 +102,13 @@ test("frontend smoke removes and counts password-recovery flow state", () => {
   assert.match(
     frontendSmoke,
     /SELECT count\(\*\) FROM auth\.flow_state\s+WHERE user_id = :'smoke_user_id'::uuid/,
+  );
+});
+
+test("frontend smoke uses one Playwright installation", () => {
+  assert.equal(
+    nestedE2ePackage.devDependencies?.["@playwright/test"],
+    undefined,
   );
 });
 
