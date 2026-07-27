@@ -10,11 +10,16 @@ import {
   type AgiGoal,
   type AgiGoalDetailResponse,
   type AgiGoalListResponse,
+  type AgiGoalLiveness,
+  type AgiGoalLivenessView,
   type AgiGoalMetric,
   type AgiGoalMetricSeries,
   type AgiGoalPushResponse,
+  type AgiLivenessResponse,
   type AgiManifestIssue,
   type AgiObserveResponse,
+  goalLivenessLabel,
+  goalStallGuidance,
   renderTaskTable,
   surfaceConflict,
 } from './tasks.ts';
@@ -31,8 +36,14 @@ signal to declare and no probe to register: a measurement is taken by an
 ordinary cron trigger's session or an ordinary webhook's session, and that
 session records it here. One verb, every producer.
 
+\`ls\` and \`show\` carry the goal's LIVENESS — measuring, unmeasurable,
+unquantified, or STALLED (every metric flat across N readings). A stalled goal
+means work happened and the goal did not get closer; nothing sweeps it, and the
+answer is a different move. \`kortix tasks stalled\` is the same question asked
+about tasks.
+
 Subcommands:
-  ls [--status <s>]        List goals, their metrics, and open task counts.
+  ls [--status <s>]        List goals, their metrics, liveness, and open tasks.
   show <slug>              One goal in full, with its series and open tasks.
   push <slug>              Fire the goal's push trigger now.
   observe <slug>           Record one reading of one metric.
@@ -156,19 +167,25 @@ async function goalsLs(
   } catch (err) {
     return surfaceApiError(err);
   }
+  const liveness = await fetchLiveness(ctx);
 
   if (json) {
-    emitJson(resp);
+    // Additive: the goals response verbatim, plus the liveness verdict that
+    // lives on a different route. A parser that only knows `goals` is
+    // unaffected; one that wants to know whether anything is stuck reads
+    // `liveness.stalled_total`.
+    emitJson({ ...resp, liveness: liveness ?? null });
     return 0;
   }
 
   if (resp.goals.length === 0) {
     process.stdout.write(`${status.info('No goals.')}\n`);
   } else {
-    process.stdout.write(`\n${renderGoalTable(resp.goals)}`);
+    process.stdout.write(`\n${renderGoalTable(resp.goals, livenessBySlug(liveness))}`);
     process.stdout.write(
-      `\n  ${C.dim}${resp.goals.length} goal${resp.goals.length === 1 ? '' : 's'}${C.reset}\n\n`,
+      `\n  ${C.dim}${resp.goals.length} goal${resp.goals.length === 1 ? '' : 's'}${C.reset}\n`,
     );
+    process.stdout.write(`${renderLivenessSummary(liveness)}\n`);
   }
 
   // A malformed manifest entry is reported, never fatal — `kortix validate` is
@@ -199,9 +216,11 @@ async function goalsShow(
   } catch (err) {
     return surfaceApiError(err);
   }
+  const liveness = await fetchLiveness(ctx);
+  const view = liveness?.goals.find((entry) => entry.slug === resp.goal.slug) ?? null;
 
   if (json) {
-    emitJson(resp);
+    emitJson({ ...resp, liveness: view?.liveness ?? null });
     return 0;
   }
 
@@ -212,6 +231,10 @@ async function goalsShow(
     process.stdout.write(`  ${C.dim}${pad(key, 10)}${C.reset}${value}\n`);
   line('slug', g.slug);
   line('status', g.status);
+  // `status` is authored in kortix.yaml — it says what a human INTENDED. This
+  // says what the series actually shows, which is the only one of the two that
+  // can contradict a comfortable assumption.
+  if (view) line('liveness', renderGoalLivenessCell(view.liveness));
   line('agent', g.agent ?? '—');
   line('push', g.push ?? '—');
   line('trigger', g.trigger_slug ?? '—');
@@ -227,6 +250,11 @@ async function goalsShow(
   } else {
     process.stdout.write(`  ${measurabilityNotice(g)}\n`);
   }
+
+  // A goal whose every metric has flat-lined has a full metrics table above it
+  // and is still not advancing. Without this the table reads as health.
+  const notice = renderGoalStallNotice(view);
+  if (notice) process.stdout.write(notice);
 
   if (resp.open_tasks.length > 0) {
     process.stdout.write(`\n${renderTaskTable(resp.open_tasks)}`);
@@ -337,6 +365,94 @@ async function goalsObserve(
     `${status.ok(`recorded ${o.goal_slug}  ${o.metric} = ${o.value}  (${o.source})`)}\n`,
   );
   return 0;
+}
+
+// ── Goal liveness (spec §4.2 / §8) ──────────────────────────────────────────
+
+/**
+ * The liveness verdict for every goal, from the one route that computes it.
+ *
+ * It is a SECOND call because the verdict is derived from the observation
+ * series, not from the manifest, and `goals ls` reads the manifest. A failure
+ * here degrades to a warning and the ordinary listing rather than failing the
+ * read: losing the stall column is bad, but refusing to show the board because
+ * the stall column could not be computed is worse.
+ */
+async function fetchLiveness(ctx: {
+  client: { get: <T>(path: string) => Promise<T> };
+  projectId: string;
+}): Promise<AgiLivenessResponse | null> {
+  try {
+    return await ctx.client.get<AgiLivenessResponse>(`/projects/${ctx.projectId}/agi/liveness`);
+  } catch (err) {
+    process.stderr.write(
+      `${status.warn(`liveness unavailable — ${(err as Error).message}. Goal stalls are NOT shown below.`)}\n`,
+    );
+    return null;
+  }
+}
+
+export function livenessBySlug(
+  liveness: AgiLivenessResponse | null,
+): Map<string, AgiGoalLiveness> | undefined {
+  if (!liveness) return undefined;
+  return new Map(liveness.goals.map((view) => [view.slug, view.liveness]));
+}
+
+/** The liveness cell, shouted for the two states that mean "you cannot tell
+ *  whether this is working". */
+export function renderGoalLivenessCell(liveness: AgiGoalLiveness): string {
+  const label = goalLivenessLabel(liveness);
+  if (liveness.state === 'stalled') {
+    return `${C.yellow}${label}${C.reset} (${liveness.flat_metrics.map((m) => `${m.metric} flat×${m.flat_observations}`).join(', ')})`;
+  }
+  if (liveness.state === 'unmeasurable') return `${C.yellow}${label}${C.reset}`;
+  return label;
+}
+
+/**
+ * The one line under the goal list that answers "is anything stuck?".
+ *
+ * It reports `stalled_total` — tasks AND goals — because those are the two ways
+ * a loop dies and a reader who only sees one of them has been told a
+ * comfortable half-truth.
+ */
+export function renderLivenessSummary(liveness: AgiLivenessResponse | null): string {
+  if (!liveness) return '';
+  if (liveness.stalled_total === 0 && liveness.unmeasurable_goal_count === 0) {
+    return `  ${C.dim}nothing stalled${C.reset}\n`;
+  }
+  const lines: string[] = [];
+  if (liveness.stalled_total > 0) {
+    lines.push(
+      status.warn(
+        `stalled_total ${liveness.stalled_total} — ${liveness.stalled_count} task${liveness.stalled_count === 1 ? '' : 's'}, ${liveness.stalled_goal_count} goal${liveness.stalled_goal_count === 1 ? '' : 's'}. Run \`kortix tasks stalled\`.`,
+      ),
+    );
+  }
+  if (liveness.unmeasurable_goal_count > 0) {
+    lines.push(
+      status.warn(
+        `${liveness.unmeasurable_goal_count} goal${liveness.unmeasurable_goal_count === 1 ? '' : 's'} unmeasurable — a threshold nobody has ever measured. Record one with \`kortix goals observe\`.`,
+      ),
+    );
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/** The stall block under `goals show`'s metrics table. Null when the goal is
+ *  measuring, settled, or paused — advice nobody needs is noise. */
+export function renderGoalStallNotice(view: AgiGoalLivenessView | null): string {
+  const guidance = view ? goalStallGuidance(view) : null;
+  if (!view || !guidance) return '';
+  // `unquantified` is legal under R-7 and gets the informational voice; the
+  // other two are defects in the ability to judge the goal at all.
+  const head =
+    view.liveness.state === 'unquantified'
+      ? status.info(`${goalLivenessLabel(view.liveness)} — ${guidance.what}`)
+      : status.warn(`${goalLivenessLabel(view.liveness)} — ${guidance.what}`);
+  const next = guidance.next.map((cmd) => `  ${C.dim}${pad('next', 10)}${C.reset}${cmd}`).join('\n');
+  return `\n${head}\n${next}\n`;
 }
 
 // ── Exported helpers (pure — unit-tested directly) ──────────────────────────
@@ -490,19 +606,36 @@ export function goalMetricCell(goal: Pick<AgiGoal, 'metrics' | 'measurability'>)
   return `${worst.metric} ${formatMetricValue(worst.latest.value)} ${directionMark(worst.direction)}${flat}`;
 }
 
-export function renderGoalTable(goals: AgiGoal[]): string {
+/**
+ * The goal list.
+ *
+ * `liveness` is optional and the LIVE column appears only when it is supplied:
+ * a column of blanks would read as "everything is fine" when the truth is "we
+ * could not find out", and those must never look the same.
+ */
+export function renderGoalTable(
+  goals: AgiGoal[],
+  liveness?: Map<string, AgiGoalLiveness>,
+): string {
+  const liveCell = (g: AgiGoal) => {
+    const entry = liveness?.get(g.slug);
+    return entry ? goalLivenessLabel(entry) : '-';
+  };
   const slugW = Math.max(...goals.map((g) => g.slug.length), 4);
   const statusW = Math.max(...goals.map((g) => g.status.length), 6);
+  const liveW = liveness ? Math.max(...goals.map((g) => liveCell(g).length), 4) : 0;
   const pushW = Math.max(...goals.map((g) => (g.push ?? '-').length), 4);
   const openW = Math.max(...goals.map((g) => String(g.open_task_count).length), 4);
   const metricW = Math.max(...goals.map((g) => goalMetricCell(g).length), 6);
+  const liveHead = liveness ? `${pad('LIVE', liveW)}   ` : '';
 
   const rows = [
-    `  ${C.dim}${pad('SLUG', slugW)}   ${pad('STATUS', statusW)}   ${pad('PUSH', pushW)}   ${pad('OPEN', openW)}   ${pad('METRIC', metricW)}   TITLE${C.reset}`,
+    `  ${C.dim}${pad('SLUG', slugW)}   ${pad('STATUS', statusW)}   ${liveHead}${pad('PUSH', pushW)}   ${pad('OPEN', openW)}   ${pad('METRIC', metricW)}   TITLE${C.reset}`,
   ];
   for (const g of goals) {
+    const live = liveness ? `${pad(liveCell(g), liveW)}   ` : '';
     rows.push(
-      `  ${pad(g.slug, slugW)}   ${pad(g.status, statusW)}   ${pad(g.push ?? '-', pushW)}   ${pad(String(g.open_task_count), openW)}   ${pad(goalMetricCell(g), metricW)}   ${g.title}`,
+      `  ${pad(g.slug, slugW)}   ${pad(g.status, statusW)}   ${live}${pad(g.push ?? '-', pushW)}   ${pad(String(g.open_task_count), openW)}   ${pad(goalMetricCell(g), metricW)}   ${g.title}`,
     );
   }
   return `${rows.join('\n')}\n`;

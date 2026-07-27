@@ -39,6 +39,34 @@ describe('the bundled behavior file is reachable and carries the rules', () => {
     expect(prompt).toContain('Never silently reassign work to a different agent');
   });
 
+  test('the daily push sweeps and reads the stalls BEFORE it creates anything', () => {
+    const prompt = agiOpencodeAgentConfig()?.prompt ?? '';
+    // The defect this guards is not a missing feature — it is a feature with no
+    // consumer. Every stall verdict the API computes reaches a human through
+    // exactly these two commands, and `POST /agi/liveness/sweep` is the only
+    // thing in the system that ever creates a continuation or an escalation.
+    // Nothing calls it on a schedule (R-21: the trigger subsystem is the one
+    // wake mechanism), so if R-11's procedure does not name it, bounded
+    // recovery never runs at all.
+    expect(prompt).toContain('kortix tasks sweep');
+    expect(prompt).toContain('kortix tasks stalled');
+
+    // Order is the rule, not a suggestion: a push that invents work while old
+    // work is wedged is the failure §8 exists to prevent.
+    const push = prompt.slice(prompt.indexOf('## The daily push'));
+    expect(push.indexOf('kortix tasks sweep')).toBeLessThan(push.indexOf('done_when'));
+    expect(prompt).toContain('A push that invents new work while old work is wedged');
+
+    // The states the prompt already described now each name the command that
+    // shows them — describing a verdict nobody can look up is what left the
+    // stall surface unread.
+    expect(prompt).toContain('blocked_without_cause');
+    expect(prompt).toContain('request_undelivered');
+
+    // A continuation is a task; nothing starts it on its own (R-24).
+    expect(prompt).toContain('a continuation is a TASK, not a session');
+  });
+
   test('it is memoized — repeated trigger fires do not re-read the template', () => {
     expect(agiOpencodeAgentConfig()).toBe(agiOpencodeAgentConfig());
   });

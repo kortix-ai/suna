@@ -2,6 +2,10 @@ import { expect, test } from 'bun:test';
 
 import {
   buildGoalListQuery,
+  livenessBySlug,
+  renderGoalLivenessCell,
+  renderGoalStallNotice,
+  renderLivenessSummary,
   buildObserveBody,
   directionMark,
   formatMetricValue,
@@ -14,7 +18,16 @@ import {
   renderSeries,
   runGoals,
 } from '../commands/goals.ts';
-import type { AgiGoal, AgiGoalMetric, AgiGoalMetricSeries } from '../commands/tasks.ts';
+import {
+  type AgiGoal,
+  type AgiGoalLiveness,
+  type AgiGoalLivenessView,
+  type AgiGoalMetric,
+  type AgiGoalMetricSeries,
+  type AgiLivenessResponse,
+  goalLivenessLabel,
+  goalStallGuidance,
+} from '../commands/tasks.ts';
 import { stripAnsi } from '../style.ts';
 
 function point(value: number, observedAt = '2026-07-26T09:00:00.000Z') {
@@ -291,4 +304,166 @@ test('no subcommand exits 2, an unknown one exits 2 with the help text', async (
   const { code, err } = await capture(['frobnicate']);
   expect(code).toBe(2);
   expect(err).toContain('unknown subcommand');
+});
+
+// ── Goal liveness on the goal views (spec §4.2, R-12d/R-12e) ───────────────
+//
+// `status` in kortix.yaml says what a human INTENDED. Liveness says what the
+// observation series actually shows, and it is the only one of the two that can
+// contradict a comfortable assumption — a goal that has been `active` for three
+// weeks while every metric it tracks sat perfectly still.
+
+function goalLiveness(over: Partial<AgiGoalLiveness> = {}): AgiGoalLiveness {
+  return { state: 'measuring', reason: null, flat_metrics: [], flat_stall_after: 3, ...over };
+}
+
+const FLAT: AgiGoalLiveness = goalLiveness({
+  state: 'stalled',
+  reason: 'metric_flat',
+  flat_metrics: [{ metric: 'rank', flat_observations: 5 }],
+});
+
+function goalLivenessView(over: Partial<AgiGoalLivenessView> = {}): AgiGoalLivenessView {
+  return {
+    slug: 'ship-v1',
+    title: 'Ship v1',
+    status: 'active',
+    liveness: goalLiveness(),
+    metrics: [],
+    ...over,
+  };
+}
+
+function livenessResponse(over: Partial<AgiLivenessResponse> = {}): AgiLivenessResponse {
+  return {
+    tasks: [],
+    stalled: [],
+    stalled_count: 0,
+    truncated: false,
+    goals: [],
+    stalled_goals: [],
+    stalled_goal_count: 0,
+    unmeasurable_goals: [],
+    unmeasurable_goal_count: 0,
+    stalled_total: 0,
+    ...over,
+  };
+}
+
+test('the LIVE column appears only when liveness was actually fetched', () => {
+  // A column of dashes and a column that could not be computed must never look
+  // the same — a blank cell reads as "fine", which is the exact failure §4.2
+  // exists to prevent.
+  const without = stripAnsi(renderGoalTable([goal()]));
+  expect(without).not.toContain('LIVE');
+
+  const withLive = stripAnsi(renderGoalTable([goal()], new Map([['ship-v1', FLAT]])));
+  expect(withLive).toContain('LIVE');
+  expect(withLive).toContain('STALLED');
+});
+
+test('a goal the liveness read did not cover renders as unknown, not as healthy', () => {
+  const table = stripAnsi(renderGoalTable([goal({ slug: 'other' })], new Map([['ship-v1', FLAT]])));
+  expect(table).toContain('LIVE');
+  expect(table).not.toContain('STALLED');
+  expect(table).toContain('other');
+});
+
+test('the two states that mean "you cannot tell if this works" are shouted', () => {
+  expect(goalLivenessLabel(FLAT)).toBe('STALLED');
+  expect(goalLivenessLabel(goalLiveness({ state: 'unmeasurable' }))).toBe('UNMEASURABLE');
+  expect(goalLivenessLabel(goalLiveness({ state: 'measuring' }))).toBe('measuring');
+  expect(goalLivenessLabel(goalLiveness({ state: 'paused' }))).toBe('paused');
+});
+
+test('the liveness cell names the flat metric and how long it has been flat', () => {
+  const cell = stripAnsi(renderGoalLivenessCell(FLAT));
+  expect(cell).toContain('STALLED');
+  expect(cell).toContain('rank flat×5');
+});
+
+test('guidance exists exactly for the states a human has to act on', () => {
+  expect(goalStallGuidance(goalLivenessView())).toBeNull();
+  expect(goalStallGuidance(goalLivenessView({ liveness: goalLiveness({ state: 'settled' }) }))).toBeNull();
+  expect(goalStallGuidance(goalLivenessView({ liveness: goalLiveness({ state: 'paused' }) }))).toBeNull();
+
+  const stalled = goalStallGuidance(goalLivenessView({ liveness: FLAT }));
+  // The threshold is quoted so nobody has to guess which N produced the verdict.
+  expect(stalled?.what).toContain('3 readings');
+  expect(stalled?.what).toContain('rank flat×5');
+  expect(stalled?.next.join(' ')).toContain('kortix goals push ship-v1');
+
+  const unmeasurable = goalStallGuidance(
+    goalLivenessView({ liveness: goalLiveness({ state: 'unmeasurable' }) }),
+  );
+  expect(unmeasurable?.next[0]).toContain('kortix goals observe ship-v1');
+});
+
+test('a stalled goal is never described as something a sweep will fix', () => {
+  // The API sweeps TASKS only: the answer to a metric that stopped moving is a
+  // different move, not a continuation task manufactured for a goal that
+  // already has a standing push.
+  const stalled = goalStallGuidance(goalLivenessView({ liveness: FLAT }));
+  expect(stalled?.next.join(' ')).not.toContain('tasks sweep');
+  expect(stalled?.what).toContain('work happened and the goal did not get closer');
+});
+
+test('the list footer reports stalled_total across BOTH tasks and goals', () => {
+  expect(renderLivenessSummary(null)).toBe('');
+  expect(stripAnsi(renderLivenessSummary(livenessResponse()))).toContain('nothing stalled');
+
+  const summary = stripAnsi(
+    renderLivenessSummary(
+      livenessResponse({ stalled_count: 2, stalled_goal_count: 1, stalled_total: 3 }),
+    ),
+  );
+  expect(summary).toContain('stalled_total 3');
+  expect(summary).toContain('2 tasks, 1 goal');
+  expect(summary).toContain('kortix tasks stalled');
+});
+
+test('unmeasurable goals are surfaced even when nothing at all is stalled', () => {
+  // R-12d: never having measured is a different defect from a flat metric, and
+  // it does not count toward stalled_total — so a total of 0 must not silence
+  // it.
+  const summary = stripAnsi(
+    renderLivenessSummary(livenessResponse({ unmeasurable_goal_count: 2 })),
+  );
+  expect(summary).toContain('2 goals unmeasurable');
+  expect(summary).toContain('kortix goals observe');
+});
+
+test('`goals show` prints a stall notice under a full metrics table', () => {
+  // The nastiest case: the table is full of readings and the goal is going
+  // nowhere. Without this, a populated table reads as health.
+  const notice = stripAnsi(renderGoalStallNotice(goalLivenessView({ liveness: FLAT })));
+  expect(notice).toContain('STALLED');
+  expect(notice).toContain('rank flat×5');
+  expect(notice).toContain('next');
+
+  expect(renderGoalStallNotice(null)).toBe('');
+  expect(renderGoalStallNotice(goalLivenessView())).toBe('');
+});
+
+test('an unquantified goal is informational — a prose done_when is legal (R-7)', () => {
+  const notice = stripAnsi(
+    renderGoalStallNotice(goalLivenessView({ liveness: goalLiveness({ state: 'unquantified' }) })),
+  );
+  expect(notice).toContain('unquantified');
+  expect(notice).toContain('names no threshold');
+  // Informational marker (▸), not the warning marker (!).
+  expect(notice).toContain('▸');
+});
+
+test('liveness is indexed by slug, and an absent read yields no index at all', () => {
+  expect(livenessBySlug(null)).toBeUndefined();
+  const map = livenessBySlug(livenessResponse({ goals: [goalLivenessView({ liveness: FLAT })] }));
+  expect(map?.get('ship-v1')?.state).toBe('stalled');
+  expect(map?.get('missing')).toBeUndefined();
+});
+
+test('the help text points a reader from a stalled goal to the task-side view', async () => {
+  const { out } = await capture(['--help']);
+  expect(out).toContain('LIVENESS');
+  expect(out).toContain('kortix tasks stalled');
 });

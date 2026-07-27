@@ -191,6 +191,101 @@ export interface AgiRequestListResponse {
   truncated: boolean;
 }
 
+// ── Liveness: "what is stuck, and why" (spec §8) ────────────────────────────
+// The API has answered this since R-28 landed; nothing asked it. These types
+// are the shapes GET /agi/liveness and POST /agi/liveness/sweep return, so
+// `--json` is the response verbatim.
+
+/** R-28's answer to "what moves this forward next?", per task. */
+export interface AgiTaskLiveness {
+  state:
+    | 'settled'
+    | 'working'
+    | 'blocked'
+    | 'human'
+    | 'awaiting_response'
+    | 'awaiting_trigger'
+    | 'stalled';
+  /** Why it matched none of the valid answers. Null unless `state` is stalled. */
+  reason:
+    | 'claiming_session_terminal'
+    | 'claim_expired'
+    | 'dead_blocker'
+    | 'no_live_path'
+    | 'request_undelivered'
+    | 'blocked_without_cause'
+    | null;
+  claim_session_state: 'active' | 'terminal' | 'unknown' | null;
+  unresolved_blockers: string[];
+  /** The continuation this stall already produced, if bounded recovery ran. */
+  recovery: { task_id: string; escalated: boolean; escalated_to: string | null } | null;
+  /** Any PENDING human ask on the task, in every state. `delivered: false` is
+   *  the one that means the ask exists and nobody was told. */
+  request: {
+    request_id: string;
+    kind: string;
+    need: string;
+    responder_user_id: string | null;
+    delivered: boolean;
+    delivered_via: string | null;
+  } | null;
+}
+
+export interface AgiLivenessView {
+  task: AgiTask;
+  liveness: AgiTaskLiveness;
+}
+
+export interface AgiGoalLiveness {
+  state: 'settled' | 'paused' | 'measuring' | 'unmeasurable' | 'unquantified' | 'stalled';
+  reason: 'metric_flat' | null;
+  flat_metrics: { metric: string; flat_observations: number }[];
+  /** The N this verdict used, so a reader never has to guess the threshold. */
+  flat_stall_after: number;
+}
+
+export interface AgiGoalLivenessView {
+  slug: string;
+  title: string;
+  status: string;
+  liveness: AgiGoalLiveness;
+  metrics: AgiGoalMetric[];
+}
+
+export interface AgiLivenessResponse {
+  tasks: AgiLivenessView[];
+  stalled: AgiLivenessView[];
+  /** Stalled TASKS only. */
+  stalled_count: number;
+  truncated: boolean;
+  goals: AgiGoalLivenessView[];
+  stalled_goals: AgiGoalLivenessView[];
+  stalled_goal_count: number;
+  unmeasurable_goals: AgiGoalLivenessView[];
+  unmeasurable_goal_count: number;
+  /** Tasks + goals. The one number that means "how much is stuck". */
+  stalled_total: number;
+}
+
+export interface AgiSweepOutcome {
+  task_id: string;
+  reason: string;
+  claim_released: boolean;
+  progressed: boolean;
+  recovery: {
+    step: 'continued' | 'escalated' | 'already_escalated';
+    fingerprint: string;
+    task_id: string | null;
+    escalated_to: string | null;
+  } | null;
+}
+
+export interface AgiLivenessSweepResponse {
+  scanned: number;
+  stalled: number;
+  outcomes: AgiSweepOutcome[];
+}
+
 const HELP = help`Usage: kortix tasks <subcommand> [options]
 
 Work the AGI task queue for the linked workspace — the shared board sessions
@@ -205,6 +300,10 @@ Subcommands:
   ls [options]             List tasks. Defaults to open ones.
   ready [options]          Work that can be started right now: open, every
                            blocker completed, claim free. Start here.
+  stalled                  What is stuck and WHY, with the next act for each.
+                           Run this before creating anything new.
+  sweep                    Apply bounded recovery to every stalled task.
+                           Idempotent — safe to run every push.
   show <task-id>           One task in full: blockers, children, body.
   new <title...>           Create a task.
   claim <task-id>          Take exclusive ownership for a session (atomic).
@@ -294,6 +393,16 @@ Waiting options:
 Answer options:
   --cancel                 Withdraw the ask instead of marking it supplied.
   --note <text>            What you did, appended to the original ask.
+
+Stalled options:
+  --limit <n>              How many open tasks to judge, 1..500 (default 500).
+
+  A stall is a REPORT, never a retry. Each entry names the evidence and the
+  concrete command that clears it. \`sweep\` is the only thing that acts, and
+  it acts only on tasks that were picked up and dropped: at most ONE
+  automatic continuation per stalled state, then an escalation to a human,
+  then silence. A flat-lining goal and an ask that reached nobody are never
+  swept — nothing but a different move, or delivering the ask, clears those.
 
 Exit codes:
   0                        Success.
@@ -412,6 +521,16 @@ export async function runTasks(argv: string[]): Promise<number> {
     // query that finds startable work does not depend on remembering a flag.
     case 'ready':
       return tasksLs(ctxOpts, { ...listFilters, ready: true }, json);
+    // The other half of the same push. `ready` says what can start; `stalled`
+    // says what already started and stopped — and R-11 now reads it FIRST,
+    // because inventing new work on top of a wedged board is the failure the
+    // whole liveness surface exists to catch.
+    case 'stalled':
+    case 'stuck':
+      return tasksStalled(ctxOpts, f.limit, json);
+    case 'sweep':
+    case 'recover':
+      return tasksSweep(ctxOpts, json);
     case 'show':
     case 'info':
       return tasksShow(positional[0], ctxOpts, json);
@@ -494,6 +613,77 @@ async function tasksLs(opts: CtxOpts, filters: TaskListFilters, json = false): P
   process.stdout.write(
     `\n  ${C.dim}${resp.tasks.length} task${resp.tasks.length === 1 ? '' : 's'}${more}${C.reset}\n\n`,
   );
+  return 0;
+}
+
+/**
+ * "The loop is wedged — what is stuck and why?"
+ *
+ * This is the read a human runs, and the read the daily push runs before it
+ * decides anything. It changes nothing: R-29 says a stall is surfaced, not
+ * retried, so acting on one is an explicit `sweep` or an explicit command from
+ * the `next` lines this prints.
+ */
+async function tasksStalled(
+  opts: CtxOpts,
+  limitFlag: string | undefined,
+  json = false,
+): Promise<number> {
+  let query: string;
+  try {
+    query = buildLivenessQuery(limitFlag);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let resp: AgiLivenessResponse;
+  try {
+    resp = await ctx.client.get<AgiLivenessResponse>(
+      `/projects/${ctx.projectId}/agi/liveness${query}`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(renderStallReport(resp));
+  return 0;
+}
+
+/**
+ * Apply bounded recovery to whatever the read above found.
+ *
+ * Deliberately a command and not a background loop (R-21: the trigger subsystem
+ * stays the one thing that starts work without a human). Running it twice with
+ * unchanged evidence changes nothing the first run did not already do — the
+ * continuation is inserted under a fingerprint that a partial unique index
+ * enforces, so the second attempt loses the INSERT rather than adding a row.
+ */
+async function tasksSweep(opts: CtxOpts, json = false): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let resp: AgiLivenessSweepResponse;
+  try {
+    resp = await ctx.client.post<AgiLivenessSweepResponse>(
+      `/projects/${ctx.projectId}/agi/liveness/sweep`,
+      {},
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(renderSweepReport(resp));
   return 0;
 }
 
@@ -1275,6 +1465,313 @@ export function surfaceConflict(err: unknown, json = false): number | null {
   }
   process.stderr.write(`${status.err(err.message)}\n`);
   return 3;
+}
+
+// ── Liveness: rendering "what is stuck and why" (spec §8) ───────────────────
+
+/** Whole-workspace bound the API enforces on the liveness read. Mirrored here
+ *  so an out-of-range `--limit` is a usage error with no round trip. */
+export const LIVENESS_TASK_CAP = 500;
+
+export function buildLivenessQuery(limit?: string): string {
+  if (!limit) return '';
+  const n = Number(limit);
+  if (!Number.isInteger(n) || n < 1 || n > LIVENESS_TASK_CAP) {
+    throw new Error(`--limit must be an integer between 1 and ${LIVENESS_TASK_CAP}`);
+  }
+  return `?limit=${n}`;
+}
+
+export interface StallGuidance {
+  /** The evidence, in one line — never the conclusion restated. */
+  what: string;
+  /** The concrete acts that clear it, most direct first. Real commands with
+   *  real ids, because a stall report whose advice is "investigate" is the
+   *  report nobody acts on. */
+  next: string[];
+}
+
+/**
+ * Why this task is stuck, and what to actually type.
+ *
+ * The `what` half deliberately names the evidence the API reasoned from rather
+ * than paraphrasing the reason code: a human reading this has to be able to
+ * disagree with the verdict, and they can only do that if they can see what it
+ * was based on.
+ */
+export function stallGuidance(view: AgiLivenessView): StallGuidance {
+  const id = view.task.task_id;
+  const { liveness } = view;
+
+  switch (liveness.reason) {
+    case 'claiming_session_terminal':
+      return {
+        what: `the claim is held by session ${view.task.claim_session_id ?? '(unknown)'}, which has already ended — the lease still looks live, so nothing else will pick this up`,
+        next: ['kortix tasks sweep', `kortix tasks claim ${id} --doing`],
+      };
+    case 'claim_expired':
+      return {
+        what: 'the lease lapsed and nobody adopted the task — an expired claim is adoptable, not a live path',
+        next: [`kortix tasks claim ${id} --doing`, 'kortix tasks sweep'],
+      };
+    case 'dead_blocker': {
+      const dead = liveness.unresolved_blockers[0] ?? '<blocker-id>';
+      return {
+        what: `every unresolved blocker is cancelled or missing (${liveness.unresolved_blockers.map(shortId).join(', ') || 'none resolvable'}) — a cancelled blocker never satisfies the edge`,
+        next: [`kortix tasks block ${id} --off ${dead} --on <replacement-id>`],
+      };
+    }
+    case 'no_live_path':
+      return {
+        what: 'no claim, no goal, and no trigger lineage — nothing in the system is scheduled to look at this again',
+        next: [
+          `kortix tasks claim ${id} --doing`,
+          `kortix tasks done ${id} --as cancelled`,
+        ],
+      };
+    case 'request_undelivered':
+      return {
+        what: `a human was asked for "${liveness.request?.need ?? 'something'}" and the ask reached NOBODY — it is never retried automatically`,
+        next: [
+          `kortix tasks request ${id} --kind ${liveness.request?.kind ?? 'secret'} --need "${liveness.request?.need ?? '<what you need>'}" --to <user-uuid>`,
+          'kortix tasks waiting --undelivered',
+        ],
+      };
+    case 'blocked_without_cause':
+      return {
+        what: 'marked `blocked` with no blocked_by edge and no pending ask — whatever it is waiting on exists only as prose, and prose is not a control-plane act',
+        next: [
+          `kortix tasks block ${id} --on <blocker-id>`,
+          `kortix tasks request ${id} --need "<what you need from a human>"`,
+        ],
+      };
+    default:
+      // A reason this build does not know about. Report it rather than
+      // swallowing it — a newer API must never make a stall invisible here.
+      return {
+        what: `stalled for an unrecognized reason (${liveness.reason ?? 'none reported'}) — upgrade the CLI`,
+        next: [`kortix tasks show ${id} --json`],
+      };
+  }
+}
+
+/**
+ * Whether `kortix tasks sweep` can do anything about this stall.
+ *
+ * Mirrors the API's own predicate, and it is printed rather than assumed
+ * because the honest answer is usually NO: recovery acts only on work that was
+ * picked up and dropped (a claim exists or a continuation already does). A task
+ * nobody ever started is stalled because a HUMAN has not scheduled it, and
+ * manufacturing work for it would bury the real signal.
+ */
+export function isSweepable(view: AgiLivenessView): boolean {
+  const { liveness, task } = view;
+  if (liveness.state !== 'stalled' || liveness.reason === null) return false;
+  // An ask that reached nobody is never continued or escalated: adding a row
+  // nobody was told about, or handing it to an assignee, would convert "we
+  // could not reach anyone" into "someone owns this".
+  if (liveness.reason === 'request_undelivered') return false;
+  return task.claim_session_id !== null || liveness.recovery !== null;
+}
+
+/** One stalled task, in full: the evidence, the fix, and whether a sweep helps. */
+export function renderStalledTask(view: AgiLivenessView, now: Date = new Date()): string {
+  const t = view.task;
+  const guidance = stallGuidance(view);
+  const out: string[] = [];
+  // 10 columns, because the widest key is `recovery` and a label that touches
+  // its value is unreadable in the one report people read when something broke.
+  const field = (key: string, value: string) => `     ${C.dim}${pad(key, 10)}${C.reset}${value}`;
+
+  out.push(`  ${C.yellow}✗${C.reset}  ${C.bold}${t.title}${C.reset}`);
+  out.push(field('reason', `${C.yellow}${view.liveness.reason ?? 'stalled'}${C.reset}`));
+  out.push(field('task', t.task_id));
+  out.push(
+    field(
+      'state',
+      `${t.status}   ${t.priority}   idle ${formatAge(t.updated_at, now)}   ${assigneeLabel(t)}   goal ${t.goal_slug ?? '-'}`,
+    ),
+  );
+  out.push(field('why', guidance.what));
+  out.push(field('next', guidance.next[0]));
+  for (const alt of guidance.next.slice(1)) out.push(field('', `or  ${alt}`));
+
+  // The continuation this stall already produced. Printed because it is the
+  // difference between "recovery has not run" and "recovery ran and this is
+  // still stuck" — which are different problems with different answers.
+  if (view.liveness.recovery) {
+    const rec = view.liveness.recovery;
+    out.push(
+      field(
+        'recovery',
+        rec.escalated
+          ? `escalated to u:${shortId(rec.escalated_to ?? '')} as ${shortId(rec.task_id)}`
+          : `continued as ${shortId(rec.task_id)} (a repeat sweep escalates it to a human)`,
+      ),
+    );
+  }
+  if (!isSweepable(view)) {
+    out.push(field('sweep', `${C.faded}no — nothing automatic clears this one${C.reset}`));
+  }
+  return `${out.join('\n')}\n`;
+}
+
+/** A goal's liveness state as one scannable token. UNMEASURABLE and STALLED are
+ *  shouted because a blank or lowercase cell in a table reads as "fine". */
+export function goalLivenessLabel(liveness: AgiGoalLiveness): string {
+  if (liveness.state === 'stalled') return 'STALLED';
+  if (liveness.state === 'unmeasurable') return 'UNMEASURABLE';
+  return liveness.state;
+}
+
+/**
+ * What a non-healthy goal state means and what to do about it, or null when
+ * the goal is fine. `measuring`, `settled`, and `paused` need no advice.
+ */
+export function goalStallGuidance(view: AgiGoalLivenessView): StallGuidance | null {
+  const { liveness } = view;
+  if (liveness.state === 'stalled') {
+    const flat = liveness.flat_metrics
+      .map((m) => `${m.metric} flat×${m.flat_observations}`)
+      .join(', ');
+    return {
+      // The failure §4.2 exists for: the loop looks alive for three weeks while
+      // the number it was supposed to move has not moved once.
+      what: `every metric has been flat across at least ${liveness.flat_stall_after} readings (${flat || 'no movement'}) — work happened and the goal did not get closer`,
+      next: [
+        `kortix goals show ${view.slug}`,
+        `kortix goals push ${view.slug} --reason "<a different move>"`,
+      ],
+    };
+  }
+  if (liveness.state === 'unmeasurable') {
+    return {
+      what: 'done_when names a threshold and nothing has ever been recorded — nobody can say whether this is being met',
+      next: [`kortix goals observe ${view.slug} --metric <name> --value <number>`],
+    };
+  }
+  if (liveness.state === 'unquantified') {
+    return {
+      what: 'done_when names no threshold to measure — legal, but nothing here can prove progress',
+      next: [`kortix goals show ${view.slug}`],
+    };
+  }
+  return null;
+}
+
+/**
+ * The whole stall report.
+ *
+ * Goals are summarized rather than detailed here — `kortix goals ls` is where
+ * they live — but they are NEVER omitted, because `stalled_total` is the number
+ * that answers "how much is stuck" and a report that counted only tasks would
+ * reproduce the exact blind spot §4.2 was written about.
+ */
+export function renderStallReport(resp: AgiLivenessResponse, now: Date = new Date()): string {
+  const out: string[] = [''];
+
+  if (resp.stalled.length === 0) {
+    out.push(
+      status.ok(
+        `No stalled tasks — all ${resp.tasks.length} open task${resp.tasks.length === 1 ? '' : 's'} ${resp.tasks.length === 1 ? 'has' : 'have'} a live path.`,
+      ),
+    );
+  } else {
+    for (const view of resp.stalled) {
+      out.push(renderStalledTask(view, now).replace(/\n$/, ''));
+      out.push('');
+    }
+    out.push(
+      status.warn(
+        `${resp.stalled.length} stalled task${resp.stalled.length === 1 ? '' : 's'} of ${resp.tasks.length} open. A stall is the highest-priority work on the board — clear it before creating anything new.`,
+      ),
+    );
+    if (resp.stalled.some(isSweepable)) {
+      out.push(
+        status.info(
+          'Run `kortix tasks sweep` for the ones a machine can act on — it is idempotent.',
+        ),
+      );
+    }
+  }
+
+  for (const view of resp.stalled_goals) {
+    const guidance = goalStallGuidance(view);
+    out.push(status.warn(`goal ${view.slug} STALLED — ${guidance?.what ?? 'metrics are flat'}`));
+    if (guidance) out.push(`     ${C.dim}${pad('next', 10)}${C.reset}${guidance.next[0]}`);
+  }
+  for (const view of resp.unmeasurable_goals) {
+    const guidance = goalStallGuidance(view);
+    out.push(status.warn(`goal ${view.slug} UNMEASURABLE — ${guidance?.what ?? 'never measured'}`));
+    if (guidance) out.push(`     ${C.dim}${pad('next', 10)}${C.reset}${guidance.next[0]}`);
+  }
+
+  if (resp.truncated) {
+    out.push(
+      status.warn(
+        `The open-task list was capped at ${resp.tasks.length}; there may be more stalls past it.`,
+      ),
+    );
+  }
+  out.push(
+    `  ${C.dim}stalled_total ${resp.stalled_total}  (${resp.stalled_count} task${resp.stalled_count === 1 ? '' : 's'}, ${resp.stalled_goal_count} goal${resp.stalled_goal_count === 1 ? '' : 's'})${C.reset}`,
+  );
+  out.push('');
+  return out.join('\n');
+}
+
+/** What the sweep did to one task. `-` where recovery declined to act, which is
+ *  a real outcome and not a gap: releasing a dead lease can be the whole fix. */
+export function sweepOutcomeLine(outcome: AgiSweepOutcome): string {
+  const parts = [`  ${pad(shortId(outcome.task_id), 8)}   ${pad(outcome.reason, 26)}`];
+  const acts: string[] = [];
+  if (outcome.claim_released) acts.push('dead lease released');
+  if (outcome.recovery) {
+    const rec = outcome.recovery;
+    if (rec.step === 'continued') acts.push(`continued as ${shortId(rec.task_id ?? '')}`);
+    else if (rec.step === 'escalated') {
+      acts.push(
+        rec.escalated_to
+          ? `escalated to u:${shortId(rec.escalated_to)}`
+          : 'escalation had nobody to hand it to — left surfaced',
+      );
+    } else acts.push('already escalated — nothing further is ever created');
+  }
+  if (acts.length === 0) acts.push('left surfaced (nothing automatic applies)');
+  return `${parts.join('')}   ${acts.join(', ')}`;
+}
+
+export function renderSweepReport(resp: AgiLivenessSweepResponse): string {
+  const out: string[] = [''];
+  if (resp.stalled === 0) {
+    out.push(status.ok(`Swept ${resp.scanned} open tasks — nothing was stalled.`));
+    out.push('');
+    return out.join('\n');
+  }
+
+  out.push(
+    status.info(
+      `Swept ${resp.scanned} open task${resp.scanned === 1 ? '' : 's'} — ${resp.stalled} stalled.`,
+    ),
+  );
+  out.push('');
+  for (const outcome of resp.outcomes) out.push(sweepOutcomeLine(outcome));
+  out.push('');
+
+  const continued = resp.outcomes.filter((o) => o.recovery?.step === 'continued').length;
+  const escalated = resp.outcomes.filter((o) => o.recovery?.step === 'escalated').length;
+  out.push(
+    `  ${C.dim}${continued} continued, ${escalated} escalated. Running this again with the same evidence changes nothing: one continuation per stalled state, then one escalation, then silence.${C.reset}`,
+  );
+  // A continuation is a task, not a session. Saying so here stops the next
+  // reader waiting for something to start on its own (R-21/R-24).
+  if (continued > 0) {
+    out.push(
+      `  ${C.dim}A continuation is a TASK. Nothing starts it but the goal's next push or its trigger's next fire.${C.reset}`,
+    );
+  }
+  out.push('');
+  return out.join('\n');
 }
 
 // ── Local helpers ───────────────────────────────────────────────────────────

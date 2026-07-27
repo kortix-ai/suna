@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 
 import { ApiError } from '../api/client.ts';
 import {
+  LIVENESS_TASK_CAP,
   assigneeLabel,
   blockedStatusChange,
   buildRequestBody,
@@ -16,10 +17,22 @@ import {
   requireTaskId,
   runTasks,
   shortId,
+  buildLivenessQuery,
+  isSweepable,
+  renderStallReport,
+  renderStalledTask,
+  renderSweepReport,
+  stallGuidance,
   surfaceConflict,
+  sweepOutcomeLine,
+  type AgiGoalLivenessView,
+  type AgiLivenessResponse,
+  type AgiLivenessView,
   type AgiRequest,
   type AgiTask,
+  type AgiTaskLiveness,
 } from '../commands/tasks.ts';
+import { stripAnsi } from '../style.ts';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -413,4 +426,390 @@ test('the help text tells an agent that a session log is not delivery', async ()
   expect(out).toContain('waiting');
   expect(out).toContain('answer <request-id>');
   expect(out).toContain('NOT');
+});
+
+// ── The stall surface has a consumer (spec §8, R-28/R-29/R-32) ──────────────
+//
+// The API has computed every one of these verdicts since R-28 landed. Nothing
+// read them: no CLI view, no web view, and no caller of the sweep — which is
+// the ONLY thing that ever creates a continuation or an escalation. These tests
+// hold the line that each verdict reaches a human with the command that clears
+// it, because a stall delivered to nobody is the same as no stall detection.
+
+function livenessTask(over: Partial<AgiTask> = {}): AgiTask {
+  return {
+    task_id: A,
+    workspace_id: B,
+    parent_id: null,
+    goal_slug: 'seo',
+    project: null,
+    title: 'Measure the core terms',
+    body: null,
+    status: 'todo',
+    priority: 'high',
+    agent: 'default',
+    assignee_user_id: null,
+    blocked_by: [],
+    trigger_slug: null,
+    claim_session_id: null,
+    claimed_at: null,
+    claim_expires_at: null,
+    claimed: false,
+    origin: 'agi',
+    origin_fingerprint: null,
+    created_at: '2026-07-01T09:00:00.000Z',
+    updated_at: '2026-07-14T09:00:00.000Z',
+    ...over,
+  };
+}
+
+function stalledView(
+  reason: NonNullable<AgiTaskLiveness['reason']>,
+  over: { task?: Partial<AgiTask>; liveness?: Partial<AgiTaskLiveness> } = {},
+): AgiLivenessView {
+  return {
+    task: livenessTask(over.task),
+    liveness: {
+      state: 'stalled',
+      reason,
+      claim_session_state: null,
+      unresolved_blockers: [],
+      recovery: null,
+      request: null,
+      ...over.liveness,
+    },
+  };
+}
+
+function livenessResponse(over: Partial<AgiLivenessResponse> = {}): AgiLivenessResponse {
+  const stalled = over.stalled ?? [];
+  const stalledGoals = over.stalled_goals ?? [];
+  return {
+    tasks: stalled,
+    stalled,
+    stalled_count: stalled.length,
+    truncated: false,
+    goals: [],
+    stalled_goals: stalledGoals,
+    stalled_goal_count: stalledGoals.length,
+    unmeasurable_goals: [],
+    unmeasurable_goal_count: 0,
+    stalled_total: stalled.length + stalledGoals.length,
+    ...over,
+  };
+}
+
+function goalView(over: Partial<AgiGoalLivenessView> = {}): AgiGoalLivenessView {
+  return {
+    slug: 'seo',
+    title: 'Rank for the core terms',
+    status: 'active',
+    liveness: { state: 'measuring', reason: null, flat_metrics: [], flat_stall_after: 3 },
+    metrics: [],
+    ...over,
+  };
+}
+
+test('the liveness limit is bounded by the API cap, checked before any round trip', () => {
+  expect(buildLivenessQuery()).toBe('');
+  expect(buildLivenessQuery('50')).toBe('?limit=50');
+  expect(buildLivenessQuery(String(LIVENESS_TASK_CAP))).toBe(`?limit=${LIVENESS_TASK_CAP}`);
+  expect(() => buildLivenessQuery('0')).toThrow('--limit');
+  expect(() => buildLivenessQuery(String(LIVENESS_TASK_CAP + 1))).toThrow('--limit');
+  expect(() => buildLivenessQuery('2.5')).toThrow('--limit');
+});
+
+test('every stall reason names a runnable command carrying the FULL task id', () => {
+  // The failure this guards: advice like "investigate the blocker" is advice
+  // nobody acts on, and a truncated id in a command is a paste that 404s.
+  const reasons: NonNullable<AgiTaskLiveness['reason']>[] = [
+    'claiming_session_terminal',
+    'claim_expired',
+    'dead_blocker',
+    'no_live_path',
+    'request_undelivered',
+    'blocked_without_cause',
+  ];
+  for (const reason of reasons) {
+    const guidance = stallGuidance(stalledView(reason));
+    expect(guidance.what.length).toBeGreaterThan(20);
+    expect(guidance.next.length).toBeGreaterThan(0);
+    expect(guidance.next.every((cmd) => cmd.startsWith('kortix '))).toBe(true);
+    // At least one act is specific to THIS task, not a generic incantation.
+    expect(guidance.next.some((cmd) => cmd.includes(A) || cmd.includes('--undelivered'))).toBe(
+      true,
+    );
+    expect(guidance.what).not.toContain('unrecognized reason');
+  }
+});
+
+test('an unknown reason is reported, never silently rendered as healthy', () => {
+  // A newer API growing a seventh reason must not make a stall invisible here.
+  const view = stalledView('claim_expired');
+  (view.liveness as { reason: string }).reason = 'heat_death';
+  expect(stallGuidance(view).what).toContain('unrecognized reason');
+});
+
+test('the guidance quotes the evidence the verdict was reached from', () => {
+  const dead = stalledView('dead_blocker', {
+    liveness: { unresolved_blockers: [B, D] },
+  });
+  expect(stallGuidance(dead).what).toContain('22222222');
+  expect(stallGuidance(dead).next[0]).toContain(`--off ${B}`);
+
+  const undelivered = stalledView('request_undelivered', {
+    liveness: {
+      request: {
+        request_id: B,
+        kind: 'connector',
+        need: 'GSC access',
+        responder_user_id: null,
+        delivered: false,
+        delivered_via: null,
+      },
+    },
+  });
+  expect(stallGuidance(undelivered).what).toContain('GSC access');
+  expect(stallGuidance(undelivered).next[0]).toContain('--kind connector');
+  expect(stallGuidance(undelivered).next[0]).toContain('--to <user-uuid>');
+});
+
+test('sweepability mirrors the API predicate, so the report never over-promises', () => {
+  // Recovery acts only on work that was picked up and dropped. An untended
+  // backlog row is stalled because a HUMAN has not scheduled it, and
+  // manufacturing a continuation for it would bury the real signal.
+  expect(isSweepable(stalledView('no_live_path'))).toBe(false);
+  expect(
+    isSweepable(stalledView('claim_expired', { task: { claim_session_id: 'ses_dead' } })),
+  ).toBe(true);
+  expect(
+    isSweepable(
+      stalledView('blocked_without_cause', {
+        liveness: { recovery: { task_id: D, escalated: false, escalated_to: null } },
+      }),
+    ),
+  ).toBe(true);
+  // Never: delivering the ask is the only thing that clears it, and escalating
+  // would turn "we reached nobody" into "somebody owns this".
+  expect(
+    isSweepable(
+      stalledView('request_undelivered', { task: { claim_session_id: 'ses_dead' } }),
+    ),
+  ).toBe(false);
+  // Not stalled at all.
+  expect(
+    isSweepable({
+      task: livenessTask(),
+      liveness: {
+        state: 'working',
+        reason: null,
+        claim_session_state: 'active',
+        unresolved_blockers: [],
+        recovery: null,
+        request: null,
+      },
+    }),
+  ).toBe(false);
+});
+
+test('a stalled task renders its reason, its evidence, and its next act', () => {
+  const now = new Date('2026-07-26T09:00:00.000Z');
+  const out = stripAnsi(
+    renderStalledTask(
+      stalledView('claiming_session_terminal', {
+        task: { claim_session_id: 'ses_dead', status: 'doing' },
+        liveness: { claim_session_state: 'terminal' },
+      }),
+      now,
+    ),
+  );
+  expect(out).toContain('claiming_session_terminal');
+  expect(out).toContain('ses_dead');
+  expect(out).toContain(A);
+  expect(out).toContain('12d');
+  expect(out).toContain('kortix tasks sweep');
+});
+
+test('a stall that no sweep can fix says so instead of implying one is coming', () => {
+  const out = stripAnsi(renderStalledTask(stalledView('no_live_path')));
+  expect(out).toContain('nothing automatic clears this one');
+  const sweepable = stripAnsi(
+    renderStalledTask(stalledView('claim_expired', { task: { claim_session_id: 'ses_dead' } })),
+  );
+  expect(sweepable).not.toContain('nothing automatic clears this one');
+});
+
+test('an existing continuation is shown, because "recovery ran and it is STILL stuck" is a different problem', () => {
+  const continued = stripAnsi(
+    renderStalledTask(
+      stalledView('blocked_without_cause', {
+        liveness: { recovery: { task_id: D, escalated: false, escalated_to: null } },
+      }),
+    ),
+  );
+  expect(continued).toContain('continued as 33333333');
+  const escalated = stripAnsi(
+    renderStalledTask(
+      stalledView('blocked_without_cause', {
+        liveness: { recovery: { task_id: D, escalated: true, escalated_to: B } },
+      }),
+    ),
+  );
+  expect(escalated).toContain('escalated to u:22222222');
+});
+
+test('an empty task list is only all-clear when the GOALS are clear too', () => {
+  const clear = stripAnsi(renderStallReport(livenessResponse()));
+  expect(clear).toContain('No stalled tasks');
+  expect(clear).toContain('stalled_total 0');
+
+  // The §4.2 blind spot exactly: every task has a live path and the metric has
+  // not moved in weeks. A task-only report would print "all clear" here.
+  const flatGoal = stripAnsi(
+    renderStallReport(
+      livenessResponse({
+        stalled_goals: [
+          goalView({
+            liveness: {
+              state: 'stalled',
+              reason: 'metric_flat',
+              flat_metrics: [{ metric: 'rank', flat_observations: 5 }],
+              flat_stall_after: 3,
+            },
+          }),
+        ],
+      }),
+    ),
+  );
+  expect(flatGoal).toContain('No stalled tasks');
+  expect(flatGoal).toContain('goal seo STALLED');
+  expect(flatGoal).toContain('rank flat×5');
+  expect(flatGoal).toContain('stalled_total 1');
+});
+
+test('the report tells the reader a stall outranks creating anything new', () => {
+  const out = stripAnsi(
+    renderStallReport(
+      livenessResponse({
+        stalled: [stalledView('claim_expired', { task: { claim_session_id: 'ses_dead' } })],
+      }),
+    ),
+  );
+  expect(out).toContain('highest-priority work');
+  expect(out).toContain('before creating anything new');
+  expect(out).toContain('kortix tasks sweep');
+});
+
+test('a truncated liveness read admits there may be stalls it never saw', () => {
+  const out = stripAnsi(renderStallReport(livenessResponse({ truncated: true })));
+  expect(out).toContain('capped');
+});
+
+test('an unmeasurable goal is reported apart from a stalled one — different fix', () => {
+  const out = stripAnsi(
+    renderStallReport(
+      livenessResponse({
+        unmeasurable_goals: [
+          goalView({
+            slug: 'oil-desk',
+            liveness: {
+              state: 'unmeasurable',
+              reason: null,
+              flat_metrics: [],
+              flat_stall_after: 3,
+            },
+          }),
+        ],
+        unmeasurable_goal_count: 1,
+      }),
+    ),
+  );
+  expect(out).toContain('goal oil-desk UNMEASURABLE');
+  expect(out).toContain('kortix goals observe oil-desk');
+  // It is NOT counted as stalled: nobody measuring is a different defect from
+  // a metric that stopped moving.
+  expect(out).toContain('stalled_total 0');
+});
+
+test('each sweep step reports what it actually did, including doing nothing', () => {
+  const base = { task_id: A, reason: 'claim_expired', claim_released: false, progressed: false };
+  expect(stripAnsi(sweepOutcomeLine({ ...base, recovery: null }))).toContain('left surfaced');
+  expect(
+    stripAnsi(sweepOutcomeLine({ ...base, claim_released: true, recovery: null })),
+  ).toContain('dead lease released');
+  expect(
+    stripAnsi(
+      sweepOutcomeLine({
+        ...base,
+        recovery: { step: 'continued', fingerprint: 'agi-stall:v1:abc', task_id: D, escalated_to: null },
+      }),
+    ),
+  ).toContain('continued as 33333333');
+  expect(
+    stripAnsi(
+      sweepOutcomeLine({
+        ...base,
+        recovery: { step: 'escalated', fingerprint: 'f', task_id: D, escalated_to: B },
+      }),
+    ),
+  ).toContain('escalated to u:22222222');
+  // R-32's third step: an escalation with nobody to hand it to stays surfaced
+  // rather than reading as success.
+  expect(
+    stripAnsi(
+      sweepOutcomeLine({
+        ...base,
+        recovery: { step: 'escalated', fingerprint: 'f', task_id: D, escalated_to: null },
+      }),
+    ),
+  ).toContain('nobody to hand it to');
+  expect(
+    stripAnsi(
+      sweepOutcomeLine({
+        ...base,
+        recovery: { step: 'already_escalated', fingerprint: 'f', task_id: D, escalated_to: B },
+      }),
+    ),
+  ).toContain('nothing further is ever created');
+});
+
+test('the sweep report states the bound, so nobody runs it in a loop expecting more', () => {
+  const out = stripAnsi(
+    renderSweepReport({
+      scanned: 9,
+      stalled: 1,
+      outcomes: [
+        {
+          task_id: A,
+          reason: 'claim_expired',
+          claim_released: true,
+          progressed: false,
+          recovery: { step: 'continued', fingerprint: 'f', task_id: D, escalated_to: null },
+        },
+      ],
+    }),
+  );
+  expect(out).toContain('Swept 9 open tasks — 1 stalled');
+  expect(out).toContain('one continuation per stalled state, then one escalation, then silence');
+  // R-21/R-24: recovery creates a TASK, not a session. Nothing starts on its own.
+  expect(out).toContain('A continuation is a TASK');
+});
+
+test('a sweep that found nothing says so without implying it repaired something', () => {
+  const out = stripAnsi(renderSweepReport({ scanned: 12, stalled: 0, outcomes: [] }));
+  expect(out).toContain('nothing was stalled');
+  expect(out).not.toContain('continued');
+});
+
+test('`stalled` validates its limit before any network call', async () => {
+  const { code, err } = await capture(['stalled', '--limit', '9000']);
+  expect(code).toBe(2);
+  expect(err).toContain('--limit');
+});
+
+test('the help text names the two commands that make stall detection reachable', async () => {
+  const { out } = await capture(['--help']);
+  expect(out).toContain('stalled');
+  expect(out).toContain('sweep');
+  expect(out).toContain('Idempotent');
 });

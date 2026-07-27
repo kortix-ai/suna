@@ -80,14 +80,20 @@ manifest change.
 Read the board:
 
 ```
-kortix goals ls
-kortix goals show <slug>            # goal, done_when, and its open tasks
+kortix tasks stalled                # what is STUCK and why, with the fix for each
+kortix goals ls                     # + each goal's liveness and stalled_total
+kortix goals show <slug>            # goal, done_when, series, and its open tasks
 kortix tasks ls                     # open tasks, newest first
+kortix tasks ready                  # what can be started right now
 kortix tasks ls --goal <slug>
 kortix tasks ls --assignee agent:<name>
 kortix tasks ls --status all --limit 200
 kortix tasks show <task-id>         # + children, blockers, missing blockers
 ```
+
+`kortix tasks ls` shows what exists. **`kortix tasks stalled` shows what is
+broken**, and they are not the same list: a wedged task looks perfectly normal
+in `ls`. Read the second one first.
 
 Change it:
 
@@ -126,21 +132,57 @@ Never move a goal to `achieved` because the tasks ran out or because a session
 said it was finished. Advance goal status only as an explicit manifest edit that
 cites the evidence.
 
+A goal's `status` is what a human intended. Its **liveness** — the `LIVE` column
+in `kortix goals ls` — is what the numbers actually show, and only the second one
+can contradict a comfortable assumption:
+
+- `measuring` — something moved.
+- `STALLED` — every metric has been flat for several readings straight. Work is
+  happening and the goal is not getting closer. Nothing sweeps this and no
+  continuation is created for it; the answer is a **different move**, chosen by
+  you or by a human, never more of the same one.
+- `UNMEASURABLE` — `done_when` names a threshold nobody has ever measured. Start
+  measuring: `kortix goals observe <slug> --metric <name> --value <number>`.
+- `unquantified` — `done_when` names no threshold at all. Legal, but nothing can
+  prove progress on it.
+
 ## The daily push
 
 When a goal's `push` trigger fires — or when you push one by hand with
 `kortix goals push <slug>` — run exactly this, in order:
 
-1. **Read the goal and its `done_when`.** `kortix goals show <slug> --json`.
+1. **Sweep first.** `kortix tasks sweep --json`. This is the only thing in the
+   system that ever repairs anything: it releases leases held by sessions that
+   have already died, and creates **one** continuation per stalled state (then
+   escalates it to a human, then stops). Nothing calls it on a schedule — if
+   your push does not call it, it never runs. It is idempotent, so calling it
+   on every push is correct and calling it twice costs nothing.
+2. **Read what is stalled.** `kortix tasks stalled --json`. Every entry names
+   the evidence and the exact command that clears it. `stalled_total` counts
+   stuck tasks **and** goals whose metrics have flat-lined.
+3. **Clear the stalls before anything else.** A stall is the highest-priority
+   work on the board. Take the `next` command each entry gives you: deliver the
+   ask, state the missing dependency, replace the dead blocker, adopt the
+   expired claim, or close the task as cancelled with the reason written down.
+4. **Read the goal and its `done_when`.** `kortix goals show <slug> --json`.
    The criteria are the yardstick; everything below is measured against them.
-2. **Read the open tasks.** They come back with the goal, or
+   Its `liveness` says whether the goal is actually moving — `STALLED` there
+   means work is happening and the goal is not getting closer, which is a
+   signal to change the move, not to do more of it.
+5. **Read the open tasks.** They come back with the goal, or
    `kortix tasks ls --goal <slug> --json` for the full list.
-3. **Determine the single most valuable next move.** One. Not a survey, not a
+6. **Determine the single most valuable next move.** One. Not a survey, not a
    ranked list of ten.
-4. **Take it, or create the tasks that constitute it.** If it's one CLI call,
+7. **Take it, or create the tasks that constitute it.** If it's one CLI call,
    make the call. If it needs a session, create the task and spawn the session.
-5. **Record what changed.** A status change, a new task, a closed task, or a
+8. **Record what changed.** A status change, a new task, a closed task, or a
    written reason. Say it plainly in your reply.
+
+**A push that invents new work while old work is wedged is the failure this
+whole loop exists to prevent.** Steps 1–3 come before step 7 for that reason,
+and there is no case where a fresh task outranks a stalled one. If
+`kortix tasks stalled` is not empty when you finish, say which entries you left
+and why.
 
 **Exiting a push with an unchanged task list and no recorded reason is a
 failure.** "Reviewed, nothing to do" is a legitimate outcome *only* when you say
@@ -276,6 +318,13 @@ next?** The only valid answers are:
 
 Anything else is stalled. Surface it — don't retry it quietly.
 
+**`kortix tasks stalled` is that question, already asked of every open task.**
+It is not a judgement call you have to make by reading rows: the board computes
+it, names the reason (`claiming_session_terminal`, `claim_expired`,
+`dead_blocker`, `no_live_path`, `request_undelivered`, `blocked_without_cause`),
+and prints the command that clears each one. Run it. Do not re-derive it by
+eye, and never conclude a task is fine because it merely *looks* busy.
+
 These never count as progress or as a live path:
 
 - provisioning a sandbox, cloning a repo, or reading context
@@ -302,6 +351,18 @@ Recovery is bounded. At most **one** automatic continuation for the same stalled
 state — one retry of a failed session, one re-prompt with better context. If the
 same evidence comes back, stop and escalate. Identical evidence must never
 produce a second identical attempt.
+
+`kortix tasks sweep` is that bound, enforced by the board rather than by your
+memory. Same stalled state twice, and the second run escalates to a human
+instead of continuing; a third run does nothing at all. So run it freely — but
+understand what it produces: **a continuation is a TASK, not a session.**
+Nothing starts it but the goal's next push or its trigger's next fire. Do not
+wait for it, and do not spawn a watcher to see if it moved.
+
+The sweep also only touches work that was picked up and dropped. It will not
+rescue a task nobody ever started, and it will never continue or escalate an
+ask that reached nobody — `kortix tasks stalled` marks those, and only you can
+clear them.
 
 Escalate with substance:
 
@@ -366,7 +427,8 @@ kortix tasks answer <request-id> --note "Granted on the property."
 could not. Anything in it is work stuck in silence; fix it by naming a responder,
 not by re-asking.
 
-Two things the board will now tell you, which it used to hide:
+Two things the board will now tell you, which it used to hide — **and
+`kortix tasks stalled` is where you read them**:
 
 - a task marked `blocked` with **no** `blocked_by` edge and **no** pending
   request reads as `blocked_without_cause` — because whatever it is waiting on
@@ -374,7 +436,8 @@ Two things the board will now tell you, which it used to hide:
   (`kortix tasks block <id> --on <blocker-id>`) or ask the human
   (`kortix tasks request`).
 - a task whose ask reached nobody reads as `request_undelivered`, and is never
-  retried automatically. Nothing but delivering it will clear that.
+  retried automatically — no sweep touches it. Nothing but delivering it will
+  clear that: name a responder with `--to <uuid>` and raise it again.
 
 Answering a request does **not** move the task. Somebody still has to advance
 the work — `kortix tasks done`, or the next push.
@@ -417,6 +480,8 @@ it (`kortix projects open`, `kortix sessions open`).
   finished task. Read its log, then move the task.
 - **Leave the board true.** What `kortix tasks ls` says must match what is
   actually happening. A stale status is a lie the next push will act on.
+- **Fix what is wedged before you build what is new.** `kortix tasks sweep`
+  then `kortix tasks stalled`, every push, before anything else.
 - **Surface blockers immediately** with what you tried and what you need.
   Never paper over a failure.
 - Direct and concrete. No filler, no emojis. State what you did and what
