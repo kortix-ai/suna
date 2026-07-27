@@ -17,7 +17,7 @@ require_command() {
   }
 }
 
-for command_name in aws jq node psql supabase; do
+for command_name in aws jq node psql; do
   require_command "$command_name"
 done
 
@@ -42,6 +42,8 @@ replication_username="$(jq -er '.replication_username' <<<"$target_secret_json")
 replication_password="$(jq -er '.replication_password' <<<"$target_secret_json")"
 
 prepare_source() {
+  require_command supabase
+
   supabase postgres-config update \
     --experimental \
     --project-ref jbriwassebxdwoieikga \

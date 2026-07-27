@@ -24,6 +24,17 @@ test("operator can override the target database endpoint", () => {
   );
 });
 
+test("only source preparation requires the Supabase CLI", () => {
+  const globalRequirements = script.match(
+    /for command_name in ([^;]+); do\n  require_command "\$command_name"\ndone/,
+  );
+  assert.ok(globalRequirements, "Missing global command requirements");
+  assert.doesNotMatch(globalRequirements[1], /\bsupabase\b/);
+
+  const body = functionBody("prepare_source", "start_subscription");
+  assert.match(body, /require_command supabase/);
+});
+
 test("reconciliation PL/pgSQL reads psql inputs through transaction settings", () => {
   const functions = [
     functionBody("write_counts", "reconcile_counts"),
