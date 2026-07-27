@@ -23,9 +23,17 @@ import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '..
 import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
+import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import type { Auth } from '../api/auth.ts';
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 import { authHeaderArgs } from './ship.ts';
+
+/** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
+ *  it without an import cycle through this command module. */
+export {
+  configureProjectGitAuth as configureClonedProjectAuth,
+  currentGitCredentialHelperCommand,
+} from '../project-git.ts';
 
 const HELP = help`Usage: kortix projects <subcommand>
 
@@ -139,61 +147,6 @@ export interface ProjectCloneTarget {
   needsManagedToken: boolean;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-/**
- * The installed binary can call itself by name. During source development,
- * preserve the exact Bun entrypoint so a clone made with `bun run ...` can be
- * exercised before the CLI is rebuilt and installed.
- */
-export function currentGitCredentialHelperCommand(): string {
-  const override = process.env.KORTIX_GIT_CREDENTIAL_HELPER?.trim();
-  if (override) return override.startsWith('!') ? override : `!${override}`;
-
-  const entrypoint = process.argv[1];
-  if (entrypoint && /\.[cm]?[jt]sx?$/.test(entrypoint) && /bun/i.test(process.execPath)) {
-    return `!${shellQuote(process.execPath)} ${shellQuote(entrypoint)} git-credential`;
-  }
-  return '!kortix git-credential';
-}
-
-/**
- * Install a URL-scoped helper for the Kortix proxy. The leading empty helper
- * resets inherited helpers for this credential context, preventing the user's
- * keychain from persisting the Kortix token returned on demand.
- */
-export function configureClonedProjectAuth(
-  repoRoot: string,
-  repoUrl: string,
-  helperCommand = currentGitCredentialHelperCommand(),
-): void {
-  const context = repoUrl.replace(/\/+$/, '');
-  const helperKey = `credential.${context}.helper`;
-  const reset = spawnSync('git', ['config', '--local', '--replace-all', helperKey, ''], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (reset.status !== 0) {
-    throw new Error(reset.stderr.trim() || 'Could not reset Git credential helpers');
-  }
-  const add = spawnSync('git', ['config', '--local', '--add', helperKey, helperCommand], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (add.status !== 0) {
-    throw new Error(add.stderr.trim() || 'Could not configure the Kortix Git credential helper');
-  }
-  const pathMode = spawnSync('git', ['config', '--local', 'credential.useHttpPath', 'true'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (pathMode.status !== 0) {
-    throw new Error(pathMode.stderr.trim() || 'Could not configure Git credential paths');
-  }
-}
-
 export function saveClonedProjectLink(
   repoRoot: string,
   project: ProjectSummary,
@@ -218,27 +171,19 @@ export function saveClonedProjectLink(
   );
 }
 
-/** Resolve clone auth without ever placing a credential in the remote URL. */
+/** Resolve clone auth without ever placing a credential in the remote URL.
+ *  Thin adapter over the shared resolver in ../project-git.ts — the same
+ *  decision `kortix ship` and the git credential helper make. */
 export function resolveProjectCloneTarget(
   project: ProjectSummary,
   kortixToken: string,
 ): ProjectCloneTarget {
-  const proxyUrl = project.git_origin_url;
-  if (proxyUrl && /\/v1\/git\/[^/]+(?:\.git)?$/i.test(proxyUrl)) {
-    return {
-      repoUrl: proxyUrl,
-      token: kortixToken,
-      username: "x-access-token",
-      needsManagedToken: false,
-    };
-  }
-
-  const git = (project.metadata?.git ?? null) as { managed?: boolean } | null;
+  const target = resolveProjectGitTarget(project);
   return {
-    repoUrl: project.repo_url,
-    token: null,
+    repoUrl: target.repoUrl,
+    token: target.credentialMode === "kortix-token" ? kortixToken : null,
     username: "x-access-token",
-    needsManagedToken: git?.managed === true,
+    needsManagedToken: target.credentialMode === "managed-git-token",
   };
 }
 
@@ -313,7 +258,7 @@ async function projectsClone(
       hostArg ?? located.located.hostName ?? activeHostName() ?? undefined,
       auth.api_base,
     );
-    if (target.token) configureClonedProjectAuth(repoRoot, target.repoUrl);
+    if (target.token) configureProjectGitAuth(repoRoot, target.repoUrl);
   }
 
   process.stdout.write(`${status.ok(`Cloned ${project.name}`)}\n`);
