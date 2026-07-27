@@ -18,7 +18,17 @@
  *     Feed it the same evidence twice and it MUST return the same string.
  */
 import { createHash } from 'node:crypto';
-import { namesThreshold, type GoalMetricSummary } from '../observations/wire';
+import {
+  namesThreshold,
+  resolveGoalStall,
+  type GoalMetricSummary,
+  type GoalStallRule,
+} from '../observations/wire';
+import {
+  isRequestAnswerOverdue,
+  requestUnansweredForMs,
+  resolveRequestUnansweredAfterMs,
+} from '../requests/wire';
 import { isTerminalTaskStatus, type AgiTaskRow } from '../tasks/wire';
 
 /**
@@ -56,8 +66,23 @@ export const STALL_REASONS = [
   /** A claim that still looks live, held by a session that has already ended.
    *  This is the overnight failure the whole module exists for. */
   'claiming_session_terminal',
-  /** The claim's TTL passed and nothing else will pick the task up. */
+  /** The claim's TTL passed. The row still names the session that dropped it,
+   *  which is the whole point: somebody was on this and is not any more.
+   *
+   *  This is deliberately NOT rescued by a trigger or a goal. See
+   *  {@link resolveTaskLiveness} — a future fire is answer 2 for work nobody has
+   *  started, never for work that was started and abandoned. */
   'claim_expired',
+  /** The row asserts a session is working this RIGHT NOW (`status: doing`) and
+   *  no session holds it. The claim was released — by the session-terminal
+   *  writeback, by the sweep, or by the agent itself — and nothing moved the
+   *  status with it.
+   *
+   *  This is the state the sweep's own fix creates, and the reason R-32's bound
+   *  used to be unreachable: releasing a dead lease erases the evidence in the
+   *  row, so the very next verdict read `awaiting_trigger` and recovery was
+   *  skipped for a task left mid-flight with nobody on it. */
+  'abandoned_in_flight',
   /** Every unresolved `blocked_by` edge points at a cancelled or missing task.
    *  R-17: a cancelled blocker does NOT satisfy the dependency, so the edge is
    *  unresolved forever — waiting on it is not a live path. */
@@ -70,6 +95,19 @@ export const STALL_REASONS = [
    *  but a row. A task with an undelivered ask is NOT rescued by its goal's next
    *  `push`: the next fire re-derives the same block and hits the same wall. */
   'request_undelivered',
+  /** The ask reached a named human and that human has not answered it within the
+   *  window `DEFAULT_REQUEST_UNANSWERED_HOURS` sets (configurable, and echoed on
+   *  every verdict as `requestUnansweredAfterMs`). R-28 answer 5 says
+   *  "AWAITING a specific responder", and waiting is a thing that stops being
+   *  true: a delivery is one event, not a standing promise that somebody will
+   *  act, and R-12g deliberately buys no second nag.
+   *
+   *  Without this, one unread inbox row propped a task up as healthy forever —
+   *  measured at 45 days on a workspace whose board reported `stalled_count: 0`.
+   *  It is the same false-healthy verdict `request_undelivered` closes, reached
+   *  from the other side, and it is reported separately because the fix is
+   *  different: go and answer the ask, rather than go and deliver it. */
+  'request_unanswered',
   /** R-12g's other half, and the one that actually fires in production. The task
    *  says it is `blocked`, names no blocking task (R-16: `blocked_by` is how a
    *  dependency is stated), and carries no pending human request. So whatever it
@@ -85,6 +123,21 @@ export const STALL_REASONS = [
   'blocked_without_cause',
 ] as const;
 export type StallReason = (typeof STALL_REASONS)[number];
+
+/**
+ * Statuses whose meaning is "a session is working this right now".
+ *
+ * One member, and the narrowness is the point. `backlog` and `todo` say nobody
+ * has started; `review` says the work is done and something else is owed;
+ * `blocked` has its own reason. Only `doing` makes a claim about the present
+ * tense that a claimless row contradicts, and a stall detector that condemned
+ * `review` or `todo` for the same reason would bury the real signal.
+ */
+export const IN_FLIGHT_TASK_STATUSES = ['doing'] as const;
+
+export function isInFlightTaskStatus(status: string): boolean {
+  return (IN_FLIGHT_TASK_STATUSES as readonly string[]).includes(status);
+}
 
 /**
  * What we know about the session named by `claim_session_id`.
@@ -253,7 +306,18 @@ export function isRecoverableStall(input: {
   // convert "we could not reach anyone" into "someone owns this", which is the
   // false-healthy answer the whole section exists to prevent. It is surfaced and
   // left surfaced (R-29: surfaced, not retried).
-  if (input.reason === 'request_undelivered') return false;
+  //
+  // `request_unanswered` is excluded for the same reason and one more. The thing
+  // that would unstick the work is a specific human act — a grant, a key, a
+  // decision — and no task this system manufactures can perform it. A
+  // continuation would be a row asking an agent to wait harder, and the
+  // escalation after it would hand the account owner a task whose entire content
+  // is "somebody did not answer a question", competing for attention with the
+  // ask itself. The ask is already addressed to a person and already on the stall
+  // surface; the honest act is to leave it there and say how long it has waited.
+  if (input.reason === 'request_undelivered' || input.reason === 'request_unanswered') {
+    return false;
+  }
   // `blocked_without_cause` deliberately stays recoverable. It is a stall on
   // work that WAS picked up and dropped, which is exactly what R-32's bound
   // exists for: one continuation, and if the same evidence comes back, an
@@ -315,24 +379,43 @@ export interface TaskLivenessInput {
    *  pending rows are passed: a satisfied ask must stop propping the task up the
    *  instant it is answered. */
   request: PendingRequestRef | null;
+  /** How long a delivered ask keeps counting as a live path, in ms. Defaults to
+   *  the configured window so a caller that has not thought about it gets the
+   *  same answer the read surface gives; pass it explicitly to judge a whole
+   *  workspace with one threshold (and to test it without touching env). */
+  requestUnansweredAfterMs?: number;
 }
 
 /**
  * What liveness needs to know about a pending human request, and nothing more.
  *
- * `delivered` arrives as a decided boolean rather than a timestamp because
- * requests/wire.ts owns that verdict ({@link isLiveRequest} there) and there
- * must be exactly one place that decides whether an ask reached a human. Two
- * implementations of R-12g's line would eventually disagree, and the direction
- * they would disagree in is "reads healthy, nobody was told".
+ * `delivered` arrives as a decided boolean because requests/wire.ts owns R-12g's
+ * line (`isDelivered` there) and there must be exactly one place that decides
+ * whether an ask reached a human. Two implementations of it would eventually
+ * disagree, and the direction they would disagree in is "reads healthy, nobody
+ * was told".
+ *
+ * The AGE is not pre-decided the same way, and deliberately so: it depends on
+ * `now`, and this module's whole contract is that `now` comes from the caller.
+ * The timestamp travels; the comparison happens once, below, against the same
+ * instant every other branch is judged with.
  */
 export interface PendingRequestRef {
   requestId: string;
   kind: string;
   need: string;
   responderUserId: string | null;
+  /** R-12g's line: the ask reached a surface a human sees. This is the DELIVERY
+   *  fact alone — whether anybody acted on it is the separate question
+   *  `deliveredAt` answers. */
   delivered: boolean;
   deliveredVia: string | null;
+  /** WHEN it reached them, so the verdict can say how long it has gone
+   *  unanswered. Optional because a caller that only knows the boolean is still
+   *  a legitimate caller (the session-terminal writeback is one); an absent
+   *  timestamp means the age is unknown and no ask is aged out on a fact nobody
+   *  has. */
+  deliveredAt?: Date | null;
 }
 
 export interface TaskLiveness {
@@ -351,6 +434,16 @@ export interface TaskLiveness {
    *  not decide. A human reading "why is this stuck" needs the ask and its link
    *  in front of them, not a request id to go look up. */
   request: PendingRequestRef | null;
+  /** The window this verdict was reached with, echoed exactly like
+   *  `flatStallAfter` on the goal side so a caller never has to guess which
+   *  threshold produced `request_unanswered` — or why an ask this old has not
+   *  produced it yet. */
+  requestUnansweredAfterMs: number;
+  /** How long the attached ask has gone unanswered, in ms, or null when there is
+   *  no ask, it was never delivered, or the caller supplied no timestamp. This is
+   *  the number the stall report reads out loud: "nobody has answered X for X
+   *  days" is the sentence, and a reason string alone cannot say it. */
+  requestUnansweredForMs: number | null;
 }
 
 /**
@@ -375,17 +468,34 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
       }
     : null;
 
+  const unansweredAfterMs = input.requestUnansweredAfterMs ?? resolveRequestUnansweredAfterMs();
+  const unansweredForMs = input.request?.delivered
+    ? requestUnansweredForMs({ deliveredAt: input.request.deliveredAt, now })
+    : null;
+
   const base = {
     reason: null as StallReason | null,
     claimSession: null as ClaimSessionState | null,
     unresolvedBlockers: [] as string[],
     recovery,
     request: input.request,
+    requestUnansweredAfterMs: unansweredAfterMs,
+    requestUnansweredForMs: unansweredForMs,
   };
 
-  // R-12g's line, decided once: a pending ask that reached a surface a human
-  // sees is a live path (R-28 answer 5); one that reached nothing is not.
-  const requestIsLivePath = input.request?.delivered === true;
+  // R-12g's line plus its missing half, decided once. A pending ask is a live
+  // path (R-28 answer 5) only while BOTH are true: it reached a surface a human
+  // sees, and that human still plausibly means to answer it. An ask delivered
+  // and ignored for two days is not a person about to act; it is a fact about
+  // something that happened once, which R-30 is explicit does not move work.
+  const requestOverdue =
+    input.request?.delivered === true &&
+    isRequestAnswerOverdue({
+      deliveredAt: input.request.deliveredAt,
+      now,
+      unansweredAfterMs,
+    });
+  const requestIsLivePath = input.request?.delivered === true && !requestOverdue;
 
   if (isTerminalTaskStatus(task.status)) return { ...base, state: 'settled' };
 
@@ -454,9 +564,15 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
   // live path if it can move the work, so a pending ask decides this task's
   // verdict and the trigger does not get to overrule it.
   if (input.request) {
-    return requestIsLivePath
-      ? { ...base, state: 'awaiting_response' }
-      : { ...base, state: 'stalled', reason: 'request_undelivered' };
+    if (requestIsLivePath) return { ...base, state: 'awaiting_response' };
+    return {
+      ...base,
+      state: 'stalled',
+      // Which failure it is matters more than that it is one: `undelivered` is
+      // fixed by sending the ask, `unanswered` by answering it. Reporting either
+      // as the other sends a human to the wrong place.
+      reason: requestOverdue ? 'request_unanswered' : 'request_undelivered',
+    };
   }
 
   // R-12g, the reachable half. Everything above has been ruled out: no live
@@ -478,6 +594,44 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
     return { ...base, state: 'stalled', reason: 'blocked_without_cause' };
   }
 
+  // Work that was PICKED UP AND DROPPED, evaluated before answer 2 — the second
+  // deliberate departure from R-28's listed order, and the one that made the
+  // difference between a stall surface and a board that reports zero.
+  //
+  // Answer 2 is "a future trigger fire that will pick it up". That sentence is
+  // true of a task nobody has started: the fire finds it in `todo`, claims it,
+  // and work begins. It is NOT true of a task somebody already started and
+  // abandoned. Two rows say so, and neither is prose:
+  //
+  //   • `claim_session_id` still names a session whose lease has lapsed —
+  //     somebody took this and did not put it down;
+  //   • `status: doing` with no claimant at all — the row asserts a session is
+  //     on it in the present tense and no session is.
+  //
+  // The second case is the one the sweep itself creates. Releasing a dead lease
+  // is the right first fix, but it ERASES the claim, so before this branch
+  // existed the very next verdict on that same row was `awaiting_trigger` and
+  // bounded recovery (R-32) was skipped for a task left mid-flight with nobody
+  // on it and no recovery row. Since the AGI's prompt tells it to create every
+  // task with `--goal`, that made R-32 structurally unreachable for the entire
+  // board.
+  //
+  // What a future fire actually does with such a row is re-derive the same
+  // half-finished state and stop — the identical argument the ask and the prose
+  // block above are decided on. A trigger is a live path only if it can move the
+  // work.
+  const claimLapsed = task.claimSessionId !== null;
+  if (claimLapsed || isInFlightTaskStatus(task.status)) {
+    return {
+      ...base,
+      state: 'stalled',
+      // The lapsed lease is the more specific evidence — it names WHO dropped
+      // this — so it wins when both are true.
+      reason: claimLapsed ? 'claim_expired' : 'abandoned_in_flight',
+      claimSession: claimLapsed ? input.claimSession : null,
+    };
+  }
+
   // R-28 answer 2. `trigger_slug` is the task's own recurrence lineage (R-22) and
   // `goal_slug` implies the goal's standing `push` (R-8, R-11) — both are a
   // future fire of the ONE trigger subsystem. We do not re-read kortix.yaml to
@@ -487,12 +641,9 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
     return { ...base, state: 'awaiting_trigger' };
   }
 
-  return {
-    ...base,
-    state: 'stalled',
-    reason: task.claimSessionId !== null ? 'claim_expired' : 'no_live_path',
-    claimSession: task.claimSessionId !== null ? input.claimSession : null,
-  };
+  // Nothing took it, nothing is scheduled to. `claim_session_id` is necessarily
+  // null here — the branch above owns every row that carries one.
+  return { ...base, state: 'stalled', reason: 'no_live_path' };
 }
 
 // ─── R-12d/R-12e: is the GOAL moving? ───────────────────────────────────────
@@ -520,8 +671,10 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
  *   unquantified  — active, nothing recorded, and `done_when` names no threshold
  *                   to record. Legal under R-7, reported so it is a choice
  *                   rather than an oversight.
- *   stalled       — R-12e. Every metric has been flat across at least N
- *                   consecutive readings.
+ *   stalled       — R-12e. The metric that defines the goal has been flat across
+ *                   at least N consecutive readings. Which metric that is, and
+ *                   therefore which rule applied, is on the verdict — see
+ *                   {@link resolveGoalStall}.
  */
 export const GOAL_LIVENESS_STATES = [
   'settled',
@@ -547,6 +700,16 @@ export interface GoalLiveness {
   /** The threshold this verdict was reached with, so a caller never has to guess
    *  which N produced it. */
   flatStallAfter: number;
+  /** Which rule decided this — `primary` when the goal declares `metric:`,
+   *  `any_metric` when it does not. Two rules that disagree on purpose, so a
+   *  reader who cannot tell them apart cannot read the verdict. */
+  rule: GoalStallRule;
+  /** The metric whose flat run produced `stalled`, or null. `flatMetrics` lists
+   *  everything that is flat; this names the one that was the VERDICT. */
+  drivenBy: string | null;
+  /** The goal's declared primary metric, or null. Echoed so `unmeasurable` on a
+   *  goal that has other series is self-explaining: this is the one missing. */
+  primaryMetric: string | null;
 }
 
 export interface GoalLivenessInput {
@@ -554,35 +717,56 @@ export interface GoalLivenessInput {
   doneWhen: string;
   metrics: readonly GoalMetricSummary[];
   flatStallAfter: number;
+  /** The goal's `metric:` declaration, already normalized by the manifest parser.
+   *  Optional so an existing caller keeps the `any_metric` rule. */
+  primaryMetric?: string | null;
 }
 
 /**
- * R-12e, decided from the series alone.
+ * R-12e, decided from the series alone. The RULE lives in
+ * {@link resolveGoalStall} (../observations/wire.ts), next to the series it
+ * reasons about; this function is the state machine around it — status first,
+ * then measurability, then movement.
  *
- * A goal stalls only when EVERY metric it carries is flat past the threshold.
- * That is the deliberate reading of "the goal did not get closer": if a goal
- * tracks rank and signups, and rank has been pinned for a week while signups
- * climb, something moved and the goal is advancing. The trade-off is stated
- * honestly — a goal that carries one real metric and one noisy one can hide a
- * flat line behind the noise, and the answer to that is to stop recording the
- * noisy one, not to make any single flat metric condemn the goal.
+ * The ordering is the whole contract:
  *
- * `unmeasurable` is checked BEFORE the flat run and can never be reached by it:
- * with zero observations there is no run to be flat, and R-12d insists that case
- * is reported as its own thing rather than folded into "on track" OR into
- * "stalled".
+ *   • terminal and paused statuses are outside the question entirely.
+ *   • `unmeasurable` is checked BEFORE the flat run and can never be reached by
+ *     it. With no reading for the metric that matters there is no run to be
+ *     flat, and R-12d insists that case is its own thing rather than folded into
+ *     "on track" OR into "stalled". A goal that DECLARES its metric and has
+ *     never recorded it lands here even when other series exist — nobody is
+ *     measuring the thing the goal is about, and three healthy-looking unrelated
+ *     series make that worse, not better.
+ *   • only then does flatness decide, and it decides by exactly one metric under
+ *     `primary` or by any metric under `any_metric`.
  */
 export function resolveGoalLiveness(input: GoalLivenessInput): GoalLiveness {
+  const stall = resolveGoalStall({
+    metrics: input.metrics,
+    primaryMetric: input.primaryMetric ?? null,
+    flatStallAfter: input.flatStallAfter,
+  });
+
   const base = {
     reason: null as GoalStallReason | null,
     flatMetrics: [] as { metric: string; flatObservations: number }[],
     flatStallAfter: input.flatStallAfter,
+    rule: stall.rule,
+    drivenBy: null as string | null,
+    primaryMetric: stall.primaryMetric,
   };
 
   if (input.status === 'achieved' || input.status === 'abandoned') {
     return { ...base, state: 'settled' };
   }
   if (input.status === 'paused') return { ...base, state: 'paused' };
+
+  // R-12d, per-metric. Deliberately ahead of the empty-metrics check so the two
+  // roads to "un-judged" produce the same word.
+  if (stall.primaryUnobserved) {
+    return { ...base, state: 'unmeasurable', flatMetrics: stall.flatMetrics };
+  }
 
   if (input.metrics.length === 0) {
     return {
@@ -591,15 +775,19 @@ export function resolveGoalLiveness(input: GoalLivenessInput): GoalLiveness {
     };
   }
 
-  const flatMetrics = input.metrics
-    .filter((metric) => metric.flatObservations >= input.flatStallAfter)
-    .map((metric) => ({ metric: metric.metric, flatObservations: metric.flatObservations }))
-    .sort((a, b) => b.flatObservations - a.flatObservations);
-
-  if (flatMetrics.length === input.metrics.length) {
-    return { ...base, state: 'stalled', reason: 'metric_flat', flatMetrics };
+  if (stall.stalled) {
+    return {
+      ...base,
+      state: 'stalled',
+      reason: 'metric_flat',
+      flatMetrics: stall.flatMetrics,
+      drivenBy: stall.drivenBy,
+    };
   }
-  return { ...base, state: 'measuring', flatMetrics };
+  // Flat metrics are still reported by name on a `measuring` goal: under
+  // `primary` a flat secondary never condemns anything, and it must still be
+  // visible rather than invisible.
+  return { ...base, state: 'measuring', flatMetrics: stall.flatMetrics };
 }
 
 export function serializeGoalLiveness(liveness: GoalLiveness) {
@@ -611,6 +799,12 @@ export function serializeGoalLiveness(liveness: GoalLiveness) {
       flat_observations: entry.flatObservations,
     })),
     flat_stall_after: liveness.flatStallAfter,
+    /** R-12e: which of the two rules produced `state`, and which metric was the
+     *  verdict. Without both, "measuring" is ambiguous between "the number that
+     *  matters moved" and "some number moved". */
+    stall_rule: liveness.rule,
+    driven_by: liveness.drivenBy,
+    primary_metric: liveness.primaryMetric,
   };
 }
 
@@ -631,6 +825,8 @@ export function serializeTaskLiveness(liveness: TaskLiveness) {
       : null,
     // R-12g, on the wire. `delivered` is the field a human scanning a stall
     // report actually needs: false means the ask exists and nobody was told.
+    // `delivered_at` is the other half — true with a date two months back means
+    // somebody WAS told and nothing happened.
     request: liveness.request
       ? {
           request_id: liveness.request.requestId,
@@ -639,8 +835,13 @@ export function serializeTaskLiveness(liveness: TaskLiveness) {
           responder_user_id: liveness.request.responderUserId,
           delivered: liveness.request.delivered,
           delivered_via: liveness.request.deliveredVia,
+          delivered_at: liveness.request.deliveredAt?.toISOString() ?? null,
         }
       : null,
+    // Echoed on every verdict, like `flat_stall_after` on the goal side: the
+    // threshold that produced the answer, and the age it was compared against.
+    request_unanswered_after_ms: liveness.requestUnansweredAfterMs,
+    request_unanswered_for_ms: liveness.requestUnansweredForMs,
   };
 }
 

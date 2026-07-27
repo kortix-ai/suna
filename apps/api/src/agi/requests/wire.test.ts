@@ -1,13 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_REQUEST_UNANSWERED_HOURS,
+  REQUEST_FINGERPRINT_PREFIX,
+  REQUEST_UNANSWERED_ENV_KEY,
   canonicalNeed,
+  isDelivered,
   isLiveRequest,
+  isRequestAnswerOverdue,
   isRequestKind,
   isRequestStatus,
-  REQUEST_FINGERPRINT_PREFIX,
   requestBody,
   requestFingerprint,
   requestHeadline,
+  requestUnansweredForMs,
+  resolveRequestUnansweredAfterMs,
   serializeAgiRequest,
   type AgiRequestRow,
 } from './wire';
@@ -60,29 +66,113 @@ describe('vocabularies', () => {
 
 // ─── The one boolean the whole feature turns on ─────────────────────────────
 
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+/** The row above was delivered at 07:00:01. `now` is pinned in every call below
+ *  rather than left to the real clock: with a fixture timestamp and a real
+ *  `Date.now()`, "is this ask still live" would answer true today and false the
+ *  day after tomorrow, and the suite would rot silently into always-stalled. */
+const SOON = new Date('2026-07-27T08:00:00.000Z');
+/** The fixture's delivery instant, named so the age arithmetic below reads as
+ *  "this long after it reached them" rather than as an offset from nothing. */
+const DELIVERED_AT = new Date('2026-07-27T07:00:01.000Z');
+const live = (overrides: Partial<AgiRequestRow> = {}, now: Date = SOON) =>
+  isLiveRequest(row(overrides), { now });
+
 describe('isLiveRequest — R-12g', () => {
-  test('pending AND delivered is a live path', () => {
-    expect(isLiveRequest(row())).toBe(true);
+  test('pending AND delivered AND recent is a live path', () => {
+    expect(live()).toBe(true);
   });
 
   test('recorded but never sent is NOT a live path — this is the whole point', () => {
     // A row with no delivery is the database-shaped version of writing the ask
     // into a session log. It must not make the task look healthy.
-    expect(isLiveRequest(row({ deliveredAt: null, deliveredVia: null }))).toBe(false);
+    expect(live({ deliveredAt: null, deliveredVia: null })).toBe(false);
   });
 
   test('a satisfied request stops propping the task up the moment it is answered', () => {
-    expect(
-      isLiveRequest(row({ status: 'satisfied', satisfiedAt: new Date('2026-07-27T09:00:00Z') })),
-    ).toBe(false);
+    expect(live({ status: 'satisfied', satisfiedAt: new Date('2026-07-27T09:00:00Z') })).toBe(false);
   });
 
   test('a cancelled request is not a live path either', () => {
-    expect(isLiveRequest(row({ status: 'cancelled' }))).toBe(false);
+    expect(live({ status: 'cancelled' })).toBe(false);
   });
 
   test('inbox delivery counts — a named person with a queue is a real surface', () => {
-    expect(isLiveRequest(row({ deliveredVia: 'inbox' }))).toBe(true);
+    expect(live({ deliveredVia: 'inbox' })).toBe(true);
+  });
+
+  // ─── the age term, and why the boolean above was not enough ───────────────
+  //
+  // Without it, ONE delivered row propped its task up as `awaiting_response`
+  // forever: reproduced at 45 days unanswered on a board reporting
+  // `stalled_count: 0`. On a fresh workspace the surface reached is `inbox` — a
+  // row a human has to go looking for — and R-12g deliberately buys no second
+  // nag, so nothing was ever going to change that answer.
+
+  test('a delivery is an event, not a standing promise: past the window it is dead', () => {
+    const fortyFiveDays = new Date(DELIVERED_AT.getTime() + 45 * DAY);
+    expect(live({}, fortyFiveDays)).toBe(false);
+    // Still PENDING and still DELIVERED — neither of the old halves changed. The
+    // only thing that moved is the clock, which is exactly the point.
+    expect(row().status).toBe('pending');
+    expect(isDelivered(row())).toBe(true);
+  });
+
+  test('the window is inclusive at the boundary and configurable per call', () => {
+    const at = new Date(DELIVERED_AT.getTime() + 6 * HOUR);
+    expect(live({}, at)).toBe(true);
+    expect(isLiveRequest(row(), { now: at, unansweredAfterMs: 6 * HOUR })).toBe(false);
+    expect(isLiveRequest(row(), { now: at, unansweredAfterMs: 6 * HOUR + 1 })).toBe(true);
+  });
+
+  test('an ask nobody sent never ages — undelivered is its own failure', () => {
+    // The two must stay distinguishable: one is fixed by delivering it, the
+    // other by answering it, and `deliveredAt` is what tells them apart.
+    const undelivered = row({ deliveredAt: null, deliveredVia: null, responderUserId: null });
+    expect(
+      isRequestAnswerOverdue({ deliveredAt: undelivered.deliveredAt, now: SOON, unansweredAfterMs: 1 }),
+    ).toBe(false);
+    expect(requestUnansweredForMs({ deliveredAt: undelivered.deliveredAt, now: SOON })).toBeNull();
+  });
+
+  test('the age is reported, and never negative', () => {
+    const at = new Date(DELIVERED_AT.getTime() + 3 * DAY);
+    expect(requestUnansweredForMs({ deliveredAt: row().deliveredAt, now: at })).toBe(3 * DAY);
+    // Clock skew between the database and this process must not produce a
+    // negative wait that reads as "delivered in the future".
+    const before = new Date(DELIVERED_AT.getTime() - 5_000);
+    expect(requestUnansweredForMs({ deliveredAt: row().deliveredAt, now: before })).toBe(0);
+  });
+
+  test('`live` on the wire is the aged verdict, so no caller re-implements it', () => {
+    // The CLI, the UI and liveness all read this field. If it disagreed with the
+    // stall surface, one of them would tell a human the task is fine.
+    const stale = row({ deliveredAt: new Date(Date.now() - 90 * DAY) });
+    expect(serializeAgiRequest(stale).live).toBe(false);
+    expect(serializeAgiRequest(row({ deliveredAt: new Date() })).live).toBe(true);
+  });
+});
+
+describe('resolveRequestUnansweredAfterMs', () => {
+  test('the default is two days, in ms', () => {
+    expect(resolveRequestUnansweredAfterMs({})).toBe(DEFAULT_REQUEST_UNANSWERED_HOURS * HOUR);
+    expect(DEFAULT_REQUEST_UNANSWERED_HOURS).toBe(48);
+  });
+
+  test('the env override is stated in hours', () => {
+    expect(resolveRequestUnansweredAfterMs({ [REQUEST_UNANSWERED_ENV_KEY]: ' 6 ' })).toBe(6 * HOUR);
+  });
+
+  test('a typo can never switch the detector off', () => {
+    // `age >= NaN` is false for every age, which would make EVERY delivered ask
+    // live forever — the exact defect this threshold closes, reintroduced by a
+    // misspelling. Same for zero, in the opposite direction.
+    for (const raw of ['', 'soon', '6h', '-1', '0', '1.5']) {
+      expect(resolveRequestUnansweredAfterMs({ [REQUEST_UNANSWERED_ENV_KEY]: raw })).toBe(
+        DEFAULT_REQUEST_UNANSWERED_HOURS * HOUR,
+      );
+    }
   });
 });
 

@@ -73,28 +73,143 @@ export function isRequestStatus(value: unknown): value is RequestStatus {
 
 // ─── R-12g: what counts as a live path to a human ───────────────────────────
 
+/** Milliseconds in an hour. The env override is stated in hours because that is
+ *  the unit a human reasons about waiting in; everything in code carries ms so
+ *  there is only ever one conversion, here. */
+const HOUR_MS = 3_600_000;
+
+/**
+ * How long a DELIVERED, still-pending ask keeps counting as a live path.
+ *
+ * Two days.
+ *
+ * The ask is a single event. On a fresh workspace the surface it reaches is the
+ * `inbox` tier — a durable row the human has to come looking for — and R-12g
+ * deliberately buys no second nag, so nothing after the first delivery will
+ * remind anybody. Without an age term that one unanswered row keeps its task in
+ * `awaiting_response` forever, which is the SAME false-healthy verdict §4.3 was
+ * written to abolish, arrived at from the other direction: before §4.3 the goal's
+ * push made a blocked task look fine, and after it an ask nobody read does.
+ *
+ * Forty-eight hours is one full working day with a night on either side: an ask
+ * delivered on Friday evening surfaces as unanswered on Sunday evening, which is
+ * exactly when a Monday-morning human wants it at the top of the stall report. A
+ * shorter window would trip on a human who saw it and planned to do it after
+ * lunch; a longer one lets a whole week of unattended pushes re-derive the same
+ * block against a wall nobody was told is still standing.
+ *
+ * The cost of being early is one line in a report a human already reads (R-29:
+ * surfaced, never retried — liveness refuses to manufacture a continuation for
+ * an unanswered ask). The cost of being late is a workspace that is stuck and
+ * says it is fine. So the bias is deliberately toward early.
+ */
+export const DEFAULT_REQUEST_UNANSWERED_HOURS = 48;
+
+export const REQUEST_UNANSWERED_ENV_KEY = 'KORTIX_AGI_REQUEST_UNANSWERED_HOURS';
+
+/**
+ * The configured window, in milliseconds.
+ *
+ * A bad value falls back to the default rather than throwing, for the same
+ * reason `resolveFlatStallThreshold` does: a typo in an env var must not be able
+ * to switch the detector off, and `age < NaN` is always false — which would
+ * silently make EVERY delivered ask a live path forever, the exact defect this
+ * threshold exists to close. Zero is rejected for the mirror-image reason: it
+ * would stall every ask the instant it was delivered.
+ */
+export function resolveRequestUnansweredAfterMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env[REQUEST_UNANSWERED_ENV_KEY];
+  const fallback = DEFAULT_REQUEST_UNANSWERED_HOURS * HOUR_MS;
+  if (raw === undefined || !/^\d+$/.test(raw.trim())) return fallback;
+  const hours = Number(raw.trim());
+  return (hours >= 1 ? hours : DEFAULT_REQUEST_UNANSWERED_HOURS) * HOUR_MS;
+}
+
+/**
+ * R-12g's line, and nothing else: did this ask reach a surface a human sees?
+ *
+ * Kept separate from {@link isLiveRequest} because the two questions have
+ * different answers and a caller reporting WHY a task is stuck needs both. An
+ * ask that was never delivered and an ask that was delivered and ignored are
+ * different failures with different fixes — deliver it, versus go and answer it
+ * — and collapsing them would report "nobody was told" about a person who was
+ * told forty-five days ago.
+ *
+ * `responderUserId` is deliberately NOT re-checked: the delivery-addressed CHECK
+ * constraint makes a delivered row with no responder unstorable, so the
+ * timestamp already implies the addressee. Re-deriving it in JavaScript would be
+ * a second source of truth that could drift from the one the database enforces.
+ */
+export function isDelivered(request: Pick<AgiRequestRow, 'deliveredAt'>): boolean {
+  return request.deliveredAt !== null && request.deliveredAt !== undefined;
+}
+
+/**
+ * Has a delivered ask gone unanswered past the window?
+ *
+ * Takes `now` rather than reading the clock, so liveness — which is a total
+ * function over rows plus one caller-supplied instant — can ask the question
+ * with the same `now` it judges everything else with. An `undefined` timestamp
+ * means the caller does not know when delivery happened and the age cannot be
+ * judged; that answers `false`, because inventing an age would stall a task on a
+ * fact nobody has.
+ */
+export function isRequestAnswerOverdue(input: {
+  deliveredAt: Date | null | undefined;
+  now: Date;
+  unansweredAfterMs: number;
+}): boolean {
+  if (!input.deliveredAt) return false;
+  return input.now.getTime() - input.deliveredAt.getTime() >= input.unansweredAfterMs;
+}
+
+/** How long a delivered ask has been waiting, in ms, or null when it was never
+ *  delivered (or the caller did not supply the timestamp). Never negative: a row
+ *  delivered a few ms into the future by clock skew has waited zero. */
+export function requestUnansweredForMs(input: {
+  deliveredAt: Date | null | undefined;
+  now: Date;
+}): number | null {
+  if (!input.deliveredAt) return null;
+  return Math.max(0, input.now.getTime() - input.deliveredAt.getTime());
+}
+
 /**
  * THE predicate. R-28 answer 5, in one expression.
  *
- * Both halves are load-bearing and neither implies the other:
+ * Three halves now, and none implies another:
  *
  *   • `status === 'pending'` — a satisfied or cancelled request is history. It
  *     must stop propping the task up the moment it is answered, or the first
  *     credential a workspace ever supplies makes its task look alive forever.
- *   • `deliveredAt !== null` — R-12g. This is the whole §4.3 distinction: the
- *     ask reached a surface a human sees. A row with a null `delivered_at` was
- *     recorded and never sent, which is the database-shaped version of writing
- *     it in the session log.
+ *   • delivered — R-12g. The ask reached a surface a human sees. A row with a
+ *     null `delivered_at` was recorded and never sent, which is the
+ *     database-shaped version of writing it in the session log.
+ *   • not overdue — R-28 answer 5 says "AWAITING a specific responder", and
+ *     waiting is a thing that can stop being true. A delivery is one event, not
+ *     a standing promise that somebody will act; past the window the ask has
+ *     become the same kind of evidence as a PID or a stated intention (R-30) —
+ *     something that happened once and moves nothing.
  *
- * `responderUserId` is deliberately NOT re-checked here: the delivery-addressed
- * CHECK constraint makes a delivered row with no responder unstorable, so the
- * timestamp already implies the addressee. Re-deriving it in JavaScript would be
- * a second source of truth that could drift from the one the database enforces.
+ * `now` and the window default rather than being required so that the callers
+ * that only have a row (the serializer's `live` field, the session-terminal
+ * writeback) get the aged answer too. Every caller reading the same verdict is
+ * the property this module is built around; a second implementation would
+ * eventually disagree, and the direction it would disagree in is "reads healthy,
+ * nobody is coming".
  */
 export function isLiveRequest(
   request: Pick<AgiRequestRow, 'status' | 'deliveredAt'>,
+  options: { now?: Date; unansweredAfterMs?: number } = {},
 ): boolean {
-  return request.status === 'pending' && request.deliveredAt !== null;
+  if (request.status !== 'pending' || !isDelivered(request)) return false;
+  return !isRequestAnswerOverdue({
+    deliveredAt: request.deliveredAt,
+    now: options.now ?? new Date(),
+    unansweredAfterMs: options.unansweredAfterMs ?? resolveRequestUnansweredAfterMs(),
+  });
 }
 
 // ─── R-20 applied to asking a human ─────────────────────────────────────────

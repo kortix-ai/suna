@@ -1,6 +1,14 @@
 import { describe, expect, test, beforeAll, afterAll, beforeEach } from 'bun:test';
 import { eq, inArray, sql } from 'drizzle-orm';
-import { accountMembers, accounts, agiTasks, projectMembers, projectSessions, projects } from '@kortix/db';
+import {
+  accountMembers,
+  accounts,
+  agiRequests,
+  agiTasks,
+  projectMembers,
+  projectSessions,
+  projects,
+} from '@kortix/db';
 import { db } from '../../shared/db';
 import { app } from '../../index';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -116,6 +124,34 @@ async function task(overrides: Partial<Parameters<typeof createTask>[0]> = {}) {
     originFingerprint: null,
     ...overrides,
   });
+  return row;
+}
+
+/**
+ * A pending ask that reached a named human `agoMs` ago and was never answered.
+ *
+ * Inserted directly rather than raised through the route because the fact under
+ * test is AGE, and no route can mint a 45-day-old delivery. The row is otherwise
+ * exactly what `POST .../agi/requests` writes — every delivery CHECK on the table
+ * (coherent, addressed) has to pass, which is what makes it a fair fixture.
+ */
+async function unansweredRequest(taskId: string, agoMs: number, via = 'inbox') {
+  const deliveredAt = new Date(Date.now() - agoMs);
+  const [row] = await db
+    .insert(agiRequests)
+    .values({
+      workspaceId: WORKSPACE,
+      taskId,
+      kind: 'access',
+      need: 'Google Search Console property access',
+      why: 'The SEO push cannot read rankings without it.',
+      responderUserId: OWNER,
+      status: 'pending',
+      deliveredAt,
+      deliveredVia: via,
+      createdAt: deliveredAt,
+    })
+    .returning();
   return row;
 }
 
@@ -297,8 +333,17 @@ describe('bounded recovery (R-32)', () => {
     expect(continuation.agent).toBe('trader');
     expect(continuation.assigneeUserId).toBeNull();
     expect(continuation.title).toBe('Stalled: Rebalance the book');
+    // `abandoned_in_flight`, not `no_live_path`: the hook released the dead
+    // lease, which erased the claim, and what is left on the row is a task that
+    // says a session is working it with no session holding it. `no_live_path`
+    // means a human never scheduled the work — a different thing, and no longer
+    // what this row shows.
     expect(continuation.originFingerprint).toBe(
-      stallFingerprint({ taskId: created.taskId, taskStatus: 'doing', reason: 'no_live_path' }),
+      stallFingerprint({
+        taskId: created.taskId,
+        taskStatus: 'doing',
+        reason: 'abandoned_in_flight',
+      }),
     );
     expect(continuation.body).toContain(sessionId);
   });
@@ -392,16 +437,14 @@ describe('the stall surface', () => {
     });
   });
 
-  test('the sweep clears the dead lease and, for a goal-backed task, stops there', async () => {
+  test('the sweep clears the dead lease and stops there when the lease WAS the problem', async () => {
+    // Nobody had started this one: the crashed session took the claim and never
+    // moved the status off `todo`. Clearing the lease genuinely restores R-28
+    // answer 2 — the goal's next push finds it and begins — so manufacturing a
+    // continuation for it would be noise a human has to triage.
     const sessionId = await session({ status: 'failed' });
-    const created = await task({ goalSlug: 'oil-desk' });
-    await claimTask({
-      workspaceId: WORKSPACE,
-      taskId: created.taskId,
-      sessionId,
-      ttlSeconds: 900,
-      status: 'doing',
-    });
+    const created = await task({ goalSlug: 'oil-desk', status: 'todo' });
+    await claimTask({ workspaceId: WORKSPACE, taskId: created.taskId, sessionId, ttlSeconds: 900 });
 
     const { status, body } = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
     expect(status).toBe(200);
@@ -415,6 +458,83 @@ describe('the stall surface', () => {
 
     const after = await get(`/v1/projects/${WORKSPACE}/agi/liveness`);
     expect(after.body.stalled_count).toBe(0);
+    expect(await db.select().from(agiTasks).where(eq(agiTasks.parentId, created.taskId))).toHaveLength(0);
+  });
+
+  // DEFECT A, end to end and through the HTTP surface.
+  //
+  // The AGI's prompt tells it to create every task with `--goal <slug>`, and
+  // `awaiting_trigger` used to be evaluated ABOVE the claim branch. So for every
+  // task that actually exists on a board, a dead session's lease was released and
+  // the row — still `doing`, now claimed by nobody — came back `awaiting_trigger`:
+  // healthy, with no recovery row and nothing to triage. R-32's bounded recovery
+  // was unreachable in production while every unit test stayed green.
+  test('a goal-backed task left MID-FLIGHT reaches bounded recovery after the release', async () => {
+    const sessionId = await session({ status: 'failed' });
+    const created = await task({ goalSlug: 'oil-desk' });
+    await claimTask({
+      workspaceId: WORKSPACE,
+      taskId: created.taskId,
+      sessionId,
+      ttlSeconds: 900,
+      status: 'doing',
+    });
+
+    const { body } = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    expect(body.outcomes[0]).toMatchObject({
+      task_id: created.taskId,
+      claim_released: true,
+      reason: 'abandoned_in_flight',
+      progressed: false,
+    });
+    expect(body.outcomes[0].recovery.step).toBe('continued');
+
+    // And it does NOT go quiet afterwards: the half-finished work is still on the
+    // board, still stalled, with the continuation pointed at it.
+    const after = await get(`/v1/projects/${WORKSPACE}/agi/liveness`);
+    expect(after.body.stalled_count).toBe(1);
+    expect(after.body.stalled[0].liveness).toMatchObject({
+      state: 'stalled',
+      reason: 'abandoned_in_flight',
+    });
+    expect(after.body.stalled[0].liveness.recovery.task_id).toBeTruthy();
+
+    // R-32's bound still holds across the new reason: one continuation, then a
+    // human, then silence.
+    const second = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    expect(second.body.outcomes[0].recovery.step).toBe('escalated');
+    const third = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    expect(third.body.outcomes[0].recovery.step).toBe('already_escalated');
+    expect(await db.select().from(agiTasks).where(eq(agiTasks.parentId, created.taskId))).toHaveLength(1);
+  });
+
+  test('a goal-linked task whose claim simply EXPIRED is stalled, not awaiting_trigger', async () => {
+    // The matched pair from the report, at the HTTP surface: same dead lease,
+    // same everything, and the only difference is `goal_slug`. Before the fix the
+    // goal-linked one read `awaiting_trigger` with reason null.
+    const sessionId = await session({ status: 'running' });
+    const withGoal = await task({ status: 'doing', goalSlug: 'oil-desk' });
+    const withoutGoal = await task({ status: 'doing', title: 'No goal' });
+    for (const row of [withGoal, withoutGoal]) {
+      await claimTask({ workspaceId: WORKSPACE, taskId: row.taskId, sessionId, ttlSeconds: 30 });
+      await db
+        .update(agiTasks)
+        .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+        .where(eq(agiTasks.taskId, row.taskId));
+    }
+
+    const { body } = await get(`/v1/projects/${WORKSPACE}/agi/liveness`);
+    const verdictFor = (taskId: string) =>
+      body.tasks.find((view: any) => view.task.task_id === taskId)?.liveness;
+    expect(verdictFor(withGoal.taskId)).toMatchObject({
+      state: 'stalled',
+      reason: 'claim_expired',
+    });
+    expect(verdictFor(withoutGoal.taskId)).toMatchObject({
+      state: 'stalled',
+      reason: 'claim_expired',
+    });
+    expect(body.stalled_count).toBe(2);
   });
 
   test('the sweep is idempotent — running it twice produces one continuation', async () => {
@@ -550,6 +670,57 @@ describe('the stall surface', () => {
     const { body } = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
     const outcome = body.outcomes.find((o: any) => o.task_id === created.taskId);
     expect(outcome.progressed).toBe(true);
+  });
+
+  // DEFECT B, end to end. `isLiveRequest` was (pending && delivered) with no age
+  // term, so ONE delivered row held its task in `awaiting_response` forever:
+  // measured at 45 days unanswered while the board reported `stalled_count: 0`
+  // and the sweep reported `scanned: 1, stalled: 0`. On a fresh workspace the
+  // surface reached is `inbox` — a row a human must go looking for — and R-12g
+  // buys no second nag, so nothing was ever going to change that verdict.
+  test('an ask delivered 45 days ago and never answered stalls, and says how long', async () => {
+    const created = await task({ status: 'blocked', goalSlug: 'oil-desk' });
+    const request = await unansweredRequest(created.taskId, 45 * 24 * 3_600_000);
+
+    const { body } = await get(`/v1/projects/${WORKSPACE}/agi/liveness`);
+    expect(body.stalled_count).toBe(1);
+    const liveness = body.stalled[0].liveness;
+    expect(liveness).toMatchObject({ state: 'stalled', reason: 'request_unanswered' });
+    // The ask is named, so a human reading the report knows WHAT is owed and by
+    // whom, without a second lookup.
+    expect(liveness.request.request_id).toBe(request.requestId);
+    expect(liveness.request.need).toBe('Google Search Console property access');
+    expect(liveness.request.responder_user_id).toBe(OWNER);
+    expect(liveness.request.delivered).toBe(true);
+    // …and how long it has gone unanswered, against the window that judged it.
+    expect(liveness.request_unanswered_for_ms).toBeGreaterThanOrEqual(45 * 24 * 3_600_000);
+    expect(liveness.request_unanswered_after_ms).toBe(48 * 3_600_000);
+  });
+
+  test('a freshly delivered ask is still a live path — the window is not a repeal', async () => {
+    const created = await task({ status: 'blocked', goalSlug: 'oil-desk' });
+    await unansweredRequest(created.taskId, 3_600_000, 'slack');
+
+    const { body } = await get(`/v1/projects/${WORKSPACE}/agi/liveness`);
+    expect(body.stalled_count).toBe(0);
+    expect(body.tasks[0].liveness.state).toBe('awaiting_response');
+  });
+
+  test('an unanswered ask is surfaced by the sweep and never continued (R-29)', async () => {
+    // No task this system can create performs the human act that would unstick
+    // the work, and escalating would hand the owner a second row competing with
+    // the ask itself. It is reported, and left reported.
+    const created = await task({ status: 'blocked', goalSlug: 'oil-desk' });
+    await unansweredRequest(created.taskId, 45 * 24 * 3_600_000);
+
+    const { body } = await post(`/v1/projects/${WORKSPACE}/agi/liveness/sweep`);
+    expect(body).toMatchObject({ scanned: 1, stalled: 1 });
+    expect(body.outcomes[0]).toMatchObject({
+      task_id: created.taskId,
+      reason: 'request_unanswered',
+      recovery: null,
+    });
+    expect(await db.select().from(agiTasks).where(eq(agiTasks.parentId, created.taskId))).toHaveLength(0);
   });
 
   test('an invalid limit is a 400, not a silent default', async () => {

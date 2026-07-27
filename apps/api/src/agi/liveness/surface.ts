@@ -28,8 +28,9 @@ import {
   type AgiTaskWithClaimFacts,
 } from './store';
 import { loadPendingRequestsByTask } from '../requests/store';
-import { isLiveRequest, type AgiRequestRow } from '../requests/wire';
+import { isDelivered, resolveRequestUnansweredAfterMs, type AgiRequestRow } from '../requests/wire';
 import {
+  STALL_REASONS,
   classifyClaimProgress,
   classifyClaimSession,
   isRecoverableStall,
@@ -81,9 +82,14 @@ export async function resolveWorkspaceLiveness(input: {
   workspaceId: string;
   now?: Date;
   limit?: number;
+  /** Resolved ONCE per pass and handed to every task, so one read of the board
+   *  cannot judge two tasks by two thresholds. */
+  requestUnansweredAfterMs?: number;
 }): Promise<WorkspaceLiveness> {
   const now = input.now ?? new Date();
   const limit = input.limit ?? LIVENESS_TASK_CAP;
+  const requestUnansweredAfterMs =
+    input.requestUnansweredAfterMs ?? resolveRequestUnansweredAfterMs();
   const tasks = await loadOpenTasks(input.workspaceId, limit);
 
   const [sessionStatuses, blockerRows, recoveryByFingerprint, requestsByTask] = await Promise.all([
@@ -116,6 +122,7 @@ export async function resolveWorkspaceLiveness(input: {
           .filter((row): row is AgiTaskRow => row !== undefined),
         recovery: recoveryFor(task, recoveryByFingerprint),
         request: pendingRequestRef(requestsByTask.get(task.taskId)),
+        requestUnansweredAfterMs,
       }),
     }));
 
@@ -155,18 +162,32 @@ export async function sweepWorkspaceLiveness(input: {
   accountId: string;
   now?: Date;
   limit?: number;
+  requestUnansweredAfterMs?: number;
 }): Promise<SweepResult> {
   const now = input.now ?? new Date();
+  // Resolved here rather than inside each pass so the re-judgement after a
+  // release is made with the identical threshold the first read used. A sweep
+  // that changed its mind about the window mid-flight could release a lease and
+  // then declare the same task healthy.
+  const requestUnansweredAfterMs =
+    input.requestUnansweredAfterMs ?? resolveRequestUnansweredAfterMs();
   const first = await resolveWorkspaceLiveness({
     workspaceId: input.workspaceId,
     now,
     limit: input.limit,
+    requestUnansweredAfterMs,
   });
 
   const outcomes: SweepOutcome[] = [];
   for (const view of first.stalled) {
     outcomes.push(
-      await sweepOne({ view, workspaceId: input.workspaceId, accountId: input.accountId, now }),
+      await sweepOne({
+        view,
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        now,
+        requestUnansweredAfterMs,
+      }),
     );
   }
 
@@ -178,6 +199,7 @@ async function sweepOne(input: {
   workspaceId: string;
   accountId: string;
   now: Date;
+  requestUnansweredAfterMs: number;
 }): Promise<SweepOutcome> {
   const { workspaceId, accountId, now } = input;
   let task: AgiTaskWithClaimFacts = input.view.task;
@@ -225,7 +247,17 @@ async function sweepOne(input: {
       // cannot create, deliver, or answer a human request, so re-querying would
       // be a round trip that can only return what we already have.
       request: input.view.liveness.request,
+      requestUnansweredAfterMs: input.requestUnansweredAfterMs,
     });
+    // What this re-judgement now finds, and used not to: the released row still
+    // says `doing` and no session holds it, so it is `abandoned_in_flight` and
+    // falls through to bounded recovery below. Before the ordering fix a
+    // goal-linked task landed on `awaiting_trigger` here and the sweep stopped —
+    // dead lease cleared, half-finished work left on the board reading healthy,
+    // no recovery row, R-32 never reached. A task the release genuinely DID fix
+    // (nobody had started it; it sits in `todo` under a goal) still lands on
+    // `awaiting_trigger` and still stops here, which is the outcome that branch
+    // was written for.
   }
 
   // `hadClaim` is read from the PRE-release row: releasing a dead lease is the
@@ -296,7 +328,13 @@ export interface WorkspaceGoalLiveness {
  */
 export async function resolveWorkspaceGoalLiveness(input: {
   workspaceId: string;
-  goals: readonly Pick<GoalSpec, 'slug' | 'title' | 'status' | 'doneWhen'>[];
+  // `primaryMetric` rides along because R-12e's verdict is decided by ONE named
+  // series when the manifest names one — dropping it here would silently revert
+  // every goal to the any-metric rule no matter what kortix.yaml declares.
+  goals: readonly Pick<
+    GoalSpec,
+    'slug' | 'title' | 'status' | 'doneWhen' | 'primaryMetric'
+  >[];
   flatStallAfter?: number;
 }): Promise<WorkspaceGoalLiveness> {
   const flatStallAfter = input.flatStallAfter ?? resolveFlatStallThreshold();
@@ -318,6 +356,7 @@ export async function resolveWorkspaceGoalLiveness(input: {
         doneWhen: goal.doneWhen,
         metrics,
         flatStallAfter,
+        primaryMetric: goal.primaryMetric,
       }),
     };
   });
@@ -399,11 +438,17 @@ function claimStateFor(task: AgiTaskRow, statuses: Map<string, string>): ClaimSe
 /**
  * Row → the minimal shape liveness reasons over.
  *
- * `delivered` is computed by `isLiveRequest` in requests/wire.ts and nowhere
- * else, so R-12g's line is drawn in exactly one place. The row arriving here is
- * already known to be pending (the store filters on it), but the predicate
- * re-checks anyway — a caller that widened the query later must not silently
- * turn a satisfied ask back into a live path.
+ * `delivered` is computed by `isDelivered` in requests/wire.ts and nowhere else,
+ * so R-12g's line is drawn in exactly one place. It is deliberately the DELIVERY
+ * fact rather than the full live-path verdict: the age is judged by
+ * {@link resolveTaskLiveness} against the same `now` it judges claims and TTLs
+ * with, and folding it in here would leave that function unable to tell an ask
+ * nobody sent from an ask nobody answered — two stalls with two different fixes.
+ *
+ * The row arriving here is already known to be pending (the store filters on
+ * it); nothing re-checks that, because a caller that widened the query would
+ * break a rule this shape cannot express. It is the store's invariant, stated on
+ * `TaskLivenessInput.request`.
  */
 function pendingRequestRef(row: AgiRequestRow | undefined): PendingRequestRef | null {
   if (!row) return null;
@@ -412,18 +457,25 @@ function pendingRequestRef(row: AgiRequestRow | undefined): PendingRequestRef | 
     kind: row.kind,
     need: row.need,
     responderUserId: row.responderUserId,
-    delivered: isLiveRequest(row),
+    delivered: isDelivered(row),
     deliveredVia: row.deliveredVia,
+    deliveredAt: row.deliveredAt,
   };
 }
 
+/**
+ * Every reason, not a hand-kept subset.
+ *
+ * The list used to be four literals and it had already drifted:
+ * `blocked_without_cause` is recoverable and creates continuations, but no
+ * lookup here would ever find one, so the stalled task's verdict reported
+ * `recovery: null` while the row existed. Deriving it from STALL_REASONS makes
+ * that class of drift impossible — a new reason is covered the moment it is
+ * declared. The reasons that never produce a recovery row (the two request
+ * stalls) simply never match, at the cost of two more hashes per task.
+ */
 function recoveryFor(task: AgiTaskRow, byFingerprint: Map<string, AgiTaskRow>): AgiTaskRow | null {
-  for (const reason of [
-    'claiming_session_terminal',
-    'claim_expired',
-    'dead_blocker',
-    'no_live_path',
-  ] as const) {
+  for (const reason of STALL_REASONS) {
     const found = byFingerprint.get(
       stallFingerprint({ taskId: task.taskId, taskStatus: task.status, reason }),
     );
