@@ -325,6 +325,91 @@ WHERE name = 'max_slot_wal_keep_size';
 SQL
 }
 
+wait_caught_up() {
+  local source_lsn
+  local caught_up
+  local latest_end_lsn
+
+  source_lsn="$(
+    psql "$source_database_url" -X -qAt -v ON_ERROR_STOP=1 \
+      -c 'SELECT pg_current_wal_lsn()'
+  )"
+  if [[ -z "$source_lsn" ]]; then
+    echo "Could not read the source WAL position." >&2
+    exit 1
+  fi
+
+  for attempt in $(seq 1 180); do
+    IFS=$'\t' read -r caught_up latest_end_lsn < <(
+      psql "$target_database_url" -X -qAt -F $'\t' -v ON_ERROR_STOP=1 \
+        -v subscription="$SUBSCRIPTION" \
+        -v source_lsn="$source_lsn" <<'SQL'
+SELECT
+  COALESCE(bool_and(latest_end_lsn >= :'source_lsn'::pg_lsn), false),
+  COALESCE(max(latest_end_lsn)::text, '')
+FROM pg_stat_subscription
+WHERE subname = :'subscription'
+  AND worker_type = 'apply';
+SQL
+    )
+    if [[ "$caught_up" == "t" ]]; then
+      echo "Application subscription reached source WAL position $source_lsn."
+      return
+    fi
+    echo "Application catch-up $attempt/180: target=${latest_end_lsn:-missing} source=$source_lsn"
+    sleep 2
+  done
+
+  echo "Application subscription did not reach source WAL position $source_lsn within six minutes." >&2
+  exit 1
+}
+
+set_subscription_enabled() {
+  local enabled="$1"
+  local guard_name
+  local guard_value
+  local action
+  local actual
+  local expected
+
+  if [[ "$enabled" == "true" ]]; then
+    guard_name="ALLOW_ENABLE_APPLICATION_SUBSCRIPTION"
+    guard_value="${ALLOW_ENABLE_APPLICATION_SUBSCRIPTION:-}"
+    action="ENABLE"
+  else
+    guard_name="ALLOW_DISABLE_APPLICATION_SUBSCRIPTION"
+    guard_value="${ALLOW_DISABLE_APPLICATION_SUBSCRIPTION:-}"
+    action="DISABLE"
+  fi
+  if [[ "$guard_value" != "1" ]]; then
+    echo "Set $guard_name=1 to ${action,,} the application subscription." >&2
+    exit 64
+  fi
+
+  psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
+    -v subscription="$SUBSCRIPTION" \
+    -v action="$action" <<'SQL'
+SELECT format('ALTER SUBSCRIPTION %I %s', :'subscription', :'action')
+\gexec
+SQL
+
+  actual="$(
+    psql "$target_database_url" -X -qAt -v ON_ERROR_STOP=1 \
+      -v subscription="$SUBSCRIPTION" <<'SQL'
+SELECT subenabled
+FROM pg_subscription
+WHERE subname = :'subscription';
+SQL
+  )"
+  expected="f"
+  [[ "$enabled" == "true" ]] && expected="t"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Application subscription state is $actual, expected $expected." >&2
+    exit 1
+  fi
+  echo "Application subscription is $([[ "$enabled" == "true" ]] && echo enabled || echo disabled)."
+}
+
 repair_public_rls_tables() {
   if [[ "${ALLOW_TARGET_PUBLIC_REPAIR:-}" != "1" ]]; then
     echo "Set ALLOW_TARGET_PUBLIC_REPAIR=1 to repair the RLS-protected public tables on the US target." >&2
@@ -495,6 +580,7 @@ SQL
   }
   printf -v cleanup_trap 'cleanup_shadow_repair %q %q' \
     "$temporary_directory" "$subscription_was_enabled"
+  # shellcheck disable=SC2064 # The caller supplies the complete deferred cleanup command.
   trap "$cleanup_trap" EXIT
 
   if [[ "$subscription_was_enabled" == "t" ]]; then
@@ -1461,6 +1547,9 @@ Commands:
   prepare-source     Set WAL retention, replica identities, and publication.
   start              Create or enable the target subscription.
   status             Show subscriber state, errors, slot state, and retained WAL.
+  wait-caught-up     Wait until the target apply worker reaches the current source WAL position.
+  disable-subscription Disable the target subscription after every final gate passes.
+  enable-subscription Re-enable the target subscription during a pre-write rollback.
   repair-public-rls  Repair public control tables skipped by RLS during initial copy.
   repair-shadow-mutations Replace target-only mutations made during shadow verification.
   backfill-target-precision Backfill target-only precision columns and keep them synchronized during replication.
@@ -1481,6 +1570,15 @@ case "${1:-}" in
     ;;
   status)
     status
+    ;;
+  wait-caught-up)
+    wait_caught_up
+    ;;
+  disable-subscription)
+    set_subscription_enabled false
+    ;;
+  enable-subscription)
+    set_subscription_enabled true
     ;;
   repair-public-rls)
     repair_public_rls_tables

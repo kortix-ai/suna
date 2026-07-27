@@ -46,6 +46,21 @@ test("US shadow exposes the managed model catalog for runtime verification", () 
   );
 });
 
+test("shadow Terraform permits only immutable ECS task-definition replacement", () => {
+  assert.match(
+    shadowWorkflow,
+    /\.address != "module\.api\.aws_ecs_task_definition\.this"[\s\S]*\.change\.actions != \["delete", "create"\]/,
+  );
+  assert.match(
+    shadowWorkflow,
+    /\.address != "module\.gateway\.aws_ecs_task_definition\.this"[\s\S]*\.change\.actions != \["create", "delete"\]/,
+  );
+  assert.match(
+    shadowWorkflow,
+    /if \[ "\$blocked_destructive_changes" != "0" \]/,
+  );
+});
+
 test("target smoke removes and counts recovery flow state", () => {
   assert.match(
     targetSmokeProgram,

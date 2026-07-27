@@ -115,20 +115,40 @@ jobs:
           terraform -chdir="$TF_ROOT" init -input=false
           terraform -chdir="$TF_ROOT" plan -input=false -out=shadow.tfplan
           terraform -chdir="$TF_ROOT" show -json shadow.tfplan > /tmp/shadow-plan.json
-          deletes="$(
-            jq '[.resource_changes[] | select(.change.actions | index("delete"))] | length' \
-              /tmp/shadow-plan.json
+          blocked_destructive_changes="$(
+            jq '[
+              .resource_changes[]
+              | select(.change.actions | index("delete"))
+              | select(
+                  (
+                    .address != "module.api.aws_ecs_task_definition.this"
+                    and .address != "module.gateway.aws_ecs_task_definition.this"
+                  )
+                  or (
+                    .change.actions != ["delete", "create"]
+                    and .change.actions != ["create", "delete"]
+                  )
+                )
+            ] | length' /tmp/shadow-plan.json
           )"
-          replacements="$(
-            jq '[.resource_changes[] | select(
-              .change.actions == ["delete", "create"]
-              or .change.actions == ["create", "delete"]
-            )] | length' /tmp/shadow-plan.json
+          task_definition_replacements="$(
+            jq '[
+              .resource_changes[]
+              | select(
+                  .address == "module.api.aws_ecs_task_definition.this"
+                  or .address == "module.gateway.aws_ecs_task_definition.this"
+                )
+              | select(
+                  .change.actions == ["delete", "create"]
+                  or .change.actions == ["create", "delete"]
+                )
+            ] | length' /tmp/shadow-plan.json
           )"
-          if [ "$deletes" != "0" ] || [ "$replacements" != "0" ]; then
-            echo "::error::US East 2 shadow plan contains deletes=$deletes replacements=$replacements."
+          if [ "$blocked_destructive_changes" != "0" ]; then
+            echo "::error::US East 2 shadow plan contains $blocked_destructive_changes blocked destructive changes."
             exit 1
           fi
+          echo "Allowed immutable ECS task-definition replacements: $task_definition_replacements."
           jq -r '
             [.resource_changes[].change.actions | join(",")]
             | group_by(.)
