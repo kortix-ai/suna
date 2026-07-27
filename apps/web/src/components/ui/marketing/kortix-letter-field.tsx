@@ -49,23 +49,109 @@ interface GridLayout {
   cols: number;
   rows: number;
   tokenCount: number;
+  cellWidth: number;
+  cellHeight: number;
+  padding: number;
+  fontSize: number;
 }
 
+// Per-cell geometry — mirrors the old HTML grid (`repeat(cols, minmax(0, 1fr))`
+// with the same min cell width so "k o r t i x" never clips).
+const CELL_HEIGHT_PX = 14;
+const CELL_HEIGHT_PX_SM = 12;
+const GAP_X = 4;
+const GAP_Y = 2;
+const PADDING = 24;
+const PADDING_SM = 16;
+const MIN_CELL_WIDTH_PX_SM = 76;
+const MIN_CELL_WIDTH_PX_MD = 84;
+const MIN_CELL_WIDTH_PX_LG = 92;
+
 function computeGrid(width: number, height: number): GridLayout {
-  const cellHeightPx = width < 640 ? 12 : 14;
-  const gapX = 4;
-  const gapY = 2;
-  const padding = width < 640 ? 16 : 24;
-  const innerWidth = Math.max(0, width - padding);
-  const innerHeight = Math.max(0, height - padding);
+  const isSm = width < 640;
+  const isLg = width >= 1024;
+  const cellHeight = isSm ? CELL_HEIGHT_PX_SM : CELL_HEIGHT_PX;
+  const padding = isSm ? PADDING_SM : PADDING;
+  const minCellWidth = isSm
+    ? MIN_CELL_WIDTH_PX_SM
+    : isLg
+      ? MIN_CELL_WIDTH_PX_LG
+      : MIN_CELL_WIDTH_PX_MD;
+  const fontSize = isSm ? 8 : isLg ? 10 : 9;
 
-  // Wide enough for "k o r t i x" (smallest highlighted token) without clipping.
-  const minCellWidthPx = width < 640 ? 76 : width < 1024 ? 84 : 92;
+  const innerWidth = Math.max(0, width - padding * 2);
+  const innerHeight = Math.max(0, height - padding * 2);
 
-  const cols = Math.max(1, Math.floor((innerWidth + gapX) / (minCellWidthPx + gapX)));
-  const rows = Math.max(1, Math.ceil((innerHeight + gapY) / (cellHeightPx + gapY)));
+  const cols = Math.max(1, Math.floor((innerWidth + GAP_X) / (minCellWidth + GAP_X)));
+  const rows = Math.max(1, Math.ceil((innerHeight + GAP_Y) / (cellHeight + GAP_Y)));
 
-  return { cols, rows, tokenCount: cols * rows };
+  // Distribute the inner width evenly across columns so the visual matches the
+  // old `1fr` grid (each cell grows to fill, tokens left-aligned inside).
+  const cellWidth = (innerWidth - GAP_X * (cols - 1)) / cols;
+
+  return { cols, rows, tokenCount: cols * rows, cellWidth, cellHeight, padding, fontSize };
+}
+
+// Per-token fill opacity, matching the old Tailwind opacity classes
+// (`text-foreground/90`, `/35`, `/20`, dark `/14`). Dark mode uses darker
+// opacities; the active set is picked from `isDark` (resolved live from the
+// container's computed `color` so it tracks any theme).
+const OPACITY_BY_KIND: Record<TokenKind, { light: number; dark: number }> = {
+  kortix: { light: 0.9, dark: 0.5 },
+  proper: { light: 0.35, dark: 0.35 },
+  scrambled: { light: 0.2, dark: 0.14 },
+};
+
+// XML-escape a string for safe embedding inside an SVG data URI.
+function svgEscape(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Build an inline SVG document string for the whole letter field, rendered as a
+// CSS `background-image: url("data:image/svg+xml,…")` so the decorative letter
+// tokens are pure image content — they do NOT appear as text anywhere in the DOM
+// (not even in `innerText`, which is what Google's renderer can extract for
+// SERP snippets). This is the airtight fix for the garbled brand-snippet
+// regression: the old `<span>` grid (and even an inline `<svg><text>` grid)
+// leaked the scrambled `t p e x 1 o c i0…` tokens into the page's text content,
+// which Google surfaced for the `Kortix` brand query instead of the meta
+// description. A CSS background image has zero text content.
+function buildFieldSvg(tokens: Token[], grid: GridLayout, color: string, isDark: boolean): string {
+  const { cols, cellWidth, cellHeight, padding, fontSize } = grid;
+  const innerWidth = cols * cellWidth + (cols - 1) * GAP_X;
+  const rows = Math.ceil(tokens.length / cols);
+  const innerHeight = rows * cellHeight + (rows - 1) * GAP_Y;
+  const vbWidth = innerWidth + padding * 2;
+  const vbHeight = innerHeight + padding * 2;
+  const baseline = padding + cellHeight - 2;
+
+  const monoStack = 'var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace';
+
+  const textNodes = tokens
+    .map((token, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = padding + col * (cellWidth + GAP_X);
+      const y = padding + row * (cellHeight + GAP_Y) + (baseline - padding);
+      const opacity = OPACITY_BY_KIND[token.kind][isDark ? 'dark' : 'light'];
+      const weight = token.kind === 'kortix' ? 600 : 500;
+      return `  <text x="${x}" y="${y}" font-family="${svgEscape(monoStack)}" font-size="${fontSize}" font-weight="${weight}" letter-spacing="${0.12 * fontSize}" fill="${svgEscape(color)}" fill-opacity="${opacity}">${svgEscape(token.text)}</text>`;
+    })
+    .join('\n');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vbWidth}" height="${vbHeight}" viewBox="0 0 ${vbWidth} ${vbHeight}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Kortix"><title>Kortix</title>\n${textNodes}\n</svg>`;
+}
+
+// URL-encode an SVG string for a `data:image/svg+xml,...` background URL.
+// `#`, `%`, `<`, `>`, `"`, and newlines must be encoded so the URI is valid in
+// CSS and survives any intermediate normalization.
+function svgToDataUri(svg: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 interface KortixLetterFieldProps {
@@ -76,25 +162,62 @@ interface KortixLetterFieldProps {
 export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [grid, setGrid] = useState<GridLayout>(() => computeGrid(1200, 800));
+  // Resolved foreground color + dark-mode flag, read live from the container so
+  // the SVG (rendered as a background image, which can't use `currentColor`)
+  // still tracks `--foreground` and theme toggles.
+  const [color, setColor] = useState('rgb(20,20,20)');
+  const [isDark, setIsDark] = useState(false);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    const readColor = () => {
+      const resolved = window.getComputedStyle(el).color;
+      setColor(resolved || 'rgb(20,20,20)');
+      // `.dark` is the theme class (see globals.css `@custom-variant dark`).
+      setIsDark(el.closest('.dark') !== null || document.documentElement.classList.contains('dark'));
+    };
+
     const update = () => {
       const { width, height } = el.getBoundingClientRect();
       setGrid(computeGrid(width, height));
+      readColor();
     };
 
     update();
+    readColor();
 
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(update);
+      observer.observe(el);
+    }
+
+    // Re-read color on theme toggle (the `.dark` class flips `--foreground`).
+    const themeObserver =
+      typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(readColor)
+        : null;
+    if (themeObserver) {
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+
+    return () => {
+      observer?.disconnect();
+      themeObserver?.disconnect();
+    };
   }, []);
 
   const tokens = useMemo(() => buildTokens(grid.tokenCount, seed), [grid.tokenCount, seed]);
+
+  const backgroundImage = useMemo(() => {
+    const svg = buildFieldSvg(tokens, grid, color, isDark);
+    return `url("${svgToDataUri(svg)}")`;
+  }, [tokens, grid, color, isDark]);
 
   return (
     <AnimatePresence>
@@ -104,32 +227,18 @@ export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldP
         transition={{ duration: 0.5, ease: 'easeInOut' }}
         ref={containerRef}
         className={cn(
-          'pointer-events-none absolute inset-0 overflow-hidden select-none',
+          'pointer-events-none absolute inset-0 overflow-hidden select-none text-foreground',
           className,
         )}
         aria-hidden
-      >
-        <div
-          className="box-border grid h-full w-full gap-x-1 gap-y-0.5 p-2 font-mono text-[8px] leading-none tracking-[0.12em] sm:p-3 sm:text-[9px] md:text-[10px]"
-          style={{ gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))` }}
-        >
-          {tokens.map((token, i) => (
-            <span
-              key={i}
-              className={cn(
-                'block min-w-0 whitespace-nowrap',
-                token.kind === 'kortix' &&
-                  'text-foreground/90 dark:text-foreground/50 hyper-text font-medium',
-                token.kind === 'proper' && 'text-foreground/35 overflow-hidden',
-                token.kind === 'scrambled' &&
-                  'text-foreground/20 dark:text-foreground/14 overflow-hidden',
-              )}
-            >
-              {token.text}
-            </span>
-          ))}
-        </div>
-      </motion.div>
+        data-a11y-decorative
+        style={{
+          backgroundImage,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+        }}
+      />
     </AnimatePresence>
   );
 }
