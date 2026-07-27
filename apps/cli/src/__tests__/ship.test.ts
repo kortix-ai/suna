@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ApiClient } from '../api/client.ts';
+import { ApiError } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
 import {
   authHeaderArgs,
+  isManagedTokenExportUnavailable,
   linkGitHubBackedProject,
   reconcileShippedManifest,
   resolveExistingShipGitTarget,
+  resolveManagedProxyFallback,
+  resolveManagedPushPlan,
   resolveProvisionShipGitTarget,
 } from '../commands/ship.ts';
 
@@ -94,6 +98,137 @@ describe('GitHub-backed project linking', () => {
         },
       },
     ]);
+  });
+});
+
+describe('managed push plan (host cannot export a repo-scoped token)', () => {
+  const managed = () =>
+    project({
+      git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
+      metadata: { git: { managed: true } },
+    });
+
+  function failingClient(status: number, message: string, calls: string[] = []) {
+    return {
+      post: async <T>(path: string) => {
+        calls.push(path);
+        throw new ApiError(status, message);
+      },
+    } as unknown as Pick<ApiClient, 'post'>;
+  }
+
+  test('reproduces the reported failure: 503 on /git-token used to abort the ship', async () => {
+    // Before the fix this rejected and `kortix ship` exited 1 with
+    // "Managed git push token export requires a repo-scoped installation token".
+    const noProxy = { project_id: 'proj_1', repo_url: 'https://github.com/managed-kortix/demo.git' };
+    await expect(
+      resolveManagedPushPlan(
+        failingClient(503, 'Managed git push token export requires a repo-scoped installation token'),
+        noProxy,
+        'kortix-jwt',
+      ),
+    ).rejects.toThrow('repo-scoped installation token');
+  });
+
+  test('falls back to the project git proxy when the token export is refused (503)', async () => {
+    const calls: string[] = [];
+    const plan = await resolveManagedPushPlan(
+      failingClient(503, 'Managed git push token export requires a repo-scoped installation token', calls),
+      managed(),
+      'kortix-jwt',
+    );
+
+    expect(calls).toEqual(['/projects/proj_1/git-token']);
+    expect(plan).toEqual({
+      repoUrl: 'https://api.kortix.com/v1/git/proj_1.git',
+      pushToken: 'kortix-jwt',
+      pushUsername: 'x-access-token',
+      viaProxy: true,
+    });
+  });
+
+  test('falls back on 409 (project not managed by an App-backed remote)', async () => {
+    const plan = await resolveManagedPushPlan(
+      failingClient(409, 'Project is not a managed repo'),
+      managed(),
+      'kortix-jwt',
+    );
+    expect(plan.viaProxy).toBe(true);
+  });
+
+  test('prefers a minted repo-scoped token over the proxy', async () => {
+    const client = {
+      post: async <T>() =>
+        ({ push_token: 'ghs_app_token', git_username: 'x-access-token', repo_id: 'r', repo_url: 'u' }) as T,
+    } as unknown as Pick<ApiClient, 'post'>;
+
+    const plan = await resolveManagedPushPlan(client, managed(), 'kortix-jwt');
+    expect(plan).toEqual({
+      repoUrl: 'https://github.com/managed-kortix/demo.git',
+      pushToken: 'ghs_app_token',
+      pushUsername: 'x-access-token',
+      viaProxy: false,
+    });
+  });
+
+  test('uses the provision-response token without a second round trip', async () => {
+    const calls: string[] = [];
+    const plan = await resolveManagedPushPlan(
+      failingClient(503, 'should not be called', calls),
+      managed(),
+      'kortix-jwt',
+      { pushToken: 'ghs_from_provision', pushUsername: 'x-access-token' },
+    );
+    expect(calls).toEqual([]);
+    expect(plan.pushToken).toBe('ghs_from_provision');
+    expect(plan.viaProxy).toBe(false);
+  });
+
+  test('rethrows when there is no proxy origin to fall back to', async () => {
+    await expect(
+      resolveManagedPushPlan(
+        failingClient(503, 'no token'),
+        { project_id: 'proj_1', repo_url: 'https://github.com/managed-kortix/demo.git' },
+        'kortix-jwt',
+      ),
+    ).rejects.toThrow('no token');
+  });
+
+  test('rethrows non-recoverable errors (401) even when a proxy exists', async () => {
+    await expect(
+      resolveManagedPushPlan(failingClient(401, 'Token rejected'), managed(), 'kortix-jwt'),
+    ).rejects.toThrow('Token rejected');
+  });
+
+  test('never exports a server-global PAT: the fallback credential is the caller token', async () => {
+    const plan = await resolveManagedPushPlan(
+      failingClient(503, 'pat'),
+      managed(),
+      'kortix-jwt',
+    );
+    expect(plan.pushToken).toBe('kortix-jwt');
+    expect(plan.repoUrl).toStartWith('https://api.kortix.com/v1/git/');
+  });
+
+  test('proxy fallback resolver ignores non-proxy origins', () => {
+    expect(resolveManagedProxyFallback({ git_origin_url: null })).toBeNull();
+    expect(
+      resolveManagedProxyFallback({ git_origin_url: 'https://github.com/acme/demo.git' }),
+    ).toBeNull();
+    expect(
+      resolveManagedProxyFallback({ git_origin_url: 'https://api.kortix.com/v1/git/p.git' }),
+    ).toEqual({
+      repoUrl: 'https://api.kortix.com/v1/git/p.git',
+      credentialMode: 'kortix-token',
+    });
+  });
+
+  test('classifies which failures are recoverable', () => {
+    expect(isManagedTokenExportUnavailable(new ApiError(503, 'x'))).toBe(true);
+    expect(isManagedTokenExportUnavailable(new ApiError(409, 'x'))).toBe(true);
+    expect(isManagedTokenExportUnavailable(new ApiError(401, 'x'))).toBe(false);
+    expect(isManagedTokenExportUnavailable(new ApiError(500, 'x'))).toBe(false);
+    expect(isManagedTokenExportUnavailable(new Error('boom'))).toBe(false);
   });
 });
 
