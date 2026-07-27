@@ -16,11 +16,20 @@
  *       status: active          # active | achieved | paused | abandoned
  *       push: "0 0 9 * * *"     # standing advance; omit for on-demand goals
  *       agent: kortix-agi       # default; name a project agent to override
+ *       metric: pnl_usd         # optional; the series that DEFINES this goal
  *
- * Two requirements shape everything in this file:
+ * Three requirements shape everything in this file:
  *
  *   R-7 — `done_when` is MANDATORY. A goal without prose completion criteria a
  *         session can evaluate against evidence is a wish, and is rejected.
+ *
+ *   R-12d/R-12e — `metric:` is OPTIONAL and names the ONE series whose movement
+ *         is the goal's verdict. `done_when` is prose and names no metric, so
+ *         without this nothing associates a threshold with a series, and a goal
+ *         tracking three numbers can have the one that matters sit dead for
+ *         three weeks while the other two wander and the goal reads "measuring".
+ *         Declaring it is authored state (R-2), so it belongs in this file next
+ *         to the criteria it quantifies — not in the database with the readings.
  *
  *   R-8 — `push` is SUGAR for exactly one cron trigger in the EXISTING trigger
  *         subsystem, not a second scheduler. {@link desugarGoalTriggers} turns
@@ -39,6 +48,7 @@
  * same contract `extractTriggers` guarantees, so one bad goal can't blank the
  * whole list.
  */
+import { normalizeMetric } from '../../agi/observations/wire';
 import { AGI_AGENT_NAME } from '../agents';
 import type { GitTriggerParseError, GitTriggerSpec, ParsedManifest } from '../triggers';
 
@@ -82,7 +92,43 @@ export interface GoalSpec {
   /** Slug of the cron trigger `push` desugars to, or null when there is no
    *  push. Pure function of {@link slug} — see {@link goalTriggerSlug}. */
   triggerSlug: string | null;
+  /**
+   * R-12e. The ONE observation series whose movement is this goal's verdict, or
+   * null when the goal declares none.
+   *
+   * Normalized through the SAME {@link normalizeMetric} a recorded observation
+   * goes through, so a declaration compares by `===` against what
+   * `kortix goals observe --metric` writes. A looser comparison would let
+   * `metric: Core Position` name a primary that `core_position` can never
+   * satisfy — the declaration would read as honoured and the goal would sit
+   * permanently unmeasurable for a reason nobody could see.
+   */
+  primaryMetric: string | null;
 }
+
+/**
+ * Prefix that marks a {@link GoalParseError} as advisory rather than fatal.
+ *
+ * There is no `severity` field: goal problems reach every surface through ONE
+ * channel (`errors` → `goalIssues` → `kortix goals ls`), and a second channel
+ * for warnings is a second channel to forget to render. A warning is an error
+ * entry on a goal that DID parse and IS in `specs` — the message carries the
+ * distinction, and the goal keeps working.
+ */
+export const GOAL_WARNING_PREFIX = 'Warning:';
+
+/** Advisory, not fatal: the goal it names is in `specs` and works. */
+export function isGoalWarning(error: Pick<GoalParseError, 'error'>): boolean {
+  return error.error.startsWith(GOAL_WARNING_PREFIX);
+}
+
+/**
+ * A `done_when` shorter than this is treated as suspect. Not a hard rule — R-7
+ * only requires prose — but the shortest honest completion criteria anyone
+ * writes ("An offer is signed.") clears 20 characters comfortably, and the
+ * strings that do not are overwhelmingly truncations.
+ */
+export const GOAL_DONE_WHEN_MIN_LENGTH = 20;
 
 export interface GoalParseError {
   /** Ordinal of the offending entry in the `goals:` list, or -1 when the problem
@@ -151,7 +197,18 @@ function isValidTimeZone(tz: string): boolean {
  * Pure and deterministic: the same goal always renders the same prompt, so a
  * re-ship produces a byte-identical trigger.
  */
-export function goalPushPrompt(goal: Pick<GoalSpec, 'slug' | 'title' | 'doneWhen'>): string {
+export function goalPushPrompt(
+  goal: Pick<GoalSpec, 'slug' | 'title' | 'doneWhen'> & { primaryMetric?: string | null },
+): string {
+  // A declared primary is the difference between "record something" and "record
+  // THIS". Naming it here closes the loop the declaration opens: the verdict is
+  // computed from that one series, so the push that is supposed to move it has
+  // to be told which series that is — otherwise the goal reads unmeasurable
+  // forever while the session dutifully records three other numbers.
+  const metricInstruction = goal.primaryMetric
+    ? `Record the reading with: kortix goals observe ${goal.slug} --metric ${goal.primaryMetric} --value <number>. "${goal.primaryMetric}" is the metric this goal DECLARES as its definition of progress — it is the only series the stall check reads, so a push that records anything else leaves this goal reported as UNMEASURABLE. Record other metrics too if they help, but never instead of this one. If you cannot take this reading yet, say so and make taking it the next move.`
+    : `Record every reading with: kortix goals observe ${goal.slug} --metric <name> --value <number>. Use the SAME metric name every time — that series is the only evidence that this goal is moving, and a renamed metric starts an empty one. If the criteria above name a threshold you cannot measure yet, say so and make measuring it the next move; a goal nobody measures is reported as UNMEASURABLE, not as on track.`;
+
   return [
     `Advance the goal "${goal.title}" (slug: ${goal.slug}).`,
     '',
@@ -160,7 +217,7 @@ export function goalPushPrompt(goal: Pick<GoalSpec, 'slug' | 'title' | 'doneWhen
     '',
     `In this order: re-read this goal and its completion criteria; read the open tasks for goal "${goal.slug}"; TAKE A READING of whatever the completion criteria measure and record it; decide the single most valuable next move; take it, or create the tasks that constitute it; then record what changed.`,
     '',
-    `Record every reading with: kortix goals observe ${goal.slug} --metric <name> --value <number>. Use the SAME metric name every time — that series is the only evidence that this goal is moving, and a renamed metric starts an empty one. If the criteria above name a threshold you cannot measure yet, say so and make measuring it the next move; a goal nobody measures is reported as UNMEASURABLE, not as on track.`,
+    metricInstruction,
     '',
     'Leave the goal measurably advanced, or state why you could not — "reviewed, nothing to do" is only a valid outcome with a stated reason.',
     '',
@@ -263,6 +320,10 @@ export function extractGoals(manifest: ParsedManifest): LoadedGoals {
     }
     seenSlugs.add(result.spec.slug);
     specs.push(result.spec);
+    // Advisory, so the goal is in BOTH lists: it works, and the complaint about
+    // it is visible. Pushed after the spec so a reader of `errors` sees warnings
+    // in the same declaration order the goals are in.
+    errors.push(...result.warnings);
   });
 
   return { specs, errors };
@@ -296,11 +357,18 @@ export function desugarGoalTriggers(
   const specs: GitTriggerSpec[] = [];
   // `index` is deliberately dropped: GitTriggerParseError is the trigger
   // subsystem's contract and these ordinals are positions in a DIFFERENT list.
-  const errors: GitTriggerParseError[] = goalErrors.map((error) => ({
-    slug: error.slug,
-    path: error.path,
-    error: error.error,
-  }));
+  //
+  // Warnings are dropped entirely. This list answers "is this trigger broken?",
+  // and a goal whose `done_when` reads thin still desugars to a perfectly good
+  // cron trigger — reporting it here would put a permanent complaint next to a
+  // working trigger, which is how a list of real problems stops being read.
+  const errors: GitTriggerParseError[] = goalErrors
+    .filter((error) => !isGoalWarning(error))
+    .map((error) => ({
+      slug: error.slug,
+      path: error.path,
+      error: error.error,
+    }));
 
   for (const goal of goals) {
     const spec = goalTriggerSpec(goal, filename);
@@ -322,6 +390,9 @@ export function desugarGoalTriggers(
 interface GoalParseOk {
   ok: true;
   spec: GoalSpec;
+  /** Advisory problems on a goal that parsed. Same type as a fatal error and the
+   *  same channel — see {@link GOAL_WARNING_PREFIX}. */
+  warnings: GoalParseError[];
 }
 interface GoalParseErr {
   ok: false;
@@ -414,6 +485,32 @@ function parseGoalEntry(
     );
   }
 
+  // R-12e. Optional by construction: `metric` absent leaves `primaryMetric` null
+  // and the goal behaves exactly as it did before this field existed, so no
+  // manifest already on disk changes meaning. Present but malformed is FATAL,
+  // like a bad `status` or `timezone` — the alternative is a declaration that
+  // looks honoured and silently is not, which is the class of bug this whole
+  // field exists to close.
+  let primaryMetric: string | null = null;
+  if (row.metric !== undefined && row.metric !== null) {
+    const normalized = normalizeMetric(row.metric);
+    if ('error' in normalized) {
+      return err(slug, `\`metric\` names the series that defines this goal — ${normalized.error}`);
+    }
+    primaryMetric = normalized.metric;
+  } else {
+    // A near-miss key is worse than no key: the goal parses, the declaration is
+    // silently dropped, and the goal falls back to the any-metric rule while its
+    // author believes a primary is in force.
+    const misspelled = PRIMARY_METRIC_NEAR_MISSES.find((key) => row[key] !== undefined);
+    if (misspelled) {
+      return err(
+        slug,
+        `Unknown key \`${misspelled}\` — the metric that defines a goal is declared as \`metric:\`. Rename it, or the goal silently falls back to stalling on ANY flat metric.`,
+      );
+    }
+  }
+
   return {
     ok: true,
     spec: {
@@ -426,6 +523,81 @@ function parseGoalEntry(
       agent,
       timezone,
       triggerSlug,
+      primaryMetric,
     },
+    warnings: goalStringWarnings({ slug, index, filename, title, doneWhen: doneWhen.trim() }),
   };
+}
+
+/** Keys an author reaches for when they mean `metric:`. Rejected by name rather
+ *  than ignored — see the call site. */
+const PRIMARY_METRIC_NEAR_MISSES = [
+  'primary_metric',
+  'primaryMetric',
+  'primary',
+  'metrics',
+  'metric_name',
+] as const;
+
+/**
+ * The YAML `#` footgun, and its fingerprint.
+ *
+ * Confirmed live and completely silent: `title: ranks #1 on Google` parses to
+ * `"ranks"` and `done_when: rank #1 within 90 days` parses to `"rank"`, both with
+ * `errors: []`. YAML reads an unquoted `#` as the start of a comment, so
+ * everything after it is discarded before this parser ever sees the value —
+ * there is nothing left to detect at the point of failure.
+ *
+ * That truncation is not cosmetic. `done_when` is what `namesThreshold` (the
+ * observations wire) reads to decide R-12d, so a truncated one can downgrade from
+ * `unmeasurable` ("nobody is measuring this") to `unquantified` ("there is
+ * nothing to measure, that's fine") — the worst possible direction for a silent
+ * failure, because the second reads as a deliberate choice.
+ *
+ * Two heuristics, because the broken case is invisible and only the fingerprint
+ * survives:
+ *
+ *   • a `#` that IS present in the parsed value was quoted or came from a block
+ *     scalar, so this goal is currently fine — and one hand-edit that drops the
+ *     quotes silently truncates it. Warned about so the author writes "number 1"
+ *     instead of carrying a live grenade.
+ *   • a `done_when` under {@link GOAL_DONE_WHEN_MIN_LENGTH} characters is what an
+ *     already-truncated one looks like. It is also, independently, criteria too
+ *     thin for a session to evaluate — so the warning is right either way and
+ *     needs no guess about which happened.
+ */
+function goalStringWarnings(goal: {
+  slug: string;
+  index: number;
+  filename: string;
+  title: string;
+  doneWhen: string;
+}): GoalParseError[] {
+  const warnings: GoalParseError[] = [];
+  const warn = (message: string) =>
+    warnings.push({
+      index: goal.index,
+      slug: goal.slug,
+      path: `${goal.filename}#goals.${goal.slug}`,
+      error: `${GOAL_WARNING_PREFIX} ${message}`,
+    });
+
+  for (const [field, value] of [
+    ['title', goal.title],
+    ['done_when', goal.doneWhen],
+  ] as const) {
+    if (value.includes('#')) {
+      warn(
+        `goal "${goal.slug}" has a "#" in \`${field}\`. It survived only because the value is quoted or a block scalar — unquoted, YAML treats "#" as a comment, so \`${field}: rank #1 in 90 days\` parses to "rank" with no error at all. Write "number 1" instead, or keep the quotes forever.`,
+      );
+    }
+  }
+
+  if (goal.doneWhen.length < GOAL_DONE_WHEN_MIN_LENGTH) {
+    warn(
+      `goal "${goal.slug}" has a \`done_when\` of only ${goal.doneWhen.length} characters ("${goal.doneWhen}") — too thin for a session to evaluate against evidence, and the usual cause is an unquoted "#" that YAML truncated the line at. A truncated \`done_when\` can silently downgrade this goal from UNMEASURABLE to UNQUANTIFIED, i.e. from "nobody is measuring this" to "there is nothing to measure". Restate the full condition, quoting any "#".`,
+    );
+  }
+
+  return warnings;
 }

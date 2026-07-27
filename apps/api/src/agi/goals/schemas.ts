@@ -1,3 +1,4 @@
+import { z } from '@hono/zod-openapi';
 /**
  * OpenAPI shapes for the AGI goal surface. These document the wire contract in
  * /v1/docs; runtime validation stays in the handlers so the exact normative
@@ -11,7 +12,6 @@ import {
   AgiGoalMetricSeriesSchema,
 } from '../observations/schemas';
 import { AgiTaskSchema } from '../tasks/schemas';
-import { z } from '@hono/zod-openapi';
 
 export const AgiGoalSchema = z
   .object({
@@ -29,8 +29,12 @@ export const AgiGoalSchema = z
     /** R-12: how the goal is actually moving. Empty until something records an
      *  observation. */
     metrics: z.array(AgiGoalMetricSchema),
+    /** R-12e. The one series `metric:` declares as this goal's definition of
+     *  progress, or null when the goal declares none. */
+    primary_metric: z.string().nullable(),
     /** R-12d. `unmeasurable` is NOT on-track: it means `done_when` names a
-     *  threshold and nothing has ever been recorded for it. */
+     *  threshold and nothing has ever been recorded for it — or the goal names
+     *  its primary metric and THAT has never been recorded. */
     measurability: AgiGoalMeasurabilitySchema,
   })
   .openapi('AgiGoal');

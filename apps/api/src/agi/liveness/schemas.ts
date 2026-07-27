@@ -1,12 +1,13 @@
+import { z } from '@hono/zod-openapi';
 /**
  * OpenAPI shapes for the stall surface. Documentation only — the handlers own
  * validation, exactly as the task routes do, so the normative error strings
  * survive instead of being flattened into the shared zod-failure envelope.
  */
 import { AgiGoalMetricSchema } from '../observations/schemas';
+import { GOAL_STALL_RULES } from '../observations/wire';
 import { AgiTaskSchema } from '../tasks/schemas';
 import { GOAL_LIVENESS_STATES, GOAL_STALL_REASONS, LIVENESS_STATES, STALL_REASONS } from './wire';
-import { z } from '@hono/zod-openapi';
 
 export const AgiTaskLivenessSchema = z
   .object({
@@ -48,6 +49,14 @@ export const AgiGoalLivenessSchema = z
     flat_metrics: z.array(z.object({ metric: z.string(), flat_observations: z.number() })),
     /** The N this verdict used, so a caller never has to guess. */
     flat_stall_after: z.number(),
+    /** R-12e. `primary` when the goal declares `metric:` in kortix.yaml and that
+     *  one series is the verdict; `any_metric` when it declares none and any flat
+     *  metric stalls it. */
+    stall_rule: z.enum(GOAL_STALL_RULES),
+    /** The metric whose flat run produced the verdict, or null. */
+    driven_by: z.string().nullable(),
+    /** The declared primary metric, or null. */
+    primary_metric: z.string().nullable(),
   })
   .openapi('AgiGoalLiveness');
 

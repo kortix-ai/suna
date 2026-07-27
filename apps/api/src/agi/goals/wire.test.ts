@@ -56,6 +56,9 @@ describe('serializeAgiGoal', () => {
       // done is terminal, so it is counted but never "open".
       open_task_count: 3,
       metrics: [],
+      // R-12e: this goal declares no `metric:`, so it has no primary and its
+      // verdict falls to the any-metric rule.
+      primary_metric: null,
       // R-12d: "unattended for 7 days" is a threshold, and nothing has ever been
       // recorded for it — so this goal reads as un-judged, never as on track.
       measurability: 'unmeasurable',

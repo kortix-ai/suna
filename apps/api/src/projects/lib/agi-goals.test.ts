@@ -22,15 +22,26 @@ import {
   serializeManifest,
 } from '../triggers';
 import {
+  GOAL_DONE_WHEN_MIN_LENGTH,
   desugarGoalTriggers,
   extractGoals,
   goalPushPrompt,
   goalTriggerSlug,
   isGoalTriggerSlug,
+  isGoalWarning,
 } from './agi-goals';
 import { goalTriggersEnabled } from './triggers';
 
 const parse = (yaml: string) => parseManifestString(yaml, 'yaml', MANIFEST_FILENAME_YAML);
+
+/** Errors that REJECTED a goal, as opposed to advisories on one that parsed.
+ *  Both ride the same list on purpose (one channel a surface can forget to
+ *  render); tests about rejection say which half they mean. */
+const fatal = <T extends { error: string }>(errors: readonly T[]) =>
+  errors.filter((error) => !isGoalWarning(error));
+
+const warningsOnly = <T extends { error: string }>(errors: readonly T[]) =>
+  errors.filter((error) => isGoalWarning(error));
 
 const MANIFEST = `kortix_version: 2
 
@@ -116,7 +127,7 @@ describe('extractGoals', () => {
       parse('kortix_version: 2\ngoals:\n  - slug: bad\n  - slug: good\n    done_when: It ships.\n'),
     );
     expect(specs.map((g) => g.slug)).toEqual(['good']);
-    expect(errors.map((e) => e.slug)).toEqual(['bad']);
+    expect(fatal(errors).map((e) => e.slug)).toEqual(['bad']);
   });
 
   test('rejects an unknown status, a bad slug, a bad timezone, and a non-string push', () => {
@@ -149,9 +160,9 @@ describe('extractGoals', () => {
     );
     expect(specs).toHaveLength(1);
     expect(specs[0].title).toBe('First');
-    expect(errors[0].error).toContain('Duplicate goal slug');
+    expect(fatal(errors)[0].error).toContain('Duplicate goal slug');
     // The SECOND declaration is the offending one — index 0 parsed cleanly.
-    expect(errors[0].index).toBe(1);
+    expect(fatal(errors)[0].index).toBe(1);
   });
 
   // The ordinal is the only handle a malformed entry has: three of the four
@@ -172,8 +183,8 @@ goals:
 `),
     );
 
-    expect(errors.map((e) => e.index)).toEqual([1, 2, 3]);
-    expect(errors.map((e) => e.slug)).toEqual(['(index-1)', '(invalid)', 'broken']);
+    expect(fatal(errors).map((e) => e.index)).toEqual([1, 2, 3]);
+    expect(fatal(errors).map((e) => e.slug)).toEqual(['(index-1)', '(invalid)', 'broken']);
   });
 
   test('a block-level error has no entry to point at and says so with -1', () => {
@@ -187,6 +198,147 @@ goals:
     expect(errors).toHaveLength(1);
     expect(errors[0].slug).toBe('(top-level)');
     expect(errors[0].error).toContain('must be a list');
+  });
+});
+
+// R-12e. `done_when` is prose and names no metric, so without a declaration
+// nothing associates a threshold with a series — and a goal tracking three
+// numbers can have the one that matters sit dead for weeks behind the noise.
+describe('`metric:` — the series that defines the goal', () => {
+  const goal = (body: string) =>
+    extractGoals(parse(`kortix_version: 2\ngoals:\n  - slug: seo\n${body}`));
+
+  test('an absent declaration is null, and every existing goal keeps working', () => {
+    const { specs, errors } = extractGoals(parse(MANIFEST));
+    expect(fatal(errors)).toEqual([]);
+    expect(specs.map((g) => g.primaryMetric)).toEqual([null, null]);
+  });
+
+  test('a declaration is normalized exactly as a recorded observation is', () => {
+    // Both sides go through normalizeMetric, so the declared name compares by
+    // `===` against what `kortix goals observe --metric` writes. A looser rule
+    // here would let `Core Position` name a primary `core_position` can never
+    // satisfy, and the goal would sit unmeasurable for a reason nobody can see.
+    const { specs, errors } = goal(
+      '    done_when: Top 3 for the core terms, sustained 30 days.\n    metric: "GSC Avg Position Core"\n',
+    );
+    expect(fatal(errors)).toEqual([]);
+    expect(specs[0].primaryMetric).toBe('gsc_avg_position_core');
+  });
+
+  test('a malformed metric is FATAL, never a silently dropped declaration', () => {
+    // The alternative is a declaration that looks honoured and is not, which is
+    // the exact class of bug this field exists to close.
+    const { specs, errors } = goal('    done_when: Top 3 for the core terms.\n    metric: a/b\n');
+    expect(specs).toEqual([]);
+    expect(fatal(errors)[0].error).toContain('defines this goal');
+  });
+
+  test('a near-miss key is rejected by name rather than ignored', () => {
+    for (const key of ['primary_metric', 'primaryMetric', 'primary', 'metrics', 'metric_name']) {
+      const { specs, errors } = goal(
+        `    done_when: Top 3 for the core terms.\n    ${key}: rank\n`,
+      );
+      expect(specs).toEqual([]);
+      expect(fatal(errors)[0].error).toContain('`metric:`');
+      // Says what the silent consequence would have been, so the fix is obvious.
+      expect(fatal(errors)[0].error).toContain('ANY flat metric');
+    }
+  });
+
+  test('the push prompt names the declared metric, so the session records THAT one', () => {
+    // A verdict computed from one series and a push told to record "whatever the
+    // criteria measure" is a goal that reads unmeasurable forever while the
+    // session dutifully records three other numbers.
+    const { specs } = goal(
+      '    done_when: Top 3 for the core terms.\n    metric: gsc_avg_position_core\n',
+    );
+    const prompt = goalPushPrompt(specs[0]);
+    expect(prompt).toContain('--metric gsc_avg_position_core');
+    expect(prompt).toContain('UNMEASURABLE');
+  });
+
+  test('an undeclared goal keeps the original "use the SAME metric name" prompt', () => {
+    const { specs } = goal('    done_when: Top 3 for the core terms.\n');
+    expect(goalPushPrompt(specs[0])).toContain('--metric <name>');
+  });
+});
+
+// The YAML `#` footgun, confirmed live and completely silent: an unquoted `#`
+// starts a comment, so the value is truncated before this parser ever sees it
+// and `errors` comes back empty.
+describe('the `#` footgun and its fingerprint', () => {
+  const goal = (body: string) =>
+    extractGoals(parse(`kortix_version: 2\ngoals:\n  - slug: seo\n${body}`));
+
+  test('the truncation itself is invisible — which is why the fingerprint is warned on', () => {
+    const { specs, errors } = goal('    title: ranks #1 on Google\n    done_when: rank #1 fast\n');
+    // Proof of the hazard: YAML already ate both values, and the parser has
+    // nothing left to detect at the point of failure.
+    expect(specs[0].title).toBe('ranks');
+    expect(specs[0].doneWhen).toBe('rank');
+    expect(fatal(errors)).toEqual([]);
+    // The fingerprint of an already-truncated `done_when` is that it is far too
+    // short to be criteria a session could evaluate.
+    expect(warningsOnly(errors)).toHaveLength(1);
+    expect(warningsOnly(errors)[0].error).toContain('done_when');
+    expect(warningsOnly(errors)[0].error).toContain('UNQUANTIFIED');
+  });
+
+  test('a truncated done_when is exactly the silent UNMEASURABLE → UNQUANTIFIED downgrade', () => {
+    // "be number one #1 on google" truncates to "be number one": no digit and no
+    // comparison word, so R-12d flips from "nobody is measuring this" to "there
+    // is nothing to measure, that's fine" — the worst direction for a silent
+    // failure, because the second reads as a deliberate choice.
+    const { specs, errors } = goal('    done_when: be number one #1 on google\n');
+    expect(specs[0].doneWhen).toBe('be number one');
+    expect(warningsOnly(errors)).toHaveLength(1);
+  });
+
+  test('a surviving "#" is warned about too — it is one unquoted edit from vanishing', () => {
+    const { specs, errors } = goal(
+      '    title: "ranks #1 on Google"\n    done_when: "Ranked #1 for the core terms for 30 days."\n',
+    );
+    expect(specs).toHaveLength(1);
+    const messages = warningsOnly(errors).map((e) => e.error);
+    expect(messages).toHaveLength(2);
+    expect(messages.some((m) => m.includes('`title`'))).toBe(true);
+    expect(messages.some((m) => m.includes('`done_when`'))).toBe(true);
+  });
+
+  test('a warned goal still parses, still pushes, and is addressable by slug and ordinal', () => {
+    const { specs, errors } = goal('    done_when: Signed.\n    push: "0 0 9 * * *"\n');
+    expect(specs[0].triggerSlug).toBe('goal-seo');
+    expect(warningsOnly(errors)[0]).toMatchObject({
+      index: 0,
+      slug: 'seo',
+      path: 'kortix.yaml#goals.seo',
+    });
+  });
+
+  test('prose at or over the minimum length is not warned about', () => {
+    const doneWhen = 'x'.repeat(GOAL_DONE_WHEN_MIN_LENGTH);
+    expect(warningsOnly(goal(`    done_when: ${doneWhen}\n`).errors)).toEqual([]);
+    expect(warningsOnly(goal(`    done_when: ${'x'.repeat(19)}\n`).errors)).toHaveLength(1);
+  });
+
+  test('warnings never reach the TRIGGER list — the derived trigger is fine', () => {
+    // A permanent complaint next to a working trigger is how a list of real
+    // problems stops being read.
+    const manifest = parse(
+      'kortix_version: 2\ngoals:\n  - slug: seo\n    done_when: Signed.\n    push: "0 0 9 * * *"\n',
+    );
+    const { specs, errors } = desugarGoalTriggers(manifest);
+    expect(specs.map((s) => s.slug)).toEqual(['goal-seo']);
+    expect(errors).toEqual([]);
+  });
+
+  test('a FATAL goal error still reaches the trigger list', () => {
+    const { errors } = desugarGoalTriggers(
+      parse('kortix_version: 2\ngoals:\n  - slug: seo\n    title: No criteria\n'),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0].error).toContain('done_when');
   });
 });
 
@@ -377,9 +529,7 @@ describe('extractTriggers — goal desugaring is opt-in (the `agi` gate)', () =>
   });
 
   test('a broken goal reaches the trigger list as an error, and only when opted in', () => {
-    const manifest = parse(
-      'kortix_version: 2\ngoals:\n  - slug: broken\n    title: No criteria\n',
-    );
+    const manifest = parse('kortix_version: 2\ngoals:\n  - slug: broken\n    title: No criteria\n');
 
     // With `agi` off a project behaves exactly as it did before goals existed —
     // including reporting nothing about a `goals:` block it does not read.

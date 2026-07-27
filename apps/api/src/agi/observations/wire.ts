@@ -7,7 +7,7 @@
  * got closer, and a wrong answer here is silent — the loop keeps looking alive
  * while the number has not moved for three weeks.
  *
- * Four things are decided here and nowhere else:
+ * Five things are decided here and nowhere else:
  *
  *   • {@link normalizeMetric} — one metric name, one series. A metric written
  *     two ways is two series that each look healthy while neither has moved.
@@ -16,6 +16,9 @@
  *   • {@link namesThreshold} / {@link resolveGoalMeasurability} — R-12d's
  *     distinction between "on track" and "nobody has ever measured this".
  *   • {@link resolveFlatStallThreshold} — how many flat readings is a stall.
+ *   • {@link resolveGoalStall} — WHICH metric's flat line condemns the goal.
+ *     The verdict itself lives in ../liveness/wire.ts, but the rule lives here,
+ *     with the series it reasons about and the only test file that can load it.
  *
  * What is deliberately NOT here: anything that declares a probe. R-12a makes a
  * signal a trigger. A measurement arrives from an ordinary cron trigger's session
@@ -223,10 +226,15 @@ export function rollupGoalMetrics(
  *   measured      — at least one reading exists, so `done_when` has a series to
  *                   be evaluated against.
  *   unmeasurable  — `done_when` names a threshold and NOTHING has ever been
- *                   recorded. R-12d: this must never read as on-track. It is the
+ *                   recorded — or the goal DECLARES the metric that defines it
+ *                   and that metric has never been recorded, whatever else has.
+ *                   R-12d: this must never read as on-track. It is the
  *                   distinction the whole section exists for — a goal like
  *                   "be #1 on Google" with no observations is not progressing
- *                   slowly, it is un-judged.
+ *                   slowly, it is un-judged. R-12d says "without any observation
+ *                   ever being recorded FOR THAT METRIC", so a goal recording
+ *                   three unrelated series and never the declared one is exactly
+ *                   as un-judged as a goal recording nothing at all.
  *   unquantified  — `done_when` names no threshold and nothing is recorded. Legal
  *                   (R-7 only requires prose), and a different problem from
  *                   `unmeasurable`: nothing here is broken, there is just nothing
@@ -259,7 +267,19 @@ export function namesThreshold(doneWhen: string): boolean {
 export function resolveGoalMeasurability(input: {
   doneWhen: string;
   hasObservations: boolean;
+  /**
+   * True when the goal DECLARES a primary metric (`metric:` in kortix.yaml) and
+   * that metric has never been observed. Checked FIRST and unconditionally:
+   * `hasObservations` is true the moment any series exists, so without this a
+   * goal that declares `gsc_avg_position_core` and only ever records
+   * `impressions` reads `measured` while the number that defines it has never
+   * been taken once. That is the same "one noisy metric hides the flat one"
+   * failure R-12e is about, one step earlier — before there is even a reading to
+   * be flat.
+   */
+  primaryUnobserved?: boolean;
 }): GoalMeasurability {
+  if (input.primaryUnobserved) return 'unmeasurable';
   if (input.hasObservations) return 'measured';
   return namesThreshold(input.doneWhen) ? 'unmeasurable' : 'unquantified';
 }
@@ -292,6 +312,128 @@ export function resolveFlatStallThreshold(
   if (raw === undefined || !/^\d+$/.test(raw.trim())) return DEFAULT_FLAT_STALL_OBSERVATIONS;
   const value = Number(raw.trim());
   return value >= 1 ? value : DEFAULT_FLAT_STALL_OBSERVATIONS;
+}
+
+// ─── R-12e: WHICH metric's flat line condemns the goal ──────────────────────
+
+/**
+ * Which rule produced a stall verdict. Carried on the verdict rather than
+ * inferred, because the two rules disagree on purpose and a reader who cannot
+ * tell which one ran cannot tell whether "measuring" means "the metric that
+ * matters moved" or "some metric moved".
+ *
+ *   primary     — the goal declares `metric:` in kortix.yaml. THAT series is the
+ *                 verdict; every other metric is context.
+ *   any_metric  — the goal declares none, so any metric flat past N stalls it.
+ */
+export const GOAL_STALL_RULES = ['primary', 'any_metric'] as const;
+export type GoalStallRule = (typeof GOAL_STALL_RULES)[number];
+
+export interface GoalStallVerdict {
+  rule: GoalStallRule;
+  /** Has this goal's defining series stopped moving? */
+  stalled: boolean;
+  /** The declared primary metric, or null under `any_metric`. */
+  primaryMetric: string | null;
+  /** R-12d, per-metric: a primary is declared and nothing has ever been recorded
+   *  for it. Never `stalled` — there is no run to be flat — and never on-track. */
+  primaryUnobserved: boolean;
+  /** The metric whose flat run produced `stalled`, or null. Under `primary` this
+   *  is always the primary; under `any_metric` it is the LONGEST flat run, which
+   *  is the one a human should look at first. */
+  drivenBy: string | null;
+  /** Every metric at or past the threshold, worst run first — reported whether or
+   *  not it drove the verdict, so a flat series is visible before it condemns
+   *  anything and a flat non-primary is visible even though it never will. */
+  flatMetrics: { metric: string; flatObservations: number }[];
+}
+
+/**
+ * R-12e, decided from the series alone.
+ *
+ * This used to stall a goal only when EVERY metric was flat past N, on the
+ * reasoning that "something moved, so the goal advanced". That reasoning is
+ * wrong, and it failed live: a platinum.dev manifest recorded
+ * `gsc_avg_position_core`, `impressions`, and `clicks`; the position — the number
+ * `done_when` is literally about — sat at 9.4 for 20 consecutive readings across
+ * 21 days while impressions and clicks wandered on their own. The goal reported
+ * `measuring` with `stalled_goal_count: 0`. Rank did not move for three weeks and
+ * nothing noticed, which is verbatim the failure §4.2 exists to prevent.
+ *
+ * The root cause is that `done_when` is prose and names no metric, so nothing
+ * associated the threshold with a series. Both halves of the fix follow from
+ * that:
+ *
+ *   1. A goal MAY declare the metric that defines it (`metric:` in kortix.yaml —
+ *      authored state, so R-2 puts it in the manifest, not the database). When it
+ *      does, that series alone is the verdict. Other metrics stay visible in
+ *      `flatMetrics` but cannot vote.
+ *
+ *   2. When it does NOT, ANY metric flat past N stalls the goal. Deliberately the
+ *      opposite of the old rule: over-reporting a stall costs a human one glance
+ *      at a goal they should be looking at anyway, while under-reporting is three
+ *      silent weeks. Same direction {@link namesThreshold} takes, and the same
+ *      direction the liveness module takes for tasks.
+ *
+ * `rule` and `drivenBy` ride along so the answer is never ambiguous: "stalled
+ * because `gsc_avg_position_core`, the declared primary, has not moved in 20
+ * readings" and "stalled because `clicks` has not moved in 4" are different
+ * statements and a human needs to be told which one they are reading.
+ *
+ * Total and pure — no clock, no database, no manifest read.
+ */
+export function resolveGoalStall(input: {
+  metrics: readonly GoalMetricSummary[];
+  /** Already normalized by the manifest parser, so it compares by `===` against
+   *  a recorded metric name. Both sides go through {@link normalizeMetric}; a
+   *  second, looser comparison here would let `Core Position` declare a primary
+   *  that `core_position` never satisfies. */
+  primaryMetric: string | null;
+  flatStallAfter: number;
+}): GoalStallVerdict {
+  const flatMetrics = input.metrics
+    .filter((metric) => metric.flatObservations >= input.flatStallAfter)
+    .map((metric) => ({ metric: metric.metric, flatObservations: metric.flatObservations }))
+    .sort((a, b) => b.flatObservations - a.flatObservations);
+
+  const primaryMetric = input.primaryMetric || null;
+
+  if (primaryMetric) {
+    const summary = input.metrics.find((metric) => metric.metric === primaryMetric) ?? null;
+    if (!summary) {
+      // R-12d. The strongest signal the system can emit: the goal names the
+      // number it is about and nobody has ever taken it. Reported as its own
+      // state by the caller, never as `stalled` (no run to be flat) and never as
+      // on-track.
+      return {
+        rule: 'primary',
+        stalled: false,
+        primaryMetric,
+        primaryUnobserved: true,
+        drivenBy: null,
+        flatMetrics,
+      };
+    }
+    const stalled = summary.flatObservations >= input.flatStallAfter;
+    return {
+      rule: 'primary',
+      stalled,
+      primaryMetric,
+      primaryUnobserved: false,
+      drivenBy: stalled ? primaryMetric : null,
+      flatMetrics,
+    };
+  }
+
+  const worst = flatMetrics[0] ?? null;
+  return {
+    rule: 'any_metric',
+    stalled: worst !== null,
+    primaryMetric: null,
+    primaryUnobserved: false,
+    drivenBy: worst?.metric ?? null,
+    flatMetrics,
+  };
 }
 
 // ─── serialization ──────────────────────────────────────────────────────────

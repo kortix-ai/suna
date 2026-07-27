@@ -10,12 +10,17 @@
  * in this surface writes one. The only cloud-side facts folded in are the task
  * counts and the derived trigger's runtime row.
  */
-import { GOAL_STATUSES, type GoalParseError, type GoalSpec, type GoalStatus } from '../../projects/lib/agi-goals';
 import {
+  GOAL_STATUSES,
+  type GoalParseError,
+  type GoalSpec,
+  type GoalStatus,
+} from '../../projects/lib/agi-goals';
+import {
+  type GoalMetricSummary,
   resolveGoalMeasurability,
   serializeGoalMetric,
   serializeGoalMetricWithSeries,
-  type GoalMetricSummary,
 } from '../observations/wire';
 import { TASK_STATUSES, TERMINAL_TASK_STATUSES } from '../tasks/wire';
 
@@ -66,9 +71,19 @@ export function serializeAgiGoal(
     task_counts: counts,
     open_task_count: openTaskCount(counts),
     metrics: metrics.map(serializeGoalMetric),
+    /** R-12e. The series this goal declares as its definition of progress, or
+     *  null. On the wire because an invisible declaration is its own silent
+     *  failure: a reader has to be able to see WHY the verdict named one metric. */
+    primary_metric: goal.primaryMetric,
     measurability: resolveGoalMeasurability({
       doneWhen: goal.doneWhen,
       hasObservations: metrics.length > 0,
+      // R-12d is per-metric: a goal that names the number it is about and has
+      // never recorded it is un-judged, however many OTHER series it carries.
+      // `hasObservations` alone would call that `measured`.
+      primaryUnobserved:
+        goal.primaryMetric !== null &&
+        !metrics.some((summary) => summary.metric === goal.primaryMetric),
     }),
   };
 }

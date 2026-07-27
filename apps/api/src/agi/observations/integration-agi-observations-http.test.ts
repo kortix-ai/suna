@@ -445,16 +445,88 @@ describe('the flat line surfaces as a stall (R-12e)', () => {
     expect(body.goals.find((g: any) => g.slug === 'seo').liveness.state).toBe('measuring');
   });
 
-  test('one metric still moving keeps the goal off the stall list', async () => {
+  // The live defect, end to end. `seo` records three metrics; the one `done_when`
+  // is about has not moved while the other two wander. Under the old "EVERY
+  // metric must be flat" rule this returned `measuring` with
+  // stalled_goal_count 0 — three weeks of a flat rank that nothing noticed.
+  test('a noisy metric no longer hides a flat one — ANY flat metric stalls an undeclared goal', async () => {
     await seedSeries('seo', 'rank', [9, 9, 9, 9]);
     await seedSeries('seo', 'signups', [31, 40]);
 
     const body = await (await req('GET', livenessPath, ownerToken)).json();
     const seo = body.goals.find((goal: any) => goal.slug === 'seo');
-    expect(seo.liveness.state).toBe('measuring');
-    // The flat metric is still named, so it is visible before it stalls the goal.
-    expect(seo.liveness.flat_metrics.map((m: any) => m.metric)).toEqual(['rank']);
-    expect(body.stalled_goal_count).toBe(0);
+    expect(seo.liveness.state).toBe('stalled');
+    expect(seo.liveness.reason).toBe('metric_flat');
+    // The verdict says which rule ran and which metric drove it, so "stalled"
+    // is never a number a human has to go and reverse-engineer.
+    expect(seo.liveness.stall_rule).toBe('any_metric');
+    expect(seo.liveness.driven_by).toBe('rank');
+    expect(seo.liveness.primary_metric).toBeNull();
+    expect(body.stalled_goal_count).toBe(1);
+  });
+
+  // R-12e with a declaration: the goal names the series that defines it, so that
+  // series alone is the verdict and the others are context.
+  describe('a goal that declares its metric (R-12e)', () => {
+    const DECLARED = `kortix_version: 2
+
+goals:
+  - slug: seo
+    title: Top 3 on the core terms
+    done_when: Top 3 for the core terms, sustained 30 days.
+    status: active
+    metric: gsc_avg_position_core
+`;
+
+    beforeEach(() => {
+      manifestFile = yaml(DECLARED);
+    });
+
+    test('the declared metric going flat stalls the goal however loudly the others move', async () => {
+      await seedSeries('seo', 'gsc_avg_position_core', [9.4, 9.4, 9.4, 9.4]);
+      await seedSeries('seo', 'impressions', [4800, 5100, 5300]);
+      await seedSeries('seo', 'clicks', [44, 61, 70]);
+
+      const body = await (await req('GET', livenessPath, ownerToken)).json();
+      const seo = body.goals.find((goal: any) => goal.slug === 'seo');
+      expect(seo.liveness.state).toBe('stalled');
+      expect(seo.liveness.stall_rule).toBe('primary');
+      expect(seo.liveness.driven_by).toBe('gsc_avg_position_core');
+      expect(body.stalled_goal_count).toBe(1);
+    });
+
+    test('a flat SECONDARY cannot condemn the goal, and is still reported by name', async () => {
+      await seedSeries('seo', 'gsc_avg_position_core', [9.4, 8.1, 7.2]);
+      await seedSeries('seo', 'clicks', [61, 61, 61, 61]);
+
+      const body = await (await req('GET', livenessPath, ownerToken)).json();
+      const seo = body.goals.find((goal: any) => goal.slug === 'seo');
+      expect(seo.liveness.state).toBe('measuring');
+      expect(seo.liveness.driven_by).toBeNull();
+      expect(seo.liveness.flat_metrics.map((m: any) => m.metric)).toEqual(['clicks']);
+      expect(body.stalled_goal_count).toBe(0);
+    });
+
+    // R-12d, per-metric, and the strongest signal the system can emit: the goal
+    // names the number it is about and nobody has ever taken it. Two
+    // healthy-looking unrelated series make that worse, not better.
+    test('a declared metric nobody ever recorded is UNMEASURABLE, never on-track', async () => {
+      await seedSeries('seo', 'impressions', [4800, 5100, 5300]);
+      await seedSeries('seo', 'clicks', [44, 61, 70]);
+
+      const body = await (await req('GET', livenessPath, ownerToken)).json();
+      const seo = body.goals.find((goal: any) => goal.slug === 'seo');
+      expect(seo.liveness.state).toBe('unmeasurable');
+      expect(seo.liveness.primary_metric).toBe('gsc_avg_position_core');
+      expect(body.unmeasurable_goals.map((goal: any) => goal.slug)).toContain('seo');
+      expect(body.stalled_goal_count).toBe(0);
+
+      // And the goal surface agrees — one word for one fact, on both routes.
+      const goals = await (await req('GET', goalsPath(), ownerToken)).json();
+      const wire = goals.goals.find((goal: any) => goal.slug === 'seo');
+      expect(wire.measurability).toBe('unmeasurable');
+      expect(wire.primary_metric).toBe('gsc_avg_position_core');
+    });
   });
 
   // R-12d on the stall surface: un-judged is its own bucket, not "stalled" and

@@ -10,16 +10,18 @@ import { describe, expect, test } from 'bun:test';
 import {
   DEFAULT_FLAT_STALL_OBSERVATIONS,
   FLAT_STALL_ENV_KEY,
+  type GoalMetricSummary,
+  type ObservationPoint,
   moved,
   namesThreshold,
   normalizeMetric,
   normalizeObservationValue,
   resolveFlatStallThreshold,
   resolveGoalMeasurability,
+  resolveGoalStall,
   rollupGoalMetrics,
   serializeGoalMetric,
   summarizeMetric,
-  type ObservationPoint,
 } from './wire';
 
 const AT = (minutes: number) => new Date(Date.UTC(2026, 6, 26, 9, minutes, 0));
@@ -202,6 +204,126 @@ describe('resolveGoalMeasurability (R-12d)', () => {
         hasObservations: false,
       }),
     ).toBe('unquantified');
+  });
+
+  // R-12d says "without any observation ever being recorded FOR THAT METRIC".
+  // `hasObservations` alone cannot see that: it is true the moment ANY series
+  // exists, so a goal recording three unrelated numbers and never the one it
+  // declares reads `measured` while nobody is measuring the thing it is about.
+  test('a declared primary that was never observed is UNMEASURABLE even with other series', () => {
+    expect(
+      resolveGoalMeasurability({
+        doneWhen: 'Top 3 for the core terms.',
+        hasObservations: true,
+        primaryUnobserved: true,
+      }),
+    ).toBe('unmeasurable');
+  });
+
+  test('an observed primary leaves the ordinary answer alone', () => {
+    expect(
+      resolveGoalMeasurability({
+        doneWhen: 'Top 3 for the core terms.',
+        hasObservations: true,
+        primaryUnobserved: false,
+      }),
+    ).toBe('measured');
+  });
+});
+
+describe('resolveGoalStall (R-12e)', () => {
+  /** Newest first, the order the store hands back. */
+  function series(metric: string, ...values: number[]): GoalMetricSummary {
+    return summarizeMetric(metric, points(...values), 50)!;
+  }
+
+  const stall = (metrics: GoalMetricSummary[], primaryMetric: string | null = null) =>
+    resolveGoalStall({ metrics, primaryMetric, flatStallAfter: 3 });
+
+  // The exact live failure. Three metrics off a real platinum.dev manifest: the
+  // position that `done_when` is literally about sat at 9.4 for 20 consecutive
+  // readings across 21 days while impressions and clicks wandered. Under the old
+  // "EVERY metric must be flat" rule this was `measuring` with
+  // stalled_goal_count 0 — rank did not move for three weeks and nothing noticed.
+  const PLATINUM = () => [
+    series('gsc_avg_position_core', ...Array(21).fill(9.4)),
+    series('impressions', 5100, 4800, 5300, 4950),
+    series('clicks', 61, 44, 70, 52),
+  ];
+
+  test('one noisy metric can no longer hide the flat one', () => {
+    const verdict = stall(PLATINUM());
+    expect(verdict.stalled).toBe(true);
+    expect(verdict.rule).toBe('any_metric');
+    expect(verdict.drivenBy).toBe('gsc_avg_position_core');
+  });
+
+  test('a declared primary IS the verdict, whatever the others do', () => {
+    const verdict = stall(PLATINUM(), 'gsc_avg_position_core');
+    expect(verdict.stalled).toBe(true);
+    expect(verdict.rule).toBe('primary');
+    expect(verdict.drivenBy).toBe('gsc_avg_position_core');
+    expect(verdict.primaryMetric).toBe('gsc_avg_position_core');
+    expect(verdict.primaryUnobserved).toBe(false);
+  });
+
+  test('a flat SECONDARY cannot condemn a declared goal, and stays visible anyway', () => {
+    const verdict = stall(
+      [series('gsc_avg_position_core', 7.2, 8.1, 9.4), series('clicks', 61, 61, 61, 61)],
+      'gsc_avg_position_core',
+    );
+    expect(verdict.stalled).toBe(false);
+    expect(verdict.drivenBy).toBeNull();
+    // Reported, but not the verdict — the whole reason `rule` is on the result.
+    expect(verdict.flatMetrics).toEqual([{ metric: 'clicks', flatObservations: 3 }]);
+  });
+
+  test('a declared primary nobody ever recorded is unobserved, never stalled', () => {
+    // Not `stalled`: there is no run to be flat. The caller turns this into
+    // `unmeasurable` (R-12d), which is a different fix — start measuring, rather
+    // than work harder.
+    const verdict = stall([series('impressions', 5100, 4800)], 'gsc_avg_position_core');
+    expect(verdict.primaryUnobserved).toBe(true);
+    expect(verdict.stalled).toBe(false);
+    expect(verdict.drivenBy).toBeNull();
+    expect(verdict.primaryMetric).toBe('gsc_avg_position_core');
+  });
+
+  test('the primary is matched exactly — a near-miss name is an unobserved primary', () => {
+    // Both sides go through normalizeMetric, so `===` is the whole comparison.
+    // A looser match would let a declaration read as honoured while pointing at
+    // a series that does not exist.
+    const verdict = stall(
+      [series('gsc_avg_position', 9.4, 9.4, 9.4, 9.4)],
+      'gsc_avg_position_core',
+    );
+    expect(verdict.primaryUnobserved).toBe(true);
+  });
+
+  test('under the any-metric rule the LONGEST flat run is the named driver', () => {
+    const verdict = stall([series('rank', 9, 9, 9, 9), series('signups', 40, 40, 40, 40, 40, 40)]);
+    expect(verdict.drivenBy).toBe('signups');
+    expect(verdict.flatMetrics.map((m) => m.metric)).toEqual(['signups', 'rank']);
+  });
+
+  test('nothing flat past the threshold is no stall under either rule', () => {
+    expect(stall([series('rank', 9, 9, 9)]).stalled).toBe(false);
+    expect(stall([series('rank', 9, 9, 9)], 'rank').stalled).toBe(false);
+    expect(stall([]).stalled).toBe(false);
+    expect(stall([]).rule).toBe('any_metric');
+  });
+
+  test('a goal with no metrics and no declaration has no primary to miss', () => {
+    expect(stall([]).primaryUnobserved).toBe(false);
+    expect(stall([]).primaryMetric).toBeNull();
+  });
+
+  test('an empty-string declaration is no declaration — never a phantom primary', () => {
+    // A manifest that writes `metric: ""` must fall back to the conservative
+    // rule, not report an unobservable primary the author cannot see.
+    expect(resolveGoalStall({ metrics: [], primaryMetric: '', flatStallAfter: 3 }).rule).toBe(
+      'any_metric',
+    );
   });
 });
 

@@ -169,6 +169,12 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 
 const goalsPath = (workspace = WORKSPACE) => `/v1/projects/${workspace}/agi/goals`;
 
+/** Issues that REJECTED a goal, as opposed to advisories on one that parsed and
+ *  is in `goals`. Both ride `errors` on purpose — one channel a surface can
+ *  forget to render — so a test about rejection says which half it means. */
+const rejected = (issues: any[]) =>
+  issues.filter((issue) => !String(issue.message).startsWith('Warning:'));
+
 async function seedTask(goalSlug: string | null, status: string) {
   const [row] = await db
     .insert(agiTasks)
@@ -226,7 +232,11 @@ describe('GET /agi/goals', () => {
       'hire-ops',
       'on-demand',
     ]);
-    expect(body.errors).toEqual([]);
+    // Nothing here was REJECTED. `on-demand`'s "Someone says so." earns an
+    // advisory (a `done_when` that thin is what an unquoted-"#" truncation looks
+    // like), and an advisory rides the same list on purpose — one channel a
+    // surface can forget to render.
+    expect(rejected(body.errors)).toEqual([]);
   });
 
   test('carries the derived trigger slug, the push schedule, and done_when', async () => {
@@ -300,9 +310,33 @@ goals:
     const body = await res.json();
 
     expect(body.goals.map((goal: any) => goal.slug)).toEqual(['fine']);
+    expect(rejected(body.errors)).toHaveLength(1);
+    expect(rejected(body.errors)[0].index).toBe(1);
+    expect(rejected(body.errors)[0].slug).toBe('wishful');
+    expect(rejected(body.errors)[0].message).toContain('done_when');
+  });
+
+  // The `#` footgun, on the surface a human actually reads. `title: ranks #1` is
+  // a comment to YAML, so the value arrives already truncated and `errors` used
+  // to come back empty — a goal silently reduced to one word with nothing said.
+  test('a truncated goal string is WARNED about in the same list `kortix goals ls` reads', async () => {
+    manifestFile = yaml(`kortix_version: 2
+
+goals:
+  - slug: seo
+    title: ranks #1 on Google
+    done_when: rank #1 within 90 days
+`);
+    const res = await req('GET', goalsPath(), ownerToken);
+    const body = await res.json();
+
+    // Proof the truncation already happened before anything could see it.
+    expect(body.goals[0].title).toBe('ranks');
+    expect(body.goals[0].done_when).toBe('rank');
+    // Nothing was rejected — the goal works, and the complaint is visible.
+    expect(rejected(body.errors)).toEqual([]);
     expect(body.errors).toHaveLength(1);
-    expect(body.errors[0].index).toBe(1);
-    expect(body.errors[0].slug).toBe('wishful');
+    expect(body.errors[0].slug).toBe('seo');
     expect(body.errors[0].message).toContain('done_when');
   });
 
