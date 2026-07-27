@@ -8,8 +8,12 @@ import { type Client, isKe2eRetryableError } from '../core/client';
 import { sleep } from '../core/poll';
 
 const MAX = Number(process.env.KE2E_PROVISION_CONCURRENCY ?? 2);
+const MIN_REQUEST_INTERVAL_MS = Number(process.env.KE2E_PROVISION_MIN_INTERVAL_MS ?? 0);
+const RATE_LIMIT_DELAY_MS = Number(process.env.KE2E_PROVISION_RATE_LIMIT_DELAY_MS ?? 120_000);
 let active = 0;
 const waiters: Array<() => void> = [];
+let nextRequestAt = 0;
+let pacingTail: Promise<void> = Promise.resolve();
 
 async function acquire(): Promise<void> {
   if (active < MAX) {
@@ -32,8 +36,22 @@ function isRetryableProvisionStatus(status: number): boolean {
   return status >= 500 && status <= 599;
 }
 
-function retryDelayMs(attempt: number): number {
+function retryDelayMs(attempt: number, rateLimited: boolean): number {
+  if (rateLimited) return RATE_LIMIT_DELAY_MS;
   return Math.min(5_000 * 2 ** attempt, 30_000);
+}
+
+export async function paceProvisionRequest(
+  minimumIntervalMs = MIN_REQUEST_INTERVAL_MS,
+): Promise<void> {
+  if (minimumIntervalMs <= 0) return;
+  const scheduled = pacingTail.then(async () => {
+    const delayMs = Math.max(0, nextRequestAt - Date.now());
+    if (delayMs > 0) await sleep(delayMs);
+    nextRequestAt = Date.now() + minimumIntervalMs;
+  });
+  pacingTail = scheduled.catch(() => undefined);
+  await scheduled;
 }
 
 /**
@@ -54,6 +72,7 @@ export async function provisionProject(
       attempts = attempt + 1;
       let r: Awaited<ReturnType<Client['post']>>;
       try {
+        await paceProvisionRequest();
         r = await client.post('/v1/projects/provision', body, {
           timeoutMs: PROVISION_REQUEST_TIMEOUT_MS,
         });
@@ -61,7 +80,7 @@ export async function provisionProject(
         if (!isKe2eRetryableError(error) || attempt === MAX_PROVISION_ATTEMPTS - 1) {
           throw error;
         }
-        await sleep(retryDelayMs(attempt));
+        await sleep(retryDelayMs(attempt, false));
         continue;
       }
 
@@ -69,10 +88,10 @@ export async function provisionProject(
       if (typeof id === 'string' && id.length > 0) return id;
       const responseText = r.text();
       lastFailure = `HTTP ${r.statusCode}: ${responseText}`;
-      const retryable =
-        isRetryableProvisionStatus(r.statusCode) || RATE_LIMIT_RE.test(responseText);
+      const rateLimited = RATE_LIMIT_RE.test(responseText);
+      const retryable = isRetryableProvisionStatus(r.statusCode) || rateLimited;
       if (!retryable || attempt === MAX_PROVISION_ATTEMPTS - 1) break;
-      await sleep(retryDelayMs(attempt));
+      await sleep(retryDelayMs(attempt, rateLimited));
     }
     throw new Error(
       `project provision returned no id after ${attempts} attempt(s): ${lastFailure}`,

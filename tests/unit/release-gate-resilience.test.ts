@@ -7,7 +7,7 @@ import {
 } from '../src/core/client';
 import { waitFor } from '../src/core/poll';
 import type { Captured } from '../src/core/result';
-import { provisionProject } from '../src/fixtures/provision';
+import { paceProvisionRequest, provisionProject } from '../src/fixtures/provision';
 
 function response(statusCode: number, bodyText: string, json?: unknown) {
   return {
@@ -86,17 +86,36 @@ describe('release gate transient failure resilience', () => {
 
   it('retries an explicit HTTP 403 rate-limit response', async () => {
     vi.useFakeTimers();
+    const attempts: number[] = [];
     const post = vi
       .fn()
-      .mockResolvedValueOnce(response(403, '{"error":"secondary rate limit"}'))
-      .mockResolvedValueOnce(
-        response(200, '{"project_id":"project-3"}', { project_id: 'project-3' }),
-      );
+      .mockImplementationOnce(async () => {
+        attempts.push(Date.now());
+        return response(403, '{"error":"secondary rate limit"}');
+      })
+      .mockImplementationOnce(async () => {
+        attempts.push(Date.now());
+        return response(200, '{"project_id":"project-3"}', { project_id: 'project-3' });
+      });
 
     const result = provisionProject(clientWithPost(post), { name: 'release-gate-test' });
 
     await expect(settleTimers(result)).resolves.toBe('project-3');
     expect(post).toHaveBeenCalledTimes(2);
+    expect(attempts).toHaveLength(2);
+    expect((attempts.at(1) ?? 0) - (attempts.at(0) ?? 0)).toBeGreaterThanOrEqual(120_000);
+  });
+
+  it('paces concurrent managed repository creation attempts', async () => {
+    vi.useFakeTimers();
+    const starts: number[] = [];
+
+    const first = paceProvisionRequest(5_000).then(() => starts.push(Date.now()));
+    const second = paceProvisionRequest(5_000).then(() => starts.push(Date.now()));
+
+    await settleTimers(Promise.all([first, second]));
+    expect(starts).toHaveLength(2);
+    expect((starts.at(1) ?? 0) - (starts.at(0) ?? 0)).toBeGreaterThanOrEqual(5_000);
   });
 
   it('continues polling after a marked network error', async () => {
