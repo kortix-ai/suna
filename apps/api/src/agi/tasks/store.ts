@@ -46,8 +46,46 @@ import {
   type SQLWrapper,
 } from 'drizzle-orm';
 
-const TERMINAL = [...TERMINAL_TASK_STATUSES];
-const OPEN = [...OPEN_TASK_STATUSES];
+/**
+ * Everything this module derives from `./wire` or from the Drizzle table is built
+ * ON FIRST USE, never at import time, because this file sits on a genuine runtime
+ * import cycle:
+ *
+ *   agi/tasks/wire.ts
+ *     -> projects/lib/serializers.ts   (wire imports UUID_V4_REGEX from it)
+ *     -> projects/lib/sessions.ts
+ *     -> agi/liveness/index.ts
+ *     -> agi/liveness/session-outcome.ts
+ *     -> agi/tasks/store.ts            (back here)
+ *
+ * When the process happens to enter that ring at `wire.ts`, store.ts's module
+ * body runs while wire.ts is still mid-evaluation, so its `const` exports are in
+ * the temporal dead zone and any import-time dereference throws
+ * "Cannot access 'TERMINAL_TASK_STATUSES' before initialization". Which module
+ * the ring is entered at depends purely on load order, so this is invisible when
+ * a suite runs alone and fires when several files are loaded in one process —
+ * `bun test src/agi/` reproduced it, ten unhandled errors, while every one of
+ * those files passed on its own.
+ *
+ * Deferring the dereference to call time removes the dependency on load order
+ * entirely: by the time any exported query function runs, every module in the
+ * ring has finished evaluating. Memoized because these values are immutable and
+ * are read on every list/claim.
+ */
+function once<T>(build: () => T): () => T {
+  let value: T | undefined;
+  let built = false;
+  return () => {
+    if (!built) {
+      value = build();
+      built = true;
+    }
+    return value as T;
+  };
+}
+
+const terminalStatuses = once(() => [...TERMINAL_TASK_STATUSES]);
+const openStatuses = once(() => [...OPEN_TASK_STATUSES]);
 
 /** Server clock, always. A client-supplied "now" would let a caller declare
  *  another session's live claim expired. */
@@ -89,7 +127,9 @@ function priorityRank(column: SQLWrapper): SQL {
   return sql`(case ${column} ${sql.join(branches, sql` `)} else ${last} end)`;
 }
 
-const QUEUE_RANK = priorityRank(agiTasks.priority);
+/** Lazy for the same reason as {@link terminalStatuses}: `priorityRank` reads
+ *  TASK_PRIORITIES out of `./wire`. */
+const queueRank = once(() => priorityRank(agiTasks.priority));
 
 /**
  * Two orderings, chosen by what the caller asked for rather than by a parameter.
@@ -145,18 +185,20 @@ function claimCondition(filter: ClaimFilter): SQL {
  * This is authoritative on its own: `resolveCompletedBlocker` prunes satisfied
  * edges as bookkeeping, but readiness never depends on that prune having run.
  */
-const BLOCKERS_SATISFIED = sql`${agiTasks.blockedBy} <@ coalesce((
+const blockersSatisfied = once(
+  () => sql`${agiTasks.blockedBy} <@ coalesce((
     select array_agg(resolved.task_id)
       from kortix.agi_tasks resolved
      where resolved.workspace_id = ${agiTasks.workspaceId}
        and resolved.task_id = any(${agiTasks.blockedBy})
        and resolved.status = 'done'
-  ), '{}'::uuid[])`;
+  ), '{}'::uuid[])`,
+);
 
 /** The `--ready` view, as three ANDed predicates rather than a mode: composed
  *  with a caller's own filters it narrows, and can never widen them. */
 function readyConditions(): SQL[] {
-  return [inArray(agiTasks.status, OPEN), claimCondition('free'), BLOCKERS_SATISFIED];
+  return [inArray(agiTasks.status, openStatuses()), claimCondition('free'), blockersSatisfied()];
 }
 
 /**
@@ -212,7 +254,7 @@ function cursorCondition(workspaceId: string, cursor: TaskCursor, order: ListOrd
     priorityRank(sql`cursor_row.priority`),
     sql`0`,
   );
-  return sql`(${QUEUE_RANK}, ${agiTasks.createdAt}, ${agiTasks.taskId}) > (${rank}, ${createdAt}, ${cursor.taskId}::uuid)`;
+  return sql`(${queueRank()}, ${agiTasks.createdAt}, ${agiTasks.taskId}) > (${rank}, ${createdAt}, ${cursor.taskId}::uuid)`;
 }
 
 export async function listTasks(
@@ -276,7 +318,7 @@ export async function listTasks(
   return order === 'history'
     ? query.orderBy(desc(agiTasks.createdAt), desc(agiTasks.taskId)).limit(filters.limit)
     : query
-        .orderBy(sql`${QUEUE_RANK} asc`, asc(agiTasks.createdAt), asc(agiTasks.taskId))
+        .orderBy(sql`${queueRank()} asc`, asc(agiTasks.createdAt), asc(agiTasks.taskId))
         .limit(filters.limit);
 }
 
@@ -550,7 +592,7 @@ export async function claimTask(input: {
       and(
         eq(agiTasks.taskId, input.taskId),
         eq(agiTasks.workspaceId, input.workspaceId),
-        notInArray(agiTasks.status, TERMINAL),
+        notInArray(agiTasks.status, terminalStatuses()),
         or(
           isNull(agiTasks.claimSessionId),
           lt(agiTasks.claimExpiresAt, NOW),

@@ -47,6 +47,8 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  GOAL_METRIC_NEAR_MISS_KEYS,
+  GOAL_STATUSES,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
@@ -371,6 +373,51 @@ function triggerSchema(): JsonSchemaFragment {
   };
 }
 
+/**
+ * One `goals:` entry — the AGI's durable objective (`validateGoals`).
+ *
+ * `done_when` is REQUIRED (R-7) and is the whole reason this fragment exists:
+ * without it, the runtime parser drops the goal silently, so a schema that let
+ * it through would bless a manifest whose goal never materializes.
+ * `done_when`/`doneWhen` are alternatives, encoded the same way `triggerSchema`
+ * encodes `prompt`/`prompt_template`.
+ *
+ * The near-miss `metric` spellings are forbidden per-key (the `LEGACY_SANDBOX_KEYS`
+ * idiom) rather than left to the imperative validator, because they are a static
+ * key list and this is the one place an editor can flag them as you type.
+ *
+ * NOT encoded, and matching the trigger fragment's documented limits: duplicate
+ * slugs, croner-parseability of `push`, and IANA-validity of `timezone` — none
+ * has a static JSON Schema encoding, so they stay imperative-only.
+ */
+function goalSchema(): JsonSchemaFragment {
+  const forbiddenNearMisses = Object.fromEntries(GOAL_METRIC_NEAR_MISS_KEYS.map((k) => [k, false]));
+  return {
+    type: 'object',
+    required: ['slug'],
+    properties: {
+      ...forbiddenNearMisses,
+      slug: SLUG_SCHEMA,
+      title: { type: 'string' },
+      done_when: NON_EMPTY_STRING,
+      doneWhen: NON_EMPTY_STRING,
+      status: { type: 'string', enum: [...GOAL_STATUSES] },
+      // Cross-field: croner-parseability is dynamic — left to the imperative
+      // validator, exactly as `triggerSchema` leaves `cron`.
+      push: { type: 'string', minLength: 1 },
+      agent: { type: 'string', minLength: 1 },
+      timezone: { type: 'string' },
+      // Only "a non-empty string" is encodable: the runtime lower-cases and
+      // collapses internal whitespace BEFORE testing its charset, so
+      // `Core Position` is a legal spelling of `core_position` and no static
+      // pattern matches the accepted set. Charset stays imperative-only.
+      metric: { type: 'string', minLength: 1 },
+    },
+    additionalProperties: true,
+    allOf: [{ anyOf: [{ required: ['done_when'] }, { required: ['doneWhen'] }] }],
+  };
+}
+
 /** Platform-owned connector slugs and the one provider each may use
  *  (`RESERVED_SLUG_PROVIDERS`) — structural (static map), so encodable.
  *  Derived by iterating every entry (rather than a hand-written subset) so a
@@ -545,6 +592,9 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandboxes: false,
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
+    // `goals` is validated identically under both versions — the imperative
+    // validator calls the same `validateGoals` from both bodies.
+    goals: { type: 'array', items: goalSchema() },
     apps: false,
   };
 }

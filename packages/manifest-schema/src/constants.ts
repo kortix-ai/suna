@@ -25,7 +25,15 @@ export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
 // runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
 // deliberately absent: it is synth-only and never written to a manifest.
-export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel'] as const;
+export const CONNECTOR_PROVIDERS = [
+  'pipedream',
+  'mcp',
+  'openapi',
+  'postman',
+  'graphql',
+  'http',
+  'channel',
+] as const;
 export const CONNECTOR_AUTH_TYPES = [
   'bearer',
   'basic',
@@ -174,6 +182,46 @@ export const LEGACY_SANDBOX_KEYS = [
   'context_dir',
   'gpu',
 ] as const;
+
+// ─── goals (docs/specs/2026-07-26-agi-autonomous-operations.md §4) ──────────
+//
+// A `goals:` entry is the AGI's durable objective. The RUNTIME parser
+// (apps/api/src/projects/lib/agi-goals.ts `parseGoalEntry`) is what decides
+// whether a goal exists, and it drops any entry it cannot parse — so anything
+// this gate fails to reject ships as a manifest whose goal SILENTLY does not
+// exist: no derived push trigger, no rows, and `kortix validate --json`
+// answering `{"valid":true,"issues":[]}`. Every constant below therefore MUST
+// stay in sync with that parser. This package cannot import apps/api, so the
+// drift guard is a test on the apps/api side (agi-goals.test.ts).
+
+/** Mirrors agi-goals.ts `GOAL_STATUSES`. */
+export const GOAL_STATUSES = ['active', 'achieved', 'paused', 'abandoned'] as const;
+
+/**
+ * Keys an author reaches for when they mean `metric:` — mirrors agi-goals.ts
+ * `PRIMARY_METRIC_NEAR_MISSES`. Rejected by name rather than ignored: the goal
+ * would otherwise parse with the declaration silently dropped and fall back to
+ * the any-metric stall rule while its author believes a primary is in force.
+ */
+export const GOAL_METRIC_NEAR_MISS_KEYS = [
+  'primary_metric',
+  'primaryMetric',
+  'primary',
+  'metrics',
+  'metric_name',
+] as const;
+
+/** Mirrors agi-goals.ts `METRIC_RE` (which mirrors `agi_observations_metric_check`). */
+export const GOAL_METRIC_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/**
+ * A `done_when` shorter than this is advisory-flagged, never rejected — mirrors
+ * agi-goals.ts `GOAL_DONE_WHEN_MIN_LENGTH`. R-7 only requires prose, but the
+ * shortest honest completion criteria anyone writes ("An offer is signed.")
+ * clears 20 characters, and the strings that do not are overwhelmingly YAML `#`
+ * truncations.
+ */
+export const GOAL_DONE_WHEN_MIN_LENGTH = 20;
 
 export const V2_RUNTIME_VALUES = ['opencode'] as const;
 export const AGENT_MODES_V2 = ['primary', 'subagent', 'all'] as const;

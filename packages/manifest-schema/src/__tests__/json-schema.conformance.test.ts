@@ -642,6 +642,48 @@ connectors:
     input:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site\n',
   },
+  // ─── goals (R-7) ────────────────────────────────────────────────────────
+  {
+    name: 'v2: goal without done_when is rejected by BOTH (R-7)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: oil-desk\n    title: Oil trades running 24/7\n',
+  },
+  {
+    name: 'v2: fully-specified goal accepted by BOTH',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: oil-desk\n    title: Oil trades running 24/7\n    done_when: A live account runs the strategy unattended for 7 days.\n    status: active\n    push: "0 0 9 * * *"\n    metric: pnl_usd\n',
+  },
+  {
+    name: 'v2: goal using the doneWhen alias accepted by BOTH',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: a\n    doneWhen: A live account runs the strategy unattended for 7 days.\n',
+  },
+  {
+    name: 'v2: goal with an unknown status rejected by BOTH',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: a\n    done_when: A live account runs unattended for 7 days.\n    status: done\n',
+  },
+  {
+    name: 'v2: near-miss primary_metric key rejected by BOTH',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: a\n    done_when: A live account runs unattended for 7 days.\n    primary_metric: pnl_usd\n',
+  },
+  {
+    name: 'v1: goals validate identically under v1',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ngoals:\n  - slug: a\n',
+  },
 ];
 
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
@@ -715,6 +757,31 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
     const toml = 'kortix_version = 2\ndefault_agent = "w"\n[agents.w]\n';
     expect(validateManifest(toml, 'toml').valid).toBe(false);
     expect(validateCombined(parseToml(toml))).toBe(true);
+  });
+
+  test('a goal `push` croner cannot parse: imperative rejects, schema accepts', () => {
+    // Same limit as a trigger's `cron` — croner-parseability is not statically
+    // encodable, so the schema can only say "a non-empty string".
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: a\n    done_when: A live account runs unattended for 7 days.\n    push: "not a cron"\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('a duplicate goal slug: imperative rejects, schema accepts', () => {
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: a\n    done_when: A live account runs unattended for 7 days.\n  - slug: a\n    done_when: A live account runs unattended for 7 days.\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('a goal `metric` charset violation: imperative rejects, schema accepts', () => {
+    // The runtime lower-cases and collapses whitespace BEFORE testing the
+    // charset, so no static pattern matches the accepted set — see goalSchema.
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ngoals:\n  - slug: a\n    done_when: A live account runs unattended for 7 days.\n    metric: impressions/day\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
   });
 
   test('auth.type oauth1 on a non-openapi/http connector: imperative rejects, schema accepts', () => {

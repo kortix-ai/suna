@@ -25,6 +25,10 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  GOAL_DONE_WHEN_MIN_LENGTH,
+  GOAL_METRIC_NEAR_MISS_KEYS,
+  GOAL_METRIC_RE,
+  GOAL_STATUSES,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
@@ -86,6 +90,10 @@ export {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  GOAL_DONE_WHEN_MIN_LENGTH,
+  GOAL_METRIC_NEAR_MISS_KEYS,
+  GOAL_METRIC_RE,
+  GOAL_STATUSES,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
@@ -251,6 +259,7 @@ function validateManifestBodyV1(
   validateConnectors(parsed.connectors, 'connectors', issues, 1, format);
   validateAgents(parsed.agents, 'agents', issues, format);
   validateChannels(parsed.channels, 'channels', issues, format);
+  validateGoals(parsed.goals, 'goals', issues, format);
   rejectRetiredApps(parsed.apps, 'apps', issues);
 }
 
@@ -273,6 +282,7 @@ function validateManifestBodyV2(
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
   validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  validateGoals(parsed.goals, 'goals', issues, format);
   rejectRetiredApps(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
@@ -926,7 +936,237 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+/**
+ * `goals:` — the AGI's durable objectives
+ * (docs/specs/2026-07-26-agi-autonomous-operations.md §4).
+ *
+ * This gate exists because the RUNTIME is safe in the WRONG direction. The
+ * runtime parser (apps/api/src/projects/lib/agi-goals.ts `parseGoalEntry`)
+ * DROPS any entry it cannot parse, so a goal missing `done_when` never becomes a
+ * spec and never desugars a push trigger — it just silently does not exist. With
+ * nothing checking here, `kortix validate --json` answered
+ * `{"valid":true,"issues":[]}` with exit 0 for exactly that manifest, and
+ * `kortix ship` pushed it. The author is told their goal is fine and then
+ * watches nothing ever happen, with no error anywhere to explain it.
+ *
+ * So every rule below mirrors a rule the runtime parser treats as fatal, and
+ * nothing more: a manifest this validator accepts must be one whose goals ALL
+ * materialize. Advisory issues (severity `warning`) mirror the parser's
+ * `GOAL_WARNING_PREFIX` warnings — they never set `valid: false`, matching the
+ * runtime, where a warned goal still parses and still pushes.
+ *
+ * Field aliases (`done_when`/`doneWhen`) mirror the parser's own input
+ * tolerance, same as `validateTriggers` does for `prompt`/`prompt_template`: a
+ * gate stricter than the runtime falsely blocks a manifest that works.
+ */
+function validateGoals(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  format: ManifestFormat = 'toml',
+): void {
+  if (node == null) return;
+  if (!Array.isArray(node)) {
+    issues.push({ path, message: listSectionHint('goals', format), severity: 'error' });
+    return;
+  }
+  const seenSlugs = new Set<string>();
+  node.forEach((entry, i) => {
+    const where = `${path}[${i}]`;
+    if (!isTable(entry)) {
+      issues.push({ path: where, message: 'must be a table.', severity: 'error' });
+      return;
+    }
+
+    const slug = typeof entry.slug === 'string' ? entry.slug.trim() : '';
+    if (!slug) {
+      issues.push({ path: `${where}.slug`, message: 'slug is required.', severity: 'error' });
+    } else if (!SLUG_RE.test(slug)) {
+      issues.push({
+        path: `${where}.slug`,
+        message: `"${slug}" is not a valid slug.`,
+        severity: 'error',
+      });
+    } else if (seenSlugs.has(slug)) {
+      issues.push({
+        path: `${where}.slug`,
+        message: `duplicate slug "${slug}".`,
+        severity: 'error',
+      });
+    } else {
+      seenSlugs.add(slug);
+    }
+
+    // R-7 — the one field that separates a goal from a wish, and the reason
+    // this whole function exists.
+    const doneWhen =
+      typeof entry.done_when === 'string'
+        ? entry.done_when
+        : typeof entry.doneWhen === 'string'
+          ? entry.doneWhen
+          : '';
+    if (!doneWhen.trim()) {
+      issues.push({
+        path: `${where}.done_when`,
+        message:
+          'done_when is required — every goal must state, in prose, the evidence that would make it achieved. A goal without done_when is a wish, and the runtime drops it silently.',
+        severity: 'error',
+      });
+    }
+
+    if (entry.status !== undefined && entry.status !== null) {
+      const status = typeof entry.status === 'string' ? entry.status.trim().toLowerCase() : '';
+      if (!(GOAL_STATUSES as readonly string[]).includes(status)) {
+        issues.push({
+          path: `${where}.status`,
+          message: `status must be one of: ${GOAL_STATUSES.join(', ')} (got "${status || 'unset'}").`,
+          severity: 'error',
+        });
+      }
+    }
+
+    // `push` is SUGAR for exactly one cron trigger (R-8), so it is held to the
+    // same standard `validateTriggers` holds `cron` to — a `push` croner cannot
+    // parse is a standing advance that never fires.
+    if (entry.push !== undefined && entry.push !== null) {
+      const push = typeof entry.push === 'string' ? entry.push.trim() : '';
+      if (!push) {
+        issues.push({
+          path: `${where}.push`,
+          message: 'push must be a cron expression string — omit it for an on-demand goal.',
+          severity: 'error',
+        });
+      } else {
+        const timezone =
+          typeof entry.timezone === 'string' && entry.timezone.trim()
+            ? entry.timezone.trim()
+            : 'UTC';
+        if (isValidIanaTimeZone(timezone)) {
+          try {
+            new Cron(push, { paused: true, timezone });
+          } catch (error) {
+            issues.push({
+              path: `${where}.push`,
+              message: `invalid cron expression: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              severity: 'error',
+            });
+          }
+        }
+      }
+    }
+
+    if (entry.timezone !== undefined && typeof entry.timezone !== 'string') {
+      issues.push({
+        path: `${where}.timezone`,
+        message: 'timezone must be an IANA string.',
+        severity: 'error',
+      });
+    } else if (
+      typeof entry.timezone === 'string' &&
+      entry.timezone.trim() &&
+      !isValidIanaTimeZone(entry.timezone.trim())
+    ) {
+      issues.push({
+        path: `${where}.timezone`,
+        message: `"${entry.timezone}" is not a valid IANA time zone (e.g. "America/New_York"); the runtime rejects it and the push would never fire.`,
+        severity: 'error',
+      });
+    }
+
+    // R-12e. `metric` names the ONE series that is this goal's verdict. The
+    // runtime folds case and internal whitespace before matching, so the gate
+    // must too — `metric: Core Position` is a legal declaration of
+    // `core_position`, and rejecting it here would block a manifest that works.
+    if (entry.metric !== undefined && entry.metric !== null) {
+      const metric =
+        typeof entry.metric === 'string'
+          ? entry.metric.trim().toLowerCase().replace(/\s+/g, '_')
+          : '';
+      if (!metric || !GOAL_METRIC_RE.test(metric)) {
+        issues.push({
+          path: `${where}.metric`,
+          message:
+            'metric names the series that defines this goal — it must be 1-64 characters of a-z, 0-9, dot, dash, or underscore, starting with a letter or digit.',
+          severity: 'error',
+        });
+      }
+    } else {
+      const nearMiss = GOAL_METRIC_NEAR_MISS_KEYS.find((key) => entry[key] !== undefined);
+      if (nearMiss) {
+        issues.push({
+          path: `${where}.${nearMiss}`,
+          message: `unknown key \`${nearMiss}\` — the metric that defines a goal is declared as \`metric\`. Rename it, or the goal silently falls back to stalling on ANY flat metric.`,
+          severity: 'error',
+        });
+      }
+    }
+
+    goalStringWarnings(where, doneWhen.trim(), entry.title, issues);
+  });
+}
+
+/**
+ * The YAML `#` footgun, at the surface an author runs BEFORE pushing.
+ *
+ * Confirmed live and completely silent: `title: platinum.dev ranks #1 on Google`
+ * parses to `"platinum.dev ranks"` and `done_when: rank #1 sustained 30 days`
+ * parses to `"rank"`, both with no error at all — YAML reads an unquoted `#` as
+ * the start of a comment, so the value is truncated before any parser sees it
+ * and there is nothing left to detect at the point of failure.
+ *
+ * Advisory, never fatal, for the same reason the runtime's copy is: the goal
+ * still parses and still pushes, and a hard error would block manifests that are
+ * merely terse. Two heuristics, because only the fingerprint survives:
+ *
+ *   • a `#` PRESENT in the parsed value was quoted or came from a block scalar,
+ *     so this goal is fine today and one unquoting edit from vanishing;
+ *   • a `done_when` under {@link GOAL_DONE_WHEN_MIN_LENGTH} characters is what an
+ *     already-truncated one looks like — and is independently too thin for a
+ *     session to evaluate, so the advice is right either way.
+ *
+ * Why the short-`done_when` case matters more than it reads: `done_when` is what
+ * decides R-12d's measurability verdict, so a truncated one can downgrade a goal
+ * from `unmeasurable` ("nobody is measuring this") to `unquantified` ("there is
+ * nothing to measure, that's fine") — the worst possible direction for a silent
+ * failure, because the second reads as a deliberate choice.
+ */
+function goalStringWarnings(
+  where: string,
+  doneWhen: string,
+  rawTitle: unknown,
+  issues: ManifestIssue[],
+): void {
+  for (const [field, value] of [
+    ['title', typeof rawTitle === 'string' ? rawTitle : ''],
+    ['done_when', doneWhen],
+  ] as const) {
+    if (value.includes('#')) {
+      issues.push({
+        path: `${where}.${field}`,
+        message: `contains a "#". It survived only because the value is quoted or a block scalar — unquoted, YAML treats "#" as a comment, so \`${field}: rank #1 in 90 days\` parses to "rank" with no error at all. Write "number 1" instead, or keep the quotes forever.`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  if (doneWhen && doneWhen.length < GOAL_DONE_WHEN_MIN_LENGTH) {
+    issues.push({
+      path: `${where}.done_when`,
+      message: `is only ${doneWhen.length} characters ("${doneWhen}") — too thin for a session to evaluate against evidence, and the usual cause is an unquoted "#" that YAML truncated the line at. A truncated done_when can silently downgrade this goal from UNMEASURABLE to UNQUANTIFIED, i.e. from "nobody is measuring this" to "there is nothing to measure". Restate the full condition, quoting any "#".`,
+      severity: 'warning',
+    });
+  }
+}
+
+function validateConnectors(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  version: 1 | 2 = 1,
+  format: ManifestFormat = 'toml',
+): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({

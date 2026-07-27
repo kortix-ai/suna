@@ -14,6 +14,12 @@
  * Pure parser, no I/O: everything runs off `parseManifestString`.
  */
 import { describe, expect, test } from 'bun:test';
+import {
+  GOAL_DONE_WHEN_MIN_LENGTH as GATE_GOAL_DONE_WHEN_MIN_LENGTH,
+  GOAL_METRIC_NEAR_MISS_KEYS as GATE_GOAL_METRIC_NEAR_MISS_KEYS,
+  GOAL_STATUSES as GATE_GOAL_STATUSES,
+  validateManifest,
+} from '@kortix/manifest-schema';
 import { AGI_AGENT_NAME, agiAgentGrant, grantFromLoadedAgents } from '../agents';
 import {
   MANIFEST_FILENAME_YAML,
@@ -23,6 +29,7 @@ import {
 } from '../triggers';
 import {
   GOAL_DONE_WHEN_MIN_LENGTH,
+  GOAL_STATUSES,
   desugarGoalTriggers,
   extractGoals,
   goalPushPrompt,
@@ -624,5 +631,58 @@ describe('R-6 — round-trip fidelity through the read-modify-write path', () =>
     expect(
       (manifest.raw.triggers as Array<{ slug: string }>).some((t) => isGoalTriggerSlug(t.slug)),
     ).toBe(false);
+  });
+});
+
+/**
+ * The pre-flight gate (`kortix validate` / the CR-merge backstop) is a SECOND,
+ * independent implementation of these rules, in `@kortix/manifest-schema` —
+ * that package cannot import apps/api, so nothing but this block stops the two
+ * from drifting.
+ *
+ * Drift here is silent and one-directional in the worst way: this parser DROPS
+ * a goal it cannot parse, so a rule the gate stops enforcing produces a manifest
+ * that validates clean, ships, and contains a goal that does not exist.
+ */
+describe('drift guard — the manifest gate enforces exactly what this parser does', () => {
+  const gate = (goalsBlock: string) =>
+    validateManifest(
+      `kortix_version: 2\ndefault_agent: main\nagents:\n  main: {}\ngoals:\n${goalsBlock}`,
+      'yaml',
+    );
+
+  test('the status vocabulary is the same list on both sides', () => {
+    expect([...GATE_GOAL_STATUSES]).toEqual([...GOAL_STATUSES]);
+  });
+
+  test('the done_when advisory threshold is the same number on both sides', () => {
+    expect(GATE_GOAL_DONE_WHEN_MIN_LENGTH).toBe(GOAL_DONE_WHEN_MIN_LENGTH);
+  });
+
+  test('every near-miss metric key the gate forbids is one this parser also rejects', () => {
+    for (const key of GATE_GOAL_METRIC_NEAR_MISS_KEYS) {
+      const yaml = `  - slug: a\n    done_when: A live account runs unattended for 7 days.\n    ${key}: pnl_usd`;
+      expect(gate(yaml).valid).toBe(false);
+      const { errors } = extractGoals(parse(`kortix_version: 2\ngoals:\n${yaml}`));
+      expect(fatal(errors)).toHaveLength(1);
+    }
+  });
+
+  test('R-7: a goal this parser drops is a goal the gate REFUSES to ship', () => {
+    // The regression itself. Before the gate knew about goals, this manifest
+    // came back `{"valid":true,"issues":[]}` with exit 0 while the goal below
+    // silently did not exist.
+    const yaml = '  - slug: oil-desk\n    title: Oil trades running 24/7';
+    expect(extractGoals(parse(`kortix_version: 2\ngoals:\n${yaml}`)).specs).toEqual([]);
+    expect(gate(yaml).valid).toBe(false);
+  });
+
+  test('a goal this parser accepts is one the gate ships without complaint', () => {
+    const yaml =
+      '  - slug: oil-desk\n    done_when: A live account runs the strategy unattended for 7 days.\n    push: "0 0 9 * * *"\n    metric: pnl_usd';
+    const { specs, errors } = extractGoals(parse(`kortix_version: 2\ngoals:\n${yaml}`));
+    expect(specs).toHaveLength(1);
+    expect(errors).toEqual([]);
+    expect(gate(yaml).issues).toEqual([]);
   });
 });
