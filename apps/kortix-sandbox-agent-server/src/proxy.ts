@@ -14,7 +14,7 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
-import { createAcpRouter } from './routes/acp'
+import { createAcpRouter, createOpenCodeSessionHistory } from './routes/acp'
 import webProxyRouter from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
@@ -133,6 +133,7 @@ export function buildOpencodeApp(
     cfg,
     () => opencode.getAcpConnection(),
     () => bootState.initialOpenCodeSessionId ?? null,
+    createOpenCodeSessionHistory(cfg, () => opencode.getInternalUrl()),
   )
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)

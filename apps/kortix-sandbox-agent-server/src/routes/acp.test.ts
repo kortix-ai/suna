@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto'
 import type { AcpConnection, AcpStreamEvent, JsonRpcEnvelope } from '../acp/connection'
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { createAcpRouter } from './acp'
+import { createAcpRouter, createOpenCodeSessionHistory } from './acp'
 
 const TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -168,6 +168,177 @@ describe('authenticated OpenCode ACP bridge', () => {
     expect(response.status).toBe(202)
     expect(await response.text()).toBe('')
     expect(seen).toHaveLength(1)
+  })
+
+  test('handles session revert and unrevert through the native OpenCode history service', async () => {
+    const calls: Array<{
+      method: string
+      sessionId: string
+      messageId?: string
+    }> = []
+    const app = createAcpRouter(
+      config(),
+      () => connection(),
+      () => 'session',
+      {
+        async revert(sessionId, messageId) {
+          calls.push({ method: 'revert', sessionId, messageId })
+          return { id: sessionId, revert: { messageID: messageId } }
+        },
+        async unrevert(sessionId) {
+          calls.push({ method: 'unrevert', sessionId })
+          return { id: sessionId }
+        },
+      },
+    )
+
+    const revert = await request(app, '/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 41,
+        method: 'session/revert',
+        params: { sessionId: 'session', messageId: 'msg_2' },
+      }),
+    })
+    const unrevert = await request(app, '/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 42,
+        method: 'session/unrevert',
+        params: { sessionId: 'session' },
+      }),
+    })
+
+    expect(revert.status).toBe(200)
+    expect(await revert.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 41,
+      result: { id: 'session', revert: { messageID: 'msg_2' } },
+    })
+    expect(unrevert.status).toBe(200)
+    expect(await unrevert.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 42,
+      result: { id: 'session' },
+    })
+    expect(calls).toEqual([
+      { method: 'revert', sessionId: 'session', messageId: 'msg_2' },
+      { method: 'unrevert', sessionId: 'session' },
+    ])
+  })
+
+  test('rejects a missing revert messageId before calling the history service', async () => {
+    let historyCalls = 0
+    const app = createAcpRouter(
+      config(),
+      () => connection(),
+      () => 'session',
+      {
+        async revert() {
+          historyCalls += 1
+          return {}
+        },
+        async unrevert() {
+          return {}
+        },
+      },
+    )
+
+    const response = await request(app, '/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 43,
+        method: 'session/revert',
+        params: { sessionId: 'session' },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 43,
+      error: { code: -32602, message: 'messageId is required' },
+    })
+    expect(historyCalls).toBe(0)
+  })
+
+  test('maps a native OpenCode history failure to a JSON-RPC server error', async () => {
+    const history = createOpenCodeSessionHistory(
+      config(),
+      () => 'http://127.0.0.1:4096',
+      async () =>
+        new Response(JSON.stringify({ error: 'message does not exist' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    const app = createAcpRouter(
+      config(),
+      () => connection(),
+      () => 'session',
+      history,
+    )
+
+    const response = await request(app, '/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 44,
+        method: 'session/revert',
+        params: { sessionId: 'session', messageId: 'missing' },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 44,
+      error: {
+        code: -32000,
+        message: 'OpenCode session revert failed with HTTP 404',
+        data: {
+          status: 404,
+          upstream: { error: 'message does not exist' },
+        },
+      },
+    })
+  })
+
+  test('calls native OpenCode history with the canonical session and workspace', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const history = createOpenCodeSessionHistory(
+      config(),
+      () => 'http://127.0.0.1:4096',
+      async (input, init) => {
+        calls.push({ url: String(input), init })
+        return Response.json({ ok: true })
+      },
+    )
+
+    await history.revert('session/with space', 'msg_2')
+    await history.unrevert('session/with space')
+
+    expect(calls).toEqual([
+      {
+        url: 'http://127.0.0.1:4096/session/session%2Fwith%20space/revert?directory=%2Fworkspace',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageID: 'msg_2' }),
+        },
+      },
+      {
+        url: 'http://127.0.0.1:4096/session/session%2Fwith%20space/unrevert?directory=%2Fworkspace',
+        init: { method: 'POST' },
+      },
+    ])
   })
 
   test('returns 202 for JSON-RPC notifications and responses', async () => {

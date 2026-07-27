@@ -32,6 +32,11 @@ const GrantSetSchema = z.union([z.literal('all'), z.array(z.string().min(1).max(
 const AgentScopeBody = z.object({
   env: GrantSetSchema.optional(),
   connectors: GrantSetSchema.optional(),
+  // v2 only: the subset of `connectors` that must resolve to the LAUNCHING
+  // USER's own connection. A concrete list (never the 'all'/'none' sentinels) —
+  // "all connectors are personal" is not a thing you can mean safely, since a
+  // session would then be unstartable for anyone who hasn't connected each one.
+  connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
 });
 
 projectsApp.openapi(
@@ -61,9 +66,12 @@ projectsApp.openapi(
 
     const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    const { env, connectors } = parsed.data;
-    if (env === undefined && connectors === undefined) {
-      return c.json({ error: 'Provide env and/or connectors', code: 'nothing_to_update' }, 400);
+    const { env, connectors, connectors_personal: connectorsPersonal } = parsed.data;
+    if (env === undefined && connectors === undefined && connectorsPersonal === undefined) {
+      return c.json(
+        { error: 'Provide env, connectors and/or connectors_personal', code: 'nothing_to_update' },
+        400,
+      );
     }
 
     let manifest;
@@ -82,7 +90,11 @@ projectsApp.openapi(
     // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
     // edit on a YAML project 404'd "agent not found" — branch on the schema.
     if (manifest.schemaVersion >= 2) {
-      const applied = applyAgentScopeV2(manifest, agentName, { env, connectors });
+      const applied = applyAgentScopeV2(manifest, agentName, {
+        env,
+        connectors,
+        connectorsPersonal,
+      });
       if (!applied.ok) {
         return applied.notFound
           ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
@@ -93,6 +105,17 @@ projectsApp.openapi(
       const current = Array.isArray(manifest.raw.agents)
         ? (manifest.raw.agents as Record<string, unknown>[])
         : [];
+      // connectors_personal is a v2 governance field; a v1 `[[agents]]` array
+      // manifest has no place to put it, so say so rather than dropping it.
+      if (connectorsPersonal !== undefined) {
+        return c.json(
+          {
+            error: 'connectors_personal requires a v2 (kortix.yaml) manifest',
+            code: 'unsupported_in_v1',
+          },
+          400,
+        );
+      }
       const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
       if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
       manifest.raw.agents = applied.agents;

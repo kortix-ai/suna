@@ -757,8 +757,15 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/sandbox-provider/transition", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.active_provider").exists("$.history");
-      const body = r.json<{ latest: unknown; history: unknown[] }>();
+      r.status(200).body().exists("$.history");
+      const body = r.json<{
+        active_provider: string | null;
+        latest: unknown;
+        history: unknown[];
+      }>();
+      if (!Object.hasOwn(body, "active_provider")) {
+        throw new Error("transition view omitted active_provider");
+      }
       assertNoLeak(body.latest);
       if (Array.isArray(body.history)) body.history.forEach(assertNoLeak);
     });

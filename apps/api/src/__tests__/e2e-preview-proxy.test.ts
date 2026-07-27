@@ -195,6 +195,10 @@ mock.module('../shared/daytona', () => ({
 }));
 
 mock.module('../platform/providers', () => ({
+  // Whole-module replacement: every export the graph touches must be present or
+  // the file loads to 0 tests (see the secrets mock above).
+  SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
+  providerAutoStopBackstopMinutes: () => 0,
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
     constructor(message: string) {
       super(message);
@@ -261,10 +265,20 @@ mock.module('../projects/secrets', () => {
     names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
     revision: `rev-${projectId}`,
   });
+  // mock.module REPLACES the module wholesale — an export omitted here is a
+  // SyntaxError for anything else in the graph that imports it, which takes the
+  // WHOLE FILE to 0 tests rather than failing one case. Stub the rest, and make
+  // them throw so a real dependency is loud instead of silently undefined.
   return {
     AmbiguousSecretGrantError: class AmbiguousSecretGrantError extends Error {},
     resolveGrantedSecretEnv: () => ({}),
     isValidSecretName: () => true,
+    intersectSecretGrants: (grant: unknown, allowlist: unknown) =>
+      allowlist == null ? grant : allowlist,
+    parseSessionSecretsAllowlist: () => null,
+    secretKeyCollisionInAllowlist: () => null,
+    canonicalizeSecretsAllowlist: (v: unknown) => v,
+    secretsAllowlistPayloadConflicts: () => false,
     isValidIdentifier: () => true,
     identifierKeyConflicts: () => false,
     encryptProjectSecret: (_projectId: string, value: string) => value,
@@ -406,6 +420,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
       userId: TEST_USER_ID,
       remainingPath: '/pty/pty_test/connect',
       queryString: '',
+      callerSessionId: null,
     });
 
     expect(upstream.ok).toBe(true);
@@ -426,6 +441,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
       userId: TEST_USER_ID,
       remainingPath: '/pty/pty_test/connect',
       queryString: '',
+      callerSessionId: null,
     });
 
     expect(upstream.ok).toBe(true);
@@ -451,6 +467,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
       userId: TEST_USER_ID,
       remainingPath: '/kortix/pty/kpty_test/connect',
       queryString: '',
+      callerSessionId: null,
     });
 
     expect(upstream.ok).toBe(true);

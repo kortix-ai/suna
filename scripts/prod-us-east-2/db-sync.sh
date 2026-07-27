@@ -325,6 +325,91 @@ WHERE name = 'max_slot_wal_keep_size';
 SQL
 }
 
+wait_caught_up() {
+  local source_lsn
+  local caught_up
+  local latest_end_lsn
+
+  source_lsn="$(
+    psql "$source_database_url" -X -qAt -v ON_ERROR_STOP=1 \
+      -c 'SELECT pg_current_wal_lsn()'
+  )"
+  if [[ -z "$source_lsn" ]]; then
+    echo "Could not read the source WAL position." >&2
+    exit 1
+  fi
+
+  for attempt in $(seq 1 180); do
+    IFS=$'\t' read -r caught_up latest_end_lsn < <(
+      psql "$target_database_url" -X -qAt -F $'\t' -v ON_ERROR_STOP=1 \
+        -v subscription="$SUBSCRIPTION" \
+        -v source_lsn="$source_lsn" <<'SQL'
+SELECT
+  COALESCE(bool_and(latest_end_lsn >= :'source_lsn'::pg_lsn), false),
+  COALESCE(max(latest_end_lsn)::text, '')
+FROM pg_stat_subscription
+WHERE subname = :'subscription'
+  AND worker_type = 'apply';
+SQL
+    )
+    if [[ "$caught_up" == "t" ]]; then
+      echo "Application subscription reached source WAL position $source_lsn."
+      return
+    fi
+    echo "Application catch-up $attempt/180: target=${latest_end_lsn:-missing} source=$source_lsn"
+    sleep 2
+  done
+
+  echo "Application subscription did not reach source WAL position $source_lsn within six minutes." >&2
+  exit 1
+}
+
+set_subscription_enabled() {
+  local enabled="$1"
+  local guard_name
+  local guard_value
+  local action
+  local actual
+  local expected
+
+  if [[ "$enabled" == "true" ]]; then
+    guard_name="ALLOW_ENABLE_APPLICATION_SUBSCRIPTION"
+    guard_value="${ALLOW_ENABLE_APPLICATION_SUBSCRIPTION:-}"
+    action="ENABLE"
+  else
+    guard_name="ALLOW_DISABLE_APPLICATION_SUBSCRIPTION"
+    guard_value="${ALLOW_DISABLE_APPLICATION_SUBSCRIPTION:-}"
+    action="DISABLE"
+  fi
+  if [[ "$guard_value" != "1" ]]; then
+    echo "Set $guard_name=1 to ${action,,} the application subscription." >&2
+    exit 64
+  fi
+
+  psql "$target_database_url" -X -q -v ON_ERROR_STOP=1 \
+    -v subscription="$SUBSCRIPTION" \
+    -v action="$action" <<'SQL'
+SELECT format('ALTER SUBSCRIPTION %I %s', :'subscription', :'action')
+\gexec
+SQL
+
+  actual="$(
+    psql "$target_database_url" -X -qAt -v ON_ERROR_STOP=1 \
+      -v subscription="$SUBSCRIPTION" <<'SQL'
+SELECT subenabled
+FROM pg_subscription
+WHERE subname = :'subscription';
+SQL
+  )"
+  expected="f"
+  [[ "$enabled" == "true" ]] && expected="t"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Application subscription state is $actual, expected $expected." >&2
+    exit 1
+  fi
+  echo "Application subscription is $([[ "$enabled" == "true" ]] && echo enabled || echo disabled)."
+}
+
 repair_public_rls_tables() {
   if [[ "${ALLOW_TARGET_PUBLIC_REPAIR:-}" != "1" ]]; then
     echo "Set ALLOW_TARGET_PUBLIC_REPAIR=1 to repair the RLS-protected public tables on the US target." >&2
@@ -495,6 +580,7 @@ SQL
   }
   printf -v cleanup_trap 'cleanup_shadow_repair %q %q' \
     "$temporary_directory" "$subscription_was_enabled"
+  # shellcheck disable=SC2064 # The caller supplies the complete deferred cleanup command.
   trap "$cleanup_trap" EXIT
 
   if [[ "$subscription_was_enabled" == "t" ]]; then
@@ -519,6 +605,8 @@ SQL
     -c "\\copy (SELECT key_id, last_used_at FROM kortix.api_keys ORDER BY key_id) TO '$temporary_directory/api_keys.csv' WITH (FORMAT csv)"
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
     -c "\\copy (SELECT $credit_account_columns FROM kortix.credit_accounts ORDER BY account_id) TO '$temporary_directory/credit_accounts.csv' WITH (FORMAT csv)"
+  psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
+    -c "\\copy (SELECT id FROM kortix.credit_ledger ORDER BY id) TO '$temporary_directory/credit_ledger_ids.csv' WITH (FORMAT csv)"
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
     -c "\\copy (SELECT session_id, last_used_at, metadata, updated_at FROM kortix.session_sandboxes ORDER BY session_id COLLATE \"C\") TO '$temporary_directory/session_sandboxes.csv' WITH (FORMAT csv)"
   psql "$source_database_url" -X -q -v ON_ERROR_STOP=1 \
@@ -547,6 +635,9 @@ CREATE TEMP TABLE repair_session_sandboxes (
   metadata jsonb,
   updated_at timestamptz
 ) ON COMMIT DROP;
+CREATE TEMP TABLE repair_credit_ledger_ids (
+  id uuid PRIMARY KEY
+) ON COMMIT DROP;
 CREATE TEMP TABLE repair_audit_event_ids (
   event_id uuid PRIMARY KEY
 ) ON COMMIT DROP;
@@ -555,6 +646,7 @@ SQL
       "$credit_account_columns"
     printf "\\copy repair_api_keys FROM '%s/api_keys.csv' WITH (FORMAT csv)\n" "$temporary_directory"
     printf "\\copy repair_credit_accounts FROM '%s/credit_accounts.csv' WITH (FORMAT csv)\n" "$temporary_directory"
+    printf "\\copy repair_credit_ledger_ids FROM '%s/credit_ledger_ids.csv' WITH (FORMAT csv)\n" "$temporary_directory"
     printf "\\copy repair_session_sandboxes FROM '%s/session_sandboxes.csv' WITH (FORMAT csv)\n" "$temporary_directory"
     printf "\\copy repair_audit_event_ids FROM '%s/audit_event_ids.csv' WITH (FORMAT csv)\n" "$temporary_directory"
     cat <<'SQL'
@@ -566,20 +658,18 @@ WHERE target.key_id = source.key_id
 
 	DO $do$
 DECLARE
-  all_column_list text;
   column_list text;
   source_column_list text;
   target_column_list text;
 BEGIN
   SELECT
-    string_agg(format('%I', attname), ', ' ORDER BY attnum),
     string_agg(format('%I', attname), ', ' ORDER BY attnum)
       FILTER (WHERE attname <> 'account_id'),
     string_agg(format('source.%I', attname), ', ' ORDER BY attnum)
       FILTER (WHERE attname <> 'account_id'),
     string_agg(format('target.%I', attname), ', ' ORDER BY attnum)
       FILTER (WHERE attname <> 'account_id')
-  INTO all_column_list, column_list, source_column_list, target_column_list
+  INTO column_list, source_column_list, target_column_list
   FROM pg_attribute
   WHERE attrelid = 'repair_credit_accounts'::regclass
     AND attnum > 0
@@ -594,18 +684,6 @@ BEGIN
 	    column_list,
 	    source_column_list,
     target_column_list
-  );
-
-  EXECUTE format(
-    'INSERT INTO kortix.credit_accounts (%1$s)
-     SELECT %1$s
-       FROM repair_credit_accounts AS source
-      WHERE NOT EXISTS (
-        SELECT 1
-          FROM kortix.credit_accounts AS target
-         WHERE target.account_id = source.account_id
-      )',
-    all_column_list
   );
 END
 $do$;
@@ -645,6 +723,13 @@ WHERE target.account_id = source.account_id
 	  FROM repair_credit_accounts AS source
 	  WHERE source.account_id = target.account_id
 	);
+
+DELETE FROM kortix.credit_ledger AS target
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM repair_credit_ledger_ids AS source
+  WHERE source.id = target.id
+);
 
 UPDATE kortix.session_sandboxes AS target
 SET
@@ -1461,6 +1546,9 @@ Commands:
   prepare-source     Set WAL retention, replica identities, and publication.
   start              Create or enable the target subscription.
   status             Show subscriber state, errors, slot state, and retained WAL.
+  wait-caught-up     Wait until the target apply worker reaches the current source WAL position.
+  disable-subscription Disable the target subscription after every final gate passes.
+  enable-subscription Re-enable the target subscription during a pre-write rollback.
   repair-public-rls  Repair public control tables skipped by RLS during initial copy.
   repair-shadow-mutations Replace target-only mutations made during shadow verification.
   backfill-target-precision Backfill target-only precision columns and keep them synchronized during replication.
@@ -1481,6 +1569,15 @@ case "${1:-}" in
     ;;
   status)
     status
+    ;;
+  wait-caught-up)
+    wait_caught_up
+    ;;
+  disable-subscription)
+    set_subscription_enabled false
+    ;;
+  enable-subscription)
+    set_subscription_enabled true
     ;;
   repair-public-rls)
     repair_public_rls_tables

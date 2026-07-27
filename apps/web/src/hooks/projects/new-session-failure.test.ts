@@ -12,6 +12,10 @@ describe('resolveCreateFailure', () => {
     expect(resolveCreateFailure('concurrent_session_limit')).toBe('silent');
   });
 
+  test('a required connector that is not connected opens the connect-to-start gate', () => {
+    expect(resolveCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe('connect');
+  });
+
   test('everything else — including codeless network failures — surfaces a toast, never a redirect', () => {
     expect(resolveCreateFailure(undefined)).toBe('toast');
     expect(resolveCreateFailure('TIMEOUT')).toBe('toast');

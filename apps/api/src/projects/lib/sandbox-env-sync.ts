@@ -140,6 +140,8 @@ async function postEnvToDaemon(args: {
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
   refreshModels?: boolean;
+  /** Runtime env the daemon applies to the OPENCODE process (allow-listed there). */
+  opencodeEnv?: Record<string, string | null>;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
@@ -159,6 +161,7 @@ async function postEnvToDaemon(args: {
     body: JSON.stringify({
       ...args.snapshot,
       refreshModels: args.refreshModels ?? false,
+      ...(args.opencodeEnv ? { opencodeEnv: args.opencodeEnv } : {}),
       ...(typeof args.llmGatewayEnabled === 'boolean'
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
@@ -382,4 +385,65 @@ async function runBounded<T>(
     }
   });
   await Promise.all(workers);
+}
+
+/**
+ * Re-point ONE live session at a different model.
+ *
+ * opencode reads `KORTIX_OPENCODE_MODEL` when it builds its config at spawn, so
+ * the value must reach the daemon AND opencode must restart for it to take
+ * effect. `refreshModels: true` is what triggers that restart.
+ *
+ * Best-effort by design: the row is already updated by the caller, so a sandbox
+ * that is down or unreachable simply picks the new model up on its next boot.
+ * Returns whether a live box actually took it, so the caller can tell the user
+ * whether the change is in effect NOW or only from the next turn.
+ */
+export async function pushSessionModelToSandbox(input: {
+  projectId: string;
+  sessionId: string;
+  model: string;
+}): Promise<{ applied: boolean; reason?: string }> {
+  try {
+    const [row] = await db
+      .select({
+        externalId: sessionSandboxes.externalId,
+        config: sessionSandboxes.config,
+      })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sessionId, input.sessionId),
+          eq(sessionSandboxes.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+
+    const config = (row.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
+
+    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
+    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
+
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: SANDBOX_SERVICE_PORT,
+      transport: 'http',
+    });
+    await postEnvToDaemon({
+      previewUrl: url,
+      providerHeaders: headers,
+      serviceKey,
+      snapshot,
+      opencodeEnv: { KORTIX_OPENCODE_MODEL: input.model },
+      // Restarts opencode so it rebuilds its config against the new model.
+      refreshModels: true,
+    });
+    return { applied: true };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[env-sync] model push failed for session ${input.sessionId}:`, reason);
+    return { applied: false, reason };
+  }
 }

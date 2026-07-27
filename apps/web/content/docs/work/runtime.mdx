@@ -32,7 +32,7 @@ Kortix enforces a concurrent-session limit per account. Exceeding your tier's li
 
 ### Active-turn protection
 
-While an OpenCode turn is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease blocks the idle reaper. Each renewal also touches the provider, so the provider's own inactivity timer cannot hibernate the sandbox mid-run. `session.idle` and `session.error` release the lease.
+While an OpenCode turn is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 60 seconds. The lease blocks the idle reaper. Each renewal also touches the provider, so the provider's own inactivity timer cannot hibernate the sandbox mid-run. `session.idle` and `session.error` release the lease.
 
 An open dashboard tab, preview, SSE connection, or health poll does not create a lease. A passive tab cannot keep an idle sandbox alive.
 

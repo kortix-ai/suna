@@ -292,6 +292,78 @@ describe('ai-sdk request conversion', () => {
     });
   });
 
+  it('backfills empty-content messages so Bedrock never sees an empty content field', () => {
+    // An assistant turn with no text and no tool_calls (e.g. persisted from an
+    // earlier empty upstream completion), an empty user turn, and a blank tool
+    // result would each serialize to an empty content field that the Bedrock
+    // Converse API rejects. All three must round-trip with non-empty content.
+    const { messages } = toModelMessages([
+      { role: 'user', content: '' },
+      { role: 'assistant', content: '' },
+      { role: 'user', content: [{ type: 'text', text: '   ' }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', function: { name: 'wx', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', name: 'wx', content: '' },
+    ]);
+    expect(messages[0]).toEqual({ role: 'user', content: '(no content)' });
+    expect(messages[1]).toEqual({ role: 'assistant', content: '(no content)' });
+    expect(messages[2]).toEqual({ role: 'user', content: '(no content)' });
+    // messages[3] is the assistant tool-call; messages[4] is its (empty) result.
+    expect(messages[4]).toMatchObject({
+      role: 'tool',
+      content: [{ type: 'tool-result', output: { type: 'text', value: '(no content)' } }],
+    });
+    // Sanity: nothing emitted an empty string / empty array content.
+    for (const m of messages) {
+      if (typeof m.content === 'string') expect(m.content.trim().length).toBeGreaterThan(0);
+      else expect(m.content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('drops an orphaned tool_call (cancelled mid-tool turn) so strict providers accept it', () => {
+    // Assistant asked for two tools but only one result came back (turn was
+    // cancelled). Bedrock/Anthropic reject the unmatched tool_use; the matched
+    // one must survive.
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'go' },
+      {
+        role: 'assistant',
+        content: 'working',
+        tool_calls: [
+          { id: 'ok', function: { name: 'a', arguments: '{}' } },
+          { id: 'orphan', function: { name: 'b', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'ok', name: 'a', content: 'done' },
+    ]);
+    const assistant = messages.find((m) => m.role === 'assistant');
+    const toolCalls = (assistant?.content as Array<{ type: string; toolCallId?: string }>).filter(
+      (p) => p.type === 'tool-call',
+    );
+    expect(toolCalls.map((p) => p.toolCallId)).toEqual(['ok']);
+  });
+
+  it('drops an orphaned tool result (no matching tool_call) entirely', () => {
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'ok' },
+      { role: 'tool', tool_call_id: 'ghost', name: 'x', content: 'stray' },
+    ]);
+    expect(messages.some((m) => m.role === 'tool')).toBe(false);
+  });
+
+  it('keeps well-formed tool pairs untouched', () => {
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', function: { name: 'wx', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', name: 'wx', content: 'sunny' },
+    ]);
+    expect(messages.some((m) => m.role === 'tool')).toBe(true);
+    const assistant = messages.find((m) => m.role === 'assistant');
+    expect((assistant?.content as Array<{ type: string }>).some((p) => p.type === 'tool-call')).toBe(
+      true,
+    );
+  });
+
   it('translates image_url user parts', () => {
     const { messages } = toModelMessages([
       {

@@ -55,6 +55,14 @@ function harness() {
     async cancel(sessionId) {
       calls.push({ method: 'cancel', args: [sessionId] });
     },
+    async revertSession(sessionId, messageId) {
+      calls.push({ method: 'revertSession', args: [sessionId, messageId] });
+      return {};
+    },
+    async unrevertSession(sessionId) {
+      calls.push({ method: 'unrevertSession', args: [sessionId] });
+      return {};
+    },
     async respond(id, result) {
       calls.push({ method: 'respond', args: [id, result] });
     },
@@ -72,6 +80,112 @@ function harness() {
 }
 
 describe('ACP session controller', () => {
+  test('rewinds the same ACP session and reloads a transcript that can be restored', async () => {
+    const h = harness();
+    h.client.loadSession = async (input) => {
+      h.calls.push({ method: 'loadSession', args: [input] });
+      for (const [messageId, kind, text] of [
+        ['msg_user_1', 'user_message_chunk', 'first prompt'],
+        ['msg_assistant_1', 'agent_message_chunk', 'first answer'],
+        ['msg_user_2', 'user_message_chunk', 'second prompt'],
+        ['msg_assistant_2', 'agent_message_chunk', 'second answer'],
+      ] as const) {
+        h.emit({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId: input.sessionId,
+            update: {
+              sessionUpdate: kind,
+              messageId,
+              content: { type: 'text', text },
+            },
+          },
+        });
+      }
+      return {};
+    };
+    const controller = createAcpSessionController({
+      sessionId: 'ses_1',
+      client: h.client,
+    });
+    await controller.connect();
+
+    await controller.rewind('msg_user_2');
+
+    expect(controller.getSnapshot().rewind).toEqual({
+      messageId: 'msg_user_2',
+    });
+    expect(controller.getSnapshot().projection.messages.map((message) => message.info.id)).toEqual([
+      'msg_user_1',
+      'msg_assistant_1',
+    ]);
+    expect(h.calls.filter((call) => call.method === 'loadSession')).toHaveLength(2);
+
+    await controller.restoreRewind();
+
+    expect(controller.getSnapshot().rewind).toBeNull();
+    expect(controller.getSnapshot().projection.messages.map((message) => message.info.id)).toEqual([
+      'msg_user_1',
+      'msg_assistant_1',
+      'msg_user_2',
+      'msg_assistant_2',
+    ]);
+    expect(h.calls).toContainEqual({
+      method: 'unrevertSession',
+      args: ['ses_1'],
+    });
+  });
+
+  test('resolves an optimistic ACP user id to the canonical OpenCode message id', async () => {
+    const h = harness();
+    const controller = createAcpSessionController({
+      sessionId: 'ses_1',
+      client: h.client,
+    });
+    await controller.connect();
+    h.emit({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses_1',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'live prompt' },
+        },
+      },
+    });
+    const optimisticId = controller.getSnapshot().projection.messages[0]?.info.id;
+    expect(optimisticId).toStartWith('acp-user-');
+
+    h.client.loadSession = async (input) => {
+      h.calls.push({ method: 'loadSession', args: [input] });
+      h.emit({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: input.sessionId,
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            messageId: 'msg_live_prompt',
+            content: { type: 'text', text: 'live prompt' },
+          },
+        },
+      });
+      return {};
+    };
+
+    await controller.rewind(optimisticId!);
+
+    expect(h.calls).toContainEqual({
+      method: 'revertSession',
+      args: ['ses_1', 'msg_live_prompt'],
+    });
+    expect(controller.getSnapshot().rewind).toEqual({
+      messageId: 'msg_live_prompt',
+    });
+  });
+
   test('opens the stream before loading the canonical OpenCode session', async () => {
     const h = harness();
     const controller = createAcpSessionController({

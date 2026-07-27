@@ -33,7 +33,8 @@ mock.module('./git', () => ({
 }));
 
 const { loadProjectAgents } = await import('./agents');
-const { DEFAULT_AGENT_SENTINEL, resolveGovernedAgentGrant } = await import('./agents');
+const { DEFAULT_AGENT_SENTINEL, resolveGovernedAgentGrant, personalConnectorsForAgent } =
+  await import('./agents');
 
 const fakeProject = () => ({
   projectId: 'proj_blank',
@@ -116,5 +117,62 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
 
     expect(loaded.defaultAgent).toBe('support');
     expect(loaded.specs.map((s) => s.name)).toEqual(['support']);
+  });
+});
+
+describe('connectors_personal — v2 agent personal-connector declaration', () => {
+  test('parses a valid subset of the connectors grant, resolvable by name AND the default sentinel', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support:',
+        '    connectors: [gmail, slack]',
+        '    connectors_personal: [gmail]',
+        '',
+      ].join('\n'),
+    };
+    const loaded = await loadProjectAgents(fakeProject());
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.specs.find((s) => s.name === 'support')?.connectorsPersonal).toEqual(['gmail']);
+    expect(personalConnectorsForAgent('support', loaded)).toEqual(['gmail']);
+    // the `default` sentinel resolves to the manifest's default_agent (support)
+    expect(personalConnectorsForAgent(DEFAULT_AGENT_SENTINEL, loaded)).toEqual(['gmail']);
+  });
+
+  test('rejects a personal connector that is not in the connectors grant', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support:',
+        '    connectors: [gmail]',
+        '    connectors_personal: [slack]',
+        '',
+      ].join('\n'),
+    };
+    const loaded = await loadProjectAgents(fakeProject());
+    expect(loaded.errors.length).toBeGreaterThan(0);
+    expect(loaded.errors[0]?.error).toContain('subset of connectors');
+  });
+
+  test('an agent that declares none yields no personal connectors', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support:',
+        '    connectors: [gmail]',
+        '',
+      ].join('\n'),
+    };
+    const loaded = await loadProjectAgents(fakeProject());
+    expect(personalConnectorsForAgent('support', loaded)).toEqual([]);
   });
 });

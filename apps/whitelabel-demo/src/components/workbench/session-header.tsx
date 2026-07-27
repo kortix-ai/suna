@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
@@ -58,6 +59,10 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{title}</div>
       </div>
+      {/* Mid-session model change. Placed by the status badge because switching
+          restarts the runtime and ends the in-flight turn — it belongs with the
+          session's live state, not buried in settings. */}
+      <ModelSwitcher projectId={projectId} sessionId={sessionId} />
       {status && (
         <Badge variant="secondary" className="capitalize">
           {status}

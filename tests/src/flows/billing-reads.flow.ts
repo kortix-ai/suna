@@ -170,13 +170,21 @@ flow(
     await ctx.step("ANON cannot deduct → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/billing/deduct", { prompt_tokens: 0, completion_tokens: 0, model: "gpt-4o" });
+        .post("/v1/billing/deduct", {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          model: "claude-sonnet-4.6",
+        });
       r.status(401);
     });
     await ctx.step("OWNER: zero-token deduct is a real no-op 200 (no balance change)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/billing/deduct", { prompt_tokens: 0, completion_tokens: 0, model: "gpt-4o" });
+        .post("/v1/billing/deduct", {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          model: "claude-sonnet-4.6",
+        });
       r.status([200, 404]);
       if (r.statusCode === 200) {
         r.body().has("$.success", true).has("$.cost", 0);

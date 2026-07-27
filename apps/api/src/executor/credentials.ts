@@ -166,7 +166,17 @@ export async function connectorIdsWithSharedCredentials(
       and(
         inArray(executorCredentials.connectorId, connectorIds),
         isNull(executorCredentials.userId),
-        or(isNull(executorCredentials.profileId), eq(executorConnectionProfiles.isDefault, true)),
+        or(
+          isNull(executorCredentials.profileId),
+          // "The default" here means the PROJECT's shared default. Defaults are
+          // per-owner now (a member may mark one of their own connections
+          // default), so this must exclude member/external rows or a personal
+          // connection would count as the connector being team-connected.
+          and(
+            eq(executorConnectionProfiles.isDefault, true),
+            eq(executorConnectionProfiles.ownerType, 'project'),
+          ),
+        ),
       ),
     );
   return new Set(rows.map((row) => row.connectorId));
@@ -180,6 +190,8 @@ async function defaultProfileIdForConnector(connectorId: string): Promise<string
       and(
         eq(executorConnectionProfiles.connectorId, connectorId),
         eq(executorConnectionProfiles.isDefault, true),
+        // The PROJECT's shared default (per-owner defaults now exist).
+        eq(executorConnectionProfiles.ownerType, 'project'),
       ),
     )
     .limit(1);
@@ -315,6 +327,9 @@ export async function ensureDefaultProfile(input: {
       and(
         eq(executorConnectionProfiles.connectorId, input.connectorId),
         eq(executorConnectionProfiles.isDefault, true),
+        // The PROJECT's shared default — defaults are per-owner now, so a
+        // member's own default connection must never be picked up here.
+        eq(executorConnectionProfiles.ownerType, 'project'),
       ),
     )
     .limit(1);
@@ -355,6 +370,9 @@ export async function ensureDefaultProfile(input: {
       and(
         eq(executorConnectionProfiles.connectorId, input.connectorId),
         eq(executorConnectionProfiles.isDefault, true),
+        // The PROJECT's shared default — defaults are per-owner now, so a
+        // member's own default connection must never be picked up here.
+        eq(executorConnectionProfiles.ownerType, 'project'),
       ),
     )
     .limit(1);

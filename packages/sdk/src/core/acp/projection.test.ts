@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  applyAcpEnvelope,
-  createAcpProjection,
-  type AcpProjection,
-} from './projection';
+import { applyAcpEnvelope, createAcpProjection, type AcpProjection } from './projection';
 
 function update(
   projection: AcpProjection,
@@ -22,6 +18,28 @@ function update(
 }
 
 describe('ACP to Kortix session projection', () => {
+  test('preserves OpenCode message ids from ACP transcript replay', () => {
+    let state = createAcpProjection('ses_1');
+    state = update(state, 'user_message_chunk', {
+      messageId: 'msg_user_1',
+      content: { type: 'text', text: 'first prompt' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_1',
+      content: { type: 'text', text: 'first answer' },
+    });
+    state = update(state, 'user_message_chunk', {
+      messageId: 'msg_user_2',
+      content: { type: 'text', text: 'second prompt' },
+    });
+
+    expect(state.messages.map((message) => message.info.id)).toEqual([
+      'msg_user_1',
+      'msg_assistant_1',
+      'msg_user_2',
+    ]);
+  });
+
   test('projects user, thought, assistant, usage, and stop reason', () => {
     let state = createAcpProjection('ses_1');
     state = update(state, 'user_message_chunk', {
@@ -54,13 +72,8 @@ describe('ACP to Kortix session projection', () => {
       },
     });
 
-    expect(state.messages.map((message) => message.info.role)).toEqual([
-      'user',
-      'assistant',
-    ]);
-    expect(state.messages[0]?.parts).toMatchObject([
-      { type: 'text', text: 'hello' },
-    ]);
+    expect(state.messages.map((message) => message.info.role)).toEqual(['user', 'assistant']);
+    expect(state.messages[0]?.parts).toMatchObject([{ type: 'text', text: 'hello' }]);
     expect(state.messages[1]?.parts).toMatchObject([
       { type: 'reasoning', text: 'think more' },
       { type: 'text', text: 'ACP_PONG' },
@@ -76,6 +89,119 @@ describe('ACP to Kortix session projection', () => {
       },
     ]);
     expect(state.status).toEqual({ type: 'idle' });
+  });
+
+  test('preserves upstream message boundaries across one ACP prompt', () => {
+    let state = createAcpProjection('ses_1');
+    state = update(state, 'user_message_chunk', {
+      messageId: 'msg_user_1',
+      content: { type: 'text', text: 'Research Marko' },
+    });
+    state = update(state, 'agent_thought_chunk', {
+      messageId: 'msg_assistant_1',
+      content: { type: 'text', text: 'First thought. ' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_1',
+      content: { type: 'text', text: 'First update.' },
+    });
+    state = update(state, 'tool_call', {
+      toolCallId: 'call_1',
+      title: 'web_search',
+      kind: 'other',
+      status: 'pending',
+      rawInput: { query: 'Marko' },
+    });
+    state = update(state, 'agent_thought_chunk', {
+      messageId: 'msg_assistant_2',
+      content: { type: 'text', text: 'Second thought.' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_2',
+      content: { type: 'text', text: 'Second update.' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_3',
+      content: { type: 'text', text: 'Third update.' },
+    });
+
+    expect(state.messages.map((message) => message.info.id)).toEqual([
+      'msg_user_1',
+      'msg_assistant_1',
+      'msg_assistant_2',
+      'msg_assistant_3',
+    ]);
+    expect(state.messages.map((message) => message.info.role)).toEqual([
+      'user',
+      'assistant',
+      'assistant',
+      'assistant',
+    ]);
+    expect(state.messages[1]?.info).toMatchObject({
+      parentID: 'msg_user_1',
+      time: { completed: expect.any(Number) },
+    });
+    expect(state.messages[1]?.parts).toMatchObject([
+      { type: 'reasoning', text: 'First thought. ' },
+      { type: 'text', text: 'First update.' },
+      { type: 'tool', callID: 'call_1' },
+    ]);
+    expect(state.messages[2]?.info).toMatchObject({
+      parentID: 'msg_user_1',
+      time: { completed: expect.any(Number) },
+    });
+    expect(state.messages[2]?.parts).toMatchObject([
+      { type: 'reasoning', text: 'Second thought.' },
+      { type: 'text', text: 'Second update.' },
+    ]);
+    expect(state.messages[3]?.info).toMatchObject({
+      parentID: 'msg_user_1',
+    });
+    expect(
+      state.messages[3] && 'completed' in state.messages[3].info.time
+        ? state.messages[3].info.time.completed
+        : undefined,
+    ).toBeUndefined();
+    expect(state.messages[3]?.parts).toMatchObject([
+      { type: 'text', text: 'Third update.' },
+    ]);
+  });
+
+  test('routes late tool updates to the assistant message that owns the call', () => {
+    let state = createAcpProjection('ses_1');
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_1',
+      content: { type: 'text', text: 'Searching.' },
+    });
+    state = update(state, 'tool_call', {
+      toolCallId: 'call_1',
+      title: 'web_search',
+      kind: 'other',
+      status: 'pending',
+      rawInput: { query: 'Marko' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_2',
+      content: { type: 'text', text: 'Still working.' },
+    });
+    state = update(state, 'tool_call_update', {
+      toolCallId: 'call_1',
+      status: 'completed',
+      rawOutput: { output: 'Found' },
+    });
+
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[0]?.parts).toMatchObject([
+      { type: 'text', text: 'Searching.' },
+      {
+        type: 'tool',
+        callID: 'call_1',
+        state: { status: 'completed', output: 'Found' },
+      },
+    ]);
+    expect(state.messages[1]?.parts).toMatchObject([
+      { type: 'text', text: 'Still working.' },
+    ]);
   });
 
   test('projects tool calls, tool updates, and plans', () => {

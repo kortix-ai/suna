@@ -12,6 +12,7 @@
 
 import type { GatewaySessionStat } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
+import { splitEndUserBills } from '@/server/end-user-billing';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { isValidProjectId, listOwnedProjects } from '@/server/users';
@@ -78,6 +79,23 @@ export async function GET(req: NextRequest) {
     }),
   );
 
+  // Kortix-as-a-Backend: upstream bills this account ONCE. end_user_ref — which
+  // the /api/kortix proxy stamps from the signed-in session — is what splits
+  // that bill back out per Lumen user, which is the whole point of running as a
+  // wrapper. Best-effort: an upstream that cannot group this way must not take
+  // the rest of the page down with it.
+  // NARROWED TO THE CALLER. The account-wide rollup is exactly that —
+  // account-wide — so returning it unfiltered would let any signed-in Lumen user
+  // read every OTHER end-user's id and spend from the main nav. `projects` above
+  // is already scoped to owned projects; this has to be scoped too.
+  //
+  // A real operator dashboard would gate the unnarrowed view behind an operator
+  // role. The demo has no such role, so it shows you your own line only.
+  const endUserBills = await kortix.billing
+    .usageRollup({ groupBy: 'end_user_ref', endUserRef: session.userId })
+    .then((rollup) => splitEndUserBills(rollup.breakdown, markup))
+    .catch(() => ({ bills: [], unattributedCost: 0 }));
+
   const totals = projects.reduce(
     (acc, p) => {
       for (const s of p.sessions) {
@@ -92,6 +110,8 @@ export async function GET(req: NextRequest) {
   return Response.json({
     markup,
     totals: { raw: round2(totals.raw), billed: round2(totals.billed) },
+    by_end_user: endUserBills.bills,
+    unattributed_cost: endUserBills.unattributedCost,
     projects,
   });
 }

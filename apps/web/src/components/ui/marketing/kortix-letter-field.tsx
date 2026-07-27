@@ -4,71 +4,16 @@ import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'motion/react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-const SOURCE = '01kortixcomputer';
-const PROPER = SOURCE.split('').join(' ');
-const KORTIX = 'kortix'.split('').join(' ');
+import {
+  buildFieldSvg,
+  buildTokens,
+  computeGrid,
+  svgToDataUri,
+  type GridLayout,
+  type Token,
+} from './kortix-letter-field.cells';
 
-function createRng(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffleWithSpaces(chars: string, rng: () => number) {
-  const arr = chars.split('');
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr.join(' ');
-}
-
-type TokenKind = 'scrambled' | 'proper' | 'kortix';
-
-interface Token {
-  text: string;
-  kind: TokenKind;
-}
-
-function buildTokens(count: number, seed: number): Token[] {
-  const rng = createRng(seed);
-  return Array.from({ length: count }, () => {
-    const roll = rng();
-    if (roll < 0.06) return { text: KORTIX, kind: 'kortix' as const };
-    if (roll < 0.14) return { text: PROPER, kind: 'proper' as const };
-    return { text: shuffleWithSpaces(SOURCE, rng), kind: 'scrambled' as const };
-  });
-}
-
-interface GridLayout {
-  cols: number;
-  rows: number;
-  tokenCount: number;
-}
-
-function computeGrid(width: number, height: number): GridLayout {
-  const cellHeightPx = width < 640 ? 12 : 14;
-  const gapX = 4;
-  const gapY = 2;
-  const padding = width < 640 ? 16 : 24;
-  const innerWidth = Math.max(0, width - padding);
-  const innerHeight = Math.max(0, height - padding);
-
-  // Wide enough for "k o r t i x" (smallest highlighted token) without clipping.
-  const minCellWidthPx = width < 640 ? 76 : width < 1024 ? 84 : 92;
-
-  const cols = Math.max(1, Math.floor((innerWidth + gapX) / (minCellWidthPx + gapX)));
-  const rows = Math.max(1, Math.ceil((innerHeight + gapY) / (cellHeightPx + gapY)));
-
-  return { cols, rows, tokenCount: cols * rows };
-}
-
-interface KortixLetterFieldProps {
+export interface KortixLetterFieldProps {
   seed?: number;
   className?: string;
 }
@@ -76,25 +21,69 @@ interface KortixLetterFieldProps {
 export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [grid, setGrid] = useState<GridLayout>(() => computeGrid(1200, 800));
+  // Resolved foreground color + dark-mode flag, read live from the container so
+  // the SVG (rendered as a background image, which can't use `currentColor`)
+  // still tracks `--foreground` and theme toggles.
+  const [color, setColor] = useState('rgb(20,20,20)');
+  const [isDark, setIsDark] = useState(false);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    const readColor = () => {
+      const resolved = window.getComputedStyle(el).color;
+      setColor(resolved || 'rgb(20,20,20)');
+      // `.dark` is the theme class (see globals.css `@custom-variant dark`).
+      setIsDark(
+        el.closest('.dark') !== null || document.documentElement.classList.contains('dark'),
+      );
+    };
+
     const update = () => {
       const { width, height } = el.getBoundingClientRect();
       setGrid(computeGrid(width, height));
+      readColor();
     };
 
     update();
+    readColor();
 
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(update);
+      observer.observe(el);
+    }
+
+    // Re-read color on theme toggle (the `.dark` class flips `--foreground`).
+    const themeObserver =
+      typeof MutationObserver !== 'undefined' ? new MutationObserver(readColor) : null;
+    if (themeObserver) {
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+
+    return () => {
+      observer?.disconnect();
+      themeObserver?.disconnect();
+    };
   }, []);
 
-  const tokens = useMemo(() => buildTokens(grid.tokenCount, seed), [grid.tokenCount, seed]);
+  const tokens = useMemo<Token[]>(() => buildTokens(grid.tokenCount, seed), [grid.tokenCount, seed]);
+
+  // Render the letter field as a CSS `background-image` SVG. The decorative
+  // tokens live ONLY inside the SVG image — they never appear as text in the
+  // DOM (not even in `innerText`), so Google's SERP snippet extractor cannot
+  // reach them. This fixes the garbled brand-snippet regression where the old
+  // `<span>` grid leaked scrambled `t p e x 1 o c i0…` tokens into the page's
+  // text content. See `kortix-letter-field.cells.ts` for the pure helpers
+  // (and `kortix-letter-field.cells.test.ts` for the coverage).
+  const backgroundImage = useMemo(() => {
+    const svg = buildFieldSvg(tokens, grid, color, isDark);
+    return `url("${svgToDataUri(svg)}")`;
+  }, [tokens, grid, color, isDark]);
 
   return (
     <AnimatePresence>
@@ -104,32 +93,18 @@ export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldP
         transition={{ duration: 0.5, ease: 'easeInOut' }}
         ref={containerRef}
         className={cn(
-          'pointer-events-none absolute inset-0 overflow-hidden select-none',
+          'pointer-events-none absolute inset-0 overflow-hidden select-none text-foreground',
           className,
         )}
         aria-hidden
-      >
-        <div
-          className="box-border grid h-full w-full gap-x-1 gap-y-0.5 p-2 font-mono text-[8px] leading-none tracking-[0.12em] sm:p-3 sm:text-[9px] md:text-[10px]"
-          style={{ gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))` }}
-        >
-          {tokens.map((token, i) => (
-            <span
-              key={i}
-              className={cn(
-                'block min-w-0 whitespace-nowrap',
-                token.kind === 'kortix' &&
-                  'text-foreground/90 dark:text-foreground/50 hyper-text font-medium',
-                token.kind === 'proper' && 'text-foreground/35 overflow-hidden',
-                token.kind === 'scrambled' &&
-                  'text-foreground/20 dark:text-foreground/14 overflow-hidden',
-              )}
-            >
-              {token.text}
-            </span>
-          ))}
-        </div>
-      </motion.div>
+        data-a11y-decorative
+        style={{
+          backgroundImage,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+        }}
+      />
     </AnimatePresence>
   );
 }

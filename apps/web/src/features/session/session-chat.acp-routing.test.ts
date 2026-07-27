@@ -20,3 +20,15 @@ test('the session page uses one SDK session hook for runtime session state', () 
   expect(sessionPageSource).not.toContain('useCanonicalRuntimeSession(');
   expect(sessionPageSource).toContain('sessionState.runtimeSessions');
 });
+
+test('message rewind uses the provider-agnostic SDK session API', () => {
+  expect(source).toContain('await sessionState.rewind(messageId)');
+  expect(source).toContain('await sessionState.restoreRewind()');
+  expect(source).not.toContain('useForkSession');
+});
+
+test('message rewind confirms the destructive file rollback and replaces the composer text', () => {
+  expect(source).toContain('<ConfirmDialog');
+  expect(source).toContain("mode: 'replace'");
+  expect(source).toContain('Sending a new prompt commits this path');
+});

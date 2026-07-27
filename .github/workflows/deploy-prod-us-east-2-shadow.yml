@@ -4,8 +4,13 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Clean production image version.
+        description: Runtime version reported by the image.
         required: true
+        type: string
+      image_tag:
+        description: Immutable image tag. Defaults to the runtime version.
+        required: false
+        default: ""
         type: string
       source_sha:
         description: Release source commit stored in the images.
@@ -29,8 +34,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing production image version to deploy.
+        description: Runtime version reported by the image.
         required: true
+        type: string
+      image_tag:
+        description: Immutable image tag. Defaults to the runtime version.
+        required: false
+        default: ""
         type: string
       source_sha:
         description: Expected image commit. Leave empty only for a legacy image.
@@ -65,6 +75,16 @@ jobs:
       CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: prod
+
+      - name: Enforce trusted production ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "::error::This workflow runs only from refs/heads/prod."
+            exit 64
+          fi
 
       - name: Require Cloudflare credentials
         run: |
@@ -115,20 +135,40 @@ jobs:
           terraform -chdir="$TF_ROOT" init -input=false
           terraform -chdir="$TF_ROOT" plan -input=false -out=shadow.tfplan
           terraform -chdir="$TF_ROOT" show -json shadow.tfplan > /tmp/shadow-plan.json
-          deletes="$(
-            jq '[.resource_changes[] | select(.change.actions | index("delete"))] | length' \
-              /tmp/shadow-plan.json
+          blocked_destructive_changes="$(
+            jq '[
+              .resource_changes[]
+              | select(.change.actions | index("delete"))
+              | select(
+                  (
+                    .address != "module.api.aws_ecs_task_definition.this"
+                    and .address != "module.gateway.aws_ecs_task_definition.this"
+                  )
+                  or (
+                    .change.actions != ["delete", "create"]
+                    and .change.actions != ["create", "delete"]
+                  )
+                )
+            ] | length' /tmp/shadow-plan.json
           )"
-          replacements="$(
-            jq '[.resource_changes[] | select(
-              .change.actions == ["delete", "create"]
-              or .change.actions == ["create", "delete"]
-            )] | length' /tmp/shadow-plan.json
+          task_definition_replacements="$(
+            jq '[
+              .resource_changes[]
+              | select(
+                  .address == "module.api.aws_ecs_task_definition.this"
+                  or .address == "module.gateway.aws_ecs_task_definition.this"
+                )
+              | select(
+                  .change.actions == ["delete", "create"]
+                  or .change.actions == ["create", "delete"]
+                )
+            ] | length' /tmp/shadow-plan.json
           )"
-          if [ "$deletes" != "0" ] || [ "$replacements" != "0" ]; then
-            echo "::error::US East 2 shadow plan contains deletes=$deletes replacements=$replacements."
+          if [ "$blocked_destructive_changes" != "0" ]; then
+            echo "::error::US East 2 shadow plan contains $blocked_destructive_changes blocked destructive changes."
             exit 1
           fi
+          echo "Allowed immutable ECS task-definition replacements: $task_definition_replacements."
           jq -r '
             [.resource_changes[].change.actions | join(",")]
             | group_by(.)
@@ -146,6 +186,7 @@ jobs:
       AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       VERSION: ${{ inputs.version }}
+      IMAGE_TAG: ${{ inputs.image_tag || inputs.version }}
       SOURCE_SHA: ${{ inputs.source_sha }}
       SOURCE_SECRET_ID: kortix-prod-env
       TARGET_ENV_BLOB: kortix-prod-us-east-2-env
@@ -153,12 +194,26 @@ jobs:
       GATEWAY_URL: https://gateway-use2-shadow.kortix.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: prod
+
+      - name: Enforce trusted production ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "::error::This workflow runs only from refs/heads/prod."
+            exit 64
+          fi
 
       - name: Validate inputs
         run: |
           set -euo pipefail
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::version must use X.Y.Z format."
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-staging\.[0-9a-f]{8})?$'; then
+            echo "::error::version must use X.Y.Z or X.Y.Z-staging.<sha8> format."
+            exit 1
+          fi
+          if ! printf '%s' "$IMAGE_TAG" | grep -Eq '^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$'; then
+            echo "::error::image_tag is not a valid Docker tag."
             exit 1
           fi
           if [ -n "${SOURCE_SHA:-}" ] && ! printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -278,11 +333,11 @@ jobs:
           set -euo pipefail
           bash infra/scripts/ecs-deploy.sh \
             prod-use2-shadow \
-            "kortix/kortix-api:${VERSION}" \
+            "kortix/kortix-api:${IMAGE_TAG}" \
             --version "$VERSION"
           bash infra/scripts/ecs-deploy.sh \
             prod-use2-shadow \
-            "kortix/kortix-gateway:${VERSION}" \
+            "kortix/kortix-gateway:${IMAGE_TAG}" \
             --service gateway \
             --version "$VERSION"
 
@@ -333,14 +388,14 @@ jobs:
 
           verify_service \
             kortix-prod-use2 \
-            kortix-prod-use2 \
-            api \
-            "kortix/kortix-api:${VERSION}"
-          verify_service \
-            kortix-prod-use2-gateway \
-            kortix-prod-use2-gateway \
-            gateway \
-            "kortix/kortix-gateway:${VERSION}"
+              kortix-prod-use2 \
+              api \
+              "kortix/kortix-api:${IMAGE_TAG}"
+            verify_service \
+              kortix-prod-use2-gateway \
+              kortix-prod-use2-gateway \
+              gateway \
+              "kortix/kortix-gateway:${IMAGE_TAG}"
 
       - name: Verify shadow endpoints
         run: |
@@ -350,11 +405,13 @@ jobs:
             gateway_live="$(curl -fsS --max-time 10 "$GATEWAY_URL/health/live" 2>/dev/null || true)"
             gateway_health="$(curl -fsS --max-time 10 "$GATEWAY_URL/health" 2>/dev/null || true)"
             api_version="$(jq -r '.version // empty' <<<"$api_body" 2>/dev/null || true)"
+            api_commit="$(jq -r '.commit // empty' <<<"$api_body" 2>/dev/null || true)"
             gateway_version="$(jq -r '.version // empty' <<<"$gateway_live" 2>/dev/null || true)"
             gateway_commit="$(jq -r '.commit // empty' <<<"$gateway_live" 2>/dev/null || true)"
             api_dependency="$(jq -r '.checks.api.status // empty' <<<"$gateway_health" 2>/dev/null || true)"
             commit_ok=1
-            if [ -n "${SOURCE_SHA:-}" ] && [ "$gateway_commit" != "$SOURCE_SHA" ]; then
+            if [ -n "${SOURCE_SHA:-}" ] \
+              && { [ "$api_commit" != "$SOURCE_SHA" ] || [ "$gateway_commit" != "$SOURCE_SHA" ]; }; then
               commit_ok=0
             fi
 
@@ -362,11 +419,11 @@ jobs:
               && [ "$gateway_version" = "$VERSION" ] \
               && [ "$api_dependency" = "up" ] \
               && [ "$commit_ok" = "1" ]; then
-              echo "US shadow verified: API=$api_version gateway=$gateway_version commit=${gateway_commit:-unavailable} dependency=$api_dependency"
+              echo "US shadow verified: API=$api_version API commit=${api_commit:-unavailable} gateway=$gateway_version gateway commit=${gateway_commit:-unavailable} dependency=$api_dependency"
               exit 0
             fi
 
-            echo "Shadow verification $attempt/40: API=${api_version:-unreachable} gateway=${gateway_version:-unreachable} commit=${gateway_commit:-unavailable} dependency=${api_dependency:-unavailable}"
+            echo "Shadow verification $attempt/40: API=${api_version:-unreachable} API commit=${api_commit:-unavailable} gateway=${gateway_version:-unreachable} gateway commit=${gateway_commit:-unavailable} dependency=${api_dependency:-unavailable}"
             sleep 15
           done
 
@@ -419,8 +476,8 @@ jobs:
         run: |
           {
             echo "### US East 2 production shadow"
-            echo "- API: \`kortix/kortix-api:${VERSION}\`"
-            echo "- Gateway: \`kortix/kortix-gateway:${VERSION}\`"
+            echo "- API: \`kortix/kortix-api:${IMAGE_TAG}\` reports \`${VERSION}\`"
+            echo "- Gateway: \`kortix/kortix-gateway:${IMAGE_TAG}\` reports \`${VERSION}\`"
             echo "- API tasks: 2 or more"
             echo "- Gateway tasks: 2 or more"
             echo "- Production traffic: unchanged"

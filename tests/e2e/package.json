@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@kortix/sdk": "workspace:*",
-    "@playwright/test": "^1.61.0"
+    "@kortix/sdk": "workspace:*"
   }
 }

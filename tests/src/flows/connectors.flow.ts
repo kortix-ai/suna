@@ -694,7 +694,7 @@ flow(
       },
       { params: { projectId: p.id } },
     );
-    connector.status(201);
+    connector.status(200);
     const defaultProfile = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
       {},

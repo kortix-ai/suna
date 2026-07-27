@@ -18,7 +18,7 @@
  * fan-out was removed earlier in this refactor. WS plumbing is a follow-up.
  */
 
-import { authenticatePreviewPrincipal, extractPreviewToken } from './preview-auth';
+import { authenticatePreviewPrincipalDetailed, extractPreviewToken } from './preview-auth';
 import { forwardToSandbox } from './routes/preview';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
@@ -46,7 +46,7 @@ export function parsePreviewSubdomain(host: string): { port: number; sandboxId: 
 // identity (the agent-server's auth gate verifies that header).
 
 type AuthState =
-  | { kind: 'principal'; userId: string; expiresAt: number }
+  | { kind: 'principal'; userId: string; callerSessionId: string | null; expiresAt: number }
   | { kind: 'public_share'; shareId: string; mode: string; expiresAt: number };
 
 // In-memory subdomain auth gate (see authenticatePreviewPrincipal / markAuthedSubdomain).
@@ -83,10 +83,19 @@ function getAuthedSubdomain(sandboxId: string, port: number, req: Request): Auth
   return entry;
 }
 
-function markAuthedSubdomain(sandboxId: string, port: number, req: Request, userId: string): void {
+function markAuthedSubdomain(
+  sandboxId: string,
+  port: number,
+  req: Request,
+  userId: string,
+  // Cached alongside the user because the cache is what later forwards get their
+  // principal from — dropping it here would re-open the bypass on every cache hit.
+  callerSessionId: string | null,
+): void {
   authedSubdomains.set(key(sandboxId, port, req), {
     kind: 'principal',
     userId,
+    callerSessionId,
     expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
   });
 }
@@ -196,8 +205,9 @@ export async function handleSubdomainRequest(
   }
   if (!authed) {
     const token = extractPreviewToken(req, url);
-    const validatedUserId = await authenticatePreviewPrincipal(token, sandboxId);
-    if (!validatedUserId) {
+    const principal = await authenticatePreviewPrincipalDetailed(token, sandboxId);
+    const validatedUserId = principal?.userId ?? null;
+    if (!principal || !validatedUserId) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         {
@@ -210,8 +220,13 @@ export async function handleSubdomainRequest(
         },
       );
     }
-    markAuthedSubdomain(sandboxId, port, req, validatedUserId);
-    authed = { kind: 'principal', userId: validatedUserId, expiresAt: Date.now() + AUTH_SESSION_TTL_MS };
+    markAuthedSubdomain(sandboxId, port, req, validatedUserId, principal.sessionId);
+    authed = {
+      kind: 'principal',
+      userId: validatedUserId,
+      callerSessionId: principal.sessionId,
+      expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
+    };
   }
 
   // Body (read once, before retries inside forwardToSandbox).
@@ -247,7 +262,7 @@ export async function handleSubdomainRequest(
       sandboxId,
       port,
       authed.kind === 'principal'
-        ? { kind: 'principal', userId: authed.userId }
+        ? { kind: 'principal', userId: authed.userId, callerSessionId: authed.callerSessionId }
         : { kind: 'public_share' },
       req.method,
       url.pathname,

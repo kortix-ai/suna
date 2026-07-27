@@ -356,6 +356,28 @@ describe('marketplace projects — full project templates', () => {
     expect(paths.has('seo-department/.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(true);
   });
 
+  test('ships the Marketing Department as a full cloneable project template', () => {
+    expect(paths.has('marketing-department/project.json')).toBe(true);
+    expect(paths.has('marketing-department/kortix.yaml')).toBe(true);
+    expect(paths.has('marketing-department/README.md')).toBe(true);
+    expect(paths.has('marketing-department/install.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/memory/MARKETING.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/marketing-director.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/campaign-strategist.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/content-marketer.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/lifecycle-marketer.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/growth-analyst.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/brand-guardian.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/marketing-repo-watchdog.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/marketing-operating-system/SKILL.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/brand-positioning/SKILL.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/campaign-strategy/SKILL.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/content-engine/SKILL.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/lifecycle-growth/SKILL.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/marketing-analytics/SKILL.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md')).toBe(true);
+  });
+
   test('SEO Department metadata is visible and dependency-backed', () => {
     const metaFile = files.find((f) => f.path === 'seo-department/project.json');
     const meta = JSON.parse(metaFile?.content ?? '{}') as {
@@ -368,6 +390,24 @@ describe('marketplace projects — full project templates', () => {
     expect(meta.hidden).toBeUndefined();
     expect(meta.dependencies).toEqual(
       expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
+    );
+  });
+
+  test('Marketing Department metadata is visible and dependency-backed', () => {
+    const metaFile = files.find((f) => f.path === 'marketing-department/project.json');
+    const meta = JSON.parse(metaFile?.content ?? '{}') as {
+      title?: string;
+      hidden?: boolean;
+      dependencies?: string[];
+    };
+
+    expect(meta.title).toBe('Marketing Department');
+    expect(meta.hidden).toBeUndefined();
+    expect(meta.dependencies).toEqual(
+      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
+    );
+    expect(meta.dependencies).toEqual(
+      expect.arrayContaining(['ad-performance-review', 'brand-mention-monitor', 'social-post-drafting']),
     );
   });
 
@@ -393,5 +433,28 @@ describe('marketplace projects — full project templates', () => {
     expect(director).toContain('do not start another session');
     expect(director).toContain('website/app repository');
     expect(repoSkill).toContain('do not assume the current project repo is the site');
+  });
+
+  test('Marketing Department guides company setup around real marketing context and repo access', () => {
+    const readme = files.find((f) => f.path === 'marketing-department/README.md')?.content ?? '';
+    const install = files.find((f) => f.path === 'marketing-department/install.md')?.content ?? '';
+    const director = files.find((f) =>
+      f.path === 'marketing-department/.kortix/opencode/agents/marketing-director.md'
+    )?.content ?? '';
+    const repoSkill = files.find((f) =>
+      f.path === 'marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md'
+    )?.content ?? '';
+
+    expect(readme).toContain("your company still needs to bring its real context");
+    expect(install).toContain('Use this form');
+    expect(install).toContain('Guided Setup Rule');
+    expect(install).toContain('MARKETING_REPO_WEBHOOK_SECRET');
+    expect(install).toContain('kortix triggers info repo-marketing-watch');
+    expect(install).toContain('Do not end with');
+    expect(director).toContain('company onboarding flow in the current session');
+    expect(director).toContain('install.md');
+    expect(director).toContain('do not start another session');
+    expect(director).toContain('marketing repo');
+    expect(repoSkill).toContain('Do not assume the current');
   });
 });

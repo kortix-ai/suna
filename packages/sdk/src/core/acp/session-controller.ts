@@ -1,4 +1,5 @@
 import { buildAcpBridgeEndpoint } from '../session/runtime-transport';
+import { messagesBeforeRewind } from '../session/rewind';
 import { createAcpClient, type AcpClient } from './client';
 import { applyAcpEnvelope, createAcpProjection, type AcpProjection } from './projection';
 import type {
@@ -40,6 +41,8 @@ export interface AcpSessionClient {
     prompt: AcpContentBlock[],
   ): Promise<{ stopReason: string; usage?: Record<string, unknown> }>;
   cancel(sessionId: string): Promise<void>;
+  revertSession(sessionId: string, messageId: string): Promise<Record<string, unknown>>;
+  unrevertSession(sessionId: string): Promise<Record<string, unknown>>;
   respond(id: AcpJsonRpcId, result?: unknown): Promise<void>;
 }
 
@@ -50,6 +53,7 @@ export interface AcpSessionControllerSnapshot {
   error: Error | null;
   projection: AcpProjection;
   configOptions: Array<Record<string, unknown>>;
+  rewind: { messageId: string } | null;
 }
 
 export interface AcpSessionControllerOptions {
@@ -184,6 +188,7 @@ export class AcpSessionController {
       error: null,
       projection: createAcpProjection(options.sessionId),
       configOptions: [],
+      rewind: null,
     };
   }
 
@@ -250,7 +255,13 @@ export class AcpSessionController {
     const configOptions = Array.isArray(loaded.configOptions)
       ? loaded.configOptions.filter(isObject)
       : [];
-    const projection = settleLoadedProjection(this.snapshot.projection);
+    const loadedProjection = settleLoadedProjection(this.snapshot.projection);
+    const projection = this.snapshot.rewind
+      ? {
+          ...loadedProjection,
+          messages: messagesBeforeRewind(loadedProjection.messages, this.snapshot.rewind.messageId),
+        }
+      : loadedProjection;
     this.patch({
       ready: true,
       connection: 'open',
@@ -384,6 +395,7 @@ export class AcpSessionController {
           },
         });
       }
+      if (this.snapshot.rewind) this.patch({ rewind: null });
       const promptOperation = this.client.prompt(this.options.sessionId, prompt);
       let result: Awaited<ReturnType<AcpSessionClient['prompt']>>;
       try {
@@ -426,6 +438,62 @@ export class AcpSessionController {
         questions: [],
       },
     });
+  }
+
+  async rewind(messageId: string): Promise<void> {
+    if (!messageId) throw new Error('ACP session rewind requires a message id');
+    if (this.snapshot.sending) throw new Error('Cannot rewind a busy ACP session');
+    if (!this.snapshot.ready) await this.connect();
+    const canonicalMessageId = await this.resolveRewindMessageId(messageId);
+    await this.client.revertSession(this.options.sessionId, canonicalMessageId);
+    this.patch({ rewind: { messageId: canonicalMessageId } });
+    this.resetCanonicalSessionState();
+    await this.loadCanonicalSession();
+  }
+
+  private async resolveRewindMessageId(messageId: string): Promise<string> {
+    if (!messageId.startsWith('acp-user-')) return messageId;
+    const optimisticUsers = this.snapshot.projection.messages.filter(
+      (message) => message.info.role === 'user',
+    );
+    const optimisticIndex = optimisticUsers.findIndex(
+      (message) => message.info.id === messageId,
+    );
+    const optimisticText = optimisticUsers[optimisticIndex]?.parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+    if (optimisticIndex < 0 || !optimisticText) {
+      throw new Error('ACP session rewind message is not in the current transcript');
+    }
+
+    this.resetCanonicalSessionState();
+    await this.loadCanonicalSession();
+    const canonicalUsers = this.snapshot.projection.messages.filter(
+      (message) => message.info.role === 'user',
+    );
+    const ordinalMatch = canonicalUsers[optimisticIndex];
+    const textMatch = [...canonicalUsers].reverse().find(
+      (message) =>
+        message.parts
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join('') === optimisticText,
+    );
+    const canonical = ordinalMatch?.info.id.startsWith('acp-user-') ? textMatch : ordinalMatch;
+    if (!canonical || canonical.info.id.startsWith('acp-user-')) {
+      throw new Error('ACP session rewind could not resolve the canonical OpenCode message id');
+    }
+    return canonical.info.id;
+  }
+
+  async restoreRewind(): Promise<void> {
+    if (!this.snapshot.rewind) return;
+    if (this.snapshot.sending) throw new Error('Cannot restore a busy ACP session');
+    await this.client.unrevertSession(this.options.sessionId);
+    this.patch({ rewind: null });
+    this.resetCanonicalSessionState();
+    await this.loadCanonicalSession();
   }
 
   async runCommand(

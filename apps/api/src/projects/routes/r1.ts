@@ -740,8 +740,20 @@ projectsApp.openapi(
   // in the sandbox/CLI git config.
   const gitAuth = await resolveProjectGitAuth(loaded.row);
   if (gitAuth.authSource === 'pat') {
+    // This host's managed git runs on an org-wide token. Exporting it to a
+    // client would hand out write access to EVERY managed repo, so we refuse —
+    // clients push through the Kortix git proxy (`git_origin_url`) with their
+    // own Kortix token instead, which needs no provider credential client-side.
+    // Say so explicitly: the old message read as a server misconfiguration and
+    // sent people hunting for GitHub App settings that aren't the problem.
     return c.json(
-      { error: 'Managed git push token export requires a repo-scoped installation token' },
+      {
+        error:
+          "This host's managed git uses an org-wide token, which is never exported. " +
+          "Push through the project's Kortix git origin instead (git_origin_url) — " +
+          'run `kortix update` if your CLI still asks for a push token.',
+        git_origin_url: serializeProject(loaded.row).git_origin_url,
+      },
       503,
     );
   }

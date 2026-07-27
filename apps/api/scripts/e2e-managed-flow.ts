@@ -11,9 +11,17 @@
  *
  * It mints a CLI PAT for a local owner account, then walks the whole flow:
  *   provision (web "Create project", seeded) → verify starter in repo →
- *   git-token + push (CLI "ship") → create session (the path that 403'd) →
- *   delete session → rm --purge → confirm the repo is gone.
+ *   clone + push exactly the way `kortix ship` does → create session (the path
+ *   that 403'd) → delete session → rm --purge → confirm the repo is gone.
  * Exits non-zero if any step fails. Cleans up everything it created.
+ *
+ * The git steps deliberately resolve their remote + credential the SAME way the
+ * CLI does (see apps/cli/src/project-git.ts): the Kortix git proxy origin with
+ * our own PAT when the host advertises one, a minted provider token against the
+ * raw upstream only when it doesn't. An earlier version always minted a token
+ * and pushed the raw upstream — a path no client actually takes — so it stayed
+ * green while `kortix ship` was 100% broken against a host whose managed git
+ * runs on an org-wide PAT (POST /git-token fails closed there, by design).
  */
 import { execFile } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -60,6 +68,32 @@ function gitEnvArgs(token: string): string[] {
   return ['-c', `http.extraheader=AUTHORIZATION: basic ${enc}`];
 }
 
+/** Mirrors apps/cli/src/project-git.ts — keep the two in step. */
+function isGitProxyUrl(url: string | undefined | null): boolean {
+  return Boolean(url && /\/v1\/git\//.test(url));
+}
+
+/**
+ * Resolve the remote + credential a real client would use for this project.
+ * Proxy origin ⇒ our own PAT (no provider credential ever leaves the server);
+ * proxy-less host ⇒ a repo-scoped provider token from POST /git-token.
+ */
+async function resolveClientGitTarget(
+  project: any,
+  token: string,
+): Promise<{ repoUrl: string; gitToken: string; via: string }> {
+  if (isGitProxyUrl(project.git_origin_url)) {
+    return { repoUrl: project.git_origin_url, gitToken: token, via: 'git proxy + CLI PAT' };
+  }
+  const tk = await api('POST', `/projects/${project.project_id}/git-token`, token);
+  assert(
+    tk.status === 200 && tk.json.push_token,
+    'git-token minted (proxy-less host)',
+    `${tk.status} ${JSON.stringify(tk.json)}`,
+  );
+  return { repoUrl: project.repo_url, gitToken: tk.json.push_token, via: 'minted provider token' };
+}
+
 async function main() {
   log(`\n\x1b[1m[e2e] managed project flow\x1b[0m  →  ${BACKEND}\n`);
 
@@ -74,7 +108,6 @@ async function main() {
   ok('minted e2e PAT');
 
   let projectId = '';
-  let repoUrl = '';
   let sessionId = '';
 
   try {
@@ -90,25 +123,32 @@ async function main() {
     assert(typeof prov.json.metadata?.git?.provider === 'string', 'metadata.git.provider is set');
     assert(typeof prov.json.dashboard_url === 'string' && !prov.json.dashboard_url.includes('/v1'), 'dashboard_url is the web URL');
     projectId = prov.json.project_id;
-    repoUrl = prov.json.repo_url;
 
     // ── 3. seeded starter actually landed in the repo ─────────────────────
-    const tk = await api('POST', `/projects/${projectId}/git-token`, token);
-    assert(tk.status === 200 && tk.json.push_token, 'git-token minted', `${tk.status}`);
+    // Resolved the way a client resolves it — NOT by always minting a token.
+    const git = await resolveClientGitTarget(prov.json, token);
+    ok(`client git target: ${git.via}`);
     const dir = await mkdtemp(join(tmpdir(), 'e2e-flow-'));
-    await execFileAsync('git', [...gitEnvArgs(tk.json.push_token), 'clone', '-q', repoUrl, dir]);
+    await execFileAsync('git', [...gitEnvArgs(git.gitToken), 'clone', '-q', git.repoUrl, dir]);
     const tracked = (await execFileAsync('git', ['-C', dir, 'ls-files'])).stdout;
     assert(tracked.includes('kortix.yaml'), 'seeded repo contains kortix.yaml');
     assert(tracked.includes('.kortix/opencode/opencode.jsonc'), 'seeded repo contains .kortix/opencode/opencode.jsonc');
 
-    // ── 4. CLI "ship": commit + push current branch to the managed origin ─
+    // ── 4. CLI "ship": commit + push current branch to the project origin ─
     await writeFile(join(dir, 'E2E.md'), `e2e ${new Date().toISOString()}\n`);
     await execFileAsync('git', ['-C', dir, 'config', 'user.email', 'e2e@kortix.ai']);
     await execFileAsync('git', ['-C', dir, 'config', 'user.name', 'e2e']);
     await execFileAsync('git', ['-C', dir, 'add', '-A']);
     await execFileAsync('git', ['-C', dir, 'commit', '-q', '-m', 'e2e edit']);
-    await execFileAsync('git', ['-C', dir, ...gitEnvArgs(tk.json.push_token), 'push', '-q', 'origin', 'HEAD:refs/heads/main']);
+    const head = (await execFileAsync('git', ['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim();
+    await execFileAsync('git', ['-C', dir, ...gitEnvArgs(git.gitToken), 'push', '-q', 'origin', 'HEAD:refs/heads/main']);
     ok('pushed an update to the managed repo (ship)');
+
+    // The push must be visible on the real upstream, not just accepted locally.
+    const remoteMain = (
+      await execFileAsync('git', ['-C', dir, ...gitEnvArgs(git.gitToken), 'ls-remote', 'origin', 'refs/heads/main'])
+    ).stdout.trim();
+    assert(remoteMain.startsWith(head), 'origin/main advanced to the pushed commit', remoteMain);
     await rm(dir, { recursive: true, force: true });
 
     // ── 5. create a session (the path that 403'd on managed git) ──────────

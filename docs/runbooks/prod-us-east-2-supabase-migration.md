@@ -557,6 +557,57 @@ post-cutover design requires a same-region standby.
 
 ## Cutover
 
+Run the source-writer control from an operator workstation with production AWS
+and EKS access. The command records the exact ECS, EKS, HPA, Argo CD, secret,
+and cron state in the ignored `.cutover-state/` directory.
+
+Do not run this command before Cloudflare returns `503` for a production write:
+
+```bash
+FREEZE_SOURCE_WRITERS_CONFIRM=freeze:prod-eu-west-2 \
+  bash scripts/prod-us-east-2/source-writers.sh freeze
+```
+
+The command stops both EU ECS services and both EU EKS deployments. It suspends
+their autoscalers. It disables source worker flags. It removes
+`kortix_global_tick`. It publishes the guarded SSM freeze marker required by the
+final database workflow.
+
+After the command returns `Source writers are frozen.`, dispatch
+`Finalize Prod US East 2 Database` with:
+
+- `action=finalize-frozen`
+- `confirm=finalize-frozen:prod-us-east-2`
+
+That workflow waits for both subscriptions, repairs target-only shadow data,
+verifies exact counts and hashes, reconciles sequences, verifies every
+`avatars` object, checks replication error counters, and disables both
+subscriptions. It does not change Cloudflare routing or production secrets.
+
+If Supabase Support does not perform the custom-domain transfer, use this
+self-service sequence under blocking maintenance:
+
+```bash
+SUPABASE_DOMAIN_CONFIRM=detach-source:supa.kortix.com \
+  bash scripts/prod-us-east-2/custom-domain.sh detach-source
+```
+
+Dispatch `Cut Over Prod US East 2` with:
+
+- `action=dns-target`
+- `confirm=dns-target:prod-us-east-2`
+
+Then run:
+
+```bash
+SUPABASE_DOMAIN_CONFIRM=attach-target:supa.kortix.com \
+  bash scripts/prod-us-east-2/custom-domain.sh attach-target
+```
+
+The attach command refuses to continue until the CNAME points to
+`uhrwvisbqjfxhxjvoofd.supabase.co`. It reverifies and activates the target
+custom domain before it returns.
+
 1. Confirm all pre-cutover blockers are closed.
 2. Raise the production maintenance notice.
 3. Block new API, gateway, and `supa.kortix.com` requests at Cloudflare.
@@ -596,6 +647,42 @@ Do not set either value before step 18.
 ## Rollback
 
 Rollback is permitted only before target writes reopen.
+
+First dispatch `Finalize Prod US East 2 Database` with:
+
+- `action=reenable-subscriptions`
+- `confirm=reenable-subscriptions:prod-us-east-2`
+
+After both subscriptions are active, keep Cloudflare maintenance blocking and
+run:
+
+```bash
+UNFREEZE_SOURCE_WRITERS_CONFIRM=unfreeze:prod-eu-west-2 \
+  bash scripts/prod-us-east-2/source-writers.sh unfreeze
+```
+
+The rollback command refuses to start EU writers while US writer flags are
+enabled or either target subscription is disabled.
+
+If the target custom domain was activated, restore it before the writer
+rollback:
+
+```bash
+SUPABASE_DOMAIN_CONFIRM=detach-target:supa.kortix.com \
+  bash scripts/prod-us-east-2/custom-domain.sh detach-target
+```
+
+Dispatch `Cut Over Prod US East 2` with:
+
+- `action=dns-source`
+- `confirm=dns-source:prod-us-east-2`
+
+Then run:
+
+```bash
+SUPABASE_DOMAIN_CONFIRM=attach-source:supa.kortix.com \
+  bash scripts/prod-us-east-2/custom-domain.sh attach-source
+```
 
 1. Keep the source project unchanged until all target checks pass.
 2. Keep target schedulers and workers disabled during validation.

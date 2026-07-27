@@ -16,10 +16,13 @@ const EMPTY_SNAPSHOT: AcpSessionControllerSnapshot = {
   error: null,
   projection: createAcpProjection(''),
   configOptions: [],
+  rewind: null,
 };
 const noopSubscribe = () => () => {};
 
-export async function cancelAcpSession(controller: { cancel(): Promise<void> } | null): Promise<void> {
+export async function cancelAcpSession(
+  controller: { cancel(): Promise<void> } | null,
+): Promise<void> {
   if (!controller) return;
   await controller.cancel();
 }
@@ -69,6 +72,17 @@ export function useAcpSessionRuntime(input: {
     },
     [controller],
   );
+  const rewind = useCallback(
+    (messageId: string) => {
+      if (!controller) throw new Error('ACP session runtime is not ready');
+      return controller.rewind(messageId);
+    },
+    [controller],
+  );
+  const restoreRewind = useCallback(() => {
+    if (!controller) throw new Error('ACP session runtime is not ready');
+    return controller.restoreRewind();
+  }, [controller]);
   const answerPermission = useCallback(
     (requestId: string, reply: 'once' | 'always' | 'reject') => {
       if (!controller) throw new Error('ACP session runtime is not ready');
@@ -93,9 +107,12 @@ export function useAcpSessionRuntime(input: {
 
   return {
     ...snapshot,
+    rewindState: snapshot.rewind,
     send,
     cancel,
     runCommand,
+    rewind,
+    restoreRewind,
     answerPermission,
     answerQuestion,
     rejectQuestion,

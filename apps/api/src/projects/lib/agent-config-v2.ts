@@ -181,7 +181,13 @@ export function applyAgentBlockV2(
 export function applyAgentScopeV2(
   manifest: ParsedManifest,
   agentName: string,
-  scope: { env?: string[] | 'all'; connectors?: string[] | 'all' },
+  scope: {
+    env?: string[] | 'all';
+    connectors?: string[] | 'all';
+    /** v2 `connectors_personal` — the subset of `connectors` that must resolve to
+     *  the launching user's OWN connection. `[]` clears it. */
+    connectorsPersonal?: string[];
+  },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
   const rawAgents = manifest.raw.agents;
   const existing =
@@ -208,6 +214,29 @@ export function applyAgentScopeV2(
     if (scope.connectors === 'all') merged.connectors = 'all';
     else if (scope.connectors.length === 0) delete merged.connectors;
     else merged.connectors = scope.connectors;
+  }
+  if (scope.connectorsPersonal !== undefined) {
+    const personal = Array.from(new Set(scope.connectorsPersonal));
+    if (personal.length === 0) delete merged.connectors_personal;
+    else merged.connectors_personal = personal;
+  }
+  // connectors_personal MUST stay a subset of connectors — the parser rejects the
+  // whole agent block otherwise, which would make the manifest unloadable and
+  // break session-create for that agent. Narrowing the grant (here, or in a
+  // separate edit that only touches `connectors`) therefore has to prune any
+  // personal entry that just lost its grant, rather than writing a manifest we
+  // know won't parse. 'all' grants everything, so nothing to prune there.
+  const effectiveConnectors = merged.connectors;
+  const effectivePersonal = merged.connectors_personal;
+  if (Array.isArray(effectivePersonal)) {
+    if (effectiveConnectors === undefined) {
+      delete merged.connectors_personal;
+    } else if (Array.isArray(effectiveConnectors)) {
+      const granted = new Set(effectiveConnectors as string[]);
+      const kept = (effectivePersonal as string[]).filter((alias) => granted.has(alias));
+      if (kept.length === 0) delete merged.connectors_personal;
+      else merged.connectors_personal = kept;
+    }
   }
   return applyAgentBlockV2(manifest, agentName, merged as AgentBlockV2);
 }

@@ -49,7 +49,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
-    "origin_ref": "your-app-user-123",
+    "end_user_ref": "your-app-user-123",
     "agent_name": "support",
     "opencode_model": "anthropic/claude-opus-4-8",
     "connector_bindings": { "gmail": { "profile_id": "<profile-id>" } },
@@ -69,7 +69,7 @@ const kortix = createScopedKortix({
 });
 
 const session = await kortix.project(projectId).sessions.create({
-  origin_ref: 'your-app-user-123',
+  end_user_ref: 'your-app-user-123',
   agent_name: 'support',
   opencode_model: 'anthropic/claude-opus-4-8',
   connector_bindings: { gmail: { profile_id } },
@@ -87,13 +87,39 @@ never races another request's config.
 
 | Field | What it does |
 | --- | --- |
-| `origin_ref` | An opaque id for *your* end-user. Attribution only — it tags the session and usage; it does **not** resolve that user's connectors or secrets by itself. |
+| `end_user_ref` | An opaque id for *your* end-user. A label, not a lever: it tags the session, reaches the agent as `KORTIX_END_USER_REF`, and blocks an `Idempotency-Key` replay under a *different* end-user. It does **not** resolve that user's connectors or secrets, or grant access. It **is** recorded on every usage event and queryable — see [Per-end-user cost](#per-end-user-cost). Formerly `origin_ref`, which is still accepted. |
 | `connector_bindings` | Map a connector alias → a specific **connection profile** (your end-user's own connected account). Resolved server-side at use time; the credential never enters the sandbox. |
 | `inherit_unbound` | With `connector_bindings` set, keep the project-default fallback for connectors you did *not* bind (instead of all-or-nothing). Only ever inherits the project default. |
 | `secrets` | An allow-list of project secret names to expose to this session. Narrowing only — a session can never see a secret you did not list. |
 | `opencode_model` | The model this session runs, in `provider/model` form. Validated at create; an unservable model fails fast with `400 INVALID_SESSION_MODEL`. |
 | `agent_name` | Which declared agent handles the session. |
 | `runtime_context` | Arbitrary non-secret key/values passed to the run as context. |
+
+
+## Per-end-user cost
+
+Every usage event carries the `end_user_ref` of the session that produced it, so
+you can bill your own users without keeping a parallel ledger.
+
+```bash
+# spend per end-user, biggest first
+curl -sS "$KORTIX_API_URL/usage?group_by=end_user_ref" \
+  -H "Authorization: Bearer $KORTIX_API_KEY"
+
+# one end-user, totals AND breakdown narrowed
+curl -sS "$KORTIX_API_URL/usage?end_user_ref=your-app-user-123" \
+  -H "Authorization: Bearer $KORTIX_API_KEY"
+```
+
+Two things to know:
+
+- Spend with **no** `end_user_ref` — your own dashboard sessions, and anything
+  predating this field — is excluded from the grouped breakdown but still counted
+  in the top-level totals. Per-user rows will not sum to the account total.
+- Grouping is an exact match on the string you sent. `user-1` and `User-1` are two
+  different end-users, so send a canonical id.
+
+The dashboard shows the same data under **Credits → Spend by end-user**.
 
 ## 3. Bring each user's own connector
 
@@ -185,7 +211,7 @@ backend session → stream — ships with the SDK at
 Always send an `Idempotency-Key` (a UUID you generate once per logical create and
 reuse across that create's retries). A replay returns the same session instead of
 starting a second one. Replaying a key with a **different** body — different
-`connector_bindings`, `secrets`, `origin_ref`, or `runtime_context` — is refused with
+`connector_bindings`, `secrets`, `end_user_ref`, or `runtime_context` — is refused with
 `409` rather than silently reusing the first session.
 
 ## Security model
@@ -195,8 +221,9 @@ starting a second one. Replaying a key with a **different** body — different
   allow-list. The agent's machine never holds an app secret.
 - **Bindings can't cross tenants.** A `profile_id` only resolves for the account and
   project that owns it; a wrong or foreign id is rejected as not-found.
-- **`origin_ref` is attribution, not authorization.** It labels the session and
-  usage; it never grants access to a user's data on its own.
+- **`end_user_ref` is attribution, not authorization.** It labels the session and is
+  handed to the agent as `KORTIX_END_USER_REF`; it never grants access to a user's
+  data on its own, and it resolves no connectors or secrets.
 - **Personal connections stay private.** A session that binds a member's personal
   connection is forced to `visibility: private` and resolves only for that user.
 

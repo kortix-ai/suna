@@ -109,6 +109,9 @@ export function serializeSession(
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,
+    end_user_ref: row.originRef,
+    // Deprecated alias, echoed with the same value so wrappers written against
+    // the old name keep working. The DB column keeps its original name.
     origin_ref: row.originRef,
     secrets_allowlist: row.secretsAllowlist ?? null,
     sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),

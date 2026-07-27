@@ -17,6 +17,7 @@ import {
   isFramelessNetworkErrorNoise,
   isInjectedAppSource,
   isInpageWalletStreamNoise,
+  isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isNonErrorUndefinedRejectionNoise,
   isOldBrowserSyntaxParseError,
@@ -3088,6 +3089,283 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
       filename: 'app://navigation_performance_logger_androidx',
     }),
     false,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// iOS WebKit (WKWebView) in-app-browser native-bridge `messageHandlers` noise
+// — the iOS sibling of the Android WebView bridge classes above.
+// (Better Stack pattern
+//  5b94212bc682a1ee1d33d67f6517ec95830c63e1ff8a3779d1700dd6091679eb,
+//  Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+//  users, last_seen 2026-07-27 10:36:24 UTC, release
+//  `5d47baf11708881f1099cdaa875266944e976a78` (POST-`0.10.16`), transaction
+//  `/` (marketing homepage), URL `https://kortix.com/?fbclid=…` (a Facebook
+//  referral), browser `Facebook 571.0.0.55.72` on `iOS (iPhone) 26.5.2` (the
+//  Facebook in-app browser — an iOS WebView). The iOS WebView injects a
+//  synthetic `app:///` (THREE slashes — distinct from the Android bridge's
+//  single-slash `app://navigation_performance_logger_android` source) script
+//  that records navigation/performance timing
+//  (`processLargestContentfulPaintEvent`) and ships it to its native bridge
+//  via `sendDataToNative` → `window.webkit.messageHandlers`. On iOS WebViews
+//  where the WebKit `messageHandlers` bridge is unavailable, `window.webkit`
+//  is `undefined` and the access throws JSC's canonical
+//  `undefined is not an object (evaluating 'window.webkit.messageHandlers')`,
+//  captured as an UNCAUGHT global `onerror` (mechanism
+//  `auto.browser.global_handlers.onerror`, `handled:false` — never reached a
+//  React error boundary). Stack frames (3, all synthetic `app:///` WebView
+//  instrumentation — NO first-party `apps/web/src/…` frame):
+//    app:///   `?`
+//    app:///   `processLargestContentfulPaintEvent`
+//    app:///   `sendDataToNative`  (throw, call_site_function)
+//  The Android matchers (#5181/#4610) anchor on the Android
+//  `app://navigation_performance_logger_android` source and the
+//  `postMessage`/`postEvent` Java-bridge-GC message, so they do NOT catch the
+//  iOS `app:///` + `window.webkit.messageHandlers` variant. The new matcher
+//  anchors on the EXACT `messageHandlers` message + a positive `app:///`/
+//  instrumentation-function anchor, with a first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event, plus the canonical
+// capture-path wrappers Sentry can deliver the same throw through.
+const IOS_WEBVIEW_WEBKIT_BRIDGE_EVENTS = [
+  // The exact raw exception value (the prod event is `onerror`, no prefix).
+  "undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+  // A typed-error wrapper (Sentry exception value with the `TypeError: ` type
+  // prefix the engine prepends).
+  `TypeError: ${"undefined is not an object (evaluating 'window.webkit.messageHandlers')"}`,
+  // An unhandled-rejection wrapper preserving the typed-error form (the other
+  // capture path Sentry's GlobalHandlers can deliver).
+  `Unhandled promise rejection: TypeError: ${"undefined is not an object (evaluating 'window.webkit.messageHandlers')"}`,
+]
+
+// The exact 3-frame production capture (Sentry oldest-first → throwing frame
+// last), all synthetic `app:///` WebView instrumentation frames.
+const IOS_WEBVIEW_PROD_FRAMES = [
+  { filename: 'app:///', function: '?' },
+  { filename: 'app:///', function: 'processLargestContentfulPaintEvent' },
+  { filename: 'app:///', function: 'sendDataToNative' },
+]
+
+test('classifies the iOS WebView WebKit messageHandlers bridge noise (with the prod app:/// frames)', () => {
+  for (const message of IOS_WEBVIEW_WEBKIT_BRIDGE_EVENTS) {
+    assert.equal(
+      isIOSWebViewWebKitBridgeNoise({
+        message,
+        frames: IOS_WEBVIEW_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" from the prod app:/// frames to be classified as noise`,
+    )
+  }
+})
+
+test('suppresses the iOS WebView WebKit bridge Sentry event via the beforeSend gate', () => {
+  // Exact frame chain from the raw production event (oldest-first → throwing
+  // frame last).
+  for (const value of IOS_WEBVIEW_WEBKIT_BRIDGE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/?fbclid=abc123' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: IOS_WEBVIEW_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('classifies the iOS WebView WebKit bridge noise via the instrumentation-function anchor alone (no app:/// filename)', () => {
+  // The function-name anchor is stable across deploys (mirrors #5181's
+  // `postEvent` anchor). A frame with ONLY the function name (no resolvable
+  // filename) still classifies as noise.
+  for (const message of IOS_WEBVIEW_WEBKIT_BRIDGE_EVENTS) {
+    assert.equal(
+      isIOSWebViewWebKitBridgeNoise({
+        message,
+        frames: [{ filename: '', function: 'sendDataToNative' }],
+      }),
+      true,
+      `expected "${message}" with the sendDataToNative function frame to be noise`,
+    )
+    assert.equal(
+      isIOSWebViewWebKitBridgeNoise({
+        message,
+        frames: [{ filename: 'undefined', function: 'processLargestContentfulPaintEvent' }],
+      }),
+      true,
+      `expected "${message}" with the processLargestContentfulPaintEvent function frame to be noise`,
+    )
+  }
+})
+
+test('suppresses the iOS WebView WebKit bridge noise via the runtime (window.onerror) gate with an app:/// filename', () => {
+  for (const message of IOS_WEBVIEW_WEBKIT_BRIDGE_EVENTS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'app:///',
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" with an app:/// filename`,
+    )
+  }
+})
+
+test('does NOT suppress a real first-party window.webkit.messageHandlers failure that throws from an apps/web/src frame', () => {
+  // A genuine `window.webkit.messageHandlers` access in our own code throws
+  // the SAME message wording, but from a de-minified `apps/web/src/…` frame
+  // (or an `app:///apps/web/src/…` sourcemap-resolved frame), NEVER from the
+  // synthetic `app:///` WebView instrumentation. It must keep reporting so a
+  // real first-party regression is never hidden.
+  const realFirstPartyFrames: Array<{ filename: unknown; function?: string }> = [
+    { filename: 'apps/web/src/features/native-bridge/webkit-handler.ts' },
+    { filename: 'app:///apps/web/src/features/native-bridge/webkit-handler.ts' },
+  ]
+  for (const frames of [realFirstPartyFrames, [...IOS_WEBVIEW_PROD_FRAMES, realFirstPartyFrames[0]]]) {
+    assert.equal(
+      isIOSWebViewWebKitBridgeNoise({
+        message: "undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+        frames,
+      }),
+      false,
+      `expected real first-party webkit.messageHandlers error from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: "undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real first-party webkit.messageHandlers error from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+      filename: 'apps/web/src/features/native-bridge/webkit-handler.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a near-worded DIFFERENT message (over-match guard — only the exact messageHandlers bridge access is noise)', () => {
+  // Only the EXACT `window.webkit.messageHandlers` bridge access is noise — a
+  // different WebKit API on `window.webkit.<x>` (e.g. `audioWorklet`) throws a
+  // near-worded but DIFFERENT message that must stay observable, even with the
+  // `app:///` frames (a different WebKit API failing could be a real
+  // regression of a feature we depend on).
+  const nearWordedMessage =
+    "undefined is not an object (evaluating 'window.webkit.audioWorklet')"
+  assert.equal(
+    isIOSWebViewWebKitBridgeNoise({
+      message: nearWordedMessage,
+      frames: IOS_WEBVIEW_PROD_FRAMES,
+    }),
+    false,
+    `expected near-worded "${nearWordedMessage}" to keep reporting`,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: nearWordedMessage,
+            stacktrace: { frames: IOS_WEBVIEW_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    false,
+    `expected Sentry event for near-worded "${nearWordedMessage}" to keep reporting`,
+  )
+})
+
+test('does NOT suppress the exact message with NO frames / a frameless capture (can\'t confirm the app:/// WebView anchor)', () => {
+  // The positive anchor is mandatory — without the `app:///` frame or an
+  // instrumentation function we cannot confirm the iOS WebView origin. A
+  // frameless first-party throw of this exact message must stay observable
+  // (a real `window.webkit.messageHandlers` access with an unresolvable stack
+  // is still attributable to first-party code that needs fixing).
+  const message =
+    "undefined is not an object (evaluating 'window.webkit.messageHandlers')"
+  assert.equal(
+    isIOSWebViewWebKitBridgeNoise({ message }),
+    false,
+    'expected frameless message to keep reporting (no positive anchor)',
+  )
+  assert.equal(
+    isIOSWebViewWebKitBridgeNoise({ message, frames: [] }),
+    false,
+    'expected message with empty frames to keep reporting (no positive anchor)',
+  )
+  assert.equal(
+    isIOSWebViewWebKitBridgeNoise({
+      message,
+      frames: [{ filename: 'app:///_next/static/chunks/main.js' }],
+    }),
+    false,
+    'expected message from an app chunk frame (no app:/// anchor) to keep reporting',
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+    }),
+    false,
+    'expected frameless Sentry event to keep reporting (no positive anchor)',
+  )
+})
+
+test('does NOT suppress the Android bridge messages under the iOS matcher (and vice versa)', () => {
+  // The iOS matcher is message-specific: the Android `postMessage`/`postEvent`
+  // `Java object is gone` messages must not be swallowed by the iOS guard,
+  // and the iOS `window.webkit.messageHandlers` message must not be swallowed
+  // by the Android guards.
+  assert.equal(
+    isIOSWebViewWebKitBridgeNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      frames: [{ filename: ANDROID_NAV_PERF_LOGGER_FRAME }],
+    }),
+    false,
+    'iOS matcher must not swallow the Android postMessage message',
+  )
+  assert.equal(
+    isIOSWebViewWebKitBridgeNoise({
+      message: 'Error invoking postEvent: Java object is gone',
+      frames: IOS_WEBVIEW_PROD_FRAMES,
+    }),
+    false,
+    'iOS matcher must not swallow the Android postEvent message',
+  )
+  assert.equal(
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message: "undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+      frames: IOS_WEBVIEW_PROD_FRAMES,
+    }),
+    false,
+    'Android postMessage matcher must not swallow the iOS webkit.messageHandlers message',
+  )
+  assert.equal(
+    isAndroidWebViewNativeBridgePostEventNoise({
+      message: "undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+      frames: IOS_WEBVIEW_PROD_FRAMES,
+    }),
+    false,
+    'Android postEvent matcher must not swallow the iOS webkit.messageHandlers message',
   )
 })
 

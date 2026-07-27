@@ -66,16 +66,37 @@ export async function promptSecret(label: string): Promise<string> {
 /**
  * Yes/no confirmation. Returns the boolean answer; treats blank input
  * as `defaultValue`. Accepts y/yes/n/no (case-insensitive).
+ *
+ * If the input stream ends before an answer arrives (EOF — a closed pty, a
+ * terminal that went away mid-question) we return `opts.onEndOfInput`
+ * (default: `defaultValue`) rather than waiting forever. `rl.question`'s
+ * callback simply never fires on EOF, so without this the promise stays
+ * pending and the process quietly exits at the prompt with whatever work was
+ * in flight abandoned. Set `onEndOfInput` explicitly wherever "nobody answered"
+ * must NOT mean the same thing as "pressed enter" — anything that would then
+ * take a destructive or irreversible action on its own.
  */
-export async function confirm(label: string, defaultValue: boolean): Promise<boolean> {
+export async function confirm(
+  label: string,
+  defaultValue: boolean,
+  opts: { onEndOfInput?: boolean } = {},
+): Promise<boolean> {
   ensureTTY();
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  // One listener for the whole loop — re-registering per question would pile
+  // up handlers every time the user typed something that wasn't y or n.
+  const ended = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
   try {
     const hint = defaultValue ? 'Y/n' : 'y/N';
     while (true) {
-      const raw = await new Promise<string>((resolve) =>
-        rl.question(`${label} [${hint}]: `, (answer) => resolve(answer)),
+      const answered = new Promise<string>((resolve) =>
+        rl.question(`${label} [${hint}]: `, resolve),
       );
+      const raw = await Promise.race([answered, ended]);
+      if (raw === null) {
+        process.stdout.write('\n');
+        return opts.onEndOfInput ?? defaultValue;
+      }
       const normalized = raw.trim().toLowerCase();
       if (normalized === '') return defaultValue;
       if (['y', 'yes'].includes(normalized)) return true;

@@ -24,6 +24,16 @@ let sessionPromptImpl: (args: unknown) => Promise<{
   error?: unknown;
   response?: Response;
 }> = async () => ({ data: {} });
+let sessionRevertImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
+let sessionUnrevertImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
   constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
@@ -40,7 +50,11 @@ mock.module('../core/runtime/client', () => ({
       reply: (args: unknown) => questionReplyImpl(args),
       reject: (args: unknown) => questionRejectImpl(args),
     },
-    session: { promptAsync: (args: unknown) => sessionPromptImpl(args) },
+    session: {
+      promptAsync: (args: unknown) => sessionPromptImpl(args),
+      revert: (args: unknown) => sessionRevertImpl(args),
+      unrevert: (args: unknown) => sessionUnrevertImpl(args),
+    },
   }),
 }));
 
@@ -55,6 +69,8 @@ import {
   buildSessionCommandInput,
   beginRestPromptObservation,
   endRestPromptObservation,
+  rewindOpenCodeSession,
+  restoreOpenCodeSessionRewind,
   sendStateOnStart,
   sendStateOnError,
   shouldRetrySessionStart,
@@ -93,6 +109,41 @@ beforeEach(() => {
   questionReplyImpl = async () => ({ data: {} });
   questionRejectImpl = async () => ({ data: {} });
   sessionPromptImpl = async () => ({ data: {} });
+  sessionRevertImpl = async () => ({ data: {} });
+  sessionUnrevertImpl = async () => ({ data: {} });
+});
+
+describe('OpenCode session rewind', () => {
+  test('stages and restores history on the same canonical session', async () => {
+    const calls: unknown[] = [];
+    sessionRevertImpl = async (args) => {
+      calls.push(args);
+      return { data: { id: 'oc-session' } };
+    };
+    sessionUnrevertImpl = async (args) => {
+      calls.push(args);
+      return { data: { id: 'oc-session' } };
+    };
+
+    await rewindOpenCodeSession('oc-session', 'msg_user_2');
+    await restoreOpenCodeSessionRewind('oc-session');
+
+    expect(calls).toEqual([
+      { sessionID: 'oc-session', messageID: 'msg_user_2' },
+      { sessionID: 'oc-session' },
+    ]);
+  });
+
+  test('does not stage local rewind state when OpenCode rejects the request', async () => {
+    sessionRevertImpl = async () => ({
+      error: { data: { message: 'message not found' } },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(rewindOpenCodeSession('oc-session', 'missing')).rejects.toThrow(
+      'message not found',
+    );
+  });
 });
 
 describe('answerQuestion', () => {

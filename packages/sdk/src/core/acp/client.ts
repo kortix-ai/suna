@@ -162,11 +162,7 @@ export class AcpClient {
     });
   }
 
-  loadSession(input: {
-    sessionId: string;
-    cwd: string;
-    mcpServers?: unknown[];
-  }) {
+  loadSession(input: { sessionId: string; cwd: string; mcpServers?: unknown[] }) {
     return this.request<Record<string, unknown>>('session/load', {
       ...input,
       mcpServers: input.mcpServers ?? [],
@@ -182,6 +178,19 @@ export class AcpClient {
 
   cancel(sessionId: string) {
     return this.notify('session/cancel', { sessionId });
+  }
+
+  revertSession(sessionId: string, messageId: string) {
+    return this.request<Record<string, unknown>>('session/revert', {
+      sessionId,
+      messageId,
+    });
+  }
+
+  unrevertSession(sessionId: string) {
+    return this.request<Record<string, unknown>>('session/unrevert', {
+      sessionId,
+    });
   }
 
   setSessionConfigOption(sessionId: string, configId: string, value: unknown) {

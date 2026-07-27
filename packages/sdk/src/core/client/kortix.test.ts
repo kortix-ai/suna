@@ -856,6 +856,47 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
   expect(startCount).toBe(2);
 });
 
+test('session rewind and restore stay bound to the same canonical OpenCode session', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const bodyText = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({
+      url,
+      method: request?.method ?? init?.method ?? 'GET',
+      body: bodyText ? JSON.parse(bodyText) : undefined,
+    });
+    if (url.includes('/sessions/SESS-REWIND/start')) {
+      return jsonResponse(sessionStartPayload('sb-rewind', 'ocs-rewind'));
+    }
+    return jsonResponse({ id: 'ocs-rewind' });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+  });
+  const handle = k.session('PROJ', 'SESS-REWIND');
+
+  await handle.rewind('msg_2');
+  await handle.restoreRewind();
+
+  const historyCalls = calls.filter((call) => call.url.includes('/session/ocs-rewind/revert'));
+  expect(historyCalls).toEqual([
+    expect.objectContaining({
+      url: expect.stringContaining('/p/sb-rewind/8000/session/ocs-rewind/revert'),
+      method: 'POST',
+      body: { messageID: 'msg_2' },
+    }),
+  ]);
+  expect(calls).toContainEqual(
+    expect.objectContaining({
+      url: expect.stringContaining('/p/sb-rewind/8000/session/ocs-rewind/unrevert'),
+      method: 'POST',
+    }),
+  );
+});
+
 // ── ensureReady() in-flight dedup (P0 robustness fix: two concurrent
 // ensureReady() calls for the SAME (projectId, sessionId) used to both drive
 // their own `/start` long-poll — a real hazard for a "Kortix as a Backend"
