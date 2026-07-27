@@ -95,6 +95,7 @@ test("shadow repair disables statement timeout and restores the full credit acco
   assert.match(body, /attname <> 'account_id'/);
   assert.match(body, /ROW\(%3\$s\) IS DISTINCT FROM ROW\(%2\$s\)/);
   assert.match(body, /balance_precise = source\.balance/);
+  assert.doesNotMatch(body, /INSERT INTO kortix\.credit_accounts/);
 });
 
 test("shadow repair deletes credit ledger rows that do not exist on the source", () => {

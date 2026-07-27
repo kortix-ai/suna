@@ -52,6 +52,21 @@ test("final database workflow consumes the source freeze marker", () => {
   assert.match(finalWorkflow, /disable-subscription/);
 });
 
+test("live preflight enables both subscriptions before catch-up", () => {
+  const repairStep = finalWorkflow.match(
+    /- name: Reconcile live shadow state([\s\S]*?)(?=\n      - name:)/,
+  );
+  assert.ok(repairStep, "Missing live shadow reconciliation step");
+  assert.match(
+    repairStep[1],
+    /db-sync\.sh repair-shadow-mutations[\s\S]*db-sync\.sh start[\s\S]*db-sync\.sh wait-caught-up/,
+  );
+  assert.match(
+    repairStep[1],
+    /auth-sync\.sh repair-shadow-mutations[\s\S]*auth-sync\.sh start[\s\S]*auth-sync\.sh wait-caught-up/,
+  );
+});
+
 test("custom-domain transfer requires explicit detach and attach gates", () => {
   assert.match(customDomain, /detach-source:\$\{CUSTOM_HOSTNAME\}/);
   assert.match(customDomain, /attach-target:\$\{CUSTOM_HOSTNAME\}/);
