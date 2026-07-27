@@ -3331,3 +3331,20 @@ Production routing and production data were unchanged.
 **Status:** COMPLETE.
 
 **Shippable to production: YES.**
+
+---
+
+### 2026-07-27 — session `nango-github-migration` (U3 claim)
+
+Claimed U3 from
+`docs/plans/2026-07-27-001-refactor-nango-github-integration-plan.md`.
+
+Scope:
+
+- Add account GitHub Connect, reconnect, refresh, and disconnect API contracts.
+- Add compatible `@kortix/sdk` methods and response fields.
+- Preserve every published SDK export.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+
+**Status:** IN PROGRESS.
