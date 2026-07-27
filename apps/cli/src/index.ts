@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { runAgentPicker } from './agent-picker.ts';
 import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
@@ -303,9 +304,9 @@ function printVersion(): void {
 }
 
 // The landing screen: ASCII banner → host/account/project context → update
-// notice → the grouped command list. `kortix`, `kortix help`, and
-// `kortix --help` all render EXACTLY this, so there's no "which one shows the
-// banner/context" surprise.
+// notice → the grouped command list. `kortix help` and `kortix --help` render
+// EXACTLY this, and bare `kortix` falls back to it whenever there is no agent
+// picker to show, so there's no "which one shows the banner/context" surprise.
 async function printLanding(): Promise<void> {
   printBanner();
   // Always surface what host/account/project commands will act on.
@@ -324,8 +325,19 @@ async function main(argv: string[]): Promise<number> {
     printVersion();
     return 0;
   }
-  // Bare `kortix` and explicit help are the same landing screen — no difference.
-  if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
+  // Bare `kortix` is the agent picker (R-40): the workspace's agents with the
+  // Kortix AGI elevated and preselected, and Enter starts a session with the
+  // pick. It answers 'banner' — degrading to the landing screen below — on
+  // every non-TTY invocation and whenever there is nothing to pick from, so a
+  // piped/CI/agent caller behaves exactly as it did before and can never be
+  // wedged on a prompt it cannot answer.
+  if (argv.length === 0) {
+    const outcome = await runAgentPicker();
+    if (outcome !== 'banner') return outcome;
+    await printLanding();
+    return 0;
+  }
+  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     await printLanding();
     return 0;
   }
