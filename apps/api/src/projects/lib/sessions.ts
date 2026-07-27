@@ -83,7 +83,7 @@ import {
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildSessionRuntimeEnv, sessionAutoCloneFlag } from './session-runtime-env';
 
 export type SessionCreateError = {
   status: number;
@@ -487,7 +487,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // these names from the opencode process (Codex/OpenCode auth is excluded —
     // that one is an intentional native provider).
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
-    KORTIX_PROJECT_AUTO_CLONE: '1',
+    KORTIX_PROJECT_AUTO_CLONE: sessionAutoCloneFlag(input.agentName),
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then

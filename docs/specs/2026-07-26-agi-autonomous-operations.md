@@ -357,6 +357,19 @@ list.
 R-38 — The AGI works by spawning sessions and managing goals and tasks. It
 SHOULD NOT do the work itself when a session can.
 
+R-38a — The AGI's own writes are limited to authored state: `kortix.yaml`
+(goals, triggers, agent pins) and documents it authored itself. Everything a
+task produces — code, and the skills and docs of R-4/R-9.5 — is written by the
+session that did the work, which already has a checkout.
+
+R-38b — When the AGI writes, it clones on demand (never at boot — R-36), works
+on a branch, pushes, and opens a change request (R-9.6). It MUST NOT push to the
+default branch, MUST NOT use `kortix ship` (which pushes the branch it is
+standing on, i.e. the default branch of a fresh clone), and MUST NOT merge its
+own change request even though its grant permits it. Nothing server-side
+enforces this today: the git proxy has no ref-level protection, so R-9.6 is
+carried by the AGI's behavior file, guarded by a test over the compiled prompt.
+
 R-39 — Its grant is the full authority of the human who launched it, and no
 more. It MUST NOT be able to grant itself capability the launching user lacks.
 

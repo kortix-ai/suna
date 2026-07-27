@@ -1,3 +1,37 @@
+import { isAgiAgentName } from '../agents';
+
+/**
+ * `KORTIX_PROJECT_AUTO_CLONE` for one session: `'0'` for the platform AGI,
+ * `'1'` for everything else.
+ *
+ * This is what makes R-36 ("the AGI MUST NOT require a checkout to start")
+ * literally true rather than aspirational. Boot AWAITS `materializeRepo`, which
+ * runs only `if (cfg.autoClone)` (sandbox daemon main.ts:162), and health's
+ * `repoRequired = sessionWantsRepo(cfg.autoClone)` (routes/health.ts:88) — so
+ * with auto-clone off `repo_ready` is immediate and `runtimeReady` gates on the
+ * opencode spawn alone. Flipping this flag, not any daemon change, is what
+ * removes the clone from the AGI's boot critical path. It is honored by
+ * already-baked daemons because they read it from env at boot; no image rebake.
+ *
+ * Two things a clone-less boot must NOT lose, both verified to be independent
+ * of `autoClone`:
+ *
+ *  - The AGI's behavior arrives via `KORTIX_COMPILED_AGENT_CONFIG`, read from
+ *    ENV (opencode.ts:127), not from the repo's `.kortix/opencode` config dir.
+ *    `resolveOpencodeConfigDir` falls back to the baked default dir, which is
+ *    exactly right for an agent that has no manifest entry.
+ *  - `configureGitCredentialHelper` runs BEFORE the clone and regardless of
+ *    `autoClone` (main.ts:115), so the AGI's later lazy `kortix projects clone`
+ *    / `git push` still authenticates against the project remote.
+ *
+ * The AGI is not repo-less, only checkout-less: when it needs to write it
+ * clones on demand and lands the change through a change request (R-9.6). See
+ * the "How you change the repo" section of its behavior file.
+ */
+export function sessionAutoCloneFlag(agentName: string): '0' | '1' {
+  return isAgiAgentName(agentName) ? '0' : '1';
+}
+
 export interface SessionRuntimeEnvInput {
   projectId: string;
   sessionId: string;
