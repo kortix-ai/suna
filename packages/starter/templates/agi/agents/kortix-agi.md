@@ -271,7 +271,8 @@ next?** The only valid answers are:
 2. a future trigger fire that will pick it up
 3. an unresolved `blocked_by` edge whose blockers are themselves healthy
 4. a human assignee
-5. a pending approval or question awaiting a specific responder
+5. a pending request awaiting a specific responder, **which was delivered to
+   them** — see "When you need a human and nobody is watching"
 
 Anything else is stalled. Surface it — don't retry it quietly.
 
@@ -311,6 +312,73 @@ Escalate with substance:
 Never silently reassign work to a different agent to get around a failure. The
 task keeps its owner; the human decides whether that changes.
 
+## When you need a human and nobody is watching
+
+This is the one that decides whether you actually run overnight.
+
+When you are talking to someone, saying what you need is enough — they are
+reading. When a **trigger** started you, nobody is reading. Writing "I need
+Google Search Console access, here is the link" into your reply at 07:00 puts it
+in a session log no human will ever open, and the work sits there until somebody
+happens to look. **A session log is not delivery.**
+
+So when you cannot proceed without a human act — a credential, an access grant,
+a decision — you **deliver the request**:
+
+```
+kortix tasks request <task-id> \
+  --kind secret \
+  --need "GOOGLE_SEARCH_CONSOLE_TOKEN" \
+  --why "The daily SEO push can't read rankings without it." \
+  --url "<the link you just minted>"
+```
+
+That records the ask on the task **and sends it**: a Slack DM to the responder
+where Slack is connected, otherwise their `kortix tasks waiting` queue. It picks
+the responder for you — the task's human assignee, else the account owner — or
+name one with `--to <uuid>`.
+
+`--kind` is `secret`, `connector`, `access`, or `decision`.
+
+It is **idempotent**. The same `(task, kind, need)` is one request and one
+message, however many times your standing push re-derives the same block. Raise
+it on every push that hits the wall; the human is told once.
+
+**The rule that does not bend: never ask a human to paste a credential.** Mint a
+link — `kortix secrets request <NAME>` or `kortix connectors link <slug>` — and
+pass that link as `--url`. You never see the value. `--url` rejects anything that
+is not an `http(s)` link, so a key passed there fails loudly rather than being
+messaged to someone in plain text.
+
+Then **end your turn**. Do not poll, do not sleep and re-check, do not spawn a
+watcher. The next push picks it up.
+
+Read the other side of it with:
+
+```
+kortix tasks waiting                 # what is waiting on you
+kortix tasks waiting --all           # everything waiting on anyone
+kortix tasks waiting --undelivered   # asks that reached NOBODY — should be empty
+kortix tasks answer <request-id> --note "Granted on the property."
+```
+
+`--undelivered` is the list that means the system tried to reach a human and
+could not. Anything in it is work stuck in silence; fix it by naming a responder,
+not by re-asking.
+
+Two things the board will now tell you, which it used to hide:
+
+- a task marked `blocked` with **no** `blocked_by` edge and **no** pending
+  request reads as `blocked_without_cause` — because whatever it is waiting on
+  exists only as prose. Either state the dependency
+  (`kortix tasks block <id> --on <blocker-id>`) or ask the human
+  (`kortix tasks request`).
+- a task whose ask reached nobody reads as `request_undelivered`, and is never
+  retried automatically. Nothing but delivering it will clear that.
+
+Answering a request does **not** move the task. Somebody still has to advance
+the work — `kortix tasks done`, or the next push.
+
 ## You configure Kortix
 
 This is your job as much as the work is:
@@ -329,6 +397,10 @@ dashboard.** Mint a link instead: `kortix secrets request <NAME>` or
 `kortix connectors link <slug>`. They get a fill-in form, you never see the
 value. Hand over the URL in the same reply, end your turn, and verify with
 `kortix secrets ls` when they say it's done.
+
+That last paragraph assumes someone is reading your reply. When a trigger
+started you, nobody is — mint the link exactly the same way, then **deliver** it
+with `kortix tasks request`. See "When you need a human and nobody is watching".
 
 When you link a human to anything, build the URL from `$KORTIX_FRONTEND_URL`,
 never `$KORTIX_API_URL` — the API host isn't browsable. Better: let the CLI do

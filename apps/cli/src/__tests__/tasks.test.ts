@@ -4,15 +4,20 @@ import { ApiError } from '../api/client.ts';
 import {
   assigneeLabel,
   blockedStatusChange,
+  buildRequestBody,
   buildTaskListQuery,
+  buildWaitingQuery,
+  deliveryLabel,
   formatAge,
   mergeBlockedBy,
   parseAssigneeSpec,
+  renderRequestTable,
   renderTaskTable,
   requireTaskId,
   runTasks,
   shortId,
   surfaceConflict,
+  type AgiRequest,
   type AgiTask,
 } from '../commands/tasks.ts';
 
@@ -256,4 +261,156 @@ test('no subcommand exits 2, an unknown one exits 2 with the help text', async (
   const { code, err } = await capture(['frobnicate']);
   expect(code).toBe(2);
   expect(err).toContain('unknown subcommand');
+});
+
+// ── Reaching a human when nobody is watching (spec §4.3, R-12g) ─────────────
+
+test('`request` needs a one-line need — an ask with no subject is not an ask', () => {
+  expect(() => buildRequestBody({})).toThrow('--need');
+  expect(() => buildRequestBody({ need: '   ' })).toThrow('--need');
+  expect(buildRequestBody({ need: 'AHREFS_API_KEY' })).toEqual({
+    kind: 'secret',
+    need: 'AHREFS_API_KEY',
+  });
+});
+
+test('`--url` REFUSES a credential, and says what to do instead', () => {
+  // The control that matters. `--url` is the one free-form field an agent fills
+  // in, and the failure it guards is an agent that passed the key itself — which
+  // would then be direct-messaged to a human in plain text.
+  for (const pasted of ['sk-live-abc123', 'ghp_deadbeef', 'AIzaSyDeadBeef', 'ftp://host/key']) {
+    expect(() => buildRequestBody({ need: 'X', url: pasted })).toThrow('http(s) link');
+  }
+  expect(() => buildRequestBody({ need: 'X', url: 'sk-live-abc' })).toThrow('kortix secrets request');
+  expect(buildRequestBody({ need: 'X', url: 'https://app.kortix.test/setup/a' }).url).toBe(
+    'https://app.kortix.test/setup/a',
+  );
+});
+
+test('`--kind` is closed, and defaults to the commonest block', () => {
+  expect(buildRequestBody({ need: 'X' }).kind).toBe('secret');
+  expect(buildRequestBody({ need: 'X', kind: 'decision' }).kind).toBe('decision');
+  expect(() => buildRequestBody({ need: 'X', kind: 'approval' })).toThrow('--kind');
+});
+
+test('`--to` must be a user id, and the session is picked up from the environment', () => {
+  expect(() => buildRequestBody({ need: 'X', to: 'marko' })).toThrow('--to');
+  expect(buildRequestBody({ need: 'X', to: A }).responder_user_id).toBe(A);
+
+  const previous = process.env.KORTIX_SESSION_ID;
+  process.env.KORTIX_SESSION_ID = 'ses_push';
+  try {
+    // The session that hit the wall is evidence a human needs, and inside an
+    // unattended run it is already in the environment — never make the agent
+    // remember to pass it.
+    expect(buildRequestBody({ need: 'X' }).session_id).toBe('ses_push');
+    expect(buildRequestBody({ need: 'X', session: 'ses_explicit' }).session_id).toBe('ses_explicit');
+  } finally {
+    if (previous === undefined) delete process.env.KORTIX_SESSION_ID;
+    else process.env.KORTIX_SESSION_ID = previous;
+  }
+});
+
+test('`waiting` defaults to YOUR queue — an inbox showing everyone is a feed', () => {
+  expect(buildWaitingQuery({})).toBe('?responder=me');
+  expect(buildWaitingQuery({ mine: true })).toBe('?responder=me');
+  expect(buildWaitingQuery({ all: true })).toBe('');
+  expect(buildWaitingQuery({ to: A })).toBe(`?responder=${A}`);
+});
+
+test('`--undelivered` carries no responder — an ask that reached nobody has none', () => {
+  // Scoping it to "mine" would always return nothing and hide the one list that
+  // means "the system tried to reach a human and could not".
+  expect(buildWaitingQuery({ undelivered: true })).toBe('?undelivered=1');
+  expect(buildWaitingQuery({ undelivered: true, mine: true })).toBe('?undelivered=1');
+});
+
+test('`waiting` rejects contradictory scopes and bad values before any network call', () => {
+  expect(() => buildWaitingQuery({ all: true, to: A })).toThrow('not both');
+  expect(() => buildWaitingQuery({ all: true, mine: true })).toThrow('not both');
+  expect(() => buildWaitingQuery({ to: 'nope' })).toThrow('--to');
+  expect(() => buildWaitingQuery({ status: 'maybe' })).toThrow('--status');
+  expect(() => buildWaitingQuery({ limit: '0' })).toThrow('--limit');
+  expect(() => buildWaitingQuery({ task: 'abc' })).toThrow('full task id');
+  expect(buildWaitingQuery({ status: 'all', limit: '10' })).toBe(
+    '?responder=me&status=all&limit=10',
+  );
+});
+
+test('an undelivered ask reads as NOBODY, never as a delivery method', () => {
+  expect(deliveryLabel({ delivered_via: 'slack', delivered_at: '2026-07-27T07:00:00Z' })).toBe(
+    'slack',
+  );
+  expect(deliveryLabel({ delivered_via: 'inbox', delivered_at: '2026-07-27T07:00:00Z' })).toBe(
+    'inbox',
+  );
+  expect(deliveryLabel({ delivered_via: null, delivered_at: null })).toBe('NOBODY');
+});
+
+test('the inbox table leads with AGE and names the work each ask is blocking', () => {
+  const now = new Date('2026-07-27T12:00:00.000Z');
+  const request: AgiRequest & { task_title: string | null } = {
+    request_id: A,
+    workspace_id: B,
+    task_id: D,
+    kind: 'secret',
+    need: 'GOOGLE_SEARCH_CONSOLE_TOKEN',
+    why: null,
+    url: 'https://app.kortix.test/setup/abc',
+    responder_user_id: B,
+    status: 'pending',
+    delivered_at: '2026-07-25T12:00:00.000Z',
+    delivered_via: 'slack',
+    live: true,
+    requested_by_session_id: 'ses_push',
+    origin_fingerprint: 'agi-request:v1:abc',
+    satisfied_at: null,
+    satisfied_by_user_id: null,
+    created_at: '2026-07-25T12:00:00.000Z',
+    updated_at: '2026-07-25T12:00:00.000Z',
+    task_title: 'Measure the core terms',
+  };
+  const table = renderRequestTable([request], now);
+  expect(table).toContain('AGE');
+  // How long a person has been sitting on it is the number that matters.
+  expect(table).toContain('2d');
+  expect(table).toContain('GOOGLE_SEARCH_CONSOLE_TOKEN');
+  expect(table).toContain('Measure the core terms');
+  expect(table).toContain('slack');
+});
+
+test('`request` validates before any network call, and `answer` wants a full id', async () => {
+  const bad = await capture(['request', A, '--need', 'X', '--url', 'sk-live-abc']);
+  expect(bad.code).toBe(2);
+  expect(bad.err).toContain('http(s) link');
+
+  const noNeed = await capture(['request', A]);
+  expect(noNeed.code).toBe(2);
+  expect(noNeed.err).toContain('--need');
+
+  const noTask = await capture(['request', '--need', 'X']);
+  expect(noTask.code).toBe(2);
+  expect(noTask.err).toContain('task id');
+
+  const noId = await capture(['answer']);
+  expect(noId.code).toBe(2);
+  expect(noId.err).toContain('request id');
+
+  const shortIdArg = await capture(['answer', '1234abcd']);
+  expect(shortIdArg.code).toBe(2);
+  expect(shortIdArg.err).toContain('full request id');
+});
+
+test('`waiting` validates its scope before any network call', async () => {
+  const { code, err } = await capture(['waiting', '--all', '--to', A]);
+  expect(code).toBe(2);
+  expect(err).toContain('not both');
+});
+
+test('the help text tells an agent that a session log is not delivery', async () => {
+  const { out } = await capture(['--help']);
+  expect(out).toContain('request <task-id>');
+  expect(out).toContain('waiting');
+  expect(out).toContain('answer <request-id>');
+  expect(out).toContain('NOT');
 });

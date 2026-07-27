@@ -138,6 +138,47 @@ export interface AgiGoalPushResponse {
   trigger_slug: string;
 }
 
+/** A pending human request attached to a task — spec §4.3 (R-12g). There is no
+ *  `value` field and there never may be one: a credential is supplied through
+ *  the minted `url`, which the agent never reads. */
+export interface AgiRequest {
+  request_id: string;
+  workspace_id: string;
+  task_id: string;
+  kind: string;
+  need: string;
+  why: string | null;
+  url: string | null;
+  responder_user_id: string | null;
+  status: string;
+  delivered_at: string | null;
+  delivered_via: string | null;
+  /** Pending AND delivered — the verdict the liveness surface reads. */
+  live: boolean;
+  requested_by_session_id: string | null;
+  origin_fingerprint: string | null;
+  satisfied_at: string | null;
+  satisfied_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgiRequestCreateResponse {
+  request: AgiRequest;
+  /** False when the same ask already existed — it was NOT re-delivered. */
+  created: boolean;
+  delivered_via: string | null;
+}
+
+export interface AgiRequestResponse {
+  request: AgiRequest;
+}
+
+export interface AgiRequestListResponse {
+  requests: (AgiRequest & { task_title: string | null })[];
+  truncated: boolean;
+}
+
 const HELP = help`Usage: kortix tasks <subcommand> [options]
 
 Work the AGI task queue for the linked workspace — the shared board sessions
@@ -157,6 +198,9 @@ Subcommands:
   claim <task-id>          Take exclusive ownership for a session (atomic).
   done <task-id>           Close a task (also clears its claim).
   block <task-id>          Add/remove blockers (--on/--off).
+  request <task-id>        Ask a human for something and DELIVER the ask.
+  waiting                  What is waiting on a human — yours by default.
+  answer <request-id>      Close a request you supplied (or --cancel it).
 
 List options:
   --ready                  Only startable work — same as the \`ready\`
@@ -205,6 +249,40 @@ Block options:
   --off <task-id>          Blocker to remove (repeatable).
   --keep-status            Don't auto-move the task to blocked/todo.
 
+Request options:
+  --need <text>            What is needed, in one line. Required.
+  --why <text>             What it is blocking, for the human reading it.
+  --url <link>             The MINTED fill-in link — \`kortix secrets request
+                           <NAME>\` or \`kortix connectors link <slug>\`. It must
+                           be an http(s) link; a pasted credential is rejected.
+  --kind <kind>            secret|connector|access|decision (default secret).
+  --to <uuid>              A specific responder. Defaults to the task's human
+                           assignee, else the account owner.
+  --session <id>           Session that hit the wall (default
+                           \$KORTIX_SESSION_ID).
+
+  Raising and delivering are ONE call. The ask is direct-messaged to the
+  responder in Slack where that is available, and otherwise lands in their
+  \`kortix tasks waiting\` queue. Writing it in your session log is NOT
+  delivery, and a task blocked on a human nobody told reads as STALLED.
+
+  It is idempotent: the same (task, kind, need) is one request and one
+  message, however many times a standing trigger re-derives the same block.
+
+Waiting options:
+  --mine                   Only requests addressed to you (the default).
+  --all                    Every pending request in the workspace.
+  --to <uuid>              Requests addressed to one person.
+  --task <task-id>         Requests raised against one task.
+  --undelivered            Only asks that reached NOBODY. This list should be
+                           empty; anything in it is work stuck in silence.
+  --status <status>        pending|satisfied|cancelled|all (default pending).
+  --limit <n>              1..200 (default 50).
+
+Answer options:
+  --cancel                 Withdraw the ask instead of marking it supplied.
+  --note <text>            What you did, appended to the original ask.
+
 Exit codes:
   0                        Success.
   1                        API or network failure.
@@ -241,6 +319,10 @@ export async function runTasks(argv: string[]): Promise<number> {
   let doing = false;
   let review = false;
   let ready = false;
+  let mine = false;
+  let all = false;
+  let undelivered = false;
+  let cancel = false;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   const f: Record<string, string | undefined> = {};
@@ -253,6 +335,10 @@ export async function runTasks(argv: string[]): Promise<number> {
     doing = takeFlagBool(rest, ['--doing']);
     review = takeFlagBool(rest, ['--review']);
     ready = takeFlagBool(rest, ['--ready']);
+    mine = takeFlagBool(rest, ['--mine']);
+    all = takeFlagBool(rest, ['--all']);
+    undelivered = takeFlagBool(rest, ['--undelivered']);
+    cancel = takeFlagBool(rest, ['--cancel']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     f.status = takeFlagValue(rest, ['--status']);
@@ -273,6 +359,13 @@ export async function runTasks(argv: string[]): Promise<number> {
     f.session = takeFlagValue(rest, ['--session']);
     f.ttl = takeFlagValue(rest, ['--ttl']);
     f.as = takeFlagValue(rest, ['--as']);
+    f.need = takeFlagValue(rest, ['--need']);
+    f.why = takeFlagValue(rest, ['--why']);
+    f.url = takeFlagValue(rest, ['--url']);
+    f.kind = takeFlagValue(rest, ['--kind']);
+    f.to = takeFlagValue(rest, ['--to']);
+    f.task = takeFlagValue(rest, ['--task']);
+    f.note = takeFlagValue(rest, ['--note']);
     // Repeatable on `new`; `ls` uses only the first occurrence as a filter.
     blockedBy = takeFlagValues(rest, ['--blocked-by']);
     on = takeFlagValues(rest, ['--on']);
@@ -321,6 +414,21 @@ export async function runTasks(argv: string[]): Promise<number> {
       return tasksDone(positional[0], ctxOpts, f.as, json);
     case 'block':
       return tasksBlock(positional[0], ctxOpts, on, off, keepStatus, json);
+    // Spec §4.3. `ask` is accepted because that is what it is, and an agent that
+    // reaches for the obvious word should not get a did-you-mean.
+    case 'request':
+    case 'ask':
+      return tasksRequest(positional[0], ctxOpts, f, json);
+    case 'waiting':
+    case 'inbox':
+      return tasksWaiting(
+        ctxOpts,
+        { mine, all, undelivered, to: f.to, task: f.task, status: f.status, limit: f.limit },
+        json,
+      );
+    case 'answer':
+    case 'satisfy':
+      return tasksAnswer(positional[0], ctxOpts, cancel, f.note, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -672,6 +780,178 @@ async function tasksBlock(
   return 0;
 }
 
+// ── Reaching a human when nobody is watching (spec §4.3, R-12g) ─────────────
+
+/**
+ * Raise an ask AND deliver it, in one call.
+ *
+ * There is deliberately no "record it now, send it later" mode. A request that
+ * exists somewhere nobody looks is the exact failure this command was built to
+ * remove: an unattended push discovers it needs a credential, mints the fill-in
+ * URL, writes it into its own session log, and stalls silently until morning.
+ */
+async function tasksRequest(
+  taskId: string | undefined,
+  opts: CtxOpts,
+  f: Record<string, string | undefined>,
+  json = false,
+): Promise<number> {
+  const id = requireTaskIdArg(taskId);
+  if (id === null) return 2;
+
+  let body: Record<string, unknown>;
+  try {
+    body = buildRequestBody(f);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let resp: AgiRequestCreateResponse;
+  try {
+    resp = await ctx.client.post<AgiRequestCreateResponse>(
+      `/projects/${ctx.projectId}/agi/tasks/${id}/requests`,
+      body,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+
+  const short = shortId(resp.request.request_id);
+  if (!resp.created) {
+    // Not an error, and worth saying out loud: this is what stops a standing
+    // trigger direct-messaging the same person every morning.
+    process.stdout.write(
+      `${status.info(`already asked ${short} — ${resp.request.need} (${deliveryLabel(resp.request)})`)}\n`,
+    );
+    return 0;
+  }
+  if (!resp.delivered_via) {
+    // The one outcome that must not read as success. Nobody was told.
+    process.stderr.write(
+      `${status.err(`recorded ${short} but it reached NOBODY — no responder could be resolved.`)}\n`,
+    );
+    process.stderr.write(
+      `  This task now reads as STALLED. Name someone with --to <uuid>, or add a member to the account.\n`,
+    );
+    return 1;
+  }
+  process.stdout.write(
+    `${status.ok(`asked ${short} — ${resp.request.need} (${deliveryLabel(resp.request)})`)}\n`,
+  );
+  return 0;
+}
+
+/** What is waiting on a human. Defaults to the caller's own queue, because the
+ *  question a person types this to answer is "what am I holding up?". */
+async function tasksWaiting(
+  opts: CtxOpts,
+  f: WaitingFilters,
+  json = false,
+): Promise<number> {
+  let query: string;
+  try {
+    query = buildWaitingQuery(f);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let resp: AgiRequestListResponse;
+  try {
+    resp = await ctx.client.get<AgiRequestListResponse>(
+      `/projects/${ctx.projectId}/agi/requests${query}`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+
+  if (resp.requests.length === 0) {
+    process.stdout.write(
+      `${status.info(
+        f.undelivered
+          ? 'Nothing is stuck unsent — every pending ask reached someone.'
+          : 'Nothing is waiting on you.',
+      )}\n`,
+    );
+    return 0;
+  }
+
+  process.stdout.write(`\n${renderRequestTable(resp.requests)}`);
+  const more = resp.truncated ? '  (more available)' : '';
+  process.stdout.write(
+    `\n  ${C.dim}${resp.requests.length} request${resp.requests.length === 1 ? '' : 's'}${more}${C.reset}\n`,
+  );
+  // The link is the whole point of the row, and truncating it into a column
+  // would make it unclickable — so every ask that has one prints it in full.
+  for (const request of resp.requests) {
+    if (!request.url) continue;
+    process.stdout.write(`\n  ${shortId(request.request_id)}  ${request.need}\n    ${request.url}\n`);
+  }
+  process.stdout.write('\n');
+  return 0;
+}
+
+/** Close an ask. `satisfied` by default — the ordinary case is "the human did
+ *  the thing". Nothing reopens: re-asking is a new request. */
+async function tasksAnswer(
+  requestId: string | undefined,
+  opts: CtxOpts,
+  cancel: boolean,
+  note: string | undefined,
+  json = false,
+): Promise<number> {
+  if (!requestId) {
+    process.stderr.write(`${status.err('Pass a request id.')}\n`);
+    return 2;
+  }
+  if (!UUID_RE.test(requestId)) {
+    process.stderr.write(`${status.err('pass the full request id')}\n`);
+    return 2;
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  const body: Record<string, unknown> = { status: cancel ? 'cancelled' : 'satisfied' };
+  if (note) body.note = note;
+
+  let resp: AgiRequestResponse;
+  try {
+    resp = await ctx.client.post<AgiRequestResponse>(
+      `/projects/${ctx.projectId}/agi/requests/${requestId}`,
+      body,
+    );
+  } catch (err) {
+    // A 409 means somebody already answered it. Exit 3 keeps that
+    // distinguishable from a failure, exactly as a lost claim does.
+    return surfaceConflict(err, json) ?? surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${resp.request.status} ${shortId(resp.request.request_id)}  ${resp.request.need}`)}\n`,
+  );
+  return 0;
+}
+
 // ── Exported helpers (pure — unit-tested directly) ──────────────────────────
 
 export interface TaskListFilters {
@@ -790,6 +1070,139 @@ export function blockedStatusChange(
 
 export function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+// ── Human requests (spec §4.3) ──────────────────────────────────────────────
+
+export const REQUEST_KINDS = ['secret', 'connector', 'access', 'decision'];
+const REQUEST_STATUSES = ['pending', 'satisfied', 'cancelled', 'all'];
+
+/**
+ * `tasks request` flags → the API body.
+ *
+ * The `--url` check is a security control, not tidiness. `--url` is the one
+ * free-form field an agent fills in, and the failure it guards against is an
+ * agent that misunderstood the flow and passed the credential itself — which
+ * would then be direct-messaged to a human in plain text. Rejecting it here
+ * means it never leaves the machine that holds it, and the error says what to
+ * do instead.
+ */
+export function buildRequestBody(f: Record<string, string | undefined>): Record<string, unknown> {
+  const need = f.need?.trim();
+  if (!need) throw new Error('--need is required: say what you need in one line');
+
+  const kind = f.kind ?? 'secret';
+  if (!REQUEST_KINDS.includes(kind)) {
+    throw new Error(`--kind must be one of ${REQUEST_KINDS.join(', ')}`);
+  }
+
+  const body: Record<string, unknown> = { kind, need };
+  if (f.why) body.why = f.why;
+  if (f.url) {
+    if (!/^https?:\/\//i.test(f.url)) {
+      throw new Error(
+        '--url must be an http(s) link. Never pass a credential — mint a link with ' +
+          '`kortix secrets request <NAME>` or `kortix connectors link <slug>`.',
+      );
+    }
+    body.url = f.url;
+  }
+  if (f.to) {
+    if (!UUID_RE.test(f.to)) throw new Error('--to must be a user uuid');
+    body.responder_user_id = f.to;
+  }
+  const sessionId = f.session ?? process.env.KORTIX_SESSION_ID;
+  if (sessionId) body.session_id = sessionId;
+  return body;
+}
+
+export interface WaitingFilters {
+  mine?: boolean;
+  all?: boolean;
+  undelivered?: boolean;
+  to?: string;
+  task?: string;
+  status?: string;
+  limit?: string;
+}
+
+/**
+ * Build the `tasks waiting` query.
+ *
+ * `--mine` is the DEFAULT rather than a flag you have to remember: an inbox that
+ * shows everyone's asks by default is a feed, and a feed is what people stop
+ * reading. `--all` and `--to` are the deliberate ways out of it.
+ */
+export function buildWaitingQuery(f: WaitingFilters): string {
+  if (f.all && f.to) throw new Error('Pass --all or --to, not both');
+  if (f.all && f.mine) throw new Error('Pass --all or --mine, not both');
+
+  const params = new URLSearchParams();
+  // `--undelivered` is its own view and carries no responder: an ask that
+  // reached nobody has no addressee to filter on, so scoping it to "mine" would
+  // always return nothing and hide the very thing it exists to show.
+  if (f.undelivered) {
+    params.set('undelivered', '1');
+  } else if (f.to) {
+    if (!UUID_RE.test(f.to)) throw new Error('--to must be a user uuid');
+    params.set('responder', f.to);
+  } else if (!f.all) {
+    params.set('responder', 'me');
+  }
+
+  if (f.task) params.set('task', requireTaskId(f.task));
+  if (f.status) {
+    if (!REQUEST_STATUSES.includes(f.status)) {
+      throw new Error(`--status must be one of ${REQUEST_STATUSES.join(', ')}`);
+    }
+    params.set('status', f.status);
+  }
+  if (f.limit) {
+    const limit = Number(f.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      throw new Error('--limit must be an integer between 1 and 200');
+    }
+    params.set('limit', String(limit));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+/**
+ * How the ask reached its human, in one cell.
+ *
+ * `nobody` is not a delivery method and is spelled so it cannot be skimmed as
+ * one — a request in that state is why its task reads as stalled.
+ */
+export function deliveryLabel(request: Pick<AgiRequest, 'delivered_via' | 'delivered_at'>): string {
+  if (!request.delivered_at || !request.delivered_via) return 'NOBODY';
+  return request.delivered_via;
+}
+
+/** The inbox table. AGE first, because the number that matters about a request
+ *  waiting on a human is how long it has been waiting. */
+export function renderRequestTable(
+  requests: (AgiRequest & { task_title?: string | null })[],
+  now: Date = new Date(),
+): string {
+  const idW = 8;
+  const age = new Map(requests.map((r) => [r.request_id, formatAge(r.created_at, now)]));
+  const ageW = Math.max(...requests.map((r) => age.get(r.request_id)!.length), 3);
+  const kindW = Math.max(...requests.map((r) => r.kind.length), 4);
+  const viaW = Math.max(...requests.map((r) => deliveryLabel(r).length), 3);
+  const fixed = 2 + idW + 3 + ageW + 3 + kindW + 3 + viaW + 3;
+  const needW = Math.max(20, Math.floor((terminalWidth() - fixed) / 2));
+  const taskW = Math.max(16, terminalWidth() - fixed - needW - 3);
+
+  const rows = [
+    `  ${C.dim}${pad('ID', idW)}   ${pad('AGE', ageW)}   ${pad('KIND', kindW)}   ${pad('VIA', viaW)}   ${pad('NEEDS', needW)}   BLOCKING${C.reset}`,
+  ];
+  for (const r of requests) {
+    rows.push(
+      `  ${pad(shortId(r.request_id), idW)}   ${pad(age.get(r.request_id)!, ageW)}   ${pad(r.kind, kindW)}   ${pad(deliveryLabel(r), viaW)}   ${pad(truncate(r.need, needW), needW)}   ${truncate(r.task_title ?? '-', taskW)}`,
+    );
+  }
+  return `${rows.join('\n')}\n`;
 }
 
 export function assigneeLabel(task: Pick<AgiTask, 'agent' | 'assignee_user_id'>): string {

@@ -27,6 +27,8 @@
  * well would be noise that a human has to triage.
  */
 import { resolveExperimentalFeature } from '../../experimental/features';
+import { loadPendingRequestsByTask } from '../requests/store';
+import { isLiveRequest } from '../requests/wire';
 import { releaseTask } from '../tasks/store';
 import type { AgiTaskRow } from '../tasks/wire';
 import { applyBoundedRecovery } from './recovery';
@@ -178,12 +180,31 @@ async function settleClaim(input: {
     claimExpiresAt: null,
   };
   const blockers = await loadTasksByIds(workspaceId, released.blockedBy);
+  // Spec §4.3, and the whole point of reading it HERE. This hook is what runs
+  // when an unattended 07:00 push exits: if that session hit a missing
+  // credential and delivered an ask to a named human before ending, the task has
+  // a live path (R-28 answer 5) and must not be treated as a crash to recover
+  // from. Omitting this read would make the one case the feature exists for —
+  // "blocked on a human, human was told" — indistinguishable from a session that
+  // died doing nothing.
+  const pending = await loadPendingRequestsByTask(workspaceId, [released.taskId]);
+  const request = pending.get(released.taskId);
   const liveness = resolveTaskLiveness({
     task: released,
     now,
     claimSession: 'terminal',
     blockers,
     recovery: null,
+    request: request
+      ? {
+          requestId: request.requestId,
+          kind: request.kind,
+          need: request.need,
+          responderUserId: request.responderUserId,
+          delivered: isLiveRequest(request),
+          deliveredVia: request.deliveredVia,
+        }
+      : null,
   });
 
   // `hadClaim` is unconditionally true here — these rows were found BY this

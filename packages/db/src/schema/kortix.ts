@@ -4315,3 +4315,146 @@ export const agiObservationsRelations = relations(agiObservations, ({ one }) => 
     references: [projects.projectId],
   }),
 }));
+
+// A pending human request attached to a task — R-12g / §4.3, and the row that
+// finally gives R-28 answer 5 ("a pending approval or question awaiting a
+// specific responder") something to point at.
+//
+// The problem it exists for: the INTERACTIVE path is already correct — the agent
+// runs `kortix secrets request <NAME>`, gets a fill-in URL, and hands it to the
+// human in the same reply. The UNATTENDED path is not. A 07:00 cron push that
+// discovers it needs an access grant mints the same URL and writes it into its
+// own session log, where nobody will ever look, then stalls silently. For a
+// fresh workspace that is the FIRST thing that happens, before any real work.
+//
+// So the request is a ROW, not a sentence. Being a row is what makes it
+// deliverable (a Slack DM is sent off it), addressable (`responder_user_id` is
+// the "specific responder" R-28 requires), and above all VISIBLE — the liveness
+// read joins it, so a task waiting on a human that WAS told counts as healthy
+// while one waiting on a human that was never told counts as stalled. That
+// distinction is the entire point.
+//
+// There is deliberately NO value column, and there never may be one. The agent
+// asks for a credential by minting a link the human fills in; it must never see
+// the secret, so the transport for one does not exist here. `url` is the minted
+// link and is CHECK-constrained to http(s) — a bearer token pasted into it would
+// not even be storable.
+//
+// GENERATED state (R-3): written mid-run by whichever session hit the wall.
+// The durable residue is what the human's act produces (a secret, a grant), not
+// this row (R-5).
+export const agiRequests = kortixSchema.table(
+  'agi_requests',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // A request is always ABOUT a task. R-12g's third delivery option is "a
+    // pending item attached to the task", and the liveness join is (task_id,
+    // status='pending') — so the edge is mandatory and cascades: a deleted task
+    // cannot leave an orphaned ask addressed to a human.
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => agiTasks.taskId, { onDelete: 'cascade' }),
+    // What KIND of human act is needed. text + CHECK, same reasoning as the task
+    // vocabularies: these will move while `agi` is experimental.
+    kind: text('kind').notNull(),
+    // WHAT is needed, in one line — the DM subject and the inbox row.
+    need: text('need').notNull(),
+    // WHY: the work this is blocking. Optional, because a request with no
+    // context is still better than a request nobody sent.
+    why: text('why'),
+    // The minted fill-in link (`kortix secrets request` / `connectors link`), or
+    // null for a decision that needs no form. NEVER a credential — see the
+    // scheme CHECK below.
+    url: text('url'),
+    // WHO it is for. Nullable, and the nullability is load-bearing: a request
+    // addressed to nobody is precisely the state R-28 answer 5 does NOT satisfy
+    // ("awaiting a SPECIFIC responder"), and liveness reports it as a stall.
+    responderUserId: uuid('responder_user_id'),
+    status: text('status').default('pending').notNull(),
+    // WHEN it reached a surface a human sees, and WHICH one. R-12g draws the
+    // whole line here: writing the ask into a session log leaves both null, and
+    // a null `delivered_at` is what makes the task read as stalled rather than
+    // as healthily waiting.
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    deliveredVia: text('delivered_via'),
+    // The session that hit the wall — evidence, so a human reading the DM can
+    // go look at what was actually being attempted.
+    requestedBySessionId: text('requested_by_session_id'),
+    // R-20 applied to asking a human. A standing daily `push` re-derives the
+    // same block every morning; without this the human is DM'd once per day
+    // forever. The fingerprint is derived server-side from (task, kind, need)
+    // when the caller supplies none, so idempotency is the DEFAULT rather than
+    // something an agent has to remember.
+    originFingerprint: text('origin_fingerprint'),
+    satisfiedAt: timestamp('satisfied_at', { withTimezone: true }),
+    satisfiedByUserId: uuid('satisfied_by_user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Hot read 1: "does this task have a live ask?" — one lookup per liveness
+    // pass, for every open task in the workspace at once. Partial on pending
+    // because satisfied rows accumulate forever and liveness never reads them.
+    index('idx_agi_requests_task_pending')
+      .on(table.workspaceId, table.taskId)
+      .where(sql`status = 'pending'`),
+    // Hot read 2: "what is waiting on ME?" — the inbox behind `kortix tasks
+    // waiting`, oldest first so the longest-ignored ask is the one on top.
+    index('idx_agi_requests_responder_pending')
+      .on(table.workspaceId, table.responderUserId, table.createdAt)
+      .where(sql`status = 'pending' and responder_user_id is not null`),
+    uniqueIndex('uq_agi_requests_origin_fingerprint')
+      .on(table.workspaceId, table.originFingerprint)
+      .where(sql`origin_fingerprint is not null`),
+    check(
+      'agi_requests_kind_check',
+      sql`${table.kind} in ('secret', 'connector', 'access', 'decision')`,
+    ),
+    check(
+      'agi_requests_status_check',
+      sql`${table.status} in ('pending', 'satisfied', 'cancelled')`,
+    ),
+    check('agi_requests_need_check', sql`length(${table.need}) between 1 and 500`),
+    // Delivery is an atom: both columns or neither. A `delivered_via` with no
+    // timestamp would make "was this delivered?" answerable two different ways,
+    // and liveness would have to pick one.
+    check(
+      'agi_requests_delivery_coherent_check',
+      sql`(${table.deliveredAt} is null and ${table.deliveredVia} is null) or (${table.deliveredAt} is not null and ${table.deliveredVia} is not null)`,
+    ),
+    // Delivery REQUIRES an addressee. Enforced here rather than trusted from the
+    // route because it is the invariant the liveness verdict rests on: nothing
+    // may be marked delivered without a specific responder to have delivered it to.
+    check(
+      'agi_requests_delivery_addressed_check',
+      sql`${table.deliveredAt} is null or ${table.responderUserId} is not null`,
+    ),
+    // `satisfied` and a satisfaction timestamp are the same fact stated twice;
+    // they may never disagree.
+    check(
+      'agi_requests_satisfied_coherent_check',
+      sql`(${table.status} = 'satisfied') = (${table.satisfiedAt} is not null)`,
+    ),
+    // Defence in depth against the one thing this table must never carry. A
+    // credential pasted where the minted link belongs fails to store rather than
+    // sitting in the database being e-mailed to someone.
+    check(
+      'agi_requests_url_scheme_check',
+      sql`${table.url} is null or ${table.url} ~ '^https?://'`,
+    ),
+  ],
+);
+
+export const agiRequestsRelations = relations(agiRequests, ({ one }) => ({
+  workspace: one(projects, {
+    fields: [agiRequests.workspaceId],
+    references: [projects.projectId],
+  }),
+  task: one(agiTasks, {
+    fields: [agiRequests.taskId],
+    references: [agiTasks.taskId],
+  }),
+}));

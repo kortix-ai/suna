@@ -34,6 +34,7 @@ import {
   accountSsoProviders,
   agiTasks,
   agiObservations,
+  agiRequests,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -615,5 +616,103 @@ describe('agi_observations table', () => {
   test('source is required — an unattributed number is not evidence', () => {
     expect(column('source')?.notNull).toBe(true);
     expect(column('source')?.hasDefault).toBe(false);
+  });
+});
+
+describe('agi_requests table', () => {
+  const cfg = getTableConfig(agiRequests);
+  const checkNames = cfg.checks.map((c) => c.name);
+  const column = (name: string) => cfg.columns.find((c) => c.name === name);
+  const index = (name: string) => cfg.indexes.find((i) => i.config.name === name);
+
+  test('lives in the kortix schema under the gate-prefixed name', () => {
+    expect(cfg.name).toBe('agi_requests');
+    expect(cfg.schema).toBe('kortix');
+    expect(primaryColumn(agiRequests)).toBe('request_id');
+  });
+
+  test('carries what a human needs to act: what, why, the link, and who it is for', () => {
+    const names = columnNames(agiRequests);
+    for (const required of ['kind', 'need', 'why', 'url', 'responder_user_id', 'status']) {
+      expect(names).toContain(required);
+    }
+  });
+
+  test('there is NO column that could carry a credential, and there never may be', () => {
+    // The agent asks for a secret by minting a fill-in link the human completes;
+    // it must never see the value, so there is nowhere here to put one.
+    const names = columnNames(agiRequests);
+    expect(names).not.toContain('value');
+    expect(names).not.toContain('secret');
+    expect(names).not.toContain('token');
+  });
+
+  test('the url is CHECK-constrained to http(s) so a pasted key is not storable', () => {
+    expect(checkNames).toContain('agi_requests_url_scheme_check');
+  });
+
+  test('cascades from both the workspace and the task it is attached to', () => {
+    const targets = cfg.foreignKeys.map((f) => ({
+      table: getTableConfig(f.reference().foreignTable).name,
+      columns: f.reference().columns.map((c) => c.name),
+      onDelete: f.onDelete,
+    }));
+    expect(targets).toEqual([
+      { table: 'projects', columns: ['workspace_id'], onDelete: 'cascade' },
+      { table: 'agi_tasks', columns: ['task_id'], onDelete: 'cascade' },
+    ]);
+  });
+
+  test('R-12g: delivery is an atom, and it REQUIRES an addressee', () => {
+    // The liveness verdict rests on these two. Nothing may be marked delivered
+    // without a specific responder to have delivered it to, and "was this
+    // delivered?" must have exactly one answer.
+    expect(checkNames).toContain('agi_requests_delivery_coherent_check');
+    expect(checkNames).toContain('agi_requests_delivery_addressed_check');
+  });
+
+  test('a request is born undelivered — neither delivery column is defaulted', () => {
+    for (const name of ['delivered_at', 'delivered_via']) {
+      expect(column(name)?.notNull).toBe(false);
+      expect(column(name)?.hasDefault).toBe(false);
+    }
+  });
+
+  test('the responder is NULLABLE — an ask addressed to nobody is a real state', () => {
+    // It is the state R-28 answer 5 does not satisfy, and liveness reports it as
+    // a stall rather than pretending someone was told.
+    expect(column('responder_user_id')?.notNull).toBe(false);
+  });
+
+  test('satisfied and its timestamp are the same fact and may never disagree', () => {
+    expect(checkNames).toContain('agi_requests_satisfied_coherent_check');
+  });
+
+  test('the vocabularies are CHECKs, droppable while `agi` is experimental', () => {
+    expect(checkNames).toContain('agi_requests_kind_check');
+    expect(checkNames).toContain('agi_requests_status_check');
+    expect(checkNames).toContain('agi_requests_need_check');
+  });
+
+  test('R-20: one ask, one row — the fingerprint is unique per workspace', () => {
+    // Without this a standing daily push direct-messages the same person every
+    // morning until they mute the bot.
+    const unique = index('uq_agi_requests_origin_fingerprint');
+    expect(unique?.config.unique).toBe(true);
+    expect(unique?.config.columns.map((c) => (c as { name?: string }).name)).toEqual([
+      'workspace_id',
+      'origin_fingerprint',
+    ]);
+    // Partial: an unfingerprinted request must never collide with another.
+    expect(unique?.config.where).toBeDefined();
+  });
+
+  test('both hot reads are indexed, and both are partial on pending', () => {
+    // "does this task have a live ask?" (the liveness join) and "what is waiting
+    // on me?" (the inbox). Satisfied rows accumulate forever and neither read
+    // ever scans them.
+    for (const name of ['idx_agi_requests_task_pending', 'idx_agi_requests_responder_pending']) {
+      expect(index(name)?.config.where).toBeDefined();
+    }
   });
 });

@@ -80,6 +80,8 @@ export {
   agiTasksRelations,
   agiObservations,
   agiObservationsRelations,
+  agiRequests,
+  agiRequestsRelations,
   // Relations
   projectsRelations,
   projectGitConnectionsRelations,

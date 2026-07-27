@@ -25,17 +25,23 @@ import { isTerminalTaskStatus, type AgiTaskRow } from '../tasks/wire';
  * The answer to "what moves this forward next?".
  *
  * `settled` is outside R-28 (it scopes itself to non-terminal tasks) and exists
- * so callers never have to special-case done/cancelled before asking. The four
- * middle values are R-28's answers 1–4. R-28's answer 5 — a pending approval
- * awaiting a specific responder — has no representation in the v1 task shape and
- * is therefore never produced; when approvals grow a task edge it becomes a
- * sixth value here and a branch below, not a second liveness model.
+ * so callers never have to special-case done/cancelled before asking. The five
+ * middle values are R-28's answers 1–5.
+ *
+ * `awaiting_response` is answer 5 — "a pending approval or question awaiting a
+ * specific responder" — and it arrived exactly as this comment used to predict:
+ * as a sixth value here and a branch below, over the task edge in
+ * `agi_requests` (spec §4.3), and NOT as a second liveness model. It is distinct
+ * from `human` on purpose: `human` means a person owns the work, while
+ * `awaiting_response` means a person owes an answer and nothing will move until
+ * they give it.
  */
 export const LIVENESS_STATES = [
   'settled',
   'working',
   'blocked',
   'human',
+  'awaiting_response',
   'awaiting_trigger',
   'stalled',
 ] as const;
@@ -59,6 +65,24 @@ export const STALL_REASONS = [
   /** Assigned to an agent, unclaimed, no trigger lineage and no goal: nothing in
    *  the system is scheduled to look at it again. */
   'no_live_path',
+  /** R-12g. The task carries a pending request for a human act, and that request
+   *  reached no surface a human sees — no channel message, no addressee, nothing
+   *  but a row. A task with an undelivered ask is NOT rescued by its goal's next
+   *  `push`: the next fire re-derives the same block and hits the same wall. */
+  'request_undelivered',
+  /** R-12g's other half, and the one that actually fires in production. The task
+   *  says it is `blocked`, names no blocking task (R-16: `blocked_by` is how a
+   *  dependency is stated), and carries no pending human request. So whatever it
+   *  is waiting on was written down in prose — a session log, a task body — and
+   *  R-31 is explicit that prose is not a control-plane act.
+   *
+   *  This is the overnight failure §4.3 was written about, exactly as it occurs:
+   *  a 07:00 push discovers it needs a Search Console grant, mints the fill-in
+   *  URL, writes it where only that session can see it, and marks the task
+   *  blocked. Before §4.3 that read as `awaiting_trigger` — perfectly healthy —
+   *  because the goal's standing push does keep firing. It just can never
+   *  advance. */
+  'blocked_without_cause',
 ] as const;
 export type StallReason = (typeof STALL_REASONS)[number];
 
@@ -222,7 +246,21 @@ export function isRecoverableStall(input: {
   hadClaim: boolean;
   hasRecovery: boolean;
 }): boolean {
-  return input.reason !== null && (input.hadClaim || input.hasRecovery);
+  if (input.reason === null) return false;
+  // R-12g stalls are never continued. The fix for an ask that reached nobody is
+  // to DELIVER it — manufacturing a continuation task would add a second row
+  // nobody was told about, and escalating it to a human assignee would quietly
+  // convert "we could not reach anyone" into "someone owns this", which is the
+  // false-healthy answer the whole section exists to prevent. It is surfaced and
+  // left surfaced (R-29: surfaced, not retried).
+  if (input.reason === 'request_undelivered') return false;
+  // `blocked_without_cause` deliberately stays recoverable. It is a stall on
+  // work that WAS picked up and dropped, which is exactly what R-32's bound
+  // exists for: one continuation, and if the same evidence comes back, an
+  // escalation to a human. That escalation is itself a way of reaching one —
+  // weaker than an addressed ask, which is why the prompt tells the agent to
+  // raise a request instead of letting recovery discover the block for it.
+  return input.hadClaim || input.hasRecovery;
 }
 
 export const CONTINUATION_TITLE_PREFIX = 'Stalled:';
@@ -273,6 +311,28 @@ export interface TaskLivenessInput {
   blockers: readonly Pick<AgiTaskRow, 'taskId' | 'status'>[];
   /** The fingerprinted recovery row this task already produced, if any. */
   recovery: Pick<AgiTaskRow, 'taskId' | 'assigneeUserId' | 'agent'> | null;
+  /** The oldest PENDING human request on this task (spec §4.3), or null. Only
+   *  pending rows are passed: a satisfied ask must stop propping the task up the
+   *  instant it is answered. */
+  request: PendingRequestRef | null;
+}
+
+/**
+ * What liveness needs to know about a pending human request, and nothing more.
+ *
+ * `delivered` arrives as a decided boolean rather than a timestamp because
+ * requests/wire.ts owns that verdict ({@link isLiveRequest} there) and there
+ * must be exactly one place that decides whether an ask reached a human. Two
+ * implementations of R-12g's line would eventually disagree, and the direction
+ * they would disagree in is "reads healthy, nobody was told".
+ */
+export interface PendingRequestRef {
+  requestId: string;
+  kind: string;
+  need: string;
+  responderUserId: string | null;
+  delivered: boolean;
+  deliveredVia: string | null;
 }
 
 export interface TaskLiveness {
@@ -287,6 +347,10 @@ export interface TaskLiveness {
     escalated: boolean;
     escalatedTo: string | null;
   } | null;
+  /** Attached whenever one exists, in EVERY state — including the states it did
+   *  not decide. A human reading "why is this stuck" needs the ask and its link
+   *  in front of them, not a request id to go look up. */
+  request: PendingRequestRef | null;
 }
 
 /**
@@ -316,7 +380,12 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
     claimSession: null as ClaimSessionState | null,
     unresolvedBlockers: [] as string[],
     recovery,
+    request: input.request,
   };
+
+  // R-12g's line, decided once: a pending ask that reached a surface a human
+  // sees is a live path (R-28 answer 5); one that reached nothing is not.
+  const requestIsLivePath = input.request?.delivered === true;
 
   if (isTerminalTaskStatus(task.status)) return { ...base, state: 'settled' };
 
@@ -357,6 +426,13 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
     if (hasHealthyBlocker) {
       return { ...base, state: 'blocked', unresolvedBlockers: unresolved };
     }
+    // A delivered ask rescues a dead-blocker stall: the blockers are indeed all
+    // dead, but a named human has been asked for the thing that would unstick
+    // this, and that is R-28 answer 5. Nothing here prunes the edges — they stay
+    // in `unresolvedBlockers` so the report keeps both facts.
+    if (requestIsLivePath) {
+      return { ...base, state: 'awaiting_response', unresolvedBlockers: unresolved };
+    }
     return {
       ...base,
       state: 'stalled',
@@ -366,6 +442,41 @@ export function resolveTaskLiveness(input: TaskLivenessInput): TaskLiveness {
   }
 
   if (task.assigneeUserId !== null) return { ...base, state: 'human' };
+
+  // R-28 answer 5, and the reason §4.3 exists.
+  //
+  // This is evaluated BEFORE the trigger check, which is the one deliberate
+  // departure from R-28's listed order and the whole value of the feature. A
+  // goal-linked task blocked on a missing credential would otherwise read as
+  // `awaiting_trigger` — perfectly healthy — forever, because it does have a
+  // standing `push` and that push does fire. It just cannot advance: every fire
+  // re-derives the same block and hits the same wall. A future fire is only a
+  // live path if it can move the work, so a pending ask decides this task's
+  // verdict and the trigger does not get to overrule it.
+  if (input.request) {
+    return requestIsLivePath
+      ? { ...base, state: 'awaiting_response' }
+      : { ...base, state: 'stalled', reason: 'request_undelivered' };
+  }
+
+  // R-12g, the reachable half. Everything above has been ruled out: no live
+  // claim, no unresolved edge, no human assignee, no pending ask. A task still
+  // sitting in `blocked` is therefore waiting on something it never told the
+  // system about — and R-31 says prose is not a control-plane act, so whatever
+  // it wrote in its body or its session log does not count.
+  //
+  // Deliberately BEFORE the trigger check, for the same reason the ask is: a
+  // standing `push` will fire, re-derive the identical block, and stop again. A
+  // future fire is a live path only if it can move the work.
+  //
+  // This state is already anomalous by construction — both `tasks block` and
+  // `resolveCompletedBlocker` move a task out of `blocked` the moment its last
+  // edge clears — so nothing that manages its dependencies properly lands here.
+  // The fix is to state the dependency (`kortix tasks block --on`) or to ask the
+  // human (`kortix tasks request`), never to leave the reason in prose.
+  if (task.status === 'blocked') {
+    return { ...base, state: 'stalled', reason: 'blocked_without_cause' };
+  }
 
   // R-28 answer 2. `trigger_slug` is the task's own recurrence lineage (R-22) and
   // `goal_slug` implies the goal's standing `push` (R-8, R-11) — both are a
@@ -516,6 +627,18 @@ export function serializeTaskLiveness(liveness: TaskLiveness) {
           task_id: liveness.recovery.taskId,
           escalated: liveness.recovery.escalated,
           escalated_to: liveness.recovery.escalatedTo,
+        }
+      : null,
+    // R-12g, on the wire. `delivered` is the field a human scanning a stall
+    // report actually needs: false means the ask exists and nobody was told.
+    request: liveness.request
+      ? {
+          request_id: liveness.request.requestId,
+          kind: liveness.request.kind,
+          need: liveness.request.need,
+          responder_user_id: liveness.request.responderUserId,
+          delivered: liveness.request.delivered,
+          delivered_via: liveness.request.deliveredVia,
         }
       : null,
   };

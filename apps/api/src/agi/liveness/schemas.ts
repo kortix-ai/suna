@@ -21,6 +21,19 @@ export const AgiTaskLivenessSchema = z
         escalated_to: z.string().uuid().nullable(),
       })
       .nullable(),
+    /** R-12g / R-28 answer 5. Present whenever the task carries a pending human
+     *  request, in EVERY state — `delivered: false` is the one that means the
+     *  ask exists and nobody was told. */
+    request: z
+      .object({
+        request_id: z.string().uuid(),
+        kind: z.string(),
+        need: z.string(),
+        responder_user_id: z.string().uuid().nullable(),
+        delivered: z.boolean(),
+        delivered_via: z.string().nullable(),
+      })
+      .nullable(),
   })
   .openapi('AgiTaskLiveness');
 

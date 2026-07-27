@@ -14,6 +14,7 @@ import {
   serializeGoalLiveness,
   serializeTaskLiveness,
   stallFingerprint,
+  type PendingRequestRef,
 } from './wire';
 import { summarizeMetric, type GoalMetricSummary } from '../observations/wire';
 import type { AgiTaskRow } from '../tasks/wire';
@@ -72,8 +73,24 @@ function liveness(task: AgiTaskRow, extra: Partial<Parameters<typeof resolveTask
     claimSession: 'unknown',
     blockers: [],
     recovery: null,
+    request: null,
     ...extra,
   });
+}
+
+/** A pending human request (spec §4.3). `delivered` defaults to true — the
+ *  ordinary case is an ask that reached somebody; the undelivered one is the
+ *  failure and every test that wants it says so explicitly. */
+function request(overrides: Partial<PendingRequestRef> = {}): PendingRequestRef {
+  return {
+    requestId: '66666666-6666-4666-8666-666666666666',
+    kind: 'secret',
+    need: 'GOOGLE_SEARCH_CONSOLE_TOKEN',
+    responderUserId: USER_ID,
+    delivered: true,
+    deliveredVia: 'slack',
+    ...overrides,
+  };
 }
 
 describe('classifyClaimSession', () => {
@@ -216,6 +233,32 @@ describe('isRecoverableStall', () => {
   test('a task that is not stalled at all is never recovered', () => {
     expect(isRecoverableStall({ reason: null, hadClaim: true, hasRecovery: true })).toBe(false);
   });
+
+  test('R-12g: an undelivered ask is surfaced and NEVER continued, claim or no claim', () => {
+    // The fix for an ask that reached nobody is to deliver it. A continuation
+    // would add a row nobody was told about, and its escalation would quietly
+    // convert "we could not reach anyone" into "someone owns this" — the exact
+    // false-healthy answer §4.3 exists to prevent.
+    expect(
+      isRecoverableStall({ reason: 'request_undelivered', hadClaim: true, hasRecovery: false }),
+    ).toBe(false);
+    expect(
+      isRecoverableStall({ reason: 'request_undelivered', hadClaim: true, hasRecovery: true }),
+    ).toBe(false);
+  });
+
+  test('a block stated only in prose IS recoverable — it is work picked up and dropped', () => {
+    // The distinction from `request_undelivered`: there, an addressed ask
+    // already exists and a continuation would double-report it. Here nobody has
+    // been told anything, so R-32's one continuation and then escalation to a
+    // human is the right bound.
+    expect(
+      isRecoverableStall({ reason: 'blocked_without_cause', hadClaim: true, hasRecovery: false }),
+    ).toBe(true);
+    expect(
+      isRecoverableStall({ reason: 'blocked_without_cause', hadClaim: false, hasRecovery: false }),
+    ).toBe(false);
+  });
 });
 
 describe('resolveTaskLiveness — R-28 answers', () => {
@@ -332,6 +375,121 @@ describe('resolveTaskLiveness — R-28 answers', () => {
   });
 });
 
+// ─── R-28 answer 5 / R-12g: the ask that reached a human, and the one that
+// did not ────────────────────────────────────────────────────────────────────
+//
+// This block is the platinum.dev scenario, decided in a pure function. A 07:00
+// push discovers it needs a Search Console grant. What happens next is the whole
+// feature: if it delivered the ask to a named person the task is healthy and a
+// human is on it; if it only wrote the ask down, the task is stalled and says so.
+
+describe('resolveTaskLiveness — R-28 answer 5 (spec §4.3)', () => {
+  test('answer 5: a DELIVERED pending request is a live path', () => {
+    const result = liveness(row({ status: 'blocked' }), { request: request() });
+    expect(result.state).toBe('awaiting_response');
+    expect(result.reason).toBeNull();
+    expect(result.request?.requestId).toBe('66666666-6666-4666-8666-666666666666');
+  });
+
+  test('R-12g: a request that reached NOBODY is a stall, not a live path', () => {
+    const result = liveness(row({ status: 'blocked' }), {
+      request: request({ delivered: false, deliveredVia: null, responderUserId: null }),
+    });
+    expect(result.state).toBe('stalled');
+    expect(result.reason).toBe('request_undelivered');
+    // The ask still rides along: a stall report has to say WHAT was needed.
+    expect(result.request?.need).toBe('GOOGLE_SEARCH_CONSOLE_TOKEN');
+  });
+
+  test('THE regression: a goal-linked task blocked on a human no longer hides behind its push', () => {
+    // The platinum.dev scenario, all three outcomes on one row. Before §4.3 all
+    // three read `awaiting_trigger` — perfectly healthy — because the goal's
+    // standing `push` does keep firing. It just cannot advance: every fire
+    // re-derives the same block and stops at the same wall.
+    const goalTask = row({ status: 'blocked', goalSlug: 'seo' });
+    // Nobody told: the ask lives in a session log.
+    expect(liveness(goalTask).reason).toBe('blocked_without_cause');
+    // Told, but the ask reached nothing.
+    expect(liveness(goalTask, { request: request({ delivered: false }) }).reason).toBe(
+      'request_undelivered',
+    );
+    // Told, and it landed on a named person.
+    expect(liveness(goalTask, { request: request() }).state).toBe('awaiting_response');
+  });
+
+  test('R-31: `blocked` with no edge and no ask is a block stated only in prose', () => {
+    const result = liveness(row({ status: 'blocked', blockedBy: [] }));
+    expect(result.state).toBe('stalled');
+    expect(result.reason).toBe('blocked_without_cause');
+  });
+
+  test('a stated dependency is never mistaken for a prose block', () => {
+    // R-16's whole job: `blocked_by` is how a task says what it waits on, and a
+    // task that used it is healthy.
+    expect(
+      liveness(row({ status: 'blocked', blockedBy: [BLOCKER_ID] }), {
+        blockers: [blocker(BLOCKER_ID, 'todo')],
+      }).state,
+    ).toBe('blocked');
+  });
+
+  test('only the `blocked` STATUS triggers it — a todo task under a goal is fine', () => {
+    expect(liveness(row({ status: 'todo', goalSlug: 'seo' })).state).toBe('awaiting_trigger');
+    expect(liveness(row({ status: 'doing', goalSlug: 'seo' })).state).toBe('awaiting_trigger');
+  });
+
+  test('a human assignee on a blocked task is still a live path', () => {
+    expect(
+      liveness(row({ status: 'blocked', agent: null, assigneeUserId: USER_ID })).state,
+    ).toBe('human');
+  });
+
+  test('a live claim still wins: a session working it is answer 1, ask or no ask', () => {
+    expect(liveness(liveClaim(), { claimSession: 'active', request: request() }).state).toBe(
+      'working',
+    );
+  });
+
+  test('a healthy blocker outranks the ask, so the report keeps the more specific reason', () => {
+    const result = liveness(row({ blockedBy: [BLOCKER_ID] }), {
+      blockers: [blocker(BLOCKER_ID, 'doing')],
+      request: request(),
+    });
+    expect(result.state).toBe('blocked');
+    expect(result.request).not.toBeNull();
+  });
+
+  test('a delivered ask rescues a dead-blocker stall without pruning the edges', () => {
+    const result = liveness(row({ blockedBy: [BLOCKER_ID] }), {
+      blockers: [blocker(BLOCKER_ID, 'cancelled')],
+      request: request(),
+    });
+    expect(result.state).toBe('awaiting_response');
+    expect(result.reason).toBeNull();
+    expect(result.unresolvedBlockers).toEqual([BLOCKER_ID]);
+  });
+
+  test('an UNdelivered ask does not rescue a dead-blocker stall', () => {
+    const result = liveness(row({ blockedBy: [BLOCKER_ID] }), {
+      blockers: [blocker(BLOCKER_ID, 'cancelled')],
+      request: request({ delivered: false }),
+    });
+    expect(result.state).toBe('stalled');
+    expect(result.reason).toBe('dead_blocker');
+  });
+
+  test('a human assignee is still answer 4 — someone already owns the work', () => {
+    const result = liveness(row({ agent: null, assigneeUserId: USER_ID }), { request: request() });
+    expect(result.state).toBe('human');
+    expect(result.request).not.toBeNull();
+  });
+
+  test('a task with no ask at all is judged exactly as before', () => {
+    expect(liveness(row({ status: 'todo' })).reason).toBe('no_live_path');
+    expect(liveness(row({ status: 'todo' })).request).toBeNull();
+  });
+});
+
 describe('continuation copy', () => {
   test('the title is derived so a repeat sweep produces a byte-identical row', () => {
     expect(continuationTitle('Ship it')).toBe(`${CONTINUATION_TITLE_PREFIX} Ship it`);
@@ -379,6 +537,22 @@ describe('serializeTaskLiveness', () => {
       claim_session_state: null,
       unresolved_blockers: [],
       recovery: null,
+      request: null,
+    });
+  });
+
+  test('R-12g: the pending request rides along on the wire, delivery included', () => {
+    const serialized = serializeTaskLiveness(
+      liveness(row({ status: 'todo', goalSlug: 'seo' }), { request: request() }),
+    );
+    expect(serialized.state).toBe('awaiting_response');
+    expect(serialized.request).toEqual({
+      request_id: '66666666-6666-4666-8666-666666666666',
+      kind: 'secret',
+      need: 'GOOGLE_SEARCH_CONSOLE_TOKEN',
+      responder_user_id: USER_ID,
+      delivered: true,
+      delivered_via: 'slack',
     });
   });
 

@@ -36,6 +36,7 @@ export {
   serializeTaskLiveness,
   stallFingerprint,
   type LivenessState,
+  type PendingRequestRef,
   type StallReason,
   type TaskLiveness,
 } from './wire';

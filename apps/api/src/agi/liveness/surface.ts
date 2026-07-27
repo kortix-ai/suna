@@ -27,6 +27,8 @@ import {
   loadTasksByIds,
   type AgiTaskWithClaimFacts,
 } from './store';
+import { loadPendingRequestsByTask } from '../requests/store';
+import { isLiveRequest, type AgiRequestRow } from '../requests/wire';
 import {
   classifyClaimProgress,
   classifyClaimSession,
@@ -39,6 +41,7 @@ import {
   stallFingerprint,
   type ClaimSessionState,
   type GoalLiveness,
+  type PendingRequestRef,
   type SerializedTaskLiveness,
   type TaskLiveness,
 } from './wire';
@@ -68,10 +71,11 @@ export interface WorkspaceLiveness {
 /**
  * Every open task with its R-28 verdict.
  *
- * Four queries total regardless of task count: the open set, the sessions those
- * tasks' claims name, the rows their `blocked_by` edges point at, and the
- * workspace's recovery rows keyed by fingerprint. No per-task round trip, so the
- * surface stays cheap enough to sit on a read route.
+ * Five queries total regardless of task count: the open set, the sessions those
+ * tasks' claims name, the rows their `blocked_by` edges point at, the
+ * workspace's recovery rows keyed by fingerprint, and the pending human requests
+ * attached to those tasks. No per-task round trip, so the surface stays cheap
+ * enough to sit on a read route.
  */
 export async function resolveWorkspaceLiveness(input: {
   workspaceId: string;
@@ -82,10 +86,16 @@ export async function resolveWorkspaceLiveness(input: {
   const limit = input.limit ?? LIVENESS_TASK_CAP;
   const tasks = await loadOpenTasks(input.workspaceId, limit);
 
-  const [sessionStatuses, blockerRows, recoveryByFingerprint] = await Promise.all([
+  const [sessionStatuses, blockerRows, recoveryByFingerprint, requestsByTask] = await Promise.all([
     loadClaimSessionStatuses(uniqueClaimSessionIds(tasks)),
     loadTasksByIds(input.workspaceId, uniqueBlockerIds(tasks)),
     loadRecoveryTasks(input.workspaceId),
+    // Spec §4.3. The join is what turns "a human was asked" from prose in a
+    // session log into a fact this read model can act on.
+    loadPendingRequestsByTask(
+      input.workspaceId,
+      tasks.map((task) => task.taskId),
+    ),
   ]);
 
   const blockersById = new Map(blockerRows.map((row) => [row.taskId, row]));
@@ -105,6 +115,7 @@ export async function resolveWorkspaceLiveness(input: {
           .map((id) => blockersById.get(id))
           .filter((row): row is AgiTaskRow => row !== undefined),
         recovery: recoveryFor(task, recoveryByFingerprint),
+        request: pendingRequestRef(requestsByTask.get(task.taskId)),
       }),
     }));
 
@@ -210,6 +221,10 @@ async function sweepOne(input: {
             agent: null,
           }
         : null,
+      // Carried from the first pass rather than re-read: releasing a dead lease
+      // cannot create, deliver, or answer a human request, so re-querying would
+      // be a round trip that can only return what we already have.
+      request: input.view.liveness.request,
     });
   }
 
@@ -381,6 +396,27 @@ function claimStateFor(task: AgiTaskRow, statuses: Map<string, string>): ClaimSe
  * task's status has since changed, the stalled state is a different one and its
  * old recovery row is correctly not attached to it.
  */
+/**
+ * Row → the minimal shape liveness reasons over.
+ *
+ * `delivered` is computed by `isLiveRequest` in requests/wire.ts and nowhere
+ * else, so R-12g's line is drawn in exactly one place. The row arriving here is
+ * already known to be pending (the store filters on it), but the predicate
+ * re-checks anyway — a caller that widened the query later must not silently
+ * turn a satisfied ask back into a live path.
+ */
+function pendingRequestRef(row: AgiRequestRow | undefined): PendingRequestRef | null {
+  if (!row) return null;
+  return {
+    requestId: row.requestId,
+    kind: row.kind,
+    need: row.need,
+    responderUserId: row.responderUserId,
+    delivered: isLiveRequest(row),
+    deliveredVia: row.deliveredVia,
+  };
+}
+
 function recoveryFor(task: AgiTaskRow, byFingerprint: Map<string, AgiTaskRow>): AgiTaskRow | null {
   for (const reason of [
     'claiming_session_terminal',
