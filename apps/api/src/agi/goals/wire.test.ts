@@ -96,13 +96,25 @@ describe('openTaskCount', () => {
   });
 });
 
+/**
+ * Every VALID goal in these fixtures carries a `done_when` of at least
+ * {@link GOAL_DONE_WHEN_MIN_LENGTH} characters on purpose.
+ *
+ * `goalIssues` is one channel carrying both errors and advisories, and a
+ * `done_when` under that threshold emits the "too thin to evaluate" warning. A
+ * placeholder like "Done." therefore adds an issue of its own and shifts the
+ * ordinals these tests exist to pin — which is what happened when the advisory
+ * landed: the fixtures started asserting against a list one longer than the one
+ * defect each test is about. Keeping the control goals warning-free means a
+ * length change here can only ever be a real regression in error indexing.
+ */
 describe('goalIssues — the silent-goal fix', () => {
   test('a goal rejected for a missing done_when is reported at its own index', () => {
     const issues = issuesFor(`kortix_version: 2
 
 goals:
   - slug: fine
-    done_when: Done.
+    done_when: The dashboard shows zero open incidents.
   - slug: broken
     title: No criteria
 `);
@@ -119,9 +131,9 @@ goals:
 
 goals:
   - slug: fine
-    done_when: Done.
+    done_when: The dashboard shows zero open incidents.
   - title: nameless
-    done_when: Done.
+    done_when: The dashboard shows zero open incidents.
 `);
 
     expect(issues).toEqual([
@@ -139,7 +151,7 @@ goals:
 
 goals:
   - slug: fine
-    done_when: Done.
+    done_when: The dashboard shows zero open incidents.
   - just-a-string
 `);
 
@@ -165,9 +177,9 @@ goals:
 
 goals:
   - slug: dupe
-    done_when: Done.
+    done_when: The dashboard shows zero open incidents.
   - slug: dupe
-    done_when: Also done.
+    done_when: A second, equally complete statement of doneness.
 `);
 
     expect(issues).toHaveLength(1);
@@ -209,7 +221,7 @@ goals:
   - slug: broken
     title: No criteria
   - slug: fine
-    done_when: Done.
+    done_when: The dashboard shows zero open incidents.
 `);
     const loaded = extractGoals(manifest);
 

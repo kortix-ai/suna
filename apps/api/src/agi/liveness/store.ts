@@ -18,7 +18,36 @@ import { STALL_FINGERPRINT_PREFIX } from './wire';
 import { accountMembers, agiTasks, projectSessions, projects } from '@kortix/db';
 import { and, desc, eq, getTableColumns, gt, inArray, like, sql } from 'drizzle-orm';
 
-const OPEN = [...OPEN_TASK_STATUSES];
+/**
+ * Built on first use, not at import time — the same load-order hazard documented
+ * at length on `once` in ../tasks/store.ts, and the second half of it.
+ *
+ * This module sits on the same runtime import cycle (tasks/wire -> serializers
+ * -> sessions -> liveness -> session-outcome -> tasks/store, and liveness/store
+ * imports tasks/wire directly). Entering the ring at wire.ts runs this module
+ * body while wire.ts is still evaluating, so `OPEN_TASK_STATUSES` is in the
+ * temporal dead zone and a module-scope spread throws
+ * "Cannot access 'OPEN_TASK_STATUSES' before initialization".
+ *
+ * This site stayed hidden until tasks/store.ts was fixed, because that module
+ * threw first and masked it — `bun test src/agi/` reported ten unhandled errors
+ * both before and after, only the identity of the missing binding changed. That
+ * is why the helper is duplicated here rather than imported: importing it from
+ * ../tasks/store would add a NEW edge into the very cycle being worked around.
+ */
+function once<T>(build: () => T): () => T {
+  let value: T | undefined;
+  let built = false;
+  return () => {
+    if (!built) {
+      value = build();
+      built = true;
+    }
+    return value as T;
+  };
+}
+
+const openStatuses = once(() => [...OPEN_TASK_STATUSES]);
 
 /**
  * A task row plus the one fact that CANNOT be recomputed in JavaScript.
@@ -120,7 +149,7 @@ export async function loadTasksClaimedBySession(input: {
       and(
         eq(agiTasks.workspaceId, input.workspaceId),
         eq(agiTasks.claimSessionId, input.sessionId),
-        inArray(agiTasks.status, OPEN),
+        inArray(agiTasks.status, openStatuses()),
       ),
     );
 }
@@ -176,7 +205,7 @@ export async function loadOpenTasks(
   return db
     .select({ ...getTableColumns(agiTasks), ...WRITTEN_SINCE_CLAIM })
     .from(agiTasks)
-    .where(and(eq(agiTasks.workspaceId, workspaceId), inArray(agiTasks.status, OPEN)))
+    .where(and(eq(agiTasks.workspaceId, workspaceId), inArray(agiTasks.status, openStatuses())))
     .orderBy(desc(agiTasks.createdAt), desc(agiTasks.taskId))
     .limit(limit);
 }
