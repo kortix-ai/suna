@@ -213,7 +213,7 @@ A project-level switch stops every trigger in the project at once, independent o
 
 ## Limits and reliability
 
-- The scheduler polls every 60 seconds. Cron precision is best-effort to the minute, even though the expression has a seconds field.
+- The scheduler polls roughly every second (default 1,000 ms; configurable via `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`). Cron precision is best-effort to the second, even though the expression has a seconds field.
 - Each project allows 3 triggered sessions provisioning at once, by default. The account's plan-tier active-session cap can also apply. A fire past either limit returns `queued` (`202`) instead of failing, and runs once a slot frees up.
 - A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
 - A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry. A webhook fire is keyed on the delivery ID header, or a hash of the body and signature when the sender sends no ID.
