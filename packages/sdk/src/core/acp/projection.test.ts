@@ -453,4 +453,42 @@ describe('ACP to Kortix session projection', () => {
     });
     expect(next).toBe(state);
   });
+
+  test('a newer assistant message terminalizes an unresolved tool from the previous message', () => {
+    let state = createAcpProjection('ses_1');
+    state = update(state, 'agent_thought_chunk', {
+      messageId: 'msg_assistant_1',
+      content: { type: 'text', text: 'Checking the files.' },
+    });
+    state = update(state, 'tool_call', {
+      toolCallId: 'call_stale',
+      title: 'bash',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { command: 'test -f deck.pptx' },
+    });
+    state = update(state, 'agent_message_chunk', {
+      messageId: 'msg_assistant_2',
+      content: { type: 'text', text: 'The deck is complete.' },
+    });
+
+    const previousAssistant = state.messages[0];
+    expect(previousAssistant?.info.role).toBe('assistant');
+    if (previousAssistant?.info.role !== 'assistant') {
+      throw new Error('Expected the first projected message to be an assistant message');
+    }
+    expect(previousAssistant.info.time.completed).toEqual(expect.any(Number));
+    expect(state.messages[0]?.parts).toContainEqual(
+      expect.objectContaining({
+        type: 'tool',
+        callID: 'call_stale',
+        state: expect.objectContaining({
+          status: 'completed',
+          output: '',
+          time: expect.objectContaining({ end: expect.any(Number) }),
+        }),
+      }),
+    );
+    expect(state.messages[1]?.info.id).toBe('msg_assistant_2');
+  });
 });

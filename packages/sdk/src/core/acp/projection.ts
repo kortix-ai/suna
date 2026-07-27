@@ -153,6 +153,45 @@ function createAssistantMessage(
   return { info, parts: [] };
 }
 
+function completeAssistantMessage(
+  message: AcpMessageWithParts,
+  completed: number,
+): AcpMessageWithParts {
+  if (message.info.role !== 'assistant' || message.info.time.completed) return message;
+  const parts = message.parts.map((part) => {
+    if (
+      part.type !== 'tool' ||
+      (part.state.status !== 'pending' && part.state.status !== 'running')
+    ) {
+      return part;
+    }
+    const state = part.state;
+    const start = state.status === 'running' ? state.time.start : completed;
+    return {
+      ...part,
+      state: {
+        status: 'completed',
+        input: state.input,
+        output: '',
+        title:
+          state.status === 'running' && state.title
+            ? state.title
+            : toolInfo(part.tool).label,
+        metadata: state.status === 'running' ? (state.metadata ?? {}) : {},
+        time: { start, end: completed },
+      },
+    } satisfies ToolPart;
+  });
+  return {
+    ...message,
+    info: {
+      ...message.info,
+      time: { ...message.info.time, completed },
+    },
+    parts,
+  };
+}
+
 function withAssistant(
   state: AcpProjection,
   messageId: string | null,
@@ -183,15 +222,7 @@ function withAssistant(
 
   const completed = Date.now();
   const messages = state.messages.map((message) =>
-    message.info.role === 'assistant' && !message.info.time.completed
-      ? {
-          ...message,
-          info: {
-            ...message.info,
-            time: { ...message.info.time, completed },
-          },
-        }
-      : message,
+    completeAssistantMessage(message, completed),
   );
   const created = createAssistantMessage({ ...state, messages }, messageId);
   return {

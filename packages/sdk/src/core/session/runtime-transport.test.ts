@@ -46,3 +46,15 @@ test('ACP transport disables OpenCode REST streaming, listing, sync, and send', 
     sendWith: 'acp',
   });
 });
+
+test('an explicit ACP override replaces a server-selected REST transport', () => {
+  expect(resolveSessionRuntimeTransport('rest', 'acp')).toBe('acp');
+  expect(createSessionRuntimePolicy('rest', 'acp')).toEqual({
+    transport: 'acp',
+    useAcp: true,
+    streamOpenCodeEvents: false,
+    listOpenCodeSessions: false,
+    syncOpenCodeMessages: false,
+    sendWith: 'acp',
+  });
+});

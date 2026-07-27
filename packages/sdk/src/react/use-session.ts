@@ -29,7 +29,10 @@ import {
   reconcileCommittedSessionRewind,
   type SessionRewindState,
 } from '../core/session/rewind';
-import { createSessionRuntimePolicy } from '../core/session/runtime-transport';
+import {
+  createSessionRuntimePolicy,
+  type SessionRuntimeTransport,
+} from '../core/session/runtime-transport';
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
@@ -323,6 +326,12 @@ export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
+   * Override the server-selected AI transport for this hook instance.
+   * Hosts can use this for page-scoped diagnostics without changing project
+   * configuration. Omit it to use `/start.runtime_transport`.
+   */
+  runtimeTransport?: SessionRuntimeTransport;
+  /**
    * Replay a stashed first message (prompt + model + agent from the "new session"
    * screen) once the runtime is ready and the thread is empty. Default true. Hosts
    * with their own first-message hand-off (e.g. apps/web) set this false.
@@ -390,6 +399,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled = true,
     chatEngine = true,
     initialOpenCodeSessionId = null,
+    runtimeTransport: runtimeTransportOverride,
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
@@ -414,7 +424,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
-  const runtimePolicy = createSessionRuntimePolicy(startData?.runtime_transport);
+  const runtimePolicy = createSessionRuntimePolicy(
+    startData?.runtime_transport,
+    runtimeTransportOverride,
+  );
   const runtimeTransport = runtimePolicy.transport;
   const usesAcp = runtimePolicy.useAcp;
 

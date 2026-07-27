@@ -467,6 +467,211 @@ describe('ACP session controller', () => {
     ]);
   });
 
+  test('settles a final response after a stale running tool and dispatches the queued prompt', async () => {
+    const h = harness();
+    let promptCount = 0;
+    h.client.prompt = async (sessionId, prompt) => {
+      h.calls.push({ method: 'prompt', args: [sessionId, prompt] });
+      promptCount += 1;
+      if (promptCount === 1) {
+        h.emit({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId,
+            update: {
+              sessionUpdate: 'agent_thought_chunk',
+              messageId: 'msg_assistant_tool',
+              content: { type: 'text', text: 'Validating the deck.' },
+            },
+          },
+        });
+        h.emit({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId,
+            update: {
+              sessionUpdate: 'tool_call',
+              toolCallId: 'call_stale',
+              title: 'bash',
+              kind: 'execute',
+              status: 'in_progress',
+              rawInput: { command: 'validate deck' },
+            },
+          },
+        });
+        h.emit({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId,
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'msg_assistant_final',
+              content: { type: 'text', text: 'The deck is complete.' },
+            },
+          },
+        });
+      }
+      return { stopReason: 'end_turn' };
+    };
+    const controller = createAcpSessionController({
+      sessionId: 'ses_1',
+      client: h.client,
+    });
+    await controller.connect();
+
+    const first = controller.send([{ type: 'text', text: 'create deck' }]);
+    const queued = controller.send([{ type: 'text', text: 'export pptx' }]);
+    await Promise.all([first, queued]);
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+    expect(h.calls.filter((call) => call.method === 'prompt').map((call) => call.args[1])).toEqual([
+      [{ type: 'text', text: 'create deck' }],
+      [{ type: 'text', text: 'export pptx' }],
+    ]);
+    expect(controller.getSnapshot()).toMatchObject({
+      sending: false,
+      projection: { status: { type: 'idle' } },
+    });
+    expect(
+      controller
+        .getSnapshot()
+        .projection.messages.flatMap((message) => message.parts)
+        .find((part) => part.type === 'tool' && part.callID === 'call_stale'),
+    ).toMatchObject({
+      state: { status: 'completed' },
+    });
+  });
+
+  test('keeps a genuine active tool busy until its terminal update arrives', async () => {
+    const h = harness();
+    h.client.prompt = async (sessionId, prompt) => {
+      h.calls.push({ method: 'prompt', args: [sessionId, prompt] });
+      h.emit({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_thought_chunk',
+            messageId: 'msg_assistant_active',
+            content: { type: 'text', text: 'Running validation.' },
+          },
+        },
+      });
+      h.emit({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'call_active',
+            title: 'bash',
+            kind: 'execute',
+            status: 'in_progress',
+            rawInput: { command: 'validate deck' },
+          },
+        },
+      });
+      return { stopReason: 'end_turn' };
+    };
+    const controller = createAcpSessionController({
+      sessionId: 'ses_1',
+      client: h.client,
+    });
+    await controller.connect();
+
+    await controller.send([{ type: 'text', text: 'create deck' }]);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+
+    expect(controller.getSnapshot()).toMatchObject({
+      sending: true,
+      projection: { status: { type: 'busy' } },
+    });
+
+    h.emit({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses_1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call_active',
+          status: 'completed',
+          rawOutput: { output: 'valid' },
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 650));
+
+    expect(controller.getSnapshot()).toMatchObject({
+      sending: false,
+      projection: { status: { type: 'idle' } },
+    });
+  });
+
+  test('loads a completed transcript with an older unresolved tool as idle', async () => {
+    const h = harness();
+    h.client.loadSession = async (input) => {
+      h.calls.push({ method: 'loadSession', args: [input] });
+      h.emit({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: input.sessionId,
+          update: {
+            sessionUpdate: 'agent_thought_chunk',
+            messageId: 'msg_assistant_tool',
+            content: { type: 'text', text: 'Validating.' },
+          },
+        },
+      });
+      h.emit({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: input.sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'call_stale',
+            title: 'bash',
+            kind: 'execute',
+            status: 'in_progress',
+            rawInput: { command: 'validate deck' },
+          },
+        },
+      });
+      h.emit({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: input.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'msg_assistant_final',
+            content: { type: 'text', text: 'Done.' },
+          },
+        },
+      });
+      return {};
+    };
+    const controller = createAcpSessionController({
+      sessionId: 'ses_1',
+      client: h.client,
+    });
+
+    await controller.connect();
+
+    expect(controller.getSnapshot()).toMatchObject({
+      ready: true,
+      sending: false,
+      projection: { status: { type: 'idle' } },
+    });
+  });
+
   test('answers ACP permission requests with the matching option id', async () => {
     const h = harness();
     const controller = createAcpSessionController({

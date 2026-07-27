@@ -2,7 +2,9 @@ export type SessionRuntimeTransport = 'acp' | 'rest';
 
 export function resolveSessionRuntimeTransport(
   value: SessionRuntimeTransport | undefined,
+  override?: SessionRuntimeTransport,
 ): SessionRuntimeTransport {
+  if (override) return override;
   return value === 'acp' ? 'acp' : 'rest';
 }
 
@@ -17,8 +19,9 @@ export interface SessionRuntimePolicy {
 
 export function createSessionRuntimePolicy(
   value: SessionRuntimeTransport | undefined,
+  override?: SessionRuntimeTransport,
 ): SessionRuntimePolicy {
-  const transport = resolveSessionRuntimeTransport(value);
+  const transport = resolveSessionRuntimeTransport(value, override);
   const useAcp = transport === 'acp';
   return {
     transport,
