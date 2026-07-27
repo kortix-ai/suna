@@ -69,6 +69,30 @@ describe('api-router worker', () => {
     expect(productionVars).not.toContain('usw2');
   });
 
+  test('removes stale ECS commit overrides and verifies both shadow commits', () => {
+    const ecsDeploy = readFileSync(
+      new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
+      'utf8',
+    );
+    const shadowWorkflow = readFileSync(
+      new URL(
+        '../../../../.github/workflows/deploy-prod-us-east-2-shadow.yml',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+
+    expect(ecsDeploy).toContain(
+      'select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")',
+    );
+    expect(shadowWorkflow).toContain(
+      'api_commit="$(jq -r \'.commit // empty\'',
+    );
+    expect(shadowWorkflow).toContain(
+      '[ "$api_commit" != "$SOURCE_SHA" ] || [ "$gateway_commit" != "$SOURCE_SHA" ]',
+    );
+  });
+
   test('redirects plaintext API requests to HTTPS before proxying', async () => {
     let fetched = false;
     globalThis.fetch = async () => {

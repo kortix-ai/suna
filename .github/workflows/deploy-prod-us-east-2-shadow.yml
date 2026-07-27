@@ -385,11 +385,13 @@ jobs:
             gateway_live="$(curl -fsS --max-time 10 "$GATEWAY_URL/health/live" 2>/dev/null || true)"
             gateway_health="$(curl -fsS --max-time 10 "$GATEWAY_URL/health" 2>/dev/null || true)"
             api_version="$(jq -r '.version // empty' <<<"$api_body" 2>/dev/null || true)"
+            api_commit="$(jq -r '.commit // empty' <<<"$api_body" 2>/dev/null || true)"
             gateway_version="$(jq -r '.version // empty' <<<"$gateway_live" 2>/dev/null || true)"
             gateway_commit="$(jq -r '.commit // empty' <<<"$gateway_live" 2>/dev/null || true)"
             api_dependency="$(jq -r '.checks.api.status // empty' <<<"$gateway_health" 2>/dev/null || true)"
             commit_ok=1
-            if [ -n "${SOURCE_SHA:-}" ] && [ "$gateway_commit" != "$SOURCE_SHA" ]; then
+            if [ -n "${SOURCE_SHA:-}" ] \
+              && { [ "$api_commit" != "$SOURCE_SHA" ] || [ "$gateway_commit" != "$SOURCE_SHA" ]; }; then
               commit_ok=0
             fi
 
@@ -397,11 +399,11 @@ jobs:
               && [ "$gateway_version" = "$VERSION" ] \
               && [ "$api_dependency" = "up" ] \
               && [ "$commit_ok" = "1" ]; then
-              echo "US shadow verified: API=$api_version gateway=$gateway_version commit=${gateway_commit:-unavailable} dependency=$api_dependency"
+              echo "US shadow verified: API=$api_version API commit=${api_commit:-unavailable} gateway=$gateway_version gateway commit=${gateway_commit:-unavailable} dependency=$api_dependency"
               exit 0
             fi
 
-            echo "Shadow verification $attempt/40: API=${api_version:-unreachable} gateway=${gateway_version:-unreachable} commit=${gateway_commit:-unavailable} dependency=${api_dependency:-unavailable}"
+            echo "Shadow verification $attempt/40: API=${api_version:-unreachable} API commit=${api_commit:-unavailable} gateway=${gateway_version:-unreachable} gateway commit=${gateway_commit:-unavailable} dependency=${api_dependency:-unavailable}"
             sleep 15
           done
 
