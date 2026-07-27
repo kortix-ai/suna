@@ -50,6 +50,7 @@ function rig(
     handlers: null as StreamHandlers | null,
     streamOpened: 0,
     streamClosed: 0,
+    closedLines: 0,
     history: overrides.history ?? [],
   };
   let onData: ((chunk: Buffer | string) => void) | null = null;
@@ -58,6 +59,13 @@ function rig(
   const renderer: Renderer = {
     append: (text) => state.appended.push(stripAnsi(text)),
     commit: (lines) => state.committed.push(...lines.map(stripAnsi)),
+    // Counted, not simulated. This fake's setTail always records, which is
+    // precisely why it could not see the mid-line composer bug — that one is
+    // pinned against the REAL renderer in chat-render.test.ts. Here we only
+    // assert the tui CALLS closeLine when a turn settles.
+    closeLine: () => {
+      state.closedLines += 1;
+    },
     setTail: (lines) => {
       state.tail = lines.map(stripAnsi);
     },

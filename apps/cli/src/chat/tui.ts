@@ -284,10 +284,18 @@ export async function runChatTui(opts: ChatTuiOptions): Promise<number> {
       // session wedged because the client walked away.
       void oc.abortSession(ocSessionId).catch(() => {});
       turnActive = false;
+      // A queued message was already echoed into scrollback, so dropping it
+      // silently leaves a transcript showing a message the agent never saw.
+      // Say so, and give it back to the composer rather than losing the typing.
+      const dropped = queued;
       queued = null;
       state = { ...state, tools: [], working: false, streamingText: false, activeTool: null };
       toolLines = [];
       renderer.commit([`  ${C.dim}interrupted${C.reset}`]);
+      if (dropped) {
+        renderer.commit([`  ${C.dim}queued message not sent — restored below${C.reset}`]);
+        composer.setText(dropped);
+      }
       redraw();
       return;
     }
@@ -391,6 +399,11 @@ export async function runChatTui(opts: ChatTuiOptions): Promise<number> {
     dispatch(event);
     if (event.type === 'session.idle') {
       turnActive = false;
+      // An assistant reply rarely ends in a newline, and `drawTail` refuses to
+      // draw while the cursor is mid-line — so without this the composer never
+      // reappears and typing shows nothing until the next commit. Reads as a
+      // hang; it is the first thing you hit after any normal reply.
+      renderer.closeLine();
       const next = queued;
       queued = null;
       if (next) void sendToAgent(next);

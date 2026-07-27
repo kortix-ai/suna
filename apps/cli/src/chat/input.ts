@@ -32,6 +32,9 @@ export interface Composer {
   text: () => string;
   cursor: () => number;
   clear: () => void;
+  /** Put text back in the composer — used when a queued message is dropped by
+   *  an interrupt, so the typing is handed back rather than lost. */
+  setText: (text: string) => void;
   /** Rendered composer lines for the tail, prompt included. */
   lines: (prompt: string) => string[];
   /** Visible column of the cursor, or null when it is not on the last line
@@ -286,6 +289,12 @@ export function createComposer(handlers: ComposerHandlers): Composer {
       if (buffer.length === 0) return;
       buffer = '';
       cursor = 0;
+      historyIndex = null;
+      handlers.onChange();
+    },
+    setText: (text) => {
+      buffer = text;
+      cursor = text.length;
       historyIndex = null;
       handlers.onChange();
     },

@@ -39,6 +39,16 @@ export interface Renderer {
   append: (text: string) => void;
   /** Whole lines into scrollback. Immutable once written. */
   commit: (lines: string[]) => void;
+  /** End a partially written line so the tail can be drawn again.
+   *
+   *  `drawTail` refuses to draw while the cursor sits mid-line — that is what
+   *  keeps streaming text on one line instead of one token per line. But an
+   *  assistant reply usually does NOT end in a newline, so when the turn
+   *  settles the cursor is mid-line and the composer is never drawn: typing
+   *  produces no visible feedback until something else forces a newline, which
+   *  reads as a hang. Call this when a turn ends. No-op when already at a line
+   *  start, so it cannot introduce a blank line. */
+  closeLine: () => void;
   /** Replace the live tail. `cursorCol` parks the cursor on the last line. */
   setTail: (lines: string[], cursorCol?: number) => void;
   /** Erase the tail and keep it erased (before handing the terminal to another
@@ -106,6 +116,14 @@ export function createRenderer(target: RenderTarget): Renderer {
       eraseTail();
       if (!atLineStart) target.write('\n');
       target.write(`${lines.join('\n')}\n`);
+      atLineStart = true;
+      drawTail();
+    },
+
+    closeLine: () => {
+      if (atLineStart) return;
+      eraseTail();
+      target.write('\n');
       atLineStart = true;
       drawTail();
     },

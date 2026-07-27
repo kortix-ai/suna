@@ -141,3 +141,45 @@ describe('cursor parking', () => {
     expect(t.since(mark)).toBe('\r\x1b[1A\x1b[0J');
   });
 });
+
+/**
+ * The composer must survive a reply that does not end in a newline.
+ *
+ * `drawTail` refuses to draw while the cursor sits mid-line — that is what
+ * keeps streamed tokens on one line. But an assistant reply rarely ends in a
+ * newline, so when the turn settles the cursor is mid-line and the composer is
+ * never drawn: typing produces NO visible feedback until something else forces
+ * a newline. On screen that is indistinguishable from a hang, and it is the
+ * first thing you hit after any normal reply.
+ *
+ * Neither existing test layer could see it — the tui tests use a fake renderer
+ * whose setTail always records, and the render tests only ever re-opened the
+ * line via commit. So this composes the REAL renderer the way a real turn does:
+ * mid-line append, then a tail draw.
+ */
+describe('a turn that ends mid-line still shows the composer', () => {
+  test('setTail after a newline-less append draws nothing until closeLine', () => {
+    const t = target();
+    const r = createRenderer(t.target);
+
+    r.append('Hello, that is done'); // no trailing newline — the normal case
+    const mark = t.writes.length;
+
+    r.setTail(['> ']);
+    expect(t.since(mark)).toBe(''); // refuses to draw over the partial line
+
+    r.closeLine();
+    expect(t.since(mark)).toContain('> '); // composer is now on screen
+  });
+
+  test('closeLine is a no-op at a line start, so it cannot add a blank line', () => {
+    const t = target();
+    const r = createRenderer(t.target);
+
+    r.commit(['done']); // leaves the cursor at a line start
+    const mark = t.writes.length;
+
+    r.closeLine();
+    expect(t.since(mark)).toBe('');
+  });
+});
