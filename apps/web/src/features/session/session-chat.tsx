@@ -52,6 +52,7 @@ import {
   shellActivityGroupLabel,
   writeActivityGroupLabel,
 } from '@/features/session/session-activity-groups';
+import { platformOwnedAgentNames } from '@/features/session/platform-agents';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -3554,6 +3555,9 @@ export function SessionChat({
   const projectConfig = useProjectConfig(projectId);
   const abortSession = useAbortRuntimeSession();
   const executeCommand = useExecuteRuntimeCommand();
+  // Memoized because SessionChatInput is memo-wrapped (see the stable-props
+  // block below) — a fresh array on every render would defeat it.
+  const platformAgentNames = useMemo(() => platformOwnedAgentNames(projectConfig), [projectConfig]);
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
@@ -5610,6 +5614,7 @@ export function SessionChat({
           selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
           onAgentChange={lockedAgentName ? undefined : handleAgentChange}
           agentSelectorLocked={!!lockedAgentName}
+          platformAgentNames={platformAgentNames}
           commands={chatCommands}
           onCommand={handleCommand}
           models={local.model.list}

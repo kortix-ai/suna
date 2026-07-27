@@ -2,7 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { KortixLogo } from '@/components/ui/kortix-logo';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -56,6 +58,7 @@ import {
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { platformAgentCopy, splitPlatformAgents } from './platform-agents';
 import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
@@ -100,16 +103,25 @@ export { type FlatModel, flattenModels } from './model-flatten';
 // Agent Selector
 // ============================================================================
 
+/** Stable identity so the default prop never re-triggers downstream memos. */
+const EMPTY_PLATFORM_AGENT_NAMES: readonly string[] = [];
+
 export function AgentSelector({
   agents,
   selectedAgent,
   onSelect,
   disabled = false,
+  platformAgentNames = EMPTY_PLATFORM_AGENT_NAMES,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
+  /** Names of the platform-owned agents in `agents` (see ./platform-agents).
+   *  Those render elevated above the workspace's own agents. Empty — the
+   *  default, and what every project without the `agi` flag produces — renders
+   *  the picker exactly as it did before platform agents existed. */
+  platformAgentNames?: readonly string[];
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -150,8 +162,22 @@ export function AgentSelector({
     );
   }, [primaryAgents, search]);
 
+  // The elevated block is carved out of the SAME filtered list the rows come
+  // from, so search still reaches it and `primaryAgents[0]` keeps identifying
+  // the implicitly-selected agent exactly as before.
+  const { platform: platformFiltered, workspace: workspaceFiltered } = useMemo(
+    () => splitPlatformAgents(filteredPrimary, platformAgentNames),
+    [filteredPrimary, platformAgentNames],
+  );
+  const hasPlatformAgents = platformFiltered.length > 0;
+
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name || 'Agent';
+  const currentIsPlatform = !!currentAgent && platformAgentNames.includes(currentAgent.name);
+  const displayName = currentAgent
+    ? currentIsPlatform
+      ? platformAgentCopy(currentAgent).title
+      : currentAgent.name
+    : 'Agent';
 
   return (
     // When locked we keep the trigger hoverable (no native `disabled`, which
@@ -175,6 +201,9 @@ export function AgentSelector({
                   'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
               )}
             >
+              {currentIsPlatform && (
+                <KortixLogo variant="icon" size={12} className="shrink-0" aria-hidden />
+              )}
               <span className="max-w-[100px] truncate">{displayName}</span>
               <ChevronDown
                 className={cn(
@@ -203,7 +232,14 @@ export function AgentSelector({
         </TooltipContent>
       </Tooltip>
 
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
+      <CommandPopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        // The elevated card carries a full, wrapped description; 300px would
+        // squeeze it into a wall of five lines.
+        className={hasPlatformAgents ? 'w-[344px]' : 'w-[300px]'}
+      >
         <CommandInput
           compact
           placeholder={tHardcodedUi.raw(
@@ -213,11 +249,66 @@ export function AgentSelector({
           onValueChange={setSearch}
         />
 
-        <CommandList className="max-h-[320px]">
-          {/* Primary agents */}
-          {filteredPrimary.length > 0 && (
-            <CommandGroup heading="Agents" forceMount>
-              {filteredPrimary.map((agent) => {
+        <CommandList className={hasPlatformAgents ? 'max-h-[380px]' : 'max-h-[320px]'}>
+          {/* Platform-owned agents — the control agents the product wants you
+              talking to. Rendered as cards above the workspace's own roster,
+              not as another row in it (R-37). */}
+          {hasPlatformAgents && (
+            <CommandGroup className="pb-0" forceMount>
+              {platformFiltered.map((agent) => {
+                const isSelected =
+                  selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
+                const copy = platformAgentCopy(agent);
+                return (
+                  <CommandItem
+                    key={agent.name}
+                    value={`agent-${agent.name}`}
+                    className={cn(
+                      // rounded-sm is concentric with the popover's rounded-lg
+                      // minus the group's 4px inset.
+                      'items-start gap-3 rounded-sm border px-3 py-3 transition-colors duration-150',
+                      isSelected ? 'bg-primary/[0.08]' : 'bg-primary/[0.05]',
+                    )}
+                    onSelect={() => {
+                      if (disabled) return;
+                      onSelect(agent.name);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="bg-kortix-base/20 flex size-8 shrink-0 items-center justify-center rounded-sm">
+                      <KortixLogo
+                        variant="icon"
+                        size={15}
+                        className="text-foreground"
+                        aria-hidden
+                      />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-foreground truncate text-sm leading-tight font-semibold">
+                          {copy.title}
+                        </span>
+                        <Badge variant="kortix" size="xs" className="shrink-0">
+                          Kortix
+                        </Badge>
+                      </div>
+                      {copy.description && (
+                        <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed text-pretty">
+                          {copy.description}
+                        </p>
+                      )}
+                    </div>
+                    {isSelected && <Check className="text-foreground mt-0.5 shrink-0" />}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          )}
+
+          {/* Workspace agents */}
+          {workspaceFiltered.length > 0 && (
+            <CommandGroup heading={hasPlatformAgents ? 'Workspace agents' : 'Agents'} forceMount>
+              {workspaceFiltered.map((agent) => {
                 const isSelected =
                   selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
                 return (
@@ -1030,6 +1121,9 @@ export interface SessionChatInputProps {
   onAgentChange?: (agentName: string | null | undefined) => void;
   /** Show the selected agent but prevent switching inside an immutable session. */
   agentSelectorLocked?: boolean;
+  /** Names of the platform-owned agents inside `agents` — see AgentSelector.
+   *  Must be referentially stable; this component is memo-wrapped. */
+  platformAgentNames?: readonly string[];
   commands?: Command[];
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
@@ -1135,6 +1229,7 @@ function SessionChatInputImpl({
   selectedAgent = null,
   onAgentChange,
   agentSelectorLocked = false,
+  platformAgentNames = EMPTY_PLATFORM_AGENT_NAMES,
   commands = [],
   onCommand,
   models = [],
@@ -2244,6 +2339,7 @@ function SessionChatInputImpl({
                   selectedAgent={selectedAgent}
                   onSelect={onAgentChange ?? (() => {})}
                   disabled={agentSelectorLocked}
+                  platformAgentNames={platformAgentNames}
                 />
               )}
               {(models.length > 0 || modelRequired) && onModelChange && (

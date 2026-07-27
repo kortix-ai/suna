@@ -1,7 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 
+import { platformOwnedAgentNames } from '@/features/session/platform-agents';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -98,6 +99,10 @@ export function ComposerChatInput({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
+  // `useRuntimeAgents` flattens the config roster into OpenCode `Agent`s, which
+  // have no room for `platform_owned` — so the marker rides alongside, read
+  // straight off the same project config.
+  const platformAgentNames = useMemo(() => platformOwnedAgentNames(projectConfig), [projectConfig]);
   // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
@@ -138,6 +143,7 @@ export function ComposerChatInput({
       selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}
+      platformAgentNames={platformAgentNames}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
