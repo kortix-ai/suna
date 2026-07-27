@@ -249,6 +249,19 @@ export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
   return schedulerHealth;
 }
 
+export function initialCatalogBackfillIncomplete(
+  health: Pick<
+    TriggerSchedulerHealth,
+    'catalogCycleCompletedAt' | 'discoveryCycleCompletedAt' | 'catalogPendingProjects'
+  >,
+): boolean {
+  return (
+    health.catalogCycleCompletedAt === null ||
+    health.discoveryCycleCompletedAt === null ||
+    (health.catalogPendingProjects ?? 1) > 0
+  );
+}
+
 // ─── Reliability: timeouts + stall detection ─────────────────────────────────
 // The 2026-06-21 fleet-wide cron outage: one trigger fire (continueSession
 // resuming a dead sandbox) hung forever inside a SEQUENTIAL sweep that awaited
@@ -1296,16 +1309,14 @@ export function startProjectTriggerScheduler(): void {
     if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
       lastConnectorSweepAt = Date.now();
       runProjectConnectorSweep()
-        .then((result) => {
-          const initialCatalogBackfillIncomplete =
-            schedulerHealth.catalogCycleCompletedAt === null ||
-            schedulerHealth.discoveryCycleCompletedAt === null ||
-            (schedulerHealth.catalogPendingProjects ?? 1) > 0;
-          if (initialCatalogBackfillIncomplete || result.errors > 0) {
+        .then(() => {
+          if (initialCatalogBackfillIncomplete(schedulerHealth)) {
             // On a new scheduler release, drain the bounded catalog batches
             // continuously instead of waiting two minutes between each batch.
             // Once both cursors complete a full cycle with no pending rows, the
-            // normal connector cadence resumes.
+            // normal connector cadence resumes. Individual project failures
+            // retry on that bounded cadence; a permanently inaccessible repo
+            // must not force an unbounded full-fleet reconciliation loop.
             lastConnectorSweepAt = 0;
           }
         })
