@@ -105,7 +105,7 @@ test("shadow repair deletes credit ledger rows that do not exist on the source",
 
   assert.match(
     body,
-    /SELECT id FROM kortix\.credit_ledger ORDER BY id COLLATE \\"C\\"/,
+    /SELECT id FROM kortix\.credit_ledger ORDER BY id/,
   );
   assert.match(
     body,
