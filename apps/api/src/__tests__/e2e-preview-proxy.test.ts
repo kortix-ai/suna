@@ -51,6 +51,8 @@ let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let mockResolvedPreviewPorts: number[] = [];
+let mockAcpTitleCaptureCalls: Array<Record<string, unknown>> = [];
+let mockDeferredTitleCaptureCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -294,6 +296,15 @@ mock.module('../projects/secrets', () => {
   };
 });
 
+mock.module('../projects/opencode-title-capture', () => ({
+  scheduleTitleCaptureAfterPrompt: (input: Record<string, unknown>) => {
+    mockDeferredTitleCaptureCalls.push(input);
+  },
+  captureTitleAfterRuntimeEvent: async (input: Record<string, unknown>) => {
+    mockAcpTitleCaptureCalls.push(input);
+  },
+}));
+
 // Override global fetch for proxy requests
 const originalFetch = globalThis.fetch;
 function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -344,6 +355,7 @@ const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
 const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 const { invalidateSandbox } = await import('../sandbox-proxy/backend');
+const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -381,6 +393,7 @@ function createProxyTestApp() {
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  __resetPromptDedupe();
   invalidateSandbox(TEST_SANDBOX_ID);
   invalidateSandbox('platinum-oc-http');
   invalidateSandbox('daytona-oc-http');
@@ -403,6 +416,8 @@ beforeEach(() => {
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
+  mockAcpTitleCaptureCalls = [];
+  mockDeferredTitleCaptureCalls = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -725,6 +740,133 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  test('captures ACP session_info_update titles before forwarding the SSE event', async () => {
+    const event =
+      'id: 7\n' +
+      'data: {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_123","update":{"sessionUpdate":"session_info_update","title":"Research Marko Kraemer"}}}\n\n';
+    mockFetchResponses = [
+      {
+        status: 200,
+        body: event,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ];
+    const app = createProxyTestApp();
+
+    const res = await app.request(
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`,
+      {
+        headers: {
+          Authorization: 'Bearer test',
+          Accept: 'text/event-stream',
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(event);
+    expect(mockAcpTitleCaptureCalls).toEqual([
+      {
+        sessionId: mockDbSandbox.sessionId,
+        projectId: TEST_PROJECT_ID,
+        opencodeSessionId: 'ses_123',
+        title: 'Research Marko Kraemer',
+      },
+    ]);
+  });
+
+  test('captures an OpenCode REST session.updated title before forwarding the SSE event', async () => {
+    const event =
+      'data: {"directory":"/workspace","payload":{"type":"session.updated","properties":{"id":"ses_123","title":"REST title"}}}\n\n';
+    mockFetchResponses = [
+      {
+        status: 200,
+        body: event,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ];
+    const app = createProxyTestApp();
+
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/global/event`, {
+      headers: {
+        Authorization: 'Bearer test',
+        Accept: 'text/event-stream',
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(event);
+    expect(mockAcpTitleCaptureCalls).toEqual([
+      {
+        sessionId: mockDbSandbox.sessionId,
+        projectId: TEST_PROJECT_ID,
+        opencodeSessionId: 'ses_123',
+        title: 'REST title',
+      },
+    ]);
+  });
+
+  test('schedules deferred title capture after an accepted ACP session prompt', async () => {
+    mockFetchResponses = [{ status: 202, body: '' }];
+    const app = createProxyTestApp();
+
+    const res = await app.request(
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'prompt-1',
+          method: 'session/prompt',
+          params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+        }),
+      },
+    );
+
+    expect(res.status).toBe(202);
+    expect(mockDeferredTitleCaptureCalls).toEqual([
+      {
+        sessionId: mockDbSandbox.sessionId,
+        projectId: TEST_PROJECT_ID,
+        externalId: TEST_SANDBOX_ID,
+        userId: TEST_USER_ID,
+      },
+    ]);
+  });
+
+  test('does not retry an ACP session prompt after an ambiguous upstream 502', async () => {
+    mockFetchResponses = [
+      { status: 502, body: 'bad gateway' },
+      { status: 202, body: '' },
+    ];
+    const app = createProxyTestApp();
+
+    const res = await app.request(
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'prompt-2',
+          method: 'session/prompt',
+          params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+        }),
+      },
+    );
+
+    expect(res.status).toBe(502);
+    expect(mockFetchCalls).toHaveLength(1);
+    expect(mockDeferredTitleCaptureCalls).toEqual([]);
   });
 
   test('allows prompt_async when requested agent matches the session-bound token agent', async () => {

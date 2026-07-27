@@ -38,6 +38,7 @@ mock.module('../../projects/lib/sandbox-env-sync', () => ({
 }));
 mock.module('../../projects/opencode-title-capture', () => ({
   scheduleTitleCaptureAfterPrompt: () => {},
+  captureTitleAfterRuntimeEvent: async () => {},
 }));
 mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,

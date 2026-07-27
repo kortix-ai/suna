@@ -19,7 +19,7 @@
  * and the `/start` poll for `(projectId, sessionId)`.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { getClient, RuntimeNotReadyError } from '../core/runtime/client';
@@ -67,6 +67,11 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { useSessionPicks } from './use-session-picks';
 import { useSessionSync } from './use-session-sync';
+import {
+  readAcpSessionTitle,
+  refreshSessionTitleQueryUntilResolved,
+  syncAcpSessionTitleQuery,
+} from './session-title-sync';
 import { useVisibleAgents } from './use-visible-agents';
 import {
   rejectQuestion as rejectQuestionApi,
@@ -393,6 +398,8 @@ const DISABLED_CHAT_ENGINE_SYNC = {
 };
 
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
+  const queryClient = useQueryClient();
+  const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
     waitMs = 15_000,
     replayStartStash = true,
@@ -488,6 +495,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     sessionId: rootSessionId,
     enabled: enabled && switched && usesAcp,
   });
+  const acpSessionTitle = readAcpSessionTitle(acpRuntime.projection.sessionInfo);
+  useEffect(() => {
+    if (!usesAcp || !acpSessionTitle) return;
+    syncAcpSessionTitleQuery(queryClient, projectId, sessionId, { title: acpSessionTitle });
+  }, [queryClient, projectId, sessionId, usesAcp, acpSessionTitle]);
+  useEffect(
+    () => () => {
+      titleRefreshAbortRef.current?.abort();
+      titleRefreshAbortRef.current = null;
+    },
+    [projectId, sessionId],
+  );
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
   // is off — `useSessionSync('')` fetches/polls nothing (its effects no-op on
@@ -618,6 +637,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     },
   ): Promise<void> => {
     if (!ocSessionId) throw new RuntimeNotReadyError();
+    titleRefreshAbortRef.current?.abort();
+    const titleRefreshAbort = new AbortController();
+    titleRefreshAbortRef.current = titleRefreshAbort;
+    void refreshSessionTitleQueryUntilResolved(queryClient, projectId, sessionId, {
+      signal: titleRefreshAbort.signal,
+    }).finally(() => {
+      if (titleRefreshAbortRef.current === titleRefreshAbort) {
+        titleRefreshAbortRef.current = null;
+      }
+    });
     const model = override?.model ?? picks.model;
     const agent = override?.agent ?? picks.agent;
     const variant = override?.variant;
