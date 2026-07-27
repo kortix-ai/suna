@@ -4,6 +4,11 @@
 CVE-2023-30533
 CVE-2024-22363
 
+# CVE-2026-14257 has no compatible fix for brace-expansion 1.x.
+# The remaining 1.x paths come from legacy build tools that require minimatch 3.
+# Keep this exception until those upstream tools remove the minimatch 3 paths.
+CVE-2026-14257
+
 # The sandbox runtime intentionally grants its isolated agent root access for
 # package installation and system-level development tasks.
 AVD-DS-0002
