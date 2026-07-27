@@ -516,19 +516,20 @@ flow(
     }
     const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
     let previousLimit: number | null | undefined;
+    const team = await ctx.fixtures.team();
 
     await ctx.step('set the run account concurrent-session override to 1', async () => {
       const r = await admin.post(
         '/v1/admin/api/accounts/:id/session-limit',
         { max_concurrent_sessions: 1 },
-        { params: { id: ctx.P.accountId } },
+        { params: { id: team.id } },
       );
       r.status(200);
       previousLimit = r.json<{ previous: number | null }>().previous;
     });
 
     try {
-      const project = await ctx.fixtures.project({ seed: true });
+      const project = await team.project({ seed: true });
       await ctx.step('first session at limit 1 → 201', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
@@ -560,7 +561,7 @@ flow(
           const r = await admin.post(
             '/v1/admin/api/accounts/:id/session-limit',
             { max_concurrent_sessions: previousLimit },
-            { params: { id: ctx.P.accountId } },
+            { params: { id: team.id } },
           );
           r.status(200);
         });
