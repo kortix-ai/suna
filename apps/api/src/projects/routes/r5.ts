@@ -21,6 +21,8 @@ import { eq } from 'drizzle-orm';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
+import { withPlatformAgents } from '../lib/platform-agents';
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import {
@@ -112,7 +114,15 @@ projectsApp.openapi(
     projectId,
     actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
   };
-  const config = await filterConfigResourcesForUser(rawConfig, denierCtx);
+  // Platform-owned agents (the AGI) are composed LAST, after per-resource
+  // scoping, because they are not the project's to scope: they carry no
+  // manifest entry and no `iam_resource_grants` row, so passing them through
+  // the filter above would leave them at the mercy of a grant the workspace
+  // controls. Nothing else in this bundle sees the composed list — the denier
+  // below and every grant-validation path keep reading `rawConfig`. R-34/R-35.
+  const config = withPlatformAgents(await filterConfigResourcesForUser(rawConfig, denierCtx), {
+    agiEnabled: resolveExperimentalFeature(loaded.row.metadata, 'agi'),
+  });
   // …and hide the raw FILES of those resources from the file list (visibility
   // isolation). Reuses the config already loaded — no extra git round-trip.
   const denier = await denierFromConfig(rawConfig, denierCtx);

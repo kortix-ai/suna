@@ -31,8 +31,17 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
-    source: 'opencode' | 'kortix.yaml';
+    /** Where the entry came from. `'platform'` is NOT a discovery source — it
+     *  means the platform composed the entry itself, after (and independently
+     *  of) whatever the repo produced. See lib/platform-agents.ts. */
+    source: 'opencode' | 'kortix.yaml' | 'platform';
     enabled?: boolean;
+    /** True = platform-owned: versioned with Kortix, identical in every
+     *  workspace, not declared in (and not editable through) this project's
+     *  manifest or repo. Clients render these ELEVATED and must never offer to
+     *  edit/scope/delete them. Absent (or false) = an ordinary workspace agent.
+     *  This is the ONLY field a client may branch on — never the agent's name. */
+    platform_owned?: boolean;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`

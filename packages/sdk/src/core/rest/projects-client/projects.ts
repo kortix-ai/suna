@@ -80,8 +80,14 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
-    source?: 'opencode' | 'kortix.toml';
+    source?: 'opencode' | 'kortix.toml' | 'platform';
     enabled?: boolean;
+    /** True = platform-owned (today: the Kortix AGI). Versioned with the
+     *  platform, identical in every workspace, declared in no manifest and
+     *  editable through no route. Render these ELEVATED above the workspace's
+     *  own agents and never offer edit/scope/delete. Branch on THIS field —
+     *  never on the agent's name. */
+    platform_owned?: boolean;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
