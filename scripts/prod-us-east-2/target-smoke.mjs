@@ -42,6 +42,7 @@ if (!Number.isSafeInteger(authSequenceHeadroom) || authSequenceHeadroom < 1) {
 }
 
 let smokeUserId = null;
+let smokeAccountIds = [];
 let originalWebhookUrl = null;
 let signupWebhookSuppressed = false;
 
@@ -212,6 +213,26 @@ function jwtPayload(token) {
 async function removeSmokeData() {
   if (!smokeUserId) return;
 
+  if (smokeAccountIds.length === 0) {
+    smokeAccountIds = JSON.parse(
+      sql(
+        `
+SELECT COALESCE(json_agg(account_id ORDER BY account_id), '[]'::json)::text
+FROM (
+  SELECT account_id
+  FROM kortix.account_members
+  WHERE user_id = :'smoke_user_id'::uuid
+  UNION
+  SELECT account_id
+  FROM kortix.accounts
+  WHERE account_id = :'smoke_user_id'::uuid
+) AS smoke_accounts;
+`,
+        { smoke_user_id: smokeUserId },
+      ),
+    );
+  }
+
   try {
     await request(
       `/auth/v1/admin/users/${encodeURIComponent(smokeUserId)}`,
@@ -229,6 +250,15 @@ WHERE payload::text LIKE '%' || :'smoke_user_id' || '%';
 
 DELETE FROM kortix.audit_events
 WHERE actor_user_id = :'smoke_user_id'::uuid;
+
+DELETE FROM kortix.credit_ledger
+WHERE account_id = ANY(:'smoke_account_ids'::uuid[]);
+
+DELETE FROM kortix.credit_accounts
+WHERE account_id = ANY(:'smoke_account_ids'::uuid[]);
+
+DELETE FROM kortix.accounts
+WHERE account_id = ANY(:'smoke_account_ids'::uuid[]);
 
 DELETE FROM auth.refresh_tokens
 WHERE user_id = :'smoke_user_id';
@@ -263,6 +293,7 @@ SELECT setval(
 `,
     {
       smoke_user_id: smokeUserId,
+      smoke_account_ids: `{${smokeAccountIds.join(',')}}`,
       sequence_headroom: keepAuthSequenceHeadroom ? authSequenceHeadroom : 0,
     },
   );
@@ -309,10 +340,21 @@ SELECT json_build_object(
   'auth.users',
   (SELECT count(*) FROM auth.users WHERE id = :'smoke_user_id'::uuid),
   'kortix.audit_events',
-  (SELECT count(*) FROM kortix.audit_events WHERE actor_user_id = :'smoke_user_id'::uuid)
+  (SELECT count(*) FROM kortix.audit_events WHERE actor_user_id = :'smoke_user_id'::uuid),
+  'kortix.accounts',
+  (SELECT count(*) FROM kortix.accounts WHERE account_id = ANY(:'smoke_account_ids'::uuid[])),
+  'kortix.account_members',
+  (SELECT count(*) FROM kortix.account_members WHERE account_id = ANY(:'smoke_account_ids'::uuid[])),
+  'kortix.credit_accounts',
+  (SELECT count(*) FROM kortix.credit_accounts WHERE account_id = ANY(:'smoke_account_ids'::uuid[])),
+  'kortix.credit_ledger',
+  (SELECT count(*) FROM kortix.credit_ledger WHERE account_id = ANY(:'smoke_account_ids'::uuid[]))
 )::text;
 `,
-      { smoke_user_id: smokeUserId },
+      {
+        smoke_user_id: smokeUserId,
+        smoke_account_ids: `{${smokeAccountIds.join(',')}}`,
+      },
     ),
   );
 }

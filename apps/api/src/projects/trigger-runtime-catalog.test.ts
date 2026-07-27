@@ -3,6 +3,7 @@ import {
   type TriggerRuntimeCatalogStore,
   reconcileProjectTriggerRuntimeWithStore,
 } from './trigger-runtime-catalog-core';
+import { triggerScheduleRevision } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 
 function trigger(slug: string, pinnedSessionId: string | null = null): GitTriggerSpec {
@@ -31,7 +32,14 @@ describe('reconcileProjectTriggerRuntime', () => {
     const upserted: Array<{ slug: string; sessionId: string | null }> = [];
     const removed: string[] = [];
     const store: TriggerRuntimeCatalogStore = {
-      list: async () => [{ slug: 'keep', sessionId: null }, { slug: 'stale' }],
+      list: async () => [
+        {
+          slug: 'keep',
+          sessionId: null,
+          scheduleRevision: triggerScheduleRevision(trigger('keep')),
+        },
+        { slug: 'stale' },
+      ],
       upsert: async (_projectId, spec) => {
         upserted.push({ slug: spec.slug, sessionId: spec.pinnedSessionId });
       },

@@ -396,6 +396,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorSensitive(projectId, ...a),
         profiles: {
           list: () => P.listConnectionProfiles(projectId),
+          listAll: () => P.listAllConnectionProfiles(projectId),
           reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
             P.reconcileConnectionProfile(projectId, ...a),
           reconcileMember: (
@@ -408,6 +409,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.revokeConnectionProfile(projectId, ...a),
           activate: (...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>) =>
             P.activateConnectionProfile(projectId, ...a),
+          setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnectionProfile>>) =>
+            P.setDefaultConnectionProfile(projectId, ...a),
           pipedreamConnect: (
             ...a: DropFirst<Parameters<typeof P.pipedreamConnectConnectionProfile>>
           ) => P.pipedreamConnectConnectionProfile(projectId, ...a),

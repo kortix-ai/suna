@@ -739,3 +739,66 @@ export async function syncSubscription(accountId?: string): Promise<Subscription
     'Failed to sync subscription',
   );
 }
+
+// ── Usage rollup (/v1/usage) ──────────────────────────────────────────────────
+
+export interface UsageTotals {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cached_tokens: number;
+  total_cache_write_tokens: number;
+  total_cost: number;
+  count: number;
+}
+
+export interface UsageBreakdownItem {
+  day?: string;
+  provider?: string | null;
+  model?: string;
+  /** Present only for `group_by: 'origin_ref'` — the wrapper's own end-user id. */
+  origin_ref?: string;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  cost: number;
+  count: number;
+}
+
+export interface UsageRollup {
+  data: UsageTotals;
+  breakdown?: UsageBreakdownItem[];
+}
+
+export interface UsageQueryOptions {
+  start?: string;
+  end?: string;
+  /**
+   * `origin_ref` attributes spend to one end-user of a Kortix-as-a-Backend
+   * wrapper. Rows written before the column existed have a NULL origin_ref and
+   * are excluded from that grouping.
+   */
+  groupBy?: 'model' | 'provider' | 'day' | 'origin_ref';
+  /** Narrow to a single end-user. Applies to the TOTALS as well as the breakdown. */
+  originRef?: string;
+  /**
+   * Which account to report on. REQUIRED whenever the caller could be looking at
+   * an account other than their default: for a browser session the server reads
+   * this from the query string, so omitting it silently reports the caller's own
+   * account instead of the one on screen. (Account-scoped tokens ignore it and
+   * always report their own account.)
+   */
+  accountId?: string;
+}
+
+/** Usage rollup for the authenticated account, optionally grouped and narrowed. */
+export async function getUsageRollup(options: UsageQueryOptions = {}): Promise<UsageRollup> {
+  const qs = new URLSearchParams();
+  if (options.start) qs.set('start', options.start);
+  if (options.end) qs.set('end', options.end);
+  if (options.groupBy) qs.set('group_by', options.groupBy);
+  if (options.originRef) qs.set('origin_ref', options.originRef);
+  if (options.accountId) qs.set('account_id', options.accountId);
+  const query = qs.toString();
+  return unwrap(await backendApi.get<UsageRollup>(`/usage${query ? `?${query}` : ''}`));
+}

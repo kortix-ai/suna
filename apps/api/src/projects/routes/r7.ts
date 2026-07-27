@@ -719,6 +719,7 @@ projectsApp.openapi(
     subject,
     grantsBySession,
     runtimeStatusBySession,
+    callerSessionId: c.get('sessionId') ?? null,
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -774,7 +775,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
@@ -827,7 +828,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
 
   const transcript = await buildSessionTranscriptDigest({
@@ -879,7 +880,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
@@ -1034,7 +1035,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const [page, live] = await Promise.all([
@@ -1491,7 +1492,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
     return c.json({ error: 'Only the session owner or a project manager can change sharing' }, 403);
@@ -1519,7 +1520,7 @@ projectsApp.openapi(
 
   await setSessionSharing(sessionId, intent);
 
-  const fresh = await loadVisibleSession(loaded, sessionId);
+  const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   return c.json(fresh ? serializeSession(fresh.row, {
     grants: fresh.grants,
     viewerId: loaded.userId,
@@ -1595,7 +1596,7 @@ projectsApp.openapi(
     }
   }
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const existing = visible.row;
 
@@ -1672,7 +1673,7 @@ projectsApp.openapi(
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
     return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);

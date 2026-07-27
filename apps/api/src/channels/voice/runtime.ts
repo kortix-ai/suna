@@ -29,11 +29,19 @@
  * calls work regardless of which API instance they land on — they used to
  * have to hit the one process that happened to run `voice_spawn`.
  */
-import { and, asc, count, desc, eq, gt } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray } from 'drizzle-orm';
 import { projectSessions, voiceCallTurns } from '@kortix/db';
 import { continueSession } from '../../projects/session-lifecycle';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import {
+  ASK_LEDGER_LIMIT,
+  ASK_LEDGER_LOOKBACK_MS,
+  ASK_SETTLED_SPEAKER,
+  ASK_SPEAKER,
+  type AskLedgerEntry,
+  judgeAsk,
+} from './ask-ledger';
 import {
   createRoom,
   deleteRoom,
@@ -191,54 +199,90 @@ export function buildAskPrompt(request: string, callId: string): string {
 }
 
 /**
- * The mirror of the old `ask_kortix` tool-call handler, now driven by the
- * worker's `ask_kortix` MCP tool call (mcp.ts / routes.ts) instead of an
- * in-process SDK callback. Answers FIRST, then delivers — the caller (the
- * MCP route) returns immediately after this resolves, well before
- * `continueSession` has done anything at all.
+ * The two `tool` rows this call has written for hand-offs — starts and settles —
+ * newest first, over whatever window the guards need. See ask-ledger.ts for what
+ * they mean and why the state lives in Postgres rather than in this process.
  */
-/**
- * How many hand-offs one call may start in {@link ASK_WINDOW_MS}. Above this the
- * call is looping, not working.
- *
- * This exists because a live call did exactly that. A stray transcription
- * artifact ("dog.") led the voice model to assert something false; its own claim
- * then sat in its conversation history as fact, so every correction Kortix sent
- * back CONFLICTED with what it believed, and it kept asking again to resolve the
- * contradiction — "clarify whether the project involves dogs", "summarize all
- * references to dog", on and on. Each ask is a real Kortix turn with real cost.
- * Nothing bounded it, so it ran until a human hung up.
- *
- * A ceiling cannot make the model reason better, but it does convert an
- * unbounded spend into a bounded one, and tells the caller plainly that it is
- * repeating itself — which is information the model can act on.
- */
-const MAX_ASKS_PER_WINDOW = 5;
-const ASK_WINDOW_MS = 60_000;
-
-/**
- * Counted from `voice_call_turns` rather than an in-process counter on purpose:
- * this file keeps NO memory (see `isCallLive`), the worker's MCP calls can land
- * on any API pod, and a per-process count would let a loop run N times per pod.
- * Every ask already writes a `tool` turn, so the ledger is already there.
- */
-async function recentAskCount(callId: string): Promise<number> {
-  const since = new Date(Date.now() - ASK_WINDOW_MS);
+async function readAskLedger(callId: string): Promise<AskLedgerEntry[]> {
+  const since = new Date(Date.now() - ASK_LEDGER_LOOKBACK_MS);
   const rows = await db
-    .select({ cursor: voiceCallTurns.cursor })
+    .select({
+      cursor: voiceCallTurns.cursor,
+      speaker: voiceCallTurns.speaker,
+      createdAt: voiceCallTurns.createdAt,
+    })
     .from(voiceCallTurns)
     .where(
       and(
         eq(voiceCallTurns.callId, callId),
         eq(voiceCallTurns.role, 'tool'),
-        eq(voiceCallTurns.speaker, 'ask_kortix'),
+        inArray(voiceCallTurns.speaker, [ASK_SPEAKER, ASK_SETTLED_SPEAKER]),
         gt(voiceCallTurns.createdAt, since),
       ),
     )
-    .limit(MAX_ASKS_PER_WINDOW + 1);
-  return rows.length;
+    .orderBy(desc(voiceCallTurns.cursor))
+    .limit(ASK_LEDGER_LIMIT);
+
+  return rows.map((r) => ({
+    cursor: Number(r.cursor),
+    speaker: r.speaker ?? '',
+    at: new Date(r.createdAt).getTime(),
+  }));
 }
 
+/** A transcript row is permanent; `request` is free text a model wrote. */
+function truncateForTranscript(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/**
+ * Marks the outstanding hand-off finished, whatever "finished" turned out to
+ * mean — an answer, a failed turn, a turn with nothing to say, or a watch that
+ * timed out. Called from answer-watch.ts's `finally`, which is the only place
+ * that sees every one of those endings.
+ *
+ * Writing the row is what un-blocks the NEXT ask (ask-ledger.ts's in-flight
+ * check reads the newest of these two speakers), so it must never throw and must
+ * never be skipped on an error path: a settle that does not happen costs the call
+ * its hand-off until ASK_INFLIGHT_TIMEOUT_MS expires.
+ *
+ * Idempotent in practice — a second settle for the same ask just leaves another
+ * "not outstanding" row on top, which is still not outstanding.
+ */
+export async function settleAsk(callId: string, outcome: string): Promise<void> {
+  try {
+    const projectId = await projectIdForSession(callId);
+    if (!projectId) {
+      console.error('[voice] cannot settle ask — no project for call', { callId });
+      return;
+    }
+    // `<tool>: <detail>` — the same shape every other tool row uses, so the call
+    // page's splitter (apps/web .../call-record.ts `interpretTool`) strips the
+    // redundant prefix and renders just the outcome, with no change needed
+    // there. `ask_kortix → answered` would have rendered the tool name twice.
+    await appendTurn(
+      { callId, projectId, sessionId: callId },
+      'tool',
+      `${ASK_SETTLED_SPEAKER}: ${outcome}`,
+      ASK_SETTLED_SPEAKER,
+    );
+  } catch (err) {
+    console.error('[voice] failed to settle ask', { callId, outcome }, err);
+  }
+}
+
+/**
+ * The mirror of the old `ask_kortix` tool-call handler, now driven by the
+ * worker's `ask_kortix` MCP tool call (mcp.ts / routes.ts) instead of an
+ * in-process SDK callback. Answers FIRST, then delivers — the caller (the
+ * MCP route) returns immediately after this resolves, well before
+ * `continueSession` has done anything at all.
+ *
+ * It is also the single gate on hand-offs. Both guards (one in flight, and a
+ * rate ceiling) live here rather than in mcp.ts because this is the only place
+ * every ask must pass through, and because the ledger they read is written here
+ * too — see ask-ledger.ts.
+ */
 export async function askKortix(
   call: VoiceCall,
   request: string,
@@ -246,20 +290,35 @@ export async function askKortix(
   const trimmed = request.trim();
   if (!trimmed) return { ok: false, error: 'empty request' };
 
-  // Fail CLOSED on a counting error: an unbounded loop costs real money on every
-  // iteration, so when we cannot tell whether this call is looping, the safe
-  // answer is to let the ask through only if the ledger says it is fine.
-  const asks = await recentAskCount(call.callId).catch(() => 0);
-  if (asks >= MAX_ASKS_PER_WINDOW) {
-    return {
-      ok: false,
-      error:
-        `You have asked Kortix ${asks} times in the last minute and are repeating yourself. ` +
-        'Stop asking and answer the room from what you already have. If an earlier answer ' +
-        'contradicted something you said before, the LATER answer is the correct one — say ' +
-        'that plainly and move on.',
-    };
+  // A ledger read that fails ALLOWS the ask, and that is the deliberate choice:
+  // a database blip must not make a live call unable to answer anyone, which is
+  // a certain failure in exchange for avoiding a possible one. What still holds
+  // when this degrades is the model's own instruction not to re-ask
+  // (apps/voice-agent/src/instructions.ts) and the fact that the loop needs
+  // MANY successful asks to get expensive, not one.
+  const ledger = await readAskLedger(call.callId).catch((err) => {
+    console.error('[voice] ask ledger unreadable — allowing the ask', { callId: call.callId }, err);
+    return [] as AskLedgerEntry[];
+  });
+  const verdict = judgeAsk(ledger, Date.now());
+  if (!verdict.allow) {
+    console.warn('[voice] ask refused', { callId: call.callId, reason: verdict.reason });
+    return { ok: false, error: verdict.error };
   }
+
+  // The ask row is written HERE, awaited, before anything else happens — not
+  // fire-and-forget from the MCP layer where it used to live. It is not just a
+  // transcript line any more, it is the in-flight flag itself, so the next ask's
+  // ledger read has to be guaranteed to see it. It is also what orders the
+  // ledger correctly: a hand-off that fails instantly settles within
+  // milliseconds, and a settle row landing before its own ask row would read as
+  // a permanently outstanding ask.
+  await appendTurn(
+    call,
+    'tool',
+    truncateForTranscript(`${ASK_SPEAKER}: ${trimmed}`, 500),
+    ASK_SPEAKER,
+  ).catch((err) => console.error('[voice] ask ledger write failed', { callId: call.callId }, err));
 
   // Start watching BEFORE the prompt is delivered: the watcher's first act is
   // to record which assistant turn was already the newest, and it must do that
@@ -282,9 +341,16 @@ export async function askKortix(
           kortixSay("I couldn't reach the agent session just now, so that request didn't go through."),
           { projectId: call.projectId },
         );
+        // And it would hold the hand-off slot until the timeout expires. The
+        // watch is still running and will settle again when it gives up; a
+        // second settle is harmless, six minutes of a mute hand-off is not.
+        void settleAsk(call.callId, 'not delivered');
       }
     })
-    .catch((err) => console.error('[voice] ask_kortix delivery failed', err));
+    .catch((err) => {
+      console.error('[voice] ask_kortix delivery failed', err);
+      void settleAsk(call.callId, 'delivery failed');
+    });
 
   return { ok: true };
 }

@@ -86,7 +86,12 @@ mock.module('../projects/session-lifecycle', () => ({
   continueSession: async () => 'delivered',
 }));
 
-const { buildAskPrompt, promptVoiceAgent } = await import('../channels/voice/runtime');
+const { askKortix, buildAskPrompt, promptVoiceAgent, settleAsk } = await import(
+  '../channels/voice/runtime'
+);
+const { ASK_SETTLED_SPEAKER, ASK_SPEAKER, IN_FLIGHT_MESSAGE } = await import(
+  '../channels/voice/ask-ledger'
+);
 
 /**
  * An in-memory stand-in for the three transcript QUERIES, so the read-position
@@ -193,6 +198,89 @@ describe('kortix utterances — instruction on the wire, payload in the record',
     expect(instruction).toContain('as a question or a task to act on');
     expect(instruction).toContain('the connector works straight from the session');
   });
+});
+
+/**
+ * The reframing that breaks the loop.
+ *
+ * Voice is the ONLY channel with its own LLM on the far side — Slack, Teams and
+ * email are one model talking to humans. So whatever apps/api says here is read
+ * by a second model with its own conversation history and its own beliefs, and
+ * that model can be wrong: on a real call a transcription artifact led it to
+ * assert "this project is about developing a system involving dogs", and because
+ * that claim sat in its history as fact, every correct answer sent from here
+ * CONTRADICTED it. It could not relay an answer that disagreed with itself, so
+ * it asked Kortix again to resolve the contradiction — at real cost per ask —
+ * until a human hung up.
+ *
+ * "[result] … say it out loud now, in your own words" is what made that
+ * possible: own words is a licence to blend the answer with the belief. The
+ * replacement has to do two things instead — state the answer, and explicitly
+ * SUPERSEDE anything the model said earlier that conflicts with it. Without the
+ * second, the model has no permission to have been wrong, and keeps trying to
+ * reconcile.
+ */
+describe('a result is authoritative, and says so', () => {
+  const result = kortixResult('the migration applied cleanly');
+
+  test('it states the answer rather than inviting a reinterpretation', () => {
+    expect(result.instruction).toContain('Kortix has answered');
+    expect(result.instruction).toContain('State this answer to the room');
+    expect(result.instruction).toContain('the migration applied cleanly');
+    // The exact licence that let a false belief survive contact with the truth.
+    expect(result.instruction).not.toContain('in your own words');
+  });
+
+  test('it explicitly overrides what the voice model said earlier — the clause that ends the loop', () => {
+    expect(result.instruction).toContain('REPLACES anything you said or assumed earlier');
+    expect(result.instruction).toContain('Do not ask Kortix about it again');
+  });
+
+  test('it corrects the record when the room already heard the contradiction', () => {
+    // A supersede the room never hears is a supersede that leaves two
+    // incompatible statements standing in the transcript and in the meeting.
+    expect(result.instruction).toContain('correct that plainly in the same');
+    expect(result.instruction).toContain('I had that wrong');
+  });
+
+  test('it forbids adding anything to the answer', () => {
+    expect(result.instruction).toContain('Add no detail, no explanation, no');
+    expect(result.instruction).toContain('guess');
+  });
+
+  test('the answer text itself is still the whole transcript line', () => {
+    // The supersede framing is for the model. None of it may leak into what a
+    // human reads back as "what was said".
+    expect(result.transcript).toBe('the migration applied cleanly');
+  });
+
+  test('a say and an error supersede too — half a rule leaves the contradiction standing', () => {
+    // If a result overrides but an error does not, a model holding a false
+    // belief still has something to chase the moment a turn fails.
+    for (const u of [kortixSay('deploy is green'), kortixError('sandbox not ready')]) {
+      expect(u.instruction).toContain('REPLACES anything you said or assumed earlier');
+    }
+    expect(kortixError('sandbox not ready').instruction).toContain('Do not offer a theory');
+    expect(kortixError('sandbox not ready').instruction).toContain('do not hand the same request over again');
+  });
+
+  test('a progress step does NOT supersede — it is not a finding', () => {
+    // Telling the model that "reading the config" overrides its beliefs would
+    // invite it to spin a step into an answer.
+    const progress = kortixProgress('reading the config');
+    expect(progress.instruction).not.toContain('REPLACES anything you said');
+    expect(progress.instruction).toContain('there is no answer yet');
+    expect(progress.instruction).toContain('do not guess what it will find');
+  });
+
+  test('results still go through generateReply, not say() — verbatim robot phrasing is worse', () => {
+    // Removing the licence to invent is not the same as removing natural
+    // phrasing: these stay INSTRUCTIONS (tagged, addressed to a model), because
+    // an answer written for a chat surface read aloud verbatim sounds like a
+    // machine reading a ticket. See inbound-replies.ts's header.
+    expect(result.instruction.startsWith('[result]')).toBe(true);
+    expect(result.instruction).not.toBe(result.transcript);
+  });
 
   test('an error with no readable cause still says something', () => {
     expect(kortixError(null).transcript).toBe('That request failed');
@@ -266,6 +354,137 @@ describe('promptVoiceAgent records what the room was given', () => {
     dbResults = [[]];
     const res = await promptVoiceAgent('sess-5', kortixResult('done'));
     expect(res.delivered).toBe(true);
+    expect(inserts).toHaveLength(0);
+  });
+});
+
+/**
+ * ONE HAND-OFF AT A TIME, against the real query chain.
+ *
+ * unit-voice-ask-ledger.test.ts covers the decision exhaustively as pure logic;
+ * what is left — and what actually broke in production — is the WIRING: that the
+ * ask row is written here, awaited, before anything can read the ledger, and
+ * that a refusal comes back as a sentence the model can act on rather than as a
+ * silent no-op.
+ */
+describe('askKortix — one hand-off in flight per call', () => {
+  const call = {
+    callId: 'sess-ask',
+    projectId: 'proj-1',
+    sessionId: 'sess-ask',
+    voice: 'alloy',
+    room: 'voice-sess-ask',
+    startedAt: 0,
+    closed: false,
+  };
+
+  test('an empty ledger allows the ask, and the ask row is written as part of it', async () => {
+    dbResults = [[]]; // readAskLedger
+
+    expect(await askKortix(call, '  what is the build status?  ')).toEqual({ ok: true });
+
+    // Written HERE and awaited, not fire-and-forget from the MCP layer: this row
+    // IS the in-flight flag, so the next ask's ledger read must be guaranteed to
+    // see it, and it must never land after its own settle row.
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toEqual({
+      callId: 'sess-ask',
+      projectId: 'proj-1',
+      sessionId: 'sess-ask',
+      role: 'tool',
+      speaker: ASK_SPEAKER,
+      text: 'ask_kortix: what is the build status?',
+    });
+  });
+
+  test('a second ask while one is outstanding is refused, and writes nothing', async () => {
+    dbResults = [[{ cursor: 7, speaker: ASK_SPEAKER, createdAt: new Date(Date.now() - 3_000) }]];
+
+    const res = await askKortix(call, 'are you sure about the dogs?');
+
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error('unreachable');
+    expect(res.error).toBe(IN_FLIGHT_MESSAGE);
+    // A refused ask is not a hand-off: recording one would make the NEXT ledger
+    // read see a fresh outstanding ask and lock the call out for longer on every
+    // repeat — the loop, inverted.
+    expect(inserts).toHaveLength(0);
+  });
+
+  test('once the answer has settled, the next ask goes through again', async () => {
+    dbResults = [
+      [
+        { cursor: 8, speaker: ASK_SETTLED_SPEAKER, createdAt: new Date(Date.now() - 1_000) },
+        { cursor: 7, speaker: ASK_SPEAKER, createdAt: new Date(Date.now() - 30_000) },
+      ],
+    ];
+
+    expect(await askKortix(call, 'and now?')).toEqual({ ok: true });
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.speaker).toBe(ASK_SPEAKER);
+  });
+
+  test('an empty request is still rejected before any of this', async () => {
+    expect(await askKortix(call, '   ')).toEqual({ ok: false, error: 'empty request' });
+    expect(inserts).toHaveLength(0);
+  });
+
+  test('a long request is truncated — a transcript row is permanent and this is free text', async () => {
+    dbResults = [[]];
+    await askKortix(call, 'x'.repeat(900));
+    expect(String(inserts[0]!.text).length).toBeLessThanOrEqual(512);
+    expect(String(inserts[0]!.text).endsWith('…')).toBe(true);
+  });
+
+  test('an unreadable ledger ALLOWS the ask — a DB blip must not mute a live call', async () => {
+    // The deliberate direction of the trade. Failing closed here turns a
+    // possible overspend into a certain one: a call that cannot hand anything
+    // over cannot answer anyone, and has no way to explain why.
+    dbResults = [];
+    const chainThatThrows = () => {
+      throw new Error('connection reset');
+    };
+    const { db } = await import('../shared/db');
+    const originalSelect = db.select;
+    (db as { select: unknown }).select = chainThatThrows;
+    try {
+      expect(await askKortix(call, 'still there?')).toEqual({ ok: true });
+    } finally {
+      (db as { select: unknown }).select = originalSelect;
+    }
+  });
+});
+
+describe('settleAsk — the arriving answer is what clears the flag', () => {
+  test('it writes a settle row naming the outcome, in the shape every tool row uses', async () => {
+    dbResults = [[{ projectId: 'proj-9' }]]; // projectIdForSession
+
+    await settleAsk('sess-settle', 'answered');
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      callId: 'sess-settle',
+      projectId: 'proj-9',
+      role: 'tool',
+      speaker: ASK_SETTLED_SPEAKER,
+      // `<tool>: <detail>` — so the call page's existing splitter renders it
+      // without a change there (apps/web .../call-record.ts `interpretTool`).
+      text: 'ask_kortix_done: answered',
+    });
+  });
+
+  test('it never throws — a settle that throws costs the call its next hand-off', async () => {
+    dbResults = [[{ projectId: 'proj-9' }]];
+    insertThrows = true;
+
+    await settleAsk('sess-settle', 'timed out');
+
+    expect(inserts).toHaveLength(0);
+  });
+
+  test('an unresolvable project degrades quietly rather than throwing into the watcher', async () => {
+    dbResults = [[]];
+    await settleAsk('sess-orphan', 'answered');
     expect(inserts).toHaveLength(0);
   });
 });

@@ -35,6 +35,7 @@ import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { inspectDatabaseError } from './shared/database-errors';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
 import {
@@ -66,11 +67,13 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
+  isLeader,
   startLeaderElection,
   stopLeaderElection,
   runsSingletonWorkers,
 } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
+import { skillsApp } from './skills';
 import { oauthApp } from './oauth';
 import { nativeOAuth2CallbackApp } from './executor/oauth2-callback';
 import {
@@ -78,6 +81,7 @@ import {
   projectsApp,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
+  getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
@@ -355,6 +359,11 @@ const HealthSchema = z
     timestamp: z.string(),
     environment: z.string(),
     version: z.string(),
+    commit: z.string(),
+    started_at: z.string(),
+    instance: z.string(),
+    scheduler_leader: z.boolean(),
+    trigger_scheduler: z.record(z.string(), z.unknown()),
   })
   .openapi('Health');
 
@@ -365,6 +374,11 @@ const healthHandler = (c: any) =>
     timestamp: new Date().toISOString(),
     environment: config.INTERNAL_KORTIX_ENV,
     version: API_VERSION,
+    commit: API_COMMIT,
+    started_at: STARTED_AT,
+    instance: API_INSTANCE,
+    scheduler_leader: isLeader(),
+    trigger_scheduler: getTriggerSchedulerHealth(),
   });
 
 app.openapi(
@@ -732,6 +746,16 @@ app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
+// /v1/skills — the kortix-managed system skills (how Kortix itself works), served
+// straight out of @kortix/starter so the text always matches this deploy. This is
+// what lets an agent in ANY harness, holding only the `kortix` binary and a token,
+// read the platform's own instructions with no repo checkout and no sandbox.
+// combinedAuth (not supabaseAuth) so a CLI `kortix_pat_` and the in-sandbox
+// KORTIX_CLI_TOKEN both work; see ./skills/index.ts for the full auth rationale.
+app.use('/v1/skills', combinedAuth);
+app.use('/v1/skills/*', combinedAuth);
+app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
+
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
 // so it is intentionally NOT wrapped in combinedAuth.
@@ -1005,12 +1029,8 @@ app.onError((err, c) => {
   }
 
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
-  const isDbError =
-    errName === 'PostgresError' ||
-    (err as any).severity ||
-    (err as any).code?.match?.(/^[0-9]{5}$/);
-  if (isDbError) {
-    const pgErr = err as any;
+  const databaseError = inspectDatabaseError(err);
+  if (databaseError) {
     // Pool-exhaustion (Supabase pooler / PgBouncer session-mode saturation on
     // the us-east-2 shadow deployment) is a TRANSIENT infra/pooler-capacity
     // class, NOT a code bug — `(EMAXCONNSESSION) max clients reached in
@@ -1026,29 +1046,39 @@ app.onError((err, c) => {
     // follow-up (raise the shadow pooler's `pool_size` / move to transaction
     // mode) is a human-owned external action recorded in the sweep ledger.
     // Better Stack patterns 721b7efe… (API) + b38179c5… (frontend symptom).
-    const isPoolExhaustion = isSentryIgnoredError(errName, err.message);
+    const databaseMessage =
+      databaseError.causeMessage ?? databaseError.outerMessage;
+    const isPoolExhaustion = isSentryIgnoredError(
+      databaseError.causeName ?? databaseError.outerName,
+      databaseMessage,
+    );
     if (!isPoolExhaustion) {
       captureException(err, {
         method,
         path,
         errorType: 'database',
-        pgCode: pgErr.code,
-        table: pgErr.table,
-        schema: pgErr.schema_name || pgErr.schema,
+        pgCode: databaseError.pgCode,
+        table: databaseError.table,
+        schema: databaseError.schema,
       });
     }
     appLogger.error(
-      `${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`,
+      `${method} ${path} -> 500 [DB ${databaseError.severity || 'ERROR'} ${databaseError.pgCode || '?'}]`,
       {
         method,
         path,
         errorType: isPoolExhaustion ? 'database-pool-exhaustion' : 'database',
         transient: isPoolExhaustion || undefined,
-        pgCode: pgErr.code,
-        table: pgErr.table,
-        hint: pgErr.hint,
-        detail: pgErr.detail,
-        message: err.message.split('\n')[0],
+        outerErrorType: databaseError.outerName,
+        causeErrorType: databaseError.causeName,
+        pgCode: databaseError.pgCode,
+        severity: databaseError.severity,
+        table: databaseError.table,
+        schema: databaseError.schema,
+        hint: databaseError.hint,
+        detail: databaseError.detail,
+        message: databaseError.outerMessage.split('\n')[0],
+        causeMessage: databaseError.causeMessage?.split('\n')[0] ?? null,
       },
     );
   } else {

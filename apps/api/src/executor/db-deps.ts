@@ -1,4 +1,5 @@
 import {
+  executorConnectionPolicies,
   executorConnectionProfiles,
   executorConnectorActions,
   executorConnectorPolicies,
@@ -87,7 +88,13 @@ import {
   runPipedreamProxy,
   verifyWebhookSig,
 } from './pipedream';
-import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
+import {
+  type DefaultMode,
+  type EffectiveResolveResult,
+  type Policy,
+  type PolicyAction,
+  resolveEffectiveAction,
+} from './policy';
 import type {
   AdminConnectorView,
   CatalogConnector,
@@ -98,6 +105,9 @@ import { resolveShareSubject } from './share';
 import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
+
+/** Which policy scope decided an action — surfaced so the editor can say so. */
+type EffectiveSource = EffectiveResolveResult['source'];
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -537,6 +547,7 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
+    loadConnectionPolicies: loadConnectionPoliciesFor,
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(executorExecutions)
@@ -667,6 +678,16 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
     .from(executorConnectorPolicies)
     .where(eq(executorConnectorPolicies.connectorId, connectorId));
   return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+}
+
+/** Rules attached to ONE connection (profile), the scope between project and connector. */
+async function loadConnectionPoliciesFor(profileId: string): Promise<Policy[]> {
+  const rows = await db
+    .select()
+    .from(executorConnectionPolicies)
+    .where(eq(executorConnectionPolicies.profileId, profileId))
+    .orderBy(executorConnectionPolicies.position);
+  return rows.map((r) => ({ match: r.match, action: r.action as PolicyAction, position: r.position }));
 }
 
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
@@ -1012,17 +1033,67 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
 async function getConnectorPolicies(
   projectId: string,
   slug: string,
-): Promise<{ policies: Array<{ match: string; action: string }> } | null> {
-  const fromManifest = await getConnectorPoliciesFromManifest(projectId, slug);
-  if (fromManifest) return fromManifest;
-  const [row] = await db
-    .select({ connectorId: executorConnectors.connectorId })
-    .from(executorConnectors)
-    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
-    .limit(1);
-  if (!row) return null;
-  const policies = await loadConnectorPoliciesFor(row.connectorId);
-  return { policies: policies.map((p) => ({ match: p.match, action: p.action })) };
+): Promise<{
+  policies: Array<{ match: string; action: string }>;
+  effective: Array<{ path: string; action: PolicyAction; source: EffectiveSource }>;
+  project_policies: Array<{ match: string; action: string }>;
+  default_mode: DefaultMode;
+} | null> {
+  const [fromManifest, [row]] = await Promise.all([
+    getConnectorPoliciesFromManifest(projectId, slug),
+    db
+      .select({ connectorId: executorConnectors.connectorId, config: executorConnectors.config })
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+      .limit(1),
+  ]);
+  if (!fromManifest && !row) return null;
+
+  const policies = fromManifest
+    ? fromManifest.policies
+    : (await loadConnectorPoliciesFor(row.connectorId)).map((p) => ({
+        match: p.match,
+        action: p.action as string,
+      }));
+
+  // The editor also needs to know WHICH scope decides each tool. A project-scope
+  // rule is evaluated first and cannot be overridden here (see policy.ts), so
+  // without this the panel would happily show a connector rule the runtime is
+  // ignoring. Resolve every action through the same function the call gate uses.
+  if (!row) {
+    return { policies, effective: [], project_policies: [], default_mode: 'allow_all' };
+  }
+  const [projectPolicies, defaultMode, actions] = await Promise.all([
+    loadProjectPoliciesFor(projectId),
+    loadDefaultModeFor(projectId),
+    db
+      .select()
+      .from(executorConnectorActions)
+      .where(eq(executorConnectorActions.connectorId, row.connectorId)),
+  ]);
+  const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
+  const connectorPolicies: Policy[] = policies.map((p) => ({
+    match: p.match,
+    action: p.action as PolicyAction,
+  }));
+  const effective = actions.map((a) => {
+    const resolved = resolveEffectiveAction({
+      fullPath: `${slug}.${a.path}`,
+      relPath: a.path,
+      projectPolicies,
+      connectorPolicies,
+      risk: a.risk,
+      defaultMode,
+      sensitive,
+    });
+    return { path: a.path, action: resolved.action, source: resolved.source };
+  });
+  return {
+    policies,
+    effective,
+    project_policies: projectPolicies.map((p) => ({ match: p.match, action: p.action })),
+    default_mode: defaultMode,
+  };
 }
 
 /**

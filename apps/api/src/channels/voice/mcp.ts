@@ -59,10 +59,10 @@ export interface VoiceMcpContext {
   runCommand(command: string, cwd?: string): Promise<RunCommandToolResult>;
   /**
    * Persists one transcript line. 'user'/'agent' are either side of the spoken
-   * conversation (the worker's own `post_turn` tool, below). 'tool' is this
-   * file's OWN doing — see `callTool`'s `ask_kortix`/`run_command` cases — a
-   * record of what the worker asked Kortix to do, not something the model
-   * asks for directly.
+   * conversation (the worker's own `post_turn` tool, below). 'tool' is written
+   * for the worker, never by it — see `callTool`'s `run_command` case here, and
+   * `askKortix`/`settleAsk` in runtime.ts for the hand-off pair, which moved out
+   * of this file because those rows double as the in-flight flag.
    */
   postTurn(role: 'user' | 'agent' | 'tool', text: string, speaker?: string | null): Promise<void>;
 }
@@ -94,7 +94,9 @@ function toolDefinitions() {
         'Hand a request to the Kortix agent for this call. Use for anything needing real project ' +
         'knowledge, files, connectors, memory, or actions. Returns the instant the request is ' +
         'queued — NEVER waits for Kortix to finish thinking, which can take minutes. The answer, ' +
-        'if any, arrives later as a separate message to speak into the call.',
+        'if any, arrives later as a separate message to speak into the call. ONE request at a ' +
+        'time: while an earlier one is still unanswered this is refused, with an explanation to ' +
+        'relay. Do not re-send a request to chase or double-check an answer you already got.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -177,13 +179,17 @@ async function callTool(
       const request = String(args.request ?? '').trim();
       if (!request) return toolError('request is required');
       const result = await ctx.askKortix(request);
+      // A refusal is a tool error so the model SEES it, but the text is
+      // guidance, not a fault report — runtime.ts refuses an ask that is
+      // already outstanding, or a call that is repeating itself, and writes
+      // the sentence it wants relayed. apps/voice-agent passes it through.
       if (!result.ok) return toolError(result.error);
-      // Fire-and-forget, same as everything else on this path (see the
-      // interface doc above `postTurn`) — a transcript write must never be
-      // what makes ask_kortix stop returning "the instant it's queued".
-      void ctx
-        .postTurn('tool', truncateForTranscript(`ask_kortix: ${request}`, 500), 'ask_kortix')
-        .catch((err) => console.error('[voice] ask_kortix transcript log failed', err));
+      // NOTE: the `ask_kortix: …` transcript line is NOT written here any more.
+      // It is the in-flight flag that stops a second overlapping hand-off
+      // (ask-ledger.ts), so it has to be written and AWAITED inside askKortix,
+      // before the next ask can read it — a fire-and-forget write from this
+      // layer let two rapid asks both see an empty ledger, and could land
+      // AFTER the settle row of a hand-off that failed instantly.
       return toolText('Queued — Kortix is working on it. The answer will arrive later as something to say.', {
         queued: true,
       });

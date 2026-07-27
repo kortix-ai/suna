@@ -47,13 +47,25 @@ export async function canAccessSandboxSession(input: {
   projectId: string;
   accountId: string;
   userId: string;
+  /** The caller's own session when the credential is bound to one, or null.
+   *  REQUIRED — an omitted binding would fail open. */
+  callerSessionId: string | null;
 }): Promise<boolean> {
-  const key = `${input.sessionId}|${input.userId}`;
+  // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
+  // shares one `userId` (the wrapper credential), so without it end-user A and
+  // end-user B collide on one entry for the same target session — and the first
+  // `true` would be served to everyone else for the whole TTL, silently
+  // defeating the isolation check below.
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}`;
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
   const [row] = await db
-    .select({ visibility: projectSessions.visibility, createdBy: projectSessions.createdBy })
+    .select({
+      visibility: projectSessions.visibility,
+      createdBy: projectSessions.createdBy,
+      origin: projectSessions.origin,
+    })
     .from(projectSessions)
     .where(
       and(
@@ -73,6 +85,11 @@ export async function canAccessSandboxSession(input: {
       row.createdBy,
       grants,
       subject,
+      {
+        origin: row.origin ?? null,
+        sessionId: input.sessionId,
+        callerSessionId: input.callerSessionId,
+      },
     );
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });

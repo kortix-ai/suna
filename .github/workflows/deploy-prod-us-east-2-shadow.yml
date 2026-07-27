@@ -189,7 +189,7 @@ jobs:
             and .KORTIX_WORKERS_ENABLED == "false"
             and .SCHEDULER_ENABLED == "false"
             and .CHANNELS_ENABLED == "false"
-            and .KORTIX_MANAGED_PROVIDER_ENABLED == "false"
+            and .KORTIX_MANAGED_PROVIDER_ENABLED == "true"
             and .KORTIX_PRERESUME_ENABLED == "false"
             and .KORTIX_PROJECT_MAINTENANCE_ENABLED == "false"
             and .KORTIX_TRIGGER_SCHEDULER_ENABLED == "false"

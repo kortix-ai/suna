@@ -32,6 +32,7 @@ import {
   type AgentGrant,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
@@ -176,37 +177,39 @@ async function resolveActorV2Uncached(
       .select({ groupId: accountGroupMembers.groupId })
       .from(accountGroupMembers)
       .where(eq(accountGroupMembers.userId, userId)),
-    db
-      .select({
-        scopeType: iamPolicies.scopeType,
-        scopeId: iamPolicies.scopeId,
-        action: iamRoleActions.action,
-      })
-      .from(iamPolicies)
-      .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
-      .where(
-        and(
-          eq(iamPolicies.accountId, accountId),
-          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
-          or(
-            and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
-            and(
-              eq(iamPolicies.principalType, 'group'),
-              inArray(
-                iamPolicies.principalId,
-                db
-                  .select({ gid: accountGroupMembers.groupId })
-                  .from(accountGroupMembers)
-                  .where(eq(accountGroupMembers.userId, userId)),
+    retryTransientDatabaseRead(async () =>
+      db
+        .select({
+          scopeType: iamPolicies.scopeType,
+          scopeId: iamPolicies.scopeId,
+          action: iamRoleActions.action,
+        })
+        .from(iamPolicies)
+        .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
+        .where(
+          and(
+            eq(iamPolicies.accountId, accountId),
+            or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+            or(
+              and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
+              and(
+                eq(iamPolicies.principalType, 'group'),
+                inArray(
+                  iamPolicies.principalId,
+                  db
+                    .select({ gid: accountGroupMembers.groupId })
+                    .from(accountGroupMembers)
+                    .where(eq(accountGroupMembers.userId, userId)),
+                ),
               ),
+              // Service-account principal: a token policy keyed on this id. Harmless
+              // for a human request (SA ids and user ids are disjoint uuids, so this
+              // matches nothing), load-bearing for an SA request (its standing role).
+              and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
             ),
-            // Service-account principal: a token policy keyed on this id. Harmless
-            // for a human request (SA ids and user ids are disjoint uuids, so this
-            // matches nothing), load-bearing for an SA request (its standing role).
-            and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
           ),
         ),
-      ),
+    ),
   ]);
   const customActions: CustomAction[] = policyRows.map((r) => ({
     scopeType: r.scopeType,

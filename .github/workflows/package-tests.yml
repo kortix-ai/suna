@@ -158,7 +158,13 @@ jobs:
     timeout-minutes: 20
     env:
       npm_config_engine_strict: 'false'
-      DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
+      # Only materialize the master dotenvx decryption key on non-PR events
+      # (push / workflow_dispatch). On pull_request, PR-head test code runs
+      # in this job; exposing DOTENV_PRIVATE_KEY would let a same-repo branch
+      # PR read all 80+ prod secrets decryptable with that one key. The
+      # `if: env.DOTENV_PRIVATE_KEY != ''` step below skips the env-gated
+      # suite when the key is absent. (pentest 2026-07-27)
+      DOTENV_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.DOTENV_PRIVATE_KEY || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7

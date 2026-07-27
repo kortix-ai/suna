@@ -41,6 +41,7 @@ import {
   serializeManifestObject,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
+import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
  *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
@@ -502,20 +503,6 @@ interface ParseErr {
   error: GitTriggerParseError;
 }
 
-// A bad IANA timezone (typo, or an abbreviation like "PST") otherwise slips
-// through parsing and only fails later inside the cron due-check, where it's
-// swallowed to `false` — the trigger then silently never fires. Catch it at
-// parse time so it surfaces as a visible trigger error instead.
-function isValidTimeZone(tz: string): boolean {
-  if (tz === 'UTC') return true;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function parseTriggerEntry(entry: unknown, index: number, filename: string = MANIFEST_FILENAME): ParseOk | ParseErr {
   const err = (slug: string, message: string): ParseErr => makeTriggerError(slug, message, filename);
 
@@ -651,12 +638,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
           : '';
     const timezone =
       typeof row.timezone === 'string' && row.timezone.trim() ? row.timezone.trim() : 'UTC';
-    if (!isValidTimeZone(timezone)) {
-      return err(
-        slug,
-        `timezone must be a valid IANA name like "UTC" or "America/New_York" (got "${timezone}")`,
-      );
-    }
+    const timezoneError = validateTriggerTimezone(timezone);
+    if (timezoneError) return err(slug, timezoneError);
 
     // A one-off ("run once") schedule carries `run_at` instead of `cron`.
     if (runAtRaw) {
@@ -689,6 +672,8 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
 
     if (!cron)
       return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
+    const cronError = validateTriggerCron(cron, timezone);
+    if (cronError) return err(slug, cronError);
     return {
       ok: true,
       spec: {

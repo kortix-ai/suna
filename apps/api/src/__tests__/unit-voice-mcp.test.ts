@@ -69,27 +69,48 @@ describe('voice MCP', () => {
     expect(res.result.content[0].text).toContain('empty request');
   });
 
-  test('ask_kortix logs a tool-role transcript line so "what did the agent DO" is visible', async () => {
-    const seen: { role?: string; text?: string; speaker?: string | null }[] = [];
+  test('ask_kortix writes NO transcript line here — that row is the in-flight flag', async () => {
+    // It used to be logged from this layer, fire-and-forget. It cannot be any
+    // more: the `ask_kortix: …` row is what stops a second overlapping hand-off
+    // (channels/voice/ask-ledger.ts), so it has to be written and awaited inside
+    // askKortix before the next ask reads the ledger. Two rapid asks would
+    // otherwise both see an empty ledger, and a hand-off that failed instantly
+    // could get its settle row in BEFORE its own ask row — a permanently
+    // outstanding ask. See unit-voice-recording.test.ts for the write itself.
+    const seen: unknown[] = [];
     const c = ctx({
       postTurn: async (role, text, speaker) => {
         seen.push({ role, text, speaker });
       },
     });
     await call('tools/call', { name: 'ask_kortix', arguments: { request: 'what is the weather' } }, c);
-    expect(seen).toEqual([{ role: 'tool', text: 'ask_kortix: what is the weather', speaker: 'ask_kortix' }]);
+    expect(seen).toEqual([]);
   });
 
-  test('ask_kortix does not log a transcript line when the request was rejected', async () => {
-    const seen: unknown[] = [];
+  test('a refused ask comes back as a tool error carrying the sentence to relay', async () => {
+    // apps/api refuses a second in-flight hand-off with guidance written for the
+    // voice model ("you already asked — wait"), not with a fault string. It has
+    // to reach the model intact, which is why it rides `isError` rather than
+    // being swallowed or rewritten here.
     const c = ctx({
-      askKortix: async () => ({ ok: false, error: 'empty request' }),
-      postTurn: async (role, text, speaker) => {
-        seen.push({ role, text, speaker });
+      askKortix: async () => ({
+        ok: false,
+        error: 'You already handed a request to Kortix and the answer has not come back yet.',
+      }),
+      postTurn: async () => {
+        throw new Error('a refused ask must not be recorded as a hand-off');
       },
     });
-    await call('tools/call', { name: 'ask_kortix', arguments: { request: 'hi' } }, c);
-    expect(seen).toEqual([]);
+    const res = await call('tools/call', { name: 'ask_kortix', arguments: { request: 'hi again' } }, c);
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toContain('already handed a request to Kortix');
+  });
+
+  test('the tool description tells the model there is one hand-off at a time', async () => {
+    const res = await call('tools/list');
+    const askKortix = res.result.tools.find((t: { name: string }) => t.name === 'ask_kortix');
+    expect(askKortix.description).toContain('ONE request at a time');
+    expect(askKortix.description).toContain('Do not re-send a request');
   });
 
   test('run_command returns stdout/stderr/exit_code/timed_out', async () => {
@@ -246,13 +267,11 @@ describe('voice MCP', () => {
         seen.push({ role, text, speaker });
       },
     });
-    await call('tools/call', { name: 'ask_kortix', arguments: { request: 'ship it' } }, record);
     await call('tools/call', { name: 'run_command', arguments: { command: 'bun test' } }, record);
 
     expect(seen.every((t) => t.role === 'tool')).toBe(true);
-    expect(seen.map((t) => t.speaker)).toEqual(['ask_kortix', 'run_command']);
-    expect(seen[0]!.text).toContain('ask_kortix: ship it');
-    expect(seen[1]!.text).toBe('run_command: bun test → exit 2');
+    expect(seen.map((t) => t.speaker)).toEqual(['run_command']);
+    expect(seen[0]!.text).toBe('run_command: bun test → exit 2');
   });
 
   test('unknown tool is an error, not a crash', async () => {

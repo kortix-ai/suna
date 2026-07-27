@@ -599,6 +599,17 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
+    // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
+    // origin_ref's live sessions, checked on every backend session create.
+    // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
+    // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
+    // NULL, so it indexes only live backend sessions — a small fraction of the
+    // table, and nothing at all for non-KaaB projects.
+    index('idx_project_sessions_account_origin_active')
+      .on(table.accountId, table.originRef)
+      .where(
+        sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
+      ),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
@@ -862,11 +873,81 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
+    // Materialized schedule catalog. The repo manifest remains the source of
+    // truth, but the timing path reads only these indexed columns. Nullable
+    // columns keep mixed-version deploys safe while existing rows are cataloged.
+    triggerType: varchar('trigger_type', { length: 16 }),
+    enabled: boolean('enabled'),
+    scheduleCron: text('schedule_cron'),
+    scheduleRunAt: timestamp('schedule_run_at', { withTimezone: true }),
+    scheduleTimezone: varchar('schedule_timezone', { length: 128 }),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }),
+    scheduleSpec: jsonb('schedule_spec').$type<Record<string, unknown>>(),
+    nextFireAt: timestamp('next_fire_at', { withTimezone: true }),
+    lastScheduledFor: timestamp('last_scheduled_for', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
+    index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/**
+ * Durable execution queue for materialized cron slots.
+ *
+ * A unique project/slug/revision/slot key prevents duplicate execution across
+ * scheduler ticks, pod restarts, and concurrent leaders. The schedule catalog
+ * advances in the same transaction that inserts this row.
+ */
+export const projectTriggerExecutions = kortixSchema.table(
+  'project_trigger_executions',
+  {
+    executionId: uuid('execution_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    scheduleRevision: varchar('schedule_revision', { length: 64 }).notNull(),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 32 }).default('queued').notNull(),
+    spec: jsonb('spec').notNull().$type<Record<string, unknown>>(),
+    payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    sessionId: text('session_id'),
+    commandId: uuid('command_id'),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+      name: 'project_trigger_exec_project_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_trigger_exec_session_fk',
+    }).onDelete('set null'),
+    uniqueIndex('idx_project_trigger_executions_slot').on(
+      table.projectId,
+      table.slug,
+      table.scheduleRevision,
+      table.scheduledFor,
+    ),
+    index('idx_project_trigger_executions_due').on(
+      table.status,
+      table.availableAt,
+      table.lockedUntil,
+    ),
+    index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
   ],
 );
 
@@ -2079,6 +2160,20 @@ export const usageEvents = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
     sessionId: text('session_id'),
+    /**
+     * Kortix-as-a-Backend attribution: which of the wrapper's END-USERS this
+     * spend belongs to. A server-derived COPY of project_sessions.origin_ref,
+     * resolved from the session at emit time — never read from a request body.
+     *
+     * Denormalized rather than joined at read time on purpose: the legacy router
+     * path takes session_id from the request (body / X-Session-ID), so joining
+     * usage_events.session_id -> project_sessions would let one end-user's agent
+     * bill spend to another end-user inside the same wrapper account.
+     *
+     * NULL = unattributed (any row written before this column existed, plus
+     * non-session spend like the model playground).
+     */
+    originRef: text('origin_ref'),
     actorUserId: uuid('actor_user_id'),
     provider: text('provider').notNull(),
     model: text('model').notNull(),
@@ -2099,6 +2194,12 @@ export const usageEvents = kortixSchema.table(
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
+    // Per-end-user metering: "spend for origin_ref X in a window", and the
+    // group_by=origin_ref rollup. Partial — the vast majority of rows are
+    // non-backend spend with a NULL origin_ref and never match this predicate.
+    index('idx_usage_events_account_origin_time')
+      .on(table.accountId, table.originRef, table.createdAt)
+      .where(sql`${table.originRef} is not null`),
   ],
 );
 
@@ -3723,12 +3824,31 @@ export const executorConnectionProfiles = kortixSchema.table(
       table.connectorId,
       table.profileId,
     ),
-    uniqueIndex('idx_executor_connection_profiles_default')
+    // A connector may hold MANY connections (e.g. support@ and sales@ for the
+    // team, plus each member's own). The default marker is therefore scoped PER
+    // OWNER, not per connector: exactly one team default, and at most one default
+    // per member/agent/external owner. Split into two partial indexes so the
+    // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
+    // is still capped at one.
+    uniqueIndex('idx_executor_connection_profiles_default_project')
       .on(table.connectorId)
-      .where(sql`${table.isDefault} = true`),
-    uniqueIndex('idx_executor_connection_profiles_owner')
+      .where(sql`${table.isDefault} = true and ${table.ownerType} = 'project'`),
+    uniqueIndex('idx_executor_connection_profiles_default_owner')
       .on(table.connectorId, table.ownerType, table.ownerId)
+      .where(sql`${table.isDefault} = true and ${table.ownerId} is not null`),
+    // Identity is (connector, owner, LABEL) — the label is the discriminator that
+    // lets one owner hold several connections ("Work", "Personal") while keeping
+    // reconcile idempotent: the same label updates in place, a new label adds a
+    // new connection.
+    uniqueIndex('idx_executor_connection_profiles_owner_label')
+      .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
+    // Project-owned rows carry owner_id NULL, so the index above (partial on
+    // owner_id IS NOT NULL) can't dedupe them. Several TEAM connections per
+    // connector are allowed, distinguished by label — this keeps that set unique.
+    uniqueIndex('idx_executor_connection_profiles_project_label')
+      .on(table.connectorId, table.label)
+      .where(sql`${table.ownerId} is null`),
     index('idx_executor_connection_profiles_project').on(table.projectId),
     index('idx_executor_connection_profiles_connector').on(table.connectorId),
     check(
@@ -3997,6 +4117,48 @@ export const executorConnectorPolicies = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_executor_connector_policies_connector').on(table.connectorId)],
+);
+
+/**
+ * Per-CONNECTION tool-call policies, keyed by profile_id.
+ *
+ * One connector can hold several connections — support@, sales@, a member's own
+ * mailbox — and they often warrant DIFFERENT permissions. Connector-scoped rules
+ * cannot express that: they are keyed by the connector, so every connection under
+ * it shares one policy.
+ *
+ * Deliberately NOT in executor_connector_policies: sync.ts deletes every row for
+ * a connector and re-inserts from the manifest on each manifest write, so a
+ * DB-authored row there would be destroyed. Deliberately NOT in the manifest
+ * either: a member's private connection can never appear in git, and profile
+ * uuids are not portable across projects.
+ *
+ * Evaluated AFTER project rules (which remain un-overridable) and BEFORE
+ * connector rules, so the more specific scope wins over the connector default.
+ */
+export const executorConnectionPolicies = kortixSchema.table(
+  'executor_connection_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    profileId: uuid('profile_id').notNull(),
+    /** Connector-relative glob, same grammar as the connector-scoped rules. */
+    match: varchar('match', { length: 512 }).notNull(),
+    action: executorPolicyActionEnum('action').notNull(),
+    /** Authoring order — evaluated top-to-bottom, first match wins. */
+    position: integer('position').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_executor_connection_policies_profile').on(table.profileId),
+    // Named explicitly: the derived name would exceed Postgres's 63-char
+    // identifier limit and be silently truncated.
+    foreignKey({
+      columns: [table.profileId],
+      foreignColumns: [executorConnectionProfiles.profileId],
+      name: 'executor_connection_policies_profile_id_fk',
+    }).onDelete('cascade'),
+  ],
 );
 
 /**

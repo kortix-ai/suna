@@ -224,6 +224,29 @@ both mintable with your API key:
    > the first tool call. Use `pipedreamConnect` + `pipedreamFinalize`; the OAuth
    > tokens live in Pipedream's custody, never in Kortix as a raw provider token.
 
+**Picking a SPECIFIC connection.** One connector can hold several connections —
+team-shared accounts (support@, sales@) and each member's own. List them to get
+the id you want:
+
+```bash
+curl -sS "$KORTIX_API_URL/projects/$PROJECT_ID/connector-profiles" \
+  -H "Authorization: Bearer $KORTIX_API_KEY" \
+  | jq '.profiles[] | {label, owner_type, is_default, profile_id}'
+```
+
+(The dashboard shows each connection's id on its row — **⋯ → Copy connection ID**.)
+Then bind that id: `connector_bindings: { gmail: { profile_id: "<id>" } }`.
+
+⚠️ **A backend can only bind TEAM connections.** A member's *private* connection
+(`owner_type: "member"`) is bindable only by that member's own token — a service
+account gets `404 CONNECTOR_PROFILE_NOT_FOUND` (deliberately identical to
+not-found, so an id can't be used to probe who connected what). That is the point
+of "private": it means *runs as me*, and a service account is not a person. If a
+backend needs a particular mailbox, add it as a **team** connection.
+
+Omit `connector_bindings` for an alias and it resolves the team **default** —
+which is what the `Default` badge in the dashboard marks.
+
 > **All-or-nothing binding:** if a session's `connector_bindings` sets *any*
 > alias, every *unbound* alias resolves to null for that session. Bind every
 > connector the agent needs in the one call — **or** pass **`inherit_unbound: true`**
@@ -259,13 +282,58 @@ manifest grants it no secrets (or not that one), the allowlist can't add it back
 — the session simply gets fewer. Identifiers are validated at create, so a typo
 fails fast rather than silently injecting nothing.
 
-### origin_ref — attribution, not identity
+### origin_ref — a label, not a lever
 
-`origin_ref` records *who* the session is for and hands the sandbox
-`KORTIX_ORIGIN_REF`. It does **not** resolve that user's connectors or secrets by
-itself — pass those explicitly (`connector_bindings`, `secrets`). It exists so
-usage, logs, and the agent can be attributed to your end-user without Kortix ever
-knowing them as a login.
+`origin_ref` records *which of your end-users* a session was started for. It is
+an opaque string you choose; Kortix never resolves it to a login.
+
+**Exactly what it does, today:**
+
+1. **Stored + echoed** on the session (`origin_ref` in every session response).
+2. **Handed to the agent** as the `KORTIX_ORIGIN_REF` sandbox env var, so a
+   prompt/tool can say who it is acting for. (Kortix itself never reads it back.)
+3. **Guards idempotent retries.** Replaying an `Idempotency-Key` with a
+   *different* `origin_ref` is refused with `409 IDEMPOTENCY_ORIGIN_CONFLICT`, so
+   a retry can never hand end-user B the session that belongs to end-user A. This
+   is the one thing that would actually break without it.
+
+**What it does NOT do — do not design around these:**
+
+- **It grants nothing.** It is never an input to an authorization decision. The
+  403 you may hit is about *who may set the field* (backend origin only), not
+  about its value.
+- **It resolves nothing.** It does not pull that user's connectors or secrets —
+  pass those explicitly (`connector_bindings`, `secrets`).
+- **It does not list sessions.** No endpoint filters sessions by `origin_ref`, so
+  "show me this end-user's sessions" still needs your own mapping.
+
+**What it DOES drive — metering and caps:**
+
+```
+GET /v1/usage?origin_ref=user-123     # that end-user's spend (totals + breakdown)
+GET /v1/usage?group_by=origin_ref     # spend per end-user, biggest first
+```
+
+Usage events carry a server-derived copy of `origin_ref`, so per-end-user spend
+is a real query. Two caveats worth knowing:
+
+- **Only backend-session spend is attributed.** Rows written before this shipped,
+  the model playground, and the legacy router path all have a `NULL` `origin_ref`
+  and are *excluded* from `group_by=origin_ref` — they aren't folded into an
+  anonymous bucket that would read as a phantom end-user. The unfiltered totals
+  in `data` still include them, so per-user rows won't sum to the account total.
+- **The value lands in the billing ledger and comes back out of the API**, so use
+  an opaque id — not an email.
+
+For concurrency, `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT` caps how many LIVE
+sessions one end-user may hold (0/unset = off; the account-wide cap always
+applies). Exceeding it returns `429 per_origin_session_limit`. It's a check-then-
+act guard, like the account cap — N parallel creates for one end-user can still
+overshoot slightly, so treat it as a runaway-loop guardrail, not a hard quota.
+
+Treat `origin_ref` as a durable label for correlation, attribution and metering.
+If you need structured per-user context inside the run as well, put it in
+`runtime_context`.
 
 ---
 

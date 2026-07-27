@@ -109,6 +109,25 @@ describe('toCallRecordEntries — tool calls are not speech', () => {
     expect(e).toMatchObject({ kind: 'tool', name: 'ask_kortix', text: 'what broke the build?', outcome: null });
   });
 
+  test('the settle row that closes a hand-off renders as name + outcome, nothing doubled', () => {
+    // `ask_kortix_done` is written by apps/api's `settleAsk` when a hand-off
+    // finishes, however it finishes — it is what lets the call ask again
+    // (channels/voice/ask-ledger.ts). It follows the same `<tool>: <detail>`
+    // convention as every other tool row precisely so it needs no special case
+    // here: the prefix is stripped and the reader sees just the outcome.
+    for (const outcome of ['answered', 'failed', 'nothing to say', 'timed out']) {
+      const [e] = toCallRecordEntries([
+        turn({
+          cursor: 1,
+          role: 'tool',
+          speaker: 'ask_kortix_done',
+          text: `ask_kortix_done: ${outcome}`,
+        }),
+      ]);
+      expect(e).toMatchObject({ kind: 'tool', name: 'ask_kortix_done', text: outcome });
+    }
+  });
+
   test('an arrow inside the text is NOT torn off as an outcome', () => {
     // The bug the fixed outcome vocabulary exists to prevent: "arrow" is not a
     // result, so the request must survive whole.

@@ -6,6 +6,7 @@
  */
 import { type FunctionTool, tool } from '@livekit/agents';
 import { z } from 'zod';
+import { nextAckLine } from './ack';
 import type { CallContext } from './call-context';
 import { runCommandInSandbox, sendPromptToKortix } from './kortix-client';
 
@@ -42,7 +43,14 @@ const runCommandParams = z.object({
 });
 
 export interface VoiceTools {
-  send_prompt: FunctionTool<{ request: string }, CallContext, string>;
+  /**
+   * `string | undefined` — and the `undefined` is the whole point. See
+   * `send_prompt`'s execute below: returning nothing is what stops the model
+   * speaking after a successful hand-off, because the ack has already been said
+   * literally. A string comes back only when there is something the model
+   * genuinely has to put into its own words (a refusal, or an unreachable API).
+   */
+  send_prompt: FunctionTool<{ request: string }, CallContext, string | undefined>;
   run_command: FunctionTool<{ command: string; cwd?: string | null }, CallContext, string>;
 }
 
@@ -53,24 +61,51 @@ export function buildTools(): VoiceTools {
   // explicitly, so `parameters`/`execute` would otherwise fall back to the
   // `Schema = undefined` default and fail to type-check against a real zod
   // schema.
-  const send_prompt = tool<CallContext, typeof sendPromptParams, string>({
+  const send_prompt = tool<CallContext, typeof sendPromptParams, string | undefined>({
     name: 'send_prompt',
     description:
       'Hand a request to the Kortix agent for this project. Use for anything needing real ' +
       'information, project files, connectors, memory, or actions. Asynchronous: returns the ' +
-      'instant the request is queued, not when Kortix has an answer — say one short sentence ' +
-      'that you are checking, then stop talking. The answer arrives later as something to speak.',
+      'instant the request is queued, not when Kortix has an answer. This tool SPEAKS the ' +
+      '"let me check" line itself — say nothing after a successful hand-off, and do not answer ' +
+      'the question yourself. The answer arrives later as something to speak.',
     parameters: sendPromptParams,
     execute: async ({ request }, { ctx }) => {
       const call = ctx.userData;
       const result = await sendPromptToKortix(call, request);
+
       if (!result.ok) {
+        // Two genuinely different failures, and conflating them is how a
+        // refusal ("you already asked — wait") got spoken as "I could not reach
+        // Kortix", which is false and invites an immediate retry.
+        //
+        // Both return a STRING on purpose: a returned tool output is what makes
+        // the framework generate a reply (see the success path below), and here
+        // there is something real the room needs to be told. `kind: 'refused'`
+        // text is written by apps/api to be relayed as-is; it is guidance for
+        // this model, not an error string.
+        if (result.kind === 'refused') return result.error;
         return `Could not reach Kortix (${result.error}). Tell the room you could not send that request right now.`;
       }
-      return (
-        'Queued. Say one short sentence that you are checking, then stop talking — do not answer ' +
-        'yet. The result will arrive later as a message for you to speak.'
-      );
+
+      // THE ACK IS SPOKEN HERE, LITERALLY — not returned as an instruction for
+      // the model to compose. `session.say()` is TTS with no LLM step, so what
+      // the room hears is exactly `nextAckLine()` and nothing else. When the
+      // model wrote this sentence itself it appended invention to it (see
+      // ack.ts's header for the utterance that started a paid ask-loop).
+      //
+      // `void` because a SpeechHandle nobody awaits is the intended usage for
+      // in-tool speech, and awaiting playout here would hold the tool — and
+      // therefore the turn — open for the length of the sentence.
+      void ctx.session.say(nextAckLine());
+
+      // RETURNING NOTHING IS LOAD-BEARING. @livekit/agents sets
+      // `replyRequired: toolOutput !== undefined` (voice/generation.js), so an
+      // undefined result still records a tool-call output in the model's chat
+      // context — no dangling tool call — while suppressing the follow-up
+      // generation entirely. There is therefore no second utterance for the
+      // model to embellish, and nothing in history inviting it to answer early.
+      return undefined;
     },
   });
 

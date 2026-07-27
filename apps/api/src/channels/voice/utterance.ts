@@ -25,7 +25,49 @@
  * of each kind is carried over verbatim from the call sites it replaces
  * (turn.ts, answer-watch.ts, executor/db-deps.ts); changing it changes what a
  * live call actually says, so treat these strings as behaviour, not comments.
+ *
+ * WHY THESE INSTRUCTIONS ARE PHRASED THE WAY THEY ARE. Voice is the only channel
+ * with its OWN LLM on the far side. Slack, Teams and email are one model talking
+ * to humans; here, whatever apps/api says is read by a second model that has its
+ * own conversation history and its own beliefs — and that model can be, and has
+ * been, WRONG about the project. On a real call a transcription artifact led it
+ * to assert "this project is about developing a system involving dogs", and
+ * because that claim sat in its history as fact, every correct answer sent from
+ * here CONTRADICTED it. It could not simply relay an answer that disagreed with
+ * itself, so it asked Kortix again to resolve the contradiction, indefinitely,
+ * at real cost per ask.
+ *
+ * The old phrasing made that worse. "[result] … say it out loud now, in your own
+ * words" is a licence: own words invites blending the answer with what the model
+ * already believes. So every instruction below that carries FACT now does three
+ * things instead — states that this is what Kortix says, that it SUPERSEDES
+ * anything the model said earlier, and that nothing may be added to it. The
+ * supersede clause is the one that breaks the loop: without explicit permission
+ * to be wrong, the model keeps trying to reconcile its own false claim.
+ *
+ * They are still INSTRUCTIONS run through `generateReply`, not scripts read by
+ * `say()`. A result recited verbatim by TTS sounds like a robot reading a
+ * ticket, and the answer text is written for a chat surface, not a mouth.
+ * Removing the licence to invent is not the same as removing natural phrasing.
  */
+
+/**
+ * The clause that lets the voice model abandon a claim it already made.
+ *
+ * Shared verbatim by every utterance that asserts something about the project,
+ * because half of it working is worse than none: if a `result` supersedes but an
+ * `error` does not, the model still has a standing contradiction to chase.
+ */
+const SUPERSEDES =
+  'This is what your Kortix agent — the one that actually knows this project — says, so it ' +
+  'is now the truth and it REPLACES anything you said or assumed earlier in this call. If it ' +
+  'contradicts something the room already heard you say, correct that plainly in the same ' +
+  'breath ("I had that wrong — it is actually…") and move on. Do not ask Kortix about it again.';
+
+/** No invention: say this and only this. */
+const NOTHING_ADDED =
+  'Say only what is here, in natural spoken language. Add no detail, no explanation, no ' +
+  'guess and no context that is not in it.';
 
 export type KortixUtteranceKind = 'say' | 'progress' | 'result' | 'question' | 'review' | 'error';
 
@@ -67,36 +109,61 @@ export function kortixSay(text: string): KortixUtterance {
     instruction:
       `[say] Your Kortix agent — the one you hand work to — wants the room to hear this now. ` +
       `Say it out loud in your own voice, keeping its meaning exactly, and do not treat it ` +
-      `as a question or a task to act on: ${text}`,
+      `as a question or a task to act on. ${SUPERSEDES} ${NOTHING_ADDED} Here it is: ${text}`,
     transcript: text,
   };
 }
 
-/** A step of an in-flight turn, spoken sparingly (see turn.ts's throttle). */
+/**
+ * A step of an in-flight turn, spoken sparingly (see turn.ts's throttle).
+ *
+ * No supersede clause: a step is not a finding, and telling the model that a
+ * step overrides its beliefs would invite it to spin one into an answer. What it
+ * DOES need is the ban on extrapolating — "reading the config" is not permission
+ * to guess what the config says.
+ */
 export function kortixProgress(step: string): KortixUtterance {
   return {
     kind: 'progress',
     instruction:
-      `[progress] You are still working on the request. Current step: ${step}. Mention this briefly and naturally, in one short sentence, only if it has been a while since you last spoke.`,
+      `[progress] You are still working on the request; there is no answer yet. Current step: ${step}. Mention this briefly and naturally, in one short sentence, only if it has been a while since you last spoke. Say what the step is and nothing else — do not guess what it will find, and do not treat it as an answer.`,
     transcript: `Working on: ${step}`,
   };
 }
 
-/** The outcome of a finished turn — the answer to whatever was handed over. */
+/**
+ * The outcome of a finished turn — the answer to whatever was handed over.
+ *
+ * THE utterance this whole file's framing exists for. It used to end "say it out
+ * loud now, in your own words", which is exactly the licence that let the voice
+ * model blend a correct answer with a false belief it was holding. It now states
+ * the answer, supersedes the belief, and forbids the addition.
+ */
 export function kortixResult(text: string): KortixUtterance {
   return {
     kind: 'result',
-    instruction: `[result] The work finished. Here is the outcome — say it out loud now, in your own words, conversationally and briefly: ${text}`,
+    instruction:
+      `[result] Kortix has answered. State this answer to the room now, briefly and ` +
+      `conversationally. ${SUPERSEDES} ${NOTHING_ADDED} The answer: ${text}`,
     transcript: text,
   };
 }
 
-/** A turn that failed. `message` is the cause, if there is a readable one. */
+/**
+ * A turn that failed. `message` is the cause, if there is a readable one.
+ *
+ * Supersedes too, and for the same reason as a result: "that didn't work" is a
+ * fact about the request, and a model holding a belief about what the request
+ * WOULD have said must not talk over it with a theory.
+ */
 export function kortixError(message?: string | null): KortixUtterance {
   const cause = message?.trim() ? `: ${message.trim()}` : '';
   return {
     kind: 'error',
-    instruction: `[error] That request failed${cause}. Tell them briefly that it didn't work, without reading the error verbatim.`,
+    instruction:
+      `[error] That request failed${cause}. Tell them briefly that it didn't work, without ` +
+      `reading the error verbatim. ${SUPERSEDES} Do not offer a theory about why, do not ` +
+      `answer the original question from memory, and do not hand the same request over again.`,
     transcript: `That request failed${cause}`,
   };
 }

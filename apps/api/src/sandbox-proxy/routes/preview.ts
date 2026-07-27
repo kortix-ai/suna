@@ -30,7 +30,9 @@ import {
 import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
-const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
+const preview = new Hono<{
+  Variables: { userId: string; userEmail: string; sessionId?: string };
+}>();
 
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
@@ -446,7 +448,17 @@ function bodyWithoutPromptAgent(
 // proxy edges use it: the path-based Hono route below and the subdomain handler
 // (src/sandbox-proxy/subdomain.ts).
 
-export type PreviewProxyAccess = { kind: 'principal'; userId: string } | { kind: 'public_share' };
+export type PreviewProxyAccess =
+  | {
+      kind: 'principal';
+      userId: string;
+      /** The caller's own session when the credential is bound to one (a sandbox
+       *  token). Kortix-as-a-Backend shares ONE userId across every end-user, so
+       *  this is what separates them. Null means a non-session-bound principal.
+       *  REQUIRED so a new entry point cannot silently omit it and fail open. */
+      callerSessionId: string | null;
+    }
+  | { kind: 'public_share' };
 
 function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
@@ -510,6 +522,7 @@ export async function forwardToSandbox(
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
   const userId = principalUserId(access);
+  const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
   if (
     access.kind === 'principal' &&
     !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
@@ -541,6 +554,7 @@ export async function forwardToSandbox(
       projectId: record.projectId,
       accountId: record.accountId,
       userId,
+      callerSessionId: callerSessionId ?? null,
     }))
   ) {
     throw new HTTPException(403, { message: 'Not authorized to access this session' });
@@ -1003,11 +1017,15 @@ export async function resolvePreviewWsUpstream(opts: {
   userId: string;
   remainingPath: string;
   queryString: string;
+  /** The caller's own session when the credential is bound to one, or null for a
+   *  principal that is not session-bound. REQUIRED — fail closed, never default. */
+  callerSessionId: string | null;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
+  const callerSessionId = opts.callerSessionId;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
@@ -1031,6 +1049,7 @@ export async function resolvePreviewWsUpstream(opts: {
       projectId: record.projectId,
       accountId: record.accountId,
       userId,
+      callerSessionId: callerSessionId ?? null,
     }))
   ) {
     return { ok: false, status: 403, message: 'not authorized for this session' };
@@ -1108,7 +1127,7 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   return forwardToSandbox(
     sandboxId,
     port,
-    { kind: 'principal', userId },
+    { kind: 'principal', userId, callerSessionId: c.get('sessionId') ?? null },
     method,
     remainingPath,
     queryString,

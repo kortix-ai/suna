@@ -9,6 +9,7 @@
     "dev": "bun run src/index.ts dev",
     "start": "bun run src/index.ts start",
     "console": "bun run src/index.ts console",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

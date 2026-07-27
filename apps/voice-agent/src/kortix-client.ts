@@ -21,7 +21,21 @@ const PROMPT_TIMEOUT_MS = 6_000;
 const RUN_COMMAND_TIMEOUT_MS = 12_000;
 const TURN_TIMEOUT_MS = 6_000;
 
-type PostResult = { ok: true; data: unknown } | { ok: false; error: string };
+/**
+ * WHY the failure carries a `kind`. A tool that came back `isError: true` was
+ * REACHED and said no — apps/api refuses a hand-off when one is already
+ * outstanding, or when the call is repeating itself, and the text it returns is
+ * guidance written for the voice model to relay. A transport failure is the
+ * opposite: nothing was told anything. Collapsing both into one string made the
+ * call announce "I could not reach Kortix" when Kortix had in fact answered
+ * "you already asked me that, wait" — which reads as a fault and invites the
+ * immediate retry the refusal exists to prevent.
+ */
+export type PostFailureKind = 'unreachable' | 'refused';
+
+type PostResult =
+  | { ok: true; data: unknown }
+  | { ok: false; kind: PostFailureKind; error: string };
 
 interface McpToolContent {
   type: string;
@@ -51,9 +65,10 @@ let nextRpcId = 1;
 /**
  * Calls one voice-MCP tool and unwraps its JSON-RPC + MCP tool-result
  * envelopes into a plain `PostResult`. A tool error (`isError: true`, e.g.
- * "request is required") and a transport error (fetch failure, non-2xx,
- * malformed JSON-RPC) both collapse to `{ ok: false, error }` here — callers
- * below don't need to know which layer failed, only that it did.
+ * "request is required", or a refused hand-off) becomes `kind: 'refused'`;
+ * every transport-layer failure (fetch failure, non-2xx, malformed JSON-RPC)
+ * becomes `kind: 'unreachable'`. See `PostFailureKind` for why that distinction
+ * has to survive this far.
  */
 async function callVoiceMcpTool(
   ctx: CallContext,
@@ -84,13 +99,14 @@ async function callVoiceMcpTool(
     console.log('[voice-agent] mcp tools/call <-', url, res.status);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: `voice mcp ${toolName} unreachable: ${message}` };
+    return { ok: false, kind: 'unreachable', error: `voice mcp ${toolName} unreachable: ${message}` };
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     return {
       ok: false,
+      kind: 'unreachable',
       error: `voice mcp ${toolName} responded ${res.status}${text ? `: ${text.slice(0, 300)}` : ''}`,
     };
   }
@@ -98,19 +114,19 @@ async function callVoiceMcpTool(
   const rpc = (await res.json().catch(() => ({}))) as JsonRpcResponse;
 
   if (rpc.error) {
-    return { ok: false, error: `voice mcp ${toolName}: ${rpc.error.message ?? 'protocol error'}` };
+    return { ok: false, kind: 'unreachable', error: `voice mcp ${toolName}: ${rpc.error.message ?? 'protocol error'}` };
   }
 
   const toolResult = rpc.result;
   if (!toolResult) {
-    return { ok: false, error: `voice mcp ${toolName}: empty response` };
+    return { ok: false, kind: 'unreachable', error: `voice mcp ${toolName}: empty response` };
   }
   if (toolResult.isError) {
     const text = (toolResult.content ?? [])
       .map((c) => c.text)
       .filter((t): t is string => Boolean(t))
       .join(' ');
-    return { ok: false, error: text || `voice mcp ${toolName} failed` };
+    return { ok: false, kind: 'refused', error: text || `voice mcp ${toolName} failed` };
   }
 
   return { ok: true, data: toolResult.structuredContent ?? {} };
@@ -126,9 +142,9 @@ async function callVoiceMcpTool(
 export async function sendPromptToKortix(
   ctx: CallContext,
   text: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; kind: PostFailureKind; error: string }> {
   const result = await callVoiceMcpTool(ctx, 'ask_kortix', { request: text }, PROMPT_TIMEOUT_MS);
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
+  return result.ok ? { ok: true } : { ok: false, kind: result.kind, error: result.error };
 }
 
 export interface RunCommandResult {

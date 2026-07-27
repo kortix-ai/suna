@@ -9,7 +9,7 @@ import {
   projectSessions,
   serviceAccounts,
 } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export interface ValidatedSessionConnectorBinding {
@@ -203,8 +203,15 @@ export async function validateSessionConnectorBindings(input: {
       (row.ownerType === 'member' &&
         row.ownerId === input.actingUserId &&
         !input.actingPrincipalIsServiceAccount) ||
-      (row.ownerType === 'project' && row.isDefault) ||
-      (row.ownerType !== 'member' && row.ownerType !== 'project' && input.mayManageSystemProfiles);
+      // ANY project-owned connection may be bound explicitly, not just the
+      // default one: a connector can now hold several TEAM connections (e.g.
+      // support@ and sales@) and naming one by profile_id is exactly how a
+      // caller picks between them. They all belong to this project (the query
+      // above is account+project scoped), so this widens choice, not authority.
+      row.ownerType === 'project' ||
+      // Anything left here is a SYSTEM profile (agent/subject/external) — the
+      // 'project' case is already handled above, so TS has narrowed it out.
+      (row.ownerType !== 'member' && input.mayManageSystemProfiles);
     if (!mayUseProfile) {
       // Deliberately match the cross-project response. A profile id is not an
       // authority, and callers must not be able to probe another member's
@@ -238,6 +245,102 @@ export async function validateSessionConnectorBindings(input: {
     });
   }
   return { ok: true, bindings: validated };
+}
+
+export type RequiredConnectorResolution =
+  | { ok: true; bindings: ValidatedSessionConnectorBinding[] }
+  | { ok: false; connector: string; error: string; code: 'CONNECTOR_CONNECTION_REQUIRED' };
+
+/**
+ * Resolve each REQUIRED connector alias to the ACTING USER's OWN active member
+ * connection profile. Unlike validateSessionConnectorBindings (which verifies a
+ * caller-supplied profile_id), this DISCOVERS the user's own profile by
+ * (owner_type='member', owner_id, connector slug). If the user has not connected
+ * a required connector — or it is revoked/disabled, or the caller is a service
+ * account with no personal identity — it fails CONNECTOR_CONNECTION_REQUIRED,
+ * naming the PUBLIC alias so the UI can prompt a connect. Returned bindings share
+ * the ValidatedSessionConnectorBinding shape and merge into the same persist path;
+ * being member-owned they force the session private, and the caller forces
+ * inherit_unbound so the agent's OTHER connectors keep their project defaults.
+ */
+export async function resolveRequiredMemberConnectorProfiles(input: {
+  accountId: string;
+  projectId: string;
+  actingUserId: string;
+  actingPrincipalIsServiceAccount: boolean;
+  aliases: readonly string[];
+}): Promise<RequiredConnectorResolution> {
+  const bindings: ValidatedSessionConnectorBinding[] = [];
+  const seen = new Set<string>();
+  for (const requestedAlias of input.aliases) {
+    const alias = canonicalConnectorAlias(requestedAlias);
+    if (seen.has(alias)) continue;
+    seen.add(alias);
+    const publicAlias = publicConnectorAlias(alias);
+    // A service account has no personal ("member") identity, so it can never
+    // satisfy a personal-connection requirement — fail closed (the caller also
+    // rejects backend origin up front; this is defense in depth).
+    if (input.actingPrincipalIsServiceAccount) {
+      return {
+        ok: false,
+        connector: publicAlias,
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
+        error: `Connector "${publicAlias}" requires a personal connection`,
+      };
+    }
+    const [row] = await db
+      .select({
+        profileId: executorConnectionProfiles.profileId,
+        connectorId: executorConnectionProfiles.connectorId,
+        ownerId: executorConnectionProfiles.ownerId,
+      })
+      .from(executorConnectionProfiles)
+      .innerJoin(
+        executorConnectors,
+        and(
+          eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+          eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
+          eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+        ),
+      )
+      .where(
+        and(
+          eq(executorConnectionProfiles.accountId, input.accountId),
+          eq(executorConnectionProfiles.projectId, input.projectId),
+          eq(executorConnectionProfiles.ownerType, 'member'),
+          eq(executorConnectionProfiles.ownerId, input.actingUserId),
+          eq(executorConnectors.slug, alias),
+          // Filter to USABLE rows in the query, not after LIMIT 1. A member may
+          // now hold several connections on one connector, so fetching an
+          // arbitrary row and then rejecting it would report "connect your
+          // account" while a perfectly good active connection sits right there.
+          eq(executorConnectionProfiles.status, 'active'),
+          eq(executorConnectors.enabled, true),
+        ),
+      )
+      // Deterministic pick: the member's own DEFAULT wins. Without this, "use my
+      // gmail" would choose arbitrarily between e.g. their "Work" and "Personal"
+      // accounts — i.e. act as the wrong account on a coin flip. Tie-break on
+      // profileId so the choice is stable across calls when no default is set.
+      .orderBy(desc(executorConnectionProfiles.isDefault), executorConnectionProfiles.profileId)
+      .limit(1);
+    if (!row) {
+      return {
+        ok: false,
+        connector: publicAlias,
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
+        error: `Connect your "${publicAlias}" account to start this session`,
+      };
+    }
+    bindings.push({
+      alias,
+      profileId: row.profileId,
+      connectorId: row.connectorId,
+      ownerType: 'member',
+      ownerId: row.ownerId,
+    });
+  }
+  return { ok: true, bindings };
 }
 
 export async function persistSessionConnectorBindings(input: {
@@ -431,6 +534,12 @@ export async function resolveSessionConnectorProfile(input: {
         eq(executorConnectionProfiles.accountId, input.accountId),
         eq(executorConnectionProfiles.projectId, input.projectId),
         eq(executorConnectionProfiles.isDefault, true),
+        // The unbound-alias fallback must ONLY ever reach the PROJECT's shared
+        // default. Defaults are per-owner now (a member can mark one of their own
+        // connections default), so without this filter a session with no explicit
+        // binding could resolve to some member's PERSONAL connection — acting as
+        // the wrong account, across users. Fail to the team connection or nothing.
+        eq(executorConnectionProfiles.ownerType, 'project'),
         eq(executorConnectors.slug, input.alias),
       ),
     )

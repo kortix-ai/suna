@@ -28,11 +28,19 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { sandboxOpencodeEndpoint } from '../../projects/opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../../projects/sandbox-fetch';
-import { promptVoiceAgent } from './runtime';
+import { promptVoiceAgent, settleAsk } from './runtime';
 import { kortixError, kortixResult } from './utterance';
 
-/** How long to wait for a turn before giving up. Agent turns can be minutes. */
-const MAX_WAIT_MS = 6 * 60_000;
+/**
+ * How long to wait for a turn before giving up. Agent turns can be minutes.
+ *
+ * Exported because ask-ledger.ts's `ASK_INFLIGHT_TIMEOUT_MS` has to sit just
+ * PAST it: this watch settles the hand-off in a `finally`, so the ledger's own
+ * expiry must only ever fire for a watch that died with its process, never for
+ * one that is simply still waiting. unit-voice-ask-ledger.test.ts asserts the
+ * ordering rather than trusting either comment.
+ */
+export const MAX_WAIT_MS = 6 * 60_000;
 /** Gentle — this is a sandbox round-trip per tick, for one live call. */
 const POLL_INTERVAL_MS = 2_500;
 /** Long answers get truncated: this is going to be READ ALOUD. */
@@ -160,83 +168,118 @@ function latestCompletedAssistantId(messages: OpencodeMessageLite[]): string | n
 }
 
 /**
+ * Every way this watch can end, in the words the transcript records.
+ *
+ * These are not decoration. This function owns the LIFETIME of one hand-off:
+ * askKortix opens it (writing the ask row that blocks a second hand-off), and
+ * whichever of these outcomes happens closes it. Anything that ends the watch
+ * without naming an outcome would leave the call unable to hand anything over
+ * until ask-ledger.ts's expiry catches it minutes later.
+ */
+type WatchOutcome =
+  | 'answered'
+  | 'failed'
+  | 'nothing to say'
+  | 'session unreadable'
+  | 'timed out';
+
+/**
  * Wait for the session's next completed assistant turn and speak it into the
  * call. Fire-and-forget: callers must NOT await this.
  *
  * `baselineId` is captured BEFORE the prompt is delivered so a turn that was
  * already sitting in history is never mistaken for the answer to this request —
  * the bug that would otherwise make the call read out a stale reply instantly.
+ *
+ * The whole body runs inside a `try/finally` whose `finally` settles the ask.
+ * That structure is load-bearing, not tidiness: the four `return`s below and the
+ * loop's own deadline are five separate exits, and a hand-off that is never
+ * settled costs the call its ability to ask again. If a new exit is added here,
+ * it must produce a `WatchOutcome` on the way out.
  */
 export function speakAnswerWhenReady(callId: string, sessionId: string): void {
   void (async () => {
-    let endpoint = await resolveOpencode(sessionId);
-    if (!endpoint) {
-      console.error('[voice] cannot watch for answer — no opencode endpoint', { sessionId });
-      return;
+    let outcome: WatchOutcome = 'timed out';
+    try {
+      outcome = await watchForAnswer(callId, sessionId);
+    } catch (err) {
+      console.error('[voice] answer watch crashed', { callId, sessionId }, err);
+      outcome = 'session unreadable';
+    } finally {
+      await settleAsk(callId, outcome);
     }
-
-    const first = await tryFetchMessages(endpoint);
-    const baselineId = first.messages ? latestCompletedAssistantId(first.messages) : null;
-
-    let consecutiveFailures = 0;
-    let lastError = first.error;
-    const deadline = Date.now() + MAX_WAIT_MS;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-
-      const tick = await tryFetchMessages(endpoint);
-      const messages = tick.messages;
-      if (!messages) {
-        lastError = tick.error ?? lastError;
-        consecutiveFailures++;
-
-        // Re-resolve rather than keep retrying with credentials that may be
-        // dead. The endpoint carries a SIGNED, sandbox-specific header, and
-        // delivering the prompt is itself liable to resume or restart the
-        // sandbox — which rotates that signature. Reusing the original headers
-        // then 401s on every remaining poll, so the answer never arrives even
-        // though the sandbox is healthy and answering other callers fine.
-        if (consecutiveFailures % 4 === 0) {
-          const refreshed = await resolveOpencode(sessionId);
-          if (refreshed) endpoint = refreshed;
-        }
-
-        // ~30s of unbroken failure is not a blip — say so once, loudly, rather
-        // than polling in silence until the deadline and reporting nothing.
-        if (consecutiveFailures === 12) {
-          console.error('[voice] answer watch cannot read the session', { sessionId, lastError });
-        }
-        continue;
-      }
-      consecutiveFailures = 0;
-
-      const newestId = latestCompletedAssistantId(messages);
-      if (!newestId || newestId === baselineId) continue;
-
-      const message = messages.find((m) => m.info?.id === newestId);
-      if (!message) continue;
-
-      const failure = errorMessage(message);
-      if (failure) {
-        await promptVoiceAgent(callId, kortixError(failure)).catch(() => {});
-        return;
-      }
-
-      const text = spokenText(message);
-      if (!text) {
-        // Not necessarily wrong — a turn can be all tool calls — but silence
-        // here is indistinguishable from a broken watcher, and that ambiguity
-        // cost hours once already.
-        console.error('[voice] turn completed with nothing to say', { sessionId, id: newestId });
-        return;
-      }
-
-      await promptVoiceAgent(callId, kortixResult(text)).catch((err) =>
-        console.error('[voice] failed to speak answer', err),
-      );
-      return;
-    }
-
-    console.error('[voice] gave up waiting for an answer', { sessionId, callId, lastError });
   })();
+}
+
+async function watchForAnswer(callId: string, sessionId: string): Promise<WatchOutcome> {
+  let endpoint = await resolveOpencode(sessionId);
+  if (!endpoint) {
+    console.error('[voice] cannot watch for answer — no opencode endpoint', { sessionId });
+    return 'session unreadable';
+  }
+
+  const first = await tryFetchMessages(endpoint);
+  const baselineId = first.messages ? latestCompletedAssistantId(first.messages) : null;
+
+  let consecutiveFailures = 0;
+  let lastError = first.error;
+  const deadline = Date.now() + MAX_WAIT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+    const tick = await tryFetchMessages(endpoint);
+    const messages = tick.messages;
+    if (!messages) {
+      lastError = tick.error ?? lastError;
+      consecutiveFailures++;
+
+      // Re-resolve rather than keep retrying with credentials that may be
+      // dead. The endpoint carries a SIGNED, sandbox-specific header, and
+      // delivering the prompt is itself liable to resume or restart the
+      // sandbox — which rotates that signature. Reusing the original headers
+      // then 401s on every remaining poll, so the answer never arrives even
+      // though the sandbox is healthy and answering other callers fine.
+      if (consecutiveFailures % 4 === 0) {
+        const refreshed = await resolveOpencode(sessionId);
+        if (refreshed) endpoint = refreshed;
+      }
+
+      // ~30s of unbroken failure is not a blip — say so once, loudly, rather
+      // than polling in silence until the deadline and reporting nothing.
+      if (consecutiveFailures === 12) {
+        console.error('[voice] answer watch cannot read the session', { sessionId, lastError });
+      }
+      continue;
+    }
+    consecutiveFailures = 0;
+
+    const newestId = latestCompletedAssistantId(messages);
+    if (!newestId || newestId === baselineId) continue;
+
+    const message = messages.find((m) => m.info?.id === newestId);
+    if (!message) continue;
+
+    const failure = errorMessage(message);
+    if (failure) {
+      await promptVoiceAgent(callId, kortixError(failure)).catch(() => {});
+      return 'failed';
+    }
+
+    const text = spokenText(message);
+    if (!text) {
+      // Not necessarily wrong — a turn can be all tool calls — but silence
+      // here is indistinguishable from a broken watcher, and that ambiguity
+      // cost hours once already.
+      console.error('[voice] turn completed with nothing to say', { sessionId, id: newestId });
+      return 'nothing to say';
+    }
+
+    await promptVoiceAgent(callId, kortixResult(text)).catch((err) =>
+      console.error('[voice] failed to speak answer', err),
+    );
+    return 'answered';
+  }
+
+  console.error('[voice] gave up waiting for an answer', { sessionId, callId, lastError });
+  return 'timed out';
 }

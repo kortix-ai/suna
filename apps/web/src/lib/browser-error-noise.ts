@@ -476,6 +476,88 @@ const ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES = [
   'Error invoking postEvent: Java object is gone',
 ] as const;
 
+// iOS WebKit (WKWebView) in-app-browser native-bridge instrumentation noise.
+// The iOS sibling of the Android System WebView bridge noise above
+// (`ANDROID_WEBVIEW_NATIVE_BRIDGE_POST{MESSAGE,EVENT}_NOISE_MESSAGES`). The
+// Facebook iOS in-app browser (and iOS WebViews generally — every iOS in-app
+// browser is a WKWebView, all running JavaScriptCore/JSC, not V8) injects a
+// synthetic `app:///` (note: THREE slashes — distinct from the Android bridge's
+// single-slash `app://navigation_performance_logger_android` source) script that
+// records navigation/performance timing (`processLargestContentfulPaintEvent`)
+// and ships it back to its native bridge via `sendDataToNative` →
+// `window.webkit.messageHandlers`. On iOS WebViews where the WebKit
+// `messageHandlers` bridge is unavailable — the host app didn't wire it, or the
+// page is loading/tearing down — `window.webkit` is `undefined`, so the property
+// access `window.webkit.messageHandlers` throws JSC's canonical
+// `undefined is not an object (evaluating 'window.webkit.messageHandlers')`.
+// This is the WebView's OWN instrumentation, never first-party code: the
+// `app:///` frames are the WebView's injected script (NOT an `app:///_next/…`
+// bundle frame and NOT a de-minified `apps/web/src/…` frame), and
+// `sendDataToNative` / `processLargestContentfulPaintEvent` are its internal
+// functions. Sentry's `GlobalHandlers` `onerror` integration captures the throw
+// as an UNCAUGHT global error (mechanism
+// `auto.browser.global_handlers.onerror`, `handled:false` — it never reaches a
+// React error boundary) and leaks it to Better Stack. Better Stack pattern
+// 5b94212bc682a1ee1d33d67f6517ec95830c63e1ff8a3779d1700dd6091679eb
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+// users, last_seen 2026-07-27 10:36:24 UTC, release
+// `5d47baf11708881f1099cdaa875266944e976a78` (POST-`0.10.16`),
+// transaction `/` (marketing homepage), URL `https://kortix.com/?fbclid=…`
+// (a Facebook referral), browser `Facebook 571.0.0.55.72` on `iOS (iPhone)
+// 26.5.2` (the Facebook in-app browser — an iOS WebView). Stack frames (3, all
+// synthetic `app:///` WebView instrumentation — NO first-party
+// `apps/web/src/…` frame): `?`, `processLargestContentfulPaintEvent`, and the
+// throwing `sendDataToNative` (call_site_function `sendDataToNative`).
+//
+// The message wording (`undefined is not an object (evaluating
+// 'window.webkit.messageHandlers')`) is JSC's canonical TypeError phrasing for
+// a property access on `undefined` (here `window.webkit` is undefined). The
+// `window.webkit.messageHandlers` token is the STABLE anchor — it names the
+// WebKit native-bridge API the WebView instrumentation is trying to reach; it
+// is never called from first-party app code. Do NOT match just `window.webkit`
+// (too broad — a real first-party `window.webkit.<x>` access, e.g.
+// `window.webkit.audioWorklet`, could throw and must stay observable). The
+// matcher is anchored on BOTH the EXACT `messageHandlers` message AND a
+// POSITIVE frame anchor: at least one frame whose filename is the synthetic
+// `app:///` source (the iOS WebView's injected instrumentation — distinct from
+// Android's `app://navigation_performance_logger_android`) OR whose function is
+// one of the iOS WebView instrumentation internals (`sendDataToNative`,
+// `processLargestContentfulPaintEvent`). The function-name anchor is stable
+// across deploys (mirroring #5181's `postEvent` function-name anchor). A
+// NEGATIVE guard (mandatory — mirrors #5181 / the Paper Shaders matchers): if
+// ANY frame resolves to a de-minified first-party `apps/web/src/…` source, the
+// event keeps reporting (a real first-party `window.webkit.messageHandlers`
+// access regression de-minifies to `apps/web/src/…` and must not be hidden).
+// The prod event carries only `app:///` frames, so the negative guard does not
+// fire for it. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-string match
+// there could swallow a real first-party `window.webkit.messageHandlers`
+// access; the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const IOS_WEBVIEW_WEBKIT_BRIDGE_NOISE_MESSAGE =
+  "undefined is not an object (evaluating 'window.webkit.messageHandlers')";
+
+// The iOS WebKit in-app-browser synthetic injected-instrumentation source:
+// the bare empty-host `app:///` (THREE slashes, NO path) — the origin shape
+// iOS WebViews use for their own injected instrumentation scripts. Distinct
+// from (a) the Android bridge's single-slash
+// `app://navigation_performance_logger_android` source, AND (b) a first-party
+// Next.js bundle frame `app:///_next/static/chunks/…` (which shares the
+// `app:///` PREFIX but carries a `_next/…` path). An EXACT match (not a
+// prefix) is required so a first-party `app:///_next/…` chunk frame is never
+// mistaken for the WebView's bare-source instrumentation.
+const IOS_WEBVIEW_INSTRUMENTED_FRAME_SOURCE = 'app:///';
+
+// The iOS WebView instrumentation internal function names — the WebView's own
+// navigation/performance-timing plumbing, never present in first-party
+// `apps/web/src/…` source. `sendDataToNative` is the bridge-call that throws
+// (the prod call_site_function); `processLargestContentfulPaintEvent` is the
+// timing recorder that calls into it.
+const IOS_WEBVIEW_INSTRUMENTED_FUNCTION_NAMES = new Set([
+  'sendDataToNative',
+  'processLargestContentfulPaintEvent',
+]);
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -1487,6 +1569,75 @@ export function isAndroidWebViewNativeBridgePostEventNoise(input: {
   }
   return true;
 }
+
+/**
+ * Whether a Sentry / window.onerror event is the iOS WebKit (WKWebView) in-app-
+ * browser native-bridge instrumentation noise class: the iOS WebView's
+ * injected `app:///` script records navigation/performance timing
+ * (`processLargestContentfulPaintEvent`) and ships it to its native bridge via
+ * `sendDataToNative` → `window.webkit.messageHandlers`. On iOS WebViews where
+ * the WebKit `messageHandlers` bridge is unavailable (host app didn't wire it,
+ * or page load/teardown), `window.webkit` is `undefined` and the property
+ * access throws JSC's canonical
+ * `undefined is not an object (evaluating 'window.webkit.messageHandlers')`.
+ * This is the iOS sibling of the Android WebView bridge noise
+ * (`isAndroidWebViewNativeBridgePost{Message,Event}Noise`, PRs #5181/#4610);
+ * the Android matchers anchor on the synthetic
+ * `app://navigation_performance_logger_android` source and the
+ * `postMessage`/`postEvent` Java-bridge-GC message, so they do NOT catch the
+ * iOS `app:///` + `window.webkit.messageHandlers` variant. This is the
+ * WebView's OWN instrumentation, never first-party code. Requires BOTH the
+ * EXACT `messageHandlers` message AND a POSITIVE frame anchor: at least one
+ * frame whose filename is the synthetic `app:///` source OR whose function is
+ * an iOS WebView instrumentation internal (`sendDataToNative` /
+ * `processLargestContentfulPaintEvent`). A NEGATIVE guard preserves any
+ * resolved first-party `apps/web/src/…` frame so a real first-party
+ * `window.webkit.messageHandlers` access regression keeps reporting. Never page
+ * Better Stack for this class. See `IOS_WEBVIEW_WEBKIT_BRIDGE_NOISE_MESSAGE`
+ * for the full rationale.
+ */
+export function isIOSWebViewWebKitBridgeNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (stripped !== IOS_WEBVIEW_WEBKIT_BRIDGE_NOISE_MESSAGE) {
+    return false;
+  }
+  // Collect every source location — the window.onerror `filename` (runtime
+  // gate) and any stacktrace frames (Sentry gate) — for the anchors.
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
+  // code accessed `window.webkit.messageHandlers` and threw → a real first-
+  // party regression; keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame is the synthetic `app:///` iOS WebView
+  // injected-instrumentation source, OR whose function is one of the iOS
+  // WebView instrumentation internals (`sendDataToNative` /
+  // `processLargestContentfulPaintEvent`). The function-name anchor is stable
+  // across deploys (mirrors #5181's `postEvent` anchor). Prefer the
+  // function-name check first (it is the prod call_site anchor).
+  const frames = input.frames ?? [];
+  const hasInstrumentedFunction = frames.some((frame) =>
+    IOS_WEBVIEW_INSTRUMENTED_FUNCTION_NAMES.has(normalizeString(frame?.function)),
+  );
+  const hasInstrumentedSource = sources.some((filename) =>
+    normalizeString(filename) === IOS_WEBVIEW_INSTRUMENTED_FRAME_SOURCE,
+  );
+  // Without the positive anchor (no `app:///` frame and no instrumentation
+  // function) we cannot confirm the iOS WebView origin — keep reporting rather
+  // than swallow a possible first-party `window.webkit.messageHandlers`
+  // access. The prod event carries 3 `app:///` frames including the throwing
+  // `sendDataToNative`, so the anchor matches.
+  return hasInstrumentedFunction || hasInstrumentedSource;
+}
+
 // iOS WebKit (Safari, Chrome-on-iOS, Google Search App — all WKWebView/JSC)
 // stack-overflow noise. When iOS WebKit exhausts its (lower-than-desktop) call
 // stack, it surfaces `RangeError: Maximum call stack size exceeded.` through
@@ -2419,6 +2570,28 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // iOS WebKit (WKWebView) in-app-browser native-bridge instrumentation noise
+  // — the iOS sibling of the Android bridge classes above. The iOS WebView
+  // injects a synthetic `app:///` script that records navigation/performance
+  // timing and ships it to `window.webkit.messageHandlers`; on iOS WebViews
+  // where the WebKit bridge is unavailable, the access throws JSC's canonical
+  // `undefined is not an object (evaluating 'window.webkit.messageHandlers')`.
+  // Requires the EXACT message AND a positive `app:///`/instrumentation-
+  // function anchor so a real first-party `window.webkit.messageHandlers`
+  // access keeps reporting. The runtime gate sees the window.onerror
+  // `filename`; the prod event carried `app:///` frames in the Sentry
+  // stacktrace (handled by the Sentry gate below), but a runtime capture with
+  // an `app:///` filename is also noise. See
+  // `isIOSWebViewWebKitBridgeNoise`.
+  if (
+    isIOSWebViewWebKitBridgeNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
+    return true;
+  }
+
   if (isInjectedAppSource(input.filename)) {
     return true;
   }
@@ -2657,6 +2830,27 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `postEvent`/`dispatchEvent` failure keeps reporting. Not in `ignoreErrors`
   // (no frame context there).
   if (isAndroidWebViewNativeBridgePostEventNoise({ message, frames })) {
+    return true;
+  }
+
+  // iOS WebKit (WKWebView) in-app-browser native-bridge instrumentation noise
+  // — the iOS sibling of the Android bridge classes above. The iOS WebView
+  // injects a synthetic `app:///` script (THREE slashes — distinct from
+  // Android's single-slash `app://navigation_performance_logger_android`)
+  // that records navigation/performance timing
+  // (`processLargestContentfulPaintEvent`) and ships it to
+  // `window.webkit.messageHandlers`; on iOS WebViews where the WebKit bridge
+  // is unavailable, the access throws JSC's canonical
+  // `undefined is not an object (evaluating 'window.webkit.messageHandlers')`.
+  // Captured as an UNCAUGHT global `onerror` (never reaches a React error
+  // boundary). Requires the EXACT message AND a positive `app:///`/
+  // instrumentation-function anchor (`sendDataToNative` /
+  // `processLargestContentfulPaintEvent`) with a first-party negative guard,
+  // so a real first-party `window.webkit.messageHandlers` access regression
+  // (which de-minifies to `apps/web/src/…`) keeps reporting. Not in
+  // `ignoreErrors` (no frame context there). See
+  // `isIOSWebViewWebKitBridgeNoise`.
+  if (isIOSWebViewWebKitBridgeNoise({ message, frames })) {
     return true;
   }
 

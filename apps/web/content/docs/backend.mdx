@@ -87,7 +87,7 @@ never races another request's config.
 
 | Field | What it does |
 | --- | --- |
-| `origin_ref` | An opaque id for *your* end-user. Attribution only — it tags the session and usage; it does **not** resolve that user's connectors or secrets by itself. |
+| `origin_ref` | An opaque id for *your* end-user. A label, not a lever: it tags the session, reaches the agent as `KORTIX_ORIGIN_REF`, and blocks an `Idempotency-Key` replay under a *different* end-user. It does **not** resolve that user's connectors or secrets, grant access, or drive billing — and it isn't queryable, so keep your own mapping. |
 | `connector_bindings` | Map a connector alias → a specific **connection profile** (your end-user's own connected account). Resolved server-side at use time; the credential never enters the sandbox. |
 | `inherit_unbound` | With `connector_bindings` set, keep the project-default fallback for connectors you did *not* bind (instead of all-or-nothing). Only ever inherits the project default. |
 | `secrets` | An allow-list of project secret names to expose to this session. Narrowing only — a session can never see a secret you did not list. |
@@ -195,8 +195,9 @@ starting a second one. Replaying a key with a **different** body — different
   allow-list. The agent's machine never holds an app secret.
 - **Bindings can't cross tenants.** A `profile_id` only resolves for the account and
   project that owns it; a wrong or foreign id is rejected as not-found.
-- **`origin_ref` is attribution, not authorization.** It labels the session and
-  usage; it never grants access to a user's data on its own.
+- **`origin_ref` is attribution, not authorization.** It labels the session and is
+  handed to the agent as `KORTIX_ORIGIN_REF`; it never grants access to a user's
+  data on its own, and it resolves no connectors or secrets.
 - **Personal connections stay private.** A session that binds a member's personal
   connection is forced to `visibility: private` and resolves only for that user.
 

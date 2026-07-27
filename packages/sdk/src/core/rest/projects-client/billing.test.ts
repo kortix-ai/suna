@@ -19,6 +19,7 @@ import {
   reactivateSubscription,
   scheduleDowngrade,
   syncSubscription,
+  getUsageRollup,
 } from './billing';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
@@ -196,4 +197,36 @@ test('getAutoTopupSettings GETs and configureAutoTopup POSTs auto-topup', async 
   expect(last().url).toContain('/billing/auto-topup/configure');
   expect(last().method).toBe('POST');
   expect(result.enabled).toBe(true);
+});
+
+test('getUsageRollup GETs /usage with no query when unfiltered', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 0, count: 0 } } };
+  await getUsageRollup();
+  expect(last().url).toContain('/usage');
+  expect(last().url).not.toContain('?');
+  expect(last().method).toBe('GET');
+});
+
+test('getUsageRollup groups by origin_ref so spend is attributable per end-user', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      data: { total_cost: 3, count: 2 },
+      breakdown: [
+        { origin_ref: 'user-a', cost: 2, count: 1 },
+        { origin_ref: 'user-b', cost: 1, count: 1 },
+      ],
+    },
+  };
+  const result = await getUsageRollup({ groupBy: 'origin_ref', start: '2026-07-01' });
+  expect(last().url).toContain('group_by=origin_ref');
+  expect(last().url).toContain('start=2026-07-01');
+  expect(result.breakdown?.map((b) => b.origin_ref)).toEqual(['user-a', 'user-b']);
+});
+
+test('getUsageRollup narrows to one end-user via origin_ref', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
+  await getUsageRollup({ originRef: 'user-a' });
+  expect(last().url).toContain('origin_ref=user-a');
+  expect(last().url).not.toContain('group_by');
 });

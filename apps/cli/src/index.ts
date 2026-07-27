@@ -28,7 +28,7 @@ import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
-import { runSkills } from './commands/skills.ts';
+import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -73,6 +73,26 @@ interface CommandTier {
 // You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
 // and open SESSIONS in the project. Order + membership here IS the layout.
 const TIERS: readonly CommandTier[] = [
+  // Deliberately the first band on the screen. An agent in any harness that
+  // holds only this binary and a token has to be able to find, unprompted, the
+  // one command that teaches it the platform — so it leads, and its blurb says
+  // what it is for in plain words rather than naming a noun ("skills") the
+  // reader does not have a definition for yet.
+  {
+    label: 'Start here',
+    sections: [
+      {
+        title: '',
+        commands: [
+          {
+            name: 'system-skills',
+            args: '[get <name>]',
+            blurb: 'Learn how to drive Kortix — the platform docs, served live by your host',
+          },
+        ],
+      },
+    ],
+  },
   {
     label: 'Where you are  (host › account › project › session)',
     sections: [
@@ -195,11 +215,6 @@ const TIERS: readonly CommandTier[] = [
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
-          },
-          {
-            name: 'skills',
-            args: '<subcommand>',
-            blurb: 'Load Kortix system skills (how Kortix works) live from the CLI',
           },
           {
             name: 'executor',
@@ -479,8 +494,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
   }
-  if (argv[0] === 'skills') {
-    return runSkills(argv.slice(1));
+  // `system-skills` is the canonical name; `skills` stays a permanent alias
+  // because every already-baked sandbox image seeds a kortix-system skill whose
+  // live pointer says `kortix skills get <name>`. Both hand the invoked name
+  // down so every hint the command prints matches how it was called.
+  if (argv[0] === SYSTEM_SKILLS_COMMAND || argv[0] === 'skills') {
+    return runSystemSkills(argv.slice(1), argv[0]);
   }
   if (argv[0] === 'registry') {
     process.stderr.write(
@@ -550,6 +569,7 @@ const KNOWN_COMMANDS = [
   'channels',
   'sandboxes',
   'marketplace',
+  'system-skills',
   'skills',
   'executor',
   'registry',
