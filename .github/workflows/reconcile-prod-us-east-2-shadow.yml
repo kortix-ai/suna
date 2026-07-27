@@ -18,7 +18,7 @@ jobs:
     environment: prod-use2-shadow
     env:
       AWS_REGION: us-east-2
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-prod-use2-terraform
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
