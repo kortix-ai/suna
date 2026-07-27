@@ -189,6 +189,29 @@ describe('bare `kortix` on a non-TTY', () => {
     }
   }, 20_000);
 
+  // `kortix chat` gained an interactive TUI. Every one of these invocations is
+  // NOT a TTY, so all of them must take the unchanged non-interactive path —
+  // agents and CI call `chat --prompt`/`--json` and a TUI would wedge them.
+  test('`chat --help` still prints the usage block and exits', async () => {
+    const result = await runCli(['chat', '--help']);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('kortix sessions chat');
+    expect(result.stdout).toContain('--prompt');
+  }, 20_000);
+
+  test('`chat` on a pipe resolves a session non-interactively and never hangs', async () => {
+    const apiBase = startDetailServer();
+    const configFile = writeConfig(apiBase, true);
+
+    const result = await runCli(['chat'], { KORTIX_CONFIG_FILE: configFile });
+
+    // No sessions exist on the fake server, so it exits with guidance rather
+    // than opening a picker or waiting for input.
+    expect(result.code).not.toBe(0);
+    expect(result.stdout).not.toContain('Enter sends');
+  }, 20_000);
+
   test('an unknown command still errors instead of opening a picker', async () => {
     const result = await runCli(['definitely-not-a-command']);
 

@@ -26,7 +26,7 @@
 import { clientFromAuth } from './api/client.ts';
 import { loadAuth, loadAuthForHost } from './api/auth.ts';
 import { hasEnvTokenHost } from './api/config.ts';
-import { runSessions } from './commands/sessions.ts';
+import { startSessionAndChat } from './commands/chat-tui.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { C, status } from './style.ts';
 import { selectFromList, type SelectItem } from './tui-select.ts';
@@ -168,7 +168,11 @@ export function defaultAgentPickerDeps(): AgentPickerDeps {
         items: opts.items,
         initialIndex: opts.initialIndex,
       }),
-    startSession: (agentName) => runSessions(['new', '--agent', agentName]),
+    // Picking an agent used to POST a session, print four lines, and hand you
+    // back to your shell — usually while the sandbox was still provisioning.
+    // The pick is the START of a conversation, so wait for readiness and drop
+    // into it. Still a seam, so the tests drive a fake.
+    startSession: (agentName) => startSessionAndChat(agentName),
     write: (text) => process.stderr.write(text),
   };
 }

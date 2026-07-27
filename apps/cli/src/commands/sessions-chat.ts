@@ -281,17 +281,22 @@ Talk to a running session's agent from your terminal — the same agent you'd
 chat with in the dashboard. With no session id, picks your most recent running
 session (or starts one with --new).
 
+On a terminal, \`kortix chat\` opens the live conversation: replies stream in
+token by token, Ctrl-C interrupts the turn (not the process), and Ctrl-D
+detaches — the session keeps running in the cloud either way. Piped, --json
+and --prompt keep the non-interactive behavior below unchanged.
+
   --prompt, -p "<text>"   Send one message, print the reply, exit (one-shot).
-                          Without it, opens an interactive REPL.
   --json                  One-shot only: print the reply as JSON (for scripts /
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
   --agent <name>          Agent to run for this turn (defaults to the session's).
+  --verbose, -v           Show tool output and reasoning inline (interactive).
   --project <id>          Operate on this project id (default: linked).
   --host <name>           Operate against a non-default Kortix host.
   -h, --help              Show this help.
 
-In the REPL: type a message + Enter to send. Ctrl-D or \`exit\` quits.`;
+In the plain REPL: type a message + Enter to send. Ctrl-D or \`exit\` quits.`;
 
 /**
  * `kortix sessions chat` — send prompts to a session's OpenCode agent and

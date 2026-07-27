@@ -278,6 +278,93 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
+type SessionContext = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+
+export interface CreatedSessionOutcome {
+  session: ProjectSession;
+  /** False only when readiness was requested and never arrived. The failure is
+   *  already on stderr unless `quiet`. */
+  ready: boolean;
+}
+
+/**
+ * Create a session and, when asked, block until the sandbox reports `ready`.
+ *
+ * Extracted from `sessions new` so bare `kortix` can create-then-attach without
+ * shelling back through the command layer — it needs the created row, not an
+ * exit code. `kortix sessions new` still drives exactly this path, so the
+ * client-created-branch prep and the canonical `/start` readiness loop stay in
+ * one place.
+ *
+ * Returns null when creation itself failed (the API error is already printed).
+ */
+export async function createSessionAndWait(
+  ctx: SessionContext,
+  body: Record<string, unknown>,
+  opts: { wait: boolean; quiet?: boolean },
+): Promise<CreatedSessionOutcome | null> {
+  const prepared = await prepareClientCreatedBranch(ctx, body);
+  if (prepared === 'error') return null;
+
+  let created: ProjectSession;
+  try {
+    created = await ctx.client.post<ProjectSession>(
+      `/projects/${ctx.projectId}/sessions`,
+      body,
+    );
+  } catch (err) {
+    surfaceApiError(err);
+    return null;
+  }
+
+  if (!opts.wait) return { session: created, ready: true };
+
+  // Drive the same canonical /start lifecycle endpoint the dashboard polls. Row
+  // status alone can say "running" before OpenCode is actually ready.
+  if (!opts.quiet) {
+    process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
+  }
+  for (let i = 0; i < 75; i += 1) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 4000));
+    try {
+      const start = await ctx.client.post<{
+        stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+        reason?: string;
+      }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
+      created = await ctx.client.get<ProjectSession>(
+        `/projects/${ctx.projectId}/sessions/${created.session_id}`,
+      );
+      if (start.stage === 'ready') return { session: created, ready: true };
+      if (start.stage === 'failed' || start.stage === 'stopped') {
+        if (!opts.quiet) {
+          const detail = start.reason
+            ? `: ${start.reason}`
+            : created.error
+              ? `: ${created.error}`
+              : '';
+          process.stderr.write(`${status.err(`Session ${start.stage}${detail}.`)}\n`);
+        }
+        return { session: created, ready: false };
+      }
+    } catch (err) {
+      if (!opts.quiet) {
+        process.stderr.write(
+          `${status.err((err as Error).message || 'Failed while waiting for session readiness')}\n`,
+        );
+      }
+      return { session: created, ready: false };
+    }
+  }
+  // Loop exhausted without reaching 'ready' — readiness is a hard gate, so a
+  // timeout is a failure, not a silent success.
+  if (!opts.quiet) {
+    process.stderr.write(
+      `${status.err(`Timed out waiting for session readiness after ~5 min (status: ${created.status}).`)}\n`,
+    );
+  }
+  return { session: created, ready: false };
+}
+
 async function sessionsNew(
   prompt: string | undefined,
   opts: CtxOpts,
@@ -302,75 +389,12 @@ async function sessionsNew(
   if (overrides.connectors) body.connector_bindings = overrides.connectors;
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
 
-  const prepared = await prepareClientCreatedBranch(ctx, body);
-  if (prepared === 'error') return 1;
-
-  let created: ProjectSession;
-  try {
-    created = await ctx.client.post<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions`,
-      body,
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  // --wait: drive the same canonical /start lifecycle endpoint the dashboard
-  // polls. Row status alone can say "running" before OpenCode is actually ready.
-  if (wait) {
-    if (!json) {
-      process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
-    }
-    let ready = false;
-    for (let i = 0; i < 75; i += 1) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 4000));
-      try {
-        const start = await ctx.client.post<{
-          stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-          reason?: string;
-        }>(
-          `/projects/${ctx.projectId}/sessions/${created.session_id}/start`,
-          {},
-        );
-        created = await ctx.client.get<ProjectSession>(
-          `/projects/${ctx.projectId}/sessions/${created.session_id}`,
-        );
-        if (start.stage === 'ready') {
-          ready = true;
-          break;
-        }
-        if (start.stage === 'failed' || start.stage === 'stopped') {
-          if (json) {
-            emitJson(created);
-          } else {
-            const detail = start.reason ? `: ${start.reason}` : created.error ? `: ${created.error}` : '';
-            process.stderr.write(`${status.err(`Session ${start.stage}${detail}.`)}\n`);
-          }
-          return 1;
-        }
-      } catch (err) {
-        if (json) {
-          emitJson(created);
-        } else {
-          process.stderr.write(
-            `${status.err((err as Error).message || 'Failed while waiting for session readiness')}\n`,
-          );
-        }
-        return 1;
-      }
-    }
-    // Loop exhausted without reaching 'ready' — --wait is a hard readiness
-    // gate, so a timeout is a failure (exit 1), not a silent success.
-    if (!ready) {
-      if (json) {
-        emitJson(created);
-      } else {
-        process.stderr.write(
-          `${status.err(`Timed out waiting for session readiness after ~5 min (status: ${created.status}).`)}\n`,
-        );
-      }
-      return 1;
-    }
+  const outcome = await createSessionAndWait(ctx, body, { wait, quiet: json });
+  if (!outcome) return 1;
+  const created = outcome.session;
+  if (!outcome.ready) {
+    if (json) emitJson(created);
+    return 1;
   }
 
   if (json) {

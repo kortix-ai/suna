@@ -205,7 +205,7 @@ function clamp(n: number, lo: number, hi: number): number {
  * the cursor-up CSI in render() undercounts and leaves the wrapped
  * portion of previous frames on screen.
  */
-function countPhysicalRows(s: string, cols: number | undefined): number {
+export function countPhysicalRows(s: string, cols: number | undefined): number {
   const parts = s.split('\n');
   // Trailing '\n' yields an empty final part — drop it.
   if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();

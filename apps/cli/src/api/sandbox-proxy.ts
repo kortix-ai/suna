@@ -120,6 +120,10 @@ let promptIdCounter = 0;
 /** Generate the ascending OpenCode message-id shape accepted by prompt_async.
  * Reusing this stable id across a transient submit retry makes the logical
  * prompt idempotent even if the proxy lost the first 204 response. */
+export function newPromptMessageId(): string {
+  return promptMessageId();
+}
+
 function promptMessageId(): string {
   const now = Date.now();
   if (now !== lastPromptIdTimestamp) {
@@ -372,6 +376,42 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
       idempotencyKey?: string,
     ) =>
       sendPromptAsyncAndWait(base, sessionId, parts, extra, timeoutMs ?? 5 * 60_000, idempotencyKey),
+    /**
+     * Submit a prompt and return the moment OpenCode accepts it (204) — no
+     * waiting for the reply.
+     *
+     * `sendPrompt` above is submit-AND-block-to-idle, which is right for the
+     * one-shot `--prompt` path and wrong for a TUI: the prompt line has to come
+     * back in one round trip so the user can keep typing while the turn runs.
+     * The turn itself is observed over `/global/event` instead. Delegates to
+     * the same `submitPromptAsync` used by `sendPrompt`, so it inherits the
+     * accept backoff and the 502-ambiguity check that stop a lost 204 from
+     * enqueueing the same message twice. Resolves to the user message id, which
+     * is what ties the streamed turn back to this submission.
+     *
+     * Pass `messageID` (from `newPromptMessageId()`) when the caller has to
+     * know the id BEFORE the round trip — a streaming client echoes what you
+     * typed on Enter and must suppress the server's copy of the same message,
+     * which can arrive on the event bus before this call resolves.
+     */
+    submitPrompt: async (
+      sessionId: string,
+      parts: OpencodePromptPart[],
+      extra?: { agent?: string; model?: { providerID: string; modelID: string } },
+      idempotencyKey?: string,
+      messageID: string = promptMessageId(),
+      timeoutMs?: number,
+    ): Promise<string> => {
+      const deadline = Date.now() + (timeoutMs ?? 60_000);
+      await submitPromptAsync(
+        base,
+        sessionId,
+        { parts, messageID, ...(extra ?? {}) },
+        deadline,
+        idempotencyKey,
+      );
+      return messageID;
+    },
     abortSession: (sessionId: string) =>
       sandboxRequest<boolean>({
         ...base,

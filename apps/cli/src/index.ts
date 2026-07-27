@@ -27,7 +27,7 @@ import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
-import { runSessionsChat } from './commands/sessions-chat.ts';
+import { runChat } from './commands/chat-tui.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
@@ -154,7 +154,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'chat',
             args: '[session-id]',
-            blurb: "Talk to a session's agent (REPL or --prompt)",
+            blurb: "Talk to a session's agent — live, or one-shot with --prompt",
           },
         ],
       },
@@ -494,7 +494,10 @@ async function main(argv: string[]): Promise<number> {
     return runSessions(argv.slice(1));
   }
   if (argv[0] === 'chat') {
-    return runSessionsChat(argv.slice(1));
+    // `runChat` routes back to `runSessionsChat` for every non-interactive
+    // invocation (piped stdio, --json, --prompt, --help), so scripts and agents
+    // see exactly the output they see today.
+    return runChat(argv.slice(1));
   }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
