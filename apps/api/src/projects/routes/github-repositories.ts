@@ -1,21 +1,23 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { config } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
 import {
-  createInstallationToken,
   getRepo,
-  listInstallationRepositories,
   listOwnerRepositories,
   listRepositoryBranches,
 } from '../github';
 import { resolveProjectAccount } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { getAccountGitHubInstallation } from '../lib/git';
 import {
-  createGitHubInstallationInstallUrl,
-  getAccountGitHubInstallation,
-} from '../lib/git';
+  GitHubCredentialResolutionError,
+  resolveAccountGithubCredential,
+} from '../nango/account-credential';
+import { enforcePatImportMode } from '../nango/credential-mode';
 import { PAT_MANAGED_GIT_INSTALLATION_ID, normalizeString, serializeGitHubRepo } from '../lib/serializers';
+import { mapGitHubOperationError } from './github-errors';
 import { createRoute, z } from '@hono/zod-openapi';
 
 const RepositoryBranchesResponseSchema = z.object({
@@ -30,6 +32,13 @@ const RepositoryBranchesResponseSchema = z.object({
   })),
 }).openapi('RepositoryBranchesResponse');
 
+// biome-ignore lint/suspicious/noExplicitAny: Hono cannot type a mapped runtime status code.
+function githubErrorResponse(context: any, error: unknown) {
+  const mapped = mapGitHubOperationError(error);
+  if (mapped.retryAfter) context.header('Retry-After', mapped.retryAfter);
+  return context.json(mapped.body, mapped.status);
+}
+
 // GET /v1/projects/github/repositories?account_id=...
 
 projectsApp.openapi(
@@ -37,16 +46,17 @@ projectsApp.openapi(
     method: 'get',
     path: '/github/repositories',
     tags: ['github'],
-    summary: 'List repositories available to a GitHub App installation',
+    summary: 'List repositories available to a GitHub connection',
     ...auth,
     request: {
       query: z.object({}).passthrough(),
     },
     responses: {
       200: json(z.any(), 'Repositories available to the installation'),
-      ...errors(403, 409, 502),
+      ...errors(403, 404, 409, 429, 502, 503),
     },
   }),
+  // biome-ignore lint/suspicious/noExplicitAny: zod-openapi cannot infer a passthrough query route.
   async (c: any) => {
     const scope = await resolveProjectAccount(c);
     await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
@@ -65,6 +75,11 @@ projectsApp.openapi(
     // no real GitHub App installation to list repos from — list via the PAT
     // itself instead of an installation token.
     if (installationId === PAT_MANAGED_GIT_INSTALLATION_ID) {
+      try {
+        enforcePatImportMode(config.GITHUB_CREDENTIAL_RESOLUTION);
+      } catch (error) {
+        return githubErrorResponse(c, error);
+      }
       if (!(await isPlatformAdmin(scope.userId))) {
         return c.json(
           { error: 'Managed GitHub repository import requires platform admin access' },
@@ -91,26 +106,34 @@ projectsApp.openapi(
           repositories: repos.map(serializeGitHubRepo),
         });
       } catch (error) {
-        return c.json({
-          error: (error as Error).message || 'Failed to list GitHub repositories',
-        }, 502);
+        return githubErrorResponse(c, error);
       }
     }
 
-    const installation = await getAccountGitHubInstallation(scope.accountId, installationId);
-    if (!installation) {
-      return c.json({
-        error: installationId
-          ? 'Selected GitHub installation is not connected to this account'
-          : 'Install the Kortix GitHub App before importing repositories',
-        install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-      }, 409);
-    }
-
     try {
-      const repos = await listInstallationRepositories(installation.installationId, {
+      const selected = await getAccountGitHubInstallation(
+        scope.accountId,
+        installationId,
+      );
+      const resolvedInstallationId =
+        selected?.installationId ?? installationId ?? '';
+      if (!resolvedInstallationId) {
+        throw new GitHubCredentialResolutionError(
+          'github_connection_required',
+          409,
+          scope.accountId,
+          '',
+        );
+      }
+      const { installation, credential } =
+        await resolveAccountGithubCredential({
+          accountId: scope.accountId,
+          installationId: resolvedInstallationId,
+        });
+      const repos = await listOwnerRepositories({
         owner: installation.ownerLogin,
         ownerType: installation.ownerType === 'User' ? 'User' : 'Organization',
+        auth: { token: credential.userToken },
         search,
         limit,
       });
@@ -121,9 +144,7 @@ projectsApp.openapi(
         repositories: repos.map(serializeGitHubRepo),
       });
     } catch (error) {
-      return c.json({
-        error: (error as Error).message || 'Failed to list GitHub repositories',
-      }, 502);
+      return githubErrorResponse(c, error);
     }
   },
 );
@@ -146,7 +167,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(RepositoryBranchesResponseSchema, 'Repository branches'),
-      ...errors(400, 409, 502),
+      ...errors(400, 403, 404, 409, 429, 502, 503),
     },
   }),
   async (c) => {
@@ -160,26 +181,35 @@ projectsApp.openapi(
       return c.json({ error: 'repo_full_name must use the owner/repository format' }, 400);
     }
 
-    const installation = await getAccountGitHubInstallation(scope.accountId, installationId);
-    if (!installation) {
-      return c.json({
-        error: 'Selected GitHub installation is not connected to this account',
-        install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-      }, 409);
-    }
-    if (owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-      return c.json({
-        error: `GitHub installation ${installationId} belongs to ${installation.ownerLogin}`,
-      }, 400);
-    }
-
     try {
-      const token = await createInstallationToken(installation.installationId);
-      const authContext = { token: token.token };
+      const { installation, credential } =
+        await resolveAccountGithubCredential({
+          accountId: scope.accountId,
+          installationId,
+        });
+      if (owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
+        return c.json(
+          {
+            error: 'The selected GitHub repository or branch no longer exists.',
+            code: 'github_repository_not_found',
+          },
+          404,
+        );
+      }
+      const authContext = { token: credential.userToken };
       const [repo, branches] = await Promise.all([
         getRepo({ owner, repo: repoName, auth: authContext }),
         listRepositoryBranches({ owner, repo: repoName, auth: authContext }),
       ]);
+      if (repo.full_name.toLowerCase() !== `${owner}/${repoName}`.toLowerCase()) {
+        return c.json(
+          {
+            error: 'The selected GitHub repository no longer exists.',
+            code: 'github_repository_not_found',
+          },
+          404,
+        );
+      }
       return c.json({
         account_id: scope.accountId,
         installation_id: installation.installationId,
@@ -189,9 +219,7 @@ projectsApp.openapi(
         branches,
       }, 200);
     } catch (error) {
-      return c.json({
-        error: (error as Error).message || 'Failed to list GitHub repository branches',
-      }, 502);
+      return githubErrorResponse(c, error);
     }
   },
 );

@@ -519,10 +519,15 @@ export const ProjectCreateModal = ({
 
   function handleLinkGitHub(values: GitHubLinkFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
+    const repository = githubReposQuery.data?.repositories.find(
+      (candidate) => candidate.full_name === values.repo,
+    );
+    if (!repository) return errorToast('Select a GitHub repository');
     const trimmedName = values.name.trim();
     linkMutation.mutate({
       account_id: effectiveAccountId,
       installation_id: values.installationId,
+      repository_id: repository.id,
       repo_full_name: values.repo,
       ...(trimmedName ? { name: trimmedName } : {}),
     });

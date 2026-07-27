@@ -6,6 +6,11 @@ import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
+import {
+  GitHubCredentialResolutionError,
+  resolveAccountGithubCredential,
+} from '../nango/account-credential';
+import { validateNangoRepositoryImport } from '../nango/repository-operations';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
@@ -165,37 +170,35 @@ async function resolveImportedDefaultBranch(
 
 
 export async function resolveGitHubRepoAuth(accountId: string, installationId?: string | null): Promise<{
-  auth?: GitHubAuthContext;
-  authSource: 'app_installation';
-  installation?: typeof accountGithubInstallations.$inferSelect;
+  auth: GitHubAuthContext;
+  authSource: 'nango';
+  installation: typeof accountGithubInstallations.$inferSelect;
 }> {
   const installation = await getAccountGitHubInstallation(accountId, installationId);
-  if (installation) {
-    const token = await createInstallationToken(installation.installationId);
-    return {
-      auth: {
-        token: token.token,
-        source: 'app_installation',
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType,
-        installationId: installation.installationId,
-      },
-      authSource: 'app_installation',
-      installation,
-    };
+  const resolvedInstallationId = installation?.installationId ?? installationId ?? '';
+  if (!resolvedInstallationId) {
+    throw new GitHubCredentialResolutionError(
+      'github_connection_required',
+      409,
+      accountId,
+      '',
+    );
   }
-  if (installationId) {
-    throw new Error('Selected GitHub installation is not connected to this account');
-  }
-
-  // GitHub backing is App-only: a per-account App installation is required.
-  // (Linking an existing repo with a user-supplied token is a separate flow
-  // that stores a project_credential — see resolveGitHubImportWithPat.)
-  if (isGithubAppConfigured()) {
-    throw new GitHubInstallationRequiredError(accountId);
-  }
-
-  throw new Error('GitHub is not configured on the server');
+  const resolved = await resolveAccountGithubCredential({
+    accountId,
+    installationId: resolvedInstallationId,
+  });
+  return {
+    auth: {
+      token: resolved.credential.userToken,
+      source: 'nango',
+      owner: resolved.installation.ownerLogin,
+      ownerType: resolved.installation.ownerType,
+      installationId: resolved.installation.installationId,
+    },
+    authSource: 'nango',
+    installation: resolved.installation,
+  };
 }
 
 
@@ -719,6 +722,7 @@ export async function resolveGitHubImport(input: {
   accountId: string;
   repoUrl: string;
   installationId?: string | null;
+  repositoryId?: string | null;
   defaultBranch?: string | null;
 }): Promise<{
   repo: GitHubRepo;
@@ -731,44 +735,63 @@ export async function resolveGitHubImport(input: {
     throw new Error('repo_url must be a GitHub repository URL');
   }
 
-  const installations = input.installationId
-    ? [
-        await getAccountGitHubInstallation(input.accountId, input.installationId),
-      ].filter(Boolean) as Array<typeof accountGithubInstallations.$inferSelect>
-    : await listAccountGitHubInstallations(input.accountId);
-  const installation = input.installationId
-    ? installations[0] ?? null
+  const installations = await listAccountGitHubInstallations(input.accountId);
+  const selectedInstallation = input.installationId
+    ? installations.find(
+        (candidate) => candidate.installationId === input.installationId,
+      ) ?? null
     : installations.find(
-        (candidate) => candidate.ownerLogin.toLowerCase() === parsed.owner.toLowerCase(),
+        (candidate) =>
+          candidate.ownerLogin.toLowerCase() === parsed.owner.toLowerCase(),
       ) ?? null;
-  if (!installation) {
-    if (installations.length === 0) throw new GitHubInstallationRequiredError(input.accountId);
-    throw new Error(
-      input.installationId
-        ? 'Selected GitHub installation is not connected to this account'
-        : `Install or select a GitHub App installation for ${parsed.owner} to link this repo`,
+  const resolvedInstallationId =
+    selectedInstallation?.installationId ?? input.installationId ?? '';
+  if (!resolvedInstallationId) {
+    throw new GitHubCredentialResolutionError(
+      'github_connection_required',
+      409,
+      input.accountId,
+      '',
     );
   }
+  const resolved = await resolveAccountGithubCredential({
+    accountId: input.accountId,
+    installationId: resolvedInstallationId,
+  });
+  const installation = resolved.installation;
   if (parsed.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-    throw new Error(
-      `GitHub App installation is for ${installation.ownerLogin}; install Kortix on ${parsed.owner} to link this repo`,
+    throw new GitHubCredentialResolutionError(
+      'github_connection_required',
+      409,
+      input.accountId,
+      installation.installationId,
     );
   }
 
-  const token = await createInstallationToken(installation.installationId);
   const auth: GitHubAuthContext = {
-    token: token.token,
-    source: 'app_installation',
+    token: resolved.credential.userToken,
+    source: 'nango',
     owner: installation.ownerLogin,
     ownerType: installation.ownerType,
     installationId: installation.installationId,
   };
   const repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth });
+  const validation = await validateNangoRepositoryImport(
+    {
+      expectedOwner: parsed.owner,
+      expectedName: parsed.repo,
+      expectedRepositoryId: input.repositoryId,
+      requestedBranch: input.defaultBranch,
+      repo,
+      auth,
+    },
+    { getBranch: getRepositoryBranch },
+  );
   return {
     repo,
     installation,
     auth,
-    defaultBranch: await resolveImportedDefaultBranch(repo, input.defaultBranch, auth),
+    defaultBranch: validation.defaultBranch,
   };
 }
 

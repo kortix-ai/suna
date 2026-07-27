@@ -1,4 +1,5 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { config } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
 import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../../snapshots/build-state';
@@ -8,14 +9,16 @@ import { isPlatformAdmin } from '../../shared/platform-roles';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
-import { commitFile, createRepo, getFileSha } from '../github';
+import { commitFile, createRepo, deleteRepo, getFileSha, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
+import { getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
+import { enforcePatImportMode } from '../nango/credential-mode';
+import { mapGitHubOperationError } from './github-errors';
 import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
@@ -34,6 +37,31 @@ function templateProviderObservation(metadata: unknown) {
   };
 }
 
+function githubErrorResponse(context: any, error: unknown) {
+  const mapped = mapGitHubOperationError(error);
+  if (mapped.retryAfter) context.header('Retry-After', mapped.retryAfter);
+  return context.json(mapped.body, mapped.status);
+}
+
+async function rollbackCreatedGitHubRepository(
+  repo: GitHubRepo,
+  auth: Pick<GitHubAuthContext, 'token'>,
+): Promise<void> {
+  const [owner, name] = repo.full_name.split('/');
+  if (!owner || !name) return;
+  try {
+    await deleteRepo({ owner, repo: name, auth });
+  } catch (error) {
+    const status =
+      typeof error === 'object' && error !== null && 'status' in error
+        ? String(error.status)
+        : 'unknown';
+    console.error(
+      `[projects/create-repo] rollback failed for ${repo.full_name} (status=${status})`,
+    );
+  }
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -46,7 +74,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(z.any(), 'OK'),
-        ...errors(400, 403, 409),
+        ...errors(400, 403, 404, 409, 429, 502, 503),
     },
   }),
   async (c: any) => {
@@ -95,6 +123,11 @@ projectsApp.openapi(
   }
   const patToken = githubToken ?? managedPatToken;
   if (patToken) {
+    try {
+      enforcePatImportMode(config.GITHUB_CREDENTIAL_RESOLUTION);
+    } catch (error) {
+      return githubErrorResponse(c, error);
+    }
     let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
     try {
       patImport = await resolveGitHubImportWithPat({
@@ -130,16 +163,11 @@ projectsApp.openapi(
       accountId: scope.accountId,
       repoUrl,
       installationId: installationIdInput,
+      repositoryId: normalizeString(body.repository_id ?? body.repositoryId),
       defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
     });
   } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return c.json({
-        error: error.message,
-        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
-      }, 409);
-    }
-    return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+    return githubErrorResponse(c, error);
   }
 
   const row = await registerGitHubLinkedProject({
@@ -158,7 +186,7 @@ projectsApp.openapi(
       repoUrl: row.repoUrl,
       defaultBranch: row.defaultBranch,
       manifestPath: row.manifestPath,
-      gitAuthToken: imported.auth.token,
+      gitAuthToken: null,
     },
     { accountId: scope.accountId, source: 'project-create' },
   );
@@ -186,7 +214,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(z.any(), 'OK'),
-        ...errors(400, 409, 502, 503),
+        ...errors(400, 403, 404, 409, 429, 502, 503),
     },
   }),
   async (c: any) => {
@@ -218,20 +246,7 @@ projectsApp.openapi(
   try {
     githubAuth = await resolveGitHubRepoAuth(scope.accountId, normalizeString(body.installation_id ?? body.installationId));
   } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return c.json({
-        error: error.message,
-        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
-      }, 409);
-    }
-    const message = (error as Error).message || 'GitHub is not configured on the server';
-    return c.json({ error: message }, 503);
-  }
-  if (!githubAuth.installation || !githubAuth.auth) {
-    return c.json({
-      error: 'Install the Kortix GitHub App before creating GitHub-backed projects',
-      install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-    }, 409);
+    return githubErrorResponse(c, error);
   }
 
   // create-repo always provisions a fresh GitHub repo, so block before we
@@ -256,7 +271,7 @@ projectsApp.openapi(
     } catch (error) {
       lastRepoError = error;
       if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
-      return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
+      return githubErrorResponse(c, error);
     }
   }
   if (!repo) {
@@ -309,24 +324,49 @@ projectsApp.openapi(
         auth: githubAuth.auth,
       });
     } catch (err) {
-      const message = (err as Error).message || 'Failed to scaffold starter file';
-      console.warn(`[projects/create-repo] Failed to scaffold ${file.path} into ${repo.full_name}:`, message);
-      return c.json({ error: `Failed to scaffold starter file ${file.path}: ${message}` }, 502);
+      const mapped = mapGitHubOperationError(err);
+      console.warn(
+        `[projects/create-repo] starter commit failed for ${repo.full_name}/${file.path} ` +
+          `(code=${mapped.body.code}, status=${mapped.status})`,
+      );
+      await rollbackCreatedGitHubRepository(repo, githubAuth.auth);
+      if (mapped.retryAfter) c.header('Retry-After', mapped.retryAfter);
+      return c.json(
+        {
+          ...mapped.body,
+          error: `Failed to scaffold starter file ${file.path}. ${mapped.body.error}`,
+        },
+        mapped.status,
+      );
     }
   }
 
-  const row = await registerGitHubLinkedProject({
-    accountId: scope.accountId,
-    userId: scope.userId,
-    repo,
-    installation: githubAuth.installation,
-    name: projectName,
-    defaultBranch,
+  let row: Awaited<ReturnType<typeof registerGitHubLinkedProject>>;
+  try {
+    row = await registerGitHubLinkedProject({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      repo,
+      installation: githubAuth.installation,
+      name: projectName,
+      defaultBranch,
       managed: true,
-    // The starter just committed above (buildStarterFiles) ships kortix.yaml
-    // (kortix_version 2) — record that path so it's never stale from birth.
-    manifestPath: 'kortix.yaml',
-  });
+      // The starter just committed above (buildStarterFiles) ships kortix.yaml
+      // (kortix_version 2) — record that path so it is current from creation.
+      manifestPath: 'kortix.yaml',
+    });
+  } catch (error) {
+    await rollbackCreatedGitHubRepository(repo, githubAuth.auth);
+    return c.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to register GitHub project',
+      },
+      502,
+    );
+  }
 
   kickProjectTemplatePrebuilds(
     {
@@ -334,7 +374,7 @@ projectsApp.openapi(
       repoUrl: row.repoUrl,
       defaultBranch: row.defaultBranch,
       manifestPath: row.manifestPath,
-      gitAuthToken: githubAuth.auth?.token ?? null,
+      gitAuthToken: null,
     },
     { accountId: scope.accountId, source: 'project-create' },
   );

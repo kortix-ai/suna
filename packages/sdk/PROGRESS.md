@@ -3519,3 +3519,36 @@ TDD and local verification:
 
 **Shippable to production: NOT YET.** U5 through U8, PR merge, Deploy Dev,
 deployed SHA proof, and deployed Nango verification remain.
+
+---
+
+### 2026-07-27 — session `nango-github-migration` (U5 implementation)
+
+Added the repository identity contract needed for Nango-backed GitHub imports.
+
+- `LinkRepositoryInput.repository_id` carries the immutable GitHub repository
+  ID through the published SDK.
+- Existing request paths, response fields, and exported SDK names remain
+  unchanged.
+- The API revalidates repository ID, owner, name, branch, and write permission
+  before project registration.
+- New project connections persist the Nango connection ID separately from the
+  GitHub installation ID.
+
+Local verification:
+
+- API typecheck: exit 0.
+- Focused API suites: **43 pass / 0 fail** with **266** assertions.
+- SDK typecheck: exit 0.
+- SDK suite: **1311 pass / 0 fail** with **5781** assertions across **111**
+  files.
+- SDK packed-install smoke: packed, installed, imported, and constructed
+  `@kortix/sdk`.
+- Touched API Biome lint: exit 0.
+- Touched web ESLint: exit 0.
+
+**Status:** LOCAL IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** The account `github-app-oauth`
+integration has zero authorized connections. Live repository list, branch,
+import, and create proof remains pending.

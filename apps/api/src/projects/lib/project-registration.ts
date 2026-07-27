@@ -16,6 +16,7 @@ type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
 type RegistrationAuth =
   | { kind: 'github_app'; installation: GitHubInstallation }
+  | { kind: 'nango'; installation: GitHubInstallation }
   | { kind: 'project_credential'; token: string };
 
 type RegistrationInput = {
@@ -34,8 +35,16 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
   const owner = input.repo.full_name.split('/')[0] ?? null;
   const now = new Date();
-  const githubApp = input.auth.kind === 'github_app' ? input.auth.installation : null;
-  const authMethod = githubApp ? 'github_app' : 'project_credential';
+  const installation =
+    input.auth.kind === 'github_app' || input.auth.kind === 'nango'
+      ? input.auth.installation
+      : null;
+  const nango = input.auth.kind === 'nango' ? input.auth.installation : null;
+  const authMethod = nango
+    ? 'nango'
+    : installation
+      ? 'github_app'
+      : 'project_credential';
   const metadata = {
     git: {
       url: input.repo.clone_url,
@@ -45,8 +54,14 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       name: input.repo.name,
       external_repo_id: String(input.repo.id),
       managed: input.managed ?? false,
-      auth: githubApp
-        ? { method: authMethod, installation_id: githubApp.installationId }
+      auth: installation
+        ? {
+            method: authMethod,
+            installation_id: installation.installationId,
+            ...(nango?.nangoConnectionId
+              ? { credential_ref: nango.nangoConnectionId }
+              : {}),
+          }
         : { method: authMethod },
     },
     github: {
@@ -54,8 +69,14 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       full_name: input.repo.full_name,
       html_url: input.repo.html_url,
       private: input.repo.private,
-      auth_source: githubApp ? 'app_installation' : 'pat',
-      ...(githubApp ? { installation_id: githubApp.installationId } : {}),
+      auth_source: nango
+        ? 'nango'
+        : installation
+          ? 'app_installation'
+          : 'pat',
+      ...(installation
+        ? { installation_id: installation.installationId }
+        : {}),
     },
   };
 
@@ -111,9 +132,9 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       managed: input.managed ?? false,
       defaultBranch: input.defaultBranch,
       authMethod,
-      installationId: githubApp?.installationId ?? null,
-      credentialRef,
-      permissions: githubApp?.permissions ?? {},
+      installationId: installation?.installationId ?? null,
+      credentialRef: nango?.nangoConnectionId ?? credentialRef,
+      permissions: installation?.permissions ?? {},
       visibility: input.repo.private ? 'private' : 'public',
       status: 'connected',
       lastValidatedAt: now,
@@ -172,7 +193,10 @@ export function registerGitHubLinkedProject(
   const { installation, ...project } = input;
   return registerLinkedProject({
     ...project,
-    auth: { kind: 'github_app', installation },
+    auth: {
+      kind: installation.nangoConnectionId ? 'nango' : 'github_app',
+      installation,
+    },
   });
 }
 

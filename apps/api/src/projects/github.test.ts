@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   GitHubApiError,
+  deleteRepo,
   getRepositoryBranch,
   listOwnerRepositories,
   listRepositoryBranches,
@@ -80,6 +81,27 @@ describe('GitHub repository branches', () => {
 
     await expect(request).rejects.toBeInstanceOf(GitHubApiError);
     await expect(request).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe('GitHub repository rollback', () => {
+  test('accepts GitHub 204 after deleting a repository', async () => {
+    let requested = '';
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requested = String(input instanceof Request ? input.url : input);
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+
+    await expect(
+      deleteRepo({
+        owner: 'acme',
+        repo: 'partial-project',
+        auth: { token: 'nango-user-token' },
+      }),
+    ).resolves.toBeUndefined();
+    expect(requested).toBe(
+      'https://api.github.com/repos/acme/partial-project',
+    );
   });
 });
 

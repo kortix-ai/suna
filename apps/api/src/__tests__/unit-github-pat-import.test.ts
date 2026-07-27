@@ -24,6 +24,10 @@ import {
   PAT_MANAGED_GIT_INSTALLATION_ID,
   serializeGitHubInstallations,
 } from '../projects/lib/serializers';
+import {
+  GitHubCredentialModeError,
+  enforcePatImportMode,
+} from '../projects/nango/credential-mode';
 
 const ACCOUNT_ID = '99999999-8888-4777-8666-555555555555';
 
@@ -87,5 +91,22 @@ describe('serializeGitHubInstallations — PAT fallback for the "Use a token" se
     expect(result.installations).toHaveLength(1);
     expect(result.installations[0]!.installation_id).toBe('501');
     expect(result.installations[0]!.owner_login).toBe('acme-corp');
+  });
+});
+
+describe('PAT import during Nango cutover', () => {
+  test('allows fallback mode with one deprecation event', () => {
+    const messages: string[] = [];
+    expect(
+      enforcePatImportMode('nango_preferred', (message) => messages.push(message)),
+    ).toBe('deprecated');
+    expect(messages).toEqual(['github_pat_import_deprecated']);
+  });
+
+  test('rejects PAT input in Nango-only mode', () => {
+    expect(() => enforcePatImportMode('nango_only')).toThrow(GitHubCredentialModeError);
+    expect(() => enforcePatImportMode('nango_only')).toThrow(
+      'Reconnect GitHub through Nango before importing this repository.',
+    );
   });
 });

@@ -32,7 +32,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
+import { buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
@@ -42,6 +42,13 @@ import {
   createProjectWebhookRateLimitMiddleware,
 } from '../../shared/rate-limit';
 import { githubNangoConnectionsApp } from './github-nango-connections';
+import { mapGitHubOperationError } from './github-errors';
+
+function githubErrorResponse(context: any, error: unknown) {
+  const mapped = mapGitHubOperationError(error);
+  if (mapped.retryAfter) context.header('Retry-After', mapped.retryAfter);
+  return context.json(mapped.body, mapped.status);
+}
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -291,7 +298,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(ProjectSchema, 'The created project'),
-        ...errors(400, 409),
+        ...errors(400, 403, 404, 409, 429, 502, 503),
     },
   }),
   async (c: any) => {
@@ -324,16 +331,11 @@ projectsApp.openapi(
       accountId: scope.accountId,
       repoUrl,
       installationId: normalizeString(body.installation_id ?? body.installationId),
+      repositoryId: normalizeString(body.repository_id ?? body.repositoryId),
       defaultBranch: requestedBranch,
     });
   } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return c.json({
-        error: error.message,
-        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
-      }, 409);
-    }
-    return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+    return githubErrorResponse(c, error);
   }
 
   const row = await registerGitHubLinkedProject({
@@ -352,7 +354,7 @@ projectsApp.openapi(
       repoUrl: row.repoUrl,
       defaultBranch: row.defaultBranch,
       manifestPath: row.manifestPath,
-      gitAuthToken: imported.auth.token,
+      gitAuthToken: null,
     },
     { accountId: scope.accountId, source: 'project-create' },
   );

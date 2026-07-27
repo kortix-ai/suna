@@ -22,6 +22,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
 import type { ManagedGithubAppConfig } from '../platform/services/managed-github-app';
+import type { GitHubRepo } from '../projects/github';
+import {
+  validateNangoRepositoryImport,
+} from '../projects/nango/repository-operations';
 
 // A throwaway RSA key — only used to produce a JWT `createInstallationToken`
 // can sign; the fetch mock below never verifies the signature.
@@ -42,6 +46,7 @@ mock.module('../platform/services/managed-github-app', () => ({
 }));
 
 const { githubBackend } = await import('../projects/git-backends/github');
+const { githubRepositoryCreatePath } = await import('../projects/github');
 
 // This repo's local `.env` (loaded automatically by `bun test`) sets real
 // MANAGED_GIT_GITHUB_*/KORTIX_GITHUB_APP_* values for interactive dev use —
@@ -230,4 +235,132 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
     // Never minted an installation token — the PAT is used directly.
     expect(findRequest('/access_tokens')).toBeUndefined();
   });
+});
+
+function nangoRepo(overrides: Partial<GitHubRepo> = {}): GitHubRepo {
+  return {
+    id: 901,
+    name: 'console',
+    full_name: 'acme/console',
+    private: true,
+    html_url: 'https://github.com/acme/console',
+    clone_url: 'https://github.com/acme/console.git',
+    ssh_url: 'git@github.com:acme/console.git',
+    default_branch: 'main',
+    description: null,
+    permissions: { push: true },
+    ...overrides,
+  };
+}
+
+describe('Nango GitHub repository import validation', () => {
+  test('revalidates repository ID, owner, name, branch, and write permission', async () => {
+    const branchRequests: string[] = [];
+    const result = await validateNangoRepositoryImport(
+      {
+        expectedOwner: 'acme',
+        expectedName: 'console',
+        expectedRepositoryId: '901',
+        requestedBranch: 'release',
+        repo: nangoRepo(),
+      },
+      {
+        getBranch: async ({ branch }) => {
+          branchRequests.push(branch);
+          return { name: branch, protected: false };
+        },
+      },
+    );
+
+    expect(result.defaultBranch).toBe('release');
+    expect(branchRequests).toEqual(['release']);
+  });
+
+  test('rejects a repository transferred to another owner', async () => {
+    await expect(
+      validateNangoRepositoryImport(
+        {
+          expectedOwner: 'acme',
+          expectedName: 'console',
+          expectedRepositoryId: '901',
+          requestedBranch: null,
+          repo: nangoRepo({ full_name: 'globex/console' }),
+        },
+        {
+          getBranch: async () => ({ name: 'main', protected: false }),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'github_repository_not_found',
+      status: 404,
+    });
+  });
+
+  test('rejects a stale repository ID, deleted branch, and read-only access', async () => {
+    await expect(
+      validateNangoRepositoryImport(
+        {
+          expectedOwner: 'acme',
+          expectedName: 'console',
+          expectedRepositoryId: '902',
+          requestedBranch: null,
+          repo: nangoRepo(),
+        },
+        {
+          getBranch: async () => ({ name: 'main', protected: false }),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'github_repository_not_found',
+    });
+
+    await expect(
+      validateNangoRepositoryImport(
+        {
+          expectedOwner: 'acme',
+          expectedName: 'console',
+          expectedRepositoryId: '901',
+          requestedBranch: 'deleted',
+          repo: nangoRepo(),
+        },
+        {
+          getBranch: async () => {
+            throw Object.assign(new Error('Not found'), { status: 404 });
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'github_repository_not_found',
+    });
+
+    await expect(
+      validateNangoRepositoryImport(
+        {
+          expectedOwner: 'acme',
+          expectedName: 'console',
+          expectedRepositoryId: '901',
+          requestedBranch: null,
+          repo: nangoRepo({ permissions: { push: false } }),
+        },
+        {
+          getBranch: async () => ({ name: 'main', protected: false }),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'github_insufficient_permissions',
+      status: 403,
+    });
+  });
+});
+
+describe('Nango GitHub repository creation routing', () => {
+  test.each([
+    ['User', 'octocat', '/user/repos'],
+    ['Organization', 'acme', '/orgs/acme/repos'],
+  ] as const)(
+    'selects %s creation endpoint',
+    (ownerType, owner, expectedPath) => {
+      expect(githubRepositoryCreatePath({ owner, ownerType })).toBe(expectedPath);
+    },
+  );
 });

@@ -1,8 +1,8 @@
 // GitHub — repository linking and GitHub App installation management.
 
 import { backendApi } from '../../http/api-client';
-import { unwrap, type ProjectGitConnection } from './shared';
 import type { KortixProject } from './projects';
+import { type ProjectGitConnection, unwrap } from './shared';
 
 export interface GitHubRepository {
   id: string;
@@ -42,6 +42,7 @@ export interface LinkRepositoryInput {
   repo_url?: string;
   repo_full_name?: string;
   installation_id?: string;
+  repository_id?: string;
   name?: string;
   default_branch?: string;
   manifest_path?: string;

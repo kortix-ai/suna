@@ -5,6 +5,7 @@ import {
   createGitHubConnectSession,
   createGitHubReconnectSession,
   disconnectGitHubConnection,
+  linkRepository,
   linkGitHubInstallation,
   listLinkableGitHubInstallations,
   listGitHubRepositories,
@@ -179,6 +180,36 @@ test('passes bounded repository search options through the typed GitHub surface'
     'http://test.local/v1/projects/github/repositories?' +
       'account_id=account+1&installation_id=pat&search=customer+portal&limit=25',
   ]);
+});
+
+test('sends the selected repository identity when linking a repository', async () => {
+  let requestBody: unknown;
+  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      project: {
+        project_id: 'project-1',
+        account_id: 'account 1',
+      },
+      git_connection: null,
+    });
+  }) as unknown as typeof fetch;
+
+  await linkRepository({
+    account_id: 'account 1',
+    installation_id: '84',
+    repository_id: '123456',
+    repo_full_name: 'acme/portal',
+    default_branch: 'trunk',
+  });
+
+  expect(requestBody).toEqual({
+    account_id: 'account 1',
+    installation_id: '84',
+    repository_id: '123456',
+    repo_full_name: 'acme/portal',
+    default_branch: 'trunk',
+  });
 });
 
 test('serializes Nango connection lifecycle inputs through stable GitHub routes', async () => {

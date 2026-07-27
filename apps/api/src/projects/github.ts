@@ -15,6 +15,7 @@ export class GitHubApiError extends Error {
     message: string,
     readonly status: number,
     readonly path: string,
+    readonly retryAfter?: string,
   ) {
     super(message);
     this.name = 'GitHubApiError';
@@ -33,7 +34,12 @@ export class GitHubInstallationAuthorizationError extends Error {
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
-type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
+type GitHubAuthSource =
+  | 'app_installation'
+  | 'nango'
+  | 'pat'
+  | 'managed'
+  | 'project_credential';
 
 export interface GitHubAuthContext {
   token: string;
@@ -53,6 +59,13 @@ export interface GitHubRepo {
   ssh_url: string;
   default_branch: string;
   description: string | null;
+  permissions?: {
+    admin?: boolean;
+    maintain?: boolean;
+    push?: boolean;
+    triage?: boolean;
+    pull?: boolean;
+  };
 }
 
 export interface GitHubBranch {
@@ -380,8 +393,10 @@ async function ghFetch<T>(
       `GitHub ${path} failed (${res.status}): ${detail || res.statusText}`,
       res.status,
       path,
+      res.headers.get('retry-after') ?? undefined,
     );
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -798,6 +813,15 @@ async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: s
   return { owner: me.login, isOrg: false };
 }
 
+export function githubRepositoryCreatePath(input: {
+  owner: string;
+  ownerType: 'User' | 'Organization';
+}): string {
+  return input.ownerType === 'User'
+    ? '/user/repos'
+    : `/orgs/${encodeURIComponent(input.owner)}/repos`;
+}
+
 export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   const ownerInput = input.owner?.trim();
   if (input.auth?.owner && ownerInput && ownerInput.toLowerCase() !== input.auth.owner.toLowerCase()) {
@@ -813,7 +837,10 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     auto_init: input.autoInit ?? true,
   };
 
-  const path = target.isOrg ? `/orgs/${target.owner}/repos` : '/user/repos';
+  const path = githubRepositoryCreatePath({
+    owner: target.owner,
+    ownerType: target.isOrg ? 'Organization' : 'User',
+  });
   return ghFetch<GitHubRepo>(path, {
     method: 'POST',
     body: JSON.stringify(body),
