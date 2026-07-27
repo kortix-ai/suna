@@ -1,0 +1,55 @@
+name: Reconcile Prod US East 2 Shadow
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: reconcile-prod-us-east-2-shadow
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  reconcile:
+    name: Remove target-only shadow verification state
+    runs-on: ubuntu-latest
+    environment: prod-use2-shadow
+    env:
+      AWS_REGION: us-east-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Reconcile application shadow mutations
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' \
+          ALLOW_TARGET_SHADOW_REPAIR=1 \
+            bash scripts/prod-us-east-2/db-sync.sh repair-shadow-mutations
+
+      - name: Reconcile Auth shadow mutations
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' \
+          ALLOW_TARGET_AUTH_SHADOW_REPAIR=1 \
+            bash scripts/prod-us-east-2/auth-sync.sh repair-shadow-mutations
+
+      - name: Verify replication subscriptions
+        run: |
+          set -euo pipefail
+          bash scripts/prod-us-east-2/db-sync.sh status
+          bash scripts/prod-us-east-2/auth-sync.sh status
