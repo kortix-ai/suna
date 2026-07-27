@@ -552,7 +552,7 @@ EOF
   source "$ROOT_DIR/apps/web/.env.local"
   set +a
 
-  kill_dev_ports 3000 8008 "${PORT:-8008}"
+  kill_dev_ports "${WEB_PORT:-3000}" 8008 "${PORT:-8008}"
 
   # A freshly-cloned session has no node_modules — install first. (Warm volumes
   # / a baked pnpm store make this near-instant later; cold it's a few minutes.)
@@ -598,7 +598,7 @@ if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
 fi
 
 load_local_env
-kill_dev_ports 3000 8008 "${PORT:-8008}" "$GATEWAY_PORT"
+kill_dev_ports "${WEB_PORT:-3000}" 8008 "${PORT:-8008}" "$GATEWAY_PORT"
 
 echo "[dev] Checking Supabase configuration..."
 if ! docker info >/dev/null 2>&1; then
@@ -741,10 +741,14 @@ PYC
         fi
       fi
     fi
-    _hdr=()
-    [[ -n "$WARM_COOKIE" ]] && _hdr=(-H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE")
     for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
-      curl -s -o /dev/null -m 120 "${_hdr[@]}" "http://localhost:${WEB_PORT:-3000}$p" || true
+      if [[ -n "$WARM_COOKIE" ]]; then
+        curl -s -o /dev/null -m 120 \
+          -H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE" \
+          "http://localhost:${WEB_PORT:-3000}$p" || true
+      else
+        curl -s -o /dev/null -m 120 "http://localhost:${WEB_PORT:-3000}$p" || true
+      fi
     done
     if [[ -n "$WARM_COOKIE" ]]; then
       echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
