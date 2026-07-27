@@ -16,6 +16,15 @@
  *   POST /git-receive-pack                                      (push)
  *
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
+ *
+ * Service-level scope is NOT the whole story for pushes. On
+ * `git-receive-pack`, an AGENT principal (sandbox token / session PAT) also has
+ * its command list parsed off the head of the body, and a push touching the
+ * project's default branch is refused with a git-native rejection — the
+ * server-side enforcement of R-9.6 ("work reaches the default branch only
+ * through a change request"). Human principals are never parsed, so every
+ * human flow (`git push`, `kortix ship` from a laptop) is byte-identical to
+ * before. See `receive-pack.ts` and `principal.ts`.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -35,8 +44,20 @@ import {
 } from './parse';
 import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
-import { loadGitProject } from '../projects/lib/git';
+import { getProjectGitConnection, loadGitProject } from '../projects/lib/git';
 import { kickProjectWarmPrebake } from '../snapshots/builder';
+import { classifyGitPrincipal, protectedRefsFor } from './principal';
+import {
+  buildProtectedRefRejection,
+  decideReceivePack,
+  drainRequestBody,
+  parseReceivePackCommands,
+  peekReceivePackHead,
+  replayReceivePackBody,
+  type ReceivePackDecision,
+} from './receive-pack';
+import { config } from '../config';
+import { recordAuditEvent } from '../shared/audit';
 
 export const gitProxyApp = makeOpenApiApp();
 
@@ -91,6 +112,209 @@ async function authorize(c: any, projectId: string, scope: GitScope): Promise<Gi
   return authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
 }
 
+/** One line per receive-pack decision, in ALL modes. This is how the first hour
+ *  of prod data answers "did we break session pushes" — which matters more than
+ *  the observe canary. Distinct reason codes keep "we broke pushes"
+ *  (deny:unparseable) and "we blocked an attack" (deny:protected-ref) from ever
+ *  being the same line on a dashboard. */
+function logReceivePackDecision(input: {
+  mode: string;
+  outcome: 'allow' | 'deny' | 'observe-deny';
+  projectId: string;
+  principalKind: string;
+  principalClass: string;
+  reason: string;
+  refCount?: number;
+  matchedRefs?: string[];
+}) {
+  const { outcome, projectId, principalKind, principalClass, reason } = input;
+  console.log(
+    `[git-proxy] receive-pack ${outcome} project=${projectId} principal=${principalKind}/${principalClass} ` +
+      `reason=${reason} refs=${input.refCount ?? 0} matched=${(input.matchedRefs ?? []).join(',') || '-'} ` +
+      `mode=${input.mode}`,
+  );
+}
+
+/**
+ * R-9.6 enforcement: an agent principal may not push a protected ref.
+ *
+ * Returns `{ response }` to refuse the push outright (the caller MUST return it
+ * immediately — see the prebake note in `forward`), or `{ body }` with a
+ * re-emitted request stream when the push is allowed and we consumed part of
+ * the body to inspect it. `{}` means "we did not touch the body, forward it
+ * exactly as before" — the path every human request takes.
+ */
+async function guardReceivePack(
+  c: any,
+  auth: Extract<GitProxyAuth, { ok: true }>,
+  projectId: string,
+): Promise<{ response?: Response; body?: ReadableStream<Uint8Array> | null }> {
+  const mode = config.KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION;
+  if (mode === 'off') return {};
+
+  const principalClass = classifyGitPrincipal(auth.principal);
+  if (principalClass !== 'agent') {
+    // A human push is NEVER parsed: zero new failure surface for `git push`
+    // from a laptop or `kortix ship`, and the reason fail-closed below is
+    // affordable at all.
+    logReceivePackDecision({
+      mode,
+      outcome: 'allow',
+      projectId,
+      principalKind: auth.principal.kind,
+      principalClass,
+      reason: 'not-agent',
+    });
+    return {};
+  }
+
+  // The protected set is the UNION of both default_branch columns: PATCH
+  // /v1/projects/:id updates only `projects.default_branch` and leaves the
+  // connection row stale, so checking one column leaves the other as a bypass.
+  // A failed connection read degrades to the `projects` column rather than
+  // failing the push — the same query runs again in resolveProjectUpstream a
+  // few lines later, which 502s if the DB is genuinely unreachable.
+  let connectionDefaultBranch: string | null = null;
+  try {
+    connectionDefaultBranch = (await getProjectGitConnection(projectId))?.defaultBranch ?? null;
+  } catch (err) {
+    console.warn(`[git-proxy] git connection lookup failed for ${projectId}:`, err);
+  }
+  const protectedRefs = protectedRefsFor({
+    projectDefaultBranch: auth.project.defaultBranch,
+    connectionDefaultBranch,
+  });
+
+  const rawBody = c.req.raw.body as ReadableStream<Uint8Array> | null;
+  const encoding = (c.req.header('content-encoding') || '').trim().toLowerCase();
+
+  let decision: ReceivePackDecision;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let replay: ReadableStream<Uint8Array> | null = null;
+  // How many refs the push actually carried — logged on ALLOW too, so the
+  // dashboard can show agent pushes flowing rather than only failures.
+  let parsedRefCount = 0;
+
+  if (encoding && encoding !== 'identity') {
+    decision = decideReceivePack({
+      principalClass,
+      protectedRefs,
+      parsed: { ok: false, reason: 'content-encoding' },
+    });
+    // Deliberately do NOT take the reader here. `observe` mode must forward the
+    // request untouched, and once a reader is acquired the original stream is
+    // locked and can no longer be handed to fetch — we would silently forward
+    // an EMPTY push. The reader is taken later, only on the enforce+drain path.
+  } else if (!rawBody) {
+    decision = decideReceivePack({
+      principalClass,
+      protectedRefs,
+      parsed: { ok: false, reason: 'no-body' },
+    });
+  } else {
+    reader = rawBody.getReader();
+    const peek = await peekReceivePackHead(reader);
+    if (peek.parsed.ok) parsedRefCount = peek.parsed.commands.length;
+    decision = decideReceivePack({ principalClass, protectedRefs, parsed: peek.parsed });
+    replay = replayReceivePackBody({ head: peek.head, reader, upstreamDone: peek.upstreamDone });
+  }
+
+  if (decision.action === 'allow') {
+    logReceivePackDecision({
+      mode,
+      outcome: 'allow',
+      projectId,
+      principalKind: auth.principal.kind,
+      principalClass,
+      reason: decision.reason,
+      refCount: parsedRefCount,
+    });
+    // `replay` is null only when we never consumed the body; forward the
+    // original stream in that case rather than a null body.
+    return replay ? { body: replay } : {};
+  }
+
+  const matchedRefs = decision.reason === 'protected-ref' ? decision.matchedRefs : [];
+  const denyCode = decision.reason === 'protected-ref'
+    ? 'protected-ref'
+    : `unparseable:${decision.detail}`;
+
+  logReceivePackDecision({
+    mode,
+    outcome: mode === 'observe' ? 'observe-deny' : 'deny',
+    projectId,
+    principalKind: auth.principal.kind,
+    principalClass,
+    reason: denyCode,
+    refCount: parsedRefCount,
+    matchedRefs,
+  });
+
+  // Audit every denial (and every would-be denial in observe mode). Never
+  // blocks or fails the request it describes.
+  void recordAuditEvent({
+    accountId: auth.project.accountId,
+    actorUserId: 'userId' in auth.principal ? auth.principal.userId : undefined,
+    action: mode === 'observe'
+      ? 'git_proxy.push.default_branch_observed'
+      : 'git_proxy.push.default_branch_denied',
+    resourceType: 'project',
+    resourceId: projectId,
+    metadata: {
+      principal_kind: auth.principal.kind,
+      deny_reason: denyCode,
+      protected_refs: protectedRefs,
+      matched_refs: matchedRefs,
+      mode,
+    },
+  }).catch((err) => console.error('[git-proxy] deny audit write failed', err));
+
+  if (mode === 'observe') {
+    // Canary: the decision is recorded, the push is forwarded UNALTERED. If we
+    // never consumed the body (`replay === null`), hand back the original
+    // stream — returning a null body here would forward an empty push and turn
+    // a read-only canary into an outage.
+    return replay ? { body: replay } : {};
+  }
+
+  // git will not SHOW our rejection unless we consume the request first —
+  // otherwise it prints "the remote end hung up unexpectedly" and the caller
+  // never learns to open a change request instead.
+  if (!reader && rawBody) reader = rawBody.getReader();
+  if (reader) await drainRequestBody(reader);
+
+  if (decision.reason === 'protected-ref') {
+    // HTTP 200 carrying a report-status document. A 403 body is invisible to
+    // git; this renders as `! [remote rejected]` and still exits non-zero.
+    return {
+      response: new Response(buildProtectedRefRejection(decision), {
+        status: 200,
+        headers: {
+          'content-type': 'application/x-git-receive-pack-result',
+          'cache-control': 'no-cache',
+          'x-kortix-deny-reason': denyCode,
+        },
+      }),
+    };
+  }
+
+  // Unparseable: we have no ref names, so no report-status can be built. Fall
+  // back to a 403 whose body git will not display — accepted, because this
+  // should ~never happen, and the header + audit row carry the detail.
+  return {
+    response: new Response(
+      'Kortix: this push was refused by the git proxy — the receive-pack command list could not be read.\n',
+      {
+        status: 403,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'x-kortix-deny-reason': denyCode,
+        },
+      },
+    ),
+  };
+}
+
 /**
  * Stream a git smart-HTTP request through to the project's real upstream.
  * `suffix` is the fixed git path appended to the upstream repo URL
@@ -101,6 +325,20 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   if (!auth.ok) {
     if (auth.status === 401) return unauthorized(c, auth.message);
     return c.text(auth.message, auth.status);
+  }
+
+  // Ref-level protection runs BEFORE upstream resolution so we never mint a
+  // host credential for a push we are about to refuse. `/info/refs` and
+  // `/git-upload-pack` never reach this — clone, fetch and discovery have no
+  // new failure mode at all.
+  let guardedBody: ReadableStream<Uint8Array> | null | undefined;
+  if (suffix === '/git-receive-pack') {
+    const guard = await guardReceivePack(c, auth, projectId);
+    // EARLY RETURN, deliberately: a denial is an HTTP 200, and falling through
+    // to the shared response path would kick a per-project warm prebake for
+    // every refused push.
+    if (guard.response) return guard.response;
+    guardedBody = guard.body;
   }
 
   const upstream = await resolveProjectUpstream(auth.project, scope);
@@ -139,7 +377,11 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
       res = await fetch(target, {
         method,
         headers,
-        body: c.req.raw.body,
+        // `guardedBody` is the re-emitted head+rest stream when we inspected a
+        // push; `undefined` (every human request, every non-push) forwards the
+        // original stream byte-identically. Either way the packfile is still
+        // STREAMED — buffering a push would OOM the API on a large repo.
+        body: guardedBody !== undefined ? guardedBody : c.req.raw.body,
         redirect: 'manual',
         // @ts-ignore — Bun extensions: stream the request body, don't decompress.
         duplex: 'half',

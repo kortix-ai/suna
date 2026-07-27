@@ -27,6 +27,12 @@ export interface AccountTokenValidationResult {
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
   agentGrant?: AgentGrant | null;
+  /** Non-null = this token acts as a standing service-account identity (set at
+   *  session mint to the agent's auto-provisioned SA). Surfaced because the git
+   *  proxy classifies a principal as an agent on
+   *  sessionId ∨ agentGrant ∨ serviceAccountId — each is independently
+   *  fail-safe-to-null at mint, so no single one may be the sole signal. */
+  serviceAccountId?: string | null;
   error?: string;
 }
 
@@ -296,6 +302,7 @@ export async function validateAccountToken(
         lastUsedAt: accountTokens.lastUsedAt,
         createdAt: accountTokens.createdAt,
         agentGrant: accountTokens.agentGrant,
+        serviceAccountId: accountTokens.serviceAccountId,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
@@ -346,6 +353,7 @@ export async function validateAccountToken(
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
       agentGrant: row.agentGrant ?? null,
+      serviceAccountId: row.serviceAccountId ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

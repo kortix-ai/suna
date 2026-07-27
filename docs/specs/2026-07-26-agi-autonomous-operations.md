@@ -366,9 +366,38 @@ R-38b — When the AGI writes, it clones on demand (never at boot — R-36), wor
 on a branch, pushes, and opens a change request (R-9.6). It MUST NOT push to the
 default branch, MUST NOT use `kortix ship` (which pushes the branch it is
 standing on, i.e. the default branch of a fresh clone), and MUST NOT merge its
-own change request even though its grant permits it. Nothing server-side
-enforces this today: the git proxy has no ref-level protection, so R-9.6 is
-carried by the AGI's behavior file, guarded by a test over the compiled prompt.
+own change request even though its grant permits it.
+
+R-38b.1 — The "MUST NOT push to the default branch" half is now enforced
+server-side, for every agent principal on every project. On
+`POST /v1/git/:projectId/git-receive-pack`, when the authenticated principal is
+an AGENT (sandbox runtime token, or a session-bound PAT — i.e. carrying
+`session_id`, `agent_grant`, or `service_account_id`), the proxy parses the
+receive-pack command list off the head of the request body and refuses the
+WHOLE push if any command targets a protected ref. Protected = the union of
+`projects.default_branch` and `project_git_connections.default_branch` (both,
+because `PATCH /v1/projects/:id` updates only the former and leaves the latter
+stale). A delete and a force-update are ordinary ref updates on the wire and are
+refused the same way; a multi-ref push (`git push origin feature main`) is
+refused entirely rather than partially applied. Denial is a git-native
+`report-status` document, not an HTTP 403, so `git push` prints
+`! [remote rejected] … (protected: agents land work through a change request…)`
+and exits 1. Human principals are never parsed, so `git push` from a laptop and
+`kortix ship` from a laptop are byte-identical to before. An agent push whose
+command list cannot be read fails CLOSED — the asymmetry is that failing open
+costs the entire control while failing closed cannot touch a human flow.
+Kill switch: `KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION`
+(`enforce` default | `observe` | `off`). See `apps/api/src/git-proxy/`.
+
+R-38b.2 — The "MUST NOT merge its own change request" half remains UNENFORCED
+and is carried only by the AGI's behavior file. CR merge runs server-side from
+the API's bare mirror straight to the upstream and never traverses the git
+proxy, so no ref-level control can see it; the AGI's grant (`kortixCli: 'all'`)
+satisfies `assertAgentScope(c, 'project.cr.merge')`. R-9.6 is therefore only
+HALF enforced today. Closing it is a separate change in the grant/CR layer —
+either drop `project.cr.merge`/`project.gitops.merge` from `agiAgentGrant()`, or
+add a no-self-merge rule keyed on `change_requests.created_by` versus the acting
+principal. Recommended as the immediate follow-up.
 
 R-39 — Its grant is the full authority of the human who launched it, and no
 more. It MUST NOT be able to grant itself capability the launching user lacks.

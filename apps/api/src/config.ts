@@ -251,6 +251,24 @@ const envSchema = z.object({
   // create-time agent. See projects/lib/secret-grant.ts.
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: optBoolTrue,
 
+  // Ref-level protection in the git proxy: an AGENT principal (sandbox token /
+  // session PAT) may not push the project's default branch. This is the
+  // server-side enforcement of R-9.6 — "work reaches the default branch ONLY
+  // through a change request" (docs/specs/2026-07-26-agi-autonomous-operations.md).
+  // Until now that rule lived only in an agent's prompt, and a model that
+  // ignores its prompt — or is talked out of it by goal text a user wrote —
+  // could push straight to the default branch of the company repo.
+  //
+  // Defaults to `enforce`, not off: never default a control off to preserve the
+  // very flow that IS the vulnerability. `observe` computes, logs and audits the
+  // decision but forwards the push anyway (an explicit operator canary, never
+  // the default). `off` is the incident lever. All three modes log every
+  // receive-pack decision, which is how the first hour of prod data answers
+  // "did we break session pushes".
+  KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION: z
+    .enum(['enforce', 'observe', 'off'])
+    .default('enforce'),
+
   // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
   // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
   // immediately reject every session/trigger on a pre-existing, agent-less project.
@@ -922,6 +940,7 @@ export const config = {
   KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
+  KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION: env.KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────

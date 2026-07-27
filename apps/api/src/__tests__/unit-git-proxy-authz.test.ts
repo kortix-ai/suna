@@ -181,3 +181,114 @@ describe('authorizeGitProxy — account API key', () => {
     expect(res).toMatchObject({ ok: false, status: 401 });
   });
 });
+
+/**
+ * Every ok-return must carry a `principal`. It is the ONLY input to the git
+ * proxy's ref-level protection (R-9.6) — the proxy is not wrapped in
+ * combinedAuth, so there is no middleware context to recover it from later. An
+ * ok-return that forgot to populate it would either silently disable the
+ * control or deny a human's push, depending on which way the classifier fell.
+ */
+describe('authorizeGitProxy — principal on every ok-return', () => {
+  test('a session-bound PAT is a `session` principal (agent)', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      sessionId: 'sandbox-1',
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({
+      ok: true,
+      principal: { kind: 'session', sessionId: 'sandbox-1', accountId: OWNER_ACCOUNT },
+    });
+  });
+
+  test('a PAT with only an agentGrant is still a `session` principal', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      agentGrant: { kortixCli: 'all' },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: true, principal: { kind: 'session' } });
+  });
+
+  test('a PAT with only a serviceAccountId is still a `session` principal', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      serviceAccountId: 'sa-1',
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: true, principal: { kind: 'session' } });
+  });
+
+  test('THE TRAP: a human PROJECT-SCOPED PAT is a `user` principal, not an agent', async () => {
+    // `POST /v1/projects/:id/tokens` mints these for humans (`cli · <project>`).
+    // Keying on projectId would deny a developer's laptop push.
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      projectId: PROJECT_ID,
+      sessionId: null,
+      agentGrant: null,
+      serviceAccountId: null,
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({
+      ok: true,
+      principal: { kind: 'user', userId: 'user-1', accountId: OWNER_ACCOUNT },
+    });
+  });
+
+  test('an unscoped laptop PAT is a `user` principal', async () => {
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    expect(res).toMatchObject({ ok: true, principal: { kind: 'user' } });
+  });
+
+  test('a sandbox runtime token is a `sandbox` principal (agent)', async () => {
+    patResult = { isValid: false };
+    apiKeyResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      type: 'sandbox',
+      sandboxId: 'sandbox-1',
+      keyId: 'key-1',
+    };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({
+      ok: true,
+      principal: { kind: 'sandbox', sandboxId: 'sandbox-1', accountId: OWNER_ACCOUNT },
+    });
+  });
+
+  test('an account API key is an `api_key` principal', async () => {
+    patResult = { isValid: false };
+    apiKeyResult = { isValid: true, accountId: OWNER_ACCOUNT, type: 'user', keyId: 'key-1' };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({
+      ok: true,
+      principal: { kind: 'api_key', keyId: 'key-1', accountId: OWNER_ACCOUNT },
+    });
+  });
+});

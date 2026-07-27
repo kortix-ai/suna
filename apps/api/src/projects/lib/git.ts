@@ -20,6 +20,7 @@ import { authorize } from '../../iam/dispatcher';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import { isAgentAccountToken, type GitPrincipal } from '../../git-proxy/principal';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request. Each DB statement is a fast same-region roundtrip (~3ms measured,
@@ -594,8 +595,14 @@ export async function resolveProjectUpstream(
 }
 
 
+/**
+ * `principal` carries WHICH validator accepted the credential. The proxy needs
+ * it for ref-level protection (R-9.6): an agent may not push the default
+ * branch, a human may. This is the only place that knows — the proxy is not
+ * wrapped in `combinedAuth`, so there is no middleware context to read it from.
+ */
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow }
+  | { ok: true; project: ProjectRow; principal: GitPrincipal }
   | { ok: false; status: number; message: string };
 
 /**
@@ -675,7 +682,27 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }
-    return { ok: true, project };
+    // Session-bound PAT ⇒ agent. NOT keyed on `projectId`: humans mint
+    // project-scoped PATs too (`POST /v1/projects/:id/tokens`), and treating
+    // those as agents would deny a human's laptop push to the default branch.
+    return {
+      ok: true,
+      project,
+      principal: isAgentAccountToken(result)
+        ? {
+            kind: 'session',
+            accountId: result.accountId,
+            sessionId: result.sessionId ?? null,
+            tokenId: result.tokenId,
+            userId: result.userId,
+          }
+        : {
+            kind: 'user',
+            accountId: result.accountId,
+            userId: result.userId,
+            tokenId: result.tokenId,
+          },
+    };
   }
 
   if (isKortixToken(token)) {
@@ -700,7 +727,11 @@ export async function authorizeGitProxy(
       if (!sandbox) {
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
-      return { ok: true, project };
+      return {
+        ok: true,
+        project,
+        principal: { kind: 'sandbox', sandboxId: result.sandboxId, accountId: result.accountId },
+      };
     }
     // Account-scoped user API key. No per-project fallback here: an API key
     // carries no user identity, so there is no principal to evaluate project
@@ -708,7 +739,11 @@ export async function authorizeGitProxy(
     if (result.accountId !== project.accountId) {
       return { ok: false, status: 403, message: 'token does not own this project' };
     }
-    return { ok: true, project };
+    return {
+      ok: true,
+      project,
+      principal: { kind: 'api_key', accountId: result.accountId, keyId: result.keyId },
+    };
   }
 
   return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };
