@@ -34,7 +34,7 @@ with the LiveKit server at `LIVEKIT_URL` and handles reload. There's also
 `pnpm start` (production mode, no reload) and `pnpm console` (an in-process
 text-only session with no real room — useful for iterating on
 instructions/tools without joining a room at all; note this mode cannot
-resolve a `CallContext` from room metadata, since there is no room — see
+resolve a `CallContext` from job metadata, since there is no job — see
 below).
 
 To actually exercise a call end-to-end you need something in the room to
@@ -45,7 +45,7 @@ the same room name as a human participant with any LiveKit client (e.g. the
 local server) and talk to it.
 
 **Required env vars** (see `src/call-context.ts` for the full explanation of
-why call-specific values come from room metadata, not env vars):
+why call-specific values come from job metadata, not env vars):
 
 | Var | Required | Purpose |
 |---|---|---|
@@ -55,17 +55,16 @@ why call-specific values come from room metadata, not env vars):
 | `OPENAI_API_KEY` | yes | Read by `agents-plugin-openai`'s `LLM`/`TTS` constructors when no `apiKey` option is passed. |
 | `KORTIX_API_URL` | no | Fallback Kortix API base URL, used only when a room's metadata omits `kortix_api_url`. Defaults to `http://localhost:8008` (matches `apps/api`'s local dev port). Named to match the existing convention (`apps/cli`, the self-host compose file). |
 
-## Why room metadata, not env vars, for call identity
+## Why job metadata, not env vars, for call identity
 
 A single worker **process** can run many jobs (rooms) concurrently — one
 process, many simultaneous calls, each for a different project/session. An
 env var is process-wide, so anything that differs per call **must** come from
-the room instead, above all the Kortix API credential: a shared static token
-would let any live call impersonate any other project's session.
+the job instead. A shared static token would let any live call impersonate any
+other project's session.
 
 `apps/api`, when it creates the LiveKit room for a call (before dispatching
-this agent into it), is expected to set the room's metadata to JSON shaped
-like:
+this agent into it), sets public room metadata to:
 
 ```json
 {
@@ -73,19 +72,22 @@ like:
   "session_id": "...",
   "call_id": "...",
   "kortix_api_url": "https://api.kortix.com",
-  "kortix_api_token": "<short-lived, call-scoped bearer credential>",
   "bot_name": "Kortix"
 }
 ```
 
-via `RoomServiceClient.createRoom({ name, metadata })`
-(`livekit-server-sdk@2.17.0`). This worker reads it back via
-`ctx.job.room.metadata` — the room's server-side state as of dispatch time,
-readable in the entrypoint immediately, before `ctx.connect()` has actually
-joined (the live `ctx.room` object only populates `.name`/`.metadata` once
-connected). `call_id` defaults to `session_id` when omitted: today there's one
-live call per session (`apps/api/src/channels/voice/routes.ts`: "The call id
-IS the session id"), so the two are normally the same value.
+The private dispatch metadata contains the same fields plus:
+
+```json
+{
+  "kortix_api_token": "<short-lived, call-scoped bearer credential>"
+}
+```
+
+The worker reads public metadata from `ctx.job.room.metadata`. It reads the
+credential from `ctx.job.metadata`. Both values are available before
+`ctx.connect()`. `call_id` defaults to `session_id` when omitted. Today, one
+live call exists per session.
 
 ## The two tools
 
@@ -130,8 +132,8 @@ This app is scoped to the LiveKit worker only — it does not touch
 `apps/api`. It expects ONE endpoint,
 `POST /v1/projects/:projectId/sessions/:sessionId/mcp/voice` — a JSON-RPC 2.0
 voice MCP (`apps/api/src/channels/voice/mcp.ts` + `routes.ts`), authenticated
-with `Authorization: Bearer <kortix_api_token>` (the per-call token from room
-metadata). Every call is a `tools/call` request; the tool surface is:
+with `Authorization: Bearer <kortix_api_token>` (the per-call token from private
+dispatch metadata). Every call is a `tools/call` request; the tool surface is:
 
 | Tool | Args | Behavior |
 |---|---|---|
@@ -143,9 +145,9 @@ metadata). Every call is a `tools/call` request; the tool surface is:
 route resolves them from the URL path (and the HMAC proves the caller owns
 that call), the same way the three REST endpoints this MCP replaced used to.
 
-Plus the reply channel above (`RoomServiceClient.sendData` on the `kortix`
-topic) and setting `kortix_api_token`/`project_id`/`session_id` in room
-metadata at room-creation time.
+The reply channel uses `RoomServiceClient.sendData` on the `kortix` topic.
+Room metadata contains `project_id` and `session_id`. Private dispatch metadata
+contains `kortix_api_token`.
 
 `src/kortix-client.ts` implements the client side of all three tool calls —
 real `fetch()` requests against the MCP endpoint, correctly shaped, with
