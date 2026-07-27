@@ -780,7 +780,9 @@ async function shipExisting(
   }
   const target = resolveExistingShipGitTarget(project);
   const managed = target.credentialMode === 'managed-git-token';
-  const repoUrl = target.repoUrl;
+  // Single source of truth for the upstream: the auth header is scoped to this
+  // URL's origin, so origin, push, and report must never diverge from it.
+  let repoUrl = target.repoUrl;
 
   process.stdout.write(
     `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}sync${C.reset}\n` +
@@ -799,16 +801,13 @@ async function shipExisting(
   // managed upstream URL. Non-managed proxy pushes use the Kortix CLI token.
   let pushToken: string | null = null;
   let pushUsername = 'x-access-token';
-  let repoUrlForPush = repoUrl;
-  let pushedViaProxy = false;
   if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
   } else if (target.credentialMode === 'managed-git-token') {
     const plan = await resolveManagedPushPlan(client, project, auth.token);
     pushToken = plan.pushToken;
     pushUsername = plan.pushUsername;
-    repoUrlForPush = plan.repoUrl;
-    pushedViaProxy = plan.viaProxy;
+    repoUrl = plan.repoUrl;
     if (plan.viaProxy) {
       process.stdout.write(
         `  ${C.dim}managed push token unavailable on this host — pushing through the project git proxy${C.reset}\n`,
@@ -819,8 +818,8 @@ async function shipExisting(
   // upstream that matches the freshly minted provider token. BYO repos may
   // have lost their remote (fresh clone of a linked repo); heal only when
   // missing so user-managed credentials stay untouched.
-  if (managed) setOrigin(repoUrlForPush);
-  else ensureOrigin(repoUrlForPush);
+  if (managed) setOrigin(repoUrl);
+  else ensureOrigin(repoUrl);
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
