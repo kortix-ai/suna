@@ -15,6 +15,8 @@ import Link from 'next/link';
 import { useCallback, useState } from 'react';
 import { ACCORDION, type AccordionIcon } from './content';
 
+const KORTIX_ORANGE_SRGB = '#d18b19';
+
 const ACCORDION_ICONS: Record<AccordionIcon, React.ReactNode> = {
   'stack-2': <Layers2 className="size-4" aria-hidden />,
   key: <Key className="size-4" aria-hidden />,
@@ -91,7 +93,7 @@ const Security = () => {
                 scale={0.65}
                 image="/shaders/heatmap-mark.svg"
                 frame={407072.499999992}
-                colors={['var(--kortix-orange)', '#fafafa', '#242424']}
+                colors={[KORTIX_ORANGE_SRGB, '#fafafa', '#242424']}
                 colorBack="#ffffff00"
                 className="shrink-0"
                 style={{
