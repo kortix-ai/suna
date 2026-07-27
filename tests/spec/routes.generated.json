@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 507,
+  "count": 511,
   "routes": [
     {
       "method": "GET",
@@ -1735,6 +1735,10 @@
       "path": "/v1/projects/create-repo"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/github/connect-session"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/github/installation"
     },
@@ -1753,6 +1757,14 @@
     {
       "method": "DELETE",
       "path": "/v1/projects/github/installations/:installationId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/:installationId/reconnect-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installations/:installationId/refresh"
     },
     {
       "method": "POST",
@@ -1969,6 +1981,10 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/nango"
     },
     {
       "method": "POST",

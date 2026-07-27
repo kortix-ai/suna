@@ -2,10 +2,14 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
 import {
+  createGitHubConnectSession,
+  createGitHubReconnectSession,
+  disconnectGitHubConnection,
   linkGitHubInstallation,
   listLinkableGitHubInstallations,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
+  refreshGitHubConnection,
   saveGitHubInstallation,
   type LinkableGitHubInstallationsResponse,
   type GitHubRepositoriesResponse,
@@ -174,5 +178,90 @@ test('passes bounded repository search options through the typed GitHub surface'
   expect(calls).toEqual([
     'http://test.local/v1/projects/github/repositories?' +
       'account_id=account+1&installation_id=pat&search=customer+portal&limit=25',
+  ]);
+});
+
+test('serializes Nango connection lifecycle inputs through stable GitHub routes', async () => {
+  const requests: Array<{ url: string; method: string; body: unknown }> = [];
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    requests.push({
+      url,
+      method: init?.method ?? 'GET',
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (url.endsWith('/connect-session') || url.endsWith('/reconnect-session')) {
+      return Response.json({
+        token: 'connect-token',
+        expires_at: '2026-07-27T18:00:00.000Z',
+        connect_link: 'https://connect.nango.dev/session',
+      });
+    }
+    const installation = {
+      account_id: 'account 1',
+      installation_row_id: 'row-1',
+      installed: true,
+      configured: true,
+      requires_installation: false,
+      install_url: null,
+      installation_id: '84',
+      owner_login: 'acme',
+      owner_type: 'Organization',
+      repository_selection: 'all',
+      permissions: {},
+      installation_url: null,
+      updated_at: '2026-07-27T17:00:00.000Z',
+      connection_id: 'nango-connection-1',
+      connection_provider: 'nango',
+      connection_status: 'connected',
+      reconnect_required: false,
+    };
+    return Response.json(
+      init?.method === 'DELETE' ? { ok: true, ...installation } : installation,
+    );
+  }) as unknown as typeof fetch;
+
+  const connect = await createGitHubConnectSession({ accountId: 'account 1' });
+  const reconnect = await createGitHubReconnectSession({
+    accountId: 'account 1',
+    installationId: '84',
+  });
+  const refreshed = await refreshGitHubConnection({
+    accountId: 'account 1',
+    installationId: '84',
+  });
+  const disconnected = await disconnectGitHubConnection({
+    accountId: 'account 1',
+    installationId: '84',
+  });
+
+  expect(connect.token).toBe('connect-token');
+  expect(reconnect.connect_link).toBe('https://connect.nango.dev/session');
+  expect(refreshed.connection_status).toBe('connected');
+  expect(disconnected.ok).toBe(true);
+  expect(disconnected.connection_provider).toBe('nango');
+  expect(requests).toEqual([
+    {
+      url: 'http://test.local/v1/projects/github/connect-session',
+      method: 'POST',
+      body: { account_id: 'account 1' },
+    },
+    {
+      url:
+        'http://test.local/v1/projects/github/installations/84/reconnect-session',
+      method: 'POST',
+      body: { account_id: 'account 1' },
+    },
+    {
+      url: 'http://test.local/v1/projects/github/installations/84/refresh',
+      method: 'POST',
+      body: { account_id: 'account 1' },
+    },
+    {
+      url:
+        'http://test.local/v1/projects/github/installations/84?account_id=account+1',
+      method: 'DELETE',
+      body: null,
+    },
   ]);
 });

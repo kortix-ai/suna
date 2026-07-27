@@ -66,6 +66,10 @@ export interface GitHubInstallationStatus {
   permissions: Record<string, unknown>;
   installation_url: string | null;
   updated_at: string | null;
+  connection_id?: string | null;
+  connection_provider?: 'nango' | 'github_app' | null;
+  connection_status?: 'connected' | 'needs_reconnect' | 'error' | 'disconnected' | null;
+  reconnect_required?: boolean;
 }
 
 export interface GitHubInstallationsResponse extends GitHubInstallationStatus {
@@ -89,6 +93,23 @@ export interface LinkableGitHubInstallationsResponse {
   install_url: string | null;
   installations: LinkableGitHubInstallation[];
 }
+
+export interface GitHubConnectionInput {
+  accountId: string;
+  installationId: string;
+}
+
+export interface GitHubConnectSessionInput {
+  accountId: string;
+}
+
+export interface GitHubConnectSessionResponse {
+  token: string;
+  expires_at: string;
+  connect_link: string;
+}
+
+export type GitHubDisconnectResponse = { ok: true } & Partial<GitHubInstallationStatus>;
 
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
@@ -146,6 +167,49 @@ export async function listGitHubRepositories(
   return unwrap(
     await backendApi.get<GitHubRepositoriesResponse>(
       `/projects/github/repositories?${params.toString()}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function createGitHubConnectSession(input: GitHubConnectSessionInput) {
+  return unwrap(
+    await backendApi.post<GitHubConnectSessionResponse>(
+      '/projects/github/connect-session',
+      { account_id: input.accountId },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function createGitHubReconnectSession(input: GitHubConnectionInput) {
+  const installationId = encodeURIComponent(input.installationId);
+  return unwrap(
+    await backendApi.post<GitHubConnectSessionResponse>(
+      `/projects/github/installations/${installationId}/reconnect-session`,
+      { account_id: input.accountId },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function refreshGitHubConnection(input: GitHubConnectionInput) {
+  const installationId = encodeURIComponent(input.installationId);
+  return unwrap(
+    await backendApi.post<GitHubInstallationStatus>(
+      `/projects/github/installations/${installationId}/refresh`,
+      { account_id: input.accountId },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function disconnectGitHubConnection(input: GitHubConnectionInput) {
+  const installationId = encodeURIComponent(input.installationId);
+  const params = new URLSearchParams({ account_id: input.accountId });
+  return unwrap(
+    await backendApi.delete<GitHubDisconnectResponse>(
+      `/projects/github/installations/${installationId}?${params.toString()}`,
       { showErrors: false },
     ),
   );

@@ -220,6 +220,18 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY: optBoolFalse,
+  // Nango is the credential broker for account and managed GitHub access.
+  // NANGO_API_KEY is canonical; NANGO_SECRET_KEY remains a rollout alias.
+  // Either integration ID enables Nango validation and requires the git proxy.
+  NANGO_API_KEY: optStr,
+  NANGO_SECRET_KEY: optStr,
+  NANGO_BASE_URL: optUrl('https://api.nango.dev'),
+  NANGO_WEBHOOK_SIGNING_KEY: optStr,
+  NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: optStr,
+  NANGO_GITHUB_MANAGED_INTEGRATION_ID: optStr,
+  GITHUB_CREDENTIAL_RESOLUTION: z
+    .enum(['nango_preferred', 'nango_only'])
+    .default('nango_preferred'),
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
@@ -753,6 +765,75 @@ function validateEnv(): z.infer<typeof envSchema> {
     });
   }
 
+  // ── Conditional: Nango GitHub credential broker ────────────────────────
+  const nonEmptyString = (value: unknown): value is string =>
+    typeof value === 'string' && value.trim().length > 0;
+  const unresolvedCiphertext = (value: unknown): boolean =>
+    nonEmptyString(value) && value.trim().startsWith('encrypted:');
+  const nangoEnabled =
+    nonEmptyString(raw.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID) ||
+    nonEmptyString(raw.NANGO_GITHUB_MANAGED_INTEGRATION_ID);
+  const canonicalNangoApiKey = nonEmptyString(raw.NANGO_API_KEY)
+    ? raw.NANGO_API_KEY
+    : raw.NANGO_SECRET_KEY;
+
+  if (nangoEnabled) {
+    if (!nonEmptyString(canonicalNangoApiKey)) {
+      issues.push({
+        var: 'NANGO_API_KEY',
+        message: 'Required when a Nango GitHub integration is enabled',
+        level: 'error',
+      });
+    } else if (unresolvedCiphertext(canonicalNangoApiKey)) {
+      issues.push({
+        var: nonEmptyString(raw.NANGO_API_KEY) ? 'NANGO_API_KEY' : 'NANGO_SECRET_KEY',
+        message: 'Must be decrypted before Nango is enabled',
+        level: 'error',
+      });
+    }
+
+    if (!nonEmptyString(raw.NANGO_WEBHOOK_SIGNING_KEY)) {
+      issues.push({
+        var: 'NANGO_WEBHOOK_SIGNING_KEY',
+        message: 'Required when a Nango GitHub integration is enabled',
+        level: 'error',
+      });
+    } else if (unresolvedCiphertext(raw.NANGO_WEBHOOK_SIGNING_KEY)) {
+      issues.push({
+        var: 'NANGO_WEBHOOK_SIGNING_KEY',
+        message: 'Must be decrypted before Nango is enabled',
+        level: 'error',
+      });
+    }
+
+    if (unresolvedCiphertext(raw.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID)) {
+      issues.push({
+        var: 'NANGO_GITHUB_ACCOUNT_INTEGRATION_ID',
+        message: 'Must be decrypted before Nango is enabled',
+        level: 'error',
+      });
+    }
+    if (unresolvedCiphertext(raw.NANGO_GITHUB_MANAGED_INTEGRATION_ID)) {
+      issues.push({
+        var: 'NANGO_GITHUB_MANAGED_INTEGRATION_ID',
+        message: 'Must be decrypted before Nango is enabled',
+        level: 'error',
+      });
+    }
+
+    const gitProxyEnabled =
+      raw.KORTIX_GIT_PROXY === true ||
+      (typeof raw.KORTIX_GIT_PROXY === 'string' &&
+        ['true', '1', 'yes', 'on'].includes(raw.KORTIX_GIT_PROXY.trim().toLowerCase()));
+    if (!gitProxyEnabled) {
+      issues.push({
+        var: 'KORTIX_GIT_PROXY',
+        message: 'Must be true when a Nango GitHub integration is enabled',
+        level: 'error',
+      });
+    }
+  }
+
   // ── Conditional: KORTIX_URL — required for sandbox routing ──────────────
   // Auto-derive from PORT for self-host/dev — fatal when billing is enabled
   // (you can't bill against an unreachable origin).
@@ -836,6 +917,10 @@ function validateEnv(): z.infer<typeof envSchema> {
     process.exit(1);
   }
 
+  result.data.NANGO_API_KEY = nonEmptyString(result.data.NANGO_API_KEY)
+    ? result.data.NANGO_API_KEY
+    : result.data.NANGO_SECRET_KEY;
+
   console.log(
     `[config] Environment validated (${Object.keys(envSchema.shape).length} vars, ${warnings.length} warnings)`,
   );
@@ -915,6 +1000,12 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
+  NANGO_API_KEY: env.NANGO_API_KEY,
+  NANGO_BASE_URL: env.NANGO_BASE_URL,
+  NANGO_WEBHOOK_SIGNING_KEY: env.NANGO_WEBHOOK_SIGNING_KEY,
+  NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: env.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID,
+  NANGO_GITHUB_MANAGED_INTEGRATION_ID: env.NANGO_GITHUB_MANAGED_INTEGRATION_ID,
+  GITHUB_CREDENTIAL_RESOLUTION: env.GITHUB_CREDENTIAL_RESOLUTION,
   KORTIX_OPENCODE_TRANSPORT: env.KORTIX_OPENCODE_TRANSPORT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,

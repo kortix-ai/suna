@@ -81,6 +81,13 @@ function resetState() {
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
     installationId: '42',
+    nangoConnectionId: null,
+    nangoIntegrationId: null,
+    connectionStatus: null,
+    lastValidatedAt: null,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    disconnectedAt: null,
     ownerLogin: 'kortix-org',
     ownerType: 'Organization',
     repositorySelection: 'all',
@@ -245,7 +252,10 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+const realGithubModule = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...realGithubModule,
+  listLinkableGitHubAppInstallations: async () => [],
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',

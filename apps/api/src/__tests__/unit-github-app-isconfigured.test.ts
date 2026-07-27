@@ -32,7 +32,7 @@ mock.module('../platform/services/managed-github-app', () => ({
   },
 }));
 
-const { isGithubAppConfigured } = await import('../projects/github');
+const { createGitHubAppJwt, isGithubAppConfigured } = await import('../projects/github');
 const { githubBackend, managedGithubOwner } = await import('../projects/git-backends/github');
 
 const ENV_KEYS = [
@@ -66,6 +66,20 @@ describe('isGithubAppConfigured (DB-first, env-fallback)', () => {
     process.env.KORTIX_GITHUB_APP_ID = '12345';
     process.env.KORTIX_GITHUB_APP_PRIVATE_KEY = 'PEM';
     expect(isGithubAppConfigured()).toBe(true);
+  });
+
+  test('false when env fallback values are dotenvx ciphertext', () => {
+    process.env.KORTIX_GITHUB_APP_ID = 'encrypted:id';
+    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY = 'encrypted:key';
+    expect(isGithubAppConfigured()).toBe(false);
+  });
+
+  test('JWT signing rejects dotenvx ciphertext before OpenSSL receives it', () => {
+    process.env.KORTIX_GITHUB_APP_ID = 'encrypted:id';
+    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY = 'encrypted:key';
+    expect(() => createGitHubAppJwt()).toThrow(
+      'GitHub App is not configured (set KORTIX_GITHUB_APP_ID and KORTIX_GITHUB_APP_PRIVATE_KEY)',
+    );
   });
 
   test('DB value wins over env when both are set', () => {
@@ -124,6 +138,22 @@ describe('githubBackend.isConfigured() — flips true once the DB config is comp
     process.env.KORTIX_GITHUB_APP_ID = '12345';
     process.env.KORTIX_GITHUB_APP_PRIVATE_KEY = 'PEM';
     expect(await githubBackend.isConfigured()).toBe(true);
+  });
+
+  test('false when env-only App installation fallback values are dotenvx ciphertext', async () => {
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'encrypted:owner';
+    process.env.MANAGED_GIT_GITHUB_INSTALL_ID = 'encrypted:install-id';
+    process.env.KORTIX_GITHUB_APP_ID = 'encrypted:app-id';
+    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY = 'encrypted:private-key';
+
+    expect(managedGithubOwner()).toBeNull();
+    expect(await githubBackend.isConfigured()).toBe(false);
+  });
+
+  test('false when the env-only PAT fallback is dotenvx ciphertext', async () => {
+    dbConfig = { owner: 'acme-corp' };
+    process.env.MANAGED_GIT_GITHUB_TOKEN = 'encrypted:token';
+    expect(await githubBackend.isConfigured()).toBe(false);
   });
 
   test('reflects a live update via updateManagedGithubAppConfig (manifest-callback then install-callback)', async () => {

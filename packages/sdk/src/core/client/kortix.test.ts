@@ -259,6 +259,35 @@ test('kortix.github covers install/list/link/repo endpoints (account-scoped, not
 
   await kortix.github.listRepositories('ACC1');
   expect(last().url).toContain('/projects/github/repositories?account_id=ACC1');
+
+  await kortix.github.createConnectSession({ accountId: 'ACC1' });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/github/connect-session',
+    method: 'POST',
+    body: { account_id: 'ACC1' },
+  });
+
+  await kortix.github.createReconnectSession({
+    accountId: 'ACC1',
+    installationId: '84',
+  });
+  expect(last().url).toContain(
+    '/projects/github/installations/84/reconnect-session',
+  );
+
+  await kortix.github.refreshConnection({
+    accountId: 'ACC1',
+    installationId: '84',
+  });
+  expect(last().url).toContain('/projects/github/installations/84/refresh');
+
+  await kortix.github.disconnectConnection({
+    accountId: 'ACC1',
+    installationId: '84',
+  });
+  expect(last().url).toContain(
+    '/projects/github/installations/84?account_id=ACC1',
+  );
 });
 
 test('kortix.sandboxShares hits /p/share (sandbox-scoped, not project-scoped)', async () => {

@@ -6,7 +6,7 @@ import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
+import { getBackend, getDefaultManagedProvider, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import {
   getGitHubAppInstallation,
@@ -41,6 +41,7 @@ import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
 } from '../../shared/rate-limit';
+import { githubNangoConnectionsApp } from './github-nango-connections';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -382,7 +383,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
+    const provider = getDefaultManagedProvider();
     const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
     return c.json({ configured, provider });
   },
@@ -422,7 +423,7 @@ projectsApp.openapi(
   // as drop-ins.
   const provider =
     normalizeString(body.provider) ??
-    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+    getDefaultManagedProvider();
   if (!hasBackend(provider)) {
     return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
   }
@@ -815,6 +816,8 @@ projectsApp.openapi(
 },
 );
 
+projectsApp.route('/github', githubNangoConnectionsApp);
+
 // GET /v1/projects/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;
 // installation tokens are minted server-side at repo creation time.
@@ -1160,72 +1163,6 @@ projectsApp.openapi(
       502,
     );
   }
-},
-);
-
-// DELETE /v1/projects/github/installation?account_id=...
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'DELETE /github/installation',
-    ...auth,
-      request: {
-        query: z.object({}).passthrough(),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
-
-  await db
-    .delete(accountGithubInstallations)
-    .where(installationId
-      ? and(
-          eq(accountGithubInstallations.accountId, scope.accountId),
-          eq(accountGithubInstallations.installationId, installationId),
-        )
-      : eq(accountGithubInstallations.accountId, scope.accountId));
-
-  return c.json({ ok: true });
-},
-);
-
-// DELETE /v1/projects/github/installations/:installationId?account_id=...
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/github/installations/{installationId}',
-    tags: ['github'],
-    summary: 'DELETE /github/installations/:installationId',
-    ...auth,
-      request: {
-        params: z.object({ installationId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const installationId = c.req.param('installationId');
-
-  await db
-    .delete(accountGithubInstallations)
-    .where(and(
-      eq(accountGithubInstallations.accountId, scope.accountId),
-      eq(accountGithubInstallations.installationId, installationId),
-    ));
-
-  return c.json({ ok: true });
 },
 );
 

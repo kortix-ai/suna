@@ -7,6 +7,7 @@ import {
   deleteRepo as ghDeleteRepo,
   isGithubAppConfigured,
   isOrgAccount,
+  plainGitHubEnv,
 } from '../github';
 import { seedRepoViaGitPush } from './seed';
 import {
@@ -34,7 +35,7 @@ export function managedGithubOwner(): string | null {
   return (
     dbConfig.patOwner?.trim() ||
     dbConfig.owner?.trim() ||
-    process.env.MANAGED_GIT_GITHUB_OWNER?.trim() ||
+    plainGitHubEnv('MANAGED_GIT_GITHUB_OWNER') ||
     null
   );
 }
@@ -42,7 +43,7 @@ export function managedGithubOwner(): string | null {
 export function managedGithubInstallId(): string | null {
   return (
     managedGithubAppConfig().installationId?.trim() ||
-    process.env.MANAGED_GIT_GITHUB_INSTALL_ID?.trim() ||
+    plainGitHubEnv('MANAGED_GIT_GITHUB_INSTALL_ID') ||
     null
   );
 }
@@ -67,9 +68,7 @@ export function managedGithubOwnerType(): 'User' | 'Organization' | undefined {
  * sandbox only ever sees KORTIX_TOKEN via the proxy.
  */
 function managedGithubToken(): string | null {
-  return (
-    managedGithubAppConfig().pat?.trim() || process.env.MANAGED_GIT_GITHUB_TOKEN?.trim() || null
-  );
+  return managedGithubAppConfig().pat?.trim() || plainGitHubEnv('MANAGED_GIT_GITHUB_TOKEN');
 }
 
 /** Embed an `x-access-token:<token>` basic credential into an https git URL. */

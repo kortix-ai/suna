@@ -120,6 +120,20 @@
       "when": 1785078159762,
       "tag": "20260726150239_voice_join_links",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785171831538,
+      "tag": "20260727170351_add_account_github_installation_nango",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785172371052,
+      "tag": "20260727171251_constrain_account_github_connection_status",
+      "breakpoints": true
     }
   ]
 }

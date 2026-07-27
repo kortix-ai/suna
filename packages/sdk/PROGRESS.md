@@ -833,6 +833,56 @@ REFACTOR and finish on the full typecheck, test, and packed-install smoke gates.
 
 ---
 
+### 2026-07-27 — session `nango-github-migration` (U3 complete)
+
+Completed the account-scoped GitHub connection lifecycle contracts.
+
+Implemented:
+
+- Added Connect, reconnect, refresh, and idempotent disconnect API routes.
+- Added additive Nango identity and connection-health serializer fields.
+- Added `@kortix/sdk` lifecycle methods with camel-case inputs and snake-case wire fields.
+- Preserved all existing SDK names, GitHub routes, and legacy delete inputs.
+- Revalidated account authorization before a Nango auth webhook can reconcile state.
+
+Evidence:
+
+- `pnpm --filter @kortix/sdk test`
+  - `1292 pass`
+  - `0 fail`
+  - `5731 expect() calls`
+- `pnpm --filter @kortix/sdk typecheck`
+  - Exit `0`.
+- `pnpm --filter @kortix/sdk smoke:install`
+  - `OK: @kortix/sdk imports and constructs from a packed tarball`
+  - `install smoke test passed`
+- SDK public-surface snapshots:
+  - Added four runtime methods and four types.
+  - Removed or renamed zero exports.
+- Focused API Nango and GitHub tests:
+  - `59 pass`
+  - `0 fail`
+  - `229 expect() calls`
+- `pnpm --filter kortix-api typecheck`
+  - Exit `0`.
+- Route manifest:
+  - Increased from `507` to `511` routes.
+  - Added four routes.
+  - Removed zero routes.
+- Correctness, security, and API-contract re-reviews:
+  - No findings.
+
+The repository-wide API test command cannot use the tracked ciphertext without
+`DOTENV_PRIVATE_KEY`. The deterministic no-env-file run also exposes unrelated
+baseline failures and a long-running Platinum poll test. Focused U1-U3 tests and
+both API and SDK typechecks pass.
+
+**Status:** COMPLETE.
+
+**Shippable to production: YES.**
+
+---
+
 ### 2026-07-26 — session `warm-project-session` (B22 completion)
 
 Added one server-owned available warm session per project and user. A partial

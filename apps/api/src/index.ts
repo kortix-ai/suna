@@ -762,6 +762,9 @@ app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1]
   app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
 }
 
+// Register provider lifecycle ingress before the project webhook router.
+const { nangoWebhookApp } = await import('./webhooks/nango');
+app.route('/v1/webhooks/nango', nangoWebhookApp); // signed Nango auth lifecycle reconciliation
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
 const {

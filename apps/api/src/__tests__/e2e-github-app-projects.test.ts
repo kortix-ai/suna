@@ -8,6 +8,7 @@ import {
   createRepo,
   getFileSha,
   getGitHubAppInstallation,
+  getGitHubAppInstallationForUserToken,
   listLinkableGitHubAppInstallations,
   verifyGitHubInstallationAdmin,
 } from '../projects/github';
@@ -129,6 +130,41 @@ describe('GitHub App project repository auth', () => {
     expect(installation.account?.login).toBe('kortix-org');
     expect(requests[0]?.url).toBe('https://api.github.com/app/installations/42');
     expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toMatch(/^Bearer /);
+  });
+
+  test('matches installation metadata through a GitHub App user access token', async () => {
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      requests.push({ url: href, init });
+      if (href.includes('/user/installations?')) {
+        return json({
+          total_count: 2,
+          installations: [
+            {
+              id: 41,
+              account: { login: 'personal', type: 'User' },
+            },
+            {
+              id: 42,
+              account: { login: 'kortix-org', type: 'Organization' },
+              repository_selection: 'all',
+              permissions: { contents: 'write' },
+            },
+          ],
+        });
+      }
+      return json({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+
+    const installation = await getGitHubAppInstallationForUserToken('ghu_user-token', '42');
+
+    expect(installation.account?.login).toBe('kortix-org');
+    expect(requests[0]?.url).toBe(
+      'https://api.github.com/user/installations?per_page=100&page=1',
+    );
+    expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer ghu_user-token',
+    );
   });
 
   test('propagates request trace headers to GitHub API calls', async () => {

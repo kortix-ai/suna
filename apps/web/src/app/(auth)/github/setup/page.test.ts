@@ -3,27 +3,28 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
 
-describe('GitHub installation setup', () => {
-  test('requires a GitHub user proof before saving the installation', () => {
-    expect(source).toContain('Verify with GitHub');
-    expect(source).toContain('requestGitHubUserProof');
-    expect(source).toContain('github_user_token: githubUserToken');
-  });
-
-  test('lists and links an existing installation without relying on the GitHub Configure redirect', () => {
-    expect(source).toContain('listLinkableGitHubInstallations');
-    expect(source).toContain('linkGitHubInstallation');
-    expect(source).toContain('Select a GitHub account');
-    expect(source).toContain('Install GitHub App');
+describe('GitHub Nango setup compatibility page', () => {
+  test('starts account and reconnect sessions through the shared Nango hook', () => {
+    expect(source).toContain('useGitHubNangoConnect');
     expect(source).toContain("searchParams.get('account_id')");
+    expect(source).toContain("searchParams.get('reconnect_installation_id')");
+    expect(source).toContain('githubConnect.start(reconnectInstallationId || undefined)');
   });
 
-  test('keeps the GitHub OAuth session separate from the Kortix session', () => {
-    const popupSource = readFileSync(
-      new URL('../../auth/github-connect/page.tsx', import.meta.url),
-      'utf8',
-    );
-    expect(popupSource).toContain('createEphemeralOAuthClient');
-    expect(popupSource).toContain("scopes: 'read:user read:org'");
+  test('does not request Supabase GitHub proof or call legacy installation routes', () => {
+    expect(source).not.toContain('requestGitHubUserProof');
+    expect(source).not.toContain('github_user_token');
+    expect(source).not.toContain('listLinkableGitHubInstallations');
+    expect(source).not.toContain('linkGitHubInstallation');
+    expect(source).not.toContain('saveGitHubInstallation');
+    expect(source).not.toContain('/auth/github-connect');
+  });
+
+  test('keeps close, retry, organization approval, and safe return behavior visible', () => {
+    expect(source).toContain('Allow pop-ups');
+    expect(source).toContain('Try again');
+    expect(source).toContain('GitHub organization owner');
+    expect(source).toContain('consumeGitHubSetupReturn');
+    expect(source).toContain("value.startsWith('//')");
   });
 });

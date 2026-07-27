@@ -37,8 +37,13 @@ export function getBackend(provider: string): GitHostBackend {
   return backends.get(provider) ?? githubBackend;
 }
 
+export function getDefaultManagedProvider(): string {
+  const provider = process.env.MANAGED_GIT_PROVIDER?.trim();
+  if (!provider || provider.toLowerCase().startsWith('encrypted:')) return 'github';
+  return provider;
+}
+
 /** The backend NEW managed projects are provisioned on. */
 export function getDefaultManagedBackend(): GitHostBackend {
-  const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
-  return getBackend(provider);
+  return getBackend(getDefaultManagedProvider());
 }

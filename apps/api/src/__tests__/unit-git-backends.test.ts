@@ -8,6 +8,7 @@ import {
   basicAuthHeader,
   getBackend,
   getDefaultManagedBackend,
+  getDefaultManagedProvider,
   githubBackend,
   hasBackend,
   parseBasicAuthHeader,
@@ -52,8 +53,16 @@ describe('registry', () => {
 
   test('default managed backend is github (and honours MANAGED_GIT_PROVIDER)', () => {
     delete process.env.MANAGED_GIT_PROVIDER;
+    expect(getDefaultManagedProvider()).toBe('github');
     expect(getDefaultManagedBackend()).toBe(githubBackend);
     process.env.MANAGED_GIT_PROVIDER = 'github';
+    expect(getDefaultManagedProvider()).toBe('github');
+    expect(getDefaultManagedBackend()).toBe(githubBackend);
+  });
+
+  test('default managed provider ignores dotenvx ciphertext', () => {
+    process.env.MANAGED_GIT_PROVIDER = 'encrypted:provider';
+    expect(getDefaultManagedProvider()).toBe('github');
     expect(getDefaultManagedBackend()).toBe(githubBackend);
   });
 });

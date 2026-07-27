@@ -15,8 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import {
   Form,
   FormControl,
@@ -25,16 +23,9 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemMedia,
-  ItemTitle,
-} from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -49,13 +40,26 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
-import { githubInstallationLabel, isGitHubAppInstallationId } from '@/lib/github-installations';
-import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useDebounce } from '@/hooks/use-debounce';
+import { useGitHubNangoConnect } from '@/hooks/use-github-nango-connect';
+import {
+  githubInstallationLabel,
+  isGitHubAppInstallationId,
+  isUsableGitHubInstallation,
+} from '@/lib/github-installations';
 import {
   getMarketplaceItem,
   listMarketplaceItems,
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
+import {
+  isManagedGitUnavailableError,
+  isProjectLimitError,
+} from '@/lib/onboarding/ensure-first-project';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   createProjectRepo,
   getManagedGitStatus,
@@ -68,11 +72,8 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk';
-import { cn } from '@/lib/utils';
-import { useDebounce } from '@/hooks/use-debounce';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -80,10 +81,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { RepositoryPicker } from './github-import-pickers';
 import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
-import {
-  startProjectOnboardingSession,
-  startTemplateSetupSession,
-} from './template-setup-session';
+import { startProjectOnboardingSession, startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -99,7 +97,10 @@ const managedProjectSchema = z.object({
       z
         .string()
         .min(1, 'Project name is required')
-        .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
+        .max(
+          PROJECT_NAME_MAX_LENGTH,
+          `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+        ),
     ),
 });
 
@@ -126,14 +127,6 @@ interface ProjectCreateModalProps {
   /** Clone a `registry:project` marketplace item instead of the blank
    *  starter — set from `/projects?clone=<item-id>` (marketplace "Clone"). */
   sourceItemId?: string | null;
-}
-
-function rememberGitHubSetupReturn(path: string) {
-  try {
-    window.localStorage.setItem('kortix:github_setup_return', path);
-  } catch {
-    // Non-critical: the setup page still falls back to the projects flow.
-  }
 }
 
 function upsertProject(projects: KortixProject[] | undefined, project: KortixProject) {
@@ -165,7 +158,6 @@ export const ProjectCreateModal = ({
   // actually picked a non-managed mode, or managed git isn't usable, so the
   // switcher stays reachable.
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
   const [sourceNameApplied, setSourceNameApplied] = useState(false);
   const [repositorySearch, setRepositorySearch] = useState('');
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
@@ -222,12 +214,20 @@ export const ProjectCreateModal = ({
 
   const selectedInstallationId = githubForm.watch('installationId');
   const selectedRepo = githubForm.watch('repo');
-  const {
-    debouncedValue: debouncedRepositorySearch,
-    isLoading: isDebouncingRepositorySearch,
-  } = useDebounce(repositorySearch.trim(), 300);
+  const { debouncedValue: debouncedRepositorySearch, isLoading: isDebouncingRepositorySearch } =
+    useDebounce(repositorySearch.trim(), 300);
+  const githubConnect = useGitHubNangoConnect({
+    accountId: effectiveAccountId,
+    onConnected: (installation) => {
+      if (installation.installation_id) {
+        githubForm.setValue('installationId', installation.installation_id);
+      }
+      setRepositorySearch('');
+    },
+  });
 
   function resetAndClose() {
+    githubConnect.cancel();
     setMode('managed');
     setAdvancedOpen(false);
     setSourceNameApplied(false);
@@ -276,37 +276,37 @@ export const ProjectCreateModal = ({
   }
 
   async function finishCreatedProject(project: KortixProject) {
-      successToast('Project created');
-      queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
-        upsertProject(projects, project),
-      );
-      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
-        upsertProject(projects, project),
-      );
-      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    successToast('Project created');
+    queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
+      upsertProject(projects, project),
+    );
+    queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+      upsertProject(projects, project),
+    );
+    void queryClient.invalidateQueries({ queryKey: ['projects'] });
     void queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' });
 
-      if (effectiveSourceItemId) {
-        const sessionId = await startTemplateSetupSession(project, {
-          itemId: effectiveSourceItemId,
-          title: sourceItemQuery.data?.title ?? 'this project',
-        });
-        if (sessionId) {
-          resetAndClose();
-          router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
-          return;
-        }
-      }
-
-      const onboardingSessionId = await startProjectOnboardingSession(project);
-      if (onboardingSessionId) {
+    if (effectiveSourceItemId) {
+      const sessionId = await startTemplateSetupSession(project, {
+        itemId: effectiveSourceItemId,
+        title: sourceItemQuery.data?.title ?? 'this project',
+      });
+      if (sessionId) {
         resetAndClose();
-        router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+        router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
         return;
       }
+    }
 
+    const onboardingSessionId = await startProjectOnboardingSession(project);
+    if (onboardingSessionId) {
       resetAndClose();
-      router.replace(`/projects/${project.project_id}`);
+      router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+      return;
+    }
+
+    resetAndClose();
+    router.replace(`/projects/${project.project_id}`);
   }
 
   const createMutation = useMutation({
@@ -334,7 +334,8 @@ export const ProjectCreateModal = ({
         const gitSettingsAccountId =
           effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast("Managed git isn't set up on this server", {
-          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          description:
+            'An admin needs to connect GitHub in Git settings before projects can be created.',
           ...(gitSettingsAccountId
             ? {
                 button: (
@@ -399,15 +400,25 @@ export const ProjectCreateModal = ({
     () => githubInstallationsQuery.data?.installations ?? [],
     [githubInstallationsQuery.data?.installations],
   );
-  const githubAppInstallations = useMemo(
-    () =>
-      githubInstallations.filter((installation) =>
-        isGitHubAppInstallationId(installation.installation_id),
-      ),
+  const usableGitHubInstallations = useMemo(
+    () => githubInstallations.filter(isUsableGitHubInstallation),
     [githubInstallations],
   );
+  const githubAppInstallations = useMemo(
+    () =>
+      usableGitHubInstallations.filter((installation) =>
+        isGitHubAppInstallationId(installation.installation_id),
+      ),
+    [usableGitHubInstallations],
+  );
   const selectableInstallations =
-    mode === 'github-create' ? githubAppInstallations : githubInstallations;
+    mode === 'github-create' ? githubAppInstallations : usableGitHubInstallations;
+  const reconnectInstallation = githubInstallations.find(
+    (installation) =>
+      isGitHubAppInstallationId(installation.installation_id) &&
+      (installation.connection_status === 'needs_reconnect' ||
+        installation.connection_status === 'error'),
+  );
   const selectedInstallation =
     selectableInstallations.find(
       (installation) => installation.installation_id === selectedInstallationId,
@@ -523,9 +534,7 @@ export const ProjectCreateModal = ({
       return;
     }
 
-    setIsConnectingGitHub(true);
-    rememberGitHubSetupReturn('/projects?new=1');
-    router.push(`/github/setup?account_id=${encodeURIComponent(effectiveAccountId)}`);
+    void githubConnect.start();
   }
 
   const submitting =
@@ -549,7 +558,7 @@ export const ProjectCreateModal = ({
 
   return (
     <Modal open={open} onOpenChange={(o) => (!o ? resetAndClose() : onOpenChange(o))}>
-      <ModalContent className={cn('space-y-6 lg:max-w-lg')}>
+      <ModalContent className={cn('w-full space-y-6 lg:max-w-lg')}>
         <ModalHeader>
           <ModalTitle>
             {tHardcodedUi.raw('componentsProjectsProjectCreateModal.line237JsxTextNewProject')}
@@ -661,7 +670,15 @@ export const ProjectCreateModal = ({
                         <Loading /> Loading GitHub connections
                       </div>
                     ) : githubAppInstallations.length === 0 ? (
-                      githubInstallationsQuery.data?.configured === false ? (
+                      reconnectInstallation?.installation_id ? (
+                        <GitHubReconnectPrompt
+                          ownerLogin={reconnectInstallation.owner_login}
+                          connecting={githubConnect.isPending}
+                          onReconnect={() =>
+                            void githubConnect.start(reconnectInstallation.installation_id!)
+                          }
+                        />
+                      ) : githubInstallationsQuery.data?.configured === false ? (
                         <GitHubSetupRequiredPanel
                           accountId={effectiveAccountId}
                           isAdmin={isGitAdmin}
@@ -669,29 +686,13 @@ export const ProjectCreateModal = ({
                           size="sm"
                         />
                       ) : (
-                        <Item variant="outline" className="items-start">
-                          <ItemMedia variant="icon" className="rounded-full bg-transparent">
-                            <Icon.Github />
-                          </ItemMedia>
-                          <ItemContent>
-                            <ItemTitle>Connect GitHub to create projects</ItemTitle>
-                            <ItemDescription>
-                              Install the Kortix GitHub App in your user account or organization.
-                              Kortix creates a private repository there.
-                            </ItemDescription>
-                          </ItemContent>
-                          <ItemActions>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={isConnectingGitHub}
-                              onClick={handleConnectGitHub}
-                            >
-                              {isConnectingGitHub ? <Loading /> : <Icon.Github />}
-                              {isConnectingGitHub ? 'Connecting' : 'Connect'}
-                            </Button>
-                          </ItemActions>
-                        </Item>
+                        <GitHubSetupRequiredPanel
+                          accountId={effectiveAccountId}
+                          isAdmin={isGitAdmin}
+                          onConnect={handleConnectGitHub}
+                          connecting={githubConnect.isPending}
+                          size="sm"
+                        />
                       )
                     ) : (
                       <div className="space-y-1.5">
@@ -728,6 +729,14 @@ export const ProjectCreateModal = ({
                         </p>
                       </div>
                     )
+                  ) : null}
+
+                  {mode === 'github-create' && githubConnect.error ? (
+                    <GitHubConnectErrorBanner
+                      message={githubConnect.error.message}
+                      pending={githubConnect.isPending}
+                      onRetry={() => void githubConnect.retry()}
+                    />
                   ) : null}
 
                   {cloningFromSource ? (
@@ -802,12 +811,16 @@ export const ProjectCreateModal = ({
                         'componentsProjectsProjectCreateModal.line352JsxTextLoadingGithubConnections',
                       )}
                     </div>
-                  ) : githubInstallations.length === 0 ? (
-                    githubInstallationsQuery.data?.configured === false ? (
-                      // No GitHub App exists at all on this server (self-host
-                      // with only a PAT, or nothing, configured) — the "install
-                      // this App" card below has nothing to install. Route to
-                      // Git settings instead of a dead-end Connect button.
+                  ) : selectableInstallations.length === 0 ? (
+                    reconnectInstallation?.installation_id ? (
+                      <GitHubReconnectPrompt
+                        ownerLogin={reconnectInstallation.owner_login}
+                        connecting={githubConnect.isPending}
+                        onReconnect={() =>
+                          void githubConnect.start(reconnectInstallation.installation_id!)
+                        }
+                      />
+                    ) : githubInstallationsQuery.data?.configured === false ? (
                       <GitHubSetupRequiredPanel
                         accountId={effectiveAccountId}
                         isAdmin={isGitAdmin}
@@ -815,29 +828,13 @@ export const ProjectCreateModal = ({
                         size="sm"
                       />
                     ) : (
-                      <Item variant="outline" className={cn('items-start')}>
-                        <ItemMedia variant="icon" className="rounded-full bg-transparent">
-                          <Icon.Github />
-                        </ItemMedia>
-                        <ItemContent>
-                          <ItemTitle>Link a GitHub account</ItemTitle>
-                          <ItemDescription>
-                            Select Configure in GitHub when the Kortix App is already installed.
-                          </ItemDescription>
-                        </ItemContent>
-                        <ItemActions>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="gap-1.5"
-                            disabled={isConnectingGitHub}
-                            onClick={handleConnectGitHub}
-                          >
-                            {isConnectingGitHub ? <Loading /> : <Icon.Github />}
-                            {isConnectingGitHub ? 'Connecting' : 'Link GitHub'}
-                          </Button>
-                        </ItemActions>
-                      </Item>
+                      <GitHubSetupRequiredPanel
+                        accountId={effectiveAccountId}
+                        isAdmin={isGitAdmin}
+                        onConnect={handleConnectGitHub}
+                        connecting={githubConnect.isPending}
+                        size="sm"
+                      />
                     )
                   ) : (
                     <>
@@ -859,10 +856,10 @@ export const ProjectCreateModal = ({
                                   size="sm"
                                   className="text-muted-foreground h-8 gap-1.5 px-2 text-xs"
                                   aria-label="Connect another GitHub account"
-                                  disabled={isConnectingGitHub}
+                                  disabled={githubConnect.isPending}
                                   onClick={handleConnectGitHub}
                                 >
-                                  {isConnectingGitHub ? <Loading /> : <Icon.Plus />}
+                                  {githubConnect.isPending ? <Loading /> : <Icon.Plus />}
                                   Add account
                                 </Button>
                               ) : null}
@@ -871,10 +868,10 @@ export const ProjectCreateModal = ({
                               <Select
                                 value={field.value}
                                 onValueChange={field.onChange}
-                                disabled={submitting || githubInstallations.length < 2}
+                                disabled={submitting || selectableInstallations.length < 2}
                               >
-                                <SelectTrigger className="w-full justify-between p-0 has-[>svg]:p-0">
-                                  <div className="flex h-full items-center">
+                                <SelectTrigger className="w-full min-w-0 justify-between p-0 has-[>svg]:p-0">
+                                  <div className="flex h-full min-w-0 flex-1 items-center">
                                     <span className="px-3">
                                       <Icon.Github className="size-4" />
                                     </span>
@@ -889,13 +886,14 @@ export const ProjectCreateModal = ({
                                         {githubInstallationLabel(
                                           selectedInstallation?.installation_id ?? null,
                                           selectedInstallation?.owner_login ?? null,
+                                          selectedInstallation?.owner_type ?? null,
                                         )}
                                       </span>
                                     </span>
                                   </div>
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {githubInstallations.map((installation) => (
+                                  {selectableInstallations.map((installation) => (
                                     <SelectItem
                                       key={installation.installation_id}
                                       value={installation.installation_id ?? ''}
@@ -906,6 +904,7 @@ export const ProjectCreateModal = ({
                                         {githubInstallationLabel(
                                           installation.installation_id,
                                           installation.owner_login,
+                                          installation.owner_type,
                                         )}
                                       </span>
                                     </SelectItem>
@@ -1030,6 +1029,14 @@ export const ProjectCreateModal = ({
                     </>
                   )}
 
+                  {mode === 'github-import' && githubConnect.error ? (
+                    <GitHubConnectErrorBanner
+                      message={githubConnect.error.message}
+                      pending={githubConnect.isPending}
+                      onRetry={() => void githubConnect.retry()}
+                    />
+                  ) : null}
+
                   {!cloningFromSource ? (
                     <RepositoryOptions
                       repositoryMode={repositoryMode}
@@ -1064,6 +1071,63 @@ export const ProjectCreateModal = ({
     </Modal>
   );
 };
+
+function GitHubReconnectPrompt({
+  ownerLogin,
+  connecting,
+  onReconnect,
+}: {
+  ownerLogin: string | null;
+  connecting: boolean;
+  onReconnect: () => void;
+}) {
+  return (
+    <InfoBanner
+      tone="warning"
+      icon={Github}
+      title={`${ownerLogin ?? 'This GitHub account'} needs to reconnect`}
+      action={
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={connecting}
+          onClick={onReconnect}
+        >
+          {connecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
+          Reconnect
+        </Button>
+      }
+    >
+      Reauthorize GitHub to keep existing project links and load repositories.
+    </InfoBanner>
+  );
+}
+
+function GitHubConnectErrorBanner({
+  message,
+  pending,
+  onRetry,
+}: {
+  message: string;
+  pending: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <InfoBanner
+      tone="warning"
+      icon={Github}
+      title="Could not connect GitHub"
+      action={
+        <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onRetry}>
+          Try again
+        </Button>
+      }
+    >
+      {message}
+    </InfoBanner>
+  );
+}
 
 /** Account switcher for the new-project target. Only rendered by the caller
  *  when there's more than one account to create in — a single-account user
@@ -1195,14 +1259,32 @@ function RepositoryOptions({
           {collapsible ? <Label>Repository source</Label> : null}
           <Tabs value={repositoryMode} onValueChange={onModeChange}>
             <TabsList type="secondary" className="w-full" aria-label="Repository source">
-              <TabsTrigger value="managed" size="sm">
-                Kortix managed
+              <TabsTrigger
+                value="managed"
+                size="sm"
+                aria-label="Kortix managed"
+                className="min-w-0 px-1.5 sm:px-3"
+              >
+                <span className="sm:hidden">Managed</span>
+                <span className="hidden sm:inline">Kortix managed</span>
               </TabsTrigger>
-              <TabsTrigger value="github-create" size="sm">
-                Create in GitHub
+              <TabsTrigger
+                value="github-create"
+                size="sm"
+                aria-label="Create in GitHub"
+                className="min-w-0 px-1.5 sm:px-3"
+              >
+                <span className="sm:hidden">Create</span>
+                <span className="hidden sm:inline">Create in GitHub</span>
               </TabsTrigger>
-              <TabsTrigger value="github-import" size="sm">
-                Import from GitHub
+              <TabsTrigger
+                value="github-import"
+                size="sm"
+                aria-label="Import from GitHub"
+                className="min-w-0 px-1.5 sm:px-3"
+              >
+                <span className="sm:hidden">Import</span>
+                <span className="hidden sm:inline">Import from GitHub</span>
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -1271,7 +1353,12 @@ function TemplatePicker({
         </div>
       </ModalBody>
       <ModalFooter>
-        <Button type="button" variant="outline-ghost" className="w-full sm:w-auto" onClick={onCancel}>
+        <Button
+          type="button"
+          variant="outline-ghost"
+          className="w-full sm:w-auto"
+          onClick={onCancel}
+        >
           Back
         </Button>
       </ModalFooter>

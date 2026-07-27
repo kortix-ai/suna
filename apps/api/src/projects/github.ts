@@ -4,6 +4,12 @@ import { managedGithubAppConfig } from '../platform/services/managed-github-app'
 
 const GITHUB_API = 'https://api.github.com';
 
+export function plainGitHubEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  if (!value || value.toLowerCase().startsWith('encrypted:')) return null;
+  return value;
+}
+
 export class GitHubApiError extends Error {
   constructor(
     message: string,
@@ -12,6 +18,13 @@ export class GitHubApiError extends Error {
   ) {
     super(message);
     this.name = 'GitHubApiError';
+  }
+}
+
+export class GitHubInstallationAuthorizationError extends Error {
+  constructor(message = 'GitHub installation owner authorization is required') {
+    super(message);
+    this.name = 'GitHubInstallationAuthorizationError';
   }
 }
 
@@ -117,8 +130,8 @@ export interface CreateRepoInput {
 export function githubAppId() {
   return (
     managedGithubAppConfig().appId?.trim() ||
-    process.env.KORTIX_GITHUB_APP_ID ||
-    process.env.GITHUB_APP_ID ||
+    plainGitHubEnv('KORTIX_GITHUB_APP_ID') ||
+    plainGitHubEnv('GITHUB_APP_ID') ||
     null
   );
 }
@@ -126,8 +139,8 @@ export function githubAppId() {
 function githubAppPrivateKey() {
   return (
     managedGithubAppConfig().privateKey?.trim() ||
-    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY ||
-    process.env.GITHUB_APP_PRIVATE_KEY ||
+    plainGitHubEnv('KORTIX_GITHUB_APP_PRIVATE_KEY') ||
+    plainGitHubEnv('GITHUB_APP_PRIVATE_KEY') ||
     null
   );
 }
@@ -135,8 +148,8 @@ function githubAppPrivateKey() {
 export function githubAppSlug() {
   return (
     managedGithubAppConfig().slug?.trim() ||
-    process.env.KORTIX_GITHUB_APP_SLUG ||
-    process.env.GITHUB_APP_SLUG ||
+    plainGitHubEnv('KORTIX_GITHUB_APP_SLUG') ||
+    plainGitHubEnv('GITHUB_APP_SLUG') ||
     null
   );
 }
@@ -148,8 +161,8 @@ export function isGithubAppConfigured() {
 function githubAppStateSecret() {
   return (
     managedGithubAppConfig().stateSecret?.trim() ||
-    process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
-    process.env.SUPABASE_JWT_SECRET ||
+    plainGitHubEnv('KORTIX_GITHUB_APP_STATE_SECRET') ||
+    plainGitHubEnv('SUPABASE_JWT_SECRET') ||
     githubAppPrivateKey() ||
     null
   );
@@ -393,11 +406,69 @@ async function ghFetchAllPages<T>(
 export async function getGitHubAppInstallation(installationId: string): Promise<GitHubAppInstallation> {
   const id = installationId.trim();
   if (!id) throw new Error('installation_id is required');
+  return getGitHubAppInstallationWithJwt(id, createGitHubAppJwt());
+}
+
+export async function getGitHubAppInstallationWithJwt(
+  installationId: string,
+  appJwt: string,
+): Promise<GitHubAppInstallation> {
+  const id = installationId.trim();
+  const token = appJwt.trim();
+  if (!id) throw new Error('installation_id is required');
+  if (!token) throw new Error('GitHub App authorization is required');
   return ghFetch<GitHubAppInstallation>(
     `/app/installations/${encodeURIComponent(id)}`,
     { method: 'GET' },
-    { token: createGitHubAppJwt() },
+    { token },
   );
+}
+
+/**
+ * Read one installation through a GitHub App user access token.
+ *
+ * GitHub returns only installations that the authenticated user can access.
+ * Nango's github-app-oauth credential supplies this user access token.
+ */
+export async function getGitHubAppInstallationForUserToken(
+  userToken: string,
+  installationId: string,
+): Promise<GitHubAppInstallation> {
+  const token = userToken.trim();
+  const id = installationId.trim();
+  if (!token) throw new Error('GitHub user authorization is required');
+  if (!id) throw new Error('installation_id is required');
+
+  for (let page = 1; page <= 100; page += 1) {
+    let response: {
+      total_count: number;
+      installations: GitHubAppInstallation[];
+    };
+    try {
+      response = await ghFetch<{
+        total_count: number;
+        installations: GitHubAppInstallation[];
+      }>(
+        `/user/installations?per_page=100&page=${page}`,
+        { method: 'GET' },
+        { token },
+      );
+    } catch (error) {
+      if (
+        error instanceof GitHubApiError &&
+        (error.status === 401 || error.status === 403 || error.status === 404)
+      ) {
+        throw new GitHubInstallationAuthorizationError();
+      }
+      throw error;
+    }
+    const match = response.installations.find(
+      (installation) => String(installation.id) === id,
+    );
+    if (match) return match;
+    if (response.installations.length < 100) break;
+  }
+  throw new GitHubInstallationAuthorizationError();
 }
 
 export async function listLinkableGitHubAppInstallations(
@@ -453,25 +524,41 @@ export async function verifyGitHubInstallationAdmin(
   installation: GitHubAppInstallation,
 ): Promise<{ login: string }> {
   const token = userToken.trim();
-  if (!token) throw new Error('GitHub authorization is required to link this installation');
+  if (!token) {
+    throw new GitHubInstallationAuthorizationError(
+      'GitHub authorization is required to link this installation',
+    );
+  }
 
   const ownerLogin = installation.account?.login?.trim();
-  if (!ownerLogin) throw new Error('GitHub installation did not include an owner account');
+  if (!ownerLogin) {
+    throw new GitHubInstallationAuthorizationError(
+      'GitHub installation did not include an owner account',
+    );
+  }
 
   let user: { login?: string };
   try {
     user = await ghFetch<{ login?: string }>('/user', { method: 'GET' }, { token });
   } catch {
-    throw new Error('GitHub user authorization is invalid or expired');
+    throw new GitHubInstallationAuthorizationError(
+      'GitHub user authorization is invalid or expired',
+    );
   }
 
   const login = user.login?.trim();
-  if (!login) throw new Error('GitHub did not return the authorized user login');
+  if (!login) {
+    throw new GitHubInstallationAuthorizationError(
+      'GitHub did not return the authorized user login',
+    );
+  }
 
   const ownerType = installation.account?.type ?? installation.target_type;
   if (ownerType === 'User') {
     if (login.toLowerCase() !== ownerLogin.toLowerCase()) {
-      throw new Error('The authorized GitHub user does not own this installation');
+      throw new GitHubInstallationAuthorizationError(
+        'The authorized GitHub user does not own this installation',
+      );
     }
     return { login };
   }
@@ -484,11 +571,15 @@ export async function verifyGitHubInstallationAdmin(
       { token },
     );
   } catch {
-    throw new Error('GitHub organization admin access is required to link this installation');
+    throw new GitHubInstallationAuthorizationError(
+      'GitHub organization admin access is required to link this installation',
+    );
   }
 
   if (membership.state !== 'active' || membership.role !== 'admin') {
-    throw new Error('GitHub organization admin access is required to link this installation');
+    throw new GitHubInstallationAuthorizationError(
+      'GitHub organization admin access is required to link this installation',
+    );
   }
   return { login };
 }

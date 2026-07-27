@@ -766,6 +766,9 @@ importers:
       '@mynaui/icons-react':
         specifier: ^0.4.2
         version: 0.4.8(react@19.1.0)
+      '@nangohq/frontend':
+        specifier: 0.71.2
+        version: 0.71.2
       '@next/third-parties':
         specifier: ^15.3.1
         version: 15.5.20(next@15.5.21)(react@19.1.0)
@@ -1045,6 +1048,9 @@ importers:
       i18next:
         specifier: ^26.3.6
         version: 26.3.6(typescript@5.9.3)
+      import-in-the-middle:
+        specifier: 3.0.0
+        version: 3.0.0
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
@@ -1153,6 +1159,9 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      require-in-the-middle:
+        specifier: ^8.0.1
+        version: 8.0.1
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
@@ -5922,6 +5931,26 @@ packages:
     dependencies:
       prop-types: 15.8.1
       react: 19.1.0
+    dev: false
+
+  /@nangohq/frontend@0.71.2:
+    resolution: {integrity: sha512-Bw83T4OI+qIdliibXiIYj/65SvVkFlNls+7c5dslMkdAqyJ8ybXW2PECf/6NB7WUKFdeHxe+wRn20lfqlP2Gpw==}
+    dependencies:
+      '@nangohq/types': 0.71.2
+    transitivePeerDependencies:
+      - debug
+      - supports-color
+    dev: false
+
+  /@nangohq/types@0.71.2:
+    resolution: {integrity: sha512-1UU8SIQfTZMADGLRFaprT34KkMWx8KUoqIZHmpUmbjvv0OuLkLU8bE1XXsjOA66c/aaVO39JtLna6uKPpIOdEA==}
+    dependencies:
+      axios: 1.18.0
+      json-schema: 0.4.0
+      type-fest: 4.41.0
+    transitivePeerDependencies:
+      - debug
+      - supports-color
     dev: false
 
   /@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0):
@@ -25454,6 +25483,11 @@ packages:
   /type-fest@0.7.1:
     resolution: {integrity: sha512-Ne2YiiGN8bmrmJJEuTWTLJR32nh/JdL1+PSicowtNb0WFpn59GK8/lfD61bVtzguz7b3PBt74nxpv/Pw5po5Rg==}
     engines: {node: '>=8'}
+
+  /type-fest@4.41.0:
+    resolution: {integrity: sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA==}
+    engines: {node: '>=16'}
+    dev: false
 
   /type-fest@5.8.0:
     resolution: {integrity: sha512-YGYEVz3Fm5iy/AybuA0oyNFq7H4CgQNfRp/qfe8nurE1kuCeNm3/vfm9X4Mtl+qLyaKJUh5xrFZwogr41SMjYA==}

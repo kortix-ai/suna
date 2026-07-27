@@ -93,8 +93,12 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
+import { useGitHubNangoConnect } from '@/hooks/use-github-nango-connect';
 import { isBillingEnabled } from '@/lib/config';
-import { isGitHubAppInstallationId } from '@/lib/github-installations';
+import {
+  githubOwnerTypeLabel,
+  isGitHubAppInstallationId,
+} from '@/lib/github-installations';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -105,7 +109,7 @@ import {
   type AccountMember,
   type AccountRole,
   cancelAccountInvite,
-  deleteGitHubInstallation,
+  disconnectGitHubConnection,
   getAccount,
   inviteAccountMember,
   leaveAccount,
@@ -252,14 +256,6 @@ async function copyInviteLink(url: string) {
       description: url,
       duration: 15_000,
     });
-  }
-}
-
-function rememberGitHubSetupReturn(path: string) {
-  try {
-    window.localStorage.setItem('kortix:github_setup_return', path);
-  } catch {
-    // Non-critical: the setup page falls back to the project import flow.
   }
 }
 
@@ -697,13 +693,11 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
     ownerLogin: string | null;
   } | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
 
   const installationsQuery = useQuery({
     queryKey: ['github-installations', account.account_id],
@@ -711,9 +705,23 @@ function GitHubConnectionCard({
     staleTime: 0,
   });
 
+  const githubConnect = useGitHubNangoConnect({
+    accountId: account.account_id,
+    onConnected: (installation) => {
+      successToast(
+        installation.owner_login
+          ? `Connected GitHub as ${installation.owner_login}`
+          : 'GitHub connected',
+      );
+    },
+  });
+
   const disconnectMutation = useMutation({
     mutationFn: (installationId: string) =>
-      deleteGitHubInstallation(account.account_id, installationId),
+      disconnectGitHubConnection({
+        accountId: account.account_id,
+        installationId,
+      }),
     onSuccess: () => {
       successToast('GitHub disconnected');
       setDisconnectTarget(null);
@@ -727,16 +735,10 @@ function GitHubConnectionCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
-  function handleConnect() {
-    if (!canManage) return;
-    setIsConnecting(true);
-    rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
-    router.push(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
-  }
-
   const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
     isGitHubAppInstallationId(installation.installation_id),
   );
+  const serverGitHubConfigured = installationsQuery.data?.configured !== false;
 
   return (
     <div className="space-y-4">
@@ -757,7 +759,7 @@ function GitHubConnectionCard({
             </Hint>
           </span>
           <p className="text-muted-foreground text-xs">
-            Link an existing App installation or install the App for a GitHub account.
+            Connect a personal GitHub account or organization through Nango.
           </p>
         </div>
         <Button
@@ -765,14 +767,45 @@ function GitHubConnectionCard({
           size="sm"
           variant="secondary"
           className="gap-1.5"
-          disabled={!canManage || isConnecting}
-          onClick={handleConnect}
-          title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
+          disabled={!canManage || githubConnect.isPending || !serverGitHubConfigured}
+          onClick={() => void githubConnect.start()}
+          title={
+            !canManage
+              ? 'You do not have permission to connect GitHub.'
+              : !serverGitHubConfigured
+                ? 'A platform admin must configure the Nango GitHub integration first.'
+                : undefined
+          }
         >
-          {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
-          {isConnecting ? 'Connecting' : 'Add account'}
+          {githubConnect.isPending ? (
+            <Loading className="size-4 shrink-0" />
+          ) : (
+            <Github className="size-4" />
+          )}
+          {githubConnect.isPending ? 'Connecting' : 'Add account'}
         </Button>
       </div>
+
+      {githubConnect.error ? (
+        <InfoBanner
+          tone="warning"
+          icon={Github}
+          title="Could not connect GitHub"
+          action={
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={githubConnect.isPending}
+              onClick={() => void githubConnect.retry()}
+            >
+              Try again
+            </Button>
+          }
+        >
+          {githubConnect.error.message}
+        </InfoBanner>
+      ) : null}
 
       {installationsQuery.isLoading ? (
         <div className="space-y-2">
@@ -782,16 +815,20 @@ function GitHubConnectionCard({
         <InfoBanner tone="warning" icon={Github} title="GitHub status unavailable">
           {(installationsQuery.error as Error).message}
         </InfoBanner>
+      ) : installationsQuery.data?.configured === false ? (
+        <InfoBanner tone="warning" icon={Github} title="GitHub is not configured on this server">
+          A platform admin must configure the Nango GitHub account integration before accounts can
+          connect GitHub.
+        </InfoBanner>
       ) : installations.length === 0 ? (
-        // Quiet contained empty state — the toolbar above already carries the
-        // single "Connect GitHub" CTA.
         <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No GitHub connections yet. Add an existing App installation or install the App.
+          No GitHub connections yet.
         </div>
       ) : (
         <ul className="space-y-2">
           {installations.map((installation) => {
             const contentsPermission = permissionLabel(installation.permissions?.contents);
+            const ownerType = githubOwnerTypeLabel(installation.owner_type);
             const repoSelection =
               installation.repository_selection === 'selected'
                 ? 'Selected repositories'
@@ -799,31 +836,60 @@ function GitHubConnectionCard({
                   ? 'All repositories'
                   : null;
             const installationId = installation.installation_id ?? '';
+            const connectionStatus = installation.connection_status ?? 'connected';
+            const needsReconnect =
+              connectionStatus === 'needs_reconnect' || connectionStatus === 'error';
+            const disconnected = connectionStatus === 'disconnected';
             return (
               <li
                 key={installationId || installation.owner_login || 'github'}
-                className={MEMBER_ROW}
+                className={cn(MEMBER_ROW, 'flex-wrap sm:flex-nowrap')}
               >
                 <EntityAvatar icon={Github} size="md" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-foreground truncate text-sm font-medium">
-                      {installation.owner_login ?? 'GitHub App'}
+                      {installation.owner_login ?? 'GitHub account'}
                     </span>
-                    <Badge variant="success" size="sm">
-                      Connected
+                    <Badge
+                      variant={
+                        disconnected ? 'muted' : needsReconnect ? 'warning' : 'success'
+                      }
+                      size="sm"
+                    >
+                      {disconnected
+                        ? 'Disconnected'
+                        : needsReconnect
+                          ? 'Reconnect required'
+                          : 'Connected'}
                     </Badge>
                   </div>
                   <span className="text-muted-foreground text-xs">
                     <InlineMeta>
-                      {installation.owner_type ? <span>{installation.owner_type}</span> : null}
+                      {ownerType ? <span>{ownerType}</span> : null}
                       {repoSelection ? <span>{repoSelection}</span> : null}
                       {contentsPermission ? <span>{contentsPermission}</span> : null}
                     </InlineMeta>
                   </span>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {installation.installation_url ? (
+                <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+                  {needsReconnect && canManage && installationId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="gap-1.5"
+                      disabled={githubConnect.isPending}
+                      onClick={() => void githubConnect.start(installationId)}
+                    >
+                      {githubConnect.isPending ? (
+                        <Loading className="size-3.5 shrink-0" />
+                      ) : (
+                        <RefreshCw className="size-3.5" />
+                      )}
+                      Reconnect
+                    </Button>
+                  ) : installation.installation_url && !disconnected ? (
                     <Button asChild variant="ghost" size="sm" className="gap-1.5">
                       <a
                         href={installation.installation_url}
@@ -835,7 +901,7 @@ function GitHubConnectionCard({
                       </a>
                     </Button>
                   ) : null}
-                  {canManage && installationId ? (
+                  {canManage && installationId && !disconnected ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -863,8 +929,9 @@ function GitHubConnectionCard({
         open={Boolean(disconnectTarget)}
         onOpenChange={(open) => !open && setDisconnectTarget(null)}
         title="Disconnect GitHub"
-        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
+        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working. Existing project descriptions and repository links stay unchanged.`}
         confirmLabel="Disconnect"
+        confirmVariant="destructive"
         onConfirm={() => {
           if (disconnectTarget) {
             disconnectMutation.mutate(disconnectTarget.installationId);

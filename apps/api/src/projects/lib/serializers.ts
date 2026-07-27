@@ -359,16 +359,26 @@ export function serializeGitHubInstallation(
   accountId: string,
   installUrl: string | null,
 ) {
-  const installed = Boolean(row);
+  const nangoConfigured = Boolean(
+    config.NANGO_API_KEY && config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID,
+  );
+  const installed = Boolean(row) && row?.connectionStatus !== 'disconnected';
   const metadata = normalizeJsonObject(row?.metadata);
-  // GitHub backing is App-only: a per-account App installation is required
-  // whenever the App is configured and this account hasn't installed it yet.
-  const requiresInstallation = isGithubAppConfigured() && !installed;
+  const configured = nangoConfigured || isGithubAppConfigured();
+  const requiresInstallation = configured && !installed;
+  const connectionProvider = row?.nangoConnectionId
+    ? 'nango'
+    : row
+      ? 'github_app'
+      : null;
+  const reconnectRequired = row?.nangoConnectionId
+    ? row.connectionStatus !== 'connected'
+    : Boolean(row && nangoConfigured);
   return {
     account_id: accountId,
     installation_row_id: row?.installationRowId ?? null,
     installed,
-    configured: isGithubAppConfigured(),
+    configured,
     requires_installation: requiresInstallation,
     install_url: installed ? null : installUrl,
     installation_id: row?.installationId ?? null,
@@ -378,6 +388,10 @@ export function serializeGitHubInstallation(
     permissions: row?.permissions ?? {},
     installation_url: normalizeString(metadata.html_url),
     updated_at: row?.updatedAt.toISOString() ?? null,
+    connection_id: row?.nangoConnectionId ?? null,
+    connection_provider: connectionProvider,
+    connection_status: row?.connectionStatus ?? null,
+    reconnect_required: reconnectRequired,
   };
 }
 
@@ -418,6 +432,12 @@ export function serializeGitHubInstallations(
       permissions: {},
       installation_url: null,
       updated_at: null,
+      connection_id: null,
+      connection_provider: null,
+      connection_status: null,
+      reconnect_required: Boolean(
+        config.NANGO_API_KEY && config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID,
+      ),
     };
     return {
       ...patInstallation,
@@ -431,12 +451,16 @@ export function serializeGitHubInstallations(
     };
   }
 
-  const primary = rows[0] ?? null;
+  const activeRows = rows.filter((row) => row.connectionStatus !== 'disconnected');
+  const primary = activeRows[0] ?? rows[0] ?? null;
   const base = serializeGitHubInstallation(primary, accountId, installUrl);
   return {
     ...base,
-    installed: rows.length > 0,
-    requires_installation: isGithubAppConfigured() && rows.length === 0,
+    installed: activeRows.length > 0,
+    requires_installation:
+      (isGithubAppConfigured() ||
+        Boolean(config.NANGO_API_KEY && config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID)) &&
+      rows.length === 0,
     install_url: installUrl,
     installations: rows.map((row) => serializeGitHubInstallation(row, accountId, null)),
   };

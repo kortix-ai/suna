@@ -234,6 +234,13 @@ export const accountGithubInstallations = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     installationId: text('installation_id').notNull(),
+    nangoConnectionId: text('nango_connection_id'),
+    nangoIntegrationId: text('nango_integration_id'),
+    connectionStatus: varchar('connection_status', { length: 32 }),
+    lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+    lastErrorCode: varchar('last_error_code', { length: 64 }),
+    lastErrorMessage: text('last_error_message'),
+    disconnectedAt: timestamp('disconnected_at', { withTimezone: true }),
     ownerLogin: varchar('owner_login', { length: 255 }).notNull(),
     ownerType: varchar('owner_type', { length: 32 }).default('Organization').notNull(),
     repositorySelection: varchar('repository_selection', { length: 32 }),
@@ -247,6 +254,13 @@ export const accountGithubInstallations = kortixSchema.table(
     uniqueIndex('idx_account_github_installations_account_installation').on(
       table.accountId,
       table.installationId,
+    ),
+    uniqueIndex('idx_account_github_installations_nango_connection')
+      .on(table.nangoConnectionId)
+      .where(sql`${table.nangoConnectionId} is not null`),
+    check(
+      'account_github_installations_connection_status_check',
+      sql`${table.connectionStatus} in ('connecting', 'connected', 'needs_reconnect', 'error', 'disconnected')`,
     ),
     index('idx_account_github_installations_owner').on(table.ownerLogin),
   ],

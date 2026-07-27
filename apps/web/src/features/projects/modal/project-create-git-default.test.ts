@@ -38,12 +38,14 @@ describe('new project git provider default', () => {
     expect(source).toContain('githubReposQuery.refetch()');
   });
 
-  test('explains how to link an existing GitHub App installation', () => {
-    expect(source).toContain('Link a GitHub account');
-    expect(source).toContain(
+  test('opens Nango Connect and keeps retry guidance inside project creation', () => {
+    expect(source).toContain('useGitHubNangoConnect');
+    expect(source).toContain('onConnect={handleConnectGitHub}');
+    expect(source).toContain('GitHubConnectErrorBanner');
+    expect(source).toContain('Try again');
+    expect(source).not.toContain(
       'Select Configure in GitHub when the Kortix App is already installed.',
     );
-    expect(source).toContain("isConnectingGitHub ? 'Connecting' : 'Link GitHub'");
   });
 });
 

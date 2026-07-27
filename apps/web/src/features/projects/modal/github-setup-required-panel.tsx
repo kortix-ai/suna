@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 
 /** Owner/admin of the account can fix a missing GitHub connection
@@ -32,6 +33,9 @@ interface GitHubSetupRequiredPanelProps {
   isAdmin: boolean;
   /** Called right before navigating (e.g. close the hosting modal). */
   onNavigate?: () => void;
+  /** Opens Nango Connect in place. Omit this for managed-git server setup. */
+  onConnect?: () => void;
+  connecting?: boolean;
   secondaryAction?: ReactNode;
   size?: 'sm' | 'default';
   /** Forwarded to the underlying EmptyState wrapper — e.g. `pt-0` to collapse
@@ -44,36 +48,41 @@ export function GitHubSetupRequiredPanel({
   accountId,
   isAdmin,
   onNavigate,
+  onConnect,
+  connecting = false,
   secondaryAction,
   size = 'default',
   className,
 }: GitHubSetupRequiredPanelProps) {
   const router = useRouter();
+  const openGitSettings = () => {
+    onNavigate?.();
+    if (accountId) router.push(`/accounts/${accountId}?tab=git`);
+  };
 
   return (
     <EmptyState
       icon={Github}
       size={size}
       className={className}
-      title="GitHub isn't connected on this server yet"
+      title={onConnect ? 'Connect GitHub to continue' : "GitHub isn't connected on this server yet"}
       description={
-        isAdmin
-          ? "Every Kortix project is a git repository. Connect GitHub once in this account's Git settings."
-          : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
+        onConnect
+          ? 'Authorize a personal GitHub account or organization. A GitHub organization owner may need to approve access.'
+          : isAdmin
+            ? "Every Kortix project is a git repository. Connect GitHub once in this account's Git settings."
+            : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
       }
       action={
         <Button
           type="button"
           size="sm"
           className="gap-1.5"
-          disabled={!accountId}
-          onClick={() => {
-            onNavigate?.();
-            if (accountId) router.push(`/accounts/${accountId}?tab=git`);
-          }}
+          disabled={!accountId || connecting}
+          onClick={onConnect ?? openGitSettings}
         >
-          <Github className="size-4" />
-          Set up GitHub
+          {connecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
+          {onConnect ? 'Connect GitHub' : 'Set up GitHub'}
         </Button>
       }
       secondaryAction={secondaryAction}

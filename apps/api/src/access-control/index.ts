@@ -1,27 +1,25 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import postgres from 'postgres';
 import { db } from '../shared/db';
 import { accessRequests } from '@kortix/db';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
-import { config } from '../config';
 import { getSsoProviderByDomain } from '../repositories/sso';
 import { createCheckEmailRateLimitMiddleware } from '../shared/rate-limit';
 import { makeOpenApiApp, json, errors } from '../openapi';
+import { getSupabase } from '../shared/supabase';
 
 export const accessControlApp = makeOpenApiApp();
 
 async function userExistsInAuth(email: string): Promise<boolean> {
-  if (!config.DATABASE_URL) return false;
-  const sql = postgres(config.DATABASE_URL, { max: 1 });
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return false;
+
   try {
-    const [row] = await sql`
-      SELECT 1 FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1
-    `;
-    return !!row;
+    const { data } = await getSupabase().auth.admin.listUsers({ page: 1, perPage: 1000 });
+    return (data?.users ?? []).some(
+      (user) => (user.email ?? '').trim().toLowerCase() === normalizedEmail,
+    );
   } catch {
     return false;
-  } finally {
-    await sql.end();
   }
 }
 

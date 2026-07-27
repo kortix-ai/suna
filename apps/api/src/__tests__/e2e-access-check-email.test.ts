@@ -7,22 +7,23 @@ let ssoProvidersByDomain = new Map<string, { enforceSso: boolean }>();
 
 mock.module('../config', () => ({
   config: {
-    DATABASE_URL: 'postgresql://mocked',
     KORTIX_CHECK_EMAIL_REQS_PER_MIN: 1000,
   },
 }));
 
-mock.module('postgres', () => {
-  const factory = () => {
-    const sql = (_strings: TemplateStringsArray, ...values: unknown[]) => {
-      const email = String(values[0] ?? '').toLowerCase();
-      return Promise.resolve(existingEmails.has(email) ? [{ exists: 1 }] : []);
-    };
-    sql.end = async () => {};
-    return sql;
-  };
-  return { default: factory };
-});
+mock.module('../shared/supabase', () => ({
+  getSupabase: () => ({
+    auth: {
+      admin: {
+        listUsers: async () => ({
+          data: {
+            users: Array.from(existingEmails).map((email) => ({ email })),
+          },
+        }),
+      },
+    },
+  }),
+}));
 
 mock.module('../shared/db', () => ({
   db: {
