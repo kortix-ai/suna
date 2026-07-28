@@ -55,17 +55,22 @@ describe('both shells use the same nav', () => {
 describe('the collapse control', () => {
   const CHROME = readFileSync(join(HERE, 'sidebar-chrome.tsx'), 'utf8');
   const PEEK = readFileSync(join(HERE, 'sidebar-peek-toggle.tsx'), 'utf8');
+  const INSET = readFileSync(join(HERE, '..', 'project-layout', 'shell-inset.tsx'), 'utf8');
 
-  test('is not inside the sidebar panel', () => {
-    expect(CHROME).not.toContain('SidebarTrigger');
+  test('lives in the sidebar panel it collapses', () => {
+    expect(CHROME).toContain('SidebarTrigger');
   });
 
-  test('renders whether the sidebar is open or closed', () => {
-    // Hiding it while open left most pages with no way to collapse at all.
-    expect(PEEK).not.toContain('if (!collapsed) return null');
+  test('the reopener only exists while the panel is off-canvas', () => {
+    // Both at once put two identical buttons a few pixels apart on every page.
+    expect(PEEK).toContain('if (!collapsed) return null');
   });
 
-  test('still summons the hover flyout while collapsed', () => {
+  test('exactly one reopener, rendered by the shared inset', () => {
+    expect(INSET).toContain('<SidebarPeekToggle');
+  });
+
+  test('it still summons the hover flyout while collapsed', () => {
     expect(PEEK).toContain('peekEnter');
     expect(PEEK).toContain('peekLeave');
   });

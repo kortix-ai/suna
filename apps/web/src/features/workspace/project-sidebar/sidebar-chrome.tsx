@@ -17,6 +17,7 @@
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
@@ -28,6 +29,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
@@ -64,10 +66,9 @@ export function SidebarShell({ children }: { children: ReactNode }) {
 /**
  * Kortix mark on the left, whatever the surface puts beside it on the right.
  *
- * No collapse control here. Every page carries one in its own top bar
- * (SidebarPeekToggle), which is also the only control that exists once the
- * panel is off-canvas — putting a second one inside the panel just meant two
- * identical buttons a few pixels apart whenever it was open.
+ * The collapse control lives here, in the panel it collapses — one control,
+ * one place. Once the panel is off-canvas this header goes with it, so
+ * SidebarPeekToggle (rendered once by ShellInset) is what brings it back.
  */
 export function SidebarBrandHeader({
   homeHref,
@@ -82,6 +83,12 @@ export function SidebarBrandHeader({
           </Link>
         </Button>
         {children ? <div className="min-w-0 flex-1">{children}</div> : null}
+        <Hint label="Collapse sidebar" side="bottom">
+          <SidebarTrigger
+            aria-label="Collapse sidebar"
+            className="text-muted-foreground hover:text-sidebar-foreground shrink-0"
+          />
+        </Hint>
       </div>
     </SidebarHeader>
   );

@@ -5,11 +5,10 @@ import { fileURLToPath } from 'node:url';
 const source = readFileSync(fileURLToPath(new URL('./project-home.tsx', import.meta.url)), 'utf8');
 
 describe('ProjectHome sidebar toggle', () => {
-  test('uses the shared toggle instead of a hand-rolled one', () => {
-    // The shared control hides itself while the sidebar is open, because the
-    // panel carries its own collapse button in its header. A local copy here
-    // put two identical buttons a few pixels apart on the project home.
-    expect(source).toContain('<SidebarPeekToggle');
+  test('renders no sidebar toggle — the shell owns it', () => {
+    // ShellInset renders the single reopener; the sidebar header carries the
+    // collapse control. A copy here was one of the duplicates.
+    expect(source).not.toContain('SidebarPeekToggle');
     expect(source).not.toContain('onPointerEnter={sidebarState ===');
   });
 

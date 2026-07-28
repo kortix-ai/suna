@@ -15,7 +15,6 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 
-import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import {
   PROJECT_SETTINGS_TABS,
@@ -48,7 +47,6 @@ export function SettingsTabStrip({
       aria-label="Settings"
       className="border-border flex shrink-0 items-center gap-1 overflow-x-auto border-b px-4"
     >
-      <SidebarPeekToggle className="mr-1" />
       {tabs.map((tab) => {
         const isActive = tab.key === active;
         return (

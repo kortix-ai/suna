@@ -29,7 +29,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, type EmptyStateProps } from '@/features/layout/section/empty-state';
 import { ErrorState, type ErrorStateProps } from '@/features/layout/section/error-state';
-import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { cn } from '@/lib/utils';
 
 export type ProjectSectionState =
@@ -168,7 +167,6 @@ export function ProjectSectionPage({
               this one has no way to collapse it at all — which is what happened
               to the sessions page when it moved onto the shell. Screens that
               render navTabs already carry it there, and pass `false` here. */}
-          {showSidebarToggle ? <SidebarPeekToggle className="mt-0.5 -ml-1" /> : null}
           <div className="min-w-0 flex-1 space-y-1">
             <h1 className="text-foreground truncate text-2xl font-semibold tracking-tight">
               {title}

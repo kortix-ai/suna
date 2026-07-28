@@ -39,8 +39,10 @@ describe('settings is one flat tab strip', () => {
     expect(strip).toContain("tab.key !== 'models' || gatewayAvailable");
   });
 
-  test('the strip keeps the sidebar peek toggle reachable', () => {
-    expect(strip).toContain('SidebarPeekToggle');
+  test('the strip carries no sidebar toggle of its own', () => {
+    // One control, in the sidebar; ShellInset renders the single reopener for
+    // the collapsed state. Per-toolbar copies produced duplicates.
+    expect(code(strip)).not.toContain('SidebarPeekToggle');
   });
 
   test('every tab still resolves to the view it always did', () => {

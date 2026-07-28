@@ -30,9 +30,11 @@ export function SidebarPeekToggle({ className }: { className?: string }) {
   const collapsed = state !== 'expanded';
   const label = collapsed ? (peek ? 'Pin sidebar' : 'Open sidebar') : 'Collapse sidebar';
 
-  // Renders in BOTH states on purpose. Hiding it while the sidebar was open
-  // left most pages with no way to collapse at all — the panel has no control
-  // of its own, so this is it.
+  // Only while collapsed. The panel carries its own collapse control in its
+  // header; this is the one that brings it back once the panel is off-canvas
+  // and that header is gone. Rendering both left two identical buttons a few
+  // pixels apart on every page.
+  if (!collapsed) return null;
 
   return (
     <Hint label={label} side="bottom">

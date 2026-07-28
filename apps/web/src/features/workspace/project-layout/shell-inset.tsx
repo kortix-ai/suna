@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
+import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { desktopShellPlatform } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 import { PanelLeft } from 'lucide-react';
@@ -41,6 +42,15 @@ export function ShellInset({ children }: { children: React.ReactNode }) {
       {/* Collapsed: an invisible strip on the viewport's left edge summons the
           sidebar as a hover flyout; it self-hides while docked open. */}
       <SidebarEdgePeek />
+
+      {/* The one reopener, for every page. Self-hides while the panel is open,
+          because the panel's own header carries the collapse control then.
+          Scattering this across each page's toolbar is what kept producing two
+          buttons a few pixels apart.
+
+          Not on the desktop shell: there it would land on the traffic lights,
+          so that build uses the offset button below instead. */}
+      {!desktopShell && <SidebarPeekToggle className="absolute top-2 left-2 z-30" />}
 
       {desktopShell && !isExpanded && (
         <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">

@@ -34,7 +34,6 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { projectSettingsHref, resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
@@ -129,7 +128,6 @@ export function ProjectHome({
       {/* The shared control, which hides itself while the sidebar is open —
           the panel carries its own collapse button in its header, and two of
           them a few pixels apart is what this replaces. */}
-      <SidebarPeekToggle className="absolute top-2 left-2 z-20" />
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint
