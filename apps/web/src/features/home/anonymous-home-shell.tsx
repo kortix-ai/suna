@@ -29,7 +29,6 @@ import { useSignInGate } from '@/features/home/use-sign-in-gate';
 import { ComposerChatInput } from '@/features/session/composer-chat-input';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import { ShellInset } from '@/features/workspace/project-layout/shell-inset';
-import { ProjectDestinationsGroup } from '@/features/workspace/project-sidebar/project-destinations';
 import { ProjectNavGroup } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import {
@@ -66,14 +65,11 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
             of the tells that these were two different apps. */}
         <SidebarNewButton label="New session" onClick={() => gate('/')} />
 
-        {/* The same destination rows and the same Customize group as the
-            signed-in sidebar, gated. Anything hand-rolled here drifts. */}
-        <ProjectDestinationsGroup onSelect={() => gate('/')} />
-
         <ProjectNavGroup
           items={PROJECT_NAV_ITEMS}
           hrefFor={(item) => `/?view=${item.key}`}
           isActive={(item) => item.key === activeSection}
+          onSelectFiles={() => gate('/')}
           onSelectSettings={() => gate('/')}
         />
 

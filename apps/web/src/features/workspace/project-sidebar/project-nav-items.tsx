@@ -71,6 +71,8 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
       hrefFor={(item) => `/projects/${projectId}/${item.segment}`}
       isActive={(item) => !!pathname?.startsWith(`/projects/${projectId}/${item.segment}`)}
       onNavigate={close}
+      filesHref={`/projects/${projectId}/files`}
+      filesActive={!!pathname?.startsWith(`/projects/${projectId}/files`)}
       settingsHref={projectSettingsHref(projectId, 'general')}
       settingsActive={!!pathname?.startsWith(`/projects/${projectId}/settings`)}
     />
@@ -90,6 +92,9 @@ export function ProjectNavGroup({
   isActive,
   onNavigate,
   onSelect,
+  filesHref,
+  filesActive,
+  onSelectFiles,
   settingsHref,
   settingsActive,
   onSelectSettings,
@@ -100,13 +105,18 @@ export function ProjectNavGroup({
   onNavigate?: () => void;
   /** Used instead of a link when the surface has nowhere to navigate yet. */
   onSelect?: (item: ProjectNavItem) => void;
+  /** Files leads the group. */
+  filesHref?: string;
+  filesActive?: boolean;
+  onSelectFiles?: () => void;
   /** Settings lives INSIDE the group — it is configuration like the rest. */
   settingsHref?: string;
   settingsActive?: boolean;
   onSelectSettings?: () => void;
 }) {
+  const showFiles = filesHref !== undefined || onSelectFiles !== undefined;
   const showSettings = settingsHref !== undefined || onSelectSettings !== undefined;
-  if (items.length === 0 && !showSettings) return null;
+  if (items.length === 0 && !showFiles && !showSettings) return null;
 
   return (
     <SidebarGroup className="py-0">
@@ -115,6 +125,18 @@ export function ProjectNavGroup({
           people to hide their own configuration and then wonder where it went. */}
       <SidebarSectionLabel>Customize</SidebarSectionLabel>
       <SidebarMenu>
+        {showFiles ? (
+          <SidebarPlainLink
+            href={filesHref}
+            isActive={filesActive}
+            onClick={() => {
+              onSelectFiles?.();
+              onNavigate?.();
+            }}
+          >
+            Files
+          </SidebarPlainLink>
+        ) : null}
         {items.map((item) => (
           <SidebarPlainLink
             key={item.key}

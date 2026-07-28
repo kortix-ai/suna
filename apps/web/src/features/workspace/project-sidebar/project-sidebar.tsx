@@ -34,7 +34,6 @@ import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sideb
 import { useCustomizeKeyboardShortcut } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
-import { ProjectDestinations } from '@/features/workspace/project-sidebar/project-destinations';
 import { ProjectNavItems } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
@@ -172,10 +171,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           )}
           onClick={handleNewSession}
         />
-
-        {/* Places you go, above the session list. Configuration lives in the
-            Customize group below them. */}
-        <ProjectDestinations projectId={projectId} />
 
         <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
           {/* Sessions are always expanded — no collapse toggle. The header
