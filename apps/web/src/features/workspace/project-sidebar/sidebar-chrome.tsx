@@ -17,6 +17,7 @@
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
@@ -28,6 +29,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
@@ -49,20 +51,34 @@ export function SidebarShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** Kortix mark on the left, whatever the surface puts beside it on the right. */
+/**
+ * Kortix mark on the left, whatever the surface puts beside it, and the
+ * collapse control on the right.
+ *
+ * The collapse control belongs *in* the panel it collapses. It used to live
+ * out in the content area, detached from the sidebar, which left no visible
+ * way to close the sidebar from the sidebar itself — you had to know the
+ * floating button off to the right was related to it.
+ */
 export function SidebarBrandHeader({
   homeHref,
   children,
 }: { homeHref: string; children?: ReactNode }) {
   return (
     <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
-      <div className="flex w-full items-center justify-between gap-1">
+      <div className="flex w-full items-center gap-1">
         <Button type="button" variant="ghost" size="icon" asChild>
           <Link href={homeHref}>
             <Icon.Kortix className="text-foreground size-4.5" />
           </Link>
         </Button>
-        {children ? <div className="w-full min-w-0">{children}</div> : null}
+        {children ? <div className="min-w-0 flex-1">{children}</div> : null}
+        <Hint label="Collapse sidebar" side="bottom">
+          <SidebarTrigger
+            aria-label="Collapse sidebar"
+            className="text-muted-foreground hover:text-sidebar-foreground shrink-0"
+          />
+        </Hint>
       </div>
     </SidebarHeader>
   );
