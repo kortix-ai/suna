@@ -103,7 +103,11 @@ jobs:
     # Terraform governs the VPCs it creates; this checks what is actually
     # deployed, so a hand-edited ACL or a new region cannot drift past the
     # control. Hard gate — unlike drift detection, a finding is a real exposure.
-    if: github.event_name != 'pull_request' && vars.TF_PLAN_ROLE_ARN != ''
+    #
+    # Uses its own role rather than TF_PLAN_ROLE_ARN: this job needs two
+    # read-only EC2 describes, while drift detection needs broad read plus
+    # state access. See security-baseline/iam-gha-nacl-audit.tf.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -111,9 +115,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # An unset role would silently skip the audit, which reads as a pass.
+      # A control that cannot run must fail loudly instead.
+      - name: require audit role
+        run: |
+          if [ -z "${{ vars.NACL_AUDIT_ROLE_ARN }}" ]; then
+            echo "::error::NACL_AUDIT_ROLE_ARN is unset - the admin-port audit cannot run."
+            exit 1
+          fi
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
-          role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
+          role-to-assume: ${{ vars.NACL_AUDIT_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
       - name: audit every region for public SSH/RDP
         run: python3 infra/terraform/scripts/audit-nacl-admin-ports.py
