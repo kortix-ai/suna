@@ -26,8 +26,12 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
+  CLAUDE_AGENT_ACP_VERSION,
+  CODEX_ACP_VERSION,
   NODE_VERSION,
   NPM_VERSION,
+  PI_ACP_VERSION,
+  PI_CODING_AGENT_VERSION,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
@@ -564,6 +568,18 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version',
+    '',
+    // Install every ACP adapter during image construction. Runtime requests
+    // only start these pinned executables. They never download an npm package.
+    `RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \\`,
+    '    && command -v claude-agent-acp \\',
+    '    && command -v codex-acp \\',
+    '    && command -v pi-acp \\',
+    '    && command -v pi \\',
+    '    && claude-agent-acp --version \\',
+    '    && codex-acp --version \\',
+    '    && pi-acp --help >/dev/null \\',
+    '    && pi --version',
     '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one

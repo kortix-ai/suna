@@ -35,7 +35,7 @@ export function isKe2eRetryableError(error: unknown): boolean {
 }
 
 const DEFAULT_RETRY_DELAY_MS = 2_000;
-const MAX_RETRY_AFTER_MS = 60_000;
+const MAX_RETRY_AFTER_MS = 15_000;
 
 /** Return the host-requested retry delay for a marked transient failure. */
 export function ke2eRetryDelayMs(

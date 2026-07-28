@@ -304,6 +304,7 @@ agents:
 | *(map key)* | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Matches the `.md` filename it governs. |
 | `enabled` | `true` | `false` treats the agent as undeclared — the platform will not launch it. |
 | `connectors` | `none` | Which connector slugs this agent may call. `all` means every connector. |
+| `connectors_personal` | — | Subset of `connectors` that must resolve to the launching user's own connection (their member profile), not the shared project one. A session started with this agent auto-requires these; a missing one fails create with `CONNECTOR_CONNECTION_REQUIRED`. Interactive sessions only — backend/service-account sessions use `connector_bindings` instead. Must be a subset of `connectors`. |
 | `secrets` | `none` | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`. |
 | `kortix_cli` | `none` | Which Kortix CLI and API actions this agent may perform. `all` means everything the launching user can do — an agent can never exceed its launcher. |
 | `skills` | `none` | Which skills this agent may load. |

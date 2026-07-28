@@ -35,7 +35,7 @@ bun bin/ke2e.ts run --grep logout
 # point at another environment
 KE2E_API_URL=https://dev-api.kortix.com/v1 bun bin/ke2e.ts run --domain auth
 
-# override the default 8 API workers and 4 sandbox workers
+# override the default 4 API workers and 4 sandbox workers
 bun bin/ke2e.ts run --api-workers 12 --sandbox-workers 4
 
 # force one shared worker pool instead of split lanes
@@ -47,7 +47,7 @@ bun bin/ke2e.ts run --workers 1
 (`KE2E_OWNER_*`, `KE2E_ADMIN_TOKEN`, capabilities, destructive-run guards).
 `KE2E_API_WORKERS` and `KE2E_SANDBOX_WORKERS` set the split-lane defaults.
 An explicit `--workers` value disables split lanes and caps the complete run.
-`KE2E_TEARDOWN_WORKERS` controls user cleanup concurrency. Its default is `4`.
+`KE2E_TEARDOWN_WORKERS` controls user cleanup concurrency. Its default is `2`.
 
 ### Adding a flow
 

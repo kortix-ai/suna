@@ -49,6 +49,8 @@ import {
   createQuestionResponseHandler,
   publishQuestionRequest,
 } from './acp/questions'
+import { createAcpHarnessRegistry } from './acp/harness-registry'
+import { AcpRuntime } from './acp/runtime'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -155,8 +157,21 @@ async function main() {
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     getCanonicalAcpSessionId: readPinnedOpencodeSessionId,
   })
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
+  const acpRuntime = new AcpRuntime({
+    registry: createAcpHarnessRegistry(process.env),
+    cwd: cfg.workspace,
+    projectEnv,
+  })
+  const server = startProxy(
+    cfg,
+    opencode,
+    bootTime,
+    bootState,
+    projectEnv,
+    staticWeb.port,
+    acpRuntime,
+  )
+  installShutdownHandlers(opencode, server, staticWeb, acpRuntime)
   bootMark('proxy-up')
 
   const repoMaterializePromise: Promise<void> = cfg.autoClone
@@ -599,8 +614,21 @@ async function runWarmSeedMode(
   })
   await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('seed-opencode-spawned')
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
+  const acpRuntime = new AcpRuntime({
+    registry: createAcpHarnessRegistry(process.env),
+    cwd: cfg.workspace,
+    projectEnv,
+  })
+  const server = startProxy(
+    cfg,
+    opencode,
+    bootTime,
+    bootState,
+    projectEnv,
+    staticWeb.port,
+    acpRuntime,
+  )
+  installShutdownHandlers(opencode, server, staticWeb, acpRuntime)
   bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
