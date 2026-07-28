@@ -114,6 +114,28 @@ describe('shared components are safe to render with no project', () => {
   });
 });
 
+describe('the showcase belongs to the new-session state, not the index', () => {
+  const INSTANT_SHELL = readFileSync(
+    join(HERE, '..', 'session', 'instant-session-shell.tsx'),
+    'utf8',
+  );
+
+  test('the index does not render the showcase', () => {
+    // Signed in or out, the index keeps its heading. The animated capability
+    // showcase is the EMPTY state of a brand-new session.
+    expect(SHELL_CODE).not.toContain('DelegateShowcase');
+    expect(SHELL_CODE).toContain('heading=');
+  });
+
+  test('a brand-new session does render it', () => {
+    expect(INSTANT_SHELL).toContain('<DelegateShowcase');
+  });
+
+  test('the project index passes no showcase', () => {
+    expect(PROJECT_HOME).toContain('showcase ??');
+  });
+});
+
 describe('the logged-out shell gates every action', () => {
   test('routes actions through the sign-in gate', () => {
     expect(SHELL_CODE).toContain('useSignInGate');

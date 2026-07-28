@@ -34,7 +34,6 @@ import {
 } from '@/components/ui/sidebar';
 import { AnonymousSectionPreview } from '@/features/home/anonymous-section-preview';
 import { AnonymousSectionTabs } from '@/features/home/anonymous-section-tabs';
-import { DelegateShowcase } from '@/features/home/delegate-showcase';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
 import { ComposerChatInput } from '@/features/session/composer-chat-input';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
@@ -178,18 +177,13 @@ export function AnonymousHomeShell() {
               starter chips — with no project behind it. */}
               <ProjectHomeWelcomeBody
                 projectId=""
-                // Signed out there are no sessions, so this surface is always
-                // the empty state — the showcase, not the heading.
-                showcase={
-                  <DelegateShowcase
-                    title="Delegate work to Kortix"
-                    description="Hand off a project and get finished work back — researched, built, and reviewed."
-                    action={
-                      <Button type="button" size="sm" onClick={() => gate('/')}>
-                        Sign in
-                      </Button>
-                    }
-                  />
+                // The heading, not the showcase. The showcase belongs to the
+                // new-session empty state; the index — signed in or out — keeps
+                // the line it always had.
+                heading={
+                  <>
+                    Give <span className="text-foreground">Kortix</span> something real to work on.
+                  </>
                 }
                 // The same pill row the signed-in home shows. Every pill gates
                 // to sign-in rather than pointing into a project that does not
