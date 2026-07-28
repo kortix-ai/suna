@@ -150,10 +150,12 @@ export const NAV: NavEntry[] = [
 /* ── 1. hero ─────────────────────────────────────────────────────────────── */
 
 export const HERO = {
-  headline: ['Give your company', 'a workforce of agents'],
+  eyebrow: 'The Autonomous Company Operating System',
+  headline: ['Give your company', 'a workforce of agents.'],
   subline: 'Run agents across your repos, tools, and inboxes, with full visibility.',
-  primaryCta: 'Contact Sales',
-  secondaryCta: 'Get Started',
+  primaryCta: 'Get started',
+  secondaryCta: 'Request demo',
+  logoWallLabel: 'Running in production at',
 };
 
 /* ── 2. logo wall ────────────────────────────────────────────────────────── */
@@ -428,8 +430,9 @@ export const CTA = {
   heading: ['Move your company', 'onto Kortix.'],
   description:
     'Run agents across your repos, tools, and inboxes in secure shared environments. Keep every session visible, reviewable, and ready for your team to steer.',
-  primary: 'Try for free',
-  secondary: 'Book a demo',
+  primary: 'Get started',
+  secondary: 'Request demo',
+  note: 'Free to self-host · Managed cloud from $20 · SSO, RBAC, on-prem · No lock-in',
 };
 
 /* ── 13. footer ──────────────────────────────────────────────────────────── */

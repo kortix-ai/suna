@@ -1,23 +1,24 @@
 'use client';
 
+import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { FOOTER } from '@/features/marketing/v2/content';
 import Link from 'next/link';
 
 export function MarketingFooter() {
   return (
-    <footer className="bg-neutral-950 text-white">
-      <div className="mx-auto max-w-6xl px-6 py-20 sm:py-24">
-        <div className="grid grid-cols-2 gap-x-8 gap-y-12 sm:grid-cols-3 lg:grid-cols-5">
+    <footer id="site-footer" className="bg-card border-border relative border-t px-6 pt-16 pb-12">
+      <div className="mx-auto max-w-6xl">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
           {FOOTER.map((column) => (
             <div key={column.title}>
-              <h3 className="text-sm font-medium text-white">{column.title}</h3>
-              <ul className="mt-6 space-y-4">
+              <h3 className="text-muted-foreground pb-2 text-sm">{column.title}</h3>
+              <ul>
                 {column.links.map((link) => (
                   <li key={link.name}>
                     <Link
                       href={link.href}
-                      className="text-sm text-white/55 transition-colors hover:text-white"
+                      className="text-foreground hover:text-foreground/70 inline-block py-1 text-sm transition-colors"
                     >
                       {link.name}
                     </Link>
@@ -28,32 +29,34 @@ export function MarketingFooter() {
           ))}
         </div>
 
-        <div className="mt-24 flex justify-center">
-          <div
-            className="flex size-40 items-center justify-center rounded-2xl"
-            style={{
-              background:
-                'linear-gradient(180deg, color-mix(in oklab, var(--kortix-blue) 85%, #0d2a4d) 0%, color-mix(in oklab, var(--kortix-blue) 25%, white) 100%)',
-            }}
-          >
-            <KortixLogo size={52} variant="symbol" className="text-white" />
+        <div className="border-border mt-16 flex flex-col items-start justify-between gap-6 border-t pt-8 md:flex-row md:items-center">
+          <div className="text-muted-foreground flex items-center gap-3">
+            <KortixLogo size={16} variant="logomark" />
+            <small className="text-sm">
+              © {new Date().getFullYear()} Kortix. Open source, and yours to run.
+            </small>
           </div>
-        </div>
 
-        <div className="mt-16 flex flex-col gap-4 border-t border-white/[0.08] pt-8 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-white/40">
-            © {new Date().getFullYear()} Kortix. Open source, and yours to run.
-          </p>
-          <div className="flex gap-6">
-            <Link href="/legal?tab=privacy" className="text-xs text-white/40 hover:text-white">
+          <div className="flex items-center gap-6">
+            <Link
+              href="/legal?tab=privacy"
+              className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+            >
               Privacy
             </Link>
-            <Link href="/legal?tab=terms" className="text-xs text-white/40 hover:text-white">
+            <Link
+              href="/legal?tab=terms"
+              className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+            >
               Terms
             </Link>
-            <Link href="https://status.kortix.com" className="text-xs text-white/40 hover:text-white">
+            <Link
+              href="https://status.kortix.com"
+              className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+            >
               Status
             </Link>
+            <ThemeToggle variant="compact" />
           </div>
         </div>
       </div>

@@ -1,15 +1,22 @@
 'use client';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { NAV, type MenuColumn, type MenuFooter, type NavEntry } from '@/features/marketing/v2/content';
+import { Button } from '@/components/ui/marketing/button';
+import {
+  NAV,
+  type MenuColumn,
+  type MenuFooter,
+  type NavEntry,
+} from '@/features/marketing/v2/content';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { NavigationMenu as Nav } from 'radix-ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { NavigationMenu as Nav } from 'radix-ui';
 import { useCallback, useEffect, useState } from 'react';
 
 const SCROLL_ON = 24;
@@ -22,20 +29,20 @@ function hasMenu(entry: NavEntry): entry is Extract<NavEntry, { columns: MenuCol
 
 function MenuPanel({ columns, footer }: { columns: MenuColumn[]; footer?: MenuFooter }) {
   return (
-    <div className="border-border bg-popover/95 w-[min(38rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(26,31,46,0.04),0_8px_10px_-1px_rgba(26,31,46,0.06)] backdrop-blur-xl">
+    <div className="border-border bg-popover w-[min(38rem,calc(100vw-2.5rem))] overflow-hidden rounded-sm border shadow-lg">
       <div className="grid gap-x-8 gap-y-6 p-6 sm:grid-cols-2">
         {columns.map((column) => (
           <div key={column.title} className="space-y-4">
-            <p className="text-muted-foreground text-xs font-medium">{column.title}</p>
+            <p className="text-muted-foreground text-xs tracking-wider">{column.title}</p>
             <ul className="space-y-4">
               {column.items.map((item) => (
                 <li key={item.name}>
                   <Nav.Link asChild>
                     <Link
                       href={item.href}
-                      className="group/item block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-kortix-blue/50"
+                      className="group/item focus-visible:ring-ring block rounded-sm outline-none focus-visible:ring-1"
                     >
-                      <span className="text-foreground block text-sm font-medium group-hover/item:text-kortix-blue">
+                      <span className="text-foreground group-hover/item:text-kortix-blue block text-sm font-medium transition-colors">
                         {item.name}
                       </span>
                       <span className="text-muted-foreground mt-0.5 block text-sm leading-snug">
@@ -76,6 +83,7 @@ function MenuPanel({ columns, footer }: { columns: MenuColumn[]; footer?: MenuFo
 export function MarketingNav() {
   const { user } = useAuth();
   const router = useRouter();
+  const openDemo = useRequestDemo();
   const [scrolled, setScrolled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
@@ -101,41 +109,31 @@ export function MarketingNav() {
     router.push(user ? '/projects' : '/auth');
   }, [router, user]);
 
-  // Over the hero the bar is transparent and everything is white; once the page
-  // scrolls past the coloured field it becomes a normal solid bar.
-  const onField = !scrolled;
+  const linkClass =
+    'flex h-9 items-center rounded-sm px-3.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground';
 
   return (
     <>
       <header
         className={cn(
           'fixed inset-x-0 top-0 z-50 transition-colors duration-200',
-          scrolled && 'border-border bg-background/80 border-b backdrop-blur-xl',
+          scrolled && 'border-border bg-background/85 border-b backdrop-blur-xl',
         )}
       >
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5">
-          <Link
-            href="/"
-            aria-label="Kortix home"
-            className={cn('shrink-0', onField && 'text-white [&_svg]:fill-current')}
-          >
+        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
+          <Link href="/" aria-label="Kortix home" className="shrink-0">
             <KortixLogo size={18} variant="logomark" />
           </Link>
 
-          <Nav.Root
-            delayDuration={80}
-            className="relative z-10 hidden flex-1 justify-center md:flex"
-          >
+          <Nav.Root delayDuration={80} className="relative z-10 hidden flex-1 md:flex">
             <Nav.List className="flex list-none items-center gap-1">
               {NAV.map((entry) =>
                 hasMenu(entry) ? (
                   <Nav.Item key={entry.name}>
                     <Nav.Trigger
                       className={cn(
-                        'group flex h-9 cursor-pointer items-center gap-1 rounded-full px-3.5 text-sm font-medium outline-none transition-colors',
-                        onField
-                          ? 'text-white/90 hover:bg-white/15 hover:text-white data-[state=open]:bg-white/15 data-[state=open]:text-white'
-                          : 'text-foreground/80 hover:bg-foreground/5 hover:text-foreground data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground',
+                        linkClass,
+                        'group cursor-pointer gap-1 data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground',
                       )}
                     >
                       {entry.name}
@@ -144,22 +142,14 @@ export function MarketingNav() {
                         className="size-3 opacity-60 transition-transform duration-200 group-data-[state=open]:rotate-180"
                       />
                     </Nav.Trigger>
-                    <Nav.Content className="data-[motion=from-end]:animate-in data-[motion=from-start]:animate-in data-[motion=to-end]:animate-out data-[motion=to-start]:animate-out data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 absolute top-full left-0 pt-3">
+                    <Nav.Content className="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 absolute top-full left-0 pt-3">
                       <MenuPanel columns={entry.columns} footer={entry.footer} />
                     </Nav.Content>
                   </Nav.Item>
                 ) : (
                   <Nav.Item key={entry.name}>
                     <Nav.Link asChild>
-                      <Link
-                        href={entry.href}
-                        className={cn(
-                          'flex h-9 items-center rounded-full px-3.5 text-sm font-medium transition-colors',
-                          onField
-                            ? 'text-white/90 hover:bg-white/15 hover:text-white'
-                            : 'text-foreground/80 hover:bg-foreground/5 hover:text-foreground',
-                        )}
-                      >
+                      <Link href={entry.href} className={linkClass}>
                         {entry.name}
                       </Link>
                     </Nav.Link>
@@ -169,41 +159,21 @@ export function MarketingNav() {
             </Nav.List>
           </Nav.Root>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:ml-0">
-            <Link
-              href={user ? '/projects' : '/auth'}
-              className={cn(
-                'hidden h-9 items-center rounded-full px-3.5 text-sm font-medium transition-colors sm:flex',
-                onField
-                  ? 'text-white/90 hover:bg-white/15 hover:text-white'
-                  : 'text-foreground/80 hover:bg-foreground/5 hover:text-foreground',
-              )}
-            >
-              {user ? 'Projects' : 'Log In'}
-            </Link>
-            <button
-              type="button"
-              onClick={handleGetStarted}
-              className={cn(
-                'flex h-9 cursor-pointer items-center rounded-full px-4 text-sm font-medium transition-colors',
-                onField
-                  ? 'bg-white/20 text-white hover:bg-white/30'
-                  : 'bg-foreground text-background hover:bg-foreground/90',
-              )}
-            >
-              Get Started
-            </button>
-            <button
-              type="button"
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => openDemo()}>
+              Request demo
+            </Button>
+            <Button onClick={handleGetStarted}>{user ? 'Projects' : 'Get started'}</Button>
+
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
-              className={cn(
-                'flex size-9 cursor-pointer items-center justify-center rounded-full md:hidden',
-                onField ? 'text-white hover:bg-white/15' : 'text-foreground hover:bg-foreground/5',
-              )}
+              className="md:hidden"
             >
               <Menu className="size-5" />
-            </button>
+            </Button>
           </div>
         </div>
       </header>
@@ -217,19 +187,19 @@ export function MarketingNav() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
-            <div className="flex h-16 shrink-0 items-center justify-between px-5">
+            <div className="flex h-16 shrink-0 items-center justify-between px-6">
               <KortixLogo size={18} variant="logomark" />
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setDrawerOpen(false)}
                 aria-label="Close menu"
-                className="hover:bg-foreground/5 flex size-9 cursor-pointer items-center justify-center rounded-full"
               >
                 <X className="size-5" />
-              </button>
+              </Button>
             </div>
 
-            <nav className="flex-1 px-5 pb-10">
+            <nav className="flex-1 px-6 pb-10">
               <ul className="divide-border divide-y">
                 {NAV.map((entry) => (
                   <li key={entry.name} className="py-1">
@@ -240,7 +210,7 @@ export function MarketingNav() {
                           onClick={() =>
                             setOpenSection((s) => (s === entry.name ? null : entry.name))
                           }
-                          className="flex w-full cursor-pointer items-center justify-between py-3 text-left text-base font-medium"
+                          className="text-foreground flex w-full cursor-pointer items-center justify-between py-3 text-left text-base font-medium"
                           aria-expanded={openSection === entry.name}
                         >
                           {entry.name}
@@ -253,22 +223,24 @@ export function MarketingNav() {
                         </button>
                         {openSection === entry.name && (
                           <ul className="space-y-3 pb-4">
-                            {entry.columns.flatMap((c) => c.items).map((item) => (
-                              <li key={`${entry.name}-${item.name}`}>
-                                <Link
-                                  href={item.href}
-                                  onClick={() => setDrawerOpen(false)}
-                                  className="block"
-                                >
-                                  <span className="text-foreground block text-sm font-medium">
-                                    {item.name}
-                                  </span>
-                                  <span className="text-muted-foreground block text-sm">
-                                    {item.description}
-                                  </span>
-                                </Link>
-                              </li>
-                            ))}
+                            {entry.columns
+                              .flatMap((c) => c.items)
+                              .map((item) => (
+                                <li key={`${entry.name}-${item.name}`}>
+                                  <Link
+                                    href={item.href}
+                                    onClick={() => setDrawerOpen(false)}
+                                    className="block"
+                                  >
+                                    <span className="text-foreground block text-sm font-medium">
+                                      {item.name}
+                                    </span>
+                                    <span className="text-muted-foreground block text-sm">
+                                      {item.description}
+                                    </span>
+                                  </Link>
+                                </li>
+                              ))}
                           </ul>
                         )}
                       </>
@@ -276,7 +248,7 @@ export function MarketingNav() {
                       <Link
                         href={entry.href}
                         onClick={() => setDrawerOpen(false)}
-                        className="block py-3 text-base font-medium"
+                        className="text-foreground block py-3 text-base font-medium"
                       >
                         {entry.name}
                       </Link>

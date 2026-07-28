@@ -38,25 +38,20 @@ export function StackSection() {
   const skip = useCallback(() => {
     const el = wrapRef.current;
     if (!el) return;
-    window.scrollTo({ top: el.offsetTop + el.offsetHeight - window.innerHeight, behavior: 'smooth' });
+    window.scrollTo({
+      top: el.offsetTop + el.offsetHeight - window.innerHeight,
+      behavior: 'smooth',
+    });
   }, []);
 
   return (
-    <section id="stack" className="bg-background scroll-mt-24">
-      <div className="mx-auto max-w-6xl px-6">
-        <div
-          ref={wrapRef}
-          style={{ height: `${(LAYERS.length + 1) * 100}vh` }}
-          className="relative"
-        >
-          <div className="sticky top-0 flex h-screen items-center">
+    <section id="stack" className="bg-background scroll-mt-24 px-6">
+      <div className="mx-auto max-w-6xl">
+        <div ref={wrapRef} style={{ height: `${(LAYERS.length + 1) * 100}vh` }} className="relative">
+          <div className="sticky top-0 flex h-screen items-center py-8">
             <div
-              className="border-border relative grid w-full overflow-hidden rounded-2xl border md:grid-cols-2"
-              style={{
-                minHeight: 'min(46rem, 82vh)',
-                background:
-                  'linear-gradient(160deg, color-mix(in oklab, var(--kortix-blue) 7%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 12%, var(--background)) 100%)',
-              }}
+              className="border-border bg-card relative grid w-full overflow-hidden rounded-sm border md:grid-cols-2"
+              style={{ minHeight: 'min(44rem, 80vh)' }}
             >
               {/* left: the layer list */}
               <div className="relative z-10 flex flex-col justify-center gap-2 p-8 sm:p-10">
@@ -68,20 +63,20 @@ export function StackSection() {
                       className={cn(
                         'transition-all duration-300 ease-out',
                         isActive
-                          ? 'bg-foreground text-background rounded-xl px-5 py-4'
-                          : 'text-background/85 bg-foreground/55 w-fit rounded-full px-4 py-1.5',
+                          ? 'border-border bg-background rounded-sm border px-5 py-4 shadow-sm'
+                          : 'bg-muted text-muted-foreground w-fit rounded-full px-4 py-1.5',
                       )}
                     >
                       <p
                         className={cn(
                           'text-[0.9375rem] font-medium',
-                          isActive ? 'text-background' : 'text-background/90',
+                          isActive ? 'text-foreground' : 'text-muted-foreground',
                         )}
                       >
                         {layer.name}
                       </p>
                       {isActive && (
-                        <p className="text-background/70 mt-1.5 max-w-sm text-sm leading-relaxed">
+                        <p className="text-muted-foreground mt-1.5 max-w-sm text-sm leading-relaxed">
                           {layer.description}
                         </p>
                       )}
@@ -91,12 +86,12 @@ export function StackSection() {
               </div>
 
               {/* right: the slabs */}
-              <div className="relative hidden items-center justify-center md:flex">
+              <div className="bg-muted/40 relative hidden items-center justify-center md:flex">
                 <Slabs active={active} />
               </div>
 
               {/* footer rail */}
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between px-8 pb-6 sm:px-10">
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-4 px-8 pb-6 sm:px-10">
                 <button
                   type="button"
                   onClick={skip}
@@ -104,13 +99,13 @@ export function StackSection() {
                 >
                   Skip section
                 </button>
-                <div className="bg-foreground/15 h-1.5 w-40 overflow-hidden rounded-full">
+                <div className="bg-border h-1 w-40 overflow-hidden rounded-full">
                   <div
-                    className="bg-foreground/60 h-full rounded-full transition-all duration-300"
+                    className="bg-foreground h-full rounded-full transition-all duration-300"
                     style={{ width: `${((active + 1) / LAYERS.length) * 100}%` }}
                   />
                 </div>
-                <span className="text-muted-foreground w-14 text-right text-sm tabular-nums">
+                <span className="text-muted-foreground w-12 text-right text-sm tabular-nums">
                   {active + 1}/{LAYERS.length}
                 </span>
               </div>
@@ -136,23 +131,21 @@ function Slabs({ active }: { active: number }) {
       >
         {LAYERS.map((layer, i) => {
           const shown = i <= active;
-          const depth = i * SLAB_RISE;
           return (
             <div
               key={layer.name}
               className={cn(
-                'absolute top-1/2 left-1/2 h-52 w-52 rounded-lg transition-all duration-500 ease-out',
+                'absolute top-1/2 left-1/2 h-52 w-52 rounded-sm border transition-all duration-500 ease-out',
                 i === active
-                  ? 'border-kortix-blue/40 bg-kortix-blue/25'
-                  : 'border-foreground/10 bg-background/70',
+                  ? 'border-kortix-blue/50 bg-kortix-blue/20'
+                  : 'border-border bg-card',
               )}
               style={{
-                borderWidth: 1,
                 marginLeft: '-6.5rem',
                 marginTop: '-6.5rem',
-                transform: `translateZ(${shown ? depth : depth - 90}px)`,
+                transform: `translateZ(${shown ? i * SLAB_RISE : i * SLAB_RISE - 90}px)`,
                 opacity: shown ? 1 : 0,
-                boxShadow: '0 1px 2px rgba(26,31,46,0.06), 0 8px 10px -1px rgba(26,31,46,0.04)',
+                boxShadow: '0px 1px 2px rgba(26,31,46,0.04), 0px 8px 10px -1px rgba(26,31,46,0.04)',
               }}
             />
           );
