@@ -177,14 +177,6 @@ export function AnonymousHomeShell() {
               starter chips — with no project behind it. */}
               <ProjectHomeWelcomeBody
                 projectId=""
-                // The heading, not the showcase. The showcase belongs to the
-                // new-session empty state; the index — signed in or out — keeps
-                // the line it always had.
-                heading={
-                  <>
-                    Give <span className="text-foreground">Kortix</span> something real to work on.
-                  </>
-                }
                 // The same pill row the signed-in home shows. Every pill gates
                 // to sign-in rather than pointing into a project that does not
                 // exist yet — the row is part of what the product looks like,

@@ -4,7 +4,6 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { DelegateShowcase } from '@/features/home/delegate-showcase';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
@@ -217,15 +216,6 @@ export function InstantSessionShell({
               projectId={projectId}
               onPickSuggestion={applySuggestion}
               composer={composerEl}
-              // A brand-new session has nothing to show, which is exactly the
-              // empty state the showcase is for. No CTA — the composer right
-              // below it already is the call to action.
-              showcase={
-                <DelegateShowcase
-                  title="Delegate work to Kortix"
-                  description="Describe the outcome you want. Kortix works in its own sandbox and brings back finished work."
-                />
-              }
             />
           </div>
         )}

@@ -114,25 +114,26 @@ describe('shared components are safe to render with no project', () => {
   });
 });
 
-describe('the showcase belongs to the new-session state, not the index', () => {
+describe('the showcase is the empty state on every surface', () => {
   const INSTANT_SHELL = readFileSync(
     join(HERE, '..', 'session', 'instant-session-shell.tsx'),
     'utf8',
   );
 
-  test('the index does not render the showcase', () => {
-    // Signed in or out, the index keeps its heading. The animated capability
-    // showcase is the EMPTY state of a brand-new session.
-    expect(SHELL_CODE).not.toContain('DelegateShowcase');
-    expect(SHELL_CODE).toContain('heading=');
-  });
-
-  test('a brand-new session does render it', () => {
-    expect(INSTANT_SHELL).toContain('<DelegateShowcase');
-  });
-
-  test('the project index passes no showcase', () => {
+  test('the shared body renders it by default', () => {
+    // One place, so the project index, the signed-out home and a brand-new
+    // session cannot drift apart again.
+    expect(PROJECT_HOME).toContain('<DelegateShowcase');
     expect(PROJECT_HOME).toContain('showcase ??');
+  });
+
+  test('no surface hand-rolls its own copy', () => {
+    expect(SHELL_CODE).not.toContain('DelegateShowcase');
+    expect(INSTANT_SHELL).not.toContain('<DelegateShowcase');
+  });
+
+  test('callers can still override it', () => {
+    expect(PROJECT_HOME).toContain('showcase?:');
   });
 });
 

@@ -28,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
+import { DelegateShowcase } from '@/features/home/delegate-showcase';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
@@ -260,17 +261,14 @@ export function ProjectHomeWelcomeBody({
           Computer sessions empty state. */}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
+          {/* The showcase is the empty state on every surface — project index,
+              signed-out home, and a brand-new session alike. `showcase` and
+              `heading` stay as overrides for a caller that needs its own. */}
           {showcase ?? (
-            <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
-              {heading ?? (
-                <>
-                  Give <span className="text-foreground">{displayName}</span>{' '}
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
-                  )}
-                </>
-              )}
-            </h1>
+            <DelegateShowcase
+              title="Delegate work to Kortix"
+              description="Hand off a project and get finished work back — researched, built, and reviewed."
+            />
           )}
         </div>
       </div>
