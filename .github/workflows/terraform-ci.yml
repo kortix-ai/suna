@@ -146,7 +146,8 @@ jobs:
           - infra/terraform/environments/prod-eks/platform
           - infra/terraform/environments/dev-eks/cluster
           - infra/terraform/environments/dev-eks/platform
-          - infra/terraform/environments/security-baseline
+          # Not under environments/ — the stack lives at the terraform root.
+          - infra/terraform/security-baseline
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
