@@ -6,19 +6,11 @@
  * `listPipedreamApps` (what it could add) — and this module merges, filters,
  * groups and pages them.
  *
- * WHY THE GROUPS ARE HAND-AUTHORED. The API has no group taxonomy. Both
- * `PipedreamApp.categories` and `DiscoverIntegration.categories` are free-text
- * string arrays from two different vocabularies, and both endpoints are
- * cursor-paged — so a grouping derived from them would only ever know the
- * categories of the pages already fetched, would grow as you scroll, and would
- * be wrong on first paint. `CURATED_GROUPS` is therefore a FRONTEND CURATION:
- * an ordered allowlist of slugs per group, maintained here, not served.
- *
- * What curation does NOT do: it never supplies a name, description, icon or
- * status. Those always come from the API. A curated slug the API did not
- * return simply never renders — so the list can be stale or wrong without ever
- * showing a connector that does not exist. Adding a slug here does not add an
- * integration; it only decides where a real one is filed.
+ * Everything on screen is the provider's own data. Names, descriptions, icons,
+ * categories and status all come from the API; the group headings are the
+ * categories it returns, not a taxonomy of ours. An earlier version filed
+ * entries against a hand-written slug allowlist, which showed a curated slice
+ * of a directory with thousands of apps under headings we invented.
  */
 
 /** Structurally compatible with `AdminConnector` from `@kortix/sdk`. */
@@ -74,82 +66,14 @@ export const CATALOGUE_PILLS: { id: CataloguePill; label: string }[] = [
   { id: 'available', label: 'Available' },
 ];
 
-export interface CuratedGroup {
-  id: string;
-  label: string;
-  /** Ordered allowlist. Slugs the API never returns are silently dropped. */
-  slugs: string[];
-}
-
-/**
- * Hand-authored filing, not API data. See the module comment before editing.
- * Slugs are Pipedream app slugs; `slack`/`slack_v2` are deliberately absent
- * because Slack ships as a built-in channel, not a catalogue app.
- */
-export const CURATED_GROUPS: CuratedGroup[] = [
-  {
-    id: 'popular',
-    label: 'Popular',
-    slugs: [
-      'gmail',
-      'google_calendar',
-      'notion',
-      'github',
-      'linear',
-      'google_sheets',
-      'hubspot',
-      'stripe',
-    ],
-  },
-  {
-    id: 'communication',
-    label: 'Communication',
-    slugs: [
-      'gmail',
-      'microsoft_outlook',
-      'discord',
-      'zoom',
-      'twilio',
-      'sendgrid',
-      'mailchimp',
-      'telegram_bot_api',
-    ],
-  },
-  {
-    id: 'productivity',
-    label: 'Productivity',
-    slugs: [
-      'notion',
-      'airtable',
-      'google_sheets',
-      'google_drive',
-      'google_docs',
-      'google_calendar',
-      'trello',
-      'asana',
-      'clickup',
-      'dropbox',
-    ],
-  },
-  {
-    id: 'development',
-    label: 'Development',
-    slugs: ['github', 'gitlab', 'linear', 'jira', 'sentry', 'vercel', 'supabase', 'figma'],
-  },
-  {
-    id: 'sales_support',
-    label: 'Sales and support',
-    slugs: ['hubspot', 'salesforce', 'pipedrive', 'stripe', 'shopify', 'zendesk', 'intercom'],
-  },
-];
-
 export interface CatalogueGroup {
   id: string;
   label: string;
   entries: CatalogueEntry[];
   /**
-   * True when the group's membership comes from `CURATED_GROUPS` rather than
-   * from the project's own data. The UI says so out loud.
+   * Kept so the grid can note a heading that is not the provider's own. Always
+   * false now that groups come from API categories; the only non-category
+   * group is "Connected", which is the project's own data.
    */
   curated: boolean;
 }
@@ -260,15 +184,27 @@ export function catalogueCategories(entries: CatalogueEntry[]): string[] {
 }
 
 /**
- * The Discover view: the project's own connectors first, then the curated
+ * The Discover view: the project's own connectors first, then the category
  * groups, then everything the curation does not mention. A group with no
  * matching entry is dropped rather than rendered empty.
  */
-export function groupCatalogue(
-  entries: CatalogueEntry[],
-  curated: CuratedGroup[] = CURATED_GROUPS,
-): CatalogueGroup[] {
-  const bySlug = new Map(entries.map((entry) => [entry.slug, entry]));
+/** How many category groups to show before the rest fall into "More". */
+export const MAX_CATEGORY_GROUPS = 8;
+
+/**
+ * Group the catalogue by the categories the API actually returns.
+ *
+ * This used to file entries against a hardcoded slug allowlist, which meant the
+ * screen showed a curated slice of a directory that has thousands of apps, and
+ * the headings were our invention rather than anything real. `PipedreamApp`
+ * carries `categories`, so the grouping is just that data, and the headings are
+ * the provider's own.
+ *
+ * Categories are ordered by how many connectors they hold, so the biggest
+ * shelves lead. An app in several categories is filed under its largest one, so
+ * no card appears twice.
+ */
+export function groupCatalogue(entries: CatalogueEntry[]): CatalogueGroup[] {
   const groups: CatalogueGroup[] = [];
 
   const connected = entries.filter((entry) => entry.connected);
@@ -276,21 +212,53 @@ export function groupCatalogue(
     groups.push({ id: 'connected', label: 'Connected', entries: connected, curated: false });
   }
 
-  const filed = new Set<string>();
-  for (const group of curated) {
-    const matched: CatalogueEntry[] = [];
-    for (const slug of group.slugs) {
-      const entry = bySlug.get(slug);
-      if (entry) matched.push(entry);
+  const available = entries.filter((entry) => !entry.connected);
+
+  // Count first, so an app in several categories can be filed under the
+  // largest one rather than duplicated across all of them.
+  const counts = new Map<string, number>();
+  for (const entry of available) {
+    for (const category of entry.categories) {
+      const name = category.trim();
+      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
     }
-    if (matched.length === 0) continue;
-    for (const entry of matched) filed.add(entry.slug);
-    groups.push({ id: group.id, label: group.label, entries: matched, curated: true });
   }
 
-  const rest = entries.filter((entry) => !filed.has(entry.slug) && !entry.connected);
-  if (rest.length > 0) {
-    groups.push({ id: 'more', label: 'More connectors', entries: rest, curated: false });
+  const ranked = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
+  const rank = new Map(ranked.map((name, index) => [name, index]));
+
+  const byCategory = new Map<string, CatalogueEntry[]>();
+  const uncategorised: CatalogueEntry[] = [];
+  for (const entry of available) {
+    const named = entry.categories.map((c) => c.trim()).filter(Boolean);
+    if (named.length === 0) {
+      uncategorised.push(entry);
+      continue;
+    }
+    const best = named.reduce((a, b) =>
+      (rank.get(a) ?? Number.MAX_SAFE_INTEGER) <= (rank.get(b) ?? Number.MAX_SAFE_INTEGER) ? a : b,
+    );
+    const bucket = byCategory.get(best);
+    if (bucket) bucket.push(entry);
+    else byCategory.set(best, [entry]);
+  }
+
+  const shown = ranked.slice(0, MAX_CATEGORY_GROUPS);
+  const overflow: CatalogueEntry[] = [...uncategorised];
+  for (const name of ranked.slice(MAX_CATEGORY_GROUPS)) {
+    overflow.push(...(byCategory.get(name) ?? []));
+  }
+
+  for (const name of shown) {
+    const bucket = byCategory.get(name);
+    if (!bucket || bucket.length === 0) continue;
+    groups.push({ id: `category:${name}`, label: name, entries: bucket, curated: false });
+  }
+
+  if (overflow.length > 0) {
+    groups.push({ id: 'more', label: 'More connectors', entries: overflow, curated: false });
   }
 
   return groups;

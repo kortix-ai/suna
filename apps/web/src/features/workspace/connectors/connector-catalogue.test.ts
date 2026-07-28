@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  CURATED_GROUPS,
   type CatalogueAvailableInput,
   type CatalogueConnectedInput,
   GROUP_PAGE_SIZE,
+  MAX_CATEGORY_GROUPS,
   buildCatalogueEntries,
   catalogueCategories,
   catalogueMatchesQuery,
@@ -173,83 +173,78 @@ describe('groupCatalogue', () => {
     expect(groups[0]?.entries.map((e) => e.slug)).toEqual(['gmail']);
   });
 
-  test('a curated slug the API never returned simply does not render', () => {
-    const groups = groupCatalogue(buildCatalogueEntries({ connectors: [], apps: [available()] }), [
-      { id: 'popular', label: 'Popular', slugs: ['notion', 'a-slug-the-api-never-returns'] },
-    ]);
-    expect(groups.map((group) => group.id)).toEqual(['popular']);
-    expect(groups[0]?.entries.map((e) => e.slug)).toEqual(['notion']);
-  });
-
-  test('curation order wins over API order', () => {
-    const entries = buildCatalogueEntries({
-      connectors: [],
-      apps: [available({ slug: 'linear', name: 'Linear' }), available()],
-    });
-    const groups = groupCatalogue(entries, [
-      { id: 'popular', label: 'Popular', slugs: ['notion', 'linear'] },
-    ]);
-    expect(groups[0]?.entries.map((e) => e.slug)).toEqual(['notion', 'linear']);
-  });
-
-  test('an empty group is dropped rather than rendered', () => {
-    const groups = groupCatalogue(buildCatalogueEntries({ connectors: [], apps: [available()] }), [
-      { id: 'popular', label: 'Popular', slugs: ['notion'] },
-      { id: 'sales', label: 'Sales', slugs: ['salesforce'] },
-    ]);
-    expect(groups.map((group) => group.id)).toEqual(['popular']);
-  });
-
-  test('anything the curation misses lands in one trailing group', () => {
-    const entries = buildCatalogueEntries({
-      connectors: [],
-      apps: [available(), available({ slug: 'weird_app', name: 'Weird App' })],
-    });
-    const groups = groupCatalogue(entries, [
-      { id: 'popular', label: 'Popular', slugs: ['notion'] },
-    ]);
-    expect(groups.map((group) => group.id)).toEqual(['popular', 'more']);
-    expect(groups[1]?.entries.map((e) => e.slug)).toEqual(['weird_app']);
-    expect(groups[1]?.curated).toBe(false);
-  });
-
-  test('a connected connector is not repeated in the trailing group', () => {
+  test("groups are the API's own categories", () => {
     const groups = groupCatalogue(
-      buildCatalogueEntries({ connectors: [connected()], apps: [] }),
-      [],
+      buildCatalogueEntries({
+        connectors: [],
+        apps: [
+          available({ slug: 'notion', name: 'Notion', categories: ['Productivity'] }),
+          available({ slug: 'linear', name: 'Linear', categories: ['Productivity'] }),
+          available({ slug: 'twilio', name: 'Twilio', categories: ['Communication'] }),
+        ],
+      }),
     );
+    expect(groups.map((g) => g.label)).toEqual(['Productivity', 'Communication']);
+    expect(groups.every((g) => g.curated === false)).toBe(true);
+  });
+
+  test('the biggest category leads', () => {
+    const groups = groupCatalogue(
+      buildCatalogueEntries({
+        connectors: [],
+        apps: [
+          available({ slug: 'a', categories: ['Small'] }),
+          available({ slug: 'b', categories: ['Big'] }),
+          available({ slug: 'c', categories: ['Big'] }),
+        ],
+      }),
+    );
+    expect(groups[0]?.label).toBe('Big');
+  });
+
+  test('an app in several categories is filed once, under the largest', () => {
+    const groups = groupCatalogue(
+      buildCatalogueEntries({
+        connectors: [],
+        apps: [
+          available({ slug: 'gmail', categories: ['Communication', 'Email'] }),
+          available({ slug: 'twilio', categories: ['Communication'] }),
+        ],
+      }),
+    );
+    const seen = groups.flatMap((g) => g.entries.map((e) => e.slug));
+    expect(seen.filter((s) => s === 'gmail')).toHaveLength(1);
+    expect(groups.find((g) => g.label === 'Communication')?.entries.map((e) => e.slug)).toContain(
+      'gmail',
+    );
+  });
+
+  test('an app with no category lands in the trailing group', () => {
+    const groups = groupCatalogue(
+      buildCatalogueEntries({
+        connectors: [],
+        apps: [
+          available({ slug: 'notion', categories: ['Productivity'] }),
+          available({ slug: 'weird_app', categories: [] }),
+        ],
+      }),
+    );
+    expect(groups.map((g) => g.id)).toEqual(['category:Productivity', 'more']);
+    expect(groups[1]?.entries.map((e) => e.slug)).toEqual(['weird_app']);
+  });
+
+  test('a connected connector is not repeated in a category group', () => {
+    const groups = groupCatalogue(buildCatalogueEntries({ connectors: [connected()], apps: [] }));
     expect(groups.map((group) => group.id)).toEqual(['connected']);
   });
 
-  test('the same app may be filed under more than one curated group', () => {
-    const entries = buildCatalogueEntries({ connectors: [], apps: [available({ slug: 'gmail' })] });
-    const groups = groupCatalogue(entries, [
-      { id: 'popular', label: 'Popular', slugs: ['gmail'] },
-      { id: 'communication', label: 'Communication', slugs: ['gmail'] },
-    ]);
-    expect(groups.map((group) => group.id)).toEqual(['popular', 'communication']);
-  });
-});
-
-describe('CURATED_GROUPS', () => {
-  test('files only real slugs, with no duplicates inside a group', () => {
-    for (const group of CURATED_GROUPS) {
-      expect(group.slugs.length).toBe(new Set(group.slugs).size);
-      for (const slug of group.slugs) {
-        expect(slug).toMatch(/^[a-z0-9_]+$/);
-      }
-    }
-  });
-
-  test('never files Slack, which ships as a built-in channel', () => {
-    const all = CURATED_GROUPS.flatMap((group) => group.slugs);
-    expect(all).not.toContain('slack');
-    expect(all).not.toContain('slack_v2');
-  });
-
-  test('group ids are unique so the grid can key on them', () => {
-    const ids = CURATED_GROUPS.map((group) => group.id);
-    expect(ids.length).toBe(new Set(ids).size);
+  test('categories beyond the cap fall into the trailing group', () => {
+    const apps = Array.from({ length: MAX_CATEGORY_GROUPS + 3 }, (_, i) =>
+      available({ slug: `app_${i}`, categories: [`Cat${i}`] }),
+    );
+    const groups = groupCatalogue(buildCatalogueEntries({ connectors: [], apps }));
+    expect(groups.filter((g) => g.id.startsWith('category:'))).toHaveLength(MAX_CATEGORY_GROUPS);
+    expect(groups.at(-1)?.id).toBe('more');
   });
 });
 

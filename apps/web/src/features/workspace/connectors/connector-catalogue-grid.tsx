@@ -54,8 +54,12 @@ const GROUP_ICON: Record<string, typeof Plug> = {
   more: Boxes,
 };
 
-/** Why a curated group exists at all — stated on the group, not buried in a doc. */
-const CURATED_HINT = 'Grouped by Kortix. The app directory has no categories of its own.';
+/**
+ * Only reachable if a group is ever built from something other than the
+ * provider's categories again. Kept so such a heading can never pass itself off
+ * as the provider's own.
+ */
+const CURATED_HINT = 'Grouped by Kortix, not by the app directory.';
 
 export interface ConnectorCatalogueCardProps {
   entry: CatalogueEntry;
