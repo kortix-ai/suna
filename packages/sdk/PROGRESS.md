@@ -1039,6 +1039,28 @@ smoke evidence.
 
 ---
 
+### 2026-07-28 — session `acp-multi-harness` claim
+
+Claimed project-gated ACP multi-harness support.
+
+The existing `acp_runtime` project experiment will become the single rollout
+gate for ACP transport and Claude Code, Codex, OpenCode, and Pi harness
+selection.
+
+The implementation will port the behavioral contract from PR #4510 onto the
+current session-scoped SDK architecture. It will not restore PR #4510's removed
+SDK refactor or host-local runtime logic.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are focused API, SDK, daemon, manifest, and web tests, API and
+SDK typechecks, the full SDK suite, packed-install smoke, local browser proof,
+real multi-harness sandbox proof, PR merge, Deploy Dev, deployed SHA proof, and
+deployed browser plus protocol verification.
+
+**Status:** IN PROGRESS.
+
+---
+
 ### 2026-07-13 — session `personal-session-branch` (abandoned)
 
 Abandoned the personal/group session-branch preference claim by explicit product
