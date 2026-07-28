@@ -39,6 +39,7 @@ export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';
 export * from './use-model-defaults';
+export * from './use-model-enablement';
 export * from './use-session-model-selection';
 export * from './use-opencode-mcp';
 export * from './use-opencode-pty';
@@ -74,9 +75,7 @@ export {
 } from './use-canonical-opencode-session';
 export { opencodeKeys as runtimeKeys } from './use-opencode-sessions/keys';
 export { useExecuteOpenCodeCommand as useExecuteRuntimeCommand } from './use-opencode-sessions/commands';
-export {
-  useAbortOpenCodeSession as useAbortRuntimeSession,
-} from './use-opencode-sessions/messages';
+export { useAbortOpenCodeSession as useAbortRuntimeSession } from './use-opencode-sessions/messages';
 export {
   useCreateOpenCodeSession as useCreateRuntimeSession,
   useSummarizeOpenCodeSession as useSummarizeRuntimeSession,

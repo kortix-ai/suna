@@ -147,6 +147,9 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Wire-model ids the project has turned OFF (server-owned enablement). Only
+   *  populated by the `/model-picker` endpoint. Absent → treat as none. */
+  disabledModels?: string[];
 }
 
 export interface ProjectInput {
