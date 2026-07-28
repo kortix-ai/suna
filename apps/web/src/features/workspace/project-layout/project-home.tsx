@@ -30,6 +30,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { DelegateShowcase } from '@/features/home/delegate-showcase';
 import { Icon } from '@/features/icon/icon';
+import { useAuth } from '@/features/providers/auth-provider';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -245,6 +246,9 @@ export function ProjectHomeWelcomeBody({
   });
   const name = detail.data?.project?.name ?? '';
   const displayName = name.trim() || 'this project';
+  // Never flash the marketing pitch at a signed-in user while auth resolves.
+  const { user, isLoading: authLoading } = useAuth();
+  const signedOut = !authLoading && !user;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -261,15 +265,29 @@ export function ProjectHomeWelcomeBody({
           Computer sessions empty state. */}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
-          {/* The showcase is the empty state on every surface — project index,
-              signed-out home, and a brand-new session alike. `showcase` and
-              `heading` stay as overrides for a caller that needs its own. */}
-          {showcase ?? (
-            <DelegateShowcase
-              title="Delegate work to Kortix"
-              description="Hand off a project and get finished work back — researched, built, and reviewed."
-            />
-          )}
+          {/* The showcase pitches the product, so it is for people who have not
+              bought it yet. Signed in you get your own project's line instead.
+              Read from useAuth here rather than passed by each caller —
+              AuthProvider is mounted in the ROOT layout, so this works on the
+              signed-out shell too, and one source cannot drift. */}
+          {showcase ??
+            (signedOut ? (
+              <DelegateShowcase
+                title="Delegate work to Kortix"
+                description="Hand off a project and get finished work back — researched, built, and reviewed."
+              />
+            ) : (
+              <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+                {heading ?? (
+                  <>
+                    Give <span className="text-foreground">{displayName}</span>{' '}
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+                    )}
+                  </>
+                )}
+              </h1>
+            ))}
         </div>
       </div>
 

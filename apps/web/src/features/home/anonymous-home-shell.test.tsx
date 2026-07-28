@@ -114,26 +114,27 @@ describe('shared components are safe to render with no project', () => {
   });
 });
 
-describe('the showcase is the empty state on every surface', () => {
-  const INSTANT_SHELL = readFileSync(
-    join(HERE, '..', 'session', 'instant-session-shell.tsx'),
-    'utf8',
-  );
-
-  test('the shared body renders it by default', () => {
-    // One place, so the project index, the signed-out home and a brand-new
-    // session cannot drift apart again.
+describe('the showcase is for signed-out visitors only', () => {
+  test('the shared body owns it, gated on auth', () => {
+    // One place, read from useAuth — so the three surfaces cannot drift, and
+    // no caller has to remember to pass an auth flag down.
     expect(PROJECT_HOME).toContain('<DelegateShowcase');
-    expect(PROJECT_HOME).toContain('showcase ??');
+    expect(PROJECT_HOME).toContain('useAuth');
+    expect(PROJECT_HOME).toContain('signedOut ?');
+  });
+
+  test('a signed-in user keeps their own project line', () => {
+    expect(PROJECT_HOME).toContain('displayName');
+  });
+
+  test('it does not flash while auth is still resolving', () => {
+    // `!user` alone is true mid-resolve, which would show the marketing pitch
+    // to a signed-in user for a frame on every load.
+    expect(PROJECT_HOME).toContain('!authLoading && !user');
   });
 
   test('no surface hand-rolls its own copy', () => {
     expect(SHELL_CODE).not.toContain('DelegateShowcase');
-    expect(INSTANT_SHELL).not.toContain('<DelegateShowcase');
-  });
-
-  test('callers can still override it', () => {
-    expect(PROJECT_HOME).toContain('showcase?:');
   });
 });
 
