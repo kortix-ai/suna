@@ -2,13 +2,11 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const provisionCalls: unknown[] = [];
 let projects: Array<{ project_id: string; account_id: string; name: string }> = [];
-let provisionError: Error | null = null;
 
-mock.module('@kortix/sdk/projects-client', () => ({
+mock.module('@kortix/sdk', () => ({
   listProjectsForAccount: async () => projects,
   provisionProject: async (input: unknown) => {
     provisionCalls.push(input);
-    if (provisionError) throw provisionError;
     return { project_id: 'proj_1', account_id: 'acct_1', name: 'My First Project' };
   },
 }));
@@ -23,7 +21,6 @@ describe('ensureFirstProject provisioning', () => {
   beforeEach(() => {
     provisionCalls.length = 0;
     projects = [];
-    provisionError = null;
   });
 
   test('does not silently create a managed repository for a new account', async () => {

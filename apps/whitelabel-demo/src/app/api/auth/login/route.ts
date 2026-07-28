@@ -3,7 +3,7 @@
  * `checkDemoCredentials`). No user directory; `userId` is just the email.
  *
  * Returns the signed session token in the JSON body (the client stores it and
- * sends it as `Authorization: Bearer …` for the SDK's REST/SSE calls) AND sets
+ * sends it as `Authorization: Bearer …` for SDK calls) AND sets
  * it as an HttpOnly cookie (so the preview iframe's same-origin requests,
  * which can't attach headers, still carry a valid session).
  *
@@ -45,7 +45,10 @@ export async function POST(req: NextRequest) {
   if (!limited.ok) {
     return Response.json(
       { error: 'Too many login attempts. Try again shortly.' },
-      { status: 429, headers: { 'Retry-After': String(Math.ceil((limited.retryAfterMs ?? 1000) / 1000)) } },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(Math.ceil((limited.retryAfterMs ?? 1000) / 1000)) },
+      },
     );
   }
 

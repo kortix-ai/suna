@@ -1,4 +1,4 @@
-import type { ProjectSession } from '@kortix/sdk/projects-client';
+import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {

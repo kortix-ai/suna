@@ -121,7 +121,7 @@ describe('marketplace catalog', () => {
       'kortix-computer',
       'kortix-executor',
       'kortix-marketplace',
-      'kortix-meet',
+      'kortix-voice',
       'kortix-memory',
       'kortix-onboarding',
       'kortix-slack',
@@ -201,6 +201,65 @@ describe('marketplace catalog', () => {
       'seo-request-intake',
       'weekly-content-refresh',
       'weekly-technical-audit',
+    ]);
+  });
+
+  test('surfaces Marketing Department as a full cloneable project with agents and schedules', async () => {
+    const projects = await listCatalogItems({ type: 'project', source: 'kortix' });
+    const marketing = projects.find((i) => i.id === 'kortix-projects:marketing-department');
+    expect(marketing).toBeTruthy();
+    expect(marketing!.title).toBe('Marketing Department');
+    expect(marketing!.categories).toEqual(expect.arrayContaining(['marketing', 'growth', 'automation']));
+    expect(marketing!.dependencies).toEqual(
+      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
+    );
+    expect(marketing!.dependencies).toEqual(
+      expect.arrayContaining(['ad-performance-review', 'brand-mention-monitor', 'social-post-drafting']),
+    );
+
+    const detail = await getCatalogItemDetail('kortix-projects:marketing-department');
+    expect(detail).toBeTruthy();
+    expect(detail!.readme).toContain('# Marketing Department');
+    expect(detail!.files.map((f) => f.target)).toEqual(
+      expect.arrayContaining([
+        'kortix.yaml',
+        'install.md',
+        '.kortix/memory/MARKETING.md',
+        '.kortix/opencode/agents/marketing-director.md',
+        '.kortix/opencode/agents/campaign-strategist.md',
+        '.kortix/opencode/agents/content-marketer.md',
+        '.kortix/opencode/agents/lifecycle-marketer.md',
+        '.kortix/opencode/agents/growth-analyst.md',
+        '.kortix/opencode/agents/brand-guardian.md',
+        '.kortix/opencode/agents/marketing-repo-watchdog.md',
+        '.kortix/opencode/skills/marketing-operating-system/SKILL.md',
+        '.kortix/opencode/skills/brand-positioning/SKILL.md',
+        '.kortix/opencode/skills/campaign-strategy/SKILL.md',
+        '.kortix/opencode/skills/content-engine/SKILL.md',
+        '.kortix/opencode/skills/lifecycle-growth/SKILL.md',
+        '.kortix/opencode/skills/marketing-analytics/SKILL.md',
+        '.kortix/opencode/skills/marketing-repo-awareness/SKILL.md',
+      ]),
+    );
+    expect(detail!.projectAgents?.map((a) => a.name).sort()).toEqual([
+      'brand-guardian',
+      'campaign-strategist',
+      'content-marketer',
+      'growth-analyst',
+      'lifecycle-marketer',
+      'marketing-director',
+      'marketing-repo-watchdog',
+    ]);
+    expect(detail!.projectTriggers?.map((t) => t.slug).sort()).toEqual([
+      'daily-marketing-performance-pulse',
+      'daily-marketing-repo-sweep',
+      'marketing-request-intake',
+      'monthly-marketing-report',
+      'repo-marketing-watch',
+      'weekly-brand-competitor-watch',
+      'weekly-campaign-planning',
+      'weekly-content-calendar',
+      'weekly-lifecycle-review',
     ]);
   });
 

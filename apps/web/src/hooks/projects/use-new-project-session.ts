@@ -6,22 +6,32 @@ import { useCallback, useRef } from 'react';
 
 import { errorToast, loadingToast } from '@/components/ui/toast';
 import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
+import {
+  buildWarmSessionClaimInput,
+  resolveWarmSessionForSend,
+  shouldFallbackFromWarmClaim,
+} from '@/hooks/projects/warm-session-create';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { warmProjectSessionKey } from '@/hooks/projects/use-warm-project-session';
 import { isBillingEnabled } from '@/lib/config';
+import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { type SessionConnectorBindings, createProjectSession } from '@kortix/sdk/projects-client';
+import {
+  claimWarmProjectSession,
+  type ProjectSession,
+  type SessionConnectorBindings,
+  createProjectSession,
+} from '@kortix/sdk';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
  * The ONE "new empty session" path, shared by every entry point (project shell
  * button, ⌘T/⌘J shortcuts, project sidebar, command palette, home composer).
  *
- * CREATE-FIRST: mint the session id client-side, persist it, and navigate the
- * moment the server confirms (create is a ~15ms insert, so this is still
- * instant). The route bundle prefetch overlaps the create RTT, and `/start`
- * is prefetched the moment the row exists — so provisioning still begins
- * during the navigation, without ever racing the create POST.
+ * The project index supplies its server-owned warm session. Other entry points
+ * mint the session id client-side and persist it before navigation. Both paths
+ * prefetch the route bundle and `/start` before navigation.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it
  * for entry-point-specific side effects (open a tab, close a drawer, timing
@@ -36,33 +46,44 @@ import { prefetchSessionStart } from '@kortix/sdk/react';
  * `create` carries create-time overrides (e.g. a chosen `sandbox_slug`)
  * straight to the persist POST.
  */
-export function useNewProjectSession(projectId: string | undefined) {
+/**
+ * Options for a new-session start.
+ * `agent_name` binds the session's immutable boot agent at birth. It MUST match
+ * the agent the composer sends on the first prompt — the API proxy rejects any
+ * prompt whose `agent` differs with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.
+ * `connector_bindings` binds specific connection profiles; `inherit_unbound`
+ * keeps the project-default fallback for every OTHER connector so binding one
+ * doesn't null the rest. `require_connectors` names connectors that must resolve
+ * to the acting user's OWN connection — a missing one opens the connect gate.
+ */
+export type NewProjectSessionOpts = {
+  onNavigate?: (sessionId: string) => void;
+  onError?: () => void;
+  create?: {
+    sandbox_slug?: string;
+    agent_name?: string;
+    connector_bindings?: SessionConnectorBindings;
+    inherit_unbound?: boolean;
+    require_connectors?: string[];
+  };
+};
+
+export function useNewProjectSession(
+  projectId: string | undefined,
+  warmSession?: Pick<ProjectSession, 'session_id'>,
+  resolveWarmSession?: () => Promise<Pick<ProjectSession, 'session_id'> | undefined>,
+) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const creatingRef = useRef(false);
   const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
+  const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
+  // A ref so the connect-to-start gate's `retry` re-invokes the LATEST create fn.
+  const startRef = useRef<(opts?: NewProjectSessionOpts) => void>(() => {});
 
-  return useCallback(
-    (opts?: {
-      onNavigate?: (sessionId: string) => void;
-      onError?: () => void;
-      // `agent_name` binds the session's immutable boot agent at birth. It MUST
-      // match the agent the composer sends on the first prompt — the API proxy
-      // rejects any prompt whose `agent` differs from the session's bound agent
-      // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      // `connector_bindings` binds specific connection profiles for this session
-      // (e.g. a member's own private connection); `inherit_unbound` keeps the
-      // project-default fallback for every OTHER connector so binding one doesn't
-      // null the rest. A member-owned binding also requires the session to be
-      // private — which is already the create default.
-      create?: {
-        sandbox_slug?: string;
-        agent_name?: string;
-        connector_bindings?: SessionConnectorBindings;
-        inherit_unbound?: boolean;
-      };
-    }) => {
+  const startSession = useCallback(
+    (opts?: NewProjectSessionOpts) => {
       if (!projectId || creatingRef.current) {
         opts?.onError?.();
         return;
@@ -81,30 +102,71 @@ export function useNewProjectSession(projectId: string | undefined) {
 
       creatingRef.current = true;
 
-      // The API requires a UUIDv4; crypto.randomUUID is available in every
-      // context this app runs (secure context: https + localhost).
-      const sessionId = crypto.randomUUID();
-      markSessionFresh(sessionId); // → instant shell, not the resume loader
-      // Warm the route bundle while the create POST is in flight.
-      router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+      const createNormalSession = async () => {
+        const sessionId = crypto.randomUUID();
+        markSessionFresh(sessionId);
+        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        await loadingToast(
+          'Starting session…',
+          createProjectSession(projectId, {
+            session_id: sessionId,
+            ...opts?.create,
+          }),
+          { success: 'Session started' },
+        );
+        return sessionId;
+      };
 
-      loadingToast(
-        'Starting session…',
-        createProjectSession(projectId, { session_id: sessionId, ...opts?.create }),
-        { success: 'Session started' },
-      )
-        .then(() => {
+      const claimOrCreate = async () => {
+        const selectedWarmSession = await resolveWarmSessionForSend(
+          warmSession,
+          resolveWarmSession,
+        );
+        if (!selectedWarmSession) return createNormalSession();
+
+        router.prefetch(
+          `/projects/${projectId}/sessions/${selectedWarmSession.session_id}`,
+        );
+        try {
+          const claimed = await claimWarmProjectSession(
+            projectId,
+            buildWarmSessionClaimInput(selectedWarmSession, opts?.create),
+          );
+          return claimed.session_id;
+        } catch (error) {
+          if (shouldFallbackFromWarmClaim(error)) {
+            return createNormalSession();
+          }
+          throw error;
+        }
+      };
+
+      claimOrCreate()
+        .then((sessionId) => {
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);
           queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
+          queryClient.removeQueries({
+            queryKey: warmProjectSessionKey(projectId),
+            exact: true,
+          });
         })
         .catch((err) => {
           const code = (err as { code?: string })?.code;
           const action = resolveCreateFailure(code);
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
+          } else if (action === 'connect') {
+            // A required connector isn't connected — open the gate so the user
+            // connects their own account, then re-run this exact create.
+            const connector = (err as { data?: { connector?: string } })?.data?.connector;
+            if (projectId && connector) {
+              openConnectorGate({ projectId, connector, retry: () => startRef.current(opts) });
+            } else {
+              errorToast(err instanceof Error ? err.message : 'Failed to start session');
+            }
           } else if (action === 'toast') {
             errorToast(err instanceof Error ? err.message : 'Failed to start session');
           }
@@ -115,6 +177,19 @@ export function useNewProjectSession(projectId: string | undefined) {
           creatingRef.current = false;
         });
     },
-    [projectId, router, queryClient, billingLoading, canRun, accountId, openUpgradeDialog],
+    [
+      projectId,
+      router,
+      queryClient,
+      billingLoading,
+      canRun,
+      accountId,
+      openUpgradeDialog,
+      openConnectorGate,
+      warmSession,
+      resolveWarmSession,
+    ],
   );
+  startRef.current = startSession;
+  return startSession;
 }

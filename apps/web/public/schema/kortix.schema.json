@@ -425,7 +425,7 @@
                     "slack",
                     "teams",
                     "email",
-                    "meet"
+                    "voice"
                   ]
                 },
                 "credential": {},
@@ -442,7 +442,11 @@
                         "bearer",
                         "basic",
                         "custom",
+                        "api_key",
                         "oauth1",
+                        "hmac",
+                        "aws_sigv4",
+                        "mtls",
                         "none"
                       ]
                     },
@@ -542,7 +546,7 @@
                   "if": {
                     "properties": {
                       "slug": {
-                        "const": "kortix_meet"
+                        "const": "kortix_voice"
                       }
                     }
                   },
@@ -883,6 +887,10 @@
                 "enabled": {
                   "type": "boolean"
                 },
+                "sandbox": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
                 "connectors": {
                   "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
                   "oneOf": [
@@ -901,6 +909,13 @@
                       ]
                     }
                   ]
+                },
+                "connectors_personal": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 },
                 "secrets": {
                   "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
@@ -1405,7 +1420,7 @@
                     "slack",
                     "teams",
                     "email",
-                    "meet"
+                    "voice"
                   ]
                 },
                 "credential": {
@@ -1424,7 +1439,11 @@
                         "bearer",
                         "basic",
                         "custom",
+                        "api_key",
                         "oauth1",
+                        "hmac",
+                        "aws_sigv4",
+                        "mtls",
                         "none"
                       ]
                     },
@@ -1524,7 +1543,7 @@
                   "if": {
                     "properties": {
                       "slug": {
-                        "const": "kortix_meet"
+                        "const": "kortix_voice"
                       }
                     }
                   },

@@ -27,7 +27,7 @@ mock.module('../shared/db', () => ({
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
 mock.module('../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
-  tickRunningComputeCharges: async () => ({ settled: 0 }),
+  tickRunningComputeCharges: async () => ({ settled: 0, reconciled: 0 }),
 }));
 mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }),

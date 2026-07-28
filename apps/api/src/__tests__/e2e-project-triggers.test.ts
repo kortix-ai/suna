@@ -31,7 +31,8 @@ let deleteCalls: Array<{ path: string; message: string }>;
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let lastProvisionEnv: Record<string, string> | null = null;
-let runtimeRows: Array<{ projectId: string; slug: string; lastFiredAt: Date | null; updatedAt: Date }>;
+let runtimeRows: any[];
+let triggerExecutionRows: any[];
 let sessionRows: Array<typeof projectSessions.$inferSelect>;
 let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
@@ -58,6 +59,7 @@ const projectRow: typeof projects.$inferSelect = {
   accountId: ACCOUNT_ID,
   name: 'Trigger Project',
   sandboxProviderGeneration: 0,
+  secretDefaultStrategy: 'runtime' as const,
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
@@ -78,6 +80,7 @@ function resetState() {
   sandboxProvisionCalls = 0;
   lastProvisionEnv = null;
   runtimeRows = [];
+  triggerExecutionRows = [];
   sessionRows = [];
   lifecycleCommandRows = [];
   activeSessionCount = 0;
@@ -474,6 +477,9 @@ const triggerDbMock: any = {
               );
               const existing = idx >= 0 ? runtimeRows[idx] : undefined;
               const next = {
+                ...existing,
+                ...values,
+                ...set,
                 projectId: values.projectId,
                 slug: values.slug,
                 lastFiredAt: (set.lastFiredAt ??
@@ -530,14 +536,132 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+mock.module('../projects/trigger-execution-store', () => ({
+  claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
+    const due = runtimeRows
+      .filter(
+        (row) =>
+          row.enabled === true &&
+          row.triggerType === 'cron' &&
+          row.nextFireAt instanceof Date &&
+          row.nextFireAt <= now &&
+          projectRow.metadata?.triggers_paused !== true,
+      )
+      .slice(0, limit);
+    return due.map((row) => {
+      const scheduledFor = row.nextFireAt as Date;
+      const execution = {
+        executionId: randomUUID(),
+        projectId: row.projectId,
+        slug: row.slug,
+        scheduleRevision: row.scheduleRevision,
+        scheduledFor,
+        status: 'queued',
+        spec: row.scheduleSpec,
+        payload: {
+          cron: {
+            schedule: row.scheduleSpec.cron,
+            timezone: row.scheduleSpec.timezone,
+            scheduled_for: scheduledFor.toISOString(),
+            claimed_at: now.toISOString(),
+          },
+          trigger: { slug: row.slug, type: 'cron', kind: 'git' },
+        },
+        attempts: 0,
+        availableAt: now,
+        lockedBy: null,
+        lockedUntil: null,
+        sessionId: null,
+        commandId: null,
+        lastError: null,
+        claimedAt: now,
+        dispatchedAt: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      triggerExecutionRows.push(execution);
+      row.lastScheduledFor = scheduledFor;
+      row.nextFireAt = row.scheduleSpec.runAt ? null : new Date(now.getTime() + 1_000);
+      return { execution, inserted: true };
+    });
+  },
+  claimTriggerExecutions: async ({
+    now,
+    workerId,
+    limit,
+  }: {
+    now: Date;
+    workerId: string;
+    limit: number;
+  }) =>
+    triggerExecutionRows
+      .filter(
+        (row) =>
+          (row.status === 'queued' && row.availableAt <= now) ||
+          (row.status === 'running' && row.lockedUntil <= now),
+      )
+      .slice(0, limit)
+      .map((row) => {
+        row.status = 'running';
+        row.attempts += 1;
+        row.lockedBy = workerId;
+        row.lockedUntil = new Date(now.getTime() + 120_000);
+        return row;
+      }),
+  markTriggerExecutionDispatched: async ({ row, dispatchedAt }: any) => {
+    row.dispatchedAt = dispatchedAt;
+  },
+  markTriggerExecutionSucceeded: async ({ row, completedAt, sessionId, commandId }: any) => {
+    Object.assign(row, {
+      status: 'succeeded',
+      completedAt,
+      sessionId: sessionId ?? null,
+      commandId: commandId ?? null,
+      lockedBy: null,
+      lockedUntil: null,
+    });
+  },
+  markTriggerExecutionSkipped: async ({ row, skippedAt, reason }: any) => {
+    Object.assign(row, {
+      status: 'skipped',
+      completedAt: skippedAt,
+      lastError: reason,
+      lockedBy: null,
+      lockedUntil: null,
+    });
+  },
+  markTriggerExecutionFailed: async ({ row, failedAt, error }: any) => {
+    const terminal = row.attempts >= 5;
+    Object.assign(row, {
+      status: terminal ? 'dead_lettered' : 'queued',
+      completedAt: terminal ? failedAt : null,
+      availableAt: new Date(failedAt.getTime() + 2_000),
+      lastError: error,
+      lockedBy: null,
+      lockedUntil: null,
+    });
+    return terminal ? 'dead_lettered' : 'queued';
+  },
+  countUncatalogedTriggerProjects: async () =>
+    runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
+}));
+
 const realModelPreferences = await import('../repositories/model-preferences');
 mock.module('../repositories/model-preferences', () => ({
   ...realModelPreferences,
   getAccountModelDefaults: async () => modelDefaults,
 }));
 
+const realDefaultModel = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModel,
+  isModelServableForAccount: async () => true,
+}));
+
 const {
   drainSessionLifecycleQueue,
+  drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
   runProjectTriggerSweep,
@@ -594,6 +718,56 @@ function cronEntry(opts: {
   if (opts.timezone !== undefined) lines.push(`    timezone: ${JSON.stringify(opts.timezone)}`);
   lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
   return lines.join('\n');
+}
+
+function seedRuntimeCron(opts: {
+  slug: string;
+  prompt: string;
+  nextFireAt: Date;
+}) {
+  runtimeRows.push({
+    projectId: PROJECT_ID,
+    slug: opts.slug,
+    lastFiredAt: null,
+    lastStatus: null,
+    lastError: null,
+    lastAttemptAt: null,
+    ownerUserId: null,
+    description: null,
+    strategy: 'runtime' as const,
+    egressPolicy: null,
+    handlePrefix: null,
+    rotatedAt: null,
+    strategyLocked: false,
+    sessionId: null,
+    triggerType: 'cron',
+    enabled: true,
+    scheduleCron: '* * * * * *',
+    scheduleRunAt: null,
+    scheduleTimezone: 'UTC',
+    scheduleRevision: 'a'.repeat(64),
+    scheduleSpec: {
+      slug: opts.slug,
+      path: `kortix.yaml#triggers.${opts.slug}`,
+      name: opts.slug,
+      type: 'cron',
+      agent: 'default',
+      model: null,
+      enabled: true,
+      promptTemplate: opts.prompt,
+      cron: '* * * * * *',
+      runAt: null,
+      timezone: 'UTC',
+      secretEnv: null,
+      sessionMode: 'fresh',
+      pinnedSessionId: null,
+      sessionKey: null,
+      filter: null,
+    },
+    nextFireAt: opts.nextFireAt,
+    lastScheduledFor: null,
+    updatedAt: opts.nextFireAt,
+  });
 }
 
 /** Build a `triggers:` list-item block for a webhook trigger. */
@@ -1032,9 +1206,16 @@ describe('git-backed triggers — runtime fire paths', () => {
       cron: '* * * * * *',
       prompt: 'Sweep run',
     }));
+    const scheduledFor = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: scheduledFor });
 
-    const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
-    expect(result).toMatchObject({ scanned: 1, fired: 1, failed: 0 });
+    const result = await runProjectTriggerSweep(scheduledFor);
+    expect(result).toMatchObject({ scanned: 1, fired: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(scheduledFor)).toMatchObject({
+      fired: 1,
+      queued: 0,
+      failed: 0,
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
@@ -1047,22 +1228,40 @@ describe('git-backed triggers — runtime fire paths', () => {
       cron: '* * * * * *',
       prompt: 'Sweep run',
     }));
+    const firstSlot = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot });
     provisioningSessionCount = 3;
 
-    const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
-    expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 1, failed: 0 });
+    const result = await runProjectTriggerSweep(firstSlot);
+    expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(firstSlot)).toMatchObject({
+      fired: 0,
+      queued: 1,
+      failed: 0,
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(0);
     expect(runtimeRows).toHaveLength(1);
-    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:30.000Z');
+    expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
+    expect(triggerExecutionRows[0]?.scheduledFor.toISOString()).toBe(
+      '2026-01-01T00:00:30.000Z',
+    );
 
     provisioningSessionCount = 0;
-    const retry = await runProjectTriggerSweep(new Date('2026-01-01T00:00:31Z'));
-    expect(retry).toMatchObject({ scanned: 1, fired: 1, queued: 0, failed: 0 });
+    const secondSlot = new Date('2026-01-01T00:00:31Z');
+    const retry = await runProjectTriggerSweep(secondSlot);
+    expect(retry).toMatchObject({ scanned: 1, fired: 0, queued: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(secondSlot)).toMatchObject({
+      fired: 1,
+      queued: 0,
+      failed: 0,
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(runtimeRows).toHaveLength(1);
-    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:31.000Z');
+    expect(triggerExecutionRows[1]?.scheduledFor.toISOString()).toBe(
+      '2026-01-01T00:00:31.000Z',
+    );
   });
 
   test('webhook fires verify the HMAC signature and reject impostors', async () => {

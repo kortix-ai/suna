@@ -12,7 +12,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
+import { listAccounts, type KortixAccount } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Plus, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';

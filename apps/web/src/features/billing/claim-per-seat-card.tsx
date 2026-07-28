@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useClaimPerSeat } from '@/hooks/billing/use-account-state';
-import type { AccountState } from '@/lib/api/billing';
+import type { AccountState } from '@kortix/sdk';
 import { ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 

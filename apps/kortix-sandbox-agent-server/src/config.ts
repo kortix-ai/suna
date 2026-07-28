@@ -52,13 +52,30 @@ const Schema = z.object({
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
-  // Partial-clone filter for the boot-time `git clone`. `blob:none` (the
-  // default) is a blobless clone: it transfers the full commit/tree history
-  // but fetches file blobs lazily, so the initial clone is a fraction of a
-  // full clone's size while `git log`/`blame`/`diff` still work. Set to an
-  // empty string to force a full clone. Remotes that don't advertise
-  // partial-clone fall back to a full clone automatically (see git.ts).
-  KORTIX_CLONE_FILTER: z.string().default('blob:none'),
+  // Depth of the boot-time `git clone`. 1 (the default) is a SHALLOW clone:
+  // one commit, no history — the only thing a fresh session's working tree
+  // actually needs at boot. History is restored right after boot by a
+  // background `fetch --unshallow` (see scheduleHistoryBackfill in git.ts), so
+  // `git log`/`blame`/`diff` work by the time an agent could ask for them.
+  // 0 clones full history inline (the old behaviour).
+  //
+  // Measured 2026-07-25 on kortix-ai/company, direct to GitHub: full 5462ms
+  // (27MB / 758 commits) vs --depth 1 3516ms (25MB / 1 commit). A real but
+  // MODEST win — history is only ~2MB of that repo, so shallow buys ~1.5x, not
+  // an order of magnitude. The bulk of a clone is the working tree, which no
+  // depth setting avoids; only baking the repo into the image does (warm
+  // images). Do not expect this flag alone to fix boot latency.
+  //
+  // --filter=blob:none measured 6161ms — SLOWER than a full clone — on top of
+  // stalling on lazy blob fetches through the git proxy, which is why the API
+  // forces no filter. Shallow has neither problem: one pack, no on-demand
+  // fetches.
+  KORTIX_CLONE_DEPTH: z.coerce.number().int().min(0).default(1),
+  // Partial-clone filter for the boot-time `git clone`. Empty (the default)
+  // means no filter. Prefer KORTIX_CLONE_DEPTH — a blobless clone measured
+  // slower than a full one and defers cost into unpredictable mid-session
+  // stalls. Kept for remotes where shallow is unavailable.
+  KORTIX_CLONE_FILTER: z.string().default(''),
 })
 
 export type Config = {
@@ -84,6 +101,7 @@ export type Config = {
   gitUserName: string
   gitUserEmail: string
   cloneFilter: string
+  cloneDepth: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -109,6 +127,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
+    KORTIX_CLONE_DEPTH: env.KORTIX_CLONE_DEPTH,
   })
 
   return {
@@ -134,6 +153,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,
+    cloneDepth: parsed.KORTIX_CLONE_DEPTH,
   }
 }
 

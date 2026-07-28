@@ -13,7 +13,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, auditWebhooks } from '@kortix/db';
-import { type SQL, and, asc, desc, eq, gte, like, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
@@ -22,6 +22,7 @@ import { recordAuditEvent } from '../shared/audit';
 import { deliverTestEvent, generateWebhookSecret } from '../shared/audit-webhooks';
 import { db } from '../shared/db';
 import type { AppEnv } from '../types';
+import { type AuditFilterInput, buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/helpers';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
@@ -88,36 +89,17 @@ const AuditWebhookPatchSchema = z
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
 
-// Shared filter builder used by both the list endpoint (cursor pagination)
-// and the export endpoint (no cursor). Keeping one source of truth means
-// what you see in the viewer is exactly what export gives you.
-function buildFilters(
-  accountId: string,
-  actionPrefix: string | null,
-  sinceRaw: string | null,
-): SQL[] {
-  const conditions: SQL[] = [eq(auditEvents.accountId, accountId)];
-
-  if (actionPrefix) {
-    conditions.push(
-      actionPrefix.includes('.') && !actionPrefix.endsWith('.')
-        ? or(eq(auditEvents.action, actionPrefix), like(auditEvents.action, `${actionPrefix}.%`))!
-        : like(auditEvents.action, `${actionPrefix}%`),
-    );
-  }
-
-  if (sinceRaw) {
-    const since = new Date(sinceRaw);
-    if (!Number.isNaN(since.getTime())) {
-      conditions.push(gte(auditEvents.occurredAt, since));
-    }
-  }
-  return conditions;
-}
+// Re-exported from ./audit-filters (pure, unit-tested) so existing importers
+// keep working.
+export { buildFilters, type AuditFilterInput } from './audit-filters';
 
 // GET /v1/accounts/:accountId/audit
 //   ?action=iam.       — prefix match on action (e.g. "iam.policy.")
+//   ?actor=<uuid>      — only events performed by this user
+//   ?resource_type=X   — prefix match on resource_type (e.g. "project_session")
 //   ?since=ISO         — only events at or after this timestamp
+//   ?until=ISO         — only events at or before this timestamp
+//   ?q=text           — case-insensitive substring on action/resource_type/resource_id
 //   ?cursor=ISO|uuid   — keyset pagination cursor (occurredAt|eventId)
 //   ?limit=N           — default 50, max 200
 auditRouter.openapi(
@@ -131,7 +113,11 @@ auditRouter.openapi(
       params: AccountIdParam,
       query: z.object({
         action: z.string().optional(),
+        actor: z.string().optional(),
+        resource_type: z.string().optional(),
         since: z.string().optional(),
+        until: z.string().optional(),
+        q: z.string().optional(),
         cursor: z.string().optional(),
         limit: z.string().optional(),
       }),
@@ -149,14 +135,25 @@ auditRouter.openapi(
     if (denied) return denied;
 
     const actionPrefix = c.req.query('action')?.trim() || null;
+    const actor = c.req.query('actor')?.trim() || null;
+    const resourceType = c.req.query('resource_type')?.trim() || null;
     const sinceRaw = c.req.query('since')?.trim() || null;
+    const untilRaw = c.req.query('until')?.trim() || null;
+    const q = c.req.query('q')?.trim() || null;
     const cursor = c.req.query('cursor')?.trim() || null;
     const limitRaw = Number.parseInt(c.req.query('limit') ?? '', 10);
     const limit = Number.isFinite(limitRaw)
       ? Math.min(Math.max(limitRaw, 1), MAX_LIMIT)
       : DEFAULT_LIMIT;
 
-    const conditions = buildFilters(accountId, actionPrefix, sinceRaw);
+    const conditions = buildFilters(accountId, {
+      actor,
+      actionPrefix,
+      resourceType,
+      sinceRaw,
+      untilRaw,
+      q,
+    });
 
     // Keyset cursor encoded as "<isoTimestamp>|<eventId>" so equal timestamps
     // tie-break by event id (stable order). Cheaper than OFFSET on long lists.
@@ -248,7 +245,11 @@ auditRouter.openapi(
       query: z.object({
         format: z.enum(['csv', 'jsonl']).optional(),
         action: z.string().optional(),
+        actor: z.string().optional(),
+        resource_type: z.string().optional(),
         since: z.string().optional(),
+        until: z.string().optional(),
+        q: z.string().optional(),
       }),
     },
     responses: {
@@ -275,9 +276,20 @@ auditRouter.openapi(
     }
 
     const actionPrefix = c.req.query('action')?.trim() || null;
+    const actor = c.req.query('actor')?.trim() || null;
+    const resourceType = c.req.query('resource_type')?.trim() || null;
     const sinceRaw = c.req.query('since')?.trim() || null;
+    const untilRaw = c.req.query('until')?.trim() || null;
+    const q = c.req.query('q')?.trim() || null;
 
-    const conditions = buildFilters(accountId, actionPrefix, sinceRaw);
+    const conditions = buildFilters(accountId, {
+      actor,
+      actionPrefix,
+      resourceType,
+      sinceRaw,
+      untilRaw,
+      q,
+    });
 
     const rows = await db
       .select()

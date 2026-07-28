@@ -21,25 +21,29 @@
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
-import { cn } from '@/lib/utils';
 import { track } from '@/lib/track';
+import { cn } from '@/lib/utils';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
   useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
-import type { MessageWithParts } from '@/ui';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
+import type { MessageWithParts, ToolPart } from '@/ui';
+import { SANDBOX_PORTS } from '@kortix/sdk';
 import { FileText, Terminal as TerminalIcon } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActionNavigator } from '../shared/action-navigator';
+import { clampIndex, type FollowMode } from '../shared/action-navigator-logic';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
@@ -62,9 +66,11 @@ import {
   isWideDeliverable,
   neighborOutputs,
   outputKey,
+  pathOutput,
   quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
@@ -148,7 +154,7 @@ export const EasyPanel = memo(function EasyPanel({
   // session. Progress redirects attention to it instead of claiming to be
   // working or done. Same filter the header's needs-input chip uses (see
   // `use-deliverable-readiness.ts`), extracted once into `pendingInputCount`.
-  const waitingOnUser = useOpenCodePendingStore(
+  const waitingOnUser = useRuntimePendingStore(
     (s) => pendingInputCount(s.permissions, s.questions, sessionId) > 0,
   );
 
@@ -406,6 +412,9 @@ export const EasyPanel = memo(function EasyPanel({
             path={output.path}
             name={displayName}
             fileName={output.name}
+            shareContext={
+              projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
+            }
             onClose={closeDetail}
             onAskForChanges={askForChanges}
             onPresent={present}
@@ -414,7 +423,7 @@ export const EasyPanel = memo(function EasyPanel({
       });
       setPanelSplit(split);
     },
-    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit],
+    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit, projectId, projectSessionId],
   );
 
   const outcome = useMemo(
@@ -491,6 +500,25 @@ export const EasyPanel = memo(function EasyPanel({
     if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
   }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
 
+  // A file path clicked in the chat, or in a read/write/edit tool card, lands
+  // here. Same one-shot handoff shape as the chip- and quick-view-consume
+  // effects above, and for the same reason: on desktop this panel stays
+  // mounted behind a CLOSED side panel, so subscribing to the request VALUE —
+  // not a stable action — is what re-renders us when the click happens.
+  //
+  // The nonce, not the path, is the guard: clicking the same file twice must
+  // re-open it, and `requestFileOpenSilently` bumps the nonce on every call.
+  // A ref rather than state — consuming must not itself schedule a render.
+  const fileOpenRequest = useSessionBrowserStore((s) => s.fileOpenBySession[sessionId]);
+  const lastFileOpenNonce = useRef(0);
+  useEffect(() => {
+    if (!fileOpenRequest || fileOpenRequest.nonce === lastFileOpenNonce.current) return;
+    lastFileOpenNonce.current = fileOpenRequest.nonce;
+    // No siblings: a path clicked in prose belongs to no list, so there is
+    // nothing for prev/next to page through and the detail earns no nav row.
+    handleOpenOutput(pathOutput(fileOpenRequest.path), undefined, 'row');
+  }, [fileOpenRequest, handleOpenOutput]);
+
   // Command-palette quick-view consume effect lives below `openAudit`'s
   // declaration — see the comment there.
   const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
@@ -517,11 +545,21 @@ export const EasyPanel = memo(function EasyPanel({
     const step = stepForCallId(steps, focusedToolCallId);
     if (step) {
       openDetail({
-        key: `step:${step.id}`,
+        // The call id is part of the key on purpose: a step is a GROUP, and
+        // two clicks on different commands inside it produce the same
+        // `step:<id>`. Deduped on that key, the second click was a no-op and
+        // the panel kept showing whatever it showed before.
+        key: `step:${step.id}:${focusedToolCallId}`,
         title: step.label,
         icon: <StepIcon family={step.family} status={step.status} />,
         padded: false,
-        body: <ToolParts parts={step.parts} sessionId={sessionId} />,
+        body: (
+          <StepDetailBody
+            parts={step.parts}
+            sessionId={sessionId}
+            focusCallId={focusedToolCallId}
+          />
+        ),
       });
     }
     clearFocusedToolCall();
@@ -537,6 +575,39 @@ export const EasyPanel = memo(function EasyPanel({
   }, [openDetail, projectId, projectSessionId]);
 
   /**
+   * The opt-in File Explorer (Marko's ask). Never a default view and never a
+   * tab — it opens only when asked for, exactly like Terminal and Audit, so
+   * Easy keeps its one-home shape.
+   *
+   * `padded: false` — the explorer owns its own chrome (version header, tabs,
+   * toolbar) and would sit inside a second frame otherwise. The layer header
+   * stays ON, unlike a file preview: the explorer's own header names a
+   * version, not this detail, so there is no duplicate name to collapse.
+   */
+  const openFiles = useCallback(
+    (changes = false) => {
+      openDetail({
+        // The Changes diff and All files are two landings of one surface, so
+        // the key differs — re-opening on the other tab must re-animate rather
+        // than be treated as the same detail already showing.
+        key: changes ? 'files:changes' : 'files',
+        title: changes ? 'Changes' : 'Files',
+        padded: false,
+        body: (
+          <SessionFilesExplorer
+            chatSessionId={sessionId}
+            projectId={projectId}
+            projectSessionId={projectSessionId}
+            ephemeral
+            initialMode={changes ? 'changes' : 'files'}
+          />
+        ),
+      });
+    },
+    [openDetail, sessionId, projectId, projectSessionId],
+  );
+
+  /**
    * Header/palette "Open Browser": the in-panel port browser (`AppPreview`),
    * defaulting to the first running app's url when the session has one, else
    * an empty url — `AppPreview` renders its "no app yet" landing (focused
@@ -549,9 +620,15 @@ export const EasyPanel = memo(function EasyPanel({
    * synthetic `callID` never collides with a real tool call's, so it can't be
    * mistaken for one if it ever leaked into a siblings list.
    */
-  const openBrowser = useCallback(() => {
-    handleOpenOutput(quickBrowserOutput(apps), undefined, 'quick');
-  }, [apps, handleOpenOutput]);
+  const openBrowser = useCallback(
+    (target?: { url?: string; title?: string }) => {
+      // A targeted request (a `show` preview button, a localhost link in chat)
+      // names the exact page it wants. Without honoring it the browser would
+      // open on the first running app instead — right surface, wrong page.
+      handleOpenOutput(quickBrowserOutput(apps, target), undefined, 'quick');
+    },
+    [apps, handleOpenOutput],
+  );
 
   // Command palette "Open Terminal"/"Open Audit"/"Open Browser" (W1→W2-shaped
   // handoff, same pattern as the chip-consume effect above): subscribe to the
@@ -565,13 +642,17 @@ export const EasyPanel = memo(function EasyPanel({
   // `setView`, not here).
   useEffect(() => {
     if (pendingQuickView?.sessionId !== sessionId) return;
-    const view = useKortixComputerStore.getState().consumeQuickView(sessionId);
+    const request = useKortixComputerStore.getState().consumeQuickView(sessionId);
+    if (!request) return;
+    const { view, target } = request;
     if (view === 'terminal') {
       openTerminal();
     } else if (view === 'audit' && projectId && projectSessionId) {
       openAudit();
     } else if (view === 'browser') {
-      openBrowser();
+      openBrowser(target);
+    } else if (view === 'files') {
+      openFiles(target?.changes);
     }
   }, [
     pendingQuickView,
@@ -581,6 +662,7 @@ export const EasyPanel = memo(function EasyPanel({
     openTerminal,
     openAudit,
     openBrowser,
+    openFiles,
   ]);
 
   const goHome = closeDetail;
@@ -613,9 +695,7 @@ export const EasyPanel = memo(function EasyPanel({
             sessionId={sessionId}
             onOpenDetail={openDetail}
           />
-          {apps.length > 0 && (
-            <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />
-          )}
+          {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
         </div>
       </DetailLayer>
 
@@ -688,3 +768,61 @@ export const EasyPanel = memo(function EasyPanel({
     </div>
   );
 });
+
+/**
+ * A step's tool calls with the chronology bar under them — Marko's ask: arrow
+ * keys from start to end of a run, with the wall-clock time of whatever you are
+ * looking at.
+ *
+ * Index and follow-mode live here rather than in `EasyPanel` because they are
+ * scoped to one open detail: closing it and opening another must start at the
+ * latest action again, and local state gives that for free by unmounting.
+ */
+function StepDetailBody({
+  parts,
+  sessionId,
+  /** The call the user actually clicked in the chat. A step is a GROUP ("Ran
+   *  13 commands"), so without this the detail always opened on the last part
+   *  in live mode — clicking the 4th command showed the 13th. */
+  focusCallId,
+}: {
+  parts: ToolPart[];
+  sessionId: string;
+  focusCallId?: string;
+}) {
+  const focusIndex = focusIndexForCall(parts, focusCallId);
+  const [index, setIndex] = useState(focusIndex >= 0 ? focusIndex : parts.length - 1);
+  // Arriving from a chat click pins the view to that call; 'live' would drag
+  // it straight back to the newest part on the next streaming update.
+  const [mode, setMode] = useState<FollowMode>(focusIndex >= 0 ? 'manual' : 'live');
+
+  useEffect(() => {
+    if (parts.length === 0) return;
+    setIndex((i) => (mode === 'live' ? parts.length - 1 : clampIndex(i, parts.length)));
+  }, [parts.length, mode]);
+
+  const safeIndex = clampIndex(index, parts.length);
+  const current = parts[safeIndex];
+  const atLatest = safeIndex >= parts.length - 1;
+
+  // Stable identity so ActionNavigator's keydown effect doesn't re-subscribe
+  // on every streaming re-render; setState setters are already stable.
+  const handleIndexChange = useCallback((i: number, m: FollowMode) => {
+    setMode(m);
+    setIndex(i);
+  }, []);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto">
+        {current && <ToolParts parts={[current]} sessionId={sessionId} />}
+      </div>
+      <ActionNavigator
+        parts={parts}
+        index={safeIndex}
+        isLive={atLatest && mode === 'live'}
+        onIndexChange={handleIndexChange}
+      />
+    </div>
+  );
+}

@@ -152,6 +152,7 @@
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "katex": "^0.16.22",
+    "livekit-client": "^2.21.0",
     "lodash": "^4.18.1",
     "lucide-react": "^0.479.0",
     "marked": "^15.0.7",

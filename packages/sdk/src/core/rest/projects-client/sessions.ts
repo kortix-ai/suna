@@ -56,6 +56,8 @@ export interface ProjectSession {
    *  'backend'; a human web session is 'user'. See Kortix-as-a-Backend. */
   origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
   /** The wrapper's end-user this session acts for (backend origin only). */
+  end_user_ref?: string | null;
+  /** @deprecated Renamed to `end_user_ref`. Echoed with the same value. */
   origin_ref?: string | null;
   /** The per-session secrets allowlist that was applied (identifiers); null = none. */
   secrets_allowlist?: string[] | null;
@@ -109,11 +111,26 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
+   * Interactive-only: connectors the acting user must have connected themselves
+   * for this session (by alias, e.g. `['gmail']`). The server resolves each to
+   * the caller's OWN member profile; if one isn't connected, create fails with a
+   * structured `CONNECTOR_CONNECTION_REQUIRED` naming the connector so a UI can
+   * prompt a connect. Implies `inherit_unbound`. Rejected for backend / service-
+   * account tokens (they have no single "current user" — use `connector_bindings`).
+   */
+  require_connectors?: string[];
+  /**
    * Kortix-as-a-Backend (backend-origin callers only — a PAT / service-account
    * bearer). The wrapper's opaque end-user this session acts for; recorded on the
    * session and surfaced to the sandbox as KORTIX_ORIGIN_REF. A non-backend
    * caller supplying it is rejected 403. Attribution only — pass the user's
    * connectors via connector_bindings.
+   */
+  /** Your opaque handle for the END-USER this session acts for. Backend origin only. */
+  end_user_ref?: string;
+  /**
+   * @deprecated Renamed to `end_user_ref`. Still accepted; sending both is fine
+   * only if they agree (disagreeing values are rejected 400).
    */
   origin_ref?: string;
   /**
@@ -123,6 +140,25 @@ export interface CreateProjectSessionInput {
    * narrowing — can't widen beyond the agent's grant. Non-backend caller → 403.
    */
   secrets?: string[];
+}
+
+export interface WarmProjectSessionWorkspaceRefresh {
+  status: 'skipped' | 'unchanged' | 'updated' | 'failed';
+  before_sha?: string | null;
+  after_sha?: string | null;
+  error?: string;
+}
+
+export interface WarmProjectSessionResult {
+  session: ProjectSession;
+  reused: boolean;
+  workspace_refresh: WarmProjectSessionWorkspaceRefresh;
+}
+
+export interface ClaimWarmProjectSessionInput {
+  session_id: string;
+  agent_name?: string;
+  sandbox_slug?: string;
 }
 
 export interface ProjectOpenCodeSession {
@@ -135,11 +171,21 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
+/**
+ * @param options.scope - `project` asks for the manager-only full inventory.
+ * @param options.end_user_ref - Kortix-as-a-Backend: return only the sessions
+ *   this wrapper created for ONE of its end-users. Filtered server-side, so a
+ *   wrapper never has to fetch the whole project to answer "show me this
+ *   customer's sessions".
+ */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: { scope?: 'visible' | 'project'; end_user_ref?: string },
 ) {
-  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.end_user_ref) params.set('end_user_ref', options.end_user_ref);
+  const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
@@ -264,6 +310,32 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
+export async function ensureWarmProjectSession(projectId: string) {
+  const result = unwrap(
+    await backendApi.post<WarmProjectSessionResult>(
+      `/projects/${projectId}/sessions/warm`,
+      {},
+    ),
+  );
+  markSessionFresh(result.session.session_id);
+  return result;
+}
+
+export async function claimWarmProjectSession(
+  projectId: string,
+  input: ClaimWarmProjectSessionInput,
+) {
+  const session = unwrap(
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions/warm/claim`,
+      input,
+      { showErrors: false },
+    ),
+  );
+  markSessionFresh(session.session_id);
+  return session;
+}
+
 export async function getProjectSession(
   projectId: string,
   sessionId: string,
@@ -371,6 +443,53 @@ export async function getSessionTranscript(
   );
 }
 
+/** One line of a session's voice-call transcript (`kortix.voice_call_turns`).
+ *  'user'/'agent' are either side of the spoken conversation; 'tool' is a
+ *  record of an `ask_kortix`/`run_command` call the voice-agent worker made
+ *  through the voice MCP (see apps/api/src/channels/voice/mcp.ts) — not
+ *  spoken, but part of "what did the voice agent DO" during the call. */
+export interface VoiceTranscriptTurn {
+  cursor: number;
+  role: 'user' | 'agent' | 'tool' | (string & {});
+  speaker: string | null;
+  text: string;
+  at: string;
+}
+
+export interface VoiceTranscript {
+  session_id: string;
+  call_id: string;
+  /** Whether a voice-agent worker is in the call's LiveKit room right now. */
+  live: boolean;
+  /** Highest `cursor` returned — pass back as `cursor` to page for only what's new. */
+  cursor: number;
+  count: number;
+  turns: VoiceTranscriptTurn[];
+}
+
+/** A session's live voice-call transcript — every spoken turn plus every
+ *  ask_kortix/run_command the worker issued, in one monotonic feed (a call's
+ *  `callId` IS its `sessionId`, so there is nothing else to key this by).
+ *  Visible to anyone who can see the session (same gate as `/audit`,
+ *  `/transcript`). Returns `{ turns: [] }` for a session that never made a
+ *  voice call — not a 404, since "no call yet" is the common case. */
+export async function getVoiceTranscript(
+  projectId: string,
+  sessionId: string,
+  options?: { cursor?: number; limit?: number; showErrors?: boolean },
+) {
+  const search = new URLSearchParams();
+  if (options?.cursor != null) search.set('cursor', String(options.cursor));
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  const qs = search.toString();
+  return unwrap(
+    await backendApi.get<VoiceTranscript>(
+      `/projects/${projectId}/sessions/${sessionId}/voice-transcript${qs ? `?${qs}` : ''}`,
+      { showErrors: options?.showErrors },
+    ),
+  );
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
@@ -405,6 +524,27 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
+    ),
+  );
+}
+
+/**
+ * Change the model a session uses, mid-flight.
+ *
+ * `opencode_model` is set at create; this re-points an existing session. When
+ * the sandbox is live the change takes effect immediately (opencode restarts to
+ * rebuild its config), which ends any in-flight turn. `applied_live: false`
+ * means it was stored and will apply when the sandbox next starts.
+ */
+export async function setProjectSessionModel(
+  projectId: string,
+  sessionId: string,
+  opencodeModel: string,
+): Promise<{ opencode_model: string; applied_live: boolean; detail?: string }> {
+  return unwrap(
+    await backendApi.put<{ opencode_model: string; applied_live: boolean; detail?: string }>(
+      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
+      { opencode_model: opencodeModel },
     ),
   );
 }

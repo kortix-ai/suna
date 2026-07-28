@@ -66,6 +66,11 @@ jobs:
       # Staging can provision managed repositories with the server credential.
       # CLI push flows also require repo-scoped token export from a GitHub App.
       KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
+      # GitHub applies a secondary content-creation limit independently of the
+      # REST core quota. Serialize and pace real managed-repository creation.
+      KE2E_PROVISION_CONCURRENCY: 1
+      KE2E_PROVISION_MIN_INTERVAL_MS: 5000
+      KE2E_PROVISION_RATE_LIMIT_DELAY_MS: 180000
       # staging.kortix.com sits behind Vercel deployment protection (SSO); the
       # Playwright configs send this as x-vercel-protection-bypass so the browser
       # suite can reach the app instead of the Vercel login wall.

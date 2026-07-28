@@ -1,5 +1,10 @@
+import { and, eq } from 'drizzle-orm';
+import { sessionSandboxes } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
+import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
+import { getProvider, type ProviderName } from '../../platform/providers';
+import { isAlreadyNotRunning, reconcileSandboxStoppedByExternalId } from '../../projects/sandbox-reaper';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
 import {
@@ -100,7 +105,62 @@ export async function processScheduledDeletions(): Promise<{
   return { processed, errors };
 }
 
+/**
+ * Stop every still-active sandbox owned by the account being deleted, right
+ * now, while we still know who it belongs to. This closes the gap BEFORE the
+ * row goes orphaned, rather than relying on the reaper's orphan-account
+ * sweep (sandbox-reaper.ts) to notice later — same reasoning as that sweep's
+ * bypass: the account is gone, so there is no customer whose in-flight turn
+ * a stop could interrupt. Best-effort per box; one failure must not block
+ * deletion or leave the rest of the account's boxes running.
+ */
+const STOP_CONCURRENCY = 6;
+
+async function stopAccountSandboxes(accountId: string): Promise<void> {
+  // Deletion must never fail because teardown did. Every failure mode here —
+  // the lookup itself, a provider stop, a reconcile — degrades to "leave the
+  // box for the reaper's orphan sweep", which is exactly what this path
+  // existed to avoid needing, not something it may block deletion over.
+  try {
+    const rows = await db
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        provider: sessionSandboxes.provider,
+        externalId: sessionSandboxes.externalId,
+      })
+      .from(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.accountId, accountId), eq(sessionSandboxes.status, 'active')));
+
+    const targets = rows.filter((row) => !!row.externalId);
+    // Bounded fan-out: this runs inline on DELETE /v1/account/delete-immediately,
+    // whose caller aborts at 30s. A serial loop over a large account would
+    // serialise that many provider round-trips into one request.
+    for (let i = 0; i < targets.length; i += STOP_CONCURRENCY) {
+      await Promise.all(
+        targets.slice(i, i + STOP_CONCURRENCY).map(async (row) => {
+          try {
+            await getProvider(row.provider as ProviderName).stop(row.externalId as string);
+          } catch (err) {
+            if (!isAlreadyNotRunning(err)) {
+              console.error(`[AccountDeletion] Failed to stop sandbox ${row.sandboxId} for ${accountId}:`, err instanceof Error ? err.message : err);
+              return;
+            }
+            // Already stopped/gone on the provider side — proceed to reconcile.
+          }
+          await reconcileSandboxStoppedByExternalId(row.externalId as string).catch((err) =>
+            console.warn(`[AccountDeletion] reconcile failed for sandbox ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+          );
+        }),
+      );
+    }
+  } catch (err) {
+    console.error(`[AccountDeletion] sandbox teardown failed for ${accountId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
 async function performDeletion(accountId: string) {
+  await stopAccountSandboxes(accountId);
+
   const account = await getCreditAccount(accountId);
 
   // Cancel Stripe subscription if active

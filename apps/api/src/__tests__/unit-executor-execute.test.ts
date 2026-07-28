@@ -17,7 +17,13 @@ import {
 const BEARER: ExecutorAuth = { type: 'bearer', in: 'header', name: null, prefix: null };
 
 function recordingFetch(status = 200, responseBody = '{"ok":true}') {
-  const calls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
+  const calls: Array<{
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    tls?: { cert: string; key: string; ca?: string };
+  }> = [];
   const fetchImpl: FetchImpl = async (url, init) => {
     calls.push({ url, ...init });
     return { status, ok: status >= 200 && status < 300, text: async () => responseBody };
@@ -80,6 +86,68 @@ describe('auth attachment', () => {
       fetchImpl: query.fetchImpl,
     });
     expect(new URL(query.calls[0]!.url).searchParams.get('api_key')).toBe('tok_k');
+  });
+
+  test('API key supports header, query, and cookie placement', async () => {
+    const cookie = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'api_key', in: 'cookie', name: 'session_key', prefix: null },
+      secret: 'a b',
+      fetchImpl: cookie.fetchImpl,
+    });
+    expect(cookie.calls[0]!.headers.Cookie).toBe('session_key=a%20b');
+  });
+
+  test('generic HMAC signs the final method, URL, timestamp, and body hash', async () => {
+    const signed = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'POST', path: '/events' },
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'hmac', in: 'header', name: 'X-Signature', prefix: null },
+      secret: JSON.stringify({ secret: 'signing-secret', key_id: 'key-1' }),
+      args: { body: { value: 1 } },
+      now: () => new Date('2026-07-25T12:34:56.000Z'),
+      fetchImpl: signed.fetchImpl,
+    });
+    expect(signed.calls[0]!.headers['X-Signature']).toMatch(/^[a-f0-9]{64}$/);
+    expect(signed.calls[0]!.headers['X-Signature-Timestamp']).toBe('2026-07-25T12:34:56.000Z');
+    expect(signed.calls[0]!.headers['X-Signature-Key-Id']).toBe('key-1');
+  });
+
+  test('AWS SigV4 emits a scoped Authorization header', async () => {
+    const signed = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/items' },
+      baseUrl: 'https://dynamodb.us-east-1.amazonaws.com',
+      auth: { type: 'aws_sigv4', in: 'header', name: null, prefix: null },
+      secret: JSON.stringify({
+        access_key_id: 'AKIDEXAMPLE',
+        secret_access_key: 'secret',
+        region: 'us-east-1',
+        service: 'dynamodb',
+      }),
+      now: () => new Date('2026-07-25T12:34:56.000Z'),
+      fetchImpl: signed.fetchImpl,
+    });
+    expect(signed.calls[0]!.headers.Authorization).toContain(
+      'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260725/us-east-1/dynamodb/aws4_request',
+    );
+    expect(signed.calls[0]!.headers['X-Amz-Date']).toBe('20260725T123456Z');
+  });
+
+  test('mutual TLS passes encrypted credential material only to fetch TLS options', async () => {
+    const signed = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/private' },
+      baseUrl: 'https://mtls.example.com',
+      auth: { type: 'mtls', in: 'header', name: null, prefix: null },
+      secret: JSON.stringify({ certificate: 'CERT', private_key: 'KEY', ca: 'CA' }),
+      fetchImpl: signed.fetchImpl,
+    });
+    expect(signed.calls[0]!.tls).toEqual({ cert: 'CERT', key: 'KEY', ca: 'CA' });
+    expect(JSON.stringify(signed.calls[0]!.headers)).not.toContain('CERT');
   });
 
   test('none / missing secret attaches nothing', async () => {

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 502,
+  "count": 507,
   "routes": [
     {
       "method": "GET",
@@ -831,6 +831,10 @@
       "path": "/v1/health/live"
     },
     {
+      "method": "GET",
+      "path": "/v1/integrations/oauth2/callback"
+    },
+    {
       "method": "POST",
       "path": "/v1/llm/chat/completions"
     },
@@ -945,6 +949,10 @@
     {
       "method": "GET",
       "path": "/v1/platform"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/boot-timeline"
     },
     {
       "method": "DELETE",
@@ -1160,22 +1168,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/channels/meet/speak"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/voice"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/meet/voices"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/meet/voices/:voiceId/preview"
-    },
-    {
-      "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/bind-thread"
     },
     {
@@ -1283,6 +1275,34 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
     },
@@ -1291,12 +1311,20 @@
       "path": "/v1/projects/:projectId/connector-profiles/me"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/:slug/oauth2/profile"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/default-agent"
     },
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/execution-lease"
     },
     {
       "method": "PATCH",
@@ -1603,6 +1631,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/previews"
     },
@@ -1637,6 +1669,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/warm"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/warm/claim"
     },
     {
       "method": "GET",
@@ -1759,6 +1803,14 @@
       "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
+      "method": "GET",
+      "path": "/v1/public/voice-join/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/voice-join/:token/transcript"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/chat/completions"
     },
@@ -1799,40 +1851,16 @@
       "path": "/v1/setup-links/secret/:token"
     },
     {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
+      "method": "GET",
+      "path": "/v1/skills"
     },
     {
       "method": "GET",
-      "path": "/v1/setup/health"
+      "path": "/v1/skills/:name"
     },
     {
       "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
+      "path": "/v1/skills/:name/file"
     },
     {
       "method": "POST",
@@ -1941,14 +1969,6 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/meet/realtime"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/meet/status"
     },
     {
       "method": "POST",

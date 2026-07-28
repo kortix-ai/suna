@@ -3,8 +3,10 @@ import type { Message } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '../stores/sync-store';
 import {
   ACTIVE_SESSION_PREFETCH_SOURCE,
+  beginSessionPromptObservation,
   clearActiveSessionPrefetches,
   getSessionSyncController,
+  noteSessionSyncEvent,
   prefetchSessionSyncOnce,
   readSessionMessagePage,
   resetSessionSyncControllers,
@@ -129,5 +131,31 @@ describe('session sync controller eviction', () => {
     retained[0]?.release();
     expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
     for (const entry of retained.slice(1)) entry.release();
+  });
+});
+
+describe('REST prompt observation events', () => {
+  test('ignores premature idle and ends observation on a terminal runtime error', () => {
+    const sessionId = 'session-rest-prompt';
+    const controller = getSessionSyncController(sessionId);
+
+    beginSessionPromptObservation(sessionId);
+    noteSessionSyncEvent({
+      type: 'session.idle',
+      properties: { sessionID: sessionId },
+    });
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    noteSessionSyncEvent({
+      type: 'message.updated',
+      properties: {
+        info: { id: 'assistant-1', sessionID: sessionId, role: 'assistant' },
+      },
+    });
+    noteSessionSyncEvent({
+      type: 'session.error',
+      properties: { sessionID: sessionId, error: { name: 'RuntimeError' } },
+    });
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
   });
 });

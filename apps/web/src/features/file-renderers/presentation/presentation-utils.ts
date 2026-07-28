@@ -1,7 +1,12 @@
-import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
-import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
+import {
+  buildPresentationTemplateImageUrl,
+  buildPresentationTemplatePdfUrl,
+  convertPresentationToGoogleSlides,
+  convertRuntimePresentation,
+  getGoogleAuthUrl,
+} from '@kortix/sdk';
 
 export enum DownloadFormat {
   PDF = 'pdf',
@@ -19,7 +24,7 @@ export enum DownloadFormat {
  * @returns The full PDF URL with parameters
  */
 export const getPdfUrl = (templateId: string): string => {
-  return `${getEnv().BACKEND_URL}/presentation-templates/${templateId}/pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+  return buildPresentationTemplatePdfUrl(getEnv().BACKEND_URL, templateId);
 };
 
 /**
@@ -29,7 +34,7 @@ export const getPdfUrl = (templateId: string): string => {
  * @returns The full image URL
  */
 export const getImageUrl = (templateId: string, hasImage: boolean): string => {
-  return `${getEnv().BACKEND_URL}/presentation-templates/${templateId}/image.png`;
+  return buildPresentationTemplateImageUrl(getEnv().BACKEND_URL, templateId);
 };
 
 /**
@@ -92,8 +97,6 @@ export function createPresentationViewerToolContent(
   return JSON.stringify(toolOutput);
 }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 /** Trigger a browser "save as" for a generated blob. */
 function saveBlob(blob: Blob, filename: string): void {
   const url = window.URL.createObjectURL(blob);
@@ -126,66 +129,21 @@ export async function downloadPresentation(
   presentationPath: string,
   presentationName: string,
 ): Promise<void> {
-  const endpoint = `${sandboxUrl}/presentation/convert-to-${format}`;
-  const POLL_INTERVAL_MS = 2500;
-  const MAX_WAIT_MS = 4 * 60_000;
-  const startedAt = Date.now();
-  let notifiedGenerating = false;
-
   try {
-    // Poll the background conversion until the file is ready.
-    for (;;) {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ presentation_path: presentationPath, download: true }),
-      });
-
-      const contentType = response.headers.get('content-type') || '';
-      const isFile =
-        response.ok &&
-        (contentType.includes('pdf') ||
-          contentType.includes('presentation') ||
-          contentType.includes('octet-stream'));
-
-      if (isFile) {
-        const blob = await response.blob();
-        if (blob.size === 0) throw new Error('Downloaded file is empty');
-        saveBlob(blob, `${presentationName}.${format}`);
-        toast.success(`Downloaded ${presentationName} as ${format.toUpperCase()}`, {
-          duration: 8000,
-        });
-        return;
-      }
-
-      // 202 => still generating in the background; keep polling.
-      if (response.status === 202) {
-        if (!notifiedGenerating) {
-          notifiedGenerating = true;
-          toast.info(`Generating ${format.toUpperCase()}… this can take a moment for large decks`, {
-            duration: 6000,
-          });
-        }
-        if (Date.now() - startedAt > MAX_WAIT_MS) {
-          throw new Error(`Timed out waiting for the ${format.toUpperCase()} to generate`);
-        }
-        await sleep(POLL_INTERVAL_MS);
-        continue;
-      }
-
-      // Anything else is an error — surface the server's detail.
-      const text = await response.text().catch(() => '');
-      let detail = response.statusText;
-      try {
-        const json = JSON.parse(text);
-        detail = json.error || json.detail || json.message || detail;
-      } catch {
-        if (text) detail = text;
-      }
-      throw new Error(
-        `Failed to download ${format.toUpperCase()}: ${detail} (HTTP ${response.status})`,
-      );
+    if (format === DownloadFormat.GOOGLE_SLIDES) {
+      throw new Error('Google Slides uses the OAuth upload flow');
     }
+    const blob = await convertRuntimePresentation(format, sandboxUrl, presentationPath, {
+      onGenerating: () => {
+        toast.info(`Generating ${format.toUpperCase()}… this can take a moment for large decks`, {
+            duration: 6000,
+        });
+      },
+    });
+    saveBlob(blob, `${presentationName}.${format}`);
+    toast.success(`Downloaded ${presentationName} as ${format.toUpperCase()}`, {
+      duration: 8000,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[downloadPresentation] Error downloading ${format}:`, error);
@@ -206,14 +164,7 @@ export const handleGoogleAuth = async (presentationPath: string, sandboxUrl: str
     );
 
     // Pass the current URL to the backend so it can be included in the OAuth state
-    const currentUrl = encodeURIComponent(window.location.href);
-    const response = await backendApi.get(`/google/auth-url?return_url=${currentUrl}`);
-
-    if (!response.success) {
-      throw new Error(response.error?.message || 'Failed to get auth URL');
-    }
-
-    const { auth_url } = response.data;
+    const { auth_url } = await getGoogleAuthUrl(window.location.href);
 
     if (auth_url) {
       window.location.href = auth_url;
@@ -231,31 +182,7 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
   }
 
   try {
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    // Use proper backend API client with authentication and extended timeout for PPTX generation
-    const response = await backendApi.post(
-      '/presentation-tools/convert-and-upload-to-slides',
-      {
-        presentation_path: presentationPath,
-        sandbox_url: sandboxUrl,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${session!.access_token}`,
-        },
-        timeout: 180000, // 3 minutes timeout for PPTX generation (longer than backend's 2 minute timeout)
-      },
-    );
-
-    if (!response.success) {
-      throw new Error('Failed to upload to Google Slides');
-    }
-
-    const result = response.data;
+    const result = await convertPresentationToGoogleSlides(presentationPath, sandboxUrl);
 
     if (!result.success && !result.is_api_enabled) {
       toast.info('Redirecting to Google authentication...', {

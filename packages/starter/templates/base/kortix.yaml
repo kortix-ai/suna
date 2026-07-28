@@ -59,8 +59,8 @@ env:
 #       cpu: 2
 #       memory: 4
 #
-# Make one template the project-wide default — every session (UI, triggers,
-# channels) then boots it without passing a slug. Omit for the platform default.
+# Make one template the project-wide default. An agent can override it with
+# `agents.<name>.sandbox`. Omit both fields for the platform default.
 # sandbox:
 #   default: python
 
@@ -90,6 +90,7 @@ agents:
     secrets: all
     kortix_cli: all
     skills: all
+    # sandbox: python # Must name an available project template, or "default".
 
   memory-reflector:
     # Scoped specialist: only what its job needs (open — never merge — a

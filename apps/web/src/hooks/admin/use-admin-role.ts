@@ -1,6 +1,6 @@
 import { useAuth } from '@/features/providers/auth-provider';
-import { backendApi } from '@/lib/api-client';
 import { useQuery, UseQueryOptions, type QueryClient } from '@tanstack/react-query';
+import { getAdminRole } from '@kortix/sdk';
 
 interface AdminRoleResponse {
   isAdmin: boolean;
@@ -48,16 +48,7 @@ export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRoleResponse
         return { isAdmin: false, role: null };
       }
 
-      const response = await backendApi.get<AdminRoleResponse>('/user-roles', {
-        showErrors: false,
-      });
-
-      if (response.error) {
-        // Silently handle errors (e.g. 404 when backend doesn't have this endpoint)
-        return { isAdmin: false, role: null };
-      }
-
-      return response.data || { isAdmin: false, role: null };
+      return getAdminRole();
     },
     enabled: !!user && options?.enabled !== false,
     // Previously: staleTime 5min + refetchOnMount:false + refetchOnFocus:false

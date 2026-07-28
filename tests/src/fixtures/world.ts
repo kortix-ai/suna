@@ -12,14 +12,21 @@
 import { Client, type Identity } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
-import type { CreatedSession, Fixtures, Principal, Principals } from '../core/types';
+import type {
+  CreatedProject,
+  CreatedSession,
+  Fixtures,
+  Principal,
+  Principals,
+} from '../core/types';
 import type { RegisteredFlow } from '../core/flow';
 import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
 import { provisionMatrix, synthUser, type Provisioned } from './principals';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
-import { RunRepositoryPool } from './repository-pool';
+import { createDatabaseProject, deleteDatabaseProject } from './database-project';
+import { mapWithConcurrency } from '../core/concurrency';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -69,7 +76,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
 
   const runId = (globalThis as any).__KE2E_RUN_ID__ ?? 'run';
   const provisioned: Provisioned = await provisionMatrix(env, runId);
-  const owner = provisioned.principals.OWNER;
+  const owner = provisioned.principals.OWNER!;
   let revokePlatformAdmin: (() => Promise<void>) | null = null;
 
   // Release QA needs a real, short-lived Supabase identity for the platform
@@ -90,50 +97,83 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     log.step(`provision: run-scoped platform admin ${platformAdmin.user.id} active`);
   }
   const adminClient = new Client(env.apiUrl).as(owner as Identity);
+  const canCreateDatabaseProject = env.capabilities.database && env.target !== 'prod';
+  const deleteDatabaseProjectFixture = canCreateDatabaseProject
+    ? (projectId: string) => deleteDatabaseProject(env, projectId)
+    : undefined;
   // Users synthesized mid-run (team members) — deleted in teardownAll.
   const extraUserIds: string[] = [];
-  const sharedStack = new ResourceStack(adminClient);
-  const repositoryPool = new RunRepositoryPool(runId, {
-    async provision() {
-      const name = `e2e-${runId}-pool`;
-      const id = await provisionProject(adminClient, {
+  let databaseProjectCount = 0;
+  let managedProjectCount = 0;
+  // One shared read-only project, provisioned at most once per run.
+  let sharedProjectPromise: Promise<CreatedProject> | null = null;
+  let sharedSeededProjectPromise: Promise<CreatedProject> | null = null;
+  const sharedStack = new ResourceStack(adminClient, deleteDatabaseProjectFixture);
+
+  async function createProject(
+    stack: ResourceStack,
+    opts?: {
+      name?: string;
+      accountId?: string;
+      seed?: boolean;
+      managedGit?: boolean;
+    },
+  ): Promise<CreatedProject> {
+    const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
+    const accountId = opts?.accountId ?? owner.accountId!;
+    if (canCreateDatabaseProject && !opts?.seed && !opts?.managedGit) {
+      const project = await createDatabaseProject(env, {
+        accountId,
+        userId: owner.userId!,
         name,
-        seed_starter: true,
       });
-      sharedStack.push('project', id);
-      return { project: { id, name } };
-    },
-    async registerProject(input) {
-      const res = await adminClient.post('/v1/projects/provision', {
-        name: input.name,
-        ...(input.accountId ? { account_id: input.accountId } : {}),
-        repository_source_project_id: input.sourceProjectId,
-        default_branch: input.branch,
-      });
-      const body = res.json<any>();
-      const id = body?.project_id;
-      if (res.statusCode !== 201 || typeof id !== 'string' || !id) {
-        throw new Error(
-          `repository pool project registration failed: HTTP ${res.statusCode}: ${res.text()}`,
-        );
-      }
-      return { id, name: input.name };
-    },
-  });
+      databaseProjectCount++;
+      stack.push('database-project', project.id);
+      return project;
+    }
+
+    const id = await provisionProject(adminClient, {
+      name,
+      ...(opts?.accountId ? { account_id: opts.accountId } : {}),
+      ...(opts?.seed ? { seed_starter: true } : {}),
+    });
+    managedProjectCount++;
+    stack.push('project', id);
+    return { id, name } as CreatedProject;
+  }
 
   const fixturesFor = (stack: ResourceStack): Fixtures => ({
     name: (slug) => `e2e-${runId}-${slug}`,
     sharedProject() {
-      return repositoryPool.sharedProject();
+      if (!sharedProjectPromise) {
+        sharedProjectPromise = (async () => {
+          const id = await provisionProject(adminClient, { name: `e2e-${runId}-shared` });
+          managedProjectCount++;
+          sharedStack.push('project', id);
+          return { id, name: `e2e-${runId}-shared` } as CreatedProject;
+        })();
+      }
+      return sharedProjectPromise;
+    },
+    sharedSeededProject() {
+      if (!sharedSeededProjectPromise) {
+        sharedSeededProjectPromise = (async () => {
+          const id = await provisionProject(adminClient, {
+            name: `e2e-${runId}-shared-seeded`,
+            seed_starter: true,
+          });
+          managedProjectCount++;
+          sharedStack.push('project', id);
+          return {
+            id,
+            name: `e2e-${runId}-shared-seeded`,
+          } as CreatedProject;
+        })();
+      }
+      return sharedSeededProjectPromise;
     },
     async project(opts) {
-      const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
-      const project = await repositoryPool.project({
-        name,
-        ...(opts?.accountId ? { accountId: opts.accountId } : {}),
-      });
-      stack.push('project', project.id);
-      return project;
+      return createProject(stack, opts);
     },
     async team(opts) {
       const res = await adminClient.post('/v1/accounts', {
@@ -172,13 +212,11 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           );
         },
         async project(o) {
-          const name = o?.name ?? `e2e-${runId}-tproj-${rand()}`;
-          const project = await repositoryPool.project({
-            name,
+          return createProject(stack, {
+            ...o,
+            name: o?.name ?? `e2e-${runId}-tproj-${rand()}`,
             accountId,
           });
-          stack.push('project', project.id);
-          return project;
         },
       };
     },
@@ -227,15 +265,13 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
 
   return {
     principals: principalsProxy(provisioned.principals),
-    newStack: () => new ResourceStack(adminClient),
+    newStack: () => new ResourceStack(adminClient, deleteDatabaseProjectFixture),
     makeFixtures: fixturesFor,
     async teardownAll() {
-      let sharedCleanupError: unknown;
-      try {
-        await sharedStack.teardown({ throwOnFailure: true });
-      } catch (err) {
-        sharedCleanupError = err;
-      }
+      log.info(
+        `fixtures: ${databaseProjectCount} database-only projects · ${managedProjectCount} managed repositories`,
+      );
+      await sharedStack.teardown();
       if (revokePlatformAdmin) {
         try {
           await revokePlatformAdmin();
@@ -254,14 +290,15 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           log.warn(`teardown run account ${acct} failed: ${(err as Error)?.message ?? err}`);
         }
       }
-      for (const uid of [...provisioned.supabaseUserIds, ...extraUserIds]) {
+      const userIds = [...provisioned.supabaseUserIds, ...extraUserIds];
+      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 2);
+      await mapWithConcurrency(userIds, cleanupWorkers, async (uid) => {
         try {
           await adminDeleteUser(env, uid);
         } catch (err) {
           log.warn(`teardown user ${uid} failed: ${(err as Error)?.message ?? err}`);
         }
-      }
-      if (sharedCleanupError) throw sharedCleanupError;
+      });
     },
   };
 }
@@ -274,6 +311,7 @@ function makeUnavailableFixtures(): Fixtures {
     name: (slug) => slug,
     project: fail as any,
     sharedProject: fail as any,
+    sharedSeededProject: fail as any,
     session: fail as any,
     pat: fail as any,
     team: fail as any,

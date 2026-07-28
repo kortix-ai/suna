@@ -25,7 +25,6 @@ export {
   useCancelSubscription,
   useReactivateSubscription,
   usePurchaseCredits,
-  useDeductTokenUsage,
   useScheduleDowngrade,
   useCancelScheduledChange,
   useSyncSubscription,
@@ -76,4 +75,4 @@ export {
 // TYPE EXPORTS
 // =============================================================================
 
-export type { AccountState } from '@/lib/api/billing';
+export type { AccountState } from '@kortix/sdk';

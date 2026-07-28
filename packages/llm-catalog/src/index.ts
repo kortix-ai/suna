@@ -425,12 +425,17 @@ export interface ManagedModel {
   name: string;
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter'   → an OpenRouter slug (`z-ai/glm-5.2`)
+  //   'openrouter'   → an OpenRouter slug (`deepseek/deepseek-v4-flash`)
+  //   'aster'        → an AsterLab OpenAI-compatible model id (`glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  transport: 'bedrock' | 'openrouter';
+  //   'aster'        → AsterLab openai-compatible chat completions
+  transport: 'aster' | 'bedrock' | 'openrouter';
+  // Optional provider id used for model-picker branding. Routing still uses
+  // `transport`; this field does not select or authenticate an upstream.
+  providerBrand?: string;
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   // Must be the model's REAL models.dev id (dashes, e.g. `claude-opus-4-8`) —
   // Kortix's own managed `id` above is dotted for display (`claude-opus-4.8`)
@@ -439,6 +444,14 @@ export interface ManagedModel {
   // net for consumers, but this field itself should always be the correct
   // dashed id so pricing/capability lookups hit on the first try.
   pricingRef: string;
+  // Explicit upstream pricing for providers that do not return cost metadata
+  // and whose direct price differs from models.dev's provider entry.
+  pricing?: {
+    inputPerMillion: number;
+    outputPerMillion: number;
+    cachedInputPerMillion?: number;
+    cacheWritePerMillion?: number;
+  };
   tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
@@ -486,8 +499,8 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 //
 // Every managed model runs through OUR keys and is billed as Kortix credits with
 // markup, so the gateway enforces budgets/logging/spend on all of them. Claude
-// runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
-// everything else goes via OpenRouter.
+// runs on Bedrock (the proven Anthropic-payload InvokeModel transport). GLM
+// runs through AsterLab. DeepSeek V4 Flash remains on OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
@@ -495,6 +508,12 @@ export const MANAGED_MODELS: ManagedModel[] = [
     upstreamModelId: 'us.anthropic.claude-opus-4-8',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-opus-4-8',
+    pricing: {
+      inputPerMillion: 5,
+      cachedInputPerMillion: 0.5,
+      cacheWritePerMillion: 6.25,
+      outputPerMillion: 25,
+    },
     tier: 'flagship',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -505,6 +524,12 @@ export const MANAGED_MODELS: ManagedModel[] = [
     upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-sonnet-4-6',
+    pricing: {
+      inputPerMillion: 3,
+      cachedInputPerMillion: 0.3,
+      cacheWritePerMillion: 3.75,
+      outputPerMillion: 15,
+    },
     tier: 'balanced',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -512,43 +537,33 @@ export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'glm-5.2',
     name: 'GLM 5.2',
-    upstreamModelId: 'z-ai/glm-5.2',
-    transport: 'openrouter',
+    upstreamModelId: 'glm-5.2',
+    transport: 'aster',
     pricingRef: 'z-ai/glm-5.2',
+    pricing: {
+      inputPerMillion: 1,
+      cachedInputPerMillion: 0.2,
+      cacheWritePerMillion: 1,
+      outputPerMillion: 4,
+    },
     tier: 'balanced',
     vision: false,
     limit: { context: 1_000_000, output: 131_072 },
-    // Prefer Z.AI's first-party endpoint (99.9%+ uptime, native fp8). Fallbacks
-    // stay enabled so an actual Z.AI outage still routes rather than failing.
-    openrouterProvider: { order: ['z-ai'], allow_fallbacks: true },
-  },
-  {
-    id: 'qwen3.7-max',
-    name: 'Qwen3.7 Max',
-    upstreamModelId: 'qwen/qwen3.7-max',
-    transport: 'openrouter',
-    pricingRef: 'qwen/qwen3.7-max',
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  {
-    id: 'deepseek-v4-pro',
-    name: 'DeepSeek V4 Pro',
-    upstreamModelId: 'deepseek/deepseek-v4-pro',
-    transport: 'openrouter',
-    pricingRef: 'deepseek/deepseek-v4-pro',
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'deepseek-v4-flash',
     name: 'DeepSeek V4 Flash',
     upstreamModelId: 'deepseek/deepseek-v4-flash',
     transport: 'openrouter',
-    pricingRef: 'deepseek/deepseek-v4-flash',
+    pricingRef: 'openrouter/deepseek/deepseek-v4-flash',
+    pricing: {
+      inputPerMillion: 0.0938,
+      cachedInputPerMillion: 0.01876,
+      cacheWritePerMillion: 0.0938,
+      outputPerMillion: 0.1876,
+    },
     tier: 'balanced',
+    providerBrand: 'deepseek',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },

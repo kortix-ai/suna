@@ -37,7 +37,6 @@ flow(
   'SCIM-1',
   {
     domain: 'scim',
-    serial: true,
     tags: ['smoke'],
     routes: [
       'GET /scim/v2/accounts/:accountId/ServiceProviderConfig',
@@ -110,7 +109,6 @@ flow(
   'SCIM-2',
   {
     domain: 'scim',
-    serial: true,
     routes: [
       'GET /scim/v2/accounts/:accountId/Users',
       'POST /scim/v2/accounts/:accountId/Users',
@@ -227,7 +225,6 @@ flow(
   'SCIM-3',
   {
     domain: 'scim',
-    serial: true,
     routes: [
       'GET /scim/v2/accounts/:accountId/Groups',
       'POST /scim/v2/accounts/:accountId/Groups',
@@ -352,7 +349,6 @@ flow(
   'SCIM-4',
   {
     domain: 'scim',
-    serial: true,
     routes: ['GET /scim/v2/accounts/:accountId/ServiceProviderConfig'],
   },
   async (ctx) => {
@@ -388,7 +384,6 @@ flow(
   'SCIM-5',
   {
     domain: 'scim',
-    serial: true,
     routes: [
       'GET /scim/v2/accounts/:accountId/ResourceTypes/:id',
       'GET /scim/v2/accounts/:accountId/Schemas/:id',

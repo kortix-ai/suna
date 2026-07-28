@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -18,12 +19,7 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-
 import { enrichPreviewMetadata, getActiveSessionContext } from '@/lib/utils/session-context';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import {
-  getActivePanelSessionId,
-  sessionPreviewTabId,
-  useSessionBrowserStore,
-} from '@/stores/session-browser-store';
+import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   AlertTriangle,
@@ -143,8 +139,15 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
           path: parsed.path,
         }),
       });
-      useSessionBrowserStore.getState().setView(sid, 'browser');
-      useKortixComputerStore.getState().setIsSidePanelOpen(true);
+      // Route through the shared, mode-aware entry point rather than writing
+      // `viewBySession` directly: that key is read only by Advanced mode, so
+      // in Easy — the only mode that ships — this opened the panel on the Easy
+      // home and dropped the page entirely. The target carries WHICH page, so
+      // the browser lands on this preview instead of the first running app.
+      openSessionQuickView('browser', 'preview', {
+        url: proxy.proxyUrl,
+        title: label || 'App preview',
+      });
       return;
     }
 
@@ -214,7 +217,9 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
         </Button>
       </Hint>
       <Hint
-        label={tHardcodedUi.raw('autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929')}
+        label={tHardcodedUi.raw(
+          'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
+        )}
         side="top"
       >
         <Button
@@ -304,7 +309,6 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
     >
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
-     
           <div className="text-muted-foreground flex items-center gap-2">
             <Loading />
             <span className="text-xs">
@@ -601,16 +605,16 @@ export function JsonFailureOutputCard({
         <CircleAlert className={cn('size-3.5', STATUS_TEXT.destructive)} />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground/90 text-xs leading-relaxed break-words text-pretty">
+        <p className="text-foreground/90 text-xs leading-relaxed text-pretty break-words">
           {summary}
         </p>
         {detail && detail !== summary && (
-          <p className="text-muted-foreground text-xs leading-relaxed break-words text-pretty">
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty break-words">
             {detail}
           </p>
         )}
         {failure.hint && (
-          <p className="text-muted-foreground/80 text-xs leading-relaxed break-words text-pretty">
+          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty break-words">
             {failure.hint.trim()}
           </p>
         )}
@@ -960,7 +964,10 @@ function PanelTriggerTitle({
             {args.length > 0 && (
               <>
                 {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
-                <span className="text-muted-foreground/60 min-w-0 truncate" title={args.join(' · ')}>
+                <span
+                  className="text-muted-foreground/60 min-w-0 truncate"
+                  title={args.join(' · ')}
+                >
                   {args.join(' · ')}
                 </span>
               </>

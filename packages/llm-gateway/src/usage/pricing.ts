@@ -3,6 +3,12 @@ interface PriceEntry {
   outputPerMillion: number;
   cachedInputPerMillion?: number;
   cacheWritePerMillion?: number;
+  tiers?: PriceTier[];
+  contextOver200k?: PriceTier;
+}
+
+interface PriceTier extends PriceEntry {
+  contextThreshold: number;
 }
 
 export interface TokenUsage {
@@ -33,22 +39,29 @@ const DEFAULT_CACHE_READ_MULTIPLIER = 0.1;
 const DEFAULT_CACHE_WRITE_MULTIPLIER = 1.25;
 
 function priceFromTable(pricing: PriceEntry, usage: TokenUsage): number {
+  const tierCandidates = [
+    ...(pricing.tiers ?? []),
+    ...(pricing.contextOver200k ? [pricing.contextOver200k] : []),
+  ]
+    .filter((tier) => usage.promptTokens > tier.contextThreshold)
+    .sort((a, b) => b.contextThreshold - a.contextThreshold);
+  const effective = tierCandidates[0] ?? pricing;
   const cachedTokens = usage.cachedTokens ?? 0;
   const cacheWriteTokens = usage.cacheWriteTokens ?? 0;
   const cachedRate =
-    pricing.cachedInputPerMillion ?? pricing.inputPerMillion * DEFAULT_CACHE_READ_MULTIPLIER;
+    effective.cachedInputPerMillion ?? effective.inputPerMillion * DEFAULT_CACHE_READ_MULTIPLIER;
   const cacheWriteRate =
-    pricing.cacheWritePerMillion ?? pricing.inputPerMillion * DEFAULT_CACHE_WRITE_MULTIPLIER;
+    effective.cacheWritePerMillion ?? effective.inputPerMillion * DEFAULT_CACHE_WRITE_MULTIPLIER;
   // promptTokens already includes both cachedTokens and cacheWriteTokens (see
   // domain/usage.ts) — subtract both to get the plain-rate remainder. Guard
   // against a malformed/short upstream usage object driving this negative
   // (e.g. cachedTokens reported larger than promptTokens).
   const plainInputTokens = Math.max(0, usage.promptTokens - cachedTokens - cacheWriteTokens);
   return (
-    (plainInputTokens / 1_000_000) * pricing.inputPerMillion +
+    (plainInputTokens / 1_000_000) * effective.inputPerMillion +
     (cachedTokens / 1_000_000) * cachedRate +
     (cacheWriteTokens / 1_000_000) * cacheWriteRate +
-    (usage.completionTokens / 1_000_000) * pricing.outputPerMillion
+    (usage.completionTokens / 1_000_000) * effective.outputPerMillion
   );
 }
 
@@ -61,10 +74,10 @@ export function calculateCost(
 ): CostBreakdown {
   let upstreamCost: number;
 
-  if (pricingOverride) {
-    upstreamCost = priceFromTable(pricingOverride, usage);
-  } else if (typeof upstreamCostHint === 'number' && upstreamCostHint > 0) {
+  if (typeof upstreamCostHint === 'number' && upstreamCostHint >= 0) {
     upstreamCost = upstreamCostHint;
+  } else if (pricingOverride) {
+    upstreamCost = priceFromTable(pricingOverride, usage);
   } else {
     upstreamCost = 0;
   }

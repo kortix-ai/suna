@@ -83,6 +83,18 @@ export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
  */
 export function isRetryablePlatinumBuildError(err: unknown): boolean {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  // Platinum answers 429 for TWO opposite conditions, and only one is transient:
+  //   - `rate_limited` (server.ts) — the per-org mutation-rate bucket
+  //     (PT_ORG_MUT_RATE, 20 req/s). Transient; retrying is right.
+  //   - `org_template_quota_exceeded` (api/templates.ts pickBuildHost) — the
+  //     per-org COUNT cap on live templates (tiers 10/50/500). This does NOT
+  //     self-clear: nothing frees a template row on its own, and Kortix has no
+  //     org-wide GC for Platinum (snapshots/quota-gc.ts is Daytona-only — it
+  //     imports listDaytonaSnapshots/deleteDaytonaSnapshotById exclusively). So
+  //     burning BUILD_ATTEMPTS on it is pure delay in front of a wall, and it
+  //     buries the one error an operator actually needs to see. Fail fast; the
+  //     caller falls through to the cold path and the session still boots.
+  if (m.includes('org_template_quota_exceeded')) return false;
   return (
     m.includes('does not exist') || m.includes('staging incomplete') || m.includes('scaffold') ||
     m.includes('no such file') || m.includes('s3 upload') || m.includes('tar build context') ||

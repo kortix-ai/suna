@@ -493,6 +493,12 @@ async function clearStaleGitLock(target: string): Promise<void> {
   }
 }
 
+/** True when `target` is a shallow (depth-limited) clone. */
+export async function isShallowRepo(target: string): Promise<boolean> {
+  const res = await execGit(['-C', target, 'rev-parse', '--is-shallow-repository'])
+  return res.code === 0 && res.stdout.trim() === 'true'
+}
+
 async function checkoutSessionBranch(
   cfg: Config,
   target: string,
@@ -500,6 +506,12 @@ async function checkoutSessionBranch(
   credential: CloneCredential | undefined,
 ): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
+  // Keep a shallow repo shallow while fetching the session branch — without
+  // this, git deepens to full history and hands the resume path the exact cost
+  // the shallow clone just avoided. Gated on the repo ACTUALLY being shallow:
+  // once the background backfill has unshallowed it, passing --depth would
+  // re-truncate a complete repo.
+  const depthArgs = (await isShallowRepo(target)) ? ['--depth', '1'] : []
   // Same stall-abort + hard timeout as the clone: a restored VM's RX can hang
   // this fetch with no reset. On failure/timeout we fall through to a local
   // branch from the base checkout (below), so the session still boots.
@@ -508,6 +520,7 @@ async function checkoutSessionBranch(
     '-C',
     target,
     'fetch',
+    ...depthArgs,
     'origin',
     refSpec,
   ], { timeoutMs: 30_000 })
@@ -693,6 +706,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       repoUrl: cfg.repoUrl,
       base,
       target,
+      depth: cfg.cloneDepth || 'full',
       filter: cfg.cloneFilter || 'none',
     })
     // Two failure modes on a restored microVM whose virtio-net RX intermittently
@@ -710,9 +724,15 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // 4 attempts × (≤12 s stall-abort + backoff) stays well under the 75 s ceiling
     // while a transient blip clears in 1–2 retries. resolveCloneCredential already
     // retries the credential fetch; the clone itself needs it just as much.
+    // `--depth` is the single biggest boot-latency lever: history is ~95% of the
+    // transfer and 0% of what a fresh session's working tree needs. See
+    // KORTIX_CLONE_DEPTH in config.ts for the measurements. A remote that can't
+    // serve shallow degrades to a full clone on its own (the retry loop below
+    // treats that like any other clone failure and retries unfiltered).
+    const depthArgs = cfg.cloneDepth > 0 ? ['--depth', String(cfg.cloneDepth)] : []
     const baseCloneArgs = [
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
-      'clone', '--branch', base, '--single-branch',
+      'clone', '--branch', base, '--single-branch', ...depthArgs,
     ]
     const isTransientGit = (s: string) =>
       /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply|Operation too slow|transfer closed|server hung up|remote end hung up|Stream closed|HTTP 5/i.test(s)
@@ -789,6 +809,45 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   await configureRepoGitIdentity(cfg, target)
+}
+
+/**
+ * Restore full history AFTER boot, off the critical path.
+ *
+ * The boot clone is shallow (`--depth 1`) because history is ~95% of the
+ * transfer and none of what a fresh working tree needs — but an agent that runs
+ * `git log`, `git blame`, or `git diff <base>` later does need it. This fetches
+ * the rest in the background once the session is already usable, so the shallow
+ * clone is invisible to everything downstream.
+ *
+ * Deliberately fire-and-forget and fully best-effort: a session whose backfill
+ * fails is still a working session (shallow), and blocking boot on it would
+ * reintroduce the cost we just removed. Idempotent — a repo that is already
+ * complete is skipped.
+ */
+export function scheduleHistoryBackfill(cfg: Config, target: string): void {
+  void (async () => {
+    try {
+      if (!(await isShallowRepo(target))) return
+      const started = Date.now()
+      const credential = await resolveCloneCredential(cfg)
+      const res = await gitWithAuth(credential, cfg.repoUrl, [
+        '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+        '-C', target, 'fetch', '--unshallow', '--tags', 'origin',
+      ], { timeoutMs: 300_000 })
+      if (res.code !== 0) {
+        logger.warn('[git] history backfill failed; repo stays shallow', {
+          stderr: res.stderr.slice(0, 200),
+        })
+        return
+      }
+      logger.info('[git] history backfill complete', { ms: Date.now() - started })
+    } catch (err) {
+      logger.warn('[git] history backfill errored; repo stays shallow', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+  })()
 }
 
 const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
@@ -919,11 +978,24 @@ export type RepoInfo = {
   remoteUrl: string | null
 }
 
+/**
+ * Read branch/commit/remote for a materialized repo.
+ *
+ * The three git calls run CONCURRENTLY, not in sequence. This is on a hotter path
+ * than it looks: `/kortix/health` calls it on EVERY request (to compute
+ * `repo_ready`), and both the frontend and the API poll health throughout boot —
+ * so three serial process spawns per poll land squarely in the window where the
+ * guest is CPU-saturated by the clone's index-pack, on a 2-vCPU box. All three
+ * are read-only plumbing commands that take no index lock, so concurrency here is
+ * safe; only the `.git` existence check has to happen first.
+ */
 export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   if (!(await pathExists(`${target}/.git`))) return null
-  const branch = await execGit(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])
-  const commit = await execGit(['-C', target, 'rev-parse', 'HEAD'])
-  const remote = await execGit(['-C', target, 'remote', 'get-url', 'origin'])
+  const [branch, commit, remote] = await Promise.all([
+    execGit(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD']),
+    execGit(['-C', target, 'rev-parse', 'HEAD']),
+    execGit(['-C', target, 'remote', 'get-url', 'origin']),
+  ])
   return {
     path: target,
     branch: branch.code === 0 ? branch.stdout.trim() : null,
@@ -1072,10 +1144,21 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
  * safe because a fresh session has no local work yet. No opencode restart
  * needed; opencode's file watcher picks up the changed files.
  */
-export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoInfo; after: RepoInfo }> {
+export async function syncWorkspaceToBase(
+  cfg: Config,
+  baseSha?: string,
+): Promise<{ before: RepoInfo; after: RepoInfo }> {
   const target = cfg.projectTarget
   const before = await readRepoInfo(target)
   if (!before) throw new Error('project repo is not materialized')
+  if (baseSha && before.commit === baseSha) {
+    logger.info('[git] workspace already matches base', {
+      base: cfg.defaultBranch,
+      branch: before.branch,
+      commit: before.commit,
+    })
+    return { before, after: before }
+  }
 
   const cloneCredential = await resolveCloneCredential(cfg)
   const base = cfg.defaultBranch
@@ -1085,8 +1168,9 @@ export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoIn
   if (fetched.code !== 0) throw new Error(`git fetch base failed: ${fetched.stderr}`)
 
   const branch = cfg.branchName || before.branch || base
+  const targetRef = baseSha ?? `refs/remotes/origin/${base}`
   const reset = await gitWithAuth(cloneCredential, cfg.repoUrl, [
-    '-C', target, 'checkout', '-B', branch, `refs/remotes/origin/${base}`,
+    '-C', target, 'checkout', '-B', branch, targetRef,
   ])
   if (reset.code !== 0) throw new Error(`git reset to base failed: ${reset.stderr}`)
 

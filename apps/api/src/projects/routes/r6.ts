@@ -1189,7 +1189,7 @@ projectsApp.openapi(
     if (feature === 'agent_tunnel') {
       void reconcileComputerConnectors(row.accountId);
     }
-    if (feature === 'meet') {
+    if (feature === 'voice') {
       void reconcileChannelConnectors(projectId);
     }
     if (feature === 'llm_gateway') {

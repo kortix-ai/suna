@@ -12,6 +12,7 @@ import { creditsRouter } from './routes/credits';
 import { paymentsRouter } from './routes/payments';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { webhooksRouter } from './routes/webhooks';
+import { billingRotationIntervalsEnabled } from './rotation-schedule';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -136,7 +137,7 @@ billingApp.openapi(
   },
 );
 
-if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+if (billingRotationIntervalsEnabled(config)) {
   const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
   setInterval(async () => {
     try {

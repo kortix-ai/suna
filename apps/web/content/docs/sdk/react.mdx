@@ -9,8 +9,8 @@ confirmed stable for React apps.
 
 ## useSession(projectId, sessionId, options?)
 
-`useSession` starts the session, opens the event stream, and syncs messages,
-status, and pending prompts. Call it once per session view.
+`useSession` starts the session, opens the server-selected event transport, and
+syncs messages, status, and pending prompts. Call it once per session view.
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
@@ -45,6 +45,10 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `questions`, `permissions` | array | Pending agent questions and permission requests. |
 | `diffs`, `todos` | array | Live file diffs and todo items. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure: `billing`, `runtime-not-ready`, or `runtime-error`. |
+| `rewindMessageId` | `string \| null` | The selected user message while a reversible rewind is staged. |
+| `rewindPending` | `boolean` | A rewind or restore request is in progress. |
+| `rewindError` | `KortixSendError \| null` | The last rewind or restore failure. |
+| `runtimeTransport` | `'rest' \| 'acp'` | The server-selected transport. Display it for diagnostics only. Do not branch on it. |
 | `models`, `agents`, `defaultAgent`, `commands` | — | Selectable models, selectable agents, the default agent, and slash commands. Available before the runtime starts. |
 | `retry` | `() => void` | Force a re-check of `/start`. |
 
@@ -53,6 +57,9 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | Action | What it does |
 |---|---|
 | `send(text, override?)` | Send a prompt. `override` sets `{ model?, agent? }` for this message only. |
+| `sendParts(parts, override?)` | Send text and file prompt parts through the selected transport. |
+| `rewind(messageId)` | Rewind this canonical session to a user message. The selected message and later path become hidden and recoverable. |
+| `restoreRewind()` | Restore the removed path before another prompt commits its replacement. |
 | `cancel()` | Stop the current run and clear pending questions and permissions. |
 | `runCommand(command, args)` | Run a project slash command. |
 | `answerQuestion(id, answers)` | Answer a pending agent question. |
@@ -69,12 +76,24 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | Option | Default | What it does |
 |---|---|---|
 | `waitMs` | `15000` | The long-poll budget sent to `/start`. |
+| `runtimeTransport` | (unset) | Override the server-selected transport (`'rest'` \| `'acp'`) for page-scoped diagnostics. Omit to use `/start`'s `runtime_transport`. |
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
 
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.
+
+`rewind(messageId)` never creates a session. It uses the canonical session from
+`POST /start`. The runtime restores file state and keeps the removed transcript
+path recoverable. The next accepted prompt commits the replacement path.
+
+### ACP experiment
+
+The project experiment `acp_runtime` selects ACP. The default is REST.
+`useSession` owns both paths. The host does not construct `/kortix/acp/` URLs
+and does not call OpenCode prompt routes directly. Disable the experiment to
+restore REST without changing the frontend.
 
 ## Other stable hooks
 

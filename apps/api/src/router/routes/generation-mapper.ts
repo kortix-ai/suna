@@ -18,6 +18,7 @@ export interface GatewayLogRowForGeneration {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  cacheWriteTokens: number;
   finalCost: string | number;
   upstreamCost: string | number;
   latencyMs: number;
@@ -42,6 +43,7 @@ export function mapGatewayLogToGeneration(row: GatewayLogRowForGeneration) {
     tokens_prompt: row.inputTokens,
     tokens_completion: row.outputTokens,
     tokens_cached: row.cachedTokens,
+    tokens_cache_write: row.cacheWriteTokens,
     total_cost: Number(row.finalCost),
     upstream_cost: Number(row.upstreamCost),
     latency_ms: row.latencyMs,

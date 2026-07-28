@@ -8,7 +8,7 @@ description: "Canonical reference for a Kortix project: what Kortix can do (rese
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-executor`, `kortix-memory`,
-`kortix-slack`, `kortix-computer`, `kortix-meet`, `kortix-marketplace` — are
+`kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -16,7 +16,10 @@ re-install, no image re-bake):
 - `kortix skills` — list the Kortix system skills.
 - `kortix skills get <name>` — print one skill's current SKILL.md body.
 - `kortix skills get <name> --full` — also include its referenced files.
-- `kortix skills --all` — list every Kortix skill (not just the system floor).
+
+(On a newer CLI the same command is also spelled `kortix system-skills`; both
+work. Optional, non-system skills are marketplace items, not system skills —
+browse them with `kortix marketplace list --type skill`.)
 
 Before answering anything about Kortix internals — the executor/connectors,
 project memory, Slack/channels, reaching a connected computer, or sending a
@@ -399,7 +402,7 @@ name a declared agent).
 write-up, and `docs/specs/2026-07-05-agent-first-config-unification.md` for
 the design rationale): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
 and every block is **governance only** —
-`enabled`/`connectors`/`secrets`/`skills`/`kortix_cli`/`workspace`. `env` was
+`enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`kortix_cli`/`workspace`. `env` was
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is OpenCode
 behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
@@ -426,6 +429,7 @@ both work this way — open their `.md` files to see what they actually do).
 ```yaml
 agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
+    sandbox: ml                         # default environment for this agent
     connectors: [github]                # which connector profiles it may call   (default: none)
     kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
 ```
@@ -436,12 +440,13 @@ agents:
 | --- | --- |
 | system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** / `opencode.jsonc` (OpenCode-native) |
 | plugins, MCP servers, providers, runtime model catalog/defaults | **`opencode.jsonc`** (OpenCode-native) |
-| **`connectors`** (integration access) + **`secrets`** (env-var access) + **`kortix_cli`** (Kortix CLI/API powers) + **`skills`** | the manifest's **`agents:`** map (v2) / **`[[agents]]`** array (v1) |
+| **`sandbox`** (environment) + **`connectors`** (integration access) + **`secrets`** (env-var access) + **`kortix_cli`** (Kortix CLI/API powers) + **`skills`** | the manifest's **`agents:`** map (v2); v1 has no agent environment field |
 
 **How the grant resolves at session start:**
 - v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access.
 - v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
 - The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
+- Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
 
 **Discovery contract:**
 - Declaring `agents:` (v2) or `[[agents]]` (v1) is an opt-in to declarative, server-side agent discovery. It is not a validation rule that every file under `.kortix/opencode/agents/` must be registered. Unregistered native files can exist for local experiments or runtime internals.

@@ -101,6 +101,30 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
   };
 }
 
+export function mergeProviderLists(
+  primary: ProviderListResponse,
+  secondary: ProviderListResponse,
+): ProviderListResponse {
+  const first = normalizeProviderList(primary);
+  const second = normalizeProviderList(secondary);
+  const all = new Map<string, NonNullable<ProviderListResponse['all']>[number]>();
+  for (const provider of Array.isArray(first.all) ? first.all : []) {
+    all.set(provider.id, provider);
+  }
+  for (const provider of Array.isArray(second.all) ? second.all : []) {
+    all.set(provider.id, provider);
+  }
+  const connected = new Set<string>();
+  for (const id of Array.isArray(first.connected) ? first.connected : []) connected.add(id);
+  for (const id of Array.isArray(second.connected) ? second.connected : []) connected.add(id);
+  return {
+    ...first,
+    all: [...all.values()],
+    connected: [...connected],
+    default: { ...(first.default ?? {}), ...(second.default ?? {}) },
+  };
+}
+
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];

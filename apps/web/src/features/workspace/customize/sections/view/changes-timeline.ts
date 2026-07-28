@@ -1,5 +1,5 @@
 import type { ChangeRequest } from '@/features/project-files/api/change-requests';
-import type { ProjectCommit } from '@kortix/sdk/projects-client';
+import type { ProjectCommit } from '@kortix/sdk';
 
 export const KORTIX_AGENT_EMAIL = 'agent@kortix.ai';
 

@@ -6,8 +6,15 @@ const managedModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   upstreamModelId: z.string().min(1),
-  transport: z.enum(['bedrock', 'openrouter']),
+  transport: z.enum(['aster', 'bedrock', 'openrouter']),
+  providerBrand: z.string().min(1).optional(),
   pricingRef: z.string().min(1),
+  pricing: z.object({
+    inputPerMillion: z.number().nonnegative(),
+    outputPerMillion: z.number().nonnegative(),
+    cachedInputPerMillion: z.number().nonnegative().optional(),
+    cacheWritePerMillion: z.number().nonnegative().optional(),
+  }).optional(),
   tier: z.enum(['flagship', 'balanced', 'fast']),
   vision: z.boolean(),
   limit: z.object({
@@ -46,7 +53,7 @@ export function parseManagedModels(
  * API/control-plane managed model overlay used by runtime routing and catalog
  * responses. CLOUD-ONLY: empty whenever KORTIX_MANAGED_PROVIDER_ENABLED is off
  * (the self-host default) — a self-host operator brings their own LLM keys and
- * must never see or route to Kortix's shared Bedrock/OpenRouter credentials.
+ * must never see or route to Kortix's shared upstream credentials.
  * This is the single choke point: every consumer (the served model catalog,
  * the picker, and request-time routing) reads through here or getRuntimeManagedModel()
  * below, so gating it here alone keeps the managed lineup off everywhere.
@@ -54,10 +61,9 @@ export function parseManagedModels(
  * IMPORTANT — what the "managed provider" IS and IS NOT (a recurring
  * misconception): KORTIX_MANAGED_PROVIDER_ENABLED is a CLOUD-ONLY CONVENIENCE
  * so cloud users can spend their KORTIX CREDITS for a zero-config experience —
- * it routes to Kortix's OWN shared Bedrock/OpenRouter credentials, billed as
- * credits. It is NOT the mechanism by which "Bedrock" (or OpenRouter, or any
- * provider) is available. Bedrock is a STANDALONE provider in its own right —
- * exactly like OpenRouter/OpenAI/Anthropic — that a project uses by connecting
+ * it routes to Kortix's own shared upstream credentials, billed as credits.
+ * It is not the mechanism by which Bedrock or OpenRouter is available.
+ * Bedrock is a standalone provider that a project uses by connecting
  * its OWN credentials (BYOK). To give a self-host Bedrock you connect Bedrock
  * as a standalone BYOK provider (project secret AWS_BEARER_TOKEN_BEDROCK →
  * resolveCatalogUpstream('amazon-bedrock') builds a kind:'bedrock' descriptor

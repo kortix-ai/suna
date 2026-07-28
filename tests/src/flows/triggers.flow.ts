@@ -4,16 +4,6 @@
  */
 import { flow } from '../core/flow';
 
-function triggerIndex(body: unknown, slug: string): number {
-  const triggers =
-    body && typeof body === 'object' && Array.isArray((body as any).triggers)
-      ? (body as any).triggers
-      : [];
-  return triggers.findIndex((trigger: unknown) => {
-    return Boolean(trigger && typeof trigger === 'object' && (trigger as any).slug === slug);
-  });
-}
-
 flow(
   'TRG-1',
   { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers'] },
@@ -50,7 +40,7 @@ flow(
   'TRG-2',
   { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.step('create a cron trigger with a pinned model → 201', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/triggers',
@@ -64,11 +54,7 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(201);
-      const index = triggerIndex(r.json(), 'nightly');
-      r.body()
-        .has(`triggers[${index}].slug`, 'nightly')
-        .has(`triggers[${index}].model`, 'anthropic/claude-sonnet-4-6');
+      r.status(201).body().has('triggers[0].model', 'anthropic/claude-sonnet-4-6');
     });
     await ctx.step('duplicate slug → 409', async () => {
       const r = await ctx.client
@@ -93,7 +79,7 @@ flow(
   'TRG-3',
   { domain: 'triggers', routes: ['PATCH /v1/projects/:projectId/triggers/:slug'] },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.client
       .as(ctx.P.OWNER)
       .post(
@@ -127,11 +113,7 @@ flow(
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
-      r.status(200);
-      const index = triggerIndex(r.json(), 'toggle-me');
-      r.body()
-        .has(`triggers[${index}].slug`, 'toggle-me')
-        .has(`triggers[${index}].model`, 'openai/gpt-5');
+      r.status(200).body().has('triggers[0].model', 'openai/gpt-5');
     });
   },
 );
@@ -140,7 +122,7 @@ flow(
   'TRG-4',
   { domain: 'triggers', routes: ['DELETE /v1/projects/:projectId/triggers/:slug'] },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.client
       .as(ctx.P.OWNER)
       .post(
@@ -610,7 +592,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
 

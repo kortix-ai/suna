@@ -74,7 +74,11 @@ data "aws_iam_policy_document" "drata_sns_inspection" {
       "sns:ListSubscriptionsByTopic",
       "sns:ListTopics",
     ]
-    resources = [data.aws_sns_topic.usw2_alerts.arn, data.aws_sns_topic.euw2_alerts.arn]
+    resources = [
+      data.aws_sns_topic.usw2_alerts.arn,
+      data.aws_sns_topic.euw2_alerts.arn,
+      aws_sns_topic.use2_alerts.arn,
+    ]
   }
 
   statement {

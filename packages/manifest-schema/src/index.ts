@@ -15,6 +15,7 @@
  * no DB calls, just `(rawToml: string | object) → ManifestValidationResult`.
  */
 
+import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
@@ -822,6 +823,24 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
           message: 'cron triggers must declare a `cron` expression or a one-off `run_at`.',
           severity: 'error',
         });
+      } else {
+        const timezone =
+          typeof entry.timezone === 'string' && entry.timezone.trim()
+            ? entry.timezone.trim()
+            : 'UTC';
+        if (isValidIanaTimeZone(timezone)) {
+          try {
+            new Cron(cron, { paused: true, timezone });
+          } catch (error) {
+            issues.push({
+              path: `${where}.cron`,
+              message: `invalid cron expression: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              severity: 'error',
+            });
+          }
+        }
       }
       if (entry.timezone !== undefined && typeof entry.timezone !== 'string') {
         issues.push({
@@ -834,11 +853,10 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
         entry.timezone.trim() &&
         !isValidIanaTimeZone(entry.timezone.trim())
       ) {
-        // Runtime rejects a non-IANA zone (e.g. "PST") and the trigger never fires.
         issues.push({
           path: `${where}.timezone`,
           message: `"${entry.timezone}" is not a valid IANA time zone (e.g. "America/New_York"); the runtime rejects it and the trigger would never fire.`,
-          severity: 'warning',
+          severity: 'error',
         });
       }
     } else if (type === 'webhook') {

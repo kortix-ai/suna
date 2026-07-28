@@ -20,10 +20,9 @@ function Workbench() {
   const projectId = String(params.id);
   const sessionId = String(params.sessionId);
 
-  // ONE hook owns the entire runtime: /start (server long-poll), the sandbox
-  // switch, the live SSE stream, the canonical OpenCode id, and message sync.
-  // The host never imports server-store, a health poller, or an event provider —
-  // it reads `session.phase` and renders. That's the whole contract.
+  // One hook owns readiness, transport selection, streaming, transcript
+  // projection, interactive requests, and message synchronization.
+  // The host reads the provider-neutral session state and renders it.
   const session = useSession(projectId, sessionId);
 
   return (

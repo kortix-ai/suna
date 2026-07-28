@@ -1,6 +1,6 @@
 'use client';
 
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 /**

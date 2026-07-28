@@ -45,7 +45,29 @@ export {
 } from './core/client/kortix';
 
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
-export { files } from './core/files/client';
+export {
+  SANDBOX_FS_ROOTS,
+  copyFile,
+  createFile,
+  deleteFile,
+  files,
+  findFiles,
+  findText,
+  getCurrentProject,
+  getFileStatus,
+  getServerHealth,
+  isServerReachable,
+  isUnderSandboxRoot,
+  listFiles,
+  mkdir,
+  readBlob,
+  readFile,
+  renameFile,
+  toDaemonPath,
+  toSandboxAbsolutePath,
+  toWorkspaceRelative,
+  uploadFile,
+} from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
@@ -340,6 +362,7 @@ export {
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
+export * from './core/acp';
 export * from './core/http/api-client';
 export * from './core/http/auth';
 export * from './core/http/config';
@@ -358,5 +381,16 @@ export {
 } from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
+export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
+
+// Runtime-neutral compatibility names for host applications. The original
+// OpenCode-named exports remain public for backward compatibility.
+export { formatOpenCodeRuntimeError as formatRuntimeError } from './core/http/opencode-errors';
+export type {
+  ProjectOpenCodeSession as ProjectRuntimeSession,
+} from './core/rest/projects-client/sessions';
+export type {
+  OpencodeAgentConfig as RuntimeAgentConfig,
+} from './core/rest/projects-client/agent-config';

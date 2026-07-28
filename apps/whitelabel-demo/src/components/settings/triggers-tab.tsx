@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,7 +28,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Play, Trash2, Zap } from 'lucide-react';
+import { Play, Trash2, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -113,7 +115,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
             disabled={setActivation.isPending}
             onClick={() => setActivation.mutate(!paused)}
           >
-            {setActivation.isPending && <Loader2 className="size-4 animate-spin" />}
+            {setActivation.isPending && <Loading className="size-4" />}
             {paused ? 'Resume all' : 'Pause all'}
           </Button>
         </div>
@@ -175,7 +177,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
           </div>
           <div className="flex justify-end">
             <Button type="submit" disabled={!name.trim() || create.isPending}>
-              {create.isPending && <Loader2 className="size-4 animate-spin" />}
+              {create.isPending && <Loading className="size-4" />}
               Add trigger
             </Button>
           </div>
@@ -321,7 +323,7 @@ function EditTriggerDialog({
         </div>
         <DialogFooter>
           <Button disabled={update.isPending} onClick={() => update.mutate()}>
-            {update.isPending && <Loader2 className="size-4 animate-spin" />}
+            {update.isPending && <Loading className="size-4" />}
             Save
           </Button>
         </DialogFooter>

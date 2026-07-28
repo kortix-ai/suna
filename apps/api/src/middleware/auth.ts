@@ -211,12 +211,19 @@ export async function supabaseAuth(c: Context, next: Next) {
   const path = c.req.path;
   const sandboxTokenPathAllowed =
     path.endsWith('/git/clone-credential') ||
+    path.endsWith('/execution-lease') ||
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
     // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
     // full picker. Catalog is the non-secret model list — safe for a sandbox token.
-    path.endsWith('/llm-catalog');
+    path.endsWith('/llm-catalog') ||
+    // The daemon relays its own in-guest boot timeline here at runtime-ready, so
+    // the ~11-15s of in-guest boot latency becomes queryable alongside the host
+    // marks in provider_events instead of dying with the sandbox. Write-only
+    // telemetry about the caller's OWN boot, and the handler re-checks that the
+    // token's sandboxId matches the session it claims to be reporting for.
+    path.endsWith('/boot-timeline');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -685,6 +692,18 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
   // "what project/session/agent am I bound to?".
   if (path === '/v1/accounts/me') return;
+
+  // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
+  // This function is default-deny, and the in-sandbox `KORTIX_CLI_TOKEN` is
+  // exactly a project+session-scoped PAT, so without this branch the ONE caller
+  // these routes exist for gets a 403: every baked sandbox seeds a kortix-system
+  // skill telling the agent to run `kortix skills get <name>`.
+  // Safe to allow — the content is static template text that is byte-identical
+  // for every caller, carries no account or project data, and is served from the
+  // shipped @kortix/starter package rather than any per-tenant store. There is
+  // no scope to enforce here; the token gate is authentication, not
+  // authorization.
+  if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
 
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {

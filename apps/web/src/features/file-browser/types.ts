@@ -125,7 +125,7 @@ export interface LssSearchResult {
 }
 
 /** GET /project/current response */
-export interface OpenCodeProjectInfo {
+export interface RuntimeProjectInfo {
   id: string;
   worktree: string;
   vcs?: 'git';

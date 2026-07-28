@@ -26,7 +26,7 @@ import {
   fixSandboxWithAgent,
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { DangerTriangleSolid, SparklesSolid } from '@mynaui/icons-react';
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];

@@ -141,6 +141,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install pnpm
         run: |
           corepack enable pnpm
@@ -150,6 +155,11 @@ jobs:
         run: pnpm install --frozen-lockfile --filter "./apps/web..."
         env:
           npm_config_engine_strict: "false"
+
+      - name: Enforce frontend SDK boundary
+        run: |
+          pnpm --dir apps/web exec bun test src/sdk-boundary.test.ts
+          pnpm --dir apps/web exec eslint src --quiet
 
       - name: Build standalone frontend
         run: pnpm --filter ./apps/web build

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { PublicSessionShareError } from '@kortix/sdk/projects-client';
+import { PublicSessionShareError } from '@kortix/sdk';
 import { describeShareError, toShareLoadError, transcriptUnavailableMessage } from './share-load-error';
 
 describe('toShareLoadError', () => {

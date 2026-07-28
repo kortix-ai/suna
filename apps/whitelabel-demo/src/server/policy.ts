@@ -26,6 +26,8 @@ export interface PolicyResult {
   filterProjectsList?: boolean;
   /** `POST /projects/provision` → the proxy should record the new project as owned. */
   recordProvisionOwner?: boolean;
+  /** Owned session `/start` → record its runtime external id for proxy authorization. */
+  recordRuntimeProjectId?: string;
 }
 
 function allow(extra: Partial<PolicyResult> = {}): PolicyResult {
@@ -63,9 +65,8 @@ export function evaluatePolicy(
   const m = method.toUpperCase();
 
   // ── Preview proxy (`/v1/p/...`) ───────────────────────────────────────────
-  // Covers the sandbox runtime proxy (`p/{sandboxId}/{port}/...` — every REST
-  // call, SSE stream, and opencode runtime call the SDK makes for an active
-  // session), the preview session-cookie mint (`p/auth`), and public-share
+  // Covers the session proxy (`p/{sandboxId}/{port}/...`), the preview
+  // session-cookie mint (`p/auth`), and public-share
   // creation (`p/share`, used by the preview panel's "Create public share").
   //
   // The proxy has ALREADY required a valid app session before policy ever
@@ -85,16 +86,9 @@ export function evaluatePolicy(
   const sandboxProxyMatch = p.match(/^p\/([^/]+)\/(\d+)(?:\/.*)?$/);
   if (sandboxProxyMatch) {
     const [, sandboxId] = sandboxProxyMatch;
-    // Enforce project ownership ONLY when the caller wired a sandboxId→projectId
-    // resolver. The BFF doesn't yet track that mapping, so until it does we must
-    // fall through to the authenticated-session allow below rather than 403 all
-    // preview/runtime traffic and break the demo. Wiring the resolver (H9) is a
-    // tracked follow-up — the guard is ready the moment a lookup is available.
-    if (resolveProjectIdForSandbox) {
-      const projectId = resolveProjectIdForSandbox(sandboxId);
-      if (!projectId || !isOwner(projectId)) {
-        return deny(403, "You don't have access to this sandbox.");
-      }
+    const projectId = resolveProjectIdForSandbox?.(sandboxId);
+    if (!projectId || !isOwner(projectId)) {
+      return deny(403, "You don't have access to this sandbox.");
     }
     return allow();
   }
@@ -121,6 +115,14 @@ export function evaluatePolicy(
   // gateway (cost/logs), secrets, sandbox, llm-catalog, settings — all live
   // under `projects/{id}/...`. Connector/policy management goes through
   // `executor/projects/{id}/...` instead. Both require ownership of `{id}`.
+  const sessionStartMatch = p.match(/^projects\/([^/]+)\/sessions\/[^/]+\/start$/);
+  if (sessionStartMatch && m === 'POST') {
+    const projectId = sessionStartMatch[1];
+    return isOwner(projectId)
+      ? allow({ recordRuntimeProjectId: projectId })
+      : deny(403, "You don't have access to this project.");
+  }
+
   const projMatch = p.match(/^projects\/([^/]+)(?:\/.*)?$/);
   if (projMatch) {
     return isOwner(projMatch[1]) ? allow() : deny(403, "You don't have access to this project.");

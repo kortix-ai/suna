@@ -1,3 +1,4 @@
+import { isCallLive, readTurns } from '../../channels/voice/runtime';
 import { recordSessionToolApproval } from '../../executor/db-deps';
 import { loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import {
@@ -12,17 +13,41 @@ import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
+import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { tierGrantsAllModels } from '../../billing/services/tiers';
+import { config } from '../../config';
+import {
+  canChangeSessionModel,
+  mayChangeSessionModel,
+  modelChangeNeedsLivePush,
+  validateModelChangeShape,
+} from '../lib/session-model-change';
+import { pushSessionModelToSandbox } from '../lib/sandbox-env-sync';
+import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
-import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { AnyObject, ClaimWarmProjectSessionInputSchema, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
-import { sendSessionCreateError } from '../lib/sessions';
+import { createProjectSession, sendSessionCreateError, type SessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
+import {
+  claimAvailableWarmProjectSession,
+  discardAvailableWarmProjectSession,
+  findAvailableWarmProjectSession,
+} from '../lib/warm-session-store';
+import { refreshWarmSessionWorkspace } from '../lib/warm-session-workspace';
+import {
+  createWarmProjectSessionCoordinator,
+  WarmProjectSessionError,
+} from '../lib/warm-sessions';
 import {
   createSession,
   deleteSession,
@@ -31,6 +56,8 @@ import {
 } from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { resolveEndUserRef } from '../lib/end-user-ref';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 
 function parseBoundedPositiveInt(
@@ -146,6 +173,194 @@ projectsApp.openapi(
     }),
   });
 },
+);
+
+class WarmSessionCreateFailure extends Error {
+  constructor(readonly detail: SessionCreateError) {
+    super(
+      typeof detail.body.error === 'string'
+        ? detail.body.error
+        : 'Warm session creation failed',
+    );
+    this.name = 'WarmSessionCreateFailure';
+  }
+}
+
+function resolvedWarmSessionConfiguration(project: {
+  defaultBranch: string;
+  metadata: Record<string, unknown> | null;
+}) {
+  const metadata = project.metadata ?? {};
+  return {
+    baseRef: project.defaultBranch,
+    agentName: normalizeString(metadata.default_agent) ?? 'default',
+    sandboxSlug:
+      normalizeString(metadata.default_sandbox_slug) ?? DEFAULT_SANDBOX_SLUG,
+  };
+}
+
+// POST /v1/projects/:projectId/sessions/warm
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/warm',
+    tags: ['sessions'],
+    summary: 'Create or reuse the current user warm project session',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({}).strict() } } },
+    },
+    responses: {
+      200: json(WarmProjectSessionResultSchema, 'The available warm session'),
+      ...errors(400, 402, 403, 404, 409, 429, 500, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+
+    const scope = {
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+    };
+    const configuration = resolvedWarmSessionConfiguration(loaded.row);
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: () => findAvailableWarmProjectSession(scope),
+      discard: (sessionId, metadata) =>
+        discardAvailableWarmProjectSession(scope, sessionId, metadata),
+      claim: (sessionId, metadata) =>
+        claimAvailableWarmProjectSession(scope, sessionId, metadata),
+      create: async (metadata) => {
+        const result = await createProjectSession({
+          project: loaded.row,
+          userId: loaded.userId,
+          requestingPrincipalType:
+            c.get('authType') === 'service_account' ? 'service_account' : 'human',
+          body: {
+            base_ref: configuration.baseRef,
+            agent_name: configuration.agentName,
+            sandbox_slug: configuration.sandboxSlug,
+          },
+          metadata: { source: 'ui', ...metadata },
+          authType: c.get('authType') as string | undefined,
+          apiKeyType: c.get('apiKeyType') as string | undefined,
+          inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+          request: requestAuditContext(c),
+        });
+        if (result.error) throw new WarmSessionCreateFailure(result.error);
+        if (!result.row) {
+          throw new WarmSessionCreateFailure({
+            status: 500,
+            body: { error: 'Warm session creation returned no row', retry: true },
+          });
+        }
+        return result.row;
+      },
+    });
+
+    try {
+      const ensured = await coordinator.ensure(configuration);
+      const workspaceRefresh = ensured.reused
+        ? await refreshWarmSessionWorkspace(
+            loaded.row,
+            ensured.session.sessionId,
+          )
+        : { status: 'skipped' as const };
+      return c.json(
+        {
+          session: serializeSession(ensured.session, {
+            viewerId: loaded.userId,
+            canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+          }),
+          reused: ensured.reused,
+          workspace_refresh: workspaceRefresh,
+        },
+        200,
+      );
+    } catch (error) {
+      if (error instanceof WarmSessionCreateFailure) {
+        return sendSessionCreateError(c, error.detail);
+      }
+      throw error;
+    }
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/warm/claim
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/warm/claim',
+    tags: ['sessions'],
+    summary: 'Claim the current user warm project session',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: ClaimWarmProjectSessionInputSchema },
+        },
+      },
+    },
+    responses: {
+      200: json(SessionSchema, 'The claimed session'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const body = await readBody(c);
+    const sessionId = normalizeString(body.session_id);
+    if (!sessionId || !UUID_V4_REGEX.test(sessionId)) {
+      return c.json({ error: 'Invalid session id', code: 'INVALID_SESSION_ID' }, 400);
+    }
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+
+    const scope = {
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: loaded.userId,
+    };
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: () => findAvailableWarmProjectSession(scope),
+      discard: (candidateSessionId, metadata) =>
+        discardAvailableWarmProjectSession(scope, candidateSessionId, metadata),
+      claim: (candidateSessionId, metadata) =>
+        claimAvailableWarmProjectSession(scope, candidateSessionId, metadata),
+      create: async () => {
+        throw new Error('Claim cannot create a warm session');
+      },
+    });
+
+    try {
+      const claimed = await coordinator.claim({
+        sessionId,
+        agentName: normalizeString(body.agent_name) ?? undefined,
+        sandboxSlug: normalizeString(body.sandbox_slug) ?? undefined,
+      });
+      return c.json(
+        serializeSession(claimed, {
+          viewerId: loaded.userId,
+          canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+        }),
+        200,
+      );
+    } catch (error) {
+      if (error instanceof WarmProjectSessionError) {
+        return c.json({ error: error.message, code: error.code }, error.status as 409);
+      }
+      throw error;
+    }
+  },
 );
 
 // POST /v1/projects/:projectId/group-grants
@@ -472,16 +687,32 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          /**
+           * Kortix-as-a-Backend: list only the sessions belonging to ONE of the
+           * wrapper's end-users. Without it a wrapper has no way to answer
+           * "show me this customer's sessions" except by fetching every session
+           * in the project and filtering client-side.
+           *
+           * Accepts the deprecated `origin_ref` spelling too.
+           */
+          end_user_ref: z.string().trim().min(1).max(256).optional(),
+          origin_ref: z.string().trim().min(1).max(256).optional(),
         }),
       },
     responses: {
         200: json(z.array(SessionSchema), 'Sessions'),
-        ...errors(403, 404),
+        ...errors(400, 403, 404),
     },
   }),
   async (c) => {
   const projectId = c.req.param('projectId');
   const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  // Same resolver the create path uses, so the filter accepts exactly the
+  // spellings a wrapper is allowed to send a session with — and rejects a
+  // disagreeing pair rather than silently letting one win.
+  const resolvedRef = resolveEndUserRef(c.req.valid('query'));
+  if (!resolvedRef.ok) return c.json({ error: resolvedRef.message, code: resolvedRef.code }, 400);
+  const endUserRefFilter = resolvedRef.value;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -490,7 +721,15 @@ projectsApp.openapi(
   const rows = await db
     .select()
     .from(projectSessions)
-    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        eq(projectSessions.accountId, loaded.row.accountId),
+        // Filtered IN THE QUERY, not after: a wrapper listing one end-user must
+        // not have to pull every session in the project to find them.
+        ...(endUserRefFilter ? [eq(projectSessions.originRef, endUserRefFilter)] : []),
+      ),
+    )
     .orderBy(desc(projectSessions.updatedAt));
 
   const runtimeRows = rows.length
@@ -513,12 +752,14 @@ projectsApp.openapi(
     rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
   );
   const selected = selectSessionRowsForViewer({
+    endUserRefFiltered: endUserRefFilter !== null,
     rows,
     scope,
     canManageProject,
     subject,
     grantsBySession,
     runtimeStatusBySession,
+    callerSessionId: callerKortixSessionId(c),
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -574,7 +815,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
@@ -627,7 +868,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
 
   const transcript = await buildSessionTranscriptDigest({
@@ -679,7 +920,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
@@ -767,6 +1008,88 @@ projectsApp.openapi(
         at: r.createdAt.toISOString(),
         resolved_at: r.resolvedAt?.toISOString() ?? null,
       })),
+    });
+  },
+);
+
+
+// GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript
+// The live-call transcript for a session's voice connector call — every spoken
+// turn (role 'user'/'agent', from voice_call_turns) PLUS every ask_kortix/
+// run_command the worker issued through the voice MCP (role 'tool', recorded
+// by mcp.ts's callTool). A session's callId IS its sessionId (see
+// channels/voice/runtime.ts's file header), so there is nothing to look up
+// beyond the session itself.
+//
+// `role` alone does not identify a turn — read `speaker` with it:
+//   user  + <null>          a human in the room
+//   agent + 'kortix'        what the Kortix agent put into the call
+//                           (channels/voice/utterance.ts's KORTIX_SPEAKER,
+//                           written server-side the moment it is delivered)
+//   agent + <bot name>      what the voice actually said, as the worker heard
+//                           itself say it (apps/voice-agent/src/transcripts.ts)
+//   tool  + <tool name>     an ask_kortix/run_command the worker issued; the
+//                           text carries the argument and the outcome
+// The two `agent` rows are not duplicates: one is the instruction Kortix sent,
+// the other the model's spoken phrasing of it, and either can appear alone.
+//
+// This is a THIN read wrapper around `readTurns`/`isCallLive` (already used
+// internally by the voice runtime) for the one thing they didn't have yet: a
+// route a Kortix-authenticated browser session can call. Same visibility gate
+// as /transcript and /audit above — project read + the session must be
+// visible to the caller — deliberately NOT the worker's per-call HMAC auth
+// (routes.ts), which authorizes exactly one call and would be the wrong tool
+// for "a person looking at the session in the web app".
+//
+// `cursor` makes this a plain incremental poll: pass back the `cursor` this
+// endpoint returned last time and only new turns come back, in order — the
+// same non-blocking "what's new since X" contract `readTurns` already gives
+// the voice agent loop.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/voice-transcript',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/voice-transcript',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(AnyObject, "A session's live voice-call transcript"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const cursor = parseBoundedPositiveInt(c.req.query('cursor'), 0, 0, Number.MAX_SAFE_INTEGER, 'cursor');
+    if (!cursor.ok) return c.json({ error: cursor.error }, 400);
+    const limit = parseBoundedPositiveInt(c.req.query('limit'), 200, 1, 500, 'limit');
+    if (!limit.ok) return c.json({ error: limit.error }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const [page, live] = await Promise.all([
+      readTurns(sessionId, cursor.value, limit.value),
+      isCallLive(sessionId),
+    ]);
+
+    return c.json({
+      session_id: sessionId,
+      call_id: sessionId,
+      live,
+      cursor: page.cursor,
+      count: page.turns.length,
+      turns: page.turns,
     });
   },
 );
@@ -918,6 +1241,7 @@ projectsApp.openapi(
         sessionId: projectSessions.sessionId,
         opencodeSessionId: projectSessions.opencodeSessionId,
         createdBy: projectSessions.createdBy,
+        origin: projectSessions.origin,
       })
       .from(projectSessions)
       .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, kortixIds)));
@@ -925,7 +1249,21 @@ projectsApp.openapi(
     const sessions: Record<string, number> = {};
     let total = 0;
     for (const s of sess) {
-      if (!isManager && s.createdBy !== loaded.userId) continue;
+      // created_by is shared across every KaaB session, so it cannot filter
+      // one end-user's pending gates from another's — and an execution_id is
+      // all the resolve route needs.
+      if (
+        !maySeeSessionApprovals({
+          isManager,
+          targetSessionId: s.sessionId,
+          targetSessionOrigin: s.origin ?? null,
+          targetSessionCreatedBy: s.createdBy,
+          callerUserId: loaded.userId,
+          callerSessionId: callerKortixSessionId(c),
+        })
+      ) {
+        continue;
+      }
       const n = byKortix[s.sessionId] ?? 0;
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
@@ -1018,19 +1356,37 @@ projectsApp.openapi(
     } catch {
       isManager = false;
     }
-    let isLauncher = false;
-    if (!isManager && row.sessionId) {
+    let targetCreatedBy: string | null = null;
+    let targetOrigin: string | null = null;
+    if (row.sessionId) {
       const [session] = await db
-        .select({ createdBy: projectSessions.createdBy })
+        .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
         .from(projectSessions)
         // Scope to THIS project too — sessionId is a PK so it's globally unique,
         // but making the project bound explicit keeps the gate self-documenting.
         .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
         .limit(1);
-      isLauncher = Boolean(session && session.createdBy === loaded.userId);
+      targetCreatedBy = session?.createdBy ?? null;
+      targetOrigin = session?.origin ?? null;
     }
-    if (!isManager && !isLauncher) {
-      return c.json({ error: 'Only a project manager or the session launcher can resolve this' }, 403);
+    const verdict = mayResolveApproval({
+      isManager,
+      targetSessionOrigin: targetOrigin,
+      targetSessionCreatedBy: targetCreatedBy,
+      callerUserId: loaded.userId,
+      callerSessionId: callerKortixSessionId(c),
+    });
+    if (!verdict.allowed) {
+      return c.json(
+        verdict.reason === 'session_bound_caller'
+          ? {
+              error:
+                'An agent cannot resolve its own approval — a human must approve or deny this',
+              code: 'APPROVAL_REQUIRES_HUMAN',
+            }
+          : { error: 'Only a project manager or the session launcher can resolve this' },
+        403,
+      );
     }
 
     const detail = {
@@ -1209,7 +1565,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
     return c.json({ error: 'Only the session owner or a project manager can change sharing' }, 403);
@@ -1237,7 +1593,7 @@ projectsApp.openapi(
 
   await setSessionSharing(sessionId, intent);
 
-  const fresh = await loadVisibleSession(loaded, sessionId);
+  const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   return c.json(fresh ? serializeSession(fresh.row, {
     grants: fresh.grants,
     viewerId: loaded.userId,
@@ -1302,7 +1658,16 @@ projectsApp.openapi(
   // Letting a client forge either via PATCH lets any project member hide
   // another member's session, block its follow-ups, and trip the reaper.
   // See SSR-7 (weekly pentest run #4).
-  const SERVER_MANAGED_METADATA_KEYS = ['deletedAt', 'deletedBy'];
+  // opencode_model is create-only by contract and changed only via
+  // PUT /sessions/{id}/model, which validates it against the account. Planting
+  // it through metadata skipped that check entirely, so a retired or
+  // account-forbidden model could be stored and booted by the next cold provision.
+  const SERVER_MANAGED_METADATA_KEYS = [
+    'deletedAt',
+    'deletedBy',
+    'opencode_model',
+    'opencode_model_source',
+  ];
   const metadataInput = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? (body.metadata as Record<string, unknown>)
     : null;
@@ -1313,7 +1678,7 @@ projectsApp.openapi(
     }
   }
 
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const existing = visible.row;
 
@@ -1390,7 +1755,7 @@ projectsApp.openapi(
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
-  const visible = await loadVisibleSession(loaded, sessionId);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
     return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
@@ -1644,5 +2009,151 @@ projectsApp.openapi(
     const removed = await deleteResourceGrant(grantId, projectId);
     if (!removed) return c.json({ error: 'grant not found' }, 404);
     return c.json({ ok: true });
+  },
+);
+
+/**
+ * Change the model a session uses, mid-flight.
+ *
+ * `opencode_model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
+ * when opencode builds its config at spawn, and nothing re-pushed it — so a live
+ * box kept its boot model for the rest of the session. The only way to "change"
+ * it was to plant a value through PATCH metadata, which skipped the account
+ * servability check entirely (now blocked; see SERVER_MANAGED_METADATA_KEYS).
+ *
+ * Validates against the SAME resolver the create path uses, persists, then
+ * pushes to the live sandbox. The response says whether it is in effect NOW or
+ * only from the next boot, because those are genuinely different outcomes and
+ * the caller cannot otherwise tell.
+ */
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/sessions/{sessionId}/model',
+    tags: ['sessions'],
+    summary: "Change a running session's model",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ opencode_model: z.string().min(1).max(128) }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          opencode_model: z.string(),
+          /** True when a live sandbox took it; false when it applies at next boot. */
+          applied_live: z.boolean(),
+          detail: z.string().optional(),
+        }),
+        'Model changed',
+      ),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A live model change restarts opencode and can terminate the target
+    // session's in-flight turn. Scoped agent tokens therefore need the same
+    // destructive capability as the stop route (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    // Seeing a session is not permission to mutate it: visibility 'project'
+    // makes it readable by every member, but changing the model restarts
+    // opencode and destroys the OWNER's in-flight turn. Same gate as the
+    // sharing and stop routes above.
+    if (!mayChangeSessionModel(visible)) {
+      return c.json(
+        { error: 'Only the session owner or a project manager can change this session model' },
+        403,
+      );
+    }
+
+    const body = await readBody(c);
+    const requested = typeof body?.opencode_model === 'string' ? body.opencode_model : '';
+    const shapeError = validateModelChangeShape(requested);
+    if (shapeError) {
+      return c.json({ error: shapeError.message, code: shapeError.code }, 400);
+    }
+    const stateError = canChangeSessionModel(visible.row.status);
+    if (stateError) {
+      return c.json({ error: stateError.message, code: stateError.code }, 409);
+    }
+
+    // Same servability gate as create — otherwise this endpoint becomes the very
+    // back door the PATCH guard just closed.
+    const trimmed = requested.trim();
+    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? !tierGrantsAllModels(await getCachedAccountTier(loaded.row.accountId))
+      : false;
+    const servable = await isModelServableForAccount({
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      freeModelsOnly,
+      model: trimmed,
+    });
+    if (!servable) {
+      return c.json(
+        {
+          error: `Model "${trimmed}" is not available for this account`,
+          code: 'INVALID_SESSION_MODEL',
+        },
+        400,
+      );
+    }
+
+    const nextModel = toOpencodeModelRef(trimmed);
+    // The session model lives in metadata, not a column (sessions.ts:1102) —
+    // which is precisely why the PATCH metadata back door was dangerous.
+    const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+    const currentModel =
+      typeof currentMetadata.opencode_model === 'string' ? currentMetadata.opencode_model : null;
+    const needsPush = modelChangeNeedsLivePush({
+      current: currentModel,
+      next: nextModel,
+      status: visible.row.status,
+    });
+
+    await db
+      .update(projectSessions)
+      .set({
+        metadata: {
+          ...currentMetadata,
+          opencode_model: nextModel,
+          opencode_model_source: 'explicit',
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSessions.sessionId, sessionId));
+
+    if (!needsPush) {
+      return c.json({
+        opencode_model: nextModel,
+        applied_live: false,
+        detail:
+          currentModel === nextModel
+            ? 'already set to this model'
+            : 'stored — applies when the sandbox next starts',
+      });
+    }
+
+    const push = await pushSessionModelToSandbox({ projectId, sessionId, model: nextModel });
+    return c.json({
+      opencode_model: nextModel,
+      applied_live: push.applied,
+      ...(push.applied ? {} : { detail: `stored, but not pushed: ${push.reason ?? 'unknown'}` }),
+    });
   },
 );

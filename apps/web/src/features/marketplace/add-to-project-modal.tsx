@@ -43,7 +43,7 @@ import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-proj
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk/projects-client';
+import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
 import { prepareMarketplaceInstallSessionNavigation } from './marketplace-session-navigation';

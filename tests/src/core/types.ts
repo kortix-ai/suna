@@ -58,25 +58,37 @@ export interface TeamFixture {
   addMember(role: 'admin' | 'member'): Promise<Principal>;
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
-  /** Provision a project owned by this team account. */
-  project(opts?: { name?: string; seed?: boolean }): Promise<CreatedProject>;
+  /** Create a project owned by this team account. */
+  project(opts?: { name?: string; seed?: boolean; managedGit?: boolean }): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
 export interface Fixtures {
   /**
-   * Create a fresh run-scoped project record and an isolated repository branch.
-   * The run owns one seeded managed repository. The API creates a distinct
-   * branch for each project with server-managed credentials. Session flows can
-   * boot without creating one GitHub repository per flow. `seed` remains
-   * accepted for flow compatibility.
+   * Create a fresh run-scoped project (default: OWNER's personal account).
+   * The default fixture creates only database state. It does not create an
+   * upstream Git repository. Use `managedGit: true` when a flow exercises Git.
+   * `seed: true` implies managed Git and seeds the starter so a sandbox can
+   * materialize the repository.
    */
-  project(opts?: { name?: string; accountId?: string; seed?: boolean }): Promise<CreatedProject>;
+  project(opts?: {
+    name?: string;
+    accountId?: string;
+    seed?: boolean;
+    managedGit?: boolean;
+  }): Promise<CreatedProject>;
   /**
-   * The pool owner project. Use it only for read-only flows. Mutating flows use
-   * project(), which creates an isolated project record and branch.
+   * A single shared, READ-ONLY project provisioned once per run and reused — use
+   * this in flows that only READ a project (never mutate its manifest/name/state),
+   * so the suite doesn't create one real GitHub repo per flow (avoids GitHub's
+   * secondary rate limit). Mutating flows must use project() for isolation.
    */
   sharedProject(): Promise<CreatedProject>;
+  /**
+   * A single seeded project for flows that create isolated sessions but do not
+   * mutate the project's base branch or project-wide Git configuration.
+   */
+  sharedSeededProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
   session(project: CreatedProject, opts?: { prompt?: string }): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */

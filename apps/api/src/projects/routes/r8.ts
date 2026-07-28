@@ -26,6 +26,7 @@ import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp }
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
+import { resolveProjectRuntimeTransport } from '../../experimental/features';
 import {
   refreshCrTips,
 } from './shared';
@@ -65,7 +66,7 @@ projectsApp.openapi(
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // Same gate as wake/create: resuming or provisioning spends compute.
@@ -88,7 +89,13 @@ projectsApp.openapi(
     const waitMsRaw = Number(c.req.query('wait_ms'));
     const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
     const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId, waitMs });
-    return c.json(result.start, 200);
+    return c.json(
+      {
+        ...result.start,
+        runtime_transport: resolveProjectRuntimeTransport(loaded.row.metadata),
+      },
+      200,
+    );
   },
 );
 
@@ -126,7 +133,7 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or an account owner/admin.
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
@@ -184,7 +191,7 @@ projectsApp.openapi(
 
     // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(

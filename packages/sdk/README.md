@@ -1,7 +1,7 @@
 # @kortix/sdk
 
 The **single, opinionated data layer** for the Kortix agent platform. One typed
-client wraps both the **Kortix REST API** and the **OpenCode v2 runtime** so a
+client wraps both the **Kortix REST API** and the **agent runtime** so a
 host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
 `@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
 below is the target state, not yet fully true of apps/web — see Rules of the
@@ -83,10 +83,14 @@ const detail   = await kortix.project(pid).detail();
 await kortix.project(pid).secrets.upsert({ name: 'STRIPE_API_KEY', value });
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix.project(pid).sessions.list({ scope: 'project' }); // manager only
+const warm = await kortix.project(pid).sessions.ensureWarm();
+await kortix.project(pid).sessions.claimWarm({ session_id: warm.session.session_id });
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
 await s.send('Build me a widget');   // provisions/resumes if needed, then prompts
+await s.rewind(userMessageId);        // stages a reversible rollback on this session
+await s.restoreRewind();              // restores the removed path before the next prompt
 await s.previews();
 
 // Lower level: the typed opencode client for THIS session's runtime.
@@ -95,6 +99,17 @@ await s.previews();
 const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
+
+### React runtime transport
+
+`useSession(projectId, sessionId)` uses the transport selected by `POST /start`.
+The default is the OpenCode REST client. A project with the `acp_runtime`
+experiment uses OpenCode ACP through the authenticated sandbox bridge.
+The hook keeps one return shape for both transports. It routes messages,
+message rewind and restore, cancellation, commands, permissions, and questions
+inside the SDK. A host does not construct ACP routes or branch on the selected
+transport. Disable `acp_runtime` to return that project to REST without a
+frontend deployment.
 
 ## The facade surface
 
@@ -109,7 +124,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
 | `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
 
 Runnable, self-contained scripts for the highest-value flows live in

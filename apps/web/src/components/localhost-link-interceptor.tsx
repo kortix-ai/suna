@@ -27,8 +27,8 @@
  * views, JSON viewers, etc.).
  */
 
-import { useEffect } from 'react';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { createSandboxProxyContext, rewriteSandboxPath } from '@/lib/utils/sandbox-proxy';
 import {
   buildWebProxyUrl,
   isPreviewUrl,
@@ -40,13 +40,9 @@ import {
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import {
-  getActivePanelSessionId,
-  sessionPreviewTabId,
-  useSessionBrowserStore,
-} from '@/stores/session-browser-store';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
+import { useEffect } from 'react';
 
 // The session's panel is keyed by the OpenCode chatSessionId (registered by the
 // active SessionLayout), NOT the Kortix session id in the URL — those differ,
@@ -57,10 +53,18 @@ function getCurrentSessionId(): string | null {
 }
 
 export function LocalhostLinkInterceptor() {
-  const { subdomainOpts, rewritePortPath } = useSandboxProxy();
-
   useEffect(() => {
     function handleClick(e: MouseEvent) {
+      // Resolved per click, never captured in the effect's closure.
+      //
+      // This component mounts at the app root — before any session exists, so
+      // any context captured here would carry `sandboxId: ''` forever and
+      // rewrite every preview link to `/v1/p//{port}/`, which 404s. The click
+      // is also the only moment the answer is knowable: by then the user has a
+      // session open and its runtime is bound. Reads are synchronous module
+      // state, so this costs nothing.
+      const { subdomainOpts, rewritePortPath } = resolveSandboxProxy();
+
       if (e.defaultPrevented || e.button !== 0) return;
       // Modifier-clicks fall through to native new-tab behavior.
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -73,7 +77,9 @@ export function LocalhostLinkInterceptor() {
 
       try {
         if (new URL(href).origin === window.location.origin) return;
-      } catch { /* not a valid URL, skip */ }
+      } catch {
+        /* not a valid URL, skip */
+      }
 
       const consume = () => {
         e.preventDefault();
@@ -93,14 +99,21 @@ export function LocalhostLinkInterceptor() {
           href: window.location.pathname,
           metadata: enrichPreviewMetadata(meta),
         });
-        useSessionBrowserStore.getState().setView(sessionId, 'browser');
-        useKortixComputerStore.getState().setIsSidePanelOpen(true);
+        // Mode-aware: writing `viewBySession` here only ever worked in
+        // Advanced mode, so in Easy a clicked localhost link opened the panel
+        // on the Easy home and lost the URL. The target carries the page.
+        openSessionQuickView('browser', 'chat', {
+          url: meta.url,
+          title: meta.port ? `localhost:${meta.port}` : safeHostname(meta.originalUrl),
+        });
       };
 
       /** Off-session fallback: window.open the proxy URL. */
       const openExternally = (url: string) => {
         consume();
-        try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+        try {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } catch {}
       };
 
       // ── Case 1: Fresh localhost:PORT URL (not yet proxied) ──
@@ -163,11 +176,28 @@ export function LocalhostLinkInterceptor() {
 
     document.addEventListener('click', handleClick, { capture: true });
     return () => document.removeEventListener('click', handleClick, { capture: true });
-  }, [rewritePortPath, subdomainOpts]);
+  }, []);
 
   return null;
 }
 
+/**
+ * Snapshot the active runtime's proxy helpers. Deliberately a plain function,
+ * not the `useSandboxProxy` hook: a delegated document-level handler must read
+ * the runtime at the moment of the click, and a hook would bind it at mount.
+ */
+function resolveSandboxProxy() {
+  const context = createSandboxProxyContext();
+  return {
+    subdomainOpts: context.subdomainOpts,
+    rewritePortPath: (port: number, path: string) => rewriteSandboxPath(port, path, context),
+  };
+}
+
 function safeHostname(url: string): string {
-  try { return new URL(url).hostname; } catch { return 'preview'; }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return 'preview';
+  }
 }

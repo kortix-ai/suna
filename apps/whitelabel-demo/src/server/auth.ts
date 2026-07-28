@@ -6,7 +6,7 @@
  *
  * `POST /api/auth/login` mints one and returns it in the JSON body (the
  * client stores it and sends it as `Authorization: Bearer <token>` — the
- * SDK's REST calls don't carry cookies) AND sets it as an HttpOnly cookie
+ * SDK calls don't carry cookies) AND sets it as an HttpOnly cookie
  * (the preview iframe's same-origin requests can't attach headers, but they
  * DO carry cookies automatically). `getRequestSession` checks both places.
  */
@@ -106,8 +106,8 @@ function cookieFromHeader(req: Request): string | null {
 }
 
 /**
- * Resolve + verify the caller's app session: `Authorization: Bearer …` first
- * (the REST/SSE path), falling back to the `lumen_session` cookie (the
+ * Resolve and verify the caller's app session. Check `Authorization: Bearer …`
+ * first. Then fall back to the `lumen_session` cookie for the
  * preview-iframe path, which can't set headers). Returns `null` if neither is
  * present or valid — the caller should respond 401.
  */

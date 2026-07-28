@@ -1,19 +1,20 @@
 'use client';
 
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
-  LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
+  LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
+import { isProviderStateLoading } from './provider-loading-state';
 import { useLlmProviderCatalogRevision } from './use-live-catalog';
 import { buildCodexProvider } from './utils';
 
@@ -47,7 +48,8 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   // into the LLM Gateway. Native OpenCode projects should show only providers
   // backed by project secrets, even if an old running sandbox still exposes a
   // stale `kortix` provider.
-  const { data: ocProviders } = useOpenCodeProviders();
+  const runtimeProvidersQuery = useRuntimeProviders();
+  const { data: ocProviders } = runtimeProvidersQuery;
 
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
     // CLOUD-ONLY: the served catalog already excludes every managed model on a
@@ -103,7 +105,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   const connectedProviders = useMemo(() => {
     const hasCodexSubscription =
       secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-      secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
+      secretNames.has(LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
         p.id !== 'kortix' && isProviderAuthSatisfied(p.authRequirement, (v) => secretNames.has(v)),
@@ -113,5 +115,10 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
   }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
 
-  return { secretsQuery, connectedProviders, llmGatewayEnabled };
+  const providerStateLoading = isProviderStateLoading({
+    projectDetailLoading: projectDetailQuery.isLoading,
+    secretsLoading: secretsQuery.isLoading,
+  });
+
+  return { secretsQuery, connectedProviders, llmGatewayEnabled, providerStateLoading };
 }

@@ -36,12 +36,6 @@ export async function stopSession(input: {
   if (!sandbox) {
     return { status: 404, body: { error: 'Session sandbox not found' } };
   }
-  if (sandbox.status === 'stopped') {
-    return {
-      status: 200,
-      body: { ok: true, session_id: sessionId, status: 'stopped' },
-    };
-  }
   if (sandbox.status !== 'active') {
     return {
       status: 409,

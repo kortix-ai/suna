@@ -21,6 +21,11 @@ provider "aws" {
   region = "eu-west-2"
 }
 
+provider "aws" {
+  alias  = "use2"
+  region = "us-east-2"
+}
+
 data "aws_caller_identity" "current" {}
 
 locals {

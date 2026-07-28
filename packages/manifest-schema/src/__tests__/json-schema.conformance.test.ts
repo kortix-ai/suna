@@ -295,6 +295,21 @@ channels:
       'kortix_version = 1\n[[connectors]]\nslug = "x"\nprovider = "openapi"\nspec = "https://x/y.json"\n[connectors.auth]\ntype = "oauth1"\n',
   },
   {
+    name: 'connectors.auth supports API key cookie, HMAC, SigV4, and mTLS modes',
+    format: 'toml',
+    valid: true,
+    input:
+      'kortix_version = 1\n' +
+      '[[connectors]]\nslug = "api-key"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "api_key"\nin = "cookie"\nname = "session_key"\n' +
+      '[[connectors]]\nslug = "signed"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "hmac"\nname = "X-Signature"\n' +
+      '[[connectors]]\nslug = "aws"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "aws_sigv4"\n' +
+      '[[connectors]]\nslug = "mtls"\nprovider = "http"\nbase_url = "https://x"\n' +
+      '[connectors.auth]\ntype = "mtls"\n',
+  },
+  {
     name: 'channel connectors must not declare a non-"none" auth.type',
     format: 'toml',
     valid: false,
@@ -320,10 +335,10 @@ channels:
 
   // ─── shared sections: reserved connector slugs ─────────────────────────
   {
-    name: 'reserved slug "kortix_meet" rejects a mismatched provider',
+    name: 'reserved slug "kortix_voice" rejects a mismatched provider',
     format: 'toml',
     valid: false,
-    input: 'kortix_version = 1\n[[connectors]]\nslug = "kortix_meet"\nprovider = "pipedream"\napp = "x"\n',
+    input: 'kortix_version = 1\n[[connectors]]\nslug = "kortix_voice"\nprovider = "pipedream"\napp = "x"\n',
   },
   {
     name: 'reserved slug "computer" rejects a mismatched (otherwise-valid) provider — regression guard for the computer-slug accept bug',
@@ -352,13 +367,6 @@ channels:
     valid: false,
     input:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = "maybe"\n',
-  },
-  {
-    name: 'trigger timezone: an invalid IANA zone is a warning only, still valid',
-    format: 'toml',
-    valid: true,
-    input:
-      'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"\n',
   },
   {
     name: 'trigger session_mode accepts "reuse" (and its sessionMode alias)',

@@ -34,6 +34,55 @@ export { runWithKortix, getScopedConfig };
 
 const MAX_WRAP_DEPTH = 12;
 
+/**
+ * Forward one same-origin wrapper request to the Kortix backend.
+ *
+ * The SDK owns the forwarding contract. Hosts supply only the authenticated
+ * upstream token and the resolved upstream URL. The function removes host
+ * credentials, buffers request bodies for deterministic Content-Length
+ * handling, preserves streaming response bodies, and strips upstream-only
+ * response headers.
+ */
+export async function forwardKortixRequest(options: {
+  request: Request;
+  upstreamUrl: string;
+  token: string;
+}): Promise<Response> {
+  const { request, upstreamUrl, token } = options;
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+  headers.delete('content-length');
+  headers.delete('cookie');
+  headers.set('authorization', `Bearer ${token}`);
+  headers.set('accept-encoding', 'identity');
+
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  const body = hasBody ? await request.arrayBuffer() : undefined;
+  if (body) headers.set('content-length', String(body.byteLength));
+
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetch(upstreamUrl, {
+      method: request.method,
+      headers,
+      redirect: 'manual',
+      ...(body ? { body } : {}),
+    });
+  } catch {
+    return Response.json({ error: 'Upstream request failed' }, { status: 502 });
+  }
+
+  const responseHeaders = new Headers(upstreamResponse.headers);
+  responseHeaders.delete('content-encoding');
+  responseHeaders.delete('content-length');
+  responseHeaders.delete('set-cookie');
+
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    headers: responseHeaders,
+  });
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false;
   const proto = Object.getPrototypeOf(value);

@@ -27,7 +27,7 @@ resource "aws_acm_certificate" "this" {
   }
   tags = {
     ManagedBy   = "terraform"
-    Name        = var.domain_name
+    Name        = replace(var.domain_name, "*", "wildcard")
     Environment = lookup(var.tags, "Environment", "managed")
     Project     = lookup(var.tags, "Project", "kortix")
     Service     = lookup(var.tags, "Service", "certificate")
@@ -37,13 +37,13 @@ resource "aws_acm_certificate" "this" {
 
 # One Cloudflare DNS record per distinct validation option.
 resource "cloudflare_record" "validation" {
-  for_each = {
+  for_each = var.manage_validation_records ? {
     for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
       name  = dvo.resource_record_name
       type  = dvo.resource_record_type
       value = dvo.resource_record_value
     }
-  }
+  } : {}
 
   zone_id = var.zone_id
   name    = each.value.name
@@ -54,6 +54,11 @@ resource "cloudflare_record" "validation" {
 }
 
 resource "aws_acm_certificate_validation" "this" {
-  certificate_arn         = aws_acm_certificate.this.arn
-  validation_record_fqdns = [for r in cloudflare_record.validation : r.hostname]
+  certificate_arn = aws_acm_certificate.this.arn
+  validation_record_fqdns = var.manage_validation_records ? [
+    for r in cloudflare_record.validation : r.hostname
+    ] : distinct([
+      for dvo in aws_acm_certificate.this.domain_validation_options :
+      dvo.resource_record_name
+  ])
 }

@@ -10,6 +10,8 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
@@ -49,6 +51,7 @@ let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
+let lastSessionListWhere: unknown = null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>;
@@ -71,6 +74,7 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   sandboxProviderGeneration: 0,
+  secretDefaultStrategy: 'runtime' as const,
   name: 'Contract Project',
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
   defaultBranch: 'main',
@@ -226,6 +230,11 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  // executor/sync.ts imports these from the same barrel; a wholesale module mock
+  // that omits them makes the whole file fail to LOAD with a SyntaxError, which
+  // reads as "the suite is broken" rather than "the mock is short two names".
+  RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
+  isRepoFileNotFoundError: () => false,
   // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
@@ -485,13 +494,20 @@ mock.module('../shared/db', () => ({
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: () => ({
+        where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
           orderBy: async () => {
             if (table === projectSecrets) return secretRows;
-            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) {
+              // Recorded so a test can assert WHICH predicate the list route
+              // built. This mock returns rows regardless of the filter, so
+              // asserting on the response alone would pass even if the filter
+              // were never applied.
+              lastSessionListWhere = predicate ?? null;
+              return sessionRow ? [sessionRow] : [];
+            }
             return [];
           },
           limit: async () => {
@@ -702,7 +718,13 @@ mock.module('../shared/db', () => ({
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
               createdBy: values.createdBy ?? null,
-                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+              description: values.description ?? null,
+              strategy: values.strategy ?? 'runtime',
+              egressPolicy: values.egressPolicy ?? null,
+              handlePrefix: values.handlePrefix ?? null,
+              rotatedAt: values.rotatedAt ?? null,
+              strategyLocked: values.strategyLocked ?? false,
+              createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
               updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
             };
             if (existingIndex >= 0) secretRows[existingIndex] = row;
@@ -878,6 +900,66 @@ describe('project session API contract', () => {
   });
 
   beforeEach(() => resetState());
+
+  test('sandbox token acquires, renews, and releases the execution lease route', async () => {
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+    const request = (action: 'acquire' | 'renew' | 'release', token: string) =>
+      app.request(`/v1/projects/${PROJECT_ID}/execution-lease`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          session_id: SESSION_ID,
+          lease_ttl_seconds: 180,
+        }),
+      });
+
+    const acquire = await request('acquire', PROJECT_SANDBOX_TOKEN);
+    expect(acquire.status).toBe(200);
+    expect(await acquire.json()).toMatchObject({
+      ok: true,
+      provider_url: null,
+      provider_headers: null,
+    });
+
+    const renew = await request('renew', PROJECT_SANDBOX_TOKEN);
+    expect(renew.status).toBe(200);
+    expect(await renew.json()).toMatchObject({
+      ok: true,
+      provider_url: null,
+      provider_headers: null,
+    });
+
+    const release = await request('release', PROJECT_SANDBOX_TOKEN);
+    expect(release.status).toBe(200);
+    expect(await release.json()).toEqual({ ok: true });
+
+    const forbidden = await request('renew', PROJECT_RUNTIME_PAT);
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({
+      error: 'execution lease requires a sandbox token',
+    });
+  });
 
   test('GET project session inventory rejects callers without project.session.read', async () => {
     deniedIamAction = 'project.session.read';
@@ -1253,6 +1335,12 @@ describe('project session API contract', () => {
       valueEnc: encryptProjectSecret(PROJECT_ID, value),
       scope: 'runtime' as const,
       ownerUserId: null,
+      description: null,
+      strategy: 'runtime' as const,
+      egressPolicy: null,
+      handlePrefix: null,
+      rotatedAt: null,
+      strategyLocked: false,
       active: true,
       createdBy: USER_ID,
       createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -1345,6 +1433,61 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
   });
 
+  test('KaaB: GET sessions filters by end_user_ref (and the deprecated origin_ref alias)', async () => {
+    // Without this filter a wrapper answering "show me THIS customer's sessions"
+    // has to pull every session in the project and filter client-side — which
+    // also means shipping other end-users' rows to a caller that asked about one.
+    //
+    // The DB here is a mock that returns rows regardless of the predicate, so
+    // asserting on the response body would pass even if the filter were dropped.
+    // We render the predicate the route actually built instead.
+    const app = createApp();
+    const renderWhere = () => new PgDialect().sqlToQuery(lastSessionListWhere as SQL);
+
+    // (A) modern spelling → an origin_ref term carrying the requested handle.
+    lastSessionListWhere = null;
+    const modern = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42`,
+    );
+    expect(modern.status).toBe(200);
+    expect(renderWhere().sql).toContain('origin_ref');
+    expect(renderWhere().params).toContain('tenant-42');
+
+    // (B) the deprecated alias resolves to the same filter — it stays accepted
+    // forever, so a live wrapper written before the rename keeps working.
+    lastSessionListWhere = null;
+    const legacy = await app.request(`/v1/projects/${PROJECT_ID}/sessions?origin_ref=tenant-42`);
+    expect(legacy.status).toBe(200);
+    expect(renderWhere().params).toContain('tenant-42');
+
+    // (C) unfiltered lists must NOT gain a stray origin_ref term.
+    lastSessionListWhere = null;
+    const unfiltered = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
+    expect(unfiltered.status).toBe(200);
+    expect(renderWhere().sql).not.toContain('origin_ref');
+
+    // (D) both spellings, disagreeing → refused. Silently preferring one would
+    // hand the caller a different end-user's sessions than they asked for.
+    const conflict = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42&origin_ref=tenant-7`,
+    );
+    expect(conflict.status).toBe(400);
+    expect((await conflict.json()).code).toBe('END_USER_REF_CONFLICT');
+
+    // ...but agreeing duplicates are fine (a client mid-migration sends both).
+    lastSessionListWhere = null;
+    const agreeing = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42&origin_ref=tenant-42`,
+    );
+    expect(agreeing.status).toBe(200);
+    expect(renderWhere().params).toContain('tenant-42');
+
+    // (E) a blank handle is a client bug, not "list everything" — refusing it
+    // keeps a wrapper from leaking the whole project on an empty variable.
+    const blank = await app.request(`/v1/projects/${PROJECT_ID}/sessions?end_user_ref=%20%20`);
+    expect(blank.status).toBe(400);
+  });
+
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
     projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};
@@ -1357,6 +1500,12 @@ describe('project session API contract', () => {
         valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-git-token'),
         scope: 'runtime',
         ownerUserId: null,
+        description: null,
+        strategy: 'runtime' as const,
+        egressPolicy: null,
+        handlePrefix: null,
+        rotatedAt: null,
+        strategyLocked: false,
         active: true,
         createdBy: USER_ID,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -1536,6 +1685,7 @@ describe('project session API contract', () => {
     expect(await pendingSandbox.json()).toMatchObject({
       stage: 'provisioning',
       agent_name: 'default',
+      runtime_transport: 'rest',
     });
 
     sessionRow = null;

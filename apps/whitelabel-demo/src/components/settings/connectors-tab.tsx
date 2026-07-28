@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,7 +28,7 @@ import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
 import type { AdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
+import { Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -127,11 +129,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
             disabled={sync.isPending}
             onClick={() => sync.mutate()}
           >
-            {sync.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
+            {sync.isPending ? <Loading className="size-4" /> : <RefreshCw className="size-4" />}
             Sync
           </Button>
         </div>
@@ -191,7 +189,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
           </div>
           <div className="sm:col-span-2 flex justify-end">
             <Button type="submit" disabled={!slug.trim() || create.isPending}>
-              {create.isPending && <Loader2 className="size-4 animate-spin" />}
+              {create.isPending && <Loading className="size-4" />}
               Add connector
             </Button>
           </div>

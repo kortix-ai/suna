@@ -5,7 +5,11 @@ description: Install, authenticate, and send your first message with the typed S
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
 
-`@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix REST API and the OpenCode runtime in one interface — your app never calls the raw API or runtime directly. The core client is fetch-based and runs in Node, Bun, and browsers.
+`@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix
+REST API and the agent runtime in one interface. React sessions can use the
+server-selected OpenCode REST or ACP transport. Your app never calls either
+runtime transport directly. The core client is fetch-based and runs in Node,
+Bun, and browsers.
 
 ## Install
 

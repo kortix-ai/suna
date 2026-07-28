@@ -87,6 +87,13 @@ export interface ModelCostRates {
   inputPer1M: number;
   outputPer1M: number;
   cacheReadPer1M?: number;
+  cacheWritePer1M?: number;
+  tiers?: ModelCostTierRates[];
+  contextOver200k?: ModelCostTierRates;
+}
+
+export interface ModelCostTierRates extends ModelCostRates {
+  contextThreshold: number;
 }
 
 export type ModelPricingLookup = (providerID: string, modelID: string) => ModelCostRates | null;

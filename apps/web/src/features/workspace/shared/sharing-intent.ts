@@ -1,4 +1,4 @@
-import type { ConnectorSharing } from '@kortix/sdk/projects-client';
+import type { ConnectorSharing } from '@kortix/sdk';
 
 /**
  * Pure sharing-selection logic, shared by the <SharingPicker> component and its

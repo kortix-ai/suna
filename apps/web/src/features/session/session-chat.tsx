@@ -22,7 +22,9 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
+  Pencil,
   Reply,
+  RotateCcw,
   Scissors,
   Search,
   Terminal,
@@ -33,22 +35,33 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import {
+  type ActivityEntry,
+  type ActivityKind,
+  buildActivityItems,
+  formatActivityDuration,
+  partitionForNarrative,
+  summarizeEntries,
+} from '@/features/session/activity/activity-model';
+import { densityForDetail, useChatDetail } from '@/features/session/activity/chat-detail';
+import {
+  type ActivityCounts,
+  activityGroupLabel,
+  humanizeShellStep,
+} from '@/features/session/activity/humanize';
+import { WorkStepRow } from '@/features/session/activity/work-step-row';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import { ConnectProviderDialog, type ModelDefaultControls } from '@/features/session/model-selector';
+import {
+  ConnectProviderDialog,
+  type ModelDefaultControls,
+} from '@/features/session/model-selector';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import {
-  isInvisibleActivityPart,
-  isNoGroupActivityTool,
-  isShellActivityTool,
-  normalizeActivityToolName,
-  shellActivityGroupLabel,
-  writeActivityGroupLabel,
-} from '@/features/session/session-activity-groups';
+import { isShellActivityTool } from '@/features/session/session-activity-groups';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -62,50 +75,28 @@ import { GridFileCard } from './grid-file-card';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
+import { STATUS_TEXT } from '@/components/ui/status';
+import { errorToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { uploadFile } from '@/features/files/api/opencode-files';
+import { uploadFile } from '@/features/files/api/runtime-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import {
-  type ModelKey,
-  formatModelString,
-  formatPromptModel,
-  parseModelKey,
-  useOpenCodeLocal,
-} from '@/hooks/opencode/use-opencode-local';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import {
-  ascendingId,
-  rejectQuestion,
-  replyToPermission,
-  replyToQuestion,
-  useAbortOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-  useOpenCodeRuntimeReady,
-  useOpenCodeSession,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { getClient } from '@/lib/opencode-sdk';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -127,31 +118,55 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { usePendingQueueStore } from '@/stores/pending-queue-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import {
+  usePendingFilesStore,
+  usePendingQueueStore,
+} from '@/stores/session-composer-handoff-store';
 import {
   useSessionComposerPrefillStore,
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   type KortixSendError,
+  type ModelKey,
+  type UseSessionResult,
   abandonOptimisticSend,
   applyOptimisticAbort,
+  ascendingId,
   beginOptimisticSend,
   classifySendError,
   clearStartStash,
+  formatModelString,
+  formatPromptModel,
+  parseModelKey,
   readStartStash,
+  recoverFromSendFailure,
+  rejectQuestion,
   replayStartStash,
+  replyToPermission,
+  replyToQuestion,
   sendAndRecover,
+  useAbortRuntimeSession,
+  useExecuteRuntimeCommand,
   usePermissionSelfHeal,
   useProjectConfig,
   useQuestionSelfHeal,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useRuntimeProviders,
+  useRuntimeReady,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionModelSelection,
+  useSessionStateStore,
+  useSessionSync,
 } from '@kortix/sdk/react';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -186,9 +201,7 @@ import {
   isCompactionPart,
   isFilePart,
   isLastUserMessage,
-  isPatchPart,
   isReasoningPart,
-  isSnapshotPart,
   isTextPart,
   isToolPart,
   isToolPartHidden,
@@ -1968,124 +1981,342 @@ function GroupedReasoningCard({
   );
 }
 
+/** `ActivityKind` → the icon that reads best for it in a collapsed group row. */
+function activityKindIcon(kind: ActivityKind) {
+  switch (kind) {
+    case 'shell':
+      return Terminal;
+    case 'web':
+      return Globe;
+    default:
+      return Search;
+  }
+}
+
 /**
- * Unified "activity" card that collapses any run of agent-side work —
- * reasoning + tool calls, in original order — into a single compact shelf.
- * Text parts (and other user-facing dividers) break the run.
- *
- * Auto-opens while anything is still streaming/running; collapses once the
- * burst settles. Respects manual user toggles thereafter.
+ * One shell call inside a folded run (or standing alone). Non-technical by
+ * default: the collapsed row is the human phrase from `humanizeShellStep`,
+ * never the raw `$ command` — that only shows up once the row itself is
+ * expanded, via the real `ToolPartRenderer` (`BashTool`), terminal output
+ * included.
  */
-/**
- * Folded Tier-1 "exploration" card.
- *
- * Holds a run of reasoning + Tier-1 tool calls and renders:
- *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
- *     Verb comes from the run's categories (e.g. "Searched", "Read",
- *     "Explored"), not a generic "N actions".
- *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
- *     existing ToolPartRenderer, which itself is expandable for full output).
- *
- * Auto-opens while anything is streaming; collapses once settled. Respects
- * manual user toggles after the first click.
- */
-/**
- * Same-tool group: collapses 2+ consecutive calls of the same tool into
- * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
- * one-liners per call with individual durations.
- */
-function SameToolGroup({
-  toolName,
-  entries,
+function ShellStepRow({
+  part,
   sessionId,
   disableNavigation,
-  busy,
 }: {
-  toolName: string;
-  entries: Array<{ part: ToolPart; message: MessageWithParts }>;
-  sessionId: string;
+  part: ToolPart;
+  sessionId?: string;
   disableNavigation?: boolean;
-  busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
-  const anyRunning = useMemo(
+  const input = ((part.state as { input?: Record<string, unknown> })?.input ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const label = useMemo(
     () =>
-      !!busy &&
-      entries.some(
-        ({ part }) =>
-          (part.state as any)?.status === 'pending' || (part.state as any)?.status === 'running',
-      ),
-    [busy, entries],
+      humanizeShellStep({
+        description: input.description as string | undefined,
+        command: input.command as string | undefined,
+      }),
+    [input.description, input.command],
   );
 
-  const totalDurationMs = useMemo(() => {
+  const status = (part.state as { status?: string } | undefined)?.status;
+  const running = status === 'pending' || status === 'running';
+  const time = (part.state as { time?: { start?: number; end?: number } } | undefined)?.time;
+  const durationMs =
+    typeof time?.start === 'number' && typeof time?.end === 'number' && time.end > time.start
+      ? time.end - time.start
+      : 0;
+  const durationLabel = !running && durationMs >= 1000 ? `${Math.round(durationMs / 1000)}s` : '';
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <div
+          className={cn(
+            'flex min-w-0 items-center gap-1.5 py-0.5',
+            'cursor-pointer text-xs select-none',
+            'text-muted-foreground/70 hover:text-foreground',
+            'group/step max-w-full transition-colors',
+          )}
+        >
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          {durationLabel && (
+            <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
+              {durationLabel}
+            </span>
+          )}
+          {running && (
+            <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
+          )}
+          <ChevronRight
+            className={cn(
+              'size-3 flex-shrink-0 transition-transform',
+              'text-muted-foreground/30 opacity-0 group-hover/step:opacity-100',
+              open && 'rotate-90 opacity-100',
+            )}
+          />
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-0.5 mb-0.5">
+          <ToolPartRenderer
+            part={part}
+            sessionId={sessionId}
+            disableNavigation={disableNavigation}
+            defaultOpen
+          />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/**
+ * Folded run of same-tool calls (e.g. 5 reads, 12 shell commands). Header:
+ * a human summary line from `activityGroupLabel` — "Ran 12 commands", never
+ * a raw command or a bare tool name. Expanded: one row per call — shell
+ * calls get the humanized `ShellStepRow` treatment (raw command stays one
+ * more click away), everything else renders its full `ToolPartRenderer` so
+ * real results (search hits, diffs, fetched pages) stay visible.
+ */
+/**
+ * Narrative mode's single work line — the whole of a turn's machinery, folded
+ * to one faint row.
+ *
+ * This is the shipping default. A reader following along sees the ask, the
+ * agent's words and the deliverable; the twelve shell calls that produced it
+ * are one line they never have to look at. Expanding shows the same humanized
+ * step rows the full-history reading uses, and each of those still expands to
+ * the real tool output — so nothing is unreachable, it is only quiet.
+ *
+ * What deliberately does NOT fold in here (handled by the caller): errors,
+ * permission-locked calls, deliverables, todos and questions.
+ */
+/**
+ * A thought inside an expanded work line. Collapsed to one quiet line by
+ * default: the raw reasoning is often several paragraphs, and rendered as
+ * body text it dwarfed the steps around it and read as the agent's answer
+ * rather than as its scratchpad.
+ */
+function ReasoningNote({ parts }: { parts: ReasoningPart[] }) {
+  const [open, setOpen] = useState(false);
+  const text = useMemo(
+    () =>
+      parts
+        .map((p) => p.text ?? '')
+        .join('\n\n')
+        .trim(),
+    [parts],
+  );
+  const preview = useMemo(
+    () =>
+      text
+        .split('\n')
+        .find((l) => l.trim())
+        ?.trim() ?? '',
+    [text],
+  );
+  if (!text) return null;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'group/think -ml-1.5 flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm py-1 pr-2 pl-1.5',
+            'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50',
+            'text-left text-xs transition-colors select-none',
+          )}
+        >
+          <Brain className="size-3 shrink-0 opacity-70" />
+          <span className="min-w-0 flex-1 truncate italic">{preview || 'Thought about it'}</span>
+          <ChevronRight
+            className={cn(
+              'text-muted-foreground/40 size-3 shrink-0 transition-transform',
+              open ? 'rotate-90 opacity-100' : 'opacity-0 group-hover/think:opacity-100',
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-border/40 my-1 ml-1 border-l pl-3">
+          <div className="text-muted-foreground/60 space-y-2 text-xs leading-relaxed italic [&_.kortix-markdown]:italic">
+            <UnifiedMarkdown content={text} />
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function TurnWorkLine({
+  entries,
+  runChildren,
+  reasoningParts,
+  sessionId,
+  disableNavigation,
+  turnWorking,
+  isLatest,
+  statusText,
+}: {
+  entries: ActivityEntry[];
+  /** Reasoning + steps in the order they happened. */
+  runChildren: import('@/features/session/activity/activity-model').NarrativeRunChild[];
+  reasoningParts: ReasoningPart[];
+  sessionId: string;
+  disableNavigation?: boolean;
+  /** Whether the TURN is still streaming. On its own this says nothing about
+   *  THIS run — an earlier run finished long ago and must read as finished. */
+  turnWorking: boolean;
+  /** Only the last run of a still-working turn can still receive steps. */
+  isLatest: boolean;
+  /** The turn's live activity ("Running commands…", "Planning…"). While a run
+   *  is live this line IS the turn's status indicator, so it shows this instead
+   *  of a bare step count — there is no second indicator underneath. */
+  statusText?: string;
+}) {
+  // Collapsed-while-working read as "nothing is happening": a static count with
+  // no motion and nothing to look at. So a live run opens itself and shows the
+  // steps landing, then settles shut once the run finishes. A reader who
+  // touches it takes over — `pinned` means we never fight them afterwards.
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const wasRunning = useRef(false);
+
+  const reasoningText = useMemo(
+    () =>
+      reasoningParts
+        .map((p) => p.text ?? '')
+        .join('\n\n')
+        .trim(),
+    [reasoningParts],
+  );
+
+  const summary = useMemo(() => summarizeEntries(entries), [entries]);
+  const duration = formatActivityDuration(summary.durationMs);
+  // A run is live only if one of ITS OWN steps is in flight, or it is the last
+  // run of a turn that is still going (the next step will land here). Using the
+  // turn-level flag for every run made four finished runs all claim
+  // "Making edits… · N steps" with a spinner — the same live state replicated
+  // down the page.
+  const running = summary.running || (turnWorking && isLatest);
+
+  const stepWord = summary.totalSteps === 1 ? 'step' : 'steps';
+
+  // Open on the way into a live run; settle shut on the way out. Guarded on the
+  // running EDGE, not on `running` itself, so a reader's manual toggle mid-run
+  // isn't stomped by the next re-render.
+  useEffect(() => {
+    if (running && !wasRunning.current) {
+      wasRunning.current = true;
+      if (!pinned) setOpen(true);
+      return;
+    }
+    if (!running && wasRunning.current) {
+      wasRunning.current = false;
+      if (!pinned) {
+        const t = setTimeout(() => setOpen(false), 600);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [running, pinned]);
+
+  if (entries.length === 0 && !reasoningText) return null;
+
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setPinned(true);
+        setOpen(next);
+      }}
+    >
+      <CollapsibleTrigger asChild>
+        <div
+          className={cn(
+            // -ml only: the pill's left edge lines up with the prose, but a
+            // negative RIGHT margin pushed it past the parent's content box and
+            // an overflow-hidden ancestor sheared the hover background off.
+            'group/work -ml-1.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 pl-1.5',
+            'text-muted-foreground/45 hover:text-muted-foreground hover:bg-muted/40',
+            'text-xs transition-colors select-none',
+          )}
+        >
+          {running && <Loading variant="spokes" className="size-3 shrink-0" />}
+          <span className="tabular-nums">
+            {running
+              ? `${statusText || 'Working…'} · ${summary.totalSteps} ${stepWord}`
+              : `${summary.totalSteps} ${stepWord}${duration ? ` · ${duration}` : ''}`}
+          </span>
+          <ChevronRight
+            className={cn(
+              'size-3 shrink-0 opacity-0 transition-transform group-hover/work:opacity-100',
+              open && 'rotate-90 opacity-100',
+            )}
+          />
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-border/40 mt-1.5 mb-1 ml-1 space-y-0.5 border-l pl-3">
+          {/* IN ORDER — a thought, then the step it produced, then the next
+              thought. Rendering all reasoning first and all steps after
+              detached the model's thinking from the work it explains. */}
+          {runChildren.map((child) =>
+            child.kind === 'reasoning' ? (
+              <ReasoningNote key={child.key} parts={child.parts} />
+            ) : (
+              <WorkStepRow
+                key={child.key}
+                part={child.entry.part}
+                sessionId={sessionId}
+                disableNavigation={disableNavigation}
+              />
+            ),
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function SameToolGroup({
+  kind,
+  counts,
+  entries,
+  sessionId,
+  disableNavigation,
+}: {
+  kind: ActivityKind;
+  counts: ActivityCounts;
+  entries: ActivityEntry[];
+  sessionId: string;
+  disableNavigation?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const Icon = activityKindIcon(kind);
+
+  const { durationMs, running } = useMemo(() => {
     let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
+    let anyRunning = false;
     for (const { part } of entries) {
       const s = (part.state as any)?.time?.start;
       const e = (part.state as any)?.time?.end;
       if (typeof s === 'number' && s < earliest) earliest = s;
       if (typeof e === 'number' && e > latest) latest = e;
+      const status = (part.state as any)?.status;
+      if (status === 'pending' || status === 'running') anyRunning = true;
     }
-    return latest > earliest ? latest - earliest : 0;
+    return { durationMs: latest > earliest ? latest - earliest : 0, running: anyRunning };
   }, [entries]);
-
-  const durationLabel =
-    !anyRunning && totalDurationMs >= 1000 ? `${Math.round(totalDurationMs / 1000)}s` : '';
-
-  const isContext = toolName === '__context__';
-  const isResearch = toolName === '__research__';
-  const isShell = useMemo(() => {
-    return isShellActivityTool(entries[0]?.part.tool);
-  }, [entries]);
-  const isWrite = useMemo(
-    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
-    [entries],
-  );
-
-  const headerLabel = useMemo(() => {
-    if (isContext) {
-      const s = contextToolSummary(entries.map((e) => e.part));
-      const items: string[] = [];
-      if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
-      if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
-      if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
-      return summary ? `${prefix} · ${summary}` : prefix;
-    }
-
-    if (isResearch) {
-      let searches = 0;
-      let fetches = 0;
-      let scrapes = 0;
-      for (const { part } of entries) {
-        const n = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
-        if (n === 'web_search' || n === 'websearch') searches++;
-        else if (n === 'webfetch' || n === 'web_fetch') fetches++;
-        else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
-      }
-      const items: string[] = [];
-      if (searches > 0) items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
-      if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
-      if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Researching' : 'Researched';
-      return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
-    }
-
-    if (isShell) {
-      return shellActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    if (isWrite) {
-      return writeActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    const t = contextToolTrigger(entries[0].part);
-    return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
+  const durationLabel = !running && durationMs >= 1000 ? `${Math.round(durationMs / 1000)}s` : '';
+  const headerLabel = activityGroupLabel(counts, running);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2098,35 +2329,19 @@ function SameToolGroup({
             'group/grp max-w-full transition-colors',
           )}
         >
-          {isResearch ? (
-            <Globe
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : isShell ? (
-            <Terminal
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : (
-            <Search
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          )}
+          <Icon
+            className={cn(
+              'text-muted-foreground/50 size-3.5 flex-shrink-0',
+              running && 'animate-pulse-heartbeat',
+            )}
+          />
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {durationLabel && (
             <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
               {durationLabel}
             </span>
           )}
-          {anyRunning && (
+          {running && (
             <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
           )}
           <ChevronRight
@@ -2141,60 +2356,46 @@ function SameToolGroup({
 
       <CollapsibleContent>
         <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
-          {isContext
-            ? entries.map(({ part }) => {
-                const t = contextToolTrigger(part);
-                const running =
-                  (part.state as any)?.status === 'pending' ||
-                  (part.state as any)?.status === 'running';
-                const s = (part.state as any)?.time?.start;
-                const e = (part.state as any)?.time?.end;
-                const dur = typeof s === 'number' && typeof e === 'number' && e > s ? e - s : 0;
-                return (
-                  <div
-                    key={part.id}
-                    className="text-muted-foreground/60 flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
-                  >
-                    <span className="flex-shrink-0">{t.title}</span>
-                    {!running && t.subtitle && (
-                      <span
-                        className="min-w-0 flex-1 truncate font-mono opacity-70"
-                        title={t.subtitle}
-                      >
-                        {t.subtitle}
-                      </span>
-                    )}
-                    {!running && dur >= 1000 && (
-                      <span className="text-muted-foreground/40 ml-auto flex-shrink-0 font-mono text-xs tabular-nums">
-                        {Math.round(dur / 1000)}s
-                      </span>
-                    )}
-                    {running && (
-                      <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
-                    )}
-                  </div>
-                );
-              })
-            : entries.map(({ part }) => (
-                // Same-tool, non-context groups (e.g. 3x web_search) render
-                // each call with its full ToolPartRenderer so users see real
-                // results — answers, sources, images — not just the input arg.
-                // Sits inside the rail's left padding (no negative margin) so
-                // each row aligns under the group header label, matching the
-                // reasoning block's nested treatment.
-                <div key={part.id}>
-                  <ToolPartRenderer
-                    part={part}
-                    sessionId={sessionId}
-                    disableNavigation={disableNavigation}
-                  />
-                </div>
-              ))}
+          {entries.map(({ part }) =>
+            isShellActivityTool(part.tool) ? (
+              <ShellStepRow
+                key={part.id}
+                part={part}
+                sessionId={sessionId}
+                disableNavigation={disableNavigation}
+              />
+            ) : (
+              // Non-shell groups (e.g. 3x web_search) render each call with
+              // its full ToolPartRenderer so users see real results —
+              // answers, sources, images — not just the input arg. Sits
+              // inside the rail's left padding (no negative margin) so each
+              // row aligns under the group header label, matching the
+              // reasoning block's nested treatment.
+              <div key={part.id}>
+                <ToolPartRenderer
+                  part={part}
+                  sessionId={sessionId}
+                  disableNavigation={disableNavigation}
+                />
+              </div>
+            ),
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
+
+/** Shared empty set for the full-history branch — allocating a new one per
+ *  render would defeat the memo on every child that reads it. */
+const EMPTY_FOLD_KEYS: ReadonlySet<string> = new Set<string>();
+const EMPTY_RUNS: ReadonlyMap<
+  string,
+  import('@/features/session/activity/activity-model').NarrativeRun
+> = new Map();
+const EMPTY_RUN_LIST: ReadonlyArray<
+  import('@/features/session/activity/activity-model').NarrativeRun
+> = [];
 
 // ============================================================================
 // Session Turn — core turn component
@@ -2224,6 +2425,72 @@ interface SessionTurnProps {
   disableToolNavigation?: boolean;
   /** Permission reply handler */
   onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  /** Stage an in-place session rewind and restore this prompt in the composer. */
+  onRewind: (messageId: string, text: string) => void;
+  /** Disable history changes while the session is busy or read-only. */
+  rewindDisabled: boolean;
+}
+
+/**
+ * The worker-run result row shown above a turn — an entity row in the design
+ * system's sense, not a tinted banner: the surface stays neutral and the status
+ * lives in one tinted icon tile, so a run of these reads as a list rather than
+ * a stack of coloured alerts.
+ *
+ * Extracted from the turn body so the row can be rendered (and looked at) on
+ * its own, and so the turn's render reads as a list of sections rather than
+ * forty lines of card markup inlined among them.
+ */
+export function SessionReportCard({
+  report,
+  onOpen,
+}: {
+  report: SessionReport;
+  onOpen: () => void;
+}) {
+  const complete = report.status === 'COMPLETE';
+  return (
+    // A real <button>: Enter, Space and the focus ring come free, where the
+    // previous role="button" div hand-rolled Enter only.
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/report bg-popover hover:bg-accent/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors active:scale-[0.99]"
+    >
+      <span
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-sm',
+          complete ? 'bg-kortix-green/15' : 'bg-kortix-red/15',
+        )}
+      >
+        {complete ? (
+          <CheckCircle className="text-kortix-green size-4" />
+        ) : (
+          <AlertTriangle className="text-kortix-red size-4" />
+        )}
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">
+          Worker {complete ? 'complete' : 'failed'}
+        </span>
+        {/* One meta line, truncated by CSS against the real available width —
+            the old 60-character slice cut mid-word at every viewport and still
+            overflowed narrow ones. */}
+        {(report.project || report.prompt) && (
+          <span className="text-muted-foreground block truncate text-xs">
+            {report.project}
+            {report.project && report.prompt && (
+              <span className="text-muted-foreground/40"> &bull; </span>
+            )}
+            {report.prompt}
+          </span>
+        )}
+      </span>
+
+      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+    </button>
+  );
 }
 
 function SessionTurn({
@@ -2242,6 +2509,8 @@ function SessionTurn({
   commands,
   disableToolNavigation,
   onPermissionReply,
+  onRewind,
+  rewindDisabled,
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
@@ -2576,6 +2845,43 @@ function SessionTurn({
   }, [allParts, answeredQuestionPartsById, answeredQuestionParts.length]);
   const shouldUseInlineContent = !hasSteps && !!inlineContentParts;
 
+  // Tool calls with an active permission prompt — never folded into a group,
+  // always rendered on their own so the user can see exactly what they are
+  // approving (see the "tool" branch of ActivityItem below).
+  const lockedCallIds = useMemo(
+    () => new Set(permissions.map((p) => p.tool?.callID).filter((id): id is string => !!id)),
+    [permissions],
+  );
+
+  // The fixed activity model turns this turn's parts into the step list the
+  // transcript renders. It is the single fix for the fragmentation bug: the
+  // runtime's step-start/step-finish bookkeeping parts (and agent/retry/
+  // snapshot/patch) are transparent to grouping, so a run of N tool calls
+  // folds into one group instead of N raw rows.
+  // Full history is the default reading: the per-kind step list, every step
+  // visible and in order. "Hide full history" flips this to Narrative, where
+  // machinery folds into one work line per turn — same parts, same model,
+  // re-rendered in place.
+  const { detail } = useChatDetail();
+  const activityItems = useMemo(
+    () =>
+      buildActivityItems(allParts, {
+        density: densityForDetail(detail),
+        lockedCallIds,
+        isHidden: (part, messageId) => isToolPartHidden(part, messageId, hidden),
+      }),
+    [allParts, lockedCallIds, hidden, detail],
+  );
+
+  // True when Narrative mode will paint at least one work line for this turn —
+  // i.e. the turn's status already has a home and the trailing indicator would
+  // be a second, competing one.
+  const narrativeStatusOwned = useMemo(
+    () =>
+      detail === 'narrative' && partitionForNarrative(activityItems, lockedCallIds).runs.length > 0,
+    [detail, activityItems, lockedCallIds],
+  );
+
   // Whether the user message has any visible content (non-synthetic, non-ignored
   // text, or attachments). Background task notifications inject synthetic-only
   // user messages that should not render a user bubble.
@@ -2643,6 +2949,19 @@ function SessionTurn({
     if (!userMessageText) return undefined;
     return detectCommandFromText(userMessageText, commands);
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
+
+  const rewindPromptText = useMemo(() => {
+    if (commandForTurn) {
+      return `/${commandForTurn.name}${commandForTurn.args ? ` ${commandForTurn.args}` : ''}`;
+    }
+    const withoutReply = parseReplyContext(userMessageText).cleanText;
+    const withoutUploads = parseFileReferences(withoutReply).cleanText;
+    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
+    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
+    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
+    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
+    return stripKortixSystemTags(withoutSessions).trim();
+  }, [commandForTurn, userMessageText]);
 
   const handleCopyUser = async () => {
     if (!userMessageText) return;
@@ -2746,7 +3065,11 @@ function SessionTurn({
           defaultOpen
         />
         {turnError && (
-          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+          <TurnErrorDisplay
+            errorText={turnError}
+            errorDetails={turnErrorDetails}
+            className="mt-2"
+          />
         )}
         <ConnectProviderDialog
           open={connectProviderOpen}
@@ -2803,44 +3126,10 @@ function SessionTurn({
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setSessionReportModalOpen(true)}
-            onKeyDown={(e) => e.key === 'Enter' && setSessionReportModalOpen(true)}
-            className={cn(
-              'flex items-center gap-2 rounded-2xl px-3 py-2 text-xs',
-              'group/report cursor-pointer border transition-colors select-none',
-              sessionReport.status === 'COMPLETE'
-                ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
-                : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
-            )}
-          >
-            {sessionReport.status === 'COMPLETE' ? (
-              <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
-            ) : (
-              <AlertTriangle className="text-destructive size-3.5 flex-shrink-0" />
-            )}
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span
-                className={cn(
-                  'font-medium',
-                  sessionReport.status === 'COMPLETE' ? STATUS_TEXT.success : 'text-destructive',
-                )}
-              >
-                Worker {sessionReport.status === 'COMPLETE' ? 'Complete' : 'Failed'}
-              </span>
-              {sessionReport.project && (
-                <span className="text-muted-foreground/60">· {sessionReport.project}</span>
-              )}
-              {sessionReport.prompt && (
-                <span className="text-muted-foreground/40 truncate">
-                  {sessionReport.prompt.slice(0, 60)}
-                </span>
-              )}
-            </div>
-            <ExternalLink className="text-muted-foreground/30 group-hover/report:text-muted-foreground/60 size-3 flex-shrink-0 transition-colors" />
-          </div>
+          <SessionReportCard
+            report={sessionReport}
+            onOpen={() => setSessionReportModalOpen(true)}
+          />
           <SubSessionModal
             open={sessionReportModalOpen}
             onOpenChange={setSessionReportModalOpen}
@@ -2867,7 +3156,19 @@ function SessionTurn({
             commands={commands}
           />
           {userMessageText && (
-            <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+            <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+              <Hint label="Edit from here" side="top" align="center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Edit message and rewind session"
+                  disabled={rewindDisabled}
+                  onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+              </Hint>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
@@ -2900,243 +3201,203 @@ function SessionTurn({
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-2">
           {(() => {
-            // Same-tool grouping: consecutive calls of the SAME tool
-            // (e.g. 5 reads, 3 greps) fold into one collapsible.
-            // Singles stay individual. Reasoning groups separately.
-            // ALL tool rows get a left border rail for visual separation.
-            type ToolEntry = { part: ToolPart; message: MessageWithParts };
-            type RenderItem =
-              | { type: 'part'; part: Part; message: MessageWithParts }
-              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
-              | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
-              | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
-
-            const items: RenderItem[] = [];
-            let pendingReasoning: ReasoningPart[] = [];
-            let pendingTools: ToolEntry[] = [];
-            let pendingToolName: string | null = null;
-
-            const flushReasoning = () => {
-              if (pendingReasoning.length > 0) {
-                items.push({
-                  type: 'reasoning-group',
-                  parts: pendingReasoning,
-                  key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
-                });
-                pendingReasoning = [];
-              }
-            };
-
-            const flushTools = () => {
-              if (pendingTools.length >= 2 && pendingToolName) {
-                items.push({
-                  type: 'tool-group',
-                  toolName: pendingToolName,
-                  entries: pendingTools,
-                  key: `tg-${pendingTools[0].part.id}`,
-                });
-              } else if (pendingTools.length === 1) {
-                items.push({
-                  type: 'tool-single',
-                  part: pendingTools[0].part,
-                  message: pendingTools[0].message,
-                });
-              }
-              pendingTools = [];
-              pendingToolName = null;
-            };
-
-            // Normalize tool name for grouping.
-            //   __context__ — read/glob/grep/list collapse into one
-            //                "Gathered context" pile (compact one-liners).
-            //   __research__ — web_search / webfetch / scrape collapse into
-            //                  one "Research" pile (full results expanded).
-            // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
-            // by their normalized tool name and render full per-call results.
-            const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
-            const RESEARCH_SET = new Set([
-              'web_search',
-              'websearch',
-              'webfetch',
-              'web_fetch',
-              'scrape',
-              'scrape_webpage',
-            ]);
-            const norm = (t: string) => {
-              const n = t.replace(/^oc-/, '').replace(/-/g, '_');
-              if (CONTEXT_SET.has(n)) return '__context__';
-              if (RESEARCH_SET.has(n)) return '__research__';
-              return n;
-            };
-
-            for (const { part, message } of allParts) {
-              if (isReasoningPart(part)) {
-                if (part.text?.trim()) {
-                  flushTools();
-                  pendingReasoning.push(part);
-                }
-                continue;
-              }
-              // Render-nothing parts (blank text, internal snapshot/patch
-              // bookkeeping) must not split a run of groupable tools — otherwise
-              // consecutive shells fragment into inconsistent singles instead of
-              // one "Ran N commands" group.
-              if (isInvisibleActivityPart(part)) continue;
-              flushReasoning();
-
-              if (isToolPart(part)) {
-                const tp = part as ToolPart;
-                const hasPermission = !!getPermissionForTool(permissions, tp.callID);
-                const groupable =
-                  shouldShowToolPart(tp) &&
-                  tp.tool !== 'todowrite' &&
-                  tp.tool !== 'question' &&
-                  !isNoGroupActivityTool(tp.tool) &&
-                  !hasPermission &&
-                  !isToolPartHidden(tp, message.info.id, hidden);
-
-                if (groupable) {
-                  const n = norm(tp.tool);
-                  if (pendingToolName === n) {
-                    pendingTools.push({ part: tp, message });
-                  } else {
-                    flushTools();
-                    pendingToolName = n;
-                    pendingTools = [{ part: tp, message }];
-                  }
-                  continue;
-                }
-              }
-
-              flushTools();
-              items.push({ type: 'part', part, message });
-            }
-            flushReasoning();
-            flushTools();
-
             const reasoningActive = working && permissions.length === 0 && questions.length === 0;
 
-            return items.map((item) => {
-              // Reasoning group
-              if (item.type === 'reasoning-group') {
+            // ── Narrative mode (opt-in; the default is full history) ──
+            // Fold the turn's machinery into ONE work line, placed where the
+            // first piece of machinery occurred so the surrounding prose still
+            // reads in order. Errors and permission-locked calls are pulled
+            // back out — a reader must see a failure, and must see what they
+            // are being asked to approve, without expanding anything.
+            const narrative = detail === 'narrative';
+            // The fold decision is pure and lives in the model, where it is
+            // tested — see `partitionForNarrative`. Duplicating it here is how
+            // the two readings would drift apart.
+            const {
+              foldedKeys,
+              runByKey,
+              runs: narrativeRuns,
+            } = narrative
+              ? partitionForNarrative(activityItems, lockedCallIds)
+              : { foldedKeys: EMPTY_FOLD_KEYS, runByKey: EMPTY_RUNS, runs: EMPTY_RUN_LIST };
+            const latestRunKey = narrativeRuns.length
+              ? narrativeRuns[narrativeRuns.length - 1].key
+              : null;
+
+            return activityItems.map((item) => {
+              if (narrative && foldedKeys.has(item.key)) {
+                // One line per contiguous RUN of machinery, painted at the
+                // run's first slot — so work and prose stay interleaved and the
+                // back-and-forth survives. A key that isn't a run start was
+                // absorbed by the line above it.
+                const run = runByKey.get(item.key);
+                if (!run) return null;
                 return (
-                  <div key={item.key}>
-                    <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
-                  </div>
+                  <TurnWorkLine
+                    key={item.key}
+                    entries={run.entries}
+                    runChildren={run.children}
+                    reasoningParts={run.reasoningParts}
+                    sessionId={sessionId}
+                    disableNavigation={disableToolNavigation}
+                    turnWorking={reasoningActive}
+                    isLatest={item.key === latestRunKey}
+                    statusText={throttledStatus || undefined}
+                  />
                 );
               }
 
-              // Same-tool group (2+ consecutive)
-              if (item.type === 'tool-group') {
-                return (
-                  <div key={item.key}>
-                    <SameToolGroup
-                      toolName={item.toolName}
-                      entries={item.entries}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      busy={working}
-                    />
-                  </div>
-                );
-              }
-
-              // Single tool (with left rail)
-              if (item.type === 'tool-single') {
-                if (!shouldShowToolPart(item.part)) return null;
-                const perm = getPermissionForTool(permissions, item.part.callID);
-                if (isToolPartHidden(item.part, item.message.info.id, hidden)) return null;
-                return (
-                  <div key={item.part.id}>
-                    <ToolPartRenderer
-                      part={item.part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              const { part, message } = item;
-
-              // When inline content rendering is active (text + answered questions in order),
-              // hide ALL text parts from steps since they render in the inline section
-              if (shouldUseInlineContent && isTextPart(part) && part.text?.trim()) return null;
-
-              // Text parts (intermediate + streaming response while working)
-              if (isTextPart(part)) {
-                if (!part.text?.trim()) return null;
-                // Text response rendering for no-step turns is handled below in
-                // the dedicated response section to avoid duplicate output.
-                if (!hasSteps) return null;
-                return (
-                  <div key={part.id} className="min-w-0 text-sm">
-                    <ThrottledMarkdown content={part.text} isStreaming={working} />
-                  </div>
-                );
-              }
-
-              // Compaction indicator
-              if (isCompactionPart(part)) {
-                return (
-                  <div key={part.id} className="flex items-center gap-2 py-2.5">
-                    <div className="bg-border h-px flex-1" />
-                    <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
-                      <Layers className="text-muted-foreground size-3" />
-                      <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                        Compaction
-                      </span>
+              switch (item.type) {
+                case 'reasoning':
+                  return (
+                    <div key={item.key}>
+                      <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
                     </div>
-                    <div className="bg-border h-px flex-1" />
-                  </div>
-                );
-              }
+                  );
 
-              // Tool parts
-              if (isToolPart(part)) {
-                if (!shouldShowToolPart(part)) return null;
-                if (part.tool === 'todowrite') return null;
-                if (part.tool === 'question') {
-                  // When inline content rendering is active, answered questions
-                  // render in the inline content section — skip here to avoid duplicates.
-                  if (shouldUseInlineContent) return null;
-                  // Render answered questions inline at their natural position
-                  // so they appear exactly where the user answered them.
-                  const answeredPart = answeredQuestionPartsById.get(part.id);
-                  if (answeredPart) {
-                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
+                // 2+ consecutive calls of the same tool, folded behind one
+                // human summary line (never a raw command or bare tool name).
+                case 'group':
+                  return (
+                    <div key={item.key}>
+                      <SameToolGroup
+                        kind={item.kind}
+                        counts={item.counts}
+                        entries={item.entries}
+                        sessionId={sessionId}
+                        disableNavigation={disableToolNavigation}
+                      />
+                    </div>
+                  );
+
+                // A lone tool call — either it didn't run alongside others of
+                // its kind, or it has an active permission prompt (never
+                // folded, always rendered so the user can see exactly what
+                // they're approving).
+                case 'tool': {
+                  const { part } = item.entry;
+                  const perm = getPermissionForTool(permissions, part.callID);
+                  const locked = lockedCallIds.has(part.callID);
+                  if (!locked && isShellActivityTool(part.tool)) {
+                    return (
+                      <div key={item.key}>
+                        <ShellStepRow
+                          part={part}
+                          sessionId={sessionId}
+                          disableNavigation={disableToolNavigation}
+                        />
+                      </div>
+                    );
                   }
-                  // Unanswered/dismissed questions: don't render in steps;
-                  // dismissed ones show via the turnError banner.
+                  return (
+                    <div key={item.key}>
+                      <ToolPartRenderer
+                        part={part}
+                        sessionId={sessionId}
+                        disableNavigation={disableToolNavigation}
+                        permission={perm}
+                        onPermissionReply={onPermissionReply}
+                      />
+                    </div>
+                  );
+                }
+
+                // Rendered output (show/show-user, generated image/video/deck)
+                // — never folded, never humanized-and-collapsed, always
+                // full-size so the deliverable can't be missed.
+                case 'deliverable': {
+                  const { part } = item.entry;
+                  const perm = getPermissionForTool(permissions, part.callID);
+                  return (
+                    <div key={item.key}>
+                      <ToolPartRenderer
+                        part={part}
+                        sessionId={sessionId}
+                        disableNavigation={disableToolNavigation}
+                        permission={perm}
+                        onPermissionReply={onPermissionReply}
+                      />
+                    </div>
+                  );
+                }
+
+                case 'text': {
+                  // When inline content rendering is active (text + answered
+                  // questions in order), text renders in the inline section.
+                  if (shouldUseInlineContent) return null;
+                  // No-step turns render their text below, in the dedicated
+                  // response section, to avoid duplicate output.
+                  if (!hasSteps) return null;
+                  const text = isTextPart(item.part) ? (item.part.text ?? '') : '';
+                  return (
+                    <div key={item.key} className="min-w-0 text-sm">
+                      <ThrottledMarkdown content={text} isStreaming={working} />
+                    </div>
+                  );
+                }
+
+                // Anything the activity list doesn't own: compaction
+                // dividers, and self-rendering tools (todowrite/todoread,
+                // question, task) that the turn body handles directly.
+                case 'passthrough': {
+                  const { part } = item;
+
+                  if (isCompactionPart(part)) {
+                    return (
+                      <div key={item.key} className="flex items-center gap-2 py-2.5">
+                        <div className="bg-border h-px flex-1" />
+                        <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
+                          <Layers className="text-muted-foreground size-3" />
+                          <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                            Compaction
+                          </span>
+                        </div>
+                        <div className="bg-border h-px flex-1" />
+                      </div>
+                    );
+                  }
+
+                  if (isToolPart(part)) {
+                    // Todos render in their own dedicated surface, not steps.
+                    if (part.tool === 'todowrite' || part.tool === 'todoread') return null;
+
+                    if (part.tool === 'question') {
+                      // Inline content rendering already shows answered
+                      // questions in the interleaved text+question section.
+                      if (shouldUseInlineContent) return null;
+                      // Render answered questions inline at their natural
+                      // position, where the user actually answered them.
+                      const answeredPart = answeredQuestionPartsById.get(part.id);
+                      if (answeredPart) {
+                        return <AnsweredQuestionCard key={item.key} part={answeredPart} />;
+                      }
+                      // Unanswered/dismissed: not shown in steps (dismissed
+                      // ones surface via the turnError banner instead).
+                      return null;
+                    }
+
+                    // task / any other self-rendering tool: full renderer,
+                    // never folded, permission-aware like any other tool.
+                    const perm = getPermissionForTool(permissions, part.callID);
+                    return (
+                      <div key={item.key}>
+                        <ToolPartRenderer
+                          part={part}
+                          sessionId={sessionId}
+                          disableNavigation={disableToolNavigation}
+                          permission={perm}
+                          onPermissionReply={onPermissionReply}
+                        />
+                      </div>
+                    );
+                  }
+
                   return null;
                 }
 
-                const perm = getPermissionForTool(permissions, part.callID);
-
-                // Hide tool parts that have active permission
-                if (isToolPartHidden(part, message.info.id, hidden)) return null;
-
-                return (
-                  <div key={part.id}>
-                    <ToolPartRenderer
-                      part={part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
+                default:
+                  return null;
               }
-
-              // Snapshot & patch parts — internal bookkeeping, not rendered in chat
-              if (isSnapshotPart(part) || isPatchPart(part)) {
-                return null;
-              }
-
-              return null;
             });
           })()}
         </div>
@@ -3247,8 +3508,13 @@ function SessionTurn({
         </>
       )}
 
-      {/* ── Working status indicator (always at the end while working) ── */}
-      {working && (
+      {/* ── Working status indicator ──
+          Suppressed in Narrative mode once a live work line is on screen: that
+          line already carries the same status text, the step count and the
+          elapsed time. Two pulsing indicators stacked, each naming a different
+          thing, read as a bug rather than as progress. The retry notice is the
+          exception — it is not a duplicate of anything and must always show. */}
+      {working && (!narrativeStatusOwned || !!retryInfo) && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
             <SessionRetryDisplay
@@ -3327,6 +3593,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Complete SDK state for the root session. Omit for a read-only child session. */
+  sessionState?: UseSessionResult;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
   projectId?: string;
   /** Immutable project-session agent. When set, prompts are locked to this agent. */
@@ -3343,6 +3611,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  sessionState,
   projectId,
   boundAgentName,
   headerLeadingAction,
@@ -3477,23 +3746,24 @@ export function SessionChat({
   // runtimeReady gates the session query (it's disabled until the sandbox
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const { data: session, isFetched: sessionFetched } = useOpenCodeSession(sessionId);
+  const runtimeReady = useRuntimeReady();
+  const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
+  const localSync = useSessionSync(sessionState ? '' : sessionId);
   const {
     messages: syncMessages,
     isLoading: syncMessagesLoading,
     hasOlder,
     isLoadingOlder,
     loadOlder,
-  } = useSessionSync(sessionId);
+  } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
-  const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
+  const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
   // Pending connector-approvals for this session pause the run — lock the
   // composer (like a question) until they're resolved. Shares the query key with
   // SessionApprovalPrompt, so it's one request.
@@ -3504,15 +3774,16 @@ export function SessionChat({
     { refetchInterval: 5_000 },
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
-  const { data: commands } = useOpenCodeCommands();
-  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
-  const { data: allSessions } = useOpenCodeSessions();
-  const { data: config } = useOpenCodeConfig();
+  const { data: commands } = useRuntimeCommands();
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
+  const { data: allSessions } = useRuntimeSessions();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const abortSession = useAbortOpenCodeSession();
+  const abortSession = useAbortRuntimeSession();
+  const executeCommand = useExecuteRuntimeCommand();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({
+  const local = useSessionModelSelection({
     agents,
     providers,
     config,
@@ -3522,7 +3793,7 @@ export function SessionChat({
   });
   // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   // default off): the picker still defaults to the session's agent (seeded via
-  // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
+  // useRuntimeLocal's boundAgentName) but stays switchable — sends use the current
   // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
   // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
@@ -3578,6 +3849,15 @@ export function SessionChat({
     files: AttachedFile[];
     id: number;
   } | null>(null);
+  const [rewindTarget, setRewindTarget] = useState<{
+    messageId: string;
+    text: string;
+  } | null>(null);
+  const [rewindDraft, setRewindDraft] = useState<{
+    text: string;
+    id: number;
+  } | null>(null);
+  const rewindPrefillId = useRef(0);
   // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
@@ -3589,7 +3869,7 @@ export function SessionChat({
   // parent), so the text has already landed by the time we clear it here.
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
-  }, [sessionPrefill?.id, sessionId]);
+  }, [sessionPrefill, sessionId]);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -3767,7 +4047,7 @@ export function SessionChat({
   // selection yet. This handles opening a session for the first time. If the user
   // already changed the model in this session (persisted per-session in localStorage),
   // we don't overwrite it — the per-session selection takes priority via the
-  // resolution chain in useOpenCodeLocal.
+  // resolution chain in useRuntimeLocal.
   const lastUserMessage = useMemo(
     () => (messages ? [...messages].reverse().find((m) => m.info.role === 'user') : undefined),
     [messages],
@@ -3792,11 +4072,9 @@ export function SessionChat({
 
   // ---- Session status ----
   // Use sync store as primary (matches OpenCode), fall back to status store
-  const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
-    Boolean(s.compactingBySession[sessionId]),
-  );
-  const sessionStatus = syncStatus;
+  const syncStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
+  const isOptimisticCompacting = sessionState?.isCompacting ?? false;
+  const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // Pending: last assistant message has no time.completed.
@@ -3890,7 +4168,7 @@ export function SessionChat({
     const cacheFingerprint = `${cached.messageID}:${cached.partID}:${cached.text.length}`;
     if (streamCacheRestoredRef.current === cacheFingerprint) return;
 
-    const store = useSyncStore.getState();
+    const store = useSessionStateStore.getState();
     const currentMsgs = store.getMessages(sessionId);
     let latestUserId: string | undefined;
     for (let i = currentMsgs.length - 1; i >= 0; i--) {
@@ -3999,7 +4277,7 @@ export function SessionChat({
         const remaining = 5000 - timeSinceSend;
         const timer = setTimeout(() => {
           // Re-check: if still idle after grace period, stop polling
-          const currentStatus = useSyncStore.getState().sessionStatus[sessionId];
+          const currentStatus = useSessionStateStore.getState().sessionStatus[sessionId];
           if (currentStatus?.type === 'idle') {
             setPollingActive(false);
           }
@@ -4095,7 +4373,7 @@ export function SessionChat({
   }, [messages?.length]);
 
   // ---- Auto-scroll (replaces inline scroll logic) ----
-  const hasActiveQuestion = useOpenCodePendingStore((s) =>
+  const hasActiveQuestion = useRuntimePendingStore((s) =>
     Object.values(s.questions).some((q) => q.sessionID === sessionId),
   );
   const messageCount = messages?.length ?? 0;
@@ -4115,11 +4393,11 @@ export function SessionChat({
   });
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
-    const previousHeight = node?.scrollHeight ?? 0;
+    const anchor = node ? captureTurnScrollAnchor(node) : null;
     await loadOlder();
     if (!node) return;
     requestAnimationFrame(() => {
-      node.scrollTop += node.scrollHeight - previousHeight;
+      restoreTurnScrollAnchor(node, anchor);
     });
   }, [loadOlder, scrollRef]);
 
@@ -4172,11 +4450,13 @@ export function SessionChat({
   // preserves scroll position automatically. No action needed here.
 
   // ---- Pending permissions & questions ----
-  const allPermissions = useOpenCodePendingStore((s) => s.permissions);
-  const allQuestions = useOpenCodePendingStore((s) => s.questions);
+  const allPermissions = useRuntimePendingStore((s) => s.permissions);
+  const allQuestions = useRuntimePendingStore((s) => s.questions);
   const pendingPermissions = useMemo(
-    () => Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
-    [allPermissions, sessionId],
+    () =>
+      sessionState?.permissions ??
+      Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
+    [sessionState?.permissions, allPermissions, sessionId],
   );
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
   const suppressQuestionFor = useCallback((requestId: string, ms = 15000) => {
@@ -4193,10 +4473,11 @@ export function SessionChat({
   }, []);
   const pendingQuestions = useMemo(
     () =>
-      Object.values(allQuestions).filter(
-        (q) => q.sessionID === sessionId && !isQuestionSuppressed(q.id),
-      ),
-    [allQuestions, sessionId, isQuestionSuppressed],
+      (
+        sessionState?.questions ??
+        Object.values(allQuestions).filter((q) => q.sessionID === sessionId)
+      ).filter((q) => !isQuestionSuppressed(q.id)),
+    [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
@@ -4270,36 +4551,44 @@ export function SessionChat({
   // Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store for this session) —
   // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
-  // `useOpenCodeEventStream`'s reconnect-gap hydration.
+  // `useRuntimeEventStream`'s reconnect-gap hydration.
   useQuestionSelfHeal(sessionId, messages, {
-    enabled: isActiveSessionTab,
+    enabled: !sessionState && isActiveSessionTab,
     isSuppressed: isQuestionSuppressed,
   });
   // The permission twin — a missed `permission.asked` frame otherwise leaves
   // the agent silently blocked with no card to answer (the "have to type
   // `continue`" wedge).
-  usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
+  usePermissionSelfHeal(sessionId, messages, {
+    enabled: !sessionState && isActiveSessionTab,
+  });
 
   // ---- Permission/question reply handlers ----
-  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
-  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
+  const removePermission = useRuntimePendingStore((s) => s.removePermission);
+  const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
-      await replyToPermission(requestId, reply);
-      removePermission(requestId);
+      if (sessionState) {
+        await sessionState.answerPermission(requestId, reply);
+      } else {
+        await replyToPermission(requestId, reply);
+        removePermission(requestId);
+      }
     },
-    [removePermission],
+    [sessionState, removePermission],
   );
 
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
       // Snapshot the question BEFORE removing it so we can cache the
       // answer against the tool part's ID.
-      const questionReq = useOpenCodePendingStore.getState().questions[requestId];
+      const questionReq =
+        sessionState?.questions.find((question) => question.id === requestId) ??
+        useRuntimePendingStore.getState().questions[requestId];
 
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
@@ -4311,7 +4600,7 @@ export function SessionChat({
       // answeredQuestionParts reads from this cache as a fallback.
       if (questionReq?.tool?.messageID) {
         const { messageID } = questionReq.tool;
-        const parts = useSyncStore.getState().parts[messageID];
+        const parts = useSessionStateStore.getState().parts[messageID];
         if (parts) {
           const match = parts.find(
             (p) =>
@@ -4329,12 +4618,13 @@ export function SessionChat({
       }
 
       try {
-        await replyToQuestion(requestId, answers);
+        if (sessionState) await sessionState.answerQuestion(requestId, answers);
+        else await replyToQuestion(requestId, answers);
       } catch {
         // ignore — SSE "question.replied" event will also remove it
       }
     },
-    [removeQuestion, suppressQuestionFor],
+    [sessionState, removeQuestion, suppressQuestionFor],
   );
 
   const handleQuestionReject = useCallback(
@@ -4343,16 +4633,19 @@ export function SessionChat({
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
       try {
-        await rejectQuestion(requestId);
+        if (sessionState) await sessionState.rejectQuestion(requestId);
+        else await rejectQuestion(requestId);
       } catch {
         // ignore — SSE "question.rejected" event will also remove it
       }
       // Also abort the session so the "The operation was aborted." banner appears
-      if (!abortSession.isPending) {
+      if (sessionState) {
+        sessionState.cancel();
+      } else if (!abortSession.isPending) {
         abortSession.mutate(sessionId);
       }
     },
-    [removeQuestion, abortSession, sessionId, suppressQuestionFor],
+    [sessionState, removeQuestion, abortSession, sessionId, suppressQuestionFor],
   );
   const hasCompactionTurn = useMemo(
     () =>
@@ -4394,6 +4687,8 @@ export function SessionChat({
     setPendingCommand(null);
     setPendingSendInFlight(false);
     setPendingSendMessageId(null);
+    setRewindTarget(null);
+    setRewindDraft(null);
     lastSendTimeRef.current = 0;
   }, [sessionId]);
 
@@ -4404,19 +4699,31 @@ export function SessionChat({
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
-  // ============================================================================
-  // TODO(session-rewind): Bring back an in-place "edit past message + rewind"
-  // flow instead of the removed edit-fork-prompt feature. The old behaviour
-  // created a native fork of the session at a message and reopened the new
-  // session with the edited prompt restored in the composer — that UX was the
-  // wrong model. What we actually want is a proper rewind/rollback on the SAME
-  // session (edit a prior user message, roll the session back to that point,
-  // and re-run from there), which opencode supports natively. Removed here so
-  // it can be rebuilt correctly. The old surface spanned: useForkSession()
-  // (SDK), the fork-draft stash (writeForkDraft/readForkDraft/clearForkDraft),
-  // the Fork / Edit-fork buttons + Confirm/Edit dialogs on user messages, and
-  // the composer draft-restore in session-chat-input.tsx.
-  // ============================================================================
+  const handleConfirmRewind = useCallback(async () => {
+    if (!sessionState || !rewindTarget) return;
+    try {
+      const { messageId, text } = rewindTarget;
+      await sessionState.rewind(messageId);
+      setRewindDraft({ text, id: ++rewindPrefillId.current });
+      setRewindTarget(null);
+    } catch (error) {
+      errorToast('Session rewind failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [rewindTarget, sessionState]);
+
+  const handleRestoreRewind = useCallback(async () => {
+    if (!sessionState?.rewindMessageId) return;
+    try {
+      await sessionState.restoreRewind();
+      setRewindDraft({ text: '', id: ++rewindPrefillId.current });
+    } catch (error) {
+      errorToast('Session restore failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [sessionState]);
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -4615,7 +4922,7 @@ export function SessionChat({
         if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;
       }
 
-      // Send via the SDK's promptOpenCodeMessage — the server accepts the
+      // Send via the SDK's promptRuntimeMessage — the server accepts the
       // prompt (204) and streams the response over SSE; we await the ACK so
       // callers (queue drain, input box) can handle send failures, but the
       // actual response body still arrives via the sync store.
@@ -4635,10 +4942,13 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
+      const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
+      const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
+      const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
 
       // Sending to the sandbox's OpenCode server can transiently fail — the
       // container may be waking from auto-stop, restarting, or the tunnel
-      // blips. `promptOpenCodeMessage` (packages/sdk) owns retrying transient
+      // blips. `promptRuntimeMessage` (packages/sdk) owns retrying transient
       // failures with backoff so a flaky send self-heals; only a real 4xx (bad
       // request / auth / missing model key), or exhausting the retry window,
       // surfaces here. The optimistic user message + busy status stay up the
@@ -4647,21 +4957,38 @@ export function SessionChat({
       // busy, then either rehydrate real messages from the server (some error
       // paths — e.g. missing API key — never emit a `session.error` SSE
       // event) or drop the optimistic message if the server has no record.
-      const result = await sendAndRecover({
-        sessionId,
-        messageId: messageID,
-        parts: mappedParts,
-        options: {
-          // Pass the session's directory so opencode resolves project-scoped
-          // agents (.opencode/agent/*.md under the project) and applies them
-          // when the user picked a project agent from the picker.
-          ...(session?.directory ? { directory: session.directory } : {}),
-          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-          ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
-          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-        } as any,
-        classify: classifySessionError,
-      });
+      const result = sessionState
+        ? await (async () => {
+            try {
+              await sessionState.sendParts(mappedParts, {
+                ...(session?.directory ? { directory: session.directory } : {}),
+                ...(selectedAgent ? { agent: selectedAgent } : {}),
+                ...(selectedModel ? { model: selectedModel } : {}),
+                ...(selectedVariant ? { variant: selectedVariant } : {}),
+              });
+              return { ok: true } as const;
+            } catch (cause) {
+              const error = recoverFromSendFailure(sessionId, messageID, cause, {
+                classify: classifySessionError,
+              });
+              return { ok: false, error, cause } as const;
+            }
+          })()
+        : await sendAndRecover({
+            sessionId,
+            messageId: messageID,
+            parts: mappedParts,
+            options: {
+              // Pass the session's directory so opencode resolves project-scoped
+              // agents (.opencode/agent/*.md under the project) and applies them
+              // when the user picked a project agent from the picker.
+              ...(session?.directory ? { directory: session.directory } : {}),
+              ...(selectedAgent ? { agent: selectedAgent } : {}),
+              ...(selectedModel ? { model: formatPromptModel(selectedModel) } : {}),
+              ...(selectedVariant ? { variant: selectedVariant } : {}),
+            } as any,
+            classify: classifySessionError,
+          });
       if (!result.ok) {
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
@@ -4680,6 +5007,7 @@ export function SessionChat({
       scrollToBottom,
       replyTo,
       messages,
+      sessionState,
     ],
   );
 
@@ -4766,8 +5094,9 @@ export function SessionChat({
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
 
-    abortSession.mutate(sessionId);
-  }, [sessionId, abortSession]);
+    if (sessionState) sessionState.cancel();
+    else abortSession.mutate(sessionId);
+  }, [sessionId, sessionState, abortSession]);
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -4876,16 +5205,14 @@ export function SessionChat({
 
       playSound('send');
       const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
-      const selectedModel = local.model.sendKey
-        ? formatModelString(local.model.sendKey)
-        : undefined;
+      const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
         setPendingCommand(null);
         setPendingUserMessage(null);
         setPendingUserMessageId(null);
         setPollingActive(false);
         pendingCommandStashRef.current = null;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        useSessionStateStore.getState().setStatus(sessionId, { type: 'idle' });
         setCommandError(classifySessionError(err));
       };
 
@@ -4908,20 +5235,23 @@ export function SessionChat({
       // SSE delivers it. Commands use the blocking /command endpoint
       // which can take minutes; using TQ would cause retry on timeout.
       commandInFlightRef.current = true;
-      const client = getClient();
-      void client.session
-        .command({
-          sessionID: sessionId,
+      const agent = lockedAgentName || local.agent.current?.name;
+      const variant = local.model.variant.current;
+      void (
+        sessionState?.runCommand(cmd.name, args || '', {
+          agent,
+          model: selectedModel,
+          variant,
+        }) ??
+        executeCommand.mutateAsync({
+          sessionId,
           command: cmd.name,
-          arguments: args || '',
-          ...((lockedAgentName || local.agent.current?.name) && {
-            agent: lockedAgentName || local.agent.current?.name,
-          }),
-          ...(selectedModel && { model: selectedModel }),
-          ...(local.model.variant.current && {
-            variant: local.model.variant.current,
-          }),
-        } as any)
+          args: args || '',
+          ...(agent ? { agent } : {}),
+          ...(selectedModel ? { model: formatModelString(selectedModel) } : {}),
+          ...(variant ? { variant } : {}),
+        })
+      )
         .then((res: any) => {
           if (res?.error) {
             handleCommandError(res.error);
@@ -4938,6 +5268,8 @@ export function SessionChat({
       sessionId,
       scrollToBottom,
       lockedAgentName,
+      sessionState,
+      executeCommand,
       local.agent.current,
       local.model.currentKey,
       local.model.sendKey,
@@ -4957,7 +5289,7 @@ export function SessionChat({
   const router = useRouter();
 
   // Thread context for subsessions only (real parentID).
-  const { data: parentSessionData } = useOpenCodeSession(session?.parentID || '');
+  const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
@@ -5061,6 +5393,27 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
+        {sessionState?.rewindMessageId ? (
+          <div className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-2">
+            <RotateCcw className="text-muted-foreground size-3.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-foreground text-xs font-medium">Session rewound</p>
+              <p className="text-muted-foreground text-xs">
+                Sending a new prompt commits this path. Restore keeps the removed messages and file
+                changes.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={sessionState.rewindPending}
+              onClick={() => void handleRestoreRewind()}
+            >
+              {sessionState.rewindPending ? <Loading /> : 'Restore'}
+            </Button>
+          </div>
+        ) : null}
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -5095,6 +5448,9 @@ export function SessionChat({
     ),
     [
       sessionId,
+      sessionState?.rewindMessageId,
+      sessionState?.rewindPending,
+      handleRestoreRewind,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -5167,7 +5523,7 @@ export function SessionChat({
   if (isDataLoading) {
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
-        <SessionStartingLoader stage="ready" />
+        <SessionStartingLoader stage="ready" variant="compact" />
       </div>
     );
   }
@@ -5262,7 +5618,8 @@ export function SessionChat({
                         {(() => {
                           const { cleanText: afterReply, replyContext: optReply } =
                             parseReplyContext(optimisticPrompt || '');
-                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
+                            const { cleanText: afterFiles, files } =
+                              parseFileReferences(afterReply);
                           const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
                           const { cleanText: afterFileMentions } =
                             parseFileMentionReferences(afterProjects);
@@ -5375,7 +5732,7 @@ export function SessionChat({
                         key={turn.userMessage.info.id}
                         data-turn-id={turn.userMessage.info.id}
                         className={cn(
-                          '[content-visibility:auto] [contain-intrinsic-size:auto_600px]',
+                          '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
                           turnIndex === 0 ? '' : 'mt-12',
                         )}
                       >
@@ -5408,6 +5765,10 @@ export function SessionChat({
                           commands={commands}
                           disableToolNavigation={disableToolNavigation}
                           onPermissionReply={handlePermissionReply}
+                            onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                            rewindDisabled={
+                              !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                            }
                         />
                       </div>
                     );
@@ -5441,7 +5802,7 @@ export function SessionChat({
               <Button
                 onClick={handleSelectionReply}
                 size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom text-xs duration-150 ease-out"
               >
                 Reply
                 <svg
@@ -5497,6 +5858,7 @@ export function SessionChat({
 
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
+          <>
         <SessionChatInput
           onSend={async (text, files, mentions) => {
             await handleSend(text, files, mentions);
@@ -5507,7 +5869,13 @@ export function SessionChat({
             }
           }}
           prefill={
-            failedStartDraft
+                rewindDraft
+                  ? {
+                      text: rewindDraft.text,
+                      id: rewindDraft.id,
+                      mode: 'replace',
+                    }
+                  : failedStartDraft
               ? {
                   text: failedStartDraft.text,
                   files: failedStartDraft.files,
@@ -5565,6 +5933,25 @@ export function SessionChat({
           onQuestionAction={handleQuestionAction}
           inputSlot={chatInputSlot}
         />
+            <ConfirmDialog
+              open={!!rewindTarget}
+              onOpenChange={(open) => !open && setRewindTarget(null)}
+              title="Edit from this message?"
+              description={
+                <>
+                  <p>This rewinds the same session and restores its files to this message.</p>
+                  <p className="mt-2">
+                    You can restore the removed path until you send a replacement prompt.
+                  </p>
+                </>
+              }
+              confirmLabel="Rewind session"
+              confirmVariant="destructive"
+              confirmIcon={<RotateCcw className="size-3.5" />}
+              isPending={sessionState?.rewindPending}
+              onConfirm={() => void handleConfirmRewind()}
+            />
+          </>
       )}
     </div>
   );

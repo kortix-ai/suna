@@ -60,6 +60,7 @@ describe('mapUsageTotals', () => {
       totalInputTokens: '1000',
       totalOutputTokens: '2000',
       totalCachedTokens: '150',
+      totalCacheWriteTokens: '75',
       totalCost: '3.456',
       count: '42',
     });
@@ -68,6 +69,7 @@ describe('mapUsageTotals', () => {
       total_input_tokens: 1000,
       total_output_tokens: 2000,
       total_cached_tokens: 150,
+      total_cache_write_tokens: 75,
       total_cost: 3.456,
       count: 42,
     });
@@ -78,6 +80,7 @@ describe('mapUsageTotals', () => {
       total_input_tokens: 0,
       total_output_tokens: 0,
       total_cached_tokens: 0,
+      total_cache_write_tokens: 0,
       total_cost: 0,
       count: 0,
     });
@@ -88,6 +91,7 @@ describe('mapUsageTotals', () => {
       totalInputTokens: null,
       totalOutputTokens: null,
       totalCachedTokens: null,
+      totalCacheWriteTokens: null,
       totalCost: null,
       count: null,
     });
@@ -96,6 +100,7 @@ describe('mapUsageTotals', () => {
       total_input_tokens: 0,
       total_output_tokens: 0,
       total_cached_tokens: 0,
+      total_cache_write_tokens: 0,
       total_cost: 0,
       count: 0,
     });
@@ -109,6 +114,7 @@ describe('mapUsageBreakdownRow', () => {
       inputTokens: 10,
       outputTokens: 20,
       cachedTokens: 5,
+      cacheWriteTokens: 2,
       cost: 0.5,
       count: 3,
     });
@@ -118,6 +124,7 @@ describe('mapUsageBreakdownRow', () => {
       input_tokens: 10,
       output_tokens: 20,
       cached_tokens: 5,
+      cache_write_tokens: 2,
       cost: 0.5,
       count: 3,
     });
@@ -130,6 +137,7 @@ describe('mapUsageBreakdownRow', () => {
       inputTokens: 100,
       outputTokens: 200,
       cachedTokens: 0,
+      cacheWriteTokens: 10,
       cost: 1.2,
       count: 7,
     });
@@ -140,6 +148,7 @@ describe('mapUsageBreakdownRow', () => {
       input_tokens: 100,
       output_tokens: 200,
       cached_tokens: 0,
+      cache_write_tokens: 10,
       cost: 1.2,
       count: 7,
     });
@@ -151,6 +160,7 @@ describe('mapUsageBreakdownRow', () => {
       inputTokens: 50,
       outputTokens: 60,
       cachedTokens: 10,
+      cacheWriteTokens: 4,
       cost: 0.75,
       count: 4,
     });
@@ -160,6 +170,7 @@ describe('mapUsageBreakdownRow', () => {
       input_tokens: 50,
       output_tokens: 60,
       cached_tokens: 10,
+      cache_write_tokens: 4,
       cost: 0.75,
       count: 4,
     });
@@ -171,6 +182,7 @@ describe('mapUsageBreakdownRow', () => {
       inputTokens: 1,
       outputTokens: 1,
       cachedTokens: 0,
+      cacheWriteTokens: 0,
       cost: 0.01,
       count: 1,
     });
@@ -180,8 +192,89 @@ describe('mapUsageBreakdownRow', () => {
       input_tokens: 1,
       output_tokens: 1,
       cached_tokens: 0,
+      cache_write_tokens: 0,
       cost: 0.01,
       count: 1,
     });
   });
 });
+
+/**
+ * Kortix-as-a-Backend per-end-user metering: `origin_ref` as both a filter and a
+ * group_by dimension on GET /v1/usage.
+ */
+describe('usage — origin_ref (per-end-user metering)', () => {
+  test('accepts and trims an origin_ref filter', () => {
+    expect(parseUsageQuery({ origin_ref: '  user-123  ' })).toEqual({ originRef: 'user-123' });
+  });
+
+  test('an absent or empty origin_ref simply means "no filter"', () => {
+    expect(parseUsageQuery({})).toEqual({});
+    expect(parseUsageQuery({ origin_ref: '' })).toEqual({});
+  });
+
+  test('rejects a blank-but-present origin_ref rather than silently ignoring it', () => {
+    // '   ' is a caller mistake, not "everyone" — failing loudly beats quietly
+    // returning account-wide totals the caller would read as one user's spend.
+    expect(() => parseUsageQuery({ origin_ref: '   ' })).toThrow(InvalidUsageQueryError);
+  });
+
+  test('rejects an over-long origin_ref (mirrors the session-create bound)', () => {
+    expect(() => parseUsageQuery({ origin_ref: 'x'.repeat(257) })).toThrow(InvalidUsageQueryError);
+    expect(parseUsageQuery({ origin_ref: 'x'.repeat(256) }).originRef).toHaveLength(256);
+  });
+
+  test('accepts origin_ref as a group_by dimension', () => {
+    expect(parseUsageQuery({ group_by: 'origin_ref' })).toEqual({ groupBy: 'origin_ref' });
+  });
+
+  test('still rejects an unknown group_by, and names origin_ref as an option', () => {
+    let message = '';
+    try {
+      parseUsageQuery({ group_by: 'end_user' });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain('origin_ref');
+  });
+
+  test('maps an origin_ref breakdown row to an origin_ref-keyed entry', () => {
+    expect(
+      mapUsageBreakdownRow({
+        originRef: 'user-123',
+        inputTokens: 10,
+        outputTokens: 5,
+        cachedTokens: 0,
+        cacheWriteTokens: 0,
+        cost: 0.25,
+        count: 2,
+      }),
+    ).toEqual({ end_user_ref: 'user-123', origin_ref: 'user-123',
+      input_tokens: 10,
+      output_tokens: 5,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      cost: 0.25,
+      count: 2,
+    });
+  });
+
+  test('an origin_ref row never degrades into the provider shape', () => {
+    // mapUsageBreakdownRow dispatches on which key is present; origin_ref must
+    // win before the provider fallback or a per-user report would come back
+    // keyed by provider.
+    const row = mapUsageBreakdownRow({
+      originRef: 'user-9',
+      provider: 'anthropic',
+      inputTokens: 1,
+      outputTokens: 1,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+      cost: 0.01,
+      count: 1,
+    });
+    expect(row).toHaveProperty('origin_ref', 'user-9');
+    expect(row).not.toHaveProperty('provider');
+  });
+});
+

@@ -61,7 +61,7 @@ import {
   type KortixProject,
   listAccountMembers,
   listProjectsForAccount,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 
 // Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
 // sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.

@@ -9,7 +9,7 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
-import { type ConnectorSharing, listProjectAccess } from '@kortix/sdk/projects-client';
+import { type ConnectorSharing, listProjectAccess } from '@kortix/sdk';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Users } from 'lucide-react';

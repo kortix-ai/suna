@@ -38,9 +38,20 @@ interface UsageProject {
   error?: string;
 }
 
+interface EndUserBill {
+  endUserRef: string;
+  rawCost: number;
+  billedCost: number;
+  sessions: number;
+}
+
 interface UsageResponse {
   markup: number;
   totals: { raw: number; billed: number };
+  /** Per-END-USER split, keyed on the end_user_ref the proxy stamps. */
+  by_end_user: EndUserBill[];
+  /** Spend with no end_user_ref — Lumen's own, deliberately not billed to anyone. */
+  unattributed_cost: number;
   projects: UsageProject[];
 }
 
@@ -140,6 +151,52 @@ function UsageDashboard() {
                 </div>
               </Card>
             </div>
+
+            {/* The wrapper's actual invoice: upstream bills this account once,
+                and end_user_ref splits it back out per Lumen user. */}
+            {data.by_end_user.length > 0 && (
+              <Card className="mt-6 overflow-hidden">
+                <div className="border-b px-4 py-3">
+                  <div className="text-sm font-medium">Your end-user charge</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Split from one upstream bill using the <code>end_user_ref</code> stamped on each
+                    session. Scoped to you — an operator dashboard would gate the account-wide view
+                    behind an operator role.
+                  </div>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="px-4 py-2 text-left font-normal">End-user</th>
+                      <th className="px-4 py-2 text-right font-normal">Sessions</th>
+                      <th className="px-4 py-2 text-right font-normal">Cost</th>
+                      <th className="px-4 py-2 text-right font-normal">You charge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.by_end_user.map((bill) => (
+                      <tr key={bill.endUserRef} className="border-b last:border-b-0">
+                        <td className="px-4 py-2 font-mono text-xs">{bill.endUserRef}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{bill.sessions}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                          {usd(bill.rawCost)}
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium tabular-nums">
+                          {usd(bill.billedCost)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {data.unattributed_cost > 0 && (
+                  <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+                    {usd(data.unattributed_cost)} is not attributed to any end-user — your own
+                    sessions, and anything from before this was tracked. It is deliberately not
+                    billed to anyone, so these rows will not sum to the total above.
+                  </div>
+                )}
+              </Card>
+            )}
 
             {data.projects.length === 0 && (
               <Card className="mt-6 p-8 text-center text-sm text-muted-foreground">

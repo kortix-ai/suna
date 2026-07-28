@@ -19,7 +19,7 @@
 
 import { Icon } from '@/features/icon/icon';
 import { WALLPAPERS } from '@/lib/wallpapers';
-import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
+import type { ExperimentalFeatureKey } from '@kortix/sdk';
 import {
   CogOne,
   CogOneSolid,
@@ -305,6 +305,17 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'openSessionBrowser',
     keywords: 'browser preview app port localhost session',
+    requiresSession: true,
+  },
+  {
+    id: 'open-session-files',
+    label: 'Open Files',
+    icon: FolderOpen,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionFiles',
+    keywords: 'files explorer workspace session',
     requiresSession: true,
   },
 

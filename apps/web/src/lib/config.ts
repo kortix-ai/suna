@@ -81,8 +81,9 @@ export const isBillingEnabled = (): boolean => {
 
 /**
  * Whether Kortix's own managed model lineup ("Managed · Included with your
- * plan" — Claude/GLM/Qwen/DeepSeek/… routed through Kortix's shared Bedrock/
- * OpenRouter credentials) can appear anywhere in the UI. CLOUD-ONLY: mirrors
+ * plan" — Claude, GLM, and DeepSeek routed through Kortix's shared Bedrock,
+ * AsterLab, and OpenRouter credentials) can appear anywhere in the UI.
+ * CLOUD-ONLY: mirrors
  * the backend's KORTIX_MANAGED_PROVIDER_ENABLED, which already keeps managed
  * models out of the served model catalog when off. Use this for a surface
  * that reasons about "is `kortix` connected" independently of the live

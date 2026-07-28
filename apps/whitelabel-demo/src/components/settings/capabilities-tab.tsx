@@ -17,12 +17,7 @@ export function CapabilitiesTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      <Section
-        icon={Bot}
-        title="Agents"
-        items={config.agents}
-        defaultName={config.open_code_default_agent}
-      />
+      <Section icon={Bot} title="Agents" items={config.agents} defaultName={config.default_agent} />
       <Section icon={Slash} title="Commands" items={config.commands} prefix="/" />
       <Section icon={Sparkles} title="Skills" items={config.skills} />
     </div>
@@ -58,7 +53,9 @@ function Section({
                 {prefix}
                 {it.name}
               </span>
-              {defaultName === it.name && <span className="text-xs text-muted-foreground">default</span>}
+              {defaultName === it.name && (
+                <span className="text-xs text-muted-foreground">default</span>
+              )}
             </div>
             {it.description && (
               <div className="mt-0.5 text-xs text-muted-foreground">{it.description}</div>

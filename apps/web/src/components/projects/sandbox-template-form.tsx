@@ -30,7 +30,7 @@ import {
   createSandboxTemplate,
   updateSandboxTemplate,
   type SandboxTemplate,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 

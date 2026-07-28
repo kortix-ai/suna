@@ -9,7 +9,14 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type AppInstance, loginUser, resetUsersStore, startApp, uniqueEmail } from './harness';
+import {
+  type AppInstance,
+  createTestKortix,
+  loginUser,
+  resetUsersStore,
+  startApp,
+  uniqueEmail,
+} from './harness';
 import { DEMO_PASSWORD, wrapperEnv } from './env';
 
 const LIVE_UPSTREAM = process.env.E2E_LIVE_UPSTREAM;
@@ -35,18 +42,14 @@ describe.skipIf(!hasLiveEnv)('live upstream golden path', () => {
     const email = uniqueEmail('live');
     const token = await loginUser(app, email, DEMO_PASSWORD);
 
-    const provision = await fetch(`${app.baseUrl}/api/kortix/projects/provision`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: `E2E Live ${Date.now()}`, seed_starter: true }),
+    const kortix = createTestKortix(app, token);
+    const project = await kortix.projects.provision({
+      name: `E2E Live ${Date.now()}`,
+      seed_starter: true,
     });
-    expect(provision.status).toBeLessThan(300);
-    const project = (await provision.json()) as { project_id: string };
     expect(project.project_id).toBeTruthy();
 
-    const detail = await fetch(`${app.baseUrl}/api/kortix/projects/${project.project_id}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(detail.status).toBe(200);
+    const detail = await kortix.project(project.project_id).get();
+    expect(detail.project_id).toBe(project.project_id);
   }, 60_000);
 });

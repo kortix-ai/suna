@@ -14,7 +14,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
-import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync';
+import { useGatewayCatalogSync } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { parseCustomizeSection } from '@/lib/customize-sections';
@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { PanelLeft } from 'lucide-react';
 
 const CommandPalette = lazy(() =>
@@ -191,10 +191,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           headers come and go (sessions render theirs only once booted) — so
           the opener lives here, always mounted, on every project view. The
           session header indents its leading buttons past it below md. */}
-      <SidebarTrigger
-        aria-label="Open sidebar"
-        className="text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 size-8 md:hidden"
-      />
+       
       {desktopShell && !isExpanded && (
         <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
           <Button
@@ -221,7 +218,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           </Button>
         </Hint>
       )}
-      {!desktopShell && !isExpanded && (
+      {/* {!desktopShell && !isExpanded && (
         // Same row as the session site header's leading cluster (p-2 +
         // size-8 buttons), so the toggle reads as part of it. Hovering it
         // also summons the flyout, mirroring the edge strip.
@@ -239,7 +236,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>
         </Hint>
-      )}
+      )} */}
       {children}
     </div>
   );

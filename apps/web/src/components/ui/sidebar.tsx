@@ -375,7 +375,7 @@ function SidebarEdgePeek({ className, ...props }: React.ComponentProps<'div'>) {
       data-slot="sidebar-edge-peek"
       onPointerEnter={peekEnter}
       onPointerLeave={peekLeave}
-      className={cn('fixed inset-y-0 left-0 z-30 hidden w-2 md:block', className)}
+      className={cn('fixed inset-y-0 left-0 z-60 hidden w-2 md:block', className)}
       {...props}
     />
   );

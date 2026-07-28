@@ -16,6 +16,12 @@ export interface UpstreamPricing {
   // documented multiple of inputPerMillion when a live source doesn't provide
   // it (see usage/pricing.ts).
   cacheWritePerMillion?: number;
+  tiers?: UpstreamPricingTier[];
+  contextOver200k?: UpstreamPricingTier;
+}
+
+export interface UpstreamPricingTier extends UpstreamPricing {
+  contextThreshold: number;
 }
 
 export interface UpstreamDescriptor {

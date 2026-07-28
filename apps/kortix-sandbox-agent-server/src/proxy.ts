@@ -14,9 +14,11 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
+import { createAcpRouter, createOpenCodeSessionHistory } from './routes/acp'
 import webProxyRouter from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
+import type { AcpRuntime } from './acp/runtime'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -109,6 +111,7 @@ export function buildOpencodeApp(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
+  acpRuntime?: AcpRuntime,
 ): Hono {
   const app = new Hono()
 
@@ -128,6 +131,13 @@ export function buildOpencodeApp(
   // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
   // the parameter is optional only so tests can build the app without one.
   const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
+  const acpRouter = createAcpRouter(
+    cfg,
+    () => opencode.getAcpConnection(),
+    () => bootState.initialOpenCodeSessionId ?? null,
+    createOpenCodeSessionHistory(cfg, () => opencode.getInternalUrl()),
+    acpRuntime,
+  )
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -138,6 +148,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
+  kortixRouter.route('/acp', acpRouter)
+  kortixRouter.route('/acp/', acpRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -334,6 +346,7 @@ export function startProxy(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
+  acpRuntime?: AcpRuntime,
 ): ProxyServer {
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
@@ -341,7 +354,16 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
+  let app = buildOpencodeApp(
+    cfg,
+    opencode,
+    bootTime,
+    bootState,
+    projectEnv,
+    staticWebPort,
+    ptyRegistry,
+    acpRuntime,
+  )
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -417,7 +439,16 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
+      app = buildOpencodeApp(
+        next,
+        opencode,
+        bootTime,
+        bootState,
+        projectEnv,
+        staticWebPort,
+        ptyRegistry,
+        acpRuntime,
+      )
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {

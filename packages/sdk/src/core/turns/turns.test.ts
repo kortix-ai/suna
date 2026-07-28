@@ -421,6 +421,30 @@ describe('getSessionCost', () => {
     const raw = 1 * deepseekRates.outputPer1M;
     expect(getSessionCost(messages, lookup)).toBeCloseTo(raw * COST_MARKUP, 8);
   });
+
+  test('uses the supplied cache-write rate', () => {
+    const cacheWriteLookup: ModelPricingLookup = () => ({
+      inputPer1M: 1,
+      outputPer1M: 4,
+      cacheReadPer1M: 0.2,
+      cacheWritePer1M: 1.5,
+    });
+    const messages = [
+      {
+        ...assistantInfo({ modelID: 'glm-5.2' }),
+        parts: [
+          stepFinishPart({
+            tokens: {
+              input: 1_000_000,
+              output: 0,
+              cache: { read: 0, write: 1_000_000 },
+            },
+          }),
+        ],
+      },
+    ];
+    expect(getSessionCost(messages, cacheWriteLookup)).toBeCloseTo(1.5 * COST_MARKUP, 8);
+  });
 });
 
 describe('getTurnCost', () => {

@@ -2,6 +2,7 @@
 
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -27,8 +28,17 @@ import { persist } from 'zustand/middleware';
 // 'actions' = tool calls · 'browser' = internal browser · 'explorer' = in-sandbox
 // file explorer + preview · 'terminal' = live PTY shell into the sandbox ·
 // 'files' = git changes for this session · 'audit' = governed-action trail +
-// pending approvals for this session.
-export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'terminal' | 'files' | 'audit';
+// pending approvals for this session · 'voice' = the live/past voice-call
+// transcript for this session (spoken turns + ask_kortix/run_command calls
+// the voice-agent worker made — see session-voice-transcript-shared.ts).
+export type SessionPanelView =
+  | 'actions'
+  | 'browser'
+  | 'explorer'
+  | 'terminal'
+  | 'files'
+  | 'audit'
+  | 'voice';
 
 /**
  * A pending "reveal this file in the Files explorer" request for a session.
@@ -160,11 +170,25 @@ export function getActivePanelSessionId(): string | null {
 }
 
 /**
- * Reveal a file in the active session's side-panel Files (explorer) tab and
- * make sure the panel is open — the file-path equivalent of clicking a
- * localhost link (which opens the Browser tab via LocalhostLinkInterceptor).
+ * Reveal a file in the active session's side panel and make sure the panel
+ * is open — the file-path equivalent of clicking a localhost link (which
+ * opens the Browser tab via LocalhostLinkInterceptor).
+ *
+ * Branches on panel mode the same way `openSessionQuickView` does, for the
+ * same reason: Advanced has no `fileOpenBySession` consumer of its own, so
+ * it needs `requestFileOpen` to flip `viewBySession` to `'explorer'` and
+ * mount `SessionFilesExplorer`. Easy mode's `EasyPanel` consumes the request
+ * directly and must use `requestFileOpenSilently` so `viewBySession` — the
+ * key Advanced mode's tab strip resumes from — is left untouched.
  */
 export function openFileInSessionPanel(sessionId: string, path: string, line?: number): void {
-  useSessionBrowserStore.getState().requestFileOpen(sessionId, path, line);
+  const panelMode = useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
+
+  if (panelMode === 'advanced') {
+    useSessionBrowserStore.getState().requestFileOpen(sessionId, path, line);
+  } else {
+    useSessionBrowserStore.getState().requestFileOpenSilently(sessionId, path, line);
+  }
+
   useKortixComputerStore.getState().setIsSidePanelOpen(true);
 }

@@ -50,7 +50,7 @@ import {
   type MemberProjectAccess,
 } from '@/lib/iam-client';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
+import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 

@@ -28,7 +28,7 @@ import { GatewayLogs } from '@/features/workspace/customize/sections/view/gatewa
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
 import { GatewayPlayground } from '@/features/workspace/customize/sections/view/gateway/gateway-playground';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useModelDefaults } from '@kortix/sdk/react';
 import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';

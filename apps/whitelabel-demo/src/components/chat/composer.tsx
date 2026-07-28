@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { ArrowUp, Slash, Square } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
@@ -90,13 +91,14 @@ export function Composer({
           </div>
           <div className="max-h-64 overflow-y-auto p-1 scrollbar-thin">
             {matches.map((c, i) => (
-              <button
+              <Button
                 key={c.name}
                 type="button"
+                variant="ghost"
                 onMouseEnter={() => setHighlight(i)}
                 onClick={() => pickCommand(c.name)}
                 className={cn(
-                  'flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left',
+                  'h-auto w-full items-start justify-start gap-2 whitespace-normal px-2 py-1.5 text-left',
                   i === highlight ? 'bg-accent' : 'hover:bg-accent',
                 )}
               >
@@ -107,7 +109,7 @@ export function Composer({
                     <div className="truncate text-xs text-muted-foreground">{c.description}</div>
                   )}
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -119,7 +121,7 @@ export function Composer({
           disabled && 'opacity-70',
         )}
       >
-        <textarea
+        <Textarea
           ref={ref}
           rows={1}
           value={value}
@@ -157,7 +159,7 @@ export function Composer({
               if (!busy) submit();
             }
           }}
-          className="max-h-52 min-h-[24px] w-full resize-none bg-transparent px-4 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground scrollbar-thin"
+          className="max-h-52 min-h-[24px] resize-none border-0 bg-transparent px-4 pt-3.5 text-sm leading-relaxed shadow-none focus-visible:ring-0 scrollbar-thin"
         />
         <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
           <div className="min-w-0">{toolbar}</div>

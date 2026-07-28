@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  type AuditWebhook,
+  type IamAuditWebhook,
   type CreatedAuditWebhook,
   createAuditWebhook,
   deleteAuditWebhook,
@@ -68,7 +68,7 @@ async function copyValue(value: string, ok = 'Copied') {
 export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardProps) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<AuditWebhook | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<IamAuditWebhook | null>(null);
 
   const hooksQuery = useQuery({
     queryKey: ['audit-webhooks', accountId],

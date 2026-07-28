@@ -2,7 +2,16 @@
 
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, CalendarClock, Container, FileCode, Package, type LucideIcon } from 'lucide-react';
+import {
+  Bell,
+  Bot,
+  CalendarClock,
+  Container,
+  FileCode,
+  Package,
+  PanelLeft,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
@@ -18,11 +27,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import type { Command } from '@kortix/sdk/react';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
@@ -33,7 +43,7 @@ import {
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { chalkColors } from '@kortix/shared';
 import { HiOutlineViewGrid } from 'react-icons/hi';
 
@@ -57,6 +67,9 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const sidebarToggleLabel =
+    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
@@ -93,10 +106,10 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        sandbox_slug: activeSlug,
+        ...(selectedSlug ? { sandbox_slug: selectedSlug } : {}),
       });
     },
-    [activeSlug, onSend],
+    [selectedSlug, onSend],
   );
 
   const handleCommand = useCallback(
@@ -117,6 +130,18 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
+      <Button
+        type="button"
+        aria-label={sidebarToggleLabel}
+        variant="ghost"
+        size="icon"
+        onClick={toggleSidebar}
+        onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
+        onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
+        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+      >
+        <PanelLeft className="cn-rtl-flip size-4" />
+      </Button>
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint
@@ -172,6 +197,7 @@ export function ProjectHome({
                 <SandboxPicker
                   items={sandboxItems}
                   activeSlug={activeSlug}
+                  selectedSlug={selectedSlug}
                   onSelect={setSelectedSlug}
                 />
               ) : null
@@ -276,11 +302,13 @@ export function StarterPromptChips({ onPick }: { onPick: (text: string) => void 
 function SandboxPicker({
   items,
   activeSlug,
+  selectedSlug,
   onSelect,
 }: {
   items: SandboxTemplate[];
   activeSlug: string;
-  onSelect: (slug: string) => void;
+  selectedSlug: string | null;
+  onSelect: (slug: string | null) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
@@ -305,7 +333,9 @@ function SandboxPicker({
           className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200"
         >
           <ActiveIcon className="size-3.5 shrink-0" />
-          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className="max-w-[7rem] truncate">
+            {selectedSlug ? active.name : 'Agent environment'}
+          </span>
           <span className={cn('size-1.5 shrink-0 rounded-full', activeStateTone)} />
         </button>
       </DropdownMenuTrigger>
@@ -313,6 +343,23 @@ function SandboxPicker({
         <DropdownMenuLabel>
           {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSandboxe9c5fbaa')}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="flex items-start gap-2" onSelect={() => onSelect(null)}>
+          <Bot className="text-muted-foreground mt-0.5 size-4" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Agent environment</span>
+              {selectedSlug === null && (
+                <Badge variant="outline" size="xs">
+                  selected
+                </Badge>
+              )}
+            </div>
+            <div className="text-muted-foreground text-xs">
+              Uses the selected agent, project, or platform default.
+            </div>
+          </div>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {items.map((tpl) => {
           const Icon = tpl.is_default ? Container : tpl.has_image ? Package : FileCode;
@@ -347,7 +394,7 @@ function SandboxPicker({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{tpl.name}</span>
-                  {tpl.slug === activeSlug && (
+                  {tpl.slug === selectedSlug && (
                     <Badge variant="outline" size="xs">
                       selected
                     </Badge>

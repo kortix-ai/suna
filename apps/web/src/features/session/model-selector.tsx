@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import {
   CommandGroup,
   CommandInput,
@@ -31,15 +32,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
+import { useModelStore } from '@kortix/sdk/react';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
+import { resolveAvailableSelectedModel } from './model-availability';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -102,9 +104,10 @@ const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 // that over parsing the wire id at all. String-splitting `modelID` remains
 // ONLY as a fallback for a stale/older baked catalog that predates the field.
 export function pickerGroupId(model: FlatModel): string {
-  if (model.providerID !== 'kortix' || MANAGED_MODEL_IDS.has(model.modelID)) {
+  if (model.providerID !== 'kortix') {
     return model.providerID;
   }
+  if (MANAGED_MODEL_IDS.has(model.modelID)) return model.provider ?? model.providerID;
   if (model.provider) return model.provider;
   const slash = model.modelID.indexOf('/');
   return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
@@ -152,6 +155,8 @@ export interface ModelSelectorProps {
    */
   unsetLabel?: string;
   disabled?: boolean;
+  /** True while the runtime provider catalog request has not resolved. */
+  modelsLoading?: boolean;
 }
 
 export function ModelSelector({
@@ -161,6 +166,7 @@ export function ModelSelector({
   defaultControls,
   unsetLabel = 'No model',
   disabled = false,
+  modelsLoading = false,
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -172,8 +178,10 @@ export function ModelSelector({
     openConnectProvider,
     openUpgrade,
     modal: connectionModal,
+    entitlementsPending,
+    isSelectableModel,
     showUpgradeOption,
-  } = useModelConnectionGate();
+  } = useModelConnectionGate(models);
 
   // When mounted under /projects/[id]/..., route model filtering to the
   // per-project gateway catalog. On every other route (instance dashboard,
@@ -232,8 +240,13 @@ export function ModelSelector({
     freeTier: llmGatewayEnabled && freeTier,
   });
 
+  const availableSelectedModel = entitlementsPending
+    ? selectedModel
+    : resolveAvailableSelectedModel(selectedModel, isSelectableModel);
   const current = baseModels.find(
-    (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
+    (m) =>
+      m.providerID === availableSelectedModel?.providerID &&
+      m.modelID === availableSelectedModel?.modelID,
   );
   const displayName = current?.modelName || unsetLabel;
 
@@ -250,8 +263,11 @@ export function ModelSelector({
     const q = search.toLowerCase();
     return baseModels
       .filter((m) => {
-        // A search query reveals everything; otherwise respect visibility from
-        // the provider modal's Models tab.
+        if (!isSelectableModel({ providerID: m.providerID, modelID: m.modelID })) {
+          return false;
+        }
+        // Search reveals usable models that the user hid from the default list.
+        // It never reveals models that the account cannot call.
         if (
           !q &&
           !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
@@ -265,7 +281,7 @@ export function ModelSelector({
         );
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search, modelStore]);
+  }, [baseModels, search, modelStore, isSelectableModel]);
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -411,7 +427,15 @@ export function ModelSelector({
               />
 
               <CommandList className="max-h-[380px]">
-                {grouped.length > 0 ? (
+                {modelsLoading || entitlementsPending ? (
+                  <div
+                    className="flex min-h-32 items-center justify-center"
+                    role="status"
+                    aria-label="Loading models"
+                  >
+                    <Loading className="text-muted-foreground size-4 shrink-0" />
+                  </div>
+                ) : grouped.length > 0 ? (
                   <>
                     {grouped.map((group) => (
                       <CommandGroup
@@ -433,8 +457,8 @@ export function ModelSelector({
                       >
                         {group.models.map((model) => {
                           const isSelected =
-                            selectedModel?.providerID === model.providerID &&
-                            selectedModel?.modelID === model.modelID;
+                            availableSelectedModel?.providerID === model.providerID &&
+                            availableSelectedModel?.modelID === model.modelID;
 
                           const isFree = shouldShowFreeTag(model);
                           // `.provider` (the real upstream, when the gateway
@@ -520,12 +544,12 @@ export function ModelSelector({
                   </div>
                 )}
               </CommandList>
-              {defaultControls && selectedModel ? (
+              {defaultControls && availableSelectedModel ? (
                 <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
                   <button
                     type="button"
                     onClick={() => {
-                      defaultControls.onSetAccountDefault(selectedModel);
+                      defaultControls.onSetAccountDefault(availableSelectedModel);
                       setOpen(false);
                     }}
                     className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
@@ -537,7 +561,7 @@ export function ModelSelector({
                     <button
                       type="button"
                       onClick={() => {
-                        defaultControls.onSetProjectDefault?.(selectedModel);
+                        defaultControls.onSetProjectDefault?.(availableSelectedModel);
                         setOpen(false);
                       }}
                       className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
@@ -550,7 +574,7 @@ export function ModelSelector({
                     <button
                       type="button"
                       onClick={() => {
-                        defaultControls.onSetAgentDefault?.(selectedModel);
+                        defaultControls.onSetAgentDefault?.(availableSelectedModel);
                         setOpen(false);
                       }}
                       className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"

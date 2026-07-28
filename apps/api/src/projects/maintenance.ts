@@ -293,12 +293,14 @@ export async function runProjectMaintenance(): Promise<void> {
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
       // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
+      // Also reconciles `active` sandboxes left with no open compute row (the
+      // close-without-reopen defect — see reconcileMissingComputeSessions).
       tickRunningComputeCharges().catch((err) => {
         console.warn(
           '[project-maintenance] compute tick failed:',
           err instanceof Error ? err.message : err,
         );
-        return { settled: 0 };
+        return { settled: 0, reconciled: 0 };
       }),
       // Heal snapshot build-log rows orphaned at "building" by a process
       // restart/crash, globally across all projects.
@@ -342,6 +344,7 @@ export async function runProjectMaintenance(): Promise<void> {
         branches.deleted ||
         branches.errors ||
         computeTick.settled ||
+        computeTick.reconciled ||
         staleBuilds.closedReady ||
         staleBuilds.closedFailed ||
         snapshotGc.deleted,

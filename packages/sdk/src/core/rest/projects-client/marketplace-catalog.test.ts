@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  createMarketplaceInstallSession,
   addMarketplaceSource,
   getMarketplaceCatalogItem,
   getMarketplaceCatalogItemFile,
@@ -90,4 +91,13 @@ test('marketplace sources: list/add/remove', async () => {
   await removeMarketplaceSource('SRC1');
   expect(last().url).toContain('/marketplace/sources/SRC1');
   expect(last().method).toBe('DELETE');
+});
+
+test('createMarketplaceInstallSession starts a typed project install session', async () => {
+  nextResponse = { status: 200, body: { session_id: 'session-1' } };
+  const result = await createMarketplaceInstallSession('project-1', 'kortix:researcher');
+  expect(last().url).toContain('/projects/project-1/marketplace/install-session');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ id: 'kortix:researcher' });
+  expect(result.session_id).toBe('session-1');
 });

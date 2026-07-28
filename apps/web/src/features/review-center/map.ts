@@ -5,7 +5,7 @@
  * labels and the actor are derived from the kind + agent. See review-center.tsx.
  */
 
-import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk/projects-client';
+import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import { looksLikeMarkdown } from './review-markdown';
 import type {
   ApprovalAction,
