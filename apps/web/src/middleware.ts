@@ -89,6 +89,7 @@ const PUBLIC_ROUTES = [
 const STATIC_PUBLIC_ROUTES = [
   '/game-of-life',
   '/rauch',
+  '/v2', // Marketing revamp preview; folds into '/' once the redesign lands
 ];
 
 const MARKDOWN_NEGOTIATION_ROUTES = new Set([
