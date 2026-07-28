@@ -221,8 +221,13 @@ test.describe.serial('17 — ACP session title synchronization', () => {
       sessionLists.length = 0;
       const navigationsBeforePrompt = mainFrameNavigations;
       const marker = transport === 'acp' ? 'ACP_TITLE_SYNC_DONE' : 'REST_TITLE_SYNC_DONE';
+      const sendButton = page.getByRole('button', { name: 'Send message' });
+      await expect(page.getByText('Sandbox build running...', { exact: true })).toBeHidden({
+        timeout: 12 * 60_000,
+      });
       await input.fill(`Research the number 7 briefly. Then reply exactly ${marker}.`);
-      await page.getByRole('button', { name: 'Send message' }).click();
+      await expect(sendButton).toBeEnabled({ timeout: 30_000 });
+      await sendButton.click();
       await expect(page.getByText(marker, { exact: true }).last()).toBeVisible({
         timeout: 120_000,
       });
