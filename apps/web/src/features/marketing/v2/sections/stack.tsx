@@ -1,29 +1,18 @@
 'use client';
 
 import { STACK } from '@/features/marketing/v2/content';
-import { Iso, Slab, Stage } from '@/features/marketing/v2/illustrations';
-import { Eyebrow, Heading, Lead } from '@/features/marketing/v2/primitives';
+import { Iso, Slab } from '@/features/marketing/v2/illustrations';
 import { cn } from '@/lib/utils';
-import {
-  Boxes,
-  Brain,
-  Cpu,
-  GitBranch,
-  Layers,
-  Radio,
-  ShieldCheck,
-  Workflow,
-} from 'lucide-react';
+import { Boxes, Brain, Cpu, GitBranch, Layers, Radio, ShieldCheck, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const LAYERS = STACK.layers;
-const SLAB_RISE = 30;
-
+const RISE = 32;
 const GLYPHS = [Cpu, Workflow, Boxes, Brain, GitBranch, Radio, ShieldCheck, Layers];
 
 /**
- * The stack: a scroll-pinned section where each layer of Kortix stacks up as a
- * frosted isometric slab while its description takes over the left column.
+ * The stack: a scroll-pinned panel where each layer of the platform stacks up as
+ * a frosted glass slab while its description takes over the left column.
  */
 export function StackSection() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -59,22 +48,19 @@ export function StackSection() {
   }, []);
 
   return (
-    <section id="stack" className="bg-background scroll-mt-24 px-6 pt-16 sm:pt-24">
-      <div className="mx-auto max-w-6xl">
-        <div className="max-w-2xl">
-          <Eyebrow>The stack</Eyebrow>
-          <Heading lines={STACK.heading} className="mt-6" />
-          <Lead className="mt-5">{STACK.subheading}</Lead>
-        </div>
-
-        <div ref={wrapRef} style={{ height: `${(LAYERS.length + 1) * 100}vh` }} className="relative mt-10">
-          <div className="sticky top-0 flex h-screen items-center py-8">
-            <Stage
-              className="grid w-full md:grid-cols-2"
-              style={{ minHeight: 'min(44rem, 80vh)' }}
+    <section id="stack" className="bg-background scroll-mt-24 px-6 py-6">
+      <div className="mx-auto w-full max-w-[68rem]">
+        <div ref={wrapRef} style={{ height: `${(LAYERS.length + 1) * 100}vh` }} className="relative">
+          <div className="sticky top-0 flex h-screen items-center py-6">
+            <div
+              className="relative grid h-[min(50rem,88vh)] w-full overflow-hidden rounded-[1.75rem] md:grid-cols-[1fr_1.05fr]"
+              style={{
+                background:
+                  'linear-gradient(155deg, color-mix(in oklab, var(--kortix-blue) 7%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 12%, var(--background)) 100%)',
+              }}
             >
               {/* left: the layer list */}
-              <div className="relative z-10 flex flex-col justify-center gap-1.5 p-8 pb-20 sm:p-10 sm:pb-20">
+              <div className="relative z-10 flex flex-col justify-center gap-2 p-8 sm:p-11">
                 {LAYERS.map((layer, i) => {
                   const isActive = i === active;
                   return (
@@ -83,29 +69,22 @@ export function StackSection() {
                       className={cn(
                         'transition-all duration-300 ease-out',
                         isActive
-                          ? 'border-border bg-background rounded-sm border px-5 py-4 shadow-sm'
-                          : 'bg-foreground/[0.06] text-muted-foreground w-fit rounded-full px-4 py-1.5',
+                          ? 'bg-foreground/[0.62] rounded-[1rem] px-5 py-4 backdrop-blur-sm'
+                          : 'bg-foreground/[0.55] w-fit rounded-full px-4 py-[0.4rem]',
                       )}
                     >
-                      <p
-                        className={cn(
-                          'text-[0.9375rem] font-medium',
-                          isActive ? 'text-foreground' : 'text-muted-foreground',
-                        )}
-                      >
-                        {layer.name}
-                      </p>
+                      <p className="text-background text-[0.9375rem] font-medium">{layer.name}</p>
                       {isActive && (
                         <>
-                          <p className="text-muted-foreground mt-1.5 max-w-sm text-sm leading-relaxed">
+                          <p className="text-background/75 mt-1.5 max-w-[24rem] text-[0.875rem] leading-[1.55]">
                             {layer.description}
                           </p>
                           {layer.chips && (
-                            <div className="mt-3 flex flex-wrap gap-1.5">
+                            <div className="mt-3.5 flex flex-wrap gap-2">
                               {layer.chips.map((chip) => (
                                 <span
                                   key={chip}
-                                  className="border-border bg-card text-muted-foreground rounded-sm border px-2 py-0.5 text-[11px]"
+                                  className="bg-background/20 text-background/90 rounded-md px-2 py-0.5 text-[11px]"
                                 >
                                   {chip}
                                 </span>
@@ -121,13 +100,12 @@ export function StackSection() {
 
               {/* right: the slabs */}
               <div className="relative hidden md:block">
-                <Iso className="absolute inset-0" scale={1.15}>
-                  {/* keep the growing stack centred instead of drifting up-frame */}
+                <Iso className="absolute inset-0" scale={1.1}>
                   <div
-                    className="transition-transform duration-500 ease-out"
+                    className="transition-transform duration-[600ms] ease-out"
                     style={{
                       transformStyle: 'preserve-3d',
-                      transform: `translateZ(${-(active * SLAB_RISE) / 2}px)`,
+                      transform: `translateZ(${-(active * RISE) / 2}px)`,
                     }}
                   >
                     {LAYERS.map((layer, i) => {
@@ -136,12 +114,12 @@ export function StackSection() {
                       return (
                         <Slab
                           key={layer.name}
-                          lift={i * SLAB_RISE}
-                          dim={i > active}
+                          lift={i * RISE}
+                          hidden={i > active}
                           tone={isTop ? 'accent' : 'frost'}
-                          thickness={13}
+                          thickness={15}
                           glyph={
-                            isTop ? <Glyph className="size-16" strokeWidth={1.25} /> : undefined
+                            isTop ? <Glyph className="size-20" strokeWidth={1.15} /> : undefined
                           }
                         />
                       );
@@ -151,25 +129,25 @@ export function StackSection() {
               </div>
 
               {/* footer rail */}
-              <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-4 px-8 pb-6 sm:px-10">
+              <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between gap-4 px-8 pb-7 sm:px-11">
                 <button
                   type="button"
                   onClick={skip}
-                  className="text-muted-foreground hover:text-foreground cursor-pointer text-sm transition-colors"
+                  className="text-muted-foreground hover:text-foreground cursor-pointer text-[0.9375rem] transition-colors"
                 >
                   Skip section
                 </button>
-                <div className="bg-foreground/10 h-1 w-40 overflow-hidden rounded-full">
+                <div className="bg-foreground/25 h-[0.6rem] w-52 overflow-hidden rounded-full p-[3px]">
                   <div
-                    className="bg-foreground h-full rounded-full transition-all duration-300"
+                    className="bg-background h-full rounded-full transition-all duration-300"
                     style={{ width: `${((active + 1) / LAYERS.length) * 100}%` }}
                   />
                 </div>
-                <span className="text-muted-foreground w-12 text-right text-sm tabular-nums">
+                <span className="text-muted-foreground w-12 text-right text-[0.9375rem] tabular-nums">
                   {active + 1}/{LAYERS.length}
                 </span>
               </div>
-            </Stage>
+            </div>
           </div>
         </div>
       </div>

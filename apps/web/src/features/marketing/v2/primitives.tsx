@@ -1,15 +1,18 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 /**
- * The marketing dialect: `max-w-6xl px-6 py-16 sm:py-24`, `rounded-sm`, hairline
- * borders, one accent. Everything here is token-driven so light and dark both work.
+ * Layout primitives for the landing page. The page is a close structural
+ * recreation of tembo.io rendered in Kortix's brand: same section rhythm, same
+ * panel geometry, Kortix blue as the single accent.
  */
 
+export const MAX_W = 'mx-auto w-full max-w-[68rem] px-6';
+
+/** Plain section — white page background. */
 export function Section({
   id,
   className,
@@ -20,42 +23,66 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className={cn('scroll-mt-24 px-6 py-16 sm:py-24', className)}>
-      <div className="mx-auto max-w-6xl">{children}</div>
+    <section id={id} className={cn('scroll-mt-24 py-20 sm:py-28', className)}>
+      <div className={MAX_W}>{children}</div>
     </section>
   );
 }
 
-export function Eyebrow({ children }: { children: ReactNode }) {
+/** The big soft-tinted rounded panel Tembo uses for its feature blocks. */
+export function Panel({
+  id,
+  className,
+  style,
+  children,
+}: {
+  id?: string;
+  className?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
   return (
-    <Badge variant="kortix" className="rounded">
-      {children}
-    </Badge>
+    <section id={id} className="scroll-mt-24 px-6 py-6">
+      <div
+        className={cn('mx-auto w-full max-w-[68rem] overflow-hidden rounded-[1.75rem]', className)}
+        style={{
+          background:
+            'linear-gradient(155deg, var(--panel-a) 0%, var(--panel-b) 55%, var(--panel-a) 100%)',
+          ...({
+            '--panel-a': 'color-mix(in oklab, var(--kortix-blue) 6%, var(--background))',
+            '--panel-b': 'color-mix(in oklab, var(--kortix-blue) 13%, var(--background))',
+          } as CSSProperties),
+          ...style,
+        }}
+      >
+        {children}
+      </div>
+    </section>
   );
 }
 
-/** Display heading. Pass an array so the line break is deliberate. */
-export function Heading({
+/** Centred display heading, two deliberate lines. */
+export function Display({
   lines,
   className,
-  as: As = 'h2',
   tone = 'default',
+  as: As = 'h2',
 }: {
   lines: string[];
   className?: string;
-  as?: 'h1' | 'h2' | 'h3';
   tone?: 'default' | 'inverse';
+  as?: 'h1' | 'h2';
 }) {
   return (
     <As
       className={cn(
-        'text-3xl leading-tight font-medium tracking-tight sm:text-4xl',
-        tone === 'inverse' ? 'text-background' : 'text-foreground',
+        'text-[2.25rem] leading-[1.08] font-medium tracking-[-0.02em] sm:text-[3rem]',
+        tone === 'inverse' ? 'text-white' : 'text-foreground',
         className,
       )}
     >
       {lines.map((line) => (
-        <span key={line} className="block text-balance">
+        <span key={line} className="block">
           {line}
         </span>
       ))}
@@ -75,8 +102,8 @@ export function Lead({
   return (
     <p
       className={cn(
-        'text-base leading-relaxed',
-        tone === 'inverse' ? 'text-background/70' : 'text-muted-foreground',
+        'text-[1.0625rem] leading-[1.6]',
+        tone === 'inverse' ? 'text-white/60' : 'text-muted-foreground',
         className,
       )}
     >
@@ -85,11 +112,11 @@ export function Lead({
   );
 }
 
-/** A bold lede followed by supporting text, split by a hairline. */
+/** Bold lede + muted rest, separated by a hairline — Tembo's bullet pattern. */
 export function LedeBullet({ lede, rest }: { lede: string; rest: string }) {
   return (
-    <div className="border-border border-t py-5">
-      <p className="text-[0.9375rem] leading-relaxed">
+    <div className="border-border border-t py-6">
+      <p className="text-[1.0625rem] leading-[1.6]">
         <span className="text-foreground font-medium">{lede}</span>{' '}
         <span className="text-muted-foreground">{rest}</span>
       </p>
@@ -97,7 +124,7 @@ export function LedeBullet({ lede, rest }: { lede: string; rest: string }) {
   );
 }
 
-/** Tick + label. Contrast holds on both the page and the inverted panel. */
+/** Blue circular tick + label. */
 export function CheckLine({
   children,
   tone = 'default',
@@ -109,16 +136,16 @@ export function CheckLine({
     <div className="flex items-start gap-2.5">
       <span
         className={cn(
-          'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full',
-          tone === 'inverse' ? 'text-foreground bg-background' : 'bg-kortix-blue text-white',
+          'mt-[3px] flex size-[18px] shrink-0 items-center justify-center rounded-full',
+          tone === 'inverse' ? 'bg-white text-neutral-900' : 'bg-kortix-blue text-white',
         )}
       >
-        <Check className="size-2.5" strokeWidth={3} />
+        <Check className="size-3" strokeWidth={3} />
       </span>
       <span
         className={cn(
-          'text-[0.9375rem] leading-snug',
-          tone === 'inverse' ? 'text-background' : 'text-foreground',
+          'text-[0.9375rem] leading-[1.45]',
+          tone === 'inverse' ? 'text-white' : 'text-foreground',
         )}
       >
         {children}
@@ -127,11 +154,46 @@ export function CheckLine({
   );
 }
 
-/** Neutral surface used behind product stills — the marketing card, not a tint. */
-export function Frame({ className, children }: { className?: string; children: ReactNode }) {
+/** Pill button, the shape Tembo uses everywhere. */
+export function Pill({
+  children,
+  variant = 'dark',
+  className,
+  onClick,
+  as = 'button',
+  href,
+}: {
+  children: ReactNode;
+  variant?: 'dark' | 'light' | 'ghost' | 'ghostLight' | 'soft';
+  className?: string;
+  onClick?: () => void;
+  as?: 'button' | 'a';
+  href?: string;
+}) {
+  const styles = {
+    dark: 'bg-foreground text-background hover:bg-foreground/90',
+    light: 'bg-white text-neutral-900 hover:bg-white/90',
+    ghost: 'text-foreground hover:bg-foreground/5',
+    ghostLight: 'text-white hover:bg-white/15',
+    soft: 'bg-foreground/[0.07] text-foreground hover:bg-foreground/10',
+  }[variant];
+
+  const cls = cn(
+    'inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-[0.9375rem] font-medium transition-colors',
+    styles,
+    className,
+  );
+
+  if (as === 'a') {
+    return (
+      <a href={href} className={cls}>
+        {children}
+      </a>
+    );
+  }
   return (
-    <div className={cn('border-border bg-card relative overflow-hidden rounded-sm border', className)}>
+    <button type="button" onClick={onClick} className={cls}>
       {children}
-    </div>
+    </button>
   );
 }

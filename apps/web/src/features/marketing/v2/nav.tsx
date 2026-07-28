@@ -109,23 +109,35 @@ export function MarketingNav() {
     router.push(user ? '/projects' : '/auth');
   }, [router, user]);
 
-  const linkClass =
-    'flex h-9 items-center rounded-sm px-3.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground';
+  // Over the hero field the bar is transparent and everything is white; past it
+  // the bar turns into a normal solid one.
+  const onField = !scrolled;
+
+  const linkClass = cn(
+    'flex h-9 items-center rounded-full px-3.5 text-[0.9375rem] font-medium transition-colors',
+    onField
+      ? 'text-white/90 hover:bg-white/15 hover:text-white'
+      : 'text-foreground/80 hover:bg-foreground/5 hover:text-foreground',
+  );
 
   return (
     <>
       <header
         className={cn(
           'fixed inset-x-0 top-0 z-50 transition-colors duration-200',
-          scrolled && 'border-border bg-background/85 border-b backdrop-blur-xl',
+          scrolled && 'border-border bg-background/90 border-b backdrop-blur-xl',
         )}
       >
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
-          <Link href="/" aria-label="Kortix home" className="shrink-0">
-            <KortixLogo size={18} variant="logomark" />
+        <div className="mx-auto flex h-[4.5rem] w-full max-w-[68rem] items-center gap-6 px-6">
+          <Link
+            href="/"
+            aria-label="Kortix home"
+            className={cn('shrink-0', onField && 'text-white [&_svg]:fill-current')}
+          >
+            <KortixLogo size={19} variant="logomark" />
           </Link>
 
-          <Nav.Root delayDuration={80} className="relative z-10 hidden flex-1 md:flex">
+          <Nav.Root delayDuration={80} className="relative z-10 hidden flex-1 justify-center md:flex">
             <Nav.List className="flex list-none items-center gap-1">
               {NAV.map((entry) =>
                 hasMenu(entry) ? (
@@ -133,7 +145,10 @@ export function MarketingNav() {
                     <Nav.Trigger
                       className={cn(
                         linkClass,
-                        'group cursor-pointer gap-1 data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground',
+                        'group cursor-pointer gap-1',
+                        onField
+                          ? 'data-[state=open]:bg-white/15 data-[state=open]:text-white'
+                          : 'data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground',
                       )}
                     >
                       {entry.name}
@@ -159,21 +174,34 @@ export function MarketingNav() {
             </Nav.List>
           </Nav.Root>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => openDemo()}>
-              Request demo
-            </Button>
-            <Button onClick={handleGetStarted}>{user ? 'Projects' : 'Get started'}</Button>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Link href={user ? '/projects' : '/auth'} className={cn(linkClass, 'hidden sm:flex')}>
+              {user ? 'Projects' : 'Log In'}
+            </Link>
+            <button
+              type="button"
+              onClick={handleGetStarted}
+              className={cn(
+                'flex h-10 cursor-pointer items-center rounded-full px-5 text-[0.9375rem] font-medium transition-colors',
+                onField
+                  ? 'bg-white/20 text-white hover:bg-white/30'
+                  : 'bg-foreground text-background hover:bg-foreground/90',
+              )}
+            >
+              Get Started
+            </button>
 
-            <Button
-              variant="ghost"
-              size="icon-sm"
+            <button
+              type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
-              className="md:hidden"
+              className={cn(
+                'flex size-9 cursor-pointer items-center justify-center rounded-full md:hidden',
+                onField ? 'text-white hover:bg-white/15' : 'text-foreground hover:bg-foreground/5',
+              )}
             >
               <Menu className="size-5" />
-            </Button>
+            </button>
           </div>
         </div>
       </header>

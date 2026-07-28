@@ -1,15 +1,12 @@
 'use client';
 
-import { Button } from '@/components/ui/marketing/button';
-import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { AppPreview } from '@/features/marketing/v2/app-preview';
 import { HERO, LOGOS } from '@/features/marketing/v2/content';
-import { Eyebrow } from '@/features/marketing/v2/primitives';
+import { MAX_W, Pill } from '@/features/marketing/v2/primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useCallback } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
 
 export function Hero() {
   const { user } = useAuth();
@@ -21,19 +18,32 @@ export function Hero() {
   }, [user]);
 
   return (
-    <section className="bg-background relative isolate overflow-hidden">
+    <section className="relative isolate">
+      {/* the field */}
       <div
-        className="pointer-events-none absolute inset-0 -z-10 mask-y-to-90%"
         aria-hidden
         data-a11y-decorative
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={
+          {
+            '--field-1': 'color-mix(in oklab, var(--kortix-blue) 72%, #123a63)',
+            '--field-2': 'color-mix(in oklab, var(--kortix-blue) 60%, #1b4675)',
+            '--field-3': 'color-mix(in oklab, var(--kortix-blue) 18%, var(--background))',
+            background:
+              'linear-gradient(177deg, var(--field-1) 0%, var(--field-2) 42%, var(--field-3) 74%, var(--background) 100%)',
+          } as React.CSSProperties
+        }
       >
-        <KortixLetterField seed={3382} />
+        <div
+          className="absolute inset-0 opacity-90"
+          style={{
+            background:
+              'radial-gradient(60% 45% at 88% 6%, rgba(255,255,255,0.26) 0%, transparent 62%), radial-gradient(45% 38% at 4% 74%, rgba(255,255,255,0.20) 0%, transparent 66%)',
+          }}
+        />
       </div>
-
-      <div className="mx-auto max-w-6xl px-6 pt-32 sm:pt-40">
-        <Eyebrow>{HERO.eyebrow}</Eyebrow>
-
-        <h1 className="text-foreground mt-6 max-w-4xl text-4xl leading-[1.08] font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
+      <div className={`${MAX_W} pt-36 sm:pt-44`}>
+        <h1 className="max-w-3xl text-[2.75rem] leading-[1.03] font-medium tracking-[-0.025em] text-white sm:text-[3.5rem] lg:text-[4.25rem]">
           {HERO.headline.map((line) => (
             <span key={line} className="block">
               {line}
@@ -41,40 +51,25 @@ export function Hero() {
           ))}
         </h1>
 
-        <div className="mt-10 flex flex-col gap-6 sm:mt-12 sm:flex-row sm:items-end sm:justify-between">
-          <p className="text-muted-foreground max-w-md text-base leading-relaxed">
-            {HERO.subline}
-          </p>
-
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button size="lg" onClick={handleGetStarted}>
+        <div className="mt-12 flex flex-col gap-6 sm:mt-14 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-lg text-[1.0625rem] leading-[1.6] text-white/85">{HERO.subline}</p>
+          <div className="flex shrink-0 items-center gap-1">
+            <Pill variant="light" onClick={() => openDemo()}>
               {HERO.primaryCta}
-              <HiArrowRight className="size-4" />
-            </Button>
-            <Button size="lg" variant="secondary" onClick={() => openDemo()}>
+            </Pill>
+            <Pill variant="ghostLight" onClick={handleGetStarted}>
               {HERO.secondaryCta}
-            </Button>
+            </Pill>
           </div>
         </div>
 
         {/* the product still, clipped by the fold */}
         <div className="relative mt-14 sm:mt-16">
-          <div
-            className="border-border rounded-t-lg border-x border-t p-1.5 pb-0"
-            style={{
-              background:
-                'linear-gradient(180deg, color-mix(in oklab, var(--kortix-blue) 11%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 5%, var(--background)) 100%)',
-            }}
-          >
-            <div className="bg-background border-border h-[30rem] overflow-hidden rounded-t-md border-x border-t sm:h-[34rem]">
+          <div className="rounded-t-[1.25rem] border-x border-t border-white/25 bg-white/[0.14] p-2 pb-0 backdrop-blur-[2px]">
+            <div className="bg-background h-[30rem] overflow-hidden rounded-t-[0.9rem] sm:h-[36rem]">
               <AppPreview />
             </div>
           </div>
-          <div
-            aria-hidden
-            data-a11y-decorative
-            className="from-background/0 to-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-b"
-          />
         </div>
       </div>
 
@@ -85,16 +80,13 @@ export function Hero() {
 
 function LogoWall() {
   return (
-    <div className="border-border bg-background relative border-t">
-      <div className="mx-auto max-w-6xl px-6 py-12 sm:py-14">
-        <p className="text-muted-foreground text-center text-xs tracking-wider">
-          {HERO.logoWallLabel}
-        </p>
-        <div className="mt-8 grid grid-cols-2 items-center gap-x-8 gap-y-6 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="bg-background relative">
+      <div className={`${MAX_W} py-14 sm:py-16`}>
+        <div className="grid grid-cols-3 items-center gap-x-6 gap-y-8 sm:grid-cols-6">
           {LOGOS.map((name) => (
             <span
               key={name}
-              className="text-muted-foreground/70 text-center text-sm font-semibold tracking-[0.12em] uppercase"
+              className="text-muted-foreground/45 text-center text-[1.0625rem] font-semibold tracking-tight"
             >
               {name}
             </span>

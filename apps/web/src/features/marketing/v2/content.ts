@@ -239,9 +239,18 @@ export const AS_CODE = {
   description:
     'Open the repo and the company is right there. Every agent is a markdown persona, every skill is know-how your team wrote down, every connector and secret is a declared, scoped line of config. Change it with a pull request. Roll it back with a revert.',
   bullets: [
-    'Diff a decision the same way you diff code.',
-    'grep your entire company from one checkout.',
-    'Clone it, fork it, or take it somewhere else — no lock-in.',
+    {
+      lede: 'Diff a decision.',
+      rest: 'A change to how the company works reviews exactly like a change to its code.',
+    },
+    {
+      lede: 'grep your whole company.',
+      rest: 'One checkout holds every agent, skill, connector, and thing the company has learned.',
+    },
+    {
+      lede: 'Leave whenever you want.',
+      rest: 'Clone it, fork it, or run it somewhere else. There is no version of this you cannot take with you.',
+    },
   ],
   tree: [
     { name: 'kortix.yaml', kind: 'file', accent: true },
@@ -316,7 +325,13 @@ export const CHANNELS = {
   eyebrow: 'Channels',
   heading: ['Start work where', 'your team already is.'],
   subheading:
-    'A channel turns any chat surface into a way to start a session. Tag Kortix in the thread you were already having and the work begins — no new tab, no new habit.',
+    'From Slack, Teams, WhatsApp, email, the desktop app, or the web. Kortix runs agents in the background and pings your team when there is output to review.',
+  integrationsLabel: '+3,000 connectors',
+  caption: [
+    'Triggers, context, and output from Slack, Teams,',
+    'GitHub, Linear, Notion, Drive, Stripe, and more.',
+  ],
+  cta: 'View all connectors',
   surfaces: [
     { name: 'Slack', note: 'Tag @Kortix in any channel' },
     { name: 'Microsoft Teams', note: 'Same agents, same permissions' },
