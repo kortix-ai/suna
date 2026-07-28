@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   intentToScope,
   isSecretUsableBy,
+  isSessionTargetVisibleToCaller,
   isSessionVisibleTo,
   parseSharingIntent,
   scopeToIntent,
@@ -249,5 +250,25 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         callerSessionId: 'session-a',
       }),
     ).toBe(true);
+  });
+
+  test('a human project member reaches the sharing permission check', () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        origin: 'user',
+        sessionId: 'private-session',
+        callerSessionId: null,
+      }),
+    ).toBe(true);
+  });
+
+  test("a session-bound backend credential cannot target another end-user's session", () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        origin: 'backend',
+        sessionId: 'session-of-end-user-b',
+        callerSessionId: 'session-of-end-user-a',
+      }),
+    ).toBe(false);
   });
 });

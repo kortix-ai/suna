@@ -153,6 +153,20 @@ export interface SessionOwnershipContext {
   callerSessionId: string | null;
 }
 
+/**
+ * A session-bound sandbox credential may access only its own backend session.
+ *
+ * Human credentials and wrapper backend credentials have no session binding.
+ * Interactive sessions keep their human ownership semantics.
+ */
+export function isSessionTargetVisibleToCaller(ownership: SessionOwnershipContext): boolean {
+  return !(
+    ownership.origin === 'backend' &&
+    ownership.callerSessionId != null &&
+    ownership.callerSessionId !== ownership.sessionId
+  );
+}
+
 /** Pure: can this subject see/open the session? The owner always can. */
 export function isSessionVisibleTo(
   visibility: SessionVisibility,
@@ -165,11 +179,7 @@ export function isSessionVisibleTo(
   // session just because the wrapper credential created them both. Interactive
   // sessions are deliberately excluded: there created_by really is one person,
   // and narrowing would break `kortix sessions ls` from inside a normal sandbox.
-  const sharedCreatorIsMeaningless =
-    ownership.origin === 'backend' &&
-    ownership.callerSessionId != null &&
-    ownership.callerSessionId !== ownership.sessionId;
-  if (sharedCreatorIsMeaningless) return false;
+  if (!isSessionTargetVisibleToCaller(ownership)) return false;
 
   if (ownerId && ownerId === subject.userId) return true;
   if (visibility === 'project') return true;

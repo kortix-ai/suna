@@ -77,6 +77,7 @@ import {
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { resolveEndUserRef } from './end-user-ref';
 import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
+import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -1309,19 +1310,10 @@ export async function createProjectSession(input: {
       });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
-        const [current] = await db
-          .select({ metadata: projectSessions.metadata })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, sessionId))
-          .limit(1);
-        const currentMetadata =
-          current?.metadata && typeof current.metadata === 'object'
-            ? (current.metadata as Record<string, unknown>)
-            : {};
         await db
           .update(projectSessions)
           .set({
-            metadata: { ...currentMetadata, ...extra },
+            metadata: projectSessionMetadataMerge(extra),
             updatedAt: new Date(),
           })
           .where(eq(projectSessions.sessionId, sessionId));

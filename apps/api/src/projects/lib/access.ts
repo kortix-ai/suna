@@ -1,4 +1,11 @@
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
+import {
+  isSessionTargetVisibleToCaller,
+  isSessionVisibleTo,
+  loadSessionGrants,
+  resolveShareSubject,
+  type SecretGrant,
+  type ShareSubject,
+} from '../../executor/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
@@ -156,15 +163,14 @@ export async function loadSessionForSharing(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
-  // Same narrowing as the read path. In Kortix-as-a-Backend every session
-  // shares one `created_by`, so the ownership test below is meaningless across
-  // end-users and would hand A full sharing rights over B's session.
-  if (
-    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, [], {
-      userId: loaded.userId,
-      groupIds: [],
-    }, { origin: row.origin ?? null, sessionId, callerSessionId })
-  ) {
+  // Apply only the session-bound KaaB narrowing here. Human project members
+  // must reach the sharing permission check and receive 403 when it rejects
+  // them. Session-content visibility does not govern share management.
+  if (!isSessionTargetVisibleToCaller({
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+  })) {
     return null;
   }
   const isOwner = row.createdBy === loaded.userId;
