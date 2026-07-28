@@ -22,9 +22,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import {
+  ProjectSectionPage,
+  type ProjectSectionState,
+} from '@/features/workspace/project-section/project-section-page';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import {
@@ -35,7 +36,6 @@ import {
   getSessionDisplayTitle,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
@@ -111,23 +111,6 @@ function formatTimestamp(value: string): { relative: string; exact: string } {
   }
 }
 
-function SessionListSkeleton() {
-  return (
-    <div className="space-y-2" aria-hidden>
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-          <Skeleton className="size-9 shrink-0 rounded-sm" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className={cn('h-3.5 rounded-sm', index % 2 ? 'w-44' : 'w-64')} />
-            <Skeleton className="h-3 w-36 rounded-sm" />
-          </div>
-          <Skeleton className="h-5 w-16 rounded-full" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function DetailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0 space-y-1">
@@ -194,21 +177,21 @@ function SessionRow({
   const href = `/projects/${projectId}/sessions/${session.session_id}`;
 
   return (
+    // A flat row, not a card. One bordered panel per session turned a list of
+    // twenty into twenty boxes; the list itself is the object, so the rows only
+    // need a hover state and a hairline between them.
     <Disclosure
       open={open}
       onOpenChange={setOpen}
-      variant="outline"
-      className="group/session bg-popover overflow-hidden"
+      className="group/session border-border/50 border-b last:border-b-0"
     >
-      <DisclosureTrigger variant="outline">
+      <DisclosureTrigger>
         <button
           type="button"
-          className="hover:bg-muted/40 flex min-h-16 w-full cursor-pointer items-center gap-3 rounded-md px-4 py-3 text-left transition-colors duration-150"
+          className="hover:bg-muted/40 flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors duration-150"
           aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
         >
-          <span className="bg-kortix-base/20 flex size-9 shrink-0 items-center justify-center rounded-sm">
-            <SourceIcon className="text-foreground size-5" />
-          </span>
+          <SourceIcon className="text-muted-foreground size-4 shrink-0" />
 
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -229,28 +212,26 @@ function SessionRow({
                 </Badge>
               ) : null}
             </span>
-            <span className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-              <span>
-                {source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
-              </span>
-              <span className="text-muted-foreground/40">&bull;</span>
-              <span className="truncate">{ownerLabel}</span>
-              <span className="text-muted-foreground/40">&bull;</span>
-              <span className="tabular-nums" title={updated.exact}>
-                {updated.relative}
-              </span>
-            </span>
           </span>
 
-          <Badge variant={status.variant} size="sm" className="hidden sm:inline-flex">
+          <Badge variant={status.variant} size="sm" className="hidden shrink-0 sm:inline-flex">
             {status.label}
           </Badge>
-          <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/session:rotate-180" />
+          {/* The timestamp is what people scan a session list by, so it gets
+              the right edge to itself. Everything else moved into the row's
+              own detail. */}
+          <span
+            className="text-muted-foreground w-20 shrink-0 text-right text-xs tabular-nums"
+            title={updated.exact}
+          >
+            {updated.relative}
+          </span>
+          <ChevronDown className="text-muted-foreground/50 size-4 shrink-0 opacity-0 transition-[transform,opacity] duration-150 ease-out group-hover/session:opacity-100 group-data-[state=open]/session:rotate-180 group-data-[state=open]/session:opacity-100" />
         </button>
       </DisclosureTrigger>
 
-      <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-5 px-4 py-5">
+      <DisclosureContent contentClassName="border-border/50 border-t">
+        <div className="space-y-5 px-3 py-5">
           <div className="flex flex-wrap items-center gap-2 sm:hidden">
             <Badge variant={status.variant} size="sm">
               {status.label}
@@ -261,6 +242,10 @@ function SessionRow({
           </div>
 
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+            <DetailItem
+              label="Source"
+              value={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
+            />
             <DetailItem label="Created" value={created.exact} />
             <DetailItem label="Last activity" value={updated.exact} />
             <DetailItem label="Status" value={status.label} />
@@ -467,30 +452,27 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     </Button>
   );
 
-  return (
-    <CustomizeSectionWrapper
-      title="Sessions"
-      description="Manager inventory of every durable session and its owner, access, and runtime state."
-      action={action}
-      leading={<SidebarPeekToggle />}
-      className="max-w-5xl"
-    >
-      <div className="space-y-4">
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <Search />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            variant="popover"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by title, owner, source, branch, agent, or ID"
-            aria-label="Search sessions"
-          />
-          {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
-        </InputGroupSearch>
+  const state: ProjectSectionState = sessionsQuery.isLoading
+    ? 'loading'
+    : sessionsQuery.isError
+      ? 'error'
+      : sessions.length === 0
+        ? 'empty'
+        : visibleSessions.length === 0
+          ? 'no-results'
+          : 'ready';
 
-        <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+  return (
+    <>
+      <ProjectSectionPage
+        title="All sessions"
+        description="Every session in this project, and what state it is in."
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: 'Search sessions',
+        }}
+        filters={
           <FilterBar className="h-8 rounded-md">
             {PROJECT_SESSIONS_FILTERS.map((option) => (
               <FilterBarItem
@@ -505,83 +487,55 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
               </FilterBarItem>
             ))}
           </FilterBar>
+        }
+        action={action}
+        state={state}
+        emptyProps={{
+          icon: MessageSquare,
+          title: 'No sessions yet',
+          description: 'Start a session to give this project its first task.',
+          action: (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => newSession()}>
+              <Plus className="size-3.5 shrink-0" />
+              New session
+            </Button>
+          ),
+        }}
+        errorProps={{
+          title: 'Sessions could not be loaded',
+          description:
+            sessionsQuery.error instanceof Error ? sessionsQuery.error.message : undefined,
+          action: (
+            <Button variant="outline" size="sm" onClick={() => sessionsQuery.refetch()}>
+              Retry
+            </Button>
+          ),
+        }}
+        noResultsMessage="No session matches that search or filter."
+        width="wide"
+      >
+        <div aria-live="polite">
+          {visibleSessions.map((session) => (
+            <SessionRow
+              key={session.session_id}
+              projectId={projectId}
+              session={session}
+              onRename={(id, name) => setSessionToRename({ id, name })}
+              onShare={setSessionToShare}
+              onDelete={(id, label) => setSessionToDelete({ id, label })}
+              onRestart={(sessionId, label) => restartMutation.mutate({ sessionId, label })}
+              onStop={(sessionId, label) => stopMutation.mutate({ sessionId, label })}
+              restarting={
+                restartMutation.isPending &&
+                restartMutation.variables?.sessionId === session.session_id
+              }
+              stopping={
+                stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
+              }
+            />
+          ))}
         </div>
-
-        {sessionsQuery.isLoading ? (
-          <SessionListSkeleton />
-        ) : sessionsQuery.isError ? (
-          <ErrorState
-            size="sm"
-            title="Sessions could not be loaded"
-            description={
-              sessionsQuery.error instanceof Error ? sessionsQuery.error.message : undefined
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => sessionsQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          />
-        ) : sessions.length === 0 ? (
-          <EmptyState
-            size="sm"
-            icon={MessageSquare}
-            title="No sessions yet"
-            description="Start a session to give this project its first task."
-            action={
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => newSession()}>
-                <Plus className="size-3.5 shrink-0" />
-                New session
-              </Button>
-            }
-          />
-        ) : visibleSessions.length === 0 ? (
-          <EmptyState
-            size="sm"
-            icon={Search}
-            title="No matching sessions"
-            description="Try another search or clear the current filter."
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setFilter('all');
-                  setSearch('');
-                }}
-              >
-                Clear filters
-              </Button>
-            }
-          />
-        ) : (
-          <div className="space-y-2" aria-live="polite">
-            <p className="text-muted-foreground text-xs tabular-nums">
-              Showing {visibleSessions.length} of {sessions.length}{' '}
-              {sessions.length === 1 ? 'session' : 'sessions'}
-            </p>
-            {visibleSessions.map((session) => (
-              <SessionRow
-                key={session.session_id}
-                projectId={projectId}
-                session={session}
-                onRename={(id, name) => setSessionToRename({ id, name })}
-                onShare={setSessionToShare}
-                onDelete={(id, label) => setSessionToDelete({ id, label })}
-                onRestart={(sessionId, label) => restartMutation.mutate({ sessionId, label })}
-                onStop={(sessionId, label) => stopMutation.mutate({ sessionId, label })}
-                restarting={
-                  restartMutation.isPending &&
-                  restartMutation.variables?.sessionId === session.session_id
-                }
-                stopping={
-                  stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
-                }
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      </ProjectSectionPage>
 
       <ShareSessionModal
         projectId={projectId}
@@ -607,6 +561,6 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
-    </CustomizeSectionWrapper>
+    </>
   );
 }

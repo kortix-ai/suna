@@ -16,11 +16,17 @@ import { PanelLeft } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { useSidebar } from '@/components/ui/sidebar';
+import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 
 export function SidebarPeekToggle({ className }: { className?: string }) {
-  const { state, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  // Optional context on purpose. This now sits inside ProjectSectionPage, which
+  // is also rendered on surfaces that have no sidebar at all (previews, tests).
+  // A hard useSidebar there would throw rather than simply omit the control.
+  const sidebar = useOptionalSidebar();
+  if (!sidebar) return null;
+
+  const { state, toggleSidebar, peek, peekEnter, peekLeave } = sidebar;
   const collapsed = state !== 'expanded';
   const label = collapsed ? (peek ? 'Pin sidebar' : 'Open sidebar') : 'Collapse sidebar';
 

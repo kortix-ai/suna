@@ -29,6 +29,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, type EmptyStateProps } from '@/features/layout/section/empty-state';
 import { ErrorState, type ErrorStateProps } from '@/features/layout/section/error-state';
+import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { cn } from '@/lib/utils';
 
 export type ProjectSectionState =
@@ -72,6 +73,8 @@ export interface ProjectSectionPageProps {
   noResultsMessage?: string;
   /** Width of the scrolling body. Lists stay narrow; split views go wide. */
   width?: 'default' | 'wide' | 'full';
+  /** Off for screens whose navTabs strip already carries the sidebar control. */
+  showSidebarToggle?: boolean;
   children?: ReactNode;
 }
 
@@ -149,6 +152,7 @@ export function ProjectSectionPage({
   forbiddenMessage,
   noResultsMessage,
   width = 'default',
+  showSidebarToggle = true,
   children,
 }: ProjectSectionPageProps) {
   const showFilterRow = Boolean(filters);
@@ -158,26 +162,34 @@ export function ProjectSectionPage({
       {navTabs}
 
       <header className="border-border flex shrink-0 flex-col gap-3 border-b px-6 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="min-w-0 space-y-1">
-          <h1 className="text-foreground truncate text-2xl font-semibold tracking-tight">
-            {title}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {description}
-            {docsHref ? (
-              <>
-                {' '}
-                <a
-                  href={docsHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-foreground underline underline-offset-2"
-                >
-                  Learn more
-                </a>
-              </>
-            ) : null}
-          </p>
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          {/* Every screen built on this shell gets the sidebar control, in the
+              same place. The sidebar has none of its own, so a screen without
+              this one has no way to collapse it at all — which is what happened
+              to the sessions page when it moved onto the shell. Screens that
+              render navTabs already carry it there, and pass `false` here. */}
+          {showSidebarToggle ? <SidebarPeekToggle className="mt-0.5 -ml-1" /> : null}
+          <div className="min-w-0 flex-1 space-y-1">
+            <h1 className="text-foreground truncate text-2xl font-semibold tracking-tight">
+              {title}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {description}
+              {docsHref ? (
+                <>
+                  {' '}
+                  <a
+                    href={docsHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-foreground underline underline-offset-2"
+                  >
+                    Learn more
+                  </a>
+                </>
+              ) : null}
+            </p>
+          </div>
         </div>
 
         {search || action ? (

@@ -10,7 +10,6 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 
-import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import {
   PROJECT_SETTINGS_TABS,
@@ -41,7 +40,6 @@ export function ProjectSettingsTabs({
   return (
     <div className="border-border shrink-0 border-b px-4">
       <div className="flex items-center gap-2 pt-4">
-        <SidebarPeekToggle />
         <h1 className="text-foreground text-2xl font-semibold tracking-tight">Settings</h1>
       </div>
       <nav aria-label="Settings" className="mt-3 flex items-center gap-1 overflow-x-auto">

@@ -70,23 +70,16 @@ describe('sidebar structure', () => {
 });
 
 describe('the Customize group', () => {
-  test('collapses, and remembers whether it was open', () => {
-    expect(NAV_ITEMS).toContain('Collapsible');
-    expect(NAV_ITEMS).toContain('kortix.sidebar.customizeOpen');
-  });
-
-  test('starts expanded', () => {
-    expect(NAV_ITEMS).toContain('useState(true)');
-  });
-
-  test('survives storage being unavailable', () => {
-    // Private mode throws on localStorage access; a sidebar must not die for it.
-    expect(NAV_ITEMS).toContain('catch');
+  test('is a plain section, styled like the session list header', () => {
+    // A disclosure here just invited people to hide their own configuration
+    // and then wonder where it went.
+    expect(NAV_ITEMS).toContain('<SidebarSectionLabel>Customize</SidebarSectionLabel>');
+    expect(NAV_ITEMS).not.toContain('Collapsible');
   });
 
   test('carries Settings inside it', () => {
     expect(NAV_ITEMS).toContain('settingsHref');
-    expect(NAV_ITEMS).toContain('>\n                Settings\n              </SidebarPlainLink>');
+    expect(NAV_ITEMS).toContain('Settings');
   });
 });
 
