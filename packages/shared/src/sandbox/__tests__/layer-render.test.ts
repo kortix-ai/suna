@@ -146,6 +146,9 @@ describe('runtime artifact integrity', () => {
     expect(rendered).toContain(
       `"@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}"`,
     );
+    expect(rendered).toContain(
+      'npm install -g --prefix /home/kortix/.local',
+    );
     expect(rendered).toContain('command -v claude-agent-acp');
     expect(rendered).toContain('command -v codex-acp');
     expect(rendered).toContain('command -v pi-acp');

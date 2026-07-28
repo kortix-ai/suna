@@ -224,7 +224,8 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v34: bake exact Claude Code, Codex, and Pi ACP adapter versions. The sandbox
 // daemon can start all four harnesses without a request-time package download.
 // v35: pin Pi's internal 0.x packages to the same version as pi-coding-agent.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v35';
+// v36: install Pi with npm because pnpm 11 isolates each global root graph.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v36';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

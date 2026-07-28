@@ -571,10 +571,10 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '',
     // Install every ACP adapter during image construction. Runtime requests
     // only start these pinned executables. They never download an npm package.
-    // pi-coding-agent declares caret ranges for its internal 0.x packages.
-    // Pin those root dependencies to prevent incompatible later 0.x releases
-    // from replacing the matching versions in pnpm's global dependency graph.
-    `RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-ai@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-tui@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}" \\`,
+    // pnpm 11 gives each global root package an isolated dependency graph.
+    // npm deduplicates Pi's exact internal versions into one compatible graph.
+    `RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" \\`,
+    `    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-ai@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-tui@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}" \\`,
     '    && command -v claude-agent-acp \\',
     '    && command -v codex-acp \\',
     '    && command -v pi-acp \\',

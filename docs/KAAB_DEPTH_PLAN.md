@@ -53,8 +53,25 @@ priority list.
 - Two files (`unit-preview-auth-principal`, `e2e-preview-proxy`) failed to LOAD
   from incomplete `mock.module` factories — a SyntaxError, environment-independent.
   Fixed in #5583 (0 → 24 and 0 → 52 tests). That fix stands.
-- `e2e-preview-proxy` still shows 4 failures under CI's billing value, so those
-  are not explained by the env flag. Unresolved.
+- `e2e-preview-proxy` still shows 4 failures under CI's billing value. Narrowed
+  but **not resolved** — what I ruled out, so the next person does not repeat it:
+
+  | Hypothesis | Verdict |
+  | --- | --- |
+  | The `KORTIX_BILLING_INTERNAL_ENABLED` flag | **No** — fails under CI's value too |
+  | Incomplete `mock.module` (the sibling-file failure mode) | **No** — stubbing `projects/lib/secret-grant` fully changed nothing |
+  | Wrong sandbox id in the fixture | **No** — every prompt test uses `TEST_SANDBOX_ID`, and one env-sync test on that id PASSES |
+  | The retry classifier mis-ranks a 401 as transient | **No** — `isRetryableEnvSyncFailure` (preview.ts:71) matches only 502/503/504, then returns `false` for any `env sync failed:` prefix |
+
+  So the product's fail-closed path looks **correct**: a 401 env sync is
+  classified non-retryable and should surface as 502. The tests assert exactly
+  that and do not reach it. The remaining unknown is why the 401 never reaches
+  `postEnvToDaemon` — most likely the `mockFetchResponses` queue ordering, since
+  the passing sibling test supplies responses for BOTH the env-sync call and the
+  forward while these four supply one.
+
+  **Do not "fix" these by relaxing the assertions.** They encode the correct
+  intent; the harness is what is not delivering the failure.
 - A lint that fails a `mock.module` factory omitting exports the graph needs is
   still worth adding: that single class of bug zeroed two files silently.
 
