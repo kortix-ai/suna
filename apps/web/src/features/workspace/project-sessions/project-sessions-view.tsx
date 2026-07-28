@@ -1,6 +1,6 @@
 'use client';
 
-import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
+import { type SessionSourceKind, sessionSource } from '@/components/projects/session-label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -28,21 +28,22 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import {
-  sessionVisibilityMeta,
   ShareSessionModal,
+  sessionVisibilityMeta,
 } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
+  type ProjectSession,
+  type ProjectSessionStatus,
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
-  type ProjectSession,
-  type ProjectSessionStatus,
 } from '@kortix/sdk';
 import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -53,6 +54,7 @@ import {
   ChevronDown,
   ExternalLink,
   GitBranch,
+  type LucideIcon,
   Mail,
   MessageSquare,
   MoreHorizontal,
@@ -61,19 +63,18 @@ import {
   Search,
   Square,
   Webhook,
-  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { IconType } from 'react-icons/lib';
 
 import {
-  filterProjectSessions,
   PROJECT_SESSIONS_FILTERS,
+  type ProjectSessionsFilter,
+  filterProjectSessions,
   projectSessionsFilterCounts,
   sessionAccessMeta,
   sessionOwnerLabel,
-  type ProjectSessionsFilter,
 } from './project-sessions-helpers';
 
 const SOURCE_ICONS: Record<SessionSourceKind, LucideIcon | IconType> = {
@@ -471,6 +472,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       title="Sessions"
       description="Manager inventory of every durable session and its owner, access, and runtime state."
       action={action}
+      leading={<SidebarPeekToggle />}
       className="max-w-5xl"
     >
       <div className="space-y-4">

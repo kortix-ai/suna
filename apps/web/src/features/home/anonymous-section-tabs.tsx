@@ -11,6 +11,7 @@
 
 import Link from 'next/link';
 
+import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { PROJECT_NAV_ITEMS, type ProjectNavKey } from '@/lib/project-nav';
 import { cn } from '@/lib/utils';
 
@@ -18,8 +19,9 @@ export function AnonymousSectionTabs({ active }: { active: ProjectNavKey }) {
   return (
     <nav
       aria-label="Project sections"
-      className="border-border flex shrink-0 items-center gap-1 border-b px-6"
+      className="border-border flex shrink-0 items-center gap-1 border-b px-4"
     >
+      <SidebarPeekToggle className="mr-1" />
       {PROJECT_NAV_ITEMS.map((item) => {
         const isActive = item.key === active;
         return (

@@ -16,6 +16,7 @@ import Loading from '@/components/ui/loading';
 import { Separator } from '@/components/ui/separator';
 import type { SortField } from '@/features/file-browser/store/files-store';
 import { isWithinRoot, useFilesStore } from '@/features/file-browser/store/files-store';
+import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import { cn } from '@/lib/utils';
 import { HomeSolid } from '@mynaui/icons-react';
 import { ArrowUpDown, ChevronRight, Download, Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
@@ -115,6 +116,8 @@ export function DriveToolbar({
     <div className="border-border bg-background w-full min-w-0 shrink-0 border-b">
       <div className="flex w-full flex-col md:flex-row md:items-center md:gap-1.5 md:px-4 md:py-2">
         <div className="border-border/40 flex w-full min-w-0 items-center gap-1.5 border-b px-3 py-2 md:flex-1 md:border-b-0 md:px-0 md:py-0">
+          {/* Files had no way to collapse or peek the sidebar at all. */}
+          <SidebarPeekToggle />
           {showVersionSelector && (
             <>
               <div className="max-w-36 shrink-0 md:max-w-none">

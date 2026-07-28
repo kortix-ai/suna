@@ -1,5 +1,5 @@
-import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import type { ProjectSession } from '@kortix/sdk';
 
 import {
   filterProjectSessions,

@@ -8,6 +8,11 @@ type Props = {
   description?: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  /**
+   * Rendered immediately before the title. Opt-in so surfaces that already have
+   * a sidebar toggle in a tab strip above them do not end up with two.
+   */
+  leading?: React.ReactNode;
   docs?: string;
   className?: string;
   /**
@@ -31,28 +36,32 @@ const CustomizeSectionWrapper = ({
   description,
   children,
   action,
+  leading,
   docs,
   className,
   fill,
   scrollContainerRef,
 }: Props) => {
   const heading = (
-    <div className="space-y-1">
-      <h2 className="text-foreground text-xl font-medium">{title}</h2>
-      {description || docs ? (
-        <span className="flex items-center gap-1">
-          {description ? (
-            <p className="text-muted-foreground text-sm text-balance">{description}</p>
-          ) : null}
-          {docs && (
-            <Button variant="transparent" className="m-0 p-0" asChild>
-              <Link href={docs} target="_blank" rel="noopener noreferrer">
-                Learn more.
-              </Link>
-            </Button>
-          )}
-        </span>
-      ) : null}
+    <div className="flex items-start gap-2">
+      {leading ? <div className="flex h-7 shrink-0 items-center">{leading}</div> : null}
+      <div className="min-w-0 space-y-1">
+        <h2 className="text-foreground text-xl font-medium">{title}</h2>
+        {description || docs ? (
+          <span className="flex items-center gap-1">
+            {description ? (
+              <p className="text-muted-foreground text-sm text-balance">{description}</p>
+            ) : null}
+            {docs && (
+              <Button variant="transparent" className="m-0 p-0" asChild>
+                <Link href={docs} target="_blank" rel="noopener noreferrer">
+                  Learn more.
+                </Link>
+              </Button>
+            )}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 
@@ -63,10 +72,7 @@ const CustomizeSectionWrapper = ({
           {heading}
           {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
         </header>
-        <div
-          ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
-        >
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
           {children}
         </div>
       </div>
