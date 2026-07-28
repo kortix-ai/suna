@@ -7,6 +7,7 @@ import {
   Boxes,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -21,7 +22,6 @@ import {
   Pencil,
   Plug,
   Plus,
-  RefreshCw,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -76,7 +76,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   ConnectorOverview,
@@ -86,6 +86,7 @@ import {
   type ConnectorToolSelection,
   ConnectorTools,
 } from '@/features/workspace/connectors/connector-tools';
+import { ConnectorsCatalogue } from '@/features/workspace/connectors/connectors-catalogue';
 import {
   POLICY_LABEL,
   PermissionPicker,
@@ -157,8 +158,8 @@ import {
   setDefaultConnectionProfile,
   startConnectionProfileOAuth2Authorization,
   startConnectionProfileOAuth2DeviceAuthorization,
-  syncConnectors,
 } from '@kortix/sdk';
+import Link from 'next/link';
 import {
   EMPTY_OAUTH2_APPLICATION_FORM,
   EMPTY_OAUTH2_CREDENTIAL_FORM,
@@ -174,6 +175,8 @@ import {
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
+
+import { ComputersView } from './view/computers-view';
 import { connectorConnectionRows } from './view/connector-connections';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -291,17 +294,66 @@ function usePipedreamConnectTeam(projectId: string, slug: string, onConnected: (
   });
 }
 
-type Selection = { kind: 'connector'; slug: string } | { kind: 'global' } | { kind: 'add' };
+type Selection =
+  | { kind: 'connector'; slug: string }
+  | { kind: 'global' }
+  | { kind: 'add' }
+  | { kind: 'computers' };
 
-export function ConnectorsView({ projectId }: { projectId: string }) {
+/**
+ * Connectors section.
+ *
+ * Two screens behind one URL, keyed off `?c=`:
+ *   - no `?c=`        → the catalogue grid (ConnectorsCatalogue)
+ *   - `?c=<slug>`     → that connector's detail
+ *   - `?c=global`     → the project-wide rules pane
+ *   - `?c=add`        → the Add-a-connector pane (Easy Connect / Discover /
+ *                       Channels / Custom), unchanged
+ *
+ * The 288px connectors rail is gone; the catalogue's grid, header search,
+ * primary action and overflow menu carry everything it used to reach.
+ */
+export function ConnectorsView({
+  projectId,
+  navTabs,
+}: {
+  projectId: string;
+  navTabs?: ReactNode;
+}) {
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const rawC = search?.get('c') ?? '';
+
+  const goTo = (key: string) => {
+    const params = new URLSearchParams(search?.toString() ?? '');
+    if (key) params.set('c', key);
+    else params.delete('c');
+    const suffix = params.toString();
+    router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
+  };
+
+  if (!rawC) {
+    return (
+      <ConnectorsCatalogue projectId={projectId} navTabs={navTabs} onSelect={(key) => goTo(key)} />
+    );
+  }
+
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
-      <ConnectorsMasterDetail projectId={projectId} />
+      {navTabs}
+      <ConnectorsMasterDetail projectId={projectId} onBack={() => goTo('')} />
     </div>
   );
 }
 
-function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
+function ConnectorsMasterDetail({
+  projectId,
+  onBack,
+}: {
+  projectId: string;
+  onBack: () => void;
+}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['project-connectors', projectId], [projectId]);
@@ -355,24 +407,17 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
-  // Resolve the active selection, defaulting to the first connector (or Add).
+  // Resolve the active selection. An unknown `?c=` falls through to Add rather
+  // than silently opening whichever connector sorted first — the catalogue is
+  // now the landing screen, so there is nothing to auto-select.
   const selection: Selection = useMemo(() => {
     if (rawC === 'global') return { kind: 'global' };
-    if (rawC === 'add') return { kind: 'add' };
+    // Computers is a pane of this screen, not a connector row. Without this,
+    // ComputersView had no route in at all once the rail was deleted.
+    if (rawC === 'computers') return { kind: 'computers' };
     if (rawC && connectors.some((c) => c.slug === rawC)) return { kind: 'connector', slug: rawC };
-    if (connectors.length > 0) return { kind: 'connector', slug: connectors[0]!.slug };
     return { kind: 'add' };
   }, [rawC, connectors]);
-
-  const sync = useMutation({
-    mutationFn: () => syncConnectors(projectId),
-    onSuccess: (res) => {
-      invalidate();
-      if (res.errors.length) warningToast(`Synced ${res.synced}, ${res.errors.length} with issues`);
-      else successToast(`Synced ${res.synced} connector(s)`);
-    },
-    onError: (err: Error) => errorToast(err.message || 'Sync failed'),
-  });
 
   if (query.isLoading) return <MasterDetailSkeleton />;
   if (isForbidden) {
@@ -417,18 +462,26 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
       ? (connectors.find((c) => c.slug === selection.slug) ?? null)
       : null;
 
+  const paneLabel =
+    selection.kind === 'add'
+      ? 'Add a connector'
+      : selection.kind === 'global'
+        ? 'Global rules'
+        : selection.kind === 'computers'
+          ? 'Computers'
+          : (active?.name ?? active?.slug ?? 'Connector');
+
   return (
-    <div className="flex min-h-0 flex-1">
-      {connectors.length > 0 && (
-        <ConnectorRail
-          connectors={connectors}
-          selection={selection}
-          onSelect={select}
-          onSync={() => sync.mutate()}
-          syncing={sync.isPending}
-          canWrite={canWrite}
-        />
-      )}
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* The rail used to be the way back to the list. This bar is. */}
+      <div className="border-border/60 flex shrink-0 items-center gap-1 border-b px-4 py-2">
+        <Button variant="ghost" size="sm" className="gap-1 px-2" onClick={onBack}>
+          <ChevronLeft className="size-4" />
+          Connectors
+        </Button>
+        <ChevronRight className="text-muted-foreground/40 size-3.5 shrink-0" aria-hidden />
+        <span className="text-muted-foreground truncate text-sm">{paneLabel}</span>
+      </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         {selection.kind === 'add' ? (
           <AddAppPanel
@@ -443,6 +496,8 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           />
         ) : selection.kind === 'global' ? (
           <GlobalRulesPanel projectId={projectId} />
+        ) : selection.kind === 'computers' ? (
+          <ComputersView projectId={projectId} />
         ) : active ? (
           <ConnectorDetail
             key={active.slug}
@@ -452,7 +507,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
             onChanged={invalidate}
             onRemoved={() => {
               invalidate();
-              select({ kind: 'add' });
+              onBack();
             }}
           />
         ) : (
@@ -471,12 +526,6 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
       </div>
     </div>
   );
-}
-
-function statusDot(c: AdminConnector): string {
-  if (c.status === 'error') return 'bg-destructive';
-  if (c.authSecret && !c.secretSet) return 'bg-kortix-orange';
-  return 'bg-kortix-green';
 }
 
 function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
@@ -548,159 +597,6 @@ function SaveBar({
   );
 }
 
-function ConnectorRail({
-  connectors,
-  selection,
-  onSelect,
-  onSync,
-  syncing,
-  canWrite = false,
-}: {
-  connectors: AdminConnector[];
-  selection: Selection;
-  onSelect: (s: Selection) => void;
-  onSync: () => void;
-  syncing: boolean;
-  canWrite?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [q, setQ] = useState('');
-  const filtered = q.trim()
-    ? connectors.filter((c) => c.slug.toLowerCase().includes(q.trim().toLowerCase()))
-    : connectors;
-  const ready = filtered.filter((c) => !(c.authSecret && !c.secretSet));
-  const needsSetup = filtered.filter((c) => c.authSecret && !c.secretSet);
-  const isSel = (slug: string) => selection.kind === 'connector' && selection.slug === slug;
-
-  return (
-    <nav
-      aria-label="Connectors"
-      className="border-border/60 bg-muted/20 flex w-72 shrink-0 flex-col border-r"
-    >
-      <div className="border-border/60 space-y-2 border-b p-3">
-        {canWrite && (
-          <Button
-            size="sm"
-            className="w-full justify-start gap-2"
-            variant={selection.kind === 'add' ? 'secondary' : 'default'}
-            onClick={() => onSelect({ kind: 'add' })}
-          >
-            <Plus className="h-4 w-4" />
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa',
-            )}
-          </Button>
-        )}
-        <div className="relative">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc',
-            )}
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto p-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <RailItem
-          icon={ShieldCheck}
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleGlobal199e18a1',
-          )}
-          subtitle={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleApply5b0aa03c',
-          )}
-          active={selection.kind === 'global'}
-          onClick={() => onSelect({ kind: 'global' })}
-        />
-
-        {connectors.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoConnectors6d11de92',
-            )}
-          </p>
-        ) : (
-          <>
-            {ready.length > 0 && <RailGroupLabel>Connected</RailGroupLabel>}
-            {ready.map((c) => (
-              <RailItem
-                key={c.slug}
-                leading={<ConnectorAppIcon connector={c} size="sm" />}
-                title={c.name || c.slug}
-                subtitle={`${c.actions.length} ${c.actions.length === 1 ? 'tool' : 'tools'}`}
-                dot={statusDot(c)}
-                active={isSel(c.slug)}
-                onClick={() => onSelect({ kind: 'connector', slug: c.slug })}
-              />
-            ))}
-            {needsSetup.length > 0 && (
-              <RailGroupLabel>
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49',
-                )}
-              </RailGroupLabel>
-            )}
-            {needsSetup.map((c) => (
-              <RailItem
-                key={c.slug}
-                leading={<ConnectorAppIcon connector={c} size="sm" />}
-                title={c.name || c.slug}
-                subtitle={tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleNot1feeff2e',
-                )}
-                dot={statusDot(c)}
-                active={isSel(c.slug)}
-                onClick={() => onSelect({ kind: 'connector', slug: c.slug })}
-              />
-            ))}
-            {filtered.length === 0 && (
-              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoMatchf1f9a197',
-                )}
-                {q}”.
-              </p>
-            )}
-          </>
-        )}
-      </div>
-
-      {canWrite && (
-        <div className="border-border/60 border-t p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground w-full justify-start gap-2"
-            onClick={onSync}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSyncFromb820661f',
-            )}
-          </Button>
-        </div>
-      )}
-    </nav>
-  );
-}
-
-function RailGroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground/50 px-3 pt-3 pb-1 text-xs font-medium tracking-wider uppercase">
-      {children}
-    </div>
-  );
-}
-
 function appIconTileClass(size: 'sm' | 'lg'): string {
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
 }
@@ -766,55 +662,6 @@ function CodeSnippet({
         className="text-xs [&_pre]:!rounded-none [&_pre]:!bg-transparent [&_pre]:!p-3"
       />
     </div>
-  );
-}
-
-function RailItem({
-  icon: Icon,
-  appIcon,
-  leading,
-  title,
-  subtitle,
-  dot,
-  active,
-  onClick,
-}: {
-  icon?: LucideIcon;
-  appIcon?: LucideIcon;
-  leading?: ReactNode;
-  title: string;
-  subtitle?: string;
-  dot?: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
-        active ? 'bg-primary/10' : 'hover:bg-muted/60',
-      )}
-    >
-      {leading ? (
-        leading
-      ) : appIcon ? (
-        <EntityAvatar icon={appIcon} size="sm" />
-      ) : Icon ? (
-        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-lg">
-          <Icon className="h-3.5 w-3.5" />
-        </span>
-      ) : null}
-      <span className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm font-medium">{title}</span>
-        {subtitle && (
-          <span className="text-muted-foreground block truncate text-xs">{subtitle}</span>
-        )}
-      </span>
-      {dot && <span className={cn('size-2 shrink-0 rounded-full', dot)} />}
-    </button>
   );
 }
 
@@ -1635,14 +1482,14 @@ function ConnectorDetail({
             icon={Monitor}
             title={`${displayName} is managed in Computers`}
             action={
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() => setSection('computers')}
-              >
-                <Monitor className="h-4 w-4" />
-                Open Computers
+              // A real link. This used to call the overlay store's
+              // setSection('computers'), which never sets `open` — so on this
+              // route it did nothing at all, leaving ComputersView unreachable.
+              <Button size="sm" variant="outline" className="shrink-0" asChild>
+                <Link href={`/projects/${projectId}/connectors?c=computers`}>
+                  <Monitor className="h-4 w-4" />
+                  Open Computers
+                </Link>
               </Button>
             }
           >
@@ -4922,20 +4769,13 @@ function SetCredentialModal({
   );
 }
 
+/** Shape of the detail pane, not of the removed rail. */
 function MasterDetailSkeleton() {
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="border-border/60 bg-muted/20 w-72 shrink-0 space-y-2 border-r p-3">
-        <Skeleton className="h-8 w-full" />
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-lg" />
-        ))}
-      </div>
-      <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-7">
-        <Skeleton className="h-12 w-2/3" />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-      </div>
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-7">
+      <Skeleton className="h-12 w-2/3" />
+      <Skeleton className="h-28 w-full rounded-2xl" />
+      <Skeleton className="h-64 w-full rounded-2xl" />
     </div>
   );
 }

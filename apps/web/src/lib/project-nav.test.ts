@@ -97,9 +97,11 @@ describe('resolveLegacyCustomizeHref — section mapping', () => {
   });
 
   test('channels, computers and voice fold into Connectors', () => {
-    expect(at('channels')).toBe('/projects/proj-1/connectors?group=channels');
-    expect(at('computers')).toBe('/projects/proj-1/connectors?group=computers');
-    expect(at('voice')).toStartWith('/projects/proj-1/connectors?group=channels');
+    // Each must name a pane connectors-view resolves. `?group=` was never read
+    // there, so these three silently landed on the catalogue instead.
+    expect(at('channels')).toBe('/projects/proj-1/connectors?c=add');
+    expect(at('computers')).toBe('/projects/proj-1/connectors?c=computers');
+    expect(at('voice')).toBe('/projects/proj-1/connectors?c=add');
   });
 
   test('config sections become Settings tabs', () => {
@@ -171,5 +173,23 @@ describe('resolveLegacyCustomizeHref — files and unknowns', () => {
     // A crafted section must never escape the project scope.
     expect(resolveLegacyCustomizeHref(P, '../admin')).toBeNull();
     expect(resolveLegacyCustomizeHref(P, '//evil.com')).toBeNull();
+  });
+});
+
+describe('folded-in sections land on a pane that exists', () => {
+  // `?group=` was never read by connectors-view, so these resolved to the
+  // catalogue and Computers had no route in at all.
+  test('computers opens the Computers pane', () => {
+    expect(resolveLegacyCustomizeHref('p1', 'computers')).toBe(
+      '/projects/p1/connectors?c=computers',
+    );
+  });
+
+  test('channels and voice open a pane rather than a dead query param', () => {
+    for (const section of ['channels', 'voice'] as const) {
+      const href = resolveLegacyCustomizeHref('p1', section);
+      expect(href).not.toContain('group=');
+      expect(href).toContain('c=');
+    }
   });
 });

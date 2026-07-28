@@ -5,22 +5,28 @@
  *
  * Clicking Connectors / Skills / Automations / Agents before signing in shows
  * the real screen — the same ProjectSectionPage, the same title, description,
- * filter pills and search — in its empty state, with the primary action routed
- * to sign-in. You can see what each surface is before committing to an account.
+ * filter pills and search — with every action routed to sign-in. You can see
+ * what each surface is before committing to an account.
  *
  * Automations renders the ACTUAL view: its query is guarded on `!!projectId`,
- * so with none it paints its own empty state. The other three still wrap large
- * legacy views with unguarded queries, so they render the shared page shell
- * directly rather than fetching. As each screen migrates to
- * ProjectSectionPage it should be swapped in here the same way.
+ * so with none it paints its own empty state.
+ *
+ * Connectors renders a real, browsable catalogue — see demo/connectors-demo.tsx
+ * for why it reads a curated static list instead of fetching (both catalogue
+ * endpoints are project-scoped and 401 without a session), and how every entry
+ * in that list is checked against the repo.
+ *
+ * Skills and Agents still wrap large legacy views with unguarded queries, so
+ * they render the shared page shell directly rather than fetching. As each
+ * screen migrates to ProjectSectionPage it should be swapped in here the same
+ * way.
  */
 
 import { SparklesSolid } from '@mynaui/icons-react';
-import { Plus } from 'lucide-react';
-import { Bot } from 'lucide-react';
-import { HiOutlineViewGrid } from 'react-icons/hi';
+import { Bot, Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { ConnectorsDemo } from '@/features/home/demo/connectors-demo';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
 import { AutomationsView } from '@/features/workspace/automations/automations-view';
 import { ProjectSectionPage } from '@/features/workspace/project-section/project-section-page';
@@ -35,16 +41,7 @@ interface PreviewCopy {
   icon: typeof Bot;
 }
 
-const COPY: Record<Exclude<ProjectNavKey, 'automations'>, PreviewCopy> = {
-  connectors: {
-    title: 'Connectors',
-    description: 'Connect the tools your agent is allowed to act in.',
-    actionLabel: 'Add connector',
-    emptyTitle: 'Connect your first tool',
-    emptyDescription:
-      'Gmail, Slack, HubSpot, Linear and 3,000 more — each one scoped to the exact actions you allow.',
-    icon: HiOutlineViewGrid as unknown as typeof Bot,
-  },
+const COPY: Record<Exclude<ProjectNavKey, 'automations' | 'connectors'>, PreviewCopy> = {
   skills: {
     title: 'Skills',
     description: 'Reusable capabilities your agent applies on its own.',
@@ -71,6 +68,11 @@ export function AnonymousSectionPreview({ section }: { section: ProjectNavKey })
   // The real screen: guarded query, so it paints its own empty state.
   if (section === 'automations') {
     return <AutomationsView projectId="" />;
+  }
+
+  // The real screen over a curated, verified list — see demo/connectors-demo.tsx.
+  if (section === 'connectors') {
+    return <ConnectorsDemo />;
   }
 
   const copy = COPY[section];

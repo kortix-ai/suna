@@ -6,9 +6,11 @@ import { ConnectorsView } from '@/features/workspace/customize/sections/connecto
 import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
 
 /**
- * Route for the connectors section. Renders the existing view for now — the screen
- * itself migrates to ProjectSectionPage in its own change, so this step is a
- * pure "the URL exists" move with no visual diff below the tab strip.
+ * Route for the connectors section.
+ *
+ * The tab strip is handed to the view rather than stacked above it, so the
+ * catalogue can render it through ProjectSectionPage's `navTabs` slot and the
+ * whole screen keeps one scroll container.
  */
 export default function ConnectorsSectionPage() {
   const params = useParams<{ id: string }>();
@@ -16,11 +18,9 @@ export default function ConnectorsSectionPage() {
   if (!projectId) return null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ProjectSectionTabs projectId={projectId} active="connectors" />
-      <div className="min-h-0 flex-1">
-        <ConnectorsView projectId={projectId} />
-      </div>
-    </div>
+    <ConnectorsView
+      projectId={projectId}
+      navTabs={<ProjectSectionTabs projectId={projectId} active="connectors" />}
+    />
   );
 }

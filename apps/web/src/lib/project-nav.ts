@@ -145,14 +145,15 @@ export function resolveLegacyCustomizeHref(
     case 'webhooks':
       return `${base}/automations?type=webhook`;
 
-    /* Folded into Connectors — channels and computers already render through
-       connectors-view internally. */
+    /* Folded into Connectors. These MUST name a pane connectors-view actually
+       resolves — `?group=` was never read, so these three links silently landed
+       on the catalogue and Computers became unreachable. */
     case 'channels':
-      return `${base}/connectors?group=channels`;
+      return `${base}/connectors?c=add`;
     case 'computers':
-      return `${base}/connectors?group=computers`;
+      return `${base}/connectors?c=computers`;
     case 'voice':
-      return `${base}/connectors?group=channels&c=voice`;
+      return `${base}/connectors?c=add`;
 
     /* Settings tabs. */
     case 'settings':
