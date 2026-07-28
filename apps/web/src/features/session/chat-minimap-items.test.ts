@@ -4,11 +4,11 @@ import type { Turn } from '@/ui';
 
 import {
   MAX_DASHES,
+  type MinimapItem,
   downsampleDashes,
   extractUserText,
   nearestDashIndex,
   truncate,
-  type MinimapItem,
 } from './chat-minimap-items';
 
 function turnWithParts(parts: { type: string; text?: string }[]): Turn {

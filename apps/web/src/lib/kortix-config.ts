@@ -1,5 +1,17 @@
 'use client';
 
+import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import { getSupabaseAccessToken } from '@/lib/auth-token';
+import { isBillingEnabled } from '@/lib/config';
+import { getEnv } from '@/lib/env-config';
+import { handleApiError } from '@/lib/error-handler';
+import { createClient } from '@/lib/supabase/client';
+import {
+  notifyPermissionRequest,
+  notifyQuestion,
+  notifySessionError,
+  notifyTaskComplete,
+} from '@/lib/web-notifications';
 /**
  * The one place apps/web wires itself into @kortix/sdk. The entire data layer
  * now lives in the SDK; this injects web's identity (Supabase token + user) and
@@ -8,18 +20,6 @@
  */
 import { configureKortix } from '@kortix/sdk';
 import { parseFlagOverride } from '@kortix/sdk/feature-flags';
-import { getSupabaseAccessToken } from '@/lib/auth-token';
-import { isBillingEnabled } from '@/lib/config';
-import { getEnv } from '@/lib/env-config';
-import { handleApiError } from '@/lib/error-handler';
-import { createClient } from '@/lib/supabase/client';
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
-import {
-  notifyPermissionRequest,
-  notifyQuestion,
-  notifySessionError,
-  notifyTaskComplete,
-} from '@/lib/web-notifications';
 
 let configured = false;
 
@@ -46,7 +46,9 @@ export function ensureKortixConfigured(): void {
     // client-bundle compiler inlines — the SDK's own dynamic env lookup yields
     // undefined in the browser, so the flags must be wired here.
     featureFlags: {
-      disableMobileAdvertising: parseFlagOverride(process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING),
+      disableMobileAdvertising: parseFlagOverride(
+        process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING,
+      ),
       enableDinoGame: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_DINO_GAME),
       enableProjects: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_PROJECTS),
     },
@@ -60,12 +62,14 @@ export function ensureKortixConfigured(): void {
     onNotify: (e) => {
       const title = e.sessionTitle as string | undefined;
       if (e.kind === 'task-complete') notifyTaskComplete(e.sessionId, title);
-      else if (e.kind === 'session-error') notifySessionError(e.sessionId, e.errorTitle as string, title);
+      else if (e.kind === 'session-error')
+        notifySessionError(e.sessionId, e.errorTitle as string, title);
       else if (e.kind === 'question') notifyQuestion(e.sessionId, e.questionText as string, title);
       else if (e.kind === 'permission')
         notifyPermissionRequest(e.sessionId, e.toolName as string, title);
     },
-    onError: (error, context) => handleApiError(error, context as Parameters<typeof handleApiError>[1]),
+    onError: (error, context) =>
+      handleApiError(error, context as Parameters<typeof handleApiError>[1]),
   });
 }
 

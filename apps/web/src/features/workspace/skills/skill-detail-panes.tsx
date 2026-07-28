@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The two panes of the skill detail modal — ux-references/perplexity/09.
+ * The two panes of the skill detail modal.
  *
  * Left: About (collapsible) + Files. Right: the file, frontmatter first, then
  * whatever the caller renders as the body. Kept free of data fetching and

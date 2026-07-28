@@ -5,7 +5,12 @@ import { latestRunCallIds, latestRunMessages } from './latest-run';
 function msg(role: 'user' | 'assistant', callIds: string[] = []): MessageWithParts {
   return {
     info: { role },
-    parts: callIds.map((callID) => ({ type: 'tool', callID, tool: 'read', state: { status: 'completed', input: {} } })),
+    parts: callIds.map((callID) => ({
+      type: 'tool',
+      callID,
+      tool: 'read',
+      state: { status: 'completed', input: {} },
+    })),
   } as unknown as MessageWithParts;
 }
 
@@ -20,7 +25,7 @@ describe('latestRunMessages', () => {
     expect(latestRunMessages(m)).toEqual(m.slice(2));
   });
 
-  test("no user message at all → the whole list is the run", () => {
+  test('no user message at all → the whole list is the run', () => {
     const m = [msg('assistant', ['a'])];
     expect(latestRunMessages(m)).toEqual(m);
   });

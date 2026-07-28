@@ -31,7 +31,7 @@ describe('new project git provider default', () => {
 
   test('searches large GitHub owners remotely and exposes repository load failures', () => {
     expect(source).toContain('useDebounce(repositorySearch.trim(), 300)');
-    expect(source).toContain("search: debouncedRepositorySearch || undefined");
+    expect(source).toContain('search: debouncedRepositorySearch || undefined');
     expect(source).toContain('onSearchChange={setRepositorySearch}');
     expect(source).toContain('githubReposQuery.isError');
     expect(source).toContain('Could not load repositories');
@@ -76,7 +76,9 @@ describe('new project dialog: simplified default state', () => {
     expect(source).not.toContain('Managed repository');
     expect(source).not.toContain('Starter skills');
     expect(source).not.toContain('Starter pack');
-    expect(source).not.toContain('Kortix creates a private repository and manages its credentials.');
+    expect(source).not.toContain(
+      'Kortix creates a private repository and manages its credentials.',
+    );
   });
 
   test('the account switcher only renders when there is more than one account to choose from', () => {
@@ -95,9 +97,7 @@ describe('new project dialog: simplified default state', () => {
     // The github-import form's name field has no autoFocus (it's the last
     // field in that body) — anchor on its placeholder key instead and
     // confirm its own RepositoryOptions usage also comes after it.
-    expect(source).toMatch(
-      /line516JsxAttrPlaceholderUseRepositoryName[\s\S]*?<RepositoryOptions/,
-    );
+    expect(source).toMatch(/line516JsxAttrPlaceholderUseRepositoryName[\s\S]*?<RepositoryOptions/);
 
     // Managed/github-create body, github-import body, and the
     // managed-git-unavailable fallback (a documented exception — it has no

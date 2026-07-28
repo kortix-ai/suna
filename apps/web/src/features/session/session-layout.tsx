@@ -12,24 +12,24 @@ import { useDeliverableReadiness } from '@/features/session/action-panel/shared/
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
-import { SessionVoiceTranscriptPanel } from '@/features/session/session-voice-transcript-panel';
-import { useVoiceTranscript } from '@/features/session/session-voice-transcript-shared';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
+import { SessionVoiceTranscriptPanel } from '@/features/session/session-voice-transcript-panel';
+import { useVoiceTranscript } from '@/features/session/session-voice-transcript-shared';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useRuntimeMessages } from '@kortix/sdk/react';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSessionStateStore } from '@kortix/sdk/react';
 import {
-  SessionPanelView,
+  type SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
+import { useRuntimeMessages } from '@kortix/sdk/react';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import { PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -584,7 +584,9 @@ function PanelHeaderSwitcher({
           </TabsTrigger>
           <TabsTrigger size="xs" value="voice" variant="secondary" className="h-7 w-fit gap-1.5">
             Voice
-            {voiceLive && <span className="bg-kortix-green size-1.5 shrink-0 animate-pulse rounded-full" />}
+            {voiceLive && (
+              <span className="bg-kortix-green size-1.5 shrink-0 animate-pulse rounded-full" />
+            )}
           </TabsTrigger>
         </TabsList>
       </Tabs>

@@ -2,11 +2,11 @@
 
 import {
   FileContentRenderer as BaseFileContentRenderer,
+  type FileCategory,
+  type FileContentRendererProps,
   FileSourceProvider,
   getFileCategory,
   getLanguageFromExt,
-  type FileCategory,
-  type FileContentRendererProps,
 } from '@/features/file-viewer';
 import { useFileExplorerSource } from '../explorer-source';
 

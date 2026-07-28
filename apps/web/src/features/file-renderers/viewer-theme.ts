@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { useTheme } from 'next-themes';
+import { useState } from 'react';
 
 /**
  * Dark-mode wiring for the Extend UI document viewers (xlsx/docx).

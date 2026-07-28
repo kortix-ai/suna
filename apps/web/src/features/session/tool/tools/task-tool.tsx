@@ -1,30 +1,23 @@
 'use client';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
+  firstMeaningfulLine,
   partInput,
   partStatus,
-  firstMeaningfulLine,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
-import { useRuntimeMessages } from '@kortix/sdk/react';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
-  ExternalLink,
-  SquareKanban,
-} from 'lucide-react';
-import {
-  useMemo,
-  useState,
-} from 'react';
-import {
+  type MessageWithParts,
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
-  type MessageWithParts,
 } from '@/ui';
-
+import { useRuntimeMessages } from '@kortix/sdk/react';
+import { ExternalLink, SquareKanban } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 export function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -90,4 +83,3 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
   );
 }
 ToolRegistry.register('task', TaskTool);
-

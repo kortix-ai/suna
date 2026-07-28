@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import type { ToolPart } from '@/ui';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { AgentStatusTool } from './agent-status-tool';

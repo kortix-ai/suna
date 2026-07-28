@@ -13,9 +13,9 @@
  *   // pass `ext` in the CodeMirror `extensions` array
  */
 
-import { linter, type Diagnostic as CmDiagnostic } from '@codemirror/lint';
+import type { DiagnosticSeverity, LspDiagnostic } from '@/stores/diagnostics-store';
+import { type Diagnostic as CmDiagnostic, linter } from '@codemirror/lint';
 import type { Extension } from '@codemirror/state';
-import type { LspDiagnostic, DiagnosticSeverity } from '@/stores/diagnostics-store';
 
 // ============================================================================
 // Severity mapping
@@ -120,7 +120,7 @@ export function diagnosticsExtension(diagnostics: LspDiagnostic[]): Extension {
           renderMessage() {
             const dom = document.createElement('div');
             dom.className = 'cm-lsp-diagnostic-tooltip';
-            
+
             // Source badge
             if (d.source) {
               const badge = document.createElement('span');
@@ -128,7 +128,7 @@ export function diagnosticsExtension(diagnostics: LspDiagnostic[]): Extension {
               badge.textContent = d.source;
               dom.appendChild(badge);
             }
-            
+
             // Message text
             const msg = document.createElement('span');
             msg.className = 'cm-lsp-diagnostic-message';

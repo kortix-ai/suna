@@ -1,22 +1,18 @@
-"use client";
+'use client';
 
 import { useTranslations } from 'next-intl';
 
-import { useState, useEffect } from "react";
-import { Settings, Clock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { KortixHyperLogo } from "@/components/ui/marketing/kortix-hyper-logo";
-import { toast } from "@/lib/toast";
+import { Badge } from '@/components/ui/badge';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import {
   useMaintenanceAdmin,
   useUpdateMaintenanceConfig,
-} from "@/hooks/admin/use-maintenance-admin";
-import {
-  MaintenanceLevelCard,
-  MaintenanceConfigDialog,
-  MAINTENANCE_LEVELS,
-} from "./_components";
-import type { MaintenanceLevel } from "@/lib/maintenance-store";
+} from '@/hooks/admin/use-maintenance-admin';
+import type { MaintenanceLevel } from '@/lib/maintenance-store';
+import { toast } from '@/lib/toast';
+import { Clock, Settings } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { MAINTENANCE_LEVELS, MaintenanceConfigDialog, MaintenanceLevelCard } from './_components';
 
 export default function AdminUtilsPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -24,25 +20,25 @@ export default function AdminUtilsPage() {
   const updateConfig = useUpdateMaintenanceConfig();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState<MaintenanceLevel>("none");
+  const [selectedLevel, setSelectedLevel] = useState<MaintenanceLevel>('none');
 
   // Form state
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-  const [statusUrl, setStatusUrl] = useState("");
+  const [statusUrl, setStatusUrl] = useState('');
   const [services, setServices] = useState<string[]>([]);
 
   // Sync form state when config loads or changes
   useEffect(() => {
     if (config) {
       setSelectedLevel(config.level);
-      setTitle(config.title || "");
-      setMessage(config.message || "");
+      setTitle(config.title || '');
+      setMessage(config.message || '');
       setStartDate(config.startTime ? new Date(config.startTime) : undefined);
       setEndDate(config.endTime ? new Date(config.endTime) : undefined);
-      setStatusUrl(config.statusUrl || "");
+      setStatusUrl(config.statusUrl || '');
       setServices(config.affectedServices || []);
     }
   }, [config]);
@@ -53,7 +49,7 @@ export default function AdminUtilsPage() {
     // Pre-fill title from level config if empty
     if (!title || title === MAINTENANCE_LEVELS.find((l) => l.value === config?.level)?.label) {
       const levelDef = MAINTENANCE_LEVELS.find((l) => l.value === level);
-      if (levelDef && level !== "none") {
+      if (levelDef && level !== 'none') {
         setTitle(levelDef.label);
       }
     }
@@ -63,17 +59,17 @@ export default function AdminUtilsPage() {
 
   const handleSave = async () => {
     try {
-      if (selectedLevel === "none") {
+      if (selectedLevel === 'none') {
         await updateConfig.mutateAsync({
-          level: "none",
-          title: "",
-          message: "",
+          level: 'none',
+          title: '',
+          message: '',
           startTime: null,
           endTime: null,
           statusUrl: null,
           affectedServices: [],
         });
-        toast.success("Maintenance notifications cleared");
+        toast.success('Maintenance notifications cleared');
       } else {
         await updateConfig.mutateAsync({
           level: selectedLevel,
@@ -86,14 +82,12 @@ export default function AdminUtilsPage() {
         });
 
         const levelDef = MAINTENANCE_LEVELS.find((l) => l.value === selectedLevel);
-        toast.success(`${levelDef?.label || "Maintenance"} activated`);
+        toast.success(`${levelDef?.label || 'Maintenance'} activated`);
       }
 
       setDialogOpen(false);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to update maintenance config"
-      );
+      toast.error(err instanceof Error ? err.message : 'Failed to update maintenance config');
     }
   };
 
@@ -101,7 +95,7 @@ export default function AdminUtilsPage() {
     setServices((prev) =>
       prev.includes(serviceLabel)
         ? prev.filter((s) => s !== serviceLabel)
-        : [...prev, serviceLabel]
+        : [...prev, serviceLabel],
     );
   };
 
@@ -113,7 +107,7 @@ export default function AdminUtilsPage() {
     );
   }
 
-  const currentLevel = config?.level || "none";
+  const currentLevel = config?.level || 'none';
   const currentLevelDef = MAINTENANCE_LEVELS.find((l) => l.value === currentLevel);
 
   return (
@@ -125,10 +119,16 @@ export default function AdminUtilsPage() {
               <Settings className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{tHardcodedUi.raw('appAdminUtilsPage.line126JsxTextMaintenanceNotifications')}</h1>
-              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminUtilsPage.line129JsxTextControlSystemWideMaintenanceBannersAndAccessRestrictions')}</p>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {tHardcodedUi.raw('appAdminUtilsPage.line126JsxTextMaintenanceNotifications')}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {tHardcodedUi.raw(
+                  'appAdminUtilsPage.line129JsxTextControlSystemWideMaintenanceBannersAndAccessRestrictions',
+                )}
+              </p>
             </div>
-            {currentLevel !== "none" && currentLevelDef && (
+            {currentLevel !== 'none' && currentLevelDef && (
               <Badge
                 className={`${currentLevelDef.bgColor} ${currentLevelDef.color} ${currentLevelDef.borderColor} border`}
               >
@@ -142,20 +142,18 @@ export default function AdminUtilsPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-6 pb-6">
           {/* Current status summary */}
-          {currentLevel !== "none" && config && (
+          {currentLevel !== 'none' && config && (
             <div className="mb-6 rounded-2xl border bg-muted/30 p-4">
               <div className="flex items-center gap-2 text-sm font-medium mb-2">
                 {currentLevelDef && (
                   <currentLevelDef.icon className={`w-4 h-4 ${currentLevelDef.color}`} />
-                )}{tHardcodedUi.raw('appAdminUtilsPage.line152JsxTextCurrentlyActive')}{currentLevelDef?.label}
+                )}
+                {tHardcodedUi.raw('appAdminUtilsPage.line152JsxTextCurrentlyActive')}
+                {currentLevelDef?.label}
               </div>
-              {config.title && (
-                <p className="text-sm font-medium">{config.title}</p>
-              )}
+              {config.title && <p className="text-sm font-medium">{config.title}</p>}
               {config.message && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {config.message}
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">{config.message}</p>
               )}
               {config.affectedServices && config.affectedServices.length > 0 && (
                 <div className="flex gap-1.5 mt-2">
@@ -171,7 +169,11 @@ export default function AdminUtilsPage() {
 
           {/* Level selection grid */}
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground mb-3">{tHardcodedUi.raw('appAdminUtilsPage.line177JsxTextSelectANotificationLevelToConfigure')}</p>
+            <p className="text-sm font-medium text-muted-foreground mb-3">
+              {tHardcodedUi.raw(
+                'appAdminUtilsPage.line177JsxTextSelectANotificationLevelToConfigure',
+              )}
+            </p>
             {MAINTENANCE_LEVELS.map((level) => (
               <MaintenanceLevelCard
                 key={level.value}
@@ -184,7 +186,9 @@ export default function AdminUtilsPage() {
 
           {config?.updatedAt && (
             <p className="text-xs text-muted-foreground mt-6 flex items-center gap-1">
-              <Clock className="w-3 h-3" />{tHardcodedUi.raw('appAdminUtilsPage.line192JsxTextLastUpdated')}{new Date(config.updatedAt).toLocaleString()}
+              <Clock className="w-3 h-3" />
+              {tHardcodedUi.raw('appAdminUtilsPage.line192JsxTextLastUpdated')}
+              {new Date(config.updatedAt).toLocaleString()}
             </p>
           )}
         </div>

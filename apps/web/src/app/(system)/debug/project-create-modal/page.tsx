@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ProjectCreateModal } from '@/features/projects/modal/project-create-modal';
 import { setBootstrapAuthToken } from '@/lib/auth-token';
+import { useEffect, useState } from 'react';
 
 export default function DebugProjectCreateModalPage() {
   const [open, setOpen] = useState(true);

@@ -1,8 +1,8 @@
 import { MCP_PROTOCOL_VERSION, MCP_SERVER_VERSION } from '@/lib/agent-discovery';
 import {
+  type PublicContentKind,
   getPublicContentRecords,
   resolvePublicMarkdown,
-  type PublicContentKind,
 } from '@/lib/seo/public-content';
 
 type JsonRpcId = string | number | null;

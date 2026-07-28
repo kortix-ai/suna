@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { resolveViewerFileName, ViewerFileName } from './viewer-file-name';
+import { ViewerFileName, resolveViewerFileName } from './viewer-file-name';
 
 describe('resolveViewerFileName', () => {
   test('uses the basename of a path', () => {

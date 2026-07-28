@@ -29,8 +29,8 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  type IamAuditWebhook,
   type CreatedAuditWebhook,
+  type IamAuditWebhook,
   createAuditWebhook,
   deleteAuditWebhook,
   listAuditWebhooks,
@@ -103,8 +103,8 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
         <div className="space-y-0.5">
           <p className="text-foreground text-sm font-medium">Audit webhooks</p>
           <p className="text-muted-foreground text-xs">
-            Ship every audit event to your SIEM or generic HTTP endpoint. Payloads are signed
-            with HMAC-SHA256.
+            Ship every audit event to your SIEM or generic HTTP endpoint. Payloads are signed with
+            HMAC-SHA256.
           </p>
         </div>
         {canManage && (
@@ -305,8 +305,7 @@ function CreateAuditWebhookDialog({
               {created.test &&
                 (created.test.ok ? (
                   <InfoBanner tone="success" icon={Check}>
-                    Test event delivered — your endpoint is reachable and events will stream
-                    here.
+                    Test event delivered — your endpoint is reachable and events will stream here.
                   </InfoBanner>
                 ) : (
                   <InfoBanner tone="warning" icon={AlertTriangle}>
@@ -419,8 +418,8 @@ function CreateAuditWebhookDialog({
                   ))}
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Only deliver events whose action starts with this prefix. Leave blank to
-                  deliver everything.
+                  Only deliver events whose action starts with this prefix. Leave blank to deliver
+                  everything.
                 </p>
               </div>
             </ModalBody>

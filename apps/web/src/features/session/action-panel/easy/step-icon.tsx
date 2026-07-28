@@ -22,6 +22,7 @@ import {
   Globe,
   History,
   ListChecks,
+  type LucideIcon,
   Plug,
   Search,
   Sparkles,
@@ -29,10 +30,9 @@ import {
   Wand2,
   Wrench,
   Zap,
-  type LucideIcon,
 } from 'lucide-react';
-import type { StepFamily } from '../shared/narration';
 import type { Step } from '../shared/group-steps';
+import type { StepFamily } from '../shared/narration';
 
 const FAMILY_ICON: Record<StepFamily, LucideIcon> = {
   explore: Search,

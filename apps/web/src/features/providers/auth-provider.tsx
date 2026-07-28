@@ -1,5 +1,11 @@
 'use client';
 
+import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '@/lib/storage/managed-storage';
+import { createClient } from '@/lib/supabase/client';
+import { resetClientState } from '@/lib/utils/reset-client-state';
+import type { Session, User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import React, {
   createContext,
   useContext,
@@ -7,14 +13,8 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
-  ReactNode,
+  type ReactNode,
 } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { User, Session } from '@supabase/supabase-js';
-import { SupabaseClient } from '@supabase/supabase-js';
-import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
-import { resetClientState } from '@/lib/utils/reset-client-state';
-import { safeGetItem, safeRemoveItem, safeSetItem } from '@/lib/storage/managed-storage';
 // Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
@@ -81,57 +81,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     getInitialSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
 
-        // Functional update: the previous `if (isLoading)` read a stale
-        // `isLoading` captured at mount (the effect only depends on `supabase`),
-        // so the guard never short-circuited. This is behavior-equivalent but
-        // doesn't rely on a stale closure value.
-        setIsLoading((prev) => (prev ? false : prev));
-        switch (event) {
-          case 'SIGNED_IN': {
-            if (newSession?.access_token) {
-              setCachedAuthToken(newSession.access_token);
-              setBootstrapAuthToken(null);
-            }
-            // Clear stale sandbox/server state if a different user signs in
-            // (e.g. signup in same browser without explicit logout first)
-            const prevUserId = safeGetItem('kortix-last-user-id');
-            const newUserId = newSession?.user?.id;
-            if (newUserId && prevUserId && prevUserId !== newUserId) {
-              console.log('[Auth] User changed, clearing stale client state');
-              await resetClientState();
-            }
-            if (newUserId) {
-              safeSetItem('kortix-last-user-id', newUserId);
-            }
-            break;
-          }
-          case 'SIGNED_OUT':
+      // Functional update: the previous `if (isLoading)` read a stale
+      // `isLoading` captured at mount (the effect only depends on `supabase`),
+      // so the guard never short-circuited. This is behavior-equivalent but
+      // doesn't rely on a stale closure value.
+      setIsLoading((prev) => (prev ? false : prev));
+      switch (event) {
+        case 'SIGNED_IN': {
+          if (newSession?.access_token) {
+            setCachedAuthToken(newSession.access_token);
             setBootstrapAuthToken(null);
-            setCachedAuthToken(null);
+          }
+          // Clear stale sandbox/server state if a different user signs in
+          // (e.g. signup in same browser without explicit logout first)
+          const prevUserId = safeGetItem('kortix-last-user-id');
+          const newUserId = newSession?.user?.id;
+          if (newUserId && prevUserId && prevUserId !== newUserId) {
+            console.log('[Auth] User changed, clearing stale client state');
             await resetClientState();
-            safeRemoveItem('kortix-last-user-id');
-            break;
-          case 'TOKEN_REFRESHED':
-            if (newSession?.access_token) {
-              setCachedAuthToken(newSession.access_token);
-              setBootstrapAuthToken(null);
-            }
-            break;
-          case 'MFA_CHALLENGE_VERIFIED':
-            if (newSession?.access_token) {
-              setCachedAuthToken(newSession.access_token);
-              setBootstrapAuthToken(null);
-            }
-            break;
-          default:
+          }
+          if (newUserId) {
+            safeSetItem('kortix-last-user-id', newUserId);
+          }
+          break;
         }
-      },
-    );
+        case 'SIGNED_OUT':
+          setBootstrapAuthToken(null);
+          setCachedAuthToken(null);
+          await resetClientState();
+          safeRemoveItem('kortix-last-user-id');
+          break;
+        case 'TOKEN_REFRESHED':
+          if (newSession?.access_token) {
+            setCachedAuthToken(newSession.access_token);
+            setBootstrapAuthToken(null);
+          }
+          break;
+        case 'MFA_CHALLENGE_VERIFIED':
+          if (newSession?.access_token) {
+            setCachedAuthToken(newSession.access_token);
+            setBootstrapAuthToken(null);
+          }
+          break;
+        default:
+      }
+    });
 
     return () => {
       authListener?.subscription.unsubscribe();

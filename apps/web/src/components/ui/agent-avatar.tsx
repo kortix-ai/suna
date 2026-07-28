@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { normalizeIconName } from '@/lib/utils/icon-utils';
+import { Bot } from 'lucide-react';
+import { DynamicIcon } from 'lucide-react/dynamic';
+import type React from 'react';
 
 interface AgentAvatarProps {
   // For direct props
@@ -29,7 +29,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   // Common props
   size = 16,
-  className = ""
+  className = '',
 }) => {
   const iconName = propIconName;
   const iconColor = propIconColor;
@@ -39,21 +39,21 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // Calculate responsive border radius - proportional to size
   const borderRadius = Math.min(size * 0.4, 16);
   const borderRadiusStyle = {
-    borderRadius: `${borderRadius}px`
+    borderRadius: `${borderRadius}px`,
   };
 
   // Filter out any rounded-* classes from className to prevent overrides
   const filteredClassName = className
     .split(' ')
-    .filter(cls => !cls.match(/^rounded(-[a-z0-9]+)?$/))
+    .filter((cls) => !cls.match(/^rounded(-[a-z0-9]+)?$/))
     .join(' ');
 
   if (isDefaultAgent) {
     return (
       <div
         className={cn(
-          "flex items-center justify-center bg-zinc-900 dark:bg-zinc-100 border-transparent",
-          filteredClassName
+          'flex items-center justify-center bg-zinc-900 dark:bg-zinc-100 border-transparent',
+          filteredClassName,
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
@@ -78,21 +78,17 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         return (
           <div
             className={cn(
-              "flex items-center justify-center transition-colors border",
-              filteredClassName
+              'flex items-center justify-center transition-colors border',
+              filteredClassName,
             )}
             style={{
               width: size,
               height: size,
               backgroundColor,
-              ...borderRadiusStyle
+              ...borderRadiusStyle,
             }}
           >
-            <DynamicIcon
-              name={normalizedIconName as any}
-              size={size * 0.5}
-              color={iconColor}
-            />
+            <DynamicIcon name={normalizedIconName as any} size={size * 0.5} color={iconColor} />
           </div>
         );
       } catch (error) {
@@ -105,16 +101,10 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // Fallback to default bot icon
   return (
     <div
-      className={cn(
-        "flex items-center justify-center bg-card border",
-        filteredClassName
-      )}
+      className={cn('flex items-center justify-center bg-card border', filteredClassName)}
       style={{ width: size, height: size, ...borderRadiusStyle }}
     >
-      <Bot
-        size={size * 0.5}
-        color="#6B7280"
-      />
+      <Bot size={size * 0.5} color="#6B7280" />
     </div>
   );
 };
@@ -124,10 +114,7 @@ interface AgentNameProps {
   name?: string;
 }
 
-export const AgentName: React.FC<AgentNameProps> = ({
-  name,
-  fallback = "Kortix"
-}) => {
+export const AgentName: React.FC<AgentNameProps> = ({ name, fallback = 'Kortix' }) => {
   return <span>{name || fallback}</span>;
 };
 
@@ -135,5 +122,5 @@ export const AgentName: React.FC<AgentNameProps> = ({
 export function hasCustomProfile(agent: {
   icon_name?: string | null;
 }): boolean {
-  return !!(agent.icon_name);
+  return !!agent.icon_name;
 }

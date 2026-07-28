@@ -13,13 +13,13 @@
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  */
 
-import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { playSound } from '@/lib/sounds';
+import { toast } from '@/lib/toast';
 import type { SoundEvent } from '@/stores/sound-store';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { useWebNotificationStore } from '@/stores/web-notification-store';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 // ============================================================================
 // Types
@@ -46,7 +46,10 @@ export interface WebNotificationPayload {
 // Preference key mapping
 // ============================================================================
 
-const TYPE_TO_PREF: Record<WebNotificationType, 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'> = {
+const TYPE_TO_PREF: Record<
+  WebNotificationType,
+  'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'
+> = {
   completion: 'onCompletion',
   error: 'onError',
   question: 'onQuestion',
@@ -73,7 +76,10 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
  */
 function playNotificationPing() {
   try {
-    if (typeof AudioContext === 'undefined' && typeof (window as any).webkitAudioContext === 'undefined') {
+    if (
+      typeof AudioContext === 'undefined' &&
+      typeof (window as any).webkitAudioContext === 'undefined'
+    ) {
       return;
     }
     const AudioCtx = AudioContext || (window as any).webkitAudioContext;
@@ -110,7 +116,11 @@ function playNotificationPing() {
 /**
  * Navigate to a session by opening/activating its tab and navigating to it.
  */
-function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { forceNavigation?: boolean }) {
+function navigateToSession(
+  sessionId: string,
+  sessionTitle?: string,
+  opts?: { forceNavigation?: boolean },
+) {
   try {
     const href = `/sessions/${sessionId}`;
     // Open/activate the tab in the tab store + pushState
@@ -320,11 +330,7 @@ export function notifyTaskComplete(sessionId: string, sessionTitle?: string) {
 /**
  * Notify that a session encountered an error.
  */
-export function notifySessionError(
-  sessionId: string,
-  errorTitle: string,
-  sessionTitle?: string,
-) {
+export function notifySessionError(sessionId: string, errorTitle: string, sessionTitle?: string) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 50)}"`
     : `Session ${sessionId.slice(0, 8)}`;
@@ -341,11 +347,7 @@ export function notifySessionError(
 /**
  * Notify that Kortix is asking the user a question.
  */
-export function notifyQuestion(
-  sessionId: string,
-  questionText: string,
-  sessionTitle?: string,
-) {
+export function notifyQuestion(sessionId: string, questionText: string, sessionTitle?: string) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 40)}"`
     : `Session ${sessionId.slice(0, 8)}`;

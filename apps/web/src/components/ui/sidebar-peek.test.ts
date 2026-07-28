@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  createPeekController,
   SIDEBAR_PEEK_CLOSE_DELAY_MS,
   SIDEBAR_PEEK_OPEN_DELAY_MS,
+  createPeekController,
 } from './sidebar-peek';
 
 function createHarness() {

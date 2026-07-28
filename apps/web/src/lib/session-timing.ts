@@ -78,11 +78,16 @@ export function finishSessionTiming(sessionId: string, backendTimeline?: unknown
   const last = t.entries[t.entries.length - 1]?.at ?? performance.now();
   const total = Math.round(last - t.start);
   // eslint-disable-next-line no-console
-  console.group(`%c[session-timing] ${sessionId.slice(0, 8)} READY in ${total}ms (click → usable)`, 'color:#06b6d4;font-weight:700');
+  console.group(
+    `%c[session-timing] ${sessionId.slice(0, 8)} READY in ${total}ms (click → usable)`,
+    'color:#06b6d4;font-weight:700',
+  );
   let prev = t.start;
   for (const e of t.entries) {
     // eslint-disable-next-line no-console
-    console.log(`${e.label.padEnd(20)} +${String(Math.round(e.at - prev)).padStart(6)}ms   (@${Math.round(e.at - t.start)}ms)`);
+    console.log(
+      `${e.label.padEnd(20)} +${String(Math.round(e.at - prev)).padStart(6)}ms   (@${Math.round(e.at - t.start)}ms)`,
+    );
     prev = e.at;
   }
   if (backendTimeline) {

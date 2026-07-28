@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { resolveAuthor, type Post, type PostFrontmatter } from '@/lib/blog';
+import { type Post, type PostFrontmatter, resolveAuthor } from '@/lib/blog';
 import { useCasesSource } from '@/lib/use-cases-source';
 
 /**

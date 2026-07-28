@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 /**
  * Project-wide approval rules for tool calls. Source of truth = `kortix.yaml`;
  * this panel CRUDs the same file via the admin endpoint, then the gateway
@@ -18,11 +17,11 @@ import { useTranslations } from 'next-intl';
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
@@ -35,15 +34,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
-  listProjectPolicies,
-  setProjectPolicies,
   type PolicyAction,
   type PolicyDefaultMode,
   type ProjectPolicy,
+  listProjectPolicies,
+  setProjectPolicies,
 } from '@kortix/sdk';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 
 interface DraftRule {
   id: string;

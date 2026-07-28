@@ -1,8 +1,9 @@
 import type { ConnectorAction, ConnectorPolicyAction } from '@kortix/sdk';
 
 /**
- * The two buckets the connector detail screen shows its tools in. Perplexity
- * splits a connector's tools into "Read-only" and "Write / delete" so the
+ * The two buckets the connector detail screen shows its tools in.
+ *
+ * A connector's tools split into "Read-only" and "Write / delete" so the
  * dangerous half is visible at a glance instead of buried in a flat list.
  */
 export type ToolGroupKey = 'readOnly' | 'write';

@@ -7,8 +7,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import { useAuth } from '@/features/providers/auth-provider';
+import { SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 
 export default function SsoSetupPage() {
   const router = useRouter();

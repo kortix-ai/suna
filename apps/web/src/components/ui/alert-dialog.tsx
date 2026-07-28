@@ -1,9 +1,9 @@
 'use client';
 
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
-import * as React from 'react';
+import type * as React from 'react';
 
-import { ButtonProps, buttonVariants } from '@/components/ui/button';
+import { type ButtonProps, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 

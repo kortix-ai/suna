@@ -12,7 +12,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import { type KortixAccount, listAccounts } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Plus, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -62,7 +62,12 @@ export default function AccountsPage() {
           </div>
           {canCreateAccount && (
             <div className="mt-2 shrink-0 sm:mt-0">
-              <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={() => setCreateOpen(true)}
+              >
                 <Plus className="size-4" />
                 New account
               </Button>
@@ -95,7 +100,12 @@ export default function AccountsPage() {
             description="Create an account to start working with a team."
             action={
               canCreateAccount ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setCreateOpen(true)}
+                >
                   <Plus className="size-3.5" />
                   New account
                 </Button>

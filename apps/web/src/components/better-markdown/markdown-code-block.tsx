@@ -1,29 +1,29 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/button";
-import { useCopy } from "@/hooks/use-copy";
-import { useHighlightedCode } from "@/lib/shiki";
-import { cn } from "@/lib/utils";
-import { Check, Copy } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { Button } from '@/components/ui/button';
+import { useCopy } from '@/hooks/use-copy';
+import { useHighlightedCode } from '@/lib/shiki';
+import { cn } from '@/lib/utils';
+import { Check, Copy } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 
 const LANGUAGE_ALIASES: Record<string, string> = {
-  py: "python",
-  sh: "bash",
-  shell: "bash",
-  zsh: "bash",
-  js: "javascript",
-  cjs: "javascript",
-  mjs: "javascript",
-  ts: "typescript",
-  yml: "yaml",
-  txt: "text",
-  plaintext: "text",
-  md: "markdown",
+  py: 'python',
+  sh: 'bash',
+  shell: 'bash',
+  zsh: 'bash',
+  js: 'javascript',
+  cjs: 'javascript',
+  mjs: 'javascript',
+  ts: 'typescript',
+  yml: 'yaml',
+  txt: 'text',
+  plaintext: 'text',
+  md: 'markdown',
 };
 
 const normalizeLanguage = (language?: string): string => {
-  if (!language) return "";
+  if (!language) return '';
 
   const normalizedLanguage = language.trim().toLowerCase();
   return LANGUAGE_ALIASES[normalizedLanguage] ?? normalizedLanguage;
@@ -53,8 +53,8 @@ export function CodeBlock({
     language: normalizedLanguage,
     showBackgroundColors: false,
     theme: {
-      dark: "plastic",
-      light: "slack-ochin",
+      dark: 'plastic',
+      light: 'slack-ochin',
     },
   });
   const { copied, copy } = useCopy();
@@ -73,7 +73,7 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        "group bg-sidebar-accent text-muted-foreground dark:bg-card relative w-full overflow-hidden rounded-lg",
+        'group bg-sidebar-accent text-muted-foreground dark:bg-card relative w-full overflow-hidden rounded-lg',
         className,
       )}
     >
@@ -88,7 +88,7 @@ export function CodeBlock({
               size="icon-sm"
               onClick={() => copy(code)}
               className="rounded-md"
-              aria-label={copied ? "Code copied to clipboard" : "Copy code to clipboard"}
+              aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
             >
               {copied ? (
                 <Check className="size-3.5" />
@@ -106,7 +106,7 @@ export function CodeBlock({
               size="icon-sm"
               onClick={() => copy(code)}
               className="rounded-md"
-              aria-label={copied ? "Code copied to clipboard" : "Copy code to clipboard"}
+              aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
             >
               {copied ? (
                 <Check className="size-3.5" />
@@ -122,9 +122,9 @@ export function CodeBlock({
         <div
           ref={highlightedScrollRef}
           className={cn(
-            "max-h-[520px] overflow-auto p-4 font-mono text-sm",
-            "text-muted-foreground [&_.shiki]:!bg-transparent [&_.shiki]:!p-0",
-            "[&_pre]:!bg-transparent [&_pre]:!p-0",
+            'max-h-[520px] overflow-auto p-4 font-mono text-sm',
+            'text-muted-foreground [&_.shiki]:!bg-transparent [&_.shiki]:!p-0',
+            '[&_pre]:!bg-transparent [&_pre]:!p-0',
           )}
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />

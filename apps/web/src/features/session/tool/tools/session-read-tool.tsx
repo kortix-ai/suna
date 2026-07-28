@@ -1,27 +1,19 @@
 'use client';
-import { STATUS_TEXT, } from '@/components/ui/status';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { STATUS_TEXT } from '@/components/ui/status';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import {
-  Check,
-  CircleAlert,
-  Clock,
-  Glasses,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { Check, CircleAlert, Clock, Glasses } from 'lucide-react';
+import { useMemo } from 'react';
 
 export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -122,4 +114,3 @@ ToolRegistry.register('session_read', SessionReadTool);
 ToolRegistry.register('session-read', SessionReadTool);
 ToolRegistry.register('oc-session_read', SessionReadTool);
 ToolRegistry.register('oc-session-read', SessionReadTool);
-

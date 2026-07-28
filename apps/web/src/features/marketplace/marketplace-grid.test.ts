@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { MarketplaceItem } from '@/lib/marketplace-client';
 import {
+  MARKETPLACE_GRID_COLUMNS,
   buildMarketplaceGridRows,
   flattenMarketplaceItems,
-  MARKETPLACE_GRID_COLUMNS,
   marketplaceGridRowKey,
   resolveMarketplaceTypeSectionTotal,
   shouldFetchNextMarketplacePage,
   shouldVirtualizeMarketplacePagedGrid,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
-import type { MarketplaceItem } from '@/lib/marketplace-client';
 
 function makeItems(type: string, ids: string[]): MarketplaceItem[] {
   return ids.map((id) => ({ id, type, name: id, title: id }) as unknown as MarketplaceItem);

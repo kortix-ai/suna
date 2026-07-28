@@ -5,8 +5,8 @@
  * subscription and a ref, neither of which survive outside a component.
  */
 
-import type { SessionPanelView } from '@/stores/session-browser-store';
 import type { SessionPanelMode } from '@/features/session/session-version-header';
+import type { SessionPanelView } from '@/stores/session-browser-store';
 
 /**
  * The mode the explorer renders in.
@@ -52,9 +52,6 @@ export function explorerViewForMode(mode: SessionPanelMode): SessionPanelView {
  * treated as already-seen, so it does not replay into the explorer and steal
  * focus onto a stale, previously-clicked path.
  */
-export function initialExplorerNonce(
-  ephemeral: boolean,
-  pendingNonce: number | undefined,
-): number {
+export function initialExplorerNonce(ephemeral: boolean, pendingNonce: number | undefined): number {
   return ephemeral ? (pendingNonce ?? 0) : 0;
 }

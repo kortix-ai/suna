@@ -7,8 +7,8 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import type { ProjectCommit } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
+import type { ProjectCommit } from '@kortix/sdk';
 import { AlertCircle, ChevronDown, History, Layers, RefreshCw, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';

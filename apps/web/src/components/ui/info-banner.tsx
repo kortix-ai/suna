@@ -7,7 +7,7 @@ import {
   AlertMedia,
   AlertTitle,
 } from '@/components/ui/alert';
-import { type StatusTone } from '@/components/ui/status';
+import type { StatusTone } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import { cva } from 'class-variance-authority';
 import * as React from 'react';

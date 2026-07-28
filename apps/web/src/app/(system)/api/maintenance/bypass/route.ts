@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import {
   MAINTENANCE_BYPASS_COOKIE,
   MAINTENANCE_BYPASS_TTL_SECONDS,
   createBypassToken,
 } from '@/lib/maintenance-bypass';
+import { createClient } from '@/lib/supabase/server';
 import { getUserRolesWithToken } from '@kortix/sdk';
+import { type NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;

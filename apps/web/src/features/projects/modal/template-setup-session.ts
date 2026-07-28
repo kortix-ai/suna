@@ -3,10 +3,7 @@ import {
   buildProjectOnboardingPrompt,
   buildTemplateSetupPrompt,
 } from '@/features/marketplace/marketplace-setup-prompt';
-import {
-  createProjectSession,
-  type KortixProject,
-} from '@kortix/sdk';
+import { type KortixProject, createProjectSession } from '@kortix/sdk';
 
 /**
  * Cloned from a marketplace item → don't drop the user on an empty project.

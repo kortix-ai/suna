@@ -1,10 +1,10 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
+import { type Locale, defaultLocale, locales } from '@/i18n/config';
+import { LOCALE_CHANGE_EVENT, getExplicitLocale } from '@/i18n/locale';
 import { NextIntlClientProvider } from 'next-intl';
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Preload default translations synchronously for immediate render
 // This prevents the loading spinner from blocking FCP

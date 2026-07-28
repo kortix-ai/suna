@@ -2,27 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 
-import {
-  addSandboxMember,
-  listSandboxMembers,
-  removeSandboxMember,
-  revokeSandboxInvite,
-  updateSandboxMemberRole,
-  type SandboxMember,
-  type SandboxMemberRole,
-  type SandboxPendingInvite,
-} from '@kortix/sdk';
-import { cn } from '@/lib/utils';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,16 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { UserRow } from '@/components/ui/user-row';
-import { useCan } from '@/hooks/platform/use-can';
 import {
   IconCheck,
   IconDelete,
@@ -48,7 +27,23 @@ import {
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
-import { User, AlertCircle } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { UserRow } from '@/components/ui/user-row';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { useCan } from '@/hooks/platform/use-can';
+import { cn } from '@/lib/utils';
+import {
+  type SandboxMember,
+  type SandboxMemberRole,
+  type SandboxPendingInvite,
+  addSandboxMember,
+  listSandboxMembers,
+  removeSandboxMember,
+  revokeSandboxInvite,
+  updateSandboxMemberRole,
+} from '@kortix/sdk';
+import { AlertCircle, User } from 'lucide-react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -129,23 +124,35 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Team</h2>
-          <p className="text-muted-foreground mt-1 text-sm">{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates')}</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {tHardcodedUi.raw(
+              'componentsInstancesInstanceMembersPanel.line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates',
+            )}
+          </p>
         </div>
         {canInvite ? (
-          <Button
-            size="sm"
-            onClick={() => setInviteOpen(true)}
-            className="shrink-0"
-          >
-            <IconInvite className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line142JsxTextInviteTeammate')}</Button>
+          <Button size="sm" onClick={() => setInviteOpen(true)} className="shrink-0">
+            <IconInvite className="h-3.5 w-3.5" />
+            {tHardcodedUi.raw(
+              'componentsInstancesInstanceMembersPanel.line142JsxTextInviteTeammate',
+            )}
+          </Button>
         ) : null}
       </header>
 
       {membersQuery.isLoading ? (
         <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <IconLoader className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line149JsxTextLoadingTeam')}</div>
+          <IconLoader className="h-4 w-4 animate-spin" />
+          {tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line149JsxTextLoadingTeam')}
+        </div>
       ) : membersQuery.error ? (
-        <InfoBanner tone="warning" icon={AlertCircle} title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line152JsxAttrTitleFailedToLoadMembers')}>
+        <InfoBanner
+          tone="warning"
+          icon={AlertCircle}
+          title={tHardcodedUi.raw(
+            'componentsInstancesInstanceMembersPanel.line152JsxAttrTitleFailedToLoadMembers',
+          )}
+        >
           {membersQuery.error instanceof Error
             ? membersQuery.error.message
             : 'Failed to load members.'}
@@ -153,12 +160,20 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       ) : members.length === 0 && pending.length === 0 ? (
         <EmptyState
           icon={IconUsers}
-          title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line160JsxAttrTitleJustYouForNow')}
-          description={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance')}
+          title={tHardcodedUi.raw(
+            'componentsInstancesInstanceMembersPanel.line160JsxAttrTitleJustYouForNow',
+          )}
+          description={tHardcodedUi.raw(
+            'componentsInstancesInstanceMembersPanel.line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance',
+          )}
           action={
             canInvite ? (
               <Button onClick={() => setInviteOpen(true)}>
-                <IconInvite className="mr-1.5 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line166JsxTextInviteTeammate')}</Button>
+                <IconInvite className="mr-1.5 h-3.5 w-3.5" />
+                {tHardcodedUi.raw(
+                  'componentsInstancesInstanceMembersPanel.line166JsxTextInviteTeammate',
+                )}
+              </Button>
             ) : undefined
           }
         />
@@ -196,7 +211,9 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       <ConfirmDialog
         open={!!removeTarget}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
-        title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line205JsxAttrTitleRemoveFromTeam')}
+        title={tHardcodedUi.raw(
+          'componentsInstancesInstanceMembersPanel.line205JsxAttrTitleRemoveFromTeam',
+        )}
         description={
           removeTarget
             ? removeTarget.role === 'admin'
@@ -212,7 +229,9 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       <ConfirmDialog
         open={!!revokeTarget}
         onOpenChange={(open) => !open && setRevokeTarget(null)}
-        title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line221JsxAttrTitleRevokeInvite')}
+        title={tHardcodedUi.raw(
+          'componentsInstancesInstanceMembersPanel.line221JsxAttrTitleRevokeInvite',
+        )}
         description={
           revokeTarget
             ? `${revokeTarget.email} won't be able to join with the pending invite link.`
@@ -316,7 +335,10 @@ function PendingSection({
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <section className="space-y-3">
-      <SectionLabel>{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line324JsxTextPending')}{invites.length}</SectionLabel>
+      <SectionLabel>
+        {tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line324JsxTextPending')}
+        {invites.length}
+      </SectionLabel>
       <div className="space-y-1.5">
         {invites.map((invite) => (
           <UserRow
@@ -324,7 +346,8 @@ function PendingSection({
             email={invite.email}
             subtitle={
               <span>
-                Invited {formatRelative(invite.created_at)}{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line332JsxTextExpires')}{' '}
+                Invited {formatRelative(invite.created_at)}
+                {tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line332JsxTextExpires')}{' '}
                 {formatRelative(invite.expires_at)}
               </span>
             }
@@ -337,7 +360,9 @@ function PendingSection({
                     variant="ghost"
                     className="text-muted-foreground h-7 w-7"
                     onClick={() => onRevoke(invite)}
-                    aria-label={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line345JsxAttrAriaLabelRevokeInvite')}
+                    aria-label={tHardcodedUi.raw(
+                      'componentsInstancesInstanceMembersPanel.line345JsxAttrAriaLabelRevokeInvite',
+                    )}
                   >
                     <IconDelete className="h-3.5 w-3.5" />
                   </Button>
@@ -405,7 +430,9 @@ function MemberRowActions({
           size="icon"
           variant="ghost"
           disabled={pending}
-          aria-label={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line412JsxAttrAriaLabelMemberActions')}
+          aria-label={tHardcodedUi.raw(
+            'componentsInstancesInstanceMembersPanel.line412JsxAttrAriaLabelMemberActions',
+          )}
           className="text-muted-foreground hover:text-foreground h-7 w-7"
         >
           {pending ? (
@@ -456,19 +483,14 @@ function RoleMenuItem({
   onSelect: () => void;
 }) {
   return (
-    <DropdownMenuItem
-      onSelect={onSelect}
-      className="flex items-start gap-2 py-2"
-    >
+    <DropdownMenuItem onSelect={onSelect} className="flex items-start gap-2 py-2">
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-foreground text-xs font-medium">
           <User className="h-3.5 w-3.5" />
           {title}
         </div>
         {subtitle ? (
-          <div className="text-muted-foreground text-xs leading-snug">
-            {subtitle}
-          </div>
+          <div className="text-muted-foreground text-xs leading-snug">{subtitle}</div>
         ) : null}
       </div>
       <IconCheck
@@ -502,8 +524,7 @@ function InviteDialog({
 
   const trimmed = email.trim();
   const emailValid = EMAIL_RE.test(trimmed);
-  const displayName =
-    emailValid && trimmed.includes('@') ? trimmed.split('@')[0] : '';
+  const displayName = emailValid && trimmed.includes('@') ? trimmed.split('@')[0] : '';
 
   // Reset state when closing
   const handleOpenChange = (next: boolean) => {
@@ -521,11 +542,7 @@ function InviteDialog({
         <div className="relative flex flex-col items-center gap-3 px-6 pt-8 pb-6">
           <div className="relative">
             {emailValid ? (
-              <UserAvatar
-                email={trimmed}
-                size="xl"
-                className="ring-background shadow-sm ring-4"
-              />
+              <UserAvatar email={trimmed} size="xl" className="ring-background shadow-sm ring-4" />
             ) : (
               <div className="bg-muted/40 border-border/60 text-muted-foreground/40 flex size-14 items-center justify-center rounded-full border border-dashed">
                 <IconInvite className="h-5 w-5" strokeWidth={1.5} />
@@ -557,11 +574,17 @@ function InviteDialog({
               <Label
                 htmlFor="invite-email"
                 className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.08em]"
-              >{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line564JsxTextEmailAddress')}</Label>
+              >
+                {tHardcodedUi.raw(
+                  'componentsInstancesInstanceMembersPanel.line564JsxTextEmailAddress',
+                )}
+              </Label>
               <Input
                 id="invite-email"
                 type="email"
-                placeholder={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line569JsxAttrPlaceholderTeammateExampleCom')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsInstancesInstanceMembersPanel.line569JsxAttrPlaceholderTeammateExampleCom',
+                )}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={pending}
@@ -592,7 +615,11 @@ function InviteDialog({
           </div>
 
           <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-2 border-t px-6 py-3.5">
-            <p className="text-muted-foreground/70 text-xs">{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line601JsxTextIfTheyDonTHaveKortixYetWe')}</p>
+            <p className="text-muted-foreground/70 text-xs">
+              {tHardcodedUi.raw(
+                'componentsInstancesInstanceMembersPanel.line601JsxTextIfTheyDonTHaveKortixYetWe',
+              )}
+            </p>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -603,16 +630,8 @@ function InviteDialog({
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!emailValid || pending}
-              >
-                {pending ? (
-                  <IconLoader className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Send invite'
-                )}
+              <Button type="submit" size="sm" disabled={!emailValid || pending}>
+                {pending ? <IconLoader className="h-4 w-4 animate-spin" /> : 'Send invite'}
               </Button>
             </div>
           </div>
@@ -649,9 +668,7 @@ function RoleCard({
       )}
     >
       <div className="flex w-full items-center justify-between">
-        <span className="text-foreground text-sm font-semibold">
-          {title}
-        </span>
+        <span className="text-foreground text-sm font-semibold">{title}</span>
         <span
           className={cn(
             'flex h-4 w-4 items-center justify-center rounded-full border transition-colors',
@@ -660,18 +677,11 @@ function RoleCard({
               : 'border-border group-hover:border-muted-foreground/60',
           )}
         >
-          {selected ? (
-            <IconCheck
-              className="text-background h-3 w-3"
-              strokeWidth={3}
-            />
-          ) : null}
+          {selected ? <IconCheck className="text-background h-3 w-3" strokeWidth={3} /> : null}
         </span>
       </div>
       {description ? (
-        <p className="text-muted-foreground text-xs leading-snug">
-          {description}
-        </p>
+        <p className="text-muted-foreground text-xs leading-snug">{description}</p>
       ) : null}
     </button>
   );

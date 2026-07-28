@@ -135,10 +135,7 @@ export function PanelCard({
                   // on click covers the mouse/tap case, and on keydown stops the
                   // Enter/Space that activates the nested button from *also*
                   // bubbling up into the trigger's own Enter/Space handler.
-                  <span
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
+                  <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     {headerAction}
                   </span>
                 )}

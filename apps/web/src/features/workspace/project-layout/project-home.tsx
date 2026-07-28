@@ -198,7 +198,7 @@ export function ProjectHome({
 }
 
 /**
- * The project-home empty-state body, laid out like Perplexity's home: the
+ * The project-home empty-state body, laid out like the reference: the
  * centered welcome heading with the composer directly beneath it and the
  * starter-prompt chips right under the input — all vertically centered — while
  * the quiet "set up your project" pills sit at the bottom of the viewport.
@@ -261,7 +261,7 @@ export function ProjectHomeWelcomeBody({
       {/* The empty state owns the middle; the composer is pinned to the
           bottom. It used to be centred together with the heading, which left
           the composer floating mid-page and no room for an empty state above
-          it. See ux-references/perplexity/11-workflow-run-modal.png and the
+          it. See also the 
           Computer sessions empty state. */}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
@@ -317,7 +317,7 @@ export function ProjectHomeWelcomeBody({
 
 /**
  * Starter prompt suggestions rendered as a centered, wrapping row of quiet
- * pills directly above the composer (Perplexity-style). All prompts are
+ * pills directly above the composer  All prompts are
  * visible at once — no scroll machinery; small screens show the first four.
  */
 export function StarterPromptChips({ onPick }: { onPick: (text: string) => void }) {

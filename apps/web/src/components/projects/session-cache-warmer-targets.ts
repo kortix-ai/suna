@@ -1,4 +1,4 @@
-import { projectSessionStartSeed, type ProjectSession } from '@kortix/sdk';
+import { type ProjectSession, projectSessionStartSeed } from '@kortix/sdk';
 
 export interface RunningSessionWarmupTarget {
   openCodeSessionId: string;

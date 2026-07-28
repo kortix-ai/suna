@@ -71,26 +71,36 @@
  * rects standing in for a video call that isn't happening.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { PublicVoiceJoinError, getPublicVoiceJoin, getPublicVoiceTranscript } from '@kortix/sdk';
 import {
   ConnectionState,
   DisconnectReason,
+  type Participant,
+  type RemoteTrack,
   Room,
   RoomEvent,
   Track,
-  type Participant,
-  type RemoteTrack,
   type TranscriptionSegment,
 } from 'livekit-client';
-import { getPublicVoiceJoin, getPublicVoiceTranscript, PublicVoiceJoinError } from '@kortix/sdk';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { AudioGestureOverlay, ConnectingScreen, EndedScreen, ReconnectingBanner } from './_components/connection-states';
 import { CallControls } from './_components/call-controls';
 import { mergeCallRecord, toCallRecordEntries, unrecordedLive } from './_components/call-record';
+import {
+  AudioGestureOverlay,
+  ConnectingScreen,
+  EndedScreen,
+  ReconnectingBanner,
+} from './_components/connection-states';
 import { PresenceRail } from './_components/presence-rail';
 import { RoomHeader } from './_components/room-header';
 import { TranscriptFeed } from './_components/transcript-feed';
-import type { CallRecordEntry, ConnectionPhase, LiveUtterance, PresenceEntry } from './_components/types';
+import type {
+  CallRecordEntry,
+  ConnectionPhase,
+  LiveUtterance,
+  PresenceEntry,
+} from './_components/types';
 
 const JOIN_LINK_TOKEN_PREFIX = 'vjl_';
 
@@ -177,14 +187,15 @@ export default function VoiceBridgePage() {
       setMicEnabled(local.isMicrophoneEnabled);
     };
 
-    const upsertLive = (
-      segments: TranscriptionSegment[],
-      participant: Participant | undefined,
-    ) => {
+    const upsertLive = (segments: TranscriptionSegment[], participant: Participant | undefined) => {
       if (cancelled) return;
       const isLocal = participant ? participant.identity === room.localParticipant.identity : false;
       const isAgent = participant?.isAgent ?? false;
-      const name = isLocal ? 'You' : isAgent ? participant?.name || 'Kortix' : participant?.name || participant?.identity || 'Guest';
+      const name = isLocal
+        ? 'You'
+        : isAgent
+          ? participant?.name || 'Kortix'
+          : participant?.name || participant?.identity || 'Guest';
       for (const segment of segments) {
         // Keyed by segment id, which is stable across the interim revisions of
         // one utterance — so a sentence being revised updates in place instead
@@ -301,7 +312,10 @@ export default function VoiceBridgePage() {
         if (!cancelled) setNeedsGesture(true);
       }
       const unblock = () => {
-        void room.startAudio().then(() => !cancelled && setNeedsGesture(false)).catch(() => {});
+        void room
+          .startAudio()
+          .then(() => !cancelled && setNeedsGesture(false))
+          .catch(() => {});
       };
       window.addEventListener('click', unblock);
       window.addEventListener('keydown', unblock);

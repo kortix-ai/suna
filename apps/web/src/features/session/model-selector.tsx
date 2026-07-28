@@ -3,7 +3,6 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import {
   CommandGroup,
   CommandInput,
@@ -13,6 +12,7 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import Loading from '@/components/ui/loading';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
@@ -32,14 +32,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
-import { useModelStore } from '@kortix/sdk/react';
-import type { ProviderListResponse } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { connectedGatewayProviderIdsFromSecretNames } from '@kortix/sdk/react';
+import { useModelStore } from '@kortix/sdk/react';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { resolveAvailableSelectedModel } from './model-availability';
 import { shouldShowFreeTag } from './model-tags';
@@ -270,7 +270,11 @@ export function ModelSelector({
         // It never reveals models that the account cannot call.
         if (
           !q &&
-          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
+          !modelStore.isVisible({
+            providerID: m.providerID,
+            modelID: m.modelID,
+            provider: m.provider,
+          })
         )
           return false;
         return (
@@ -379,212 +383,212 @@ export function ModelSelector({
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
           <>
-              <CommandInput
-                compact
-                placeholder={tHardcodedUi.raw(
-                  'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
-                )}
-                value={search}
-                onValueChange={setSearch}
-                rightElement={
-                  <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Add provider"
-                          onClick={() => handleOpenProviderModal('providers')}
-                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
-                        >
-                          <Plus className="size-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        {tHardcodedUi.raw(
-                          'componentsSessionModelSelector.line239JsxTextConnectProvider',
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Manage models"
-                          onClick={() => handleOpenProviderModal('models')}
-                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
-                        >
-                          <SlidersHorizontal className="size-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        {tHardcodedUi.raw(
-                          'componentsSessionModelSelector.line251JsxTextManageModels',
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                }
-              />
-
-              <CommandList className="max-h-[380px]">
-                {modelsLoading || entitlementsPending ? (
-                  <div
-                    className="flex min-h-32 items-center justify-center"
-                    role="status"
-                    aria-label="Loading models"
-                  >
-                    <Loading className="text-muted-foreground size-4 shrink-0" />
-                  </div>
-                ) : grouped.length > 0 ? (
-                  <>
-                    {grouped.map((group) => (
-                      <CommandGroup
-                        key={group.providerID}
-                        heading={
-                          <div className="flex items-center gap-2">
-                            <ProviderLogo
-                              providerID={group.providerID}
-                              name={group.providerName}
-                              size="small"
-                            />
-                            <span className="flex-1">{group.providerName}</span>
-                            <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
-                              {group.models.length}
-                            </span>
-                          </div>
-                        }
-                        forceMount
-                      >
-                        {group.models.map((model) => {
-                          const isSelected =
-                            availableSelectedModel?.providerID === model.providerID &&
-                            availableSelectedModel?.modelID === model.modelID;
-
-                          const isFree = shouldShowFreeTag(model);
-                          // `.provider` (the real upstream, when the gateway
-                          // serves it) makes isVisible's connection-gating
-                          // check the correct sub-provider instead of falling
-                          // back to string-splitting modelID — see
-                          // use-model-store.ts's subProviderOf.
-                          const modelKey = {
-                            providerID: model.providerID,
-                            modelID: model.modelID,
-                            provider: model.provider,
-                          };
-                          // "Latest" models are always shown; older ones get an
-                          // activation switch so they can be pinned into the picker.
-                          const isLatestModel = modelStore.isLatest(modelKey);
-                          const isModelVisible = modelStore.isVisible(modelKey);
-                          // Under a BYOK provider group the `<provider>/` prefix is
-                          // redundant — show just the bare model id.
-                          const displayModelID =
-                            group.providerID !== model.providerID && model.modelID.includes('/')
-                              ? model.modelID.slice(model.modelID.indexOf('/') + 1)
-                              : model.modelID;
-
-                          return (
-                            <CommandItem
-                              key={`${model.providerID}:${model.modelID}`}
-                              value={`model-${model.providerID}-${model.modelID}`}
-                              className={cn(
-                                '!pl-3',
-                                isSelected && 'bg-foreground/[0.06]',
-                                !isLatestModel && !isModelVisible && 'opacity-60',
-                              )}
-                              onSelect={() => handleSelect(model)}
-                            >
-                              <div className="min-w-0 flex-1 py-0.5">
-                                <div
-                                  className={cn(
-                                    'truncate text-sm leading-tight',
-                                    isSelected
-                                      ? 'text-foreground font-semibold'
-                                      : 'text-foreground/90 font-medium',
-                                  )}
-                                >
-                                  {model.modelName}
-                                </div>
-                                <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                                  {displayModelID}
-                                </p>
-                              </div>
-                              {isFree && <Tag variant="free">Free</Tag>}
-                              {isSelected && <Check className="text-foreground shrink-0" />}
-                            </CommandItem>
-                          );
-                        })}
-                      </CommandGroup>
-                    ))}
-                  </>
-                ) : (
-                  <div className="px-3 py-5 text-center">
-                    <div className="text-foreground text-sm font-medium">No models available</div>
-                    <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                      {showUpgradeOption
-                        ? 'Upgrade or connect your own provider to start using this session.'
-                        : 'Connect your own provider to start using this session.'}
-                    </p>
-                    <div className="mt-4 flex items-center justify-center gap-2">
-                      {showUpgradeOption && (
-                        <Button type="button" size="xs" onClick={handleUpgrade}>
-                          <CreditCard className="size-3.5" />
-                          Upgrade
-                        </Button>
-                      )}
-                      <Button
+            <CommandInput
+              compact
+              placeholder={tHardcodedUi.raw(
+                'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
+              )}
+              value={search}
+              onValueChange={setSearch}
+              rightElement={
+                <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
                         type="button"
-                        size="xs"
-                        variant={showUpgradeOption ? 'outline' : 'default'}
+                        aria-label="Add provider"
                         onClick={() => handleOpenProviderModal('providers')}
+                        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                       >
-                        <KeyRound className="size-3.5" />
-                        Connect provider
+                        <Plus className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {tHardcodedUi.raw(
+                        'componentsSessionModelSelector.line239JsxTextConnectProvider',
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Manage models"
+                        onClick={() => handleOpenProviderModal('models')}
+                        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
+                      >
+                        <SlidersHorizontal className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {tHardcodedUi.raw(
+                        'componentsSessionModelSelector.line251JsxTextManageModels',
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              }
+            />
+
+            <CommandList className="max-h-[380px]">
+              {modelsLoading || entitlementsPending ? (
+                <div
+                  className="flex min-h-32 items-center justify-center"
+                  role="status"
+                  aria-label="Loading models"
+                >
+                  <Loading className="text-muted-foreground size-4 shrink-0" />
+                </div>
+              ) : grouped.length > 0 ? (
+                <>
+                  {grouped.map((group) => (
+                    <CommandGroup
+                      key={group.providerID}
+                      heading={
+                        <div className="flex items-center gap-2">
+                          <ProviderLogo
+                            providerID={group.providerID}
+                            name={group.providerName}
+                            size="small"
+                          />
+                          <span className="flex-1">{group.providerName}</span>
+                          <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
+                            {group.models.length}
+                          </span>
+                        </div>
+                      }
+                      forceMount
+                    >
+                      {group.models.map((model) => {
+                        const isSelected =
+                          availableSelectedModel?.providerID === model.providerID &&
+                          availableSelectedModel?.modelID === model.modelID;
+
+                        const isFree = shouldShowFreeTag(model);
+                        // `.provider` (the real upstream, when the gateway
+                        // serves it) makes isVisible's connection-gating
+                        // check the correct sub-provider instead of falling
+                        // back to string-splitting modelID — see
+                        // use-model-store.ts's subProviderOf.
+                        const modelKey = {
+                          providerID: model.providerID,
+                          modelID: model.modelID,
+                          provider: model.provider,
+                        };
+                        // "Latest" models are always shown; older ones get an
+                        // activation switch so they can be pinned into the picker.
+                        const isLatestModel = modelStore.isLatest(modelKey);
+                        const isModelVisible = modelStore.isVisible(modelKey);
+                        // Under a BYOK provider group the `<provider>/` prefix is
+                        // redundant — show just the bare model id.
+                        const displayModelID =
+                          group.providerID !== model.providerID && model.modelID.includes('/')
+                            ? model.modelID.slice(model.modelID.indexOf('/') + 1)
+                            : model.modelID;
+
+                        return (
+                          <CommandItem
+                            key={`${model.providerID}:${model.modelID}`}
+                            value={`model-${model.providerID}-${model.modelID}`}
+                            className={cn(
+                              '!pl-3',
+                              isSelected && 'bg-foreground/[0.06]',
+                              !isLatestModel && !isModelVisible && 'opacity-60',
+                            )}
+                            onSelect={() => handleSelect(model)}
+                          >
+                            <div className="min-w-0 flex-1 py-0.5">
+                              <div
+                                className={cn(
+                                  'truncate text-sm leading-tight',
+                                  isSelected
+                                    ? 'text-foreground font-semibold'
+                                    : 'text-foreground/90 font-medium',
+                                )}
+                              >
+                                {model.modelName}
+                              </div>
+                              <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                                {displayModelID}
+                              </p>
+                            </div>
+                            {isFree && <Tag variant="free">Free</Tag>}
+                            {isSelected && <Check className="text-foreground shrink-0" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  ))}
+                </>
+              ) : (
+                <div className="px-3 py-5 text-center">
+                  <div className="text-foreground text-sm font-medium">No models available</div>
+                  <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
+                    {showUpgradeOption
+                      ? 'Upgrade or connect your own provider to start using this session.'
+                      : 'Connect your own provider to start using this session.'}
+                  </p>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    {showUpgradeOption && (
+                      <Button type="button" size="xs" onClick={handleUpgrade}>
+                        <CreditCard className="size-3.5" />
+                        Upgrade
                       </Button>
-                    </div>
+                    )}
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={showUpgradeOption ? 'outline' : 'default'}
+                      onClick={() => handleOpenProviderModal('providers')}
+                    >
+                      <KeyRound className="size-3.5" />
+                      Connect provider
+                    </Button>
                   </div>
-                )}
-              </CommandList>
-              {defaultControls && availableSelectedModel ? (
-                <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
+                </div>
+              )}
+            </CommandList>
+            {defaultControls && availableSelectedModel ? (
+              <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    defaultControls.onSetAccountDefault(availableSelectedModel);
+                    setOpen(false);
+                  }}
+                  className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                >
+                  <Star className="size-3.5 shrink-0" />
+                  Set as my default model
+                </button>
+                {defaultControls.onSetProjectDefault ? (
                   <button
                     type="button"
                     onClick={() => {
-                      defaultControls.onSetAccountDefault(availableSelectedModel);
+                      defaultControls.onSetProjectDefault?.(availableSelectedModel);
                       setOpen(false);
                     }}
                     className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
                   >
-                    <Star className="size-3.5 shrink-0" />
-                    Set as my default model
+                    <FolderGit2 className="size-3.5 shrink-0" />
+                    Set as this project&apos;s default
                   </button>
-                  {defaultControls.onSetProjectDefault ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        defaultControls.onSetProjectDefault?.(availableSelectedModel);
-                        setOpen(false);
-                      }}
-                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                    >
-                      <FolderGit2 className="size-3.5 shrink-0" />
-                      Set as this project&apos;s default
-                    </button>
-                  ) : null}
-                  {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        defaultControls.onSetAgentDefault?.(availableSelectedModel);
-                        setOpen(false);
-                      }}
-                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                    >
-                      <Bot className="size-3.5 shrink-0" />
-                      Set as default for {defaultControls.agentName}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+                ) : null}
+                {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      defaultControls.onSetAgentDefault?.(availableSelectedModel);
+                      setOpen(false);
+                    }}
+                    className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                  >
+                    <Bot className="size-3.5 shrink-0" />
+                    Set as default for {defaultControls.agentName}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </>
         </CommandPopoverContent>
       </CommandPopover>

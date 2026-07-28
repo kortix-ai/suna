@@ -2,10 +2,10 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { ShareViewer } from './_components/ShareViewer';
+import React, { useEffect, useState, useCallback } from 'react';
 import { SharePageWrapper } from './_components/SharePageWrapper';
+import { ShareViewer } from './_components/ShareViewer';
 
 export default function SharePage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -15,7 +15,9 @@ export default function SharePage() {
   if (!shareId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">{tHardcodedUi.raw('appShareShareidPage.line15JsxTextInvalidShareLink')}</p>
+        <p className="text-muted-foreground">
+          {tHardcodedUi.raw('appShareShareidPage.line15JsxTextInvalidShareLink')}
+        </p>
       </div>
     );
   }

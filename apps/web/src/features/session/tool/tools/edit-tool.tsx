@@ -5,16 +5,16 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
   DiagnosticsDisplay,
-  getToolDiagnostics,
   InlineDiffView,
+  ToolOutputFallback,
+  ToolRunningContext,
+  getToolDiagnostics,
   isErrorOutput,
   partInput,
   partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
-  ToolOutputFallback,
-  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';

@@ -1,26 +1,18 @@
 'use client';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  MessageCircle,
-} from 'lucide-react';
-import {
-  useMemo,
-  useState,
-} from 'react';
-import {
-  getChildSessionId,
-} from '@/ui';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { getChildSessionId } from '@/ui';
+import { MessageCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 export function AgentMessageTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -68,4 +60,3 @@ export function AgentMessageTool({ part, forceOpen }: ToolProps) {
 }
 ToolRegistry.register('agent_message', AgentMessageTool);
 ToolRegistry.register('agent-message', AgentMessageTool);
-

@@ -1,6 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  type AddSourceInput,
+  type ItemsPage,
   addMarketplaceSource,
   getMarketplaceItem,
   getMarketplaceItemFile,
@@ -9,13 +11,11 @@ import {
   installMarketplaceItemAsSession,
   listFeaturedMarketplaces,
   listMarketplaceItems,
-  listMarketplaces,
   listMarketplaceSources,
+  listMarketplaces,
   listPublicMarketplaceItems,
   listPublicMarketplaces,
   removeMarketplaceSource,
-  type AddSourceInput,
-  type ItemsPage,
 } from '@/lib/marketplace-client';
 
 // Default page size for `useInfiniteMarketplaceItems`. Re-exported from the

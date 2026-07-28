@@ -1,12 +1,12 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
+import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
+import { getDirectory, getFilename } from '@/ui';
 import { ChevronRight, FileIcon, FileText, Folder } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
-import { getDirectory, getFilename } from '@/ui';
 
 export function parseFilePaths(output: string): string[] | null {
   if (!output) return null;
@@ -32,11 +32,13 @@ export interface GrepFileGroup {
   matches: GrepMatch[];
 }
 
-export function parseGrepOutput(output: string): { matchCount: number; groups: GrepFileGroup[] } | null {
+export function parseGrepOutput(
+  output: string,
+): { matchCount: number; groups: GrepFileGroup[] } | null {
   if (!output) return null;
   const text = String(output).trim();
   const headerMatch = text.match(/^Found\s+(\d+)\s+match/i);
-  const matchCount = headerMatch ? parseInt(headerMatch[1], 10) : 0;
+  const matchCount = headerMatch ? Number.parseInt(headerMatch[1], 10) : 0;
   const body = headerMatch ? text.slice(headerMatch[0].length).trim() : text;
   if (!body) return null;
 
@@ -55,7 +57,7 @@ export function parseGrepOutput(output: string): { matchCount: number; groups: G
     let m: RegExpExecArray | null;
     while ((m = lineRegex.exec(rest)) !== null) {
       matches.push({
-        line: parseInt(m[1], 10),
+        line: Number.parseInt(m[1], 10),
         content: m[2].trim().replace(/;$/, ''),
       });
     }
@@ -228,4 +230,3 @@ export function InlineGrepResults({
     </div>
   );
 }
-

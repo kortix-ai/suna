@@ -2,9 +2,9 @@
 
 import {
   BasicTool,
+  ToolOutputFallback,
   partInput,
   partOutput,
-  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { Cpu } from 'lucide-react';
@@ -82,4 +82,3 @@ export function GenericTool({ part }: ToolProps) {
     </BasicTool>
   );
 }
-

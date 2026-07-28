@@ -1,4 +1,4 @@
-import { ComponentType } from 'react';
+import type { ComponentType } from 'react';
 
 export interface AnnouncementComponentProps {
   onClose: () => void;
@@ -9,7 +9,7 @@ export const announcementRegistry: Record<string, ComponentType<AnnouncementComp
 
 export function registerAnnouncement(
   name: string,
-  component: ComponentType<AnnouncementComponentProps>
+  component: ComponentType<AnnouncementComponentProps>,
 ) {
   announcementRegistry[name] = component;
 }

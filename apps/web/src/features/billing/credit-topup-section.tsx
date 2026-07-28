@@ -5,9 +5,9 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import { purchaseCredits } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
+import { purchaseCredits } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { useMemo, useState } from 'react';
 
@@ -72,15 +72,15 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
     setPurchaseError(null);
     try {
       const response = await purchaseCredits({
-          accountId: billingAccountId ?? undefined,
-          // Whole-dollar amounts only — custom prices are per-dollar on the
-          // backend and the ledger displays cleanly. Round to be safe.
-          amount: Math.round(amount),
-          // Land on /projects (a real route) — /dashboard 404s. The projects
-          // page reads ?credit_purchase=success to refresh the wallet + confetti.
-          successUrl: successUrl ?? `${window.location.origin}/projects?credit_purchase=success`,
-          cancelUrl: cancelUrl ?? window.location.href,
-        });
+        accountId: billingAccountId ?? undefined,
+        // Whole-dollar amounts only — custom prices are per-dollar on the
+        // backend and the ledger displays cleanly. Round to be safe.
+        amount: Math.round(amount),
+        // Land on /projects (a real route) — /dashboard 404s. The projects
+        // page reads ?credit_purchase=success to refresh the wallet + confetti.
+        successUrl: successUrl ?? `${window.location.origin}/projects?credit_purchase=success`,
+        cancelUrl: cancelUrl ?? window.location.href,
+      });
       if (response.checkout_url) {
         window.location.href = response.checkout_url;
       } else {

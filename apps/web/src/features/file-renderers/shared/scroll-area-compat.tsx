@@ -1,5 +1,6 @@
 'use client';
 
+import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
 // Vendored extend.ai viewers (e.g. pdf-viewer.tsx) are written against
 // extend.ai's own `ScrollArea`, which wraps `@base-ui/react/scroll-area` and
 // exposes a richer prop surface (`orientation`, `scrollFade`,
@@ -10,7 +11,6 @@
 // the `@radix-ui/react-scroll-area` primitive already used elsewhere in the
 // app, so the vendor diff in pdf-viewer.tsx stays a single import swap.
 import * as React from 'react';
-import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
 
 import { cn } from '@/lib/utils';
 

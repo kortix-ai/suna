@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import type { ToolPart } from '@/ui';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ToolPart } from '@/ui';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { MemorySearchTool } from './memory-search-tool';
@@ -89,9 +89,7 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <MemorySearchTool
-            part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)}
-          />
+          <MemorySearchTool part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)} />
         </ToolSurfaceContext.Provider>,
       ),
     );

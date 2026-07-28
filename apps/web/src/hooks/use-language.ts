@@ -1,8 +1,8 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
+import { type Locale, defaultLocale, locales } from '@/i18n/config';
+import { LOCALE_CHANGE_EVENT, getExplicitLocale } from '@/i18n/locale';
 import { createClient } from '@/lib/supabase/client';
 import { useCallback, useEffect, useState } from 'react';
 

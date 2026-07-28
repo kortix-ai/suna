@@ -3,12 +3,12 @@
 import { StatusDot } from '@/components/ui/status';
 import {
   BasicTool,
+  ToolEmptyState,
+  ToolOutputFallback,
   isErrorOutput,
   partInput,
   partOutput,
   partStatus,
-  ToolEmptyState,
-  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';

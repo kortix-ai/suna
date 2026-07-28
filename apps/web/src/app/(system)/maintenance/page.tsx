@@ -1,8 +1,8 @@
+import { LocalTime } from '@/components/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { Wrench } from 'lucide-react';
 import { redirect } from 'next/navigation';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
-import { LocalTime } from '@/components/ui/local-time';
 
 const SCHEDULE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: 'short',
@@ -42,10 +42,10 @@ export default async function MaintenancePage({
     redirect(safeInternalPath(from));
   }
 
-  const title = config.title || 'We\'ll be right back';
+  const title = config.title || "We'll be right back";
   const message =
     config.message ||
-    'We\'re performing scheduled maintenance to improve your experience. Please check back soon.';
+    "We're performing scheduled maintenance to improve your experience. Please check back soon.";
 
   const hasSchedule = config.startTime && config.endTime;
 
@@ -59,9 +59,7 @@ export default async function MaintenancePage({
 
         {/* Title */}
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            {title}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-md mx-auto">
             {message}
           </p>
@@ -95,12 +93,18 @@ export default async function MaintenancePage({
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium text-primary hover:underline underline-offset-4"
-            >{tHardcodedUi.raw('appMaintenancePage.line54JsxTextCheckSystemStatus')}</a>
+            >
+              {tHardcodedUi.raw('appMaintenancePage.line54JsxTextCheckSystemStatus')}
+            </a>
           </div>
         )}
 
         {/* Auto-refresh hint */}
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('appMaintenancePage.line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds')}</p>
+        <p className="text-xs text-muted-foreground/60">
+          {tHardcodedUi.raw(
+            'appMaintenancePage.line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds',
+          )}
+        </p>
 
         {/* Auto-refresh meta (client-side) */}
         <AutoRefresh />

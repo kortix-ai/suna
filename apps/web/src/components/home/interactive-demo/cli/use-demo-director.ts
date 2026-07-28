@@ -2,11 +2,11 @@
 
 import { useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDemoConversation, type DemoConversation } from '../chat/use-demo-conversation';
+import { type DemoConversation, useDemoConversation } from '../chat/use-demo-conversation';
 import { defaultDemoPage, isDemoPageEnabled } from '../page-flags';
 import type { ActiveModel, PageId, ProjectCard, ProjectStatus } from '../types';
-import { CHAT_PROMPT, DEFAULT_MODEL, SCRIPT, SETTLED, type Beat, type DirectorApi } from './script';
-import { cmdLine, type Line } from './terminal';
+import { type Beat, CHAT_PROMPT, DEFAULT_MODEL, type DirectorApi, SCRIPT, SETTLED } from './script';
+import { type Line, cmdLine } from './terminal';
 
 /** One rendered terminal entry: the typed command + the output streamed under it. */
 export type Block = { cmd: Line; out: Line[]; note?: boolean };

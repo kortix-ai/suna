@@ -24,7 +24,7 @@ import {
   CogOne,
   CogOneSolid,
   CreditCardSolid,
-  Icon as IconMynauiType,
+  type Icon as IconMynauiType,
   UsersSolid,
 } from '@mynaui/icons-react';
 import type { LucideIcon } from 'lucide-react';
@@ -44,9 +44,9 @@ import {
   GitPullRequest,
   Globe,
   Hash,
-  Keyboard,
   // Settings pages
   KeyRound,
+  Keyboard,
   Layers,
   // Navigation
   LayoutDashboard,
@@ -74,7 +74,7 @@ import {
   Wallpaper as WallpaperIcon,
   Webhook,
 } from 'lucide-react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 // ============================================================================
 // Types
@@ -454,7 +454,8 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
-    keywords: 'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
+    keywords:
+      'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
   },
   {
     id: 'proj-connectors-policies',

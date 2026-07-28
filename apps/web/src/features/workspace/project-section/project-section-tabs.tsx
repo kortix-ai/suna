@@ -2,9 +2,8 @@
 
 /**
  * The persistent section strip that sits above every project section screen,
- * mirroring the sidebar's Customize group — see
- * ux-references/perplexity/06-connectors-list.png, where
- * `Connectors | Skills | Workflows | Memory` stays put across all four pages.
+ * mirroring the sidebar's Customize group. The same strip stays put across all
+ * of the section pages.
  *
  * A link list, not a Tabs widget: each entry is a real route, so ⌘-click and
  * the back button behave.

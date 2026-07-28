@@ -13,17 +13,14 @@ export type SetupLinkKind = 'secret' | 'connector';
  * plain tappable link in Slack; inside the web app that origin equals our own,
  * so we intercept it and render an in-app modal instead of navigating away.
  */
-export function parseSetupLinkHref(
-  href?: string,
-): { kind: SetupLinkKind; token: string } | null {
+export function parseSetupLinkHref(href?: string): { kind: SetupLinkKind; token: string } | null {
   if (!href) return null;
   let pathname = href;
   let sameOrigin = true;
   if (/^https?:\/\//i.test(href)) {
     try {
       const u = new URL(href);
-      sameOrigin =
-        typeof window === 'undefined' || u.origin === window.location.origin;
+      sameOrigin = typeof window === 'undefined' || u.origin === window.location.origin;
       pathname = u.pathname;
     } catch {
       return null;

@@ -3,9 +3,8 @@
 /**
  * The Customize group in the sidebar: a quiet label with four plain-text links.
  *
- * The lightness of Perplexity's sidebar comes from exactly this — the
- * Customize children are unstyled text, not icon rows in boxes (see
- * ux-references/perplexity/01-home-search.png). Keep them that way.
+ * The lightness of the sidebar comes from exactly this: the Customize children
+ * are unstyled text, not icon rows in boxes. Keep them that way.
  *
  * Visibility reuses the batched capability probe the Customize rail used, so
  * promoting a section to a route changes nothing about who can see it. The

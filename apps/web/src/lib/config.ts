@@ -1,7 +1,7 @@
 // Subscription tier structure - tier keys only, no price IDs
 export interface SubscriptionTierData {
-  tierKey: string;  // Backend tier key like 'free', 'pro', etc.
-  name: string;     // Display name like 'Free', 'Pro'
+  tierKey: string; // Backend tier key like 'free', 'pro', etc.
+  name: string; // Display name like 'Free', 'Pro'
 }
 
 // Subscription tiers structure - ONLY tier keys, price IDs come from backend

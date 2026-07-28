@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import type { ToolPart } from '@/ui';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ToolPart } from '@/ui';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { ProjectDeleteTool } from './project-delete-tool';
@@ -53,7 +53,9 @@ describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
 
     expect(html).toContain('Workspace delete disabled');
     expect(html).toContain('kortix-web');
-    expect(html).not.toContain('text-muted-foreground/40 flex items-center gap-2 px-2.5 py-1 text-xs');
+    expect(html).not.toContain(
+      'text-muted-foreground/40 flex items-center gap-2 px-2.5 py-1 text-xs',
+    );
   });
 
   test('panel surface: standard sticky header, message preserved', () => {

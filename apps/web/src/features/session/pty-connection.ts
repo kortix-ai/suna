@@ -19,11 +19,7 @@ export function deriveTerminalPanelState(input: {
   return 'empty';
 }
 
-export function shouldExpirePtyConnect(
-  startedAt: number,
-  now: number,
-  timeoutMs: number,
-): boolean {
+export function shouldExpirePtyConnect(startedAt: number, now: number, timeoutMs: number): boolean {
   return now - startedAt >= timeoutMs;
 }
 

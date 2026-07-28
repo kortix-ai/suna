@@ -13,7 +13,7 @@
 /** Strip the noise a model puts in front of the verb it actually ran:
  *  `cd /workspace &&`, `VAR=x`, `sudo`, a leading `(`. */
 function stripCommandPrefixes(command: string): string {
-  let rest = command.trim();
+  const rest = command.trim();
   // Take the first segment of a chain — the rest is usually plumbing.
   const chainSplit = rest.split(/\s*(?:&&|\|\||;|\|)\s*/);
   for (const segment of chainSplit) {
@@ -86,7 +86,10 @@ const SHELL_RULES: ShellRule[] = [
   },
 
   // Version control
-  { test: /^git\s+(?:commit|add|push|pull|checkout|branch|merge|status|diff|log|clone)\b/, label: '' },
+  {
+    test: /^git\s+(?:commit|add|push|pull|checkout|branch|merge|status|diff|log|clone)\b/,
+    label: '',
+  },
 ];
 
 /** `git <sub>` reads better as "Git commit" than as a generic bucket. */
@@ -187,13 +190,21 @@ export function activityGroupLabel(counts: ActivityCounts, running: boolean): st
     const n = counts[kind];
     switch (kind) {
       case 'shell':
-        return running ? `Running ${plural(n, 'command', 'commands')}` : `Ran ${plural(n, 'command', 'commands')}`;
+        return running
+          ? `Running ${plural(n, 'command', 'commands')}`
+          : `Ran ${plural(n, 'command', 'commands')}`;
       case 'read':
-        return running ? `Reading ${plural(n, 'file', 'files')}` : `Read ${plural(n, 'file', 'files')}`;
+        return running
+          ? `Reading ${plural(n, 'file', 'files')}`
+          : `Read ${plural(n, 'file', 'files')}`;
       case 'write':
-        return running ? `Writing ${plural(n, 'file', 'files')}` : `Wrote ${plural(n, 'file', 'files')}`;
+        return running
+          ? `Writing ${plural(n, 'file', 'files')}`
+          : `Wrote ${plural(n, 'file', 'files')}`;
       case 'edit':
-        return running ? `Editing ${plural(n, 'file', 'files')}` : `Edited ${plural(n, 'file', 'files')}`;
+        return running
+          ? `Editing ${plural(n, 'file', 'files')}`
+          : `Edited ${plural(n, 'file', 'files')}`;
       case 'search':
         return running ? 'Searching the files' : `Searched the files ${plural(n, 'time', 'times')}`;
       case 'web':

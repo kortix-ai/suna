@@ -8,7 +8,7 @@
  * (open a connector you already have vs. add one you don't) and this file can
  * be rendered in a test with plain objects.
  *
- * Reference: ux-references/perplexity/06-connectors-list.png.
+ *
  */
 
 import {

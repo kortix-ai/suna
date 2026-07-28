@@ -2,26 +2,21 @@
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { parseImageOutput } from '@/features/session/image-output-path';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
+  isLocalSandboxFilePath,
   partInput,
   partOutput,
   partStatus,
-  isLocalSandboxFilePath,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Image as ImageIcon,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Image as ImageIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-
+import { useMemo } from 'react';
 
 export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -108,4 +103,3 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   );
 }
 ToolRegistry.register('image-gen', ImageGenTool);
-

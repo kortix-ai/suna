@@ -13,7 +13,12 @@ function part(tool: string, input: Record<string, unknown> = {}): Pick<ToolPart,
 describe('stepLabel', () => {
   test("a shell step uses the model's own description", () => {
     expect(
-      stepLabel(part('bash', { description: 'Build slide 7 — Uber and Robinhood', command: 'python3 x.py' })),
+      stepLabel(
+        part('bash', {
+          description: 'Build slide 7 — Uber and Robinhood',
+          command: 'python3 x.py',
+        }),
+      ),
     ).toBe('Build slide 7 — Uber and Robinhood');
   });
 

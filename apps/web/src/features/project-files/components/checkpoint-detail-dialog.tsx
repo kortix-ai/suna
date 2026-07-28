@@ -2,7 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { cn } from '@/lib/utils';
+import type { ProjectCommitFile } from '@kortix/sdk';
 import {
   AlertCircle,
   Calendar,
@@ -20,23 +29,10 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
-import { useCommit, useCommitDiff } from '../hooks/use-commits';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
+import { useCommit, useCommitDiff } from '../hooks/use-commits';
 import { DiffRenderer } from './diff-renderer';
-import type { ProjectCommitFile } from '@kortix/sdk';
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -84,12 +80,12 @@ function statusBadgeFor(status: ProjectCommitFile['status']) {
     ProjectCommitFile['status'],
     { text: string; variant: React.ComponentProps<typeof Badge>['variant'] }
   > = {
-    added:     { text: 'Added',     variant: 'success' },
-    modified:  { text: 'Modified',  variant: 'info' },
-    deleted:   { text: 'Deleted',   variant: 'destructive' },
-    renamed:   { text: 'Renamed',   variant: 'warning' },
-    copied:    { text: 'Copied',    variant: 'warning' },
-    typechange:{ text: 'Changed',   variant: 'secondary' },
+    added: { text: 'Added', variant: 'success' },
+    modified: { text: 'Modified', variant: 'info' },
+    deleted: { text: 'Deleted', variant: 'destructive' },
+    renamed: { text: 'Renamed', variant: 'warning' },
+    copied: { text: 'Copied', variant: 'warning' },
+    typechange: { text: 'Changed', variant: 'secondary' },
   };
   const { text, variant } = map[status];
   return (
@@ -118,9 +114,7 @@ function FileRailRow({
       className={cn(
         'group flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs',
         'border-l-2',
-        active
-          ? 'border-l-primary bg-primary/[0.04]'
-          : 'border-l-transparent hover:bg-muted/40',
+        active ? 'border-l-primary bg-primary/[0.04]' : 'border-l-transparent hover:bg-muted/40',
       )}
     >
       {statusIconFor(file.status, 'size-3.5 shrink-0')}
@@ -134,12 +128,8 @@ function FileRailRow({
         {file.path}
       </span>
       <span className="flex items-center gap-1 text-xs tabular-nums shrink-0">
-        {file.additions > 0 && (
-          <span className="text-kortix-green">+{file.additions}</span>
-        )}
-        {file.deletions > 0 && (
-          <span className="text-kortix-red">−{file.deletions}</span>
-        )}
+        {file.additions > 0 && <span className="text-kortix-green">+{file.additions}</span>}
+        {file.deletions > 0 && <span className="text-kortix-red">−{file.deletions}</span>}
       </span>
     </button>
   );
@@ -166,7 +156,11 @@ function MainDiffColumn({
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
         <History className="h-10 w-10 text-muted-foreground/20" />
-        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line166JsxTextSelectAFileToViewTheDiff')}</p>
+        <p className="text-sm text-muted-foreground">
+          {tHardcodedUi.raw(
+            'featuresProjectFilesComponentsCheckpointDetailDialog.line166JsxTextSelectAFileToViewTheDiff',
+          )}
+        </p>
       </div>
     );
   }
@@ -186,9 +180,7 @@ function MainDiffColumn({
             {file.old_path && file.old_path !== file.path && (
               <span className="text-muted-foreground/40">→</span>
             )}
-            <span className="font-mono text-sm font-medium truncate">
-              {file.path}
-            </span>
+            <span className="font-mono text-sm font-medium truncate">{file.path}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -220,19 +212,29 @@ function MainDiffColumn({
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
             <AlertCircle className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line220JsxTextFailedToLoadDiff')}</p>
+            <p className="text-xs text-muted-foreground">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsCheckpointDetailDialog.line220JsxTextFailedToLoadDiff',
+              )}
+            </p>
           </div>
         )}
         {data && !data.patch && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
             <History className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line226JsxTextNoTextualDiff')}</p>
-            <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line228JsxTextFileMayBeBinaryOrUnchangedInThis')}</p>
+            <p className="text-xs text-muted-foreground">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsCheckpointDetailDialog.line226JsxTextNoTextualDiff',
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground/60">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsCheckpointDetailDialog.line228JsxTextFileMayBeBinaryOrUnchangedInThis',
+              )}
+            </p>
           </div>
         )}
-        {data?.patch && (
-          <DiffRenderer patch={data.patch} filename={file.path} className="py-2" />
-        )}
+        {data?.patch && <DiffRenderer patch={data.patch} filename={file.path} className="py-2" />}
       </ScrollArea>
     </div>
   );
@@ -302,9 +304,7 @@ export function CheckpointDetailDialog({
       const target = e.target as HTMLElement | null;
       if (
         target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       ) {
         return;
       }
@@ -326,7 +326,10 @@ export function CheckpointDetailDialog({
 
       const files = data?.files ?? [];
       if (!files.length) return;
-      const idx = Math.max(0, files.findIndex((f) => f.path === selectedFile));
+      const idx = Math.max(
+        0,
+        files.findIndex((f) => f.path === selectedFile),
+      );
       let next = idx;
       if (e.key === 'ArrowDown' || e.key === 'j') next = Math.min(files.length - 1, idx + 1);
       else if (e.key === 'ArrowUp' || e.key === 'k') next = Math.max(0, idx - 1);
@@ -342,9 +345,10 @@ export function CheckpointDetailDialog({
     if (!data) return [];
     const trimmed = fileFilter.trim().toLowerCase();
     if (!trimmed) return data.files;
-    return data.files.filter((f) =>
-      f.path.toLowerCase().includes(trimmed) ||
-      (f.old_path?.toLowerCase().includes(trimmed) ?? false),
+    return data.files.filter(
+      (f) =>
+        f.path.toLowerCase().includes(trimmed) ||
+        (f.old_path?.toLowerCase().includes(trimmed) ?? false),
     );
   }, [data, fileFilter]);
 
@@ -356,8 +360,7 @@ export function CheckpointDetailDialog({
     );
   }, [data]);
 
-  const currentFile =
-    data?.files.find((f) => f.path === selectedFile) ?? null;
+  const currentFile = data?.files.find((f) => f.path === selectedFile) ?? null;
 
   const ts = data
     ? Number(new Date(data.committed_at || data.authored_at).getTime()) || Date.now()
@@ -406,7 +409,9 @@ export function CheckpointDetailDialog({
                 className="h-8 w-8"
                 disabled={!hasPrevSha}
                 onClick={gotoPrevSha}
-                title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line407JsxAttrTitlePreviousCheckpoint')}
+                title={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsCheckpointDetailDialog.line407JsxAttrTitlePreviousCheckpoint',
+                )}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -416,7 +421,9 @@ export function CheckpointDetailDialog({
                 className="h-8 w-8"
                 disabled={!hasNextSha}
                 onClick={gotoNextSha}
-                title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line417JsxAttrTitleNextCheckpoint')}
+                title={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsCheckpointDetailDialog.line417JsxAttrTitleNextCheckpoint',
+                )}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -457,11 +464,7 @@ export function CheckpointDetailDialog({
                 className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 pr-2 pl-0.5 py-0.5 text-xs"
                 title={`${data.author_name} <${data.author_email}>`}
               >
-                <UserAvatar
-                  email={data.author_email}
-                  name={data.author_name}
-                  size="xs"
-                />
+                <UserAvatar email={data.author_email} name={data.author_name} size="xs" />
                 <span className="truncate max-w-[120px]">{data.author_name}</span>
               </span>
 
@@ -481,7 +484,9 @@ export function CheckpointDetailDialog({
                   'inline-flex items-center gap-1.5 rounded-full bg-muted/60 hover:bg-muted px-2 py-1 text-xs',
                   'font-mono tabular-nums transition-colors',
                 )}
-                title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line482JsxAttrTitleCopyCheckpointId')}
+                title={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsCheckpointDetailDialog.line482JsxAttrTitleCopyCheckpointId',
+                )}
               >
                 {copied ? (
                   <Check className="text-kortix-green h-3 w-3" />
@@ -512,12 +517,8 @@ export function CheckpointDetailDialog({
                     {data.files.length} file{data.files.length === 1 ? '' : 's'}
                   </span>
                   <span className="flex items-center gap-2 tabular-nums">
-                    {totals.add > 0 && (
-                      <span className="text-kortix-green">+{totals.add}</span>
-                    )}
-                    {totals.del > 0 && (
-                      <span className="text-kortix-red">−{totals.del}</span>
-                    )}
+                    {totals.add > 0 && <span className="text-kortix-green">+{totals.add}</span>}
+                    {totals.del > 0 && <span className="text-kortix-red">−{totals.del}</span>}
                   </span>
                 </div>
               )}
@@ -527,7 +528,9 @@ export function CheckpointDetailDialog({
                 <Input
                   value={fileFilter}
                   onChange={(e) => setFileFilter(e.target.value)}
-                  placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line528JsxAttrPlaceholderFilterFiles')}
+                  placeholder={tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsCheckpointDetailDialog.line528JsxAttrPlaceholderFilterFiles',
+                  )}
                   className="h-7 pl-7 text-xs"
                 />
               </div>
@@ -544,14 +547,16 @@ export function CheckpointDetailDialog({
               {error && !isLoading && (
                 <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                   <AlertCircle className="h-5 w-5 text-muted-foreground/30" />
-                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line546JsxTextFailedToLoadCheckpoint')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsCheckpointDetailDialog.line546JsxTextFailedToLoadCheckpoint',
+                    )}
+                  </p>
                 </div>
               )}
               {data && filteredFiles.length === 0 && !isLoading && (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  {data.files.length === 0
-                    ? 'No file changes'
-                    : 'No files match'}
+                  {data.files.length === 0 ? 'No file changes' : 'No files match'}
                 </div>
               )}
               <div className="py-1">
@@ -572,12 +577,14 @@ export function CheckpointDetailDialog({
             {isLoading && !data && (
               <div className="flex flex-col items-center justify-center h-full gap-2">
                 <Loading className="h-5 w-5 shrink-0" />
-                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line575JsxTextLoadingCheckpoint')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsCheckpointDetailDialog.line575JsxTextLoadingCheckpoint',
+                  )}
+                </p>
               </div>
             )}
-            {sha && (data || !isLoading) && (
-              <MainDiffColumn sha={sha} file={currentFile} />
-            )}
+            {sha && (data || !isLoading) && <MainDiffColumn sha={sha} file={currentFile} />}
           </main>
         </div>
       </DialogContent>

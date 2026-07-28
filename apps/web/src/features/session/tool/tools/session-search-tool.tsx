@@ -1,22 +1,17 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   ToolEmptyState,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Search,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Search } from 'lucide-react';
+import { useMemo } from 'react';
 
 export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -98,4 +93,3 @@ ToolRegistry.register('session_search', SessionSearchTool);
 ToolRegistry.register('session-search', SessionSearchTool);
 ToolRegistry.register('oc-session_search', SessionSearchTool);
 ToolRegistry.register('oc-session-search', SessionSearchTool);
-

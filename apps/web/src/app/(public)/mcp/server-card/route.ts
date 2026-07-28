@@ -1,4 +1,4 @@
-import { discoveryJson, MCP_SERVER_CARD } from '@/lib/agent-discovery';
+import { MCP_SERVER_CARD, discoveryJson } from '@/lib/agent-discovery';
 
 export const dynamic = 'force-static';
 

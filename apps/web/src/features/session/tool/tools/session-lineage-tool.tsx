@@ -1,21 +1,16 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  ListTree,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ListTree } from 'lucide-react';
+import { useMemo } from 'react';
 
 export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -52,4 +47,3 @@ ToolRegistry.register('session_lineage', SessionLineageTool);
 ToolRegistry.register('session-lineage', SessionLineageTool);
 ToolRegistry.register('oc-session_lineage', SessionLineageTool);
 ToolRegistry.register('oc-session-lineage', SessionLineageTool);
-

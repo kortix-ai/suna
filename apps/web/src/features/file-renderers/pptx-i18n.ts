@@ -1,8 +1,8 @@
 'use client';
 
-import { createInstance, type i18n as I18nType } from 'i18next';
-import { initReactI18next } from 'react-i18next';
+import { type i18n as I18nType, createInstance } from 'i18next';
 import { translationsEn } from 'pptx-react-viewer/i18n';
+import { initReactI18next } from 'react-i18next';
 
 /**
  * pptx-react-viewer renders every label through react-i18next's

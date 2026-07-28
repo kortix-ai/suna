@@ -42,11 +42,7 @@ export function ModelConnectionGate({
               Upgrade
             </Button>
           ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => openConnectProvider('providers')}
-            >
+            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
               <KeyRound className="size-3.5" />
               Bring your own key
             </Button>

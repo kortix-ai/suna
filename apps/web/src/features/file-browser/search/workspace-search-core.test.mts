@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   mergeWorkspaceSearchEntries,
   normalizeWorkspacePath,
@@ -13,7 +13,8 @@ test('normalizes relative paths into /workspace paths', () => {
 });
 
 test('finds exact deep path matches before shallow partial matches', () => {
-  const exactPath = '/workspace/.local/share/opencode/storage/session_diff/ses_29fc6e281ffet54CZfUqSZlkE2.json';
+  const exactPath =
+    '/workspace/.local/share/opencode/storage/session_diff/ses_29fc6e281ffet54CZfUqSZlkE2.json';
   const entries = [
     toWorkspaceSearchEntry('/workspace/session_diff.json'),
     toWorkspaceSearchEntry('/workspace/.local/share/opencode/storage/session_diff/other.json'),
@@ -27,7 +28,8 @@ test('finds exact deep path matches before shallow partial matches', () => {
 });
 
 test('matches relative deep path queries against indexed files', () => {
-  const exactPath = '/workspace/.local/share/opencode/storage/session_diff/ses_29fc6e281ffet54CZfUqSZlkE2.json';
+  const exactPath =
+    '/workspace/.local/share/opencode/storage/session_diff/ses_29fc6e281ffet54CZfUqSZlkE2.json';
   const entries = [
     toWorkspaceSearchEntry(exactPath),
     toWorkspaceSearchEntry('/workspace/.local/share/opencode/storage/session_diff/older.json'),
@@ -44,7 +46,8 @@ test('matches relative deep path queries against indexed files', () => {
 });
 
 test('dedupes backend and fallback search results before ranking', () => {
-  const exactPath = '/workspace/.local/share/opencode/storage/session_diff/ses_29fc6e281ffet54CZfUqSZlkE2.json';
+  const exactPath =
+    '/workspace/.local/share/opencode/storage/session_diff/ses_29fc6e281ffet54CZfUqSZlkE2.json';
   const merged = mergeWorkspaceSearchEntries(
     [toWorkspaceSearchEntry(exactPath)],
     [toWorkspaceSearchEntry(exactPath), toWorkspaceSearchEntry('/workspace/src/app.tsx')],

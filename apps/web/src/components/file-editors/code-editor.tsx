@@ -2,26 +2,21 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { pierreDarkCm, pierreLightCm } from '@/lib/codemirror-pierre-theme';
-import { langs } from '@uiw/codemirror-extensions-langs';
-import { EditorView, keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
-import { lintGutter } from '@codemirror/lint';
-import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Check, AlertCircle, Save, RotateCcw } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { pierreDarkCm, pierreLightCm } from '@/lib/codemirror-pierre-theme';
+import { cn } from '@/lib/utils';
 import type { LspDiagnostic } from '@/stores/diagnostics-store';
+import { indentWithTab } from '@codemirror/commands';
+import { lintGutter } from '@codemirror/lint';
+import { EditorView, keymap } from '@codemirror/view';
+import { langs } from '@uiw/codemirror-extensions-langs';
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
+import { AlertCircle, Check, RotateCcw, Save } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagnostics';
 
 // Map of language aliases to CodeMirror language support
@@ -48,7 +43,9 @@ const getLangExtension = (langKey: string): any => {
       }
       // Extension function exists but returned null/undefined
       if (process.env.NODE_ENV === 'development') {
-        console.warn(`[CodeEditor] Language extension "${langKey}" function returned null/undefined`);
+        console.warn(
+          `[CodeEditor] Language extension "${langKey}" function returned null/undefined`,
+        );
       }
       return null;
     }
@@ -56,14 +53,16 @@ const getLangExtension = (langKey: string): any => {
     // Language not found in langs object
     if (process.env.NODE_ENV === 'development') {
       const availableLangs = Object.keys(langsTyped)
-        .filter(k => typeof langsTyped[k] === 'function')
+        .filter((k) => typeof langsTyped[k] === 'function')
         .sort();
       console.warn(
         `[CodeEditor] Language "${langKey}" not found.`,
-        `Looking for similar: ${availableLangs.filter(l =>
-          l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l)
-        ).join(', ') || 'none'}`,
-        `Total available: ${availableLangs.length} languages`
+        `Looking for similar: ${
+          availableLangs
+            .filter((l) => l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l))
+            .join(', ') || 'none'
+        }`,
+        `Total available: ${availableLangs.length} languages`,
       );
     }
     return null;
@@ -188,12 +187,14 @@ export function getLanguageFromExtension(fileName: string): string {
   if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
     return 'properties';
   }
-  if (fileNameLower.includes('gitignore') ||
-      fileNameLower.includes('editorconfig') ||
-      fileNameLower.includes('dockerignore') ||
-      fileNameLower.includes('npmignore') ||
-      fileNameLower.includes('prettierignore') ||
-      fileNameLower.includes('eslintignore')) {
+  if (
+    fileNameLower.includes('gitignore') ||
+    fileNameLower.includes('editorconfig') ||
+    fileNameLower.includes('dockerignore') ||
+    fileNameLower.includes('npmignore') ||
+    fileNameLower.includes('prettierignore') ||
+    fileNameLower.includes('eslintignore')
+  ) {
     return 'text';
   }
   // Filename-based detection (no extension)
@@ -538,7 +539,7 @@ export function CodeEditor({
         onChange(value);
       }
     },
-    [onChange]
+    [onChange],
   );
 
   // Update local content when external content changes (but not if we have unsaved local changes)
@@ -576,7 +577,7 @@ export function CodeEditor({
         }
       }
     },
-    [readOnly, handleSave]
+    [readOnly, handleSave],
   );
 
   useEffect(() => {
@@ -599,17 +600,14 @@ export function CodeEditor({
 
     // Add language extension if available (filter out null/undefined)
     if (langExtension && langExtension.length > 0) {
-      const validLangExts = langExtension.filter(ext => ext != null);
+      const validLangExts = langExtension.filter((ext) => ext != null);
       if (validLangExts.length > 0) {
         exts.push(...validLangExts);
       }
     }
 
     // Always add these core extensions
-    exts.push(
-      EditorView.lineWrapping,
-      keymap.of([indentWithTab])
-    );
+    exts.push(EditorView.lineWrapping, keymap.of([indentWithTab]));
 
     // Add lint gutter + diagnostic decorations when diagnostics are present
     if (diagExt) {
@@ -626,12 +624,7 @@ export function CodeEditor({
     switch (saveState) {
       case 'saving':
         return (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            className="gap-1.5 h-7 px-2 text-xs"
-          >
+          <Button variant="ghost" size="sm" disabled className="gap-1.5 h-7 px-2 text-xs">
             <KortixLoader size="small" />
             <span className="hidden sm:inline">Saving</span>
           </Button>
@@ -665,20 +658,25 @@ export function CodeEditor({
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-          <Button
+                <Button
                   variant="ghost"
-            size="sm"
-            onClick={handleSave}
+                  size="sm"
+                  onClick={handleSave}
                   disabled={!hasChanges}
                   className="gap-1.5 h-7 px-2 text-xs"
-          >
-            <Save className="h-3.5 w-3.5" />
+                >
+                  <Save className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Save</span>
-          </Button>
+                </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {hasChanges ? (
-                  <>{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextSaveChanges')}<kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextS')}</kbd></>
+                  <>
+                    {tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextSaveChanges')}
+                    <kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">
+                      {tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextS')}
+                    </kbd>
+                  </>
                 ) : (
                   'No changes to save'
                 )}
@@ -696,7 +694,7 @@ export function CodeEditor({
         readOnly
           ? 'min-h-full' // For read-only, fill at least one viewport so the editor background doesn't end at the last line
           : 'h-full max-h-full overflow-hidden',
-        className
+        className,
       )}
       style={readOnly ? undefined : { contain: 'strict' }}
     >
@@ -719,7 +717,11 @@ export function CodeEditor({
                       <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line719JsxTextDiscardChanges')}</TooltipContent>
+                  <TooltipContent side="bottom">
+                    {tHardcodedUi.raw(
+                      'componentsFileEditorsCodeEditor.line719JsxTextDiscardChanges',
+                    )}
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
@@ -744,10 +746,10 @@ export function CodeEditor({
       <div
         ref={editorContainerRef}
         className={cn(
-          "w-full max-w-full bg-white dark:bg-zinc-900",
+          'w-full max-w-full bg-white dark:bg-zinc-900',
           readOnly
-            ? "flex-1 min-h-full overflow-visible" // Stretch to fill parent so short files still fill the viewport
-            : "flex-1 overflow-hidden min-h-0 max-h-full"
+            ? 'flex-1 min-h-full overflow-visible' // Stretch to fill parent so short files still fill the viewport
+            : 'flex-1 overflow-hidden min-h-0 max-h-full',
         )}
         style={readOnly ? undefined : { contain: 'strict' }}
       >
@@ -777,11 +779,11 @@ export function CodeEditor({
             }}
             editable={!readOnly}
             className={cn(
-              "w-full max-w-full",
-              fontSize || "text-sm",
+              'w-full max-w-full',
+              fontSize || 'text-sm',
               readOnly
-                ? "[&_.cm-scroller]:!overflow-visible [&_.cm-editor]:!min-h-full [&_.cm-gutters]:!min-h-full" // No scroll in read-only; gutter + editor stretch to fill viewport
-                : "[&_.cm-editor]:max-h-full [&_.cm-scroller]:overflow-auto"
+                ? '[&_.cm-scroller]:!overflow-visible [&_.cm-editor]:!min-h-full [&_.cm-gutters]:!min-h-full' // No scroll in read-only; gutter + editor stretch to fill viewport
+                : '[&_.cm-editor]:max-h-full [&_.cm-scroller]:overflow-auto',
             )}
             height={editorHeight}
             minHeight={readOnly ? '100%' : undefined}

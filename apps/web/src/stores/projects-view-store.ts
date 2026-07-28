@@ -1,6 +1,6 @@
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
  * How the Projects page groups its grid:

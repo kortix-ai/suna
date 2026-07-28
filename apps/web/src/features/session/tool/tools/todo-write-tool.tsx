@@ -4,13 +4,13 @@ import { Progress } from '@/components/ui/progress';
 import { Stepper, StepperItem, StepperSeparator, StepperTrigger } from '@/components/ui/stepper';
 import {
   BasicTool,
+  ToolEmptyState,
   partInput,
   partMetadata,
   partStreamingInput,
-  ToolEmptyState,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { parseTodos, TodoStatusIcon } from '@/features/session/tool/shared/todo-helpers';
+import { TodoStatusIcon, parseTodos } from '@/features/session/tool/shared/todo-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { ListTodo } from 'lucide-react';

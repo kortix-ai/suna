@@ -17,7 +17,7 @@
  * poll loop); this UI doesn't need it.
  */
 
-import { getVoiceTranscript, type VoiceTranscript } from '@kortix/sdk';
+import { type VoiceTranscript, getVoiceTranscript } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 /** Faster than the audit trail's 15s: this is a LIVE spoken conversation, not

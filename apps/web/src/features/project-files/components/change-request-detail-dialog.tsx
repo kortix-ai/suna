@@ -24,8 +24,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { createProjectSession } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
+import { createProjectSession } from '@kortix/sdk';
 import { SparklesSolid } from '@mynaui/icons-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {

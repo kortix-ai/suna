@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Skills, signed out — ux-references/perplexity/08-skills-list.png.
+ * Skills, signed out.
  *
  * The real screen (features/workspace/skills/skills-section.tsx) reads
  * `config.skills` from a project-scoped endpoint, so with no session there is

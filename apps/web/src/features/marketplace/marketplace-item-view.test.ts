@@ -65,7 +65,11 @@ describe('itemCountLabel', () => {
   });
 
   test('a non-bundle type counts files, ignoring dependencies', () => {
-    const result = itemCountLabel({ type: 'registry:skill', dependencies: ['a', 'b'], fileCount: 5 });
+    const result = itemCountLabel({
+      type: 'registry:skill',
+      dependencies: ['a', 'b'],
+      fileCount: 5,
+    });
 
     expect(result).toEqual({ count: 5, unit: 'files' });
   });
@@ -82,7 +86,13 @@ describe('resolveBundleMembers', () => {
 
   test('joins each dependency name against its resolved metadata', () => {
     const dependencyItems: DependencyItem[] = [
-      { id: 'kortix:review', name: 'review', type: 'registry:skill', title: 'Review', description: null },
+      {
+        id: 'kortix:review',
+        name: 'review',
+        type: 'registry:skill',
+        title: 'Review',
+        description: null,
+      },
     ];
 
     const members = resolveBundleMembers({
@@ -125,7 +135,13 @@ describe('resolveBundleMembers', () => {
     });
 
     expect(members).toEqual([
-      { key: 'unresolved-item', title: 'unresolved-item', type: null, description: null, href: null },
+      {
+        key: 'unresolved-item',
+        title: 'unresolved-item',
+        type: null,
+        description: null,
+        href: null,
+      },
     ]);
   });
 
@@ -181,7 +197,12 @@ describe('groupCapabilities', () => {
 
   test('includes network alongside secrets, connectors, and tools', () => {
     const groups = groupCapabilities(
-      caps({ secrets: ['API_KEY'], connectors: ['slack'], tools: ['search'], network: ['api.example.com'] }),
+      caps({
+        secrets: ['API_KEY'],
+        connectors: ['slack'],
+        tools: ['search'],
+        network: ['api.example.com'],
+      }),
     );
 
     expect(groups).toEqual([

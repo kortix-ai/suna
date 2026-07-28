@@ -1,9 +1,9 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 // ============================================================================
 // Types
@@ -174,6 +174,6 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       partialize: (state) => ({
         preferences: state.preferences,
       }),
-    }
-  )
+    },
+  ),
 );

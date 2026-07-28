@@ -104,7 +104,13 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     !native && description && looksLikeMarkdown(description) ? description : undefined;
   const whatChanged =
     native ??
-    (descriptionMarkdown ? [] : description ? lines(description) : row.summary ? [row.summary] : []);
+    (descriptionMarkdown
+      ? []
+      : description
+        ? lines(description)
+        : row.summary
+          ? [row.summary]
+          : []);
   return {
     crId: str(d.cr_id),
     whatChanged,

@@ -1,16 +1,17 @@
-import 'server-only'
+import 'server-only';
 
-import { parseRuntimeEnv, type RuntimeEnv } from '@/lib/env-schema'
+import { type RuntimeEnv, parseRuntimeEnv } from '@/lib/env-schema';
 
-export type PublicRuntimeEnv = RuntimeEnv
+export type PublicRuntimeEnv = RuntimeEnv;
 
 function read(name: string): string | undefined {
-  return process.env[`KORTIX_PUBLIC_${name}`] ?? process.env[`NEXT_PUBLIC_${name}`]
+  return process.env[`KORTIX_PUBLIC_${name}`] ?? process.env[`NEXT_PUBLIC_${name}`];
 }
 
 export function getServerPublicEnv(): PublicRuntimeEnv {
   return parseRuntimeEnv({
-    SUPABASE_URL: read('SUPABASE_URL') || process.env.SUPABASE_PUBLIC_URL || process.env.SUPABASE_URL,
+    SUPABASE_URL:
+      read('SUPABASE_URL') || process.env.SUPABASE_PUBLIC_URL || process.env.SUPABASE_URL,
     SUPABASE_ANON_KEY: read('SUPABASE_ANON_KEY') || process.env.SUPABASE_ANON_KEY,
     BACKEND_URL: read('BACKEND_URL') || process.env.BACKEND_URL,
     // The public API origin sandbox callbacks already use (KORTIX_URL = the dev
@@ -27,7 +28,7 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,
     AUTH_METHODS: read('AUTH_METHODS') || undefined,
     VERSION: process.env.NEXT_PUBLIC_KORTIX_VERSION || read('VERSION') || undefined,
-  })
+  });
 }
 
 /**
@@ -41,13 +42,13 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
  * characters, so the resulting config object is identical to the unescaped form.
  */
 export function serializeRuntimeConfigScript(): string {
-  const LINE_SEPARATOR = String.fromCharCode(0x2028)
-  const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029)
+  const LINE_SEPARATOR = String.fromCharCode(0x2028);
+  const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
   const json = JSON.stringify(getServerPublicEnv())
     .replace(/[<>&]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
     .split(LINE_SEPARATOR)
     .join('\\u2028')
     .split(PARAGRAPH_SEPARATOR)
-    .join('\\u2029')
-  return `window.__KORTIX_RUNTIME_CONFIG=${json};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`
+    .join('\\u2029');
+  return `window.__KORTIX_RUNTIME_CONFIG=${json};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`;
 }

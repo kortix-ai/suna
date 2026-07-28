@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import {
+  MAINTENANCE_BYPASS_TTL_SECONDS,
   createBypassToken,
   verifyBypassToken,
-  MAINTENANCE_BYPASS_TTL_SECONDS,
 } from './maintenance-bypass';
 
 const NOW = 1_800_000_000; // fixed reference time (seconds)

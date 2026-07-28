@@ -143,7 +143,9 @@ export function ComposerToolbar({
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}</p>
+            <p>
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
+            </p>
           </TooltipContent>
         </Tooltip>
 

@@ -5,21 +5,14 @@ import { useTranslations } from 'next-intl';
 import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
-  buildKatexRehypePlugins,
-  isKatexClassName,
   KATEX_FENCE_LANGUAGES,
   KATEX_RENDER_OPTIONS,
+  buildKatexRehypePlugins,
+  isKatexClassName,
   katexRemarkPlugins,
   normalizeClassName,
   prepareMarkdownForKatex,
 } from '@/components/markdown/katex-markdown';
-import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
-import { parseSetupLinkHref } from '@/components/setup-links/util';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { isMermaidCode } from '@/lib/mermaid-utils';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   isInternalUrl,
   isLinkSafeHref,
@@ -29,6 +22,13 @@ import {
   normalizeLanguage,
   shikiWasmAvailable,
 } from '@/components/markdown/unified-markdown-utils';
+import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
+import { parseSetupLinkHref } from '@/components/setup-links/util';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { isMermaidCode } from '@/lib/mermaid-utils';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getActivePanelSessionId, openFileInSessionPanel } from '@/stores/session-browser-store';
 import { autoLinkUrls } from '@kortix/shared';
@@ -38,10 +38,10 @@ import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  codeToHtml,
-  getSingletonHighlighter,
   type Highlighter,
   type ShikiTransformer,
+  codeToHtml,
+  getSingletonHighlighter,
 } from 'shiki';
 import { Streamdown } from 'streamdown';
 

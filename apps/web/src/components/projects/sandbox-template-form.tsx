@@ -26,13 +26,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  createSandboxTemplate,
-  updateSandboxTemplate,
-  type SandboxTemplate,
-} from '@kortix/sdk';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { type SandboxTemplate, createSandboxTemplate, updateSandboxTemplate } from '@kortix/sdk';
 
 type Mode = 'image' | 'dockerfile';
 

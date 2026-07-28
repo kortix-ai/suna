@@ -2,10 +2,10 @@ import type { MetadataRoute } from 'next';
 
 import { locales } from '@/i18n/config';
 import {
+  STATIC_PUBLIC_ROUTES,
   absoluteUrl,
   areUseCasesPublic,
   getPublicContentRecords,
-  STATIC_PUBLIC_ROUTES,
 } from '@/lib/seo/public-content';
 
 type SitemapEntry = MetadataRoute.Sitemap[number];

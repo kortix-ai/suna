@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildActiveScopeMap } from './tunnel-scope-toggles';
 import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
+import { buildActiveScopeMap } from './tunnel-scope-toggles';
 
 function permission(partial: Partial<TunnelPermission>): TunnelPermission {
   return {

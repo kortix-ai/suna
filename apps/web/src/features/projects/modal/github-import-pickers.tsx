@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import type { GitHubRepository, GitHubRepositoryBranch } from '@kortix/sdk';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { ChevronsUpDown, GitBranch, Search } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 interface PickerOption {
   value: string;

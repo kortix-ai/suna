@@ -1,7 +1,4 @@
-import type {
-  ClaimWarmProjectSessionInput,
-  ProjectSession,
-} from '@kortix/sdk';
+import type { ClaimWarmProjectSessionInput, ProjectSession } from '@kortix/sdk';
 
 interface WarmSessionCreateOverrides {
   agent_name?: string;
@@ -36,8 +33,5 @@ export function shouldFallbackFromWarmClaim(error: unknown): boolean {
     error && typeof error === 'object' && 'code' in error
       ? (error as { code?: unknown }).code
       : null;
-  return (
-    code === 'WARM_SESSION_CONFIGURATION_MISMATCH' ||
-    code === 'WARM_SESSION_ALREADY_CLAIMED'
-  );
+  return code === 'WARM_SESSION_CONFIGURATION_MISMATCH' || code === 'WARM_SESSION_ALREADY_CLAIMED';
 }

@@ -2,15 +2,15 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  type ConnectorSetupLinkInfo,
+  getConnectorSetupLink,
+  startConnectorSetupLink,
+} from '@kortix/sdk';
 import { Check, ExternalLink, Loader2, Plug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
-import {
-  getConnectorSetupLink,
-  startConnectorSetupLink,
-  type ConnectorSetupLinkInfo,
-} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened';
 
@@ -75,7 +75,9 @@ export function ConnectorIntake({
       setPhase('opened');
       onOpened?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.');
+      setError(
+        cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.',
+      );
       setPhase('ready');
     }
   }

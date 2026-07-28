@@ -10,10 +10,7 @@ export function isUploadedWorkspacePath(filePath: string | null | undefined): bo
   return normalized === 'workspace/uploads' || normalized.startsWith('workspace/uploads/');
 }
 
-export function fileReadRetryDelayMs(
-  attempt: number,
-  filePath?: string | null,
-): number {
+export function fileReadRetryDelayMs(attempt: number, filePath?: string | null): number {
   if (isUploadedWorkspacePath(filePath)) return UPLOADED_FILE_READ_RETRY_DELAY_MS;
   return Math.min(1000 * Math.pow(2, attempt), 5000);
 }
@@ -26,7 +23,13 @@ function isPermanentFileReadFailure(error: unknown): boolean {
   // Prefer a numeric HTTP status when the thrown error carries one: any 4xx
   // except 408/429 is a client error that won't fix itself on retry.
   const status = (error as { status?: unknown } | null)?.status;
-  if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+  if (
+    typeof status === 'number' &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 429
+  ) {
     return true;
   }
   const msg = errorMessage(error);

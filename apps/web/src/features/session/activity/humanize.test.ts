@@ -58,7 +58,10 @@ describe('humanizeShellCommand', () => {
 describe('humanizeShellStep', () => {
   test("the model's own description wins — it knows the intent", () => {
     expect(
-      humanizeShellStep({ description: 'Validate all slides', command: 'python3 present.py check' }),
+      humanizeShellStep({
+        description: 'Validate all slides',
+        command: 'python3 present.py check',
+      }),
     ).toBe('Validate all slides');
   });
 

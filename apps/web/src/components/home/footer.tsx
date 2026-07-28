@@ -99,10 +99,10 @@ const Footer = () => {
                         link.href !== '/use-cases',
                     )
                     .map((link) => (
-                    <li key={link.label}>
-                      <FooterLink {...link} />
-                    </li>
-                  ))}
+                      <li key={link.label}>
+                        <FooterLink {...link} />
+                      </li>
+                    ))}
                 </ul>
               </div>
             ))}

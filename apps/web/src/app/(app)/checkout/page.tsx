@@ -2,12 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useEffect, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
+import React, { useEffect, useState, Suspense } from 'react';
 
 function CheckoutContent() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -69,7 +69,7 @@ function CheckoutContent() {
     // Initialize Stripe checkout
     const initCheckout = async () => {
       try {
-        const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
+        const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
         if (typeof window.Stripe === 'undefined') {
           throw new Error('Stripe not loaded on window');
@@ -135,21 +135,25 @@ function CheckoutContent() {
         {error ? (
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <CardTitle className="text-foreground">{tHardcodedUi.raw('appCheckoutPage.line144JsxTextCheckoutError')}</CardTitle>
-              <CardDescription className="text-muted-foreground">{tHardcodedUi.raw('appCheckoutPage.line145JsxTextUnableToLoadCheckout')}</CardDescription>
+              <CardTitle className="text-foreground">
+                {tHardcodedUi.raw('appCheckoutPage.line144JsxTextCheckoutError')}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {tHardcodedUi.raw('appCheckoutPage.line145JsxTextUnableToLoadCheckout')}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Alert variant="destructive">
-                <AlertDescription className="text-center">
-                  {error}
-                </AlertDescription>
+                <AlertDescription className="text-center">{error}</AlertDescription>
               </Alert>
             </CardContent>
           </Card>
         ) : isLoading ? (
           <div className="flex flex-col items-center gap-4">
             <KortixHyperLogo size={80} startOnView={false} loop className="text-foreground" />
-            <p className="text-muted-foreground text-sm">{tHardcodedUi.raw('appCheckoutPage.line158JsxTextLoadingSecureCheckout')}</p>
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw('appCheckoutPage.line158JsxTextLoadingSecureCheckout')}
+            </p>
           </div>
         ) : (
           // Embedded checkout container
@@ -164,11 +168,13 @@ function CheckoutContent() {
 
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
+        </div>
+      }
+    >
       <CheckoutContent />
     </Suspense>
   );

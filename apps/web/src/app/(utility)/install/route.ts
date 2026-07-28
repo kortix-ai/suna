@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 // Serves the Kortix CLI installer. Hit via:
 //   curl -fsSL https://kortix.com/install | bash

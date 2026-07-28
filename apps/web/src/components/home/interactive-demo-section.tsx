@@ -6,8 +6,8 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import {
   ArrowRight,
   Blocks,
@@ -20,10 +20,10 @@ import {
   FileText,
   GitPullRequest,
   KeyRound,
+  type LucideIcon,
   MessageSquare,
   Plus,
   Search,
-  type LucideIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
@@ -31,13 +31,13 @@ import { useEffect, useRef, useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
 import { GoHomeFill } from 'react-icons/go';
 import { HiMiniSparkles } from 'react-icons/hi2';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 import { MdShield } from 'react-icons/md';
 import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
 import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
-import { type DemoConversation } from './interactive-demo/chat/use-demo-conversation';
+import type { DemoConversation } from './interactive-demo/chat/use-demo-conversation';
 import { CliTerminal } from './interactive-demo/cli/cli-terminal';
 import { DraggableCliPanel } from './interactive-demo/cli/draggable-cli-panel';
 import { useDemoDirector } from './interactive-demo/cli/use-demo-director';

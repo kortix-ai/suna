@@ -4,28 +4,28 @@ import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import {
-  isShowContentUnavailable,
   type ShowLoadStatus,
+  isShowContentUnavailable,
 } from '@/features/session/show-availability';
 import {
   BasicTool,
   InlineServicePreview,
-  partInput,
   ServicePreviewActions,
   type ServicePreviewState,
   ToolRunningContext,
   ToolSurfaceContext,
+  partInput,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
-  buildHtmlStaticUrl,
-  ServicePreviewViewport,
   SHOW_HTML_EXT_RE,
+  ServicePreviewViewport,
   ShowCarousel,
-  ShowCarouselItem,
+  type ShowCarouselItem,
   ShowContentRenderer,
-  showDomain,
   ShowFileActions,
+  buildHtmlStaticUrl,
+  showDomain,
   showTypeIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { Globe } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import { type ReactNode, createContext, useContext, useMemo, useState } from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
 // through context so its viewport and the header controls drive the same iframe.

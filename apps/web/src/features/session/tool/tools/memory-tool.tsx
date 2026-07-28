@@ -4,15 +4,15 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import {
   BasicTool,
   InlineDiffView,
+  ToolCode,
+  ToolEmptyState,
+  ToolOutputFallback,
+  ToolRunningContext,
   isErrorOutput,
   partInput,
   partOutput,
   partStatus,
   partStreamingInput,
-  ToolCode,
-  ToolEmptyState,
-  ToolOutputFallback,
-  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { Brain, ChevronRight, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { type ReactNode, useContext, useMemo, } from 'react';
+import { type ReactNode, useContext, useMemo } from 'react';
 
 import { memoryRelPath, parseMemoryView } from '@/features/session/tool/shared/memory-helpers';
 

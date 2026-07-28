@@ -4,15 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { type SecretSetupLinkInfo, getSecretSetupLink, submitSecretSetupLink } from '@kortix/sdk';
 import { Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
-import {
-  getSecretSetupLink,
-  submitSecretSetupLink,
-  type SecretSetupLinkInfo,
-} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'ready' | 'submitting' | 'done';
 
@@ -79,7 +75,11 @@ export function SecretIntakeForm({
       setPhase('done');
       onDone?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save. Check your connection and try again.');
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not save. Check your connection and try again.',
+      );
       setPhase('ready');
     }
   }

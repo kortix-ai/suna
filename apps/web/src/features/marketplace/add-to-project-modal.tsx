@@ -1,9 +1,9 @@
 'use client';
 
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plug, Wrench } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,10 +39,10 @@ import {
 } from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
@@ -189,7 +189,8 @@ export function AddToProjectModal({
         const gitSettingsAccountId =
           resolvedAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast("Managed git isn't set up on this server", {
-          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          description:
+            'An admin needs to connect GitHub in Git settings before projects can be created.',
           ...(gitSettingsAccountId
             ? {
                 button: (

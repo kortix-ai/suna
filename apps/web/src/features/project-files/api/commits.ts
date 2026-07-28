@@ -4,12 +4,12 @@
  */
 
 import {
-  getProjectCommit,
-  getProjectCommitDiff,
-  listProjectCommits,
   type ProjectCommitDetail,
   type ProjectCommitDiffResponse,
   type ProjectCommitsResponse,
+  getProjectCommit,
+  getProjectCommitDiff,
+  listProjectCommits,
 } from '@kortix/sdk';
 
 export async function fetchCommits(
@@ -19,10 +19,7 @@ export async function fetchCommits(
   return listProjectCommits(projectId, options);
 }
 
-export async function fetchCommit(
-  projectId: string,
-  sha: string,
-): Promise<ProjectCommitDetail> {
+export async function fetchCommit(projectId: string, sha: string): Promise<ProjectCommitDetail> {
   return getProjectCommit(projectId, sha);
 }
 

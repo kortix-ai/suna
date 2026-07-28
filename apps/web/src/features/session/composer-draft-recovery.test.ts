@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AttachedFile, TrackedMention } from './session-chat-input';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
+import type { AttachedFile, TrackedMention } from './session-chat-input';
 
 function localFile(name: string, localUrl: string): Extract<AttachedFile, { kind: 'local' }> {
   return {
@@ -18,9 +18,7 @@ function localFile(name: string, localUrl: string): Extract<AttachedFile, { kind
 
 describe('failed composer submission recovery', () => {
   test('restores the submitted prompt when the composer is still empty', () => {
-    expect(mergeFailedSubmissionText('', 'twenty minutes of work')).toBe(
-      'twenty minutes of work',
-    );
+    expect(mergeFailedSubmissionText('', 'twenty minutes of work')).toBe('twenty minutes of work');
   });
 
   test('preserves text typed while the failed request was in flight', () => {

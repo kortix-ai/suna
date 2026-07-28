@@ -14,11 +14,7 @@ import {
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import {
-  restartProjectSession,
-  sessionStartKey,
-  type SessionStartStage,
-} from '@kortix/sdk';
+import { type SessionStartStage, restartProjectSession, sessionStartKey } from '@kortix/sdk';
 import { formatDuration } from '@kortix/sdk/turns';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

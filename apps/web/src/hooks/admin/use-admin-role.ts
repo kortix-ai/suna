@@ -1,6 +1,6 @@
 import { useAuth } from '@/features/providers/auth-provider';
-import { useQuery, UseQueryOptions, type QueryClient } from '@tanstack/react-query';
 import { getAdminRole } from '@kortix/sdk';
+import { type QueryClient, type UseQueryOptions, useQuery } from '@tanstack/react-query';
 
 interface AdminRoleResponse {
   isAdmin: boolean;

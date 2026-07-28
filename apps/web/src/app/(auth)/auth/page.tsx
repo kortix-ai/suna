@@ -284,7 +284,6 @@ function AuthCardForm({
     }
   };
 
-
   /**
    * Probe the address's domain for a registered SAML provider and hand the
    * browser to the IdP (or the SSO interstitial) when one exists. Shared by
@@ -873,7 +872,9 @@ function AuthCardForm({
               disabled={pending}
               className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
             >
-              {pendingAction === 'sso' ? 'Looking up your identity provider…' : 'Use single sign-on (SSO)'}
+              {pendingAction === 'sso'
+                ? 'Looking up your identity provider…'
+                : 'Use single sign-on (SSO)'}
             </button>
           </p>
         )}

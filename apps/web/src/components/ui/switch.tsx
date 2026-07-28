@@ -4,7 +4,7 @@ import { spring } from '@/lib/springs';
 import { cn } from '@/lib/utils';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 import { animate, motion, useMotionValue } from 'motion/react';
-import { forwardRef, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { type ComponentProps, forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 
 type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, 'asChild'> & {
   label?: string;

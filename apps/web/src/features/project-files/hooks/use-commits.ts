@@ -1,20 +1,19 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { fetchCommit, fetchCommitDiff, fetchCommits } from '../api/commits';
-import { useProjectContext } from '../context';
 import type {
   ProjectCommitDetail,
   ProjectCommitDiffResponse,
   ProjectCommitsResponse,
 } from '@kortix/sdk';
+import { useQuery } from '@tanstack/react-query';
+import { fetchCommit, fetchCommitDiff, fetchCommits } from '../api/commits';
+import { useProjectContext } from '../context';
 
 export const commitKeys = {
   all: ['project-files', 'commits'] as const,
   list: (projectId: string, ref: string, limit: number, skip: number) =>
     ['project-files', 'commits', projectId, ref, limit, skip] as const,
-  detail: (projectId: string, sha: string) =>
-    ['project-files', 'commits', projectId, sha] as const,
+  detail: (projectId: string, sha: string) => ['project-files', 'commits', projectId, sha] as const,
   diff: (projectId: string, sha: string, path?: string | null) =>
     ['project-files', 'commits', projectId, sha, 'diff', path ?? ''] as const,
 };

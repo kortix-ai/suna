@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Children, Fragment, isValidElement, type ReactNode } from 'react';
+import { Children, Fragment, type ReactNode, isValidElement } from 'react';
 
 export interface InlineMetaProps {
   className?: string;

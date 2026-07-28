@@ -36,12 +36,19 @@ describe('deriveRunOutcome', () => {
   });
 
   test('run-level error on the last assistant message → failed', () => {
-    expect(deriveRunOutcome([user, assistant({ name: 'ProviderError', data: { message: 'boom' } })])).toBe('failed');
+    expect(
+      deriveRunOutcome([user, assistant({ name: 'ProviderError', data: { message: 'boom' } })]),
+    ).toBe('failed');
   });
 
   test('abort error → stopped, by name or by message text', () => {
     expect(deriveRunOutcome([user, assistant({ name: 'MessageAbortedError' })])).toBe('stopped');
-    expect(deriveRunOutcome([user, assistant({ name: 'UnknownError', data: { message: 'The operation was aborted' } })])).toBe('stopped');
+    expect(
+      deriveRunOutcome([
+        user,
+        assistant({ name: 'UnknownError', data: { message: 'The operation was aborted' } }),
+      ]),
+    ).toBe('stopped');
   });
 
   test('an errored final step fails the run even without a run-level error', () => {
@@ -73,6 +80,8 @@ describe('deriveRunOutcome', () => {
     expect(sessionWideSteps[sessionWideSteps.length - 1]?.status).toBe('error');
 
     const latestSteps = groupSteps(collectAllToolParts(latestRunMessages(messages)));
-    expect(deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status)).toBe('succeeded');
+    expect(deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status)).toBe(
+      'succeeded',
+    );
   });
 });

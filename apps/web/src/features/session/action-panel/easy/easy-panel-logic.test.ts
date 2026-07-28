@@ -3,6 +3,7 @@ import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
   deriveIsRunning,
+  focusIndexForCall,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
@@ -11,7 +12,6 @@ import {
   sandboxRecents,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
-  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
 
@@ -23,7 +23,13 @@ function output(overrides: Partial<FileOutputItem> = {}): FileOutputItem {
 }
 
 function appOutput(overrides: Partial<AppOutputItem> = {}): AppOutputItem {
-  return { callID: 'app-1', name: 'my-app', kind: 'app', url: 'http://localhost:5173', ...overrides };
+  return {
+    callID: 'app-1',
+    name: 'my-app',
+    kind: 'app',
+    url: 'http://localhost:5173',
+    ...overrides,
+  };
 }
 
 describe('outputKey', () => {
@@ -218,8 +224,11 @@ describe('quickBrowserOutput (header/palette "Open Browser")', () => {
     expect(quickBrowserOutput([]).url).toBe('');
   });
 
-  it('defaults to the first running app\'s url when several exist', () => {
-    const apps = [appOutput({ url: 'http://localhost:5173' }), appOutput({ callID: 'app-2', url: 'http://localhost:8080' })];
+  it("defaults to the first running app's url when several exist", () => {
+    const apps = [
+      appOutput({ url: 'http://localhost:5173' }),
+      appOutput({ callID: 'app-2', url: 'http://localhost:8080' }),
+    ];
     expect(quickBrowserOutput(apps).url).toBe('http://localhost:5173');
   });
 
@@ -263,7 +272,7 @@ describe('pathOutput', () => {
     expect(outputKey(pathOutput('/a/one.md'))).not.toBe(outputKey(pathOutput('/a/two.md')));
   });
 
-  it('never reports fresh — a path opened by click is not this run\'s deliverable', () => {
+  it("never reports fresh — a path opened by click is not this run's deliverable", () => {
     expect(pathOutput('/a/one.md').fresh).toBeUndefined();
   });
 });

@@ -4,10 +4,10 @@ import { GrainShader, NeuroShader } from '@/components/ui/paper-wallpaper-shader
 import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
 import { DitherShader, SilkShader } from '@/components/ui/wallpaper-shaders';
 import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID, getWallpaperById, Wallpaper } from '@/lib/wallpapers';
+import { DEFAULT_WALLPAPER_ID, type Wallpaper, getWallpaperById } from '@/lib/wallpapers';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import Image from 'next/image';
-import { memo, type ComponentType } from 'react';
+import { type ComponentType, memo } from 'react';
 
 // One shader composition per wallpaper id; unknown shader ids fall back
 // to the Pixel Beams preset in ShaderWallpaper.

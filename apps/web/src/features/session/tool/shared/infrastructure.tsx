@@ -39,7 +39,7 @@ import { TbExternalLink } from 'react-icons/tb';
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
-import { type Diagnostic, getDiagnostics, type ToolPart, type TriggerTitle } from '@/ui';
+import { type Diagnostic, type ToolPart, type TriggerTitle, getDiagnostics } from '@/ui';
 
 export { StructuredOutput } from '@/features/session/tool/shared/structured-output';
 

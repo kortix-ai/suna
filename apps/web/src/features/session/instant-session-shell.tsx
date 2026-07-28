@@ -272,7 +272,7 @@ export function InstantSessionShell({
       </div>
 
       {/* Once a first message is sent the composer leaves the hero position and
-          docks at the bottom for the thread view (the same jump Perplexity makes
+          docks at the bottom for the thread view (the same jump the reference makes
           when a search becomes a thread). */}
       {submitted ? composerEl : null}
     </div>

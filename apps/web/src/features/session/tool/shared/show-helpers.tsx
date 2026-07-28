@@ -98,9 +98,7 @@ export function useShowOpenInTab(props: {
 
   const isHtmlFilePath =
     !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
-  const htmlStaticUrl = isHtmlFilePath
-    ? buildStaticFileLocalUrl(path)
-    : '';
+  const htmlStaticUrl = isHtmlFilePath ? buildStaticFileLocalUrl(path) : '';
   const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
 
   return useCallback(() => {

@@ -1,16 +1,16 @@
 'use client';
 
 import {
+  type DocxDocumentTheme,
+  type DocxEditorController,
   DocxEditorViewer,
+  type DocxPageThumbnailItem,
   setWasmSource,
   useDocxComments,
   useDocxEditor,
   useDocxPageLayout,
   useDocxTrackChanges,
   useDocxViewerThumbnails,
-  type DocxDocumentTheme,
-  type DocxEditorController,
-  type DocxPageThumbnailItem,
 } from '@extend-ai/react-docx';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {

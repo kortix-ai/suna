@@ -8,9 +8,7 @@
 import type { MessageWithParts } from '@/ui';
 import { collectAllToolParts } from './collect-tool-parts';
 
-export function latestRunMessages(
-  messages: MessageWithParts[] | undefined,
-): MessageWithParts[] {
+export function latestRunMessages(messages: MessageWithParts[] | undefined): MessageWithParts[] {
   if (!messages || messages.length === 0) return [];
   for (let i = messages.length - 1; i >= 0; i--) {
     if ((messages[i].info as { role?: string }).role === 'user') {

@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
 
 import {
-  getKortixCliInstallCommand,
   KORTIX_CLI_DEV_INSTALL_COMMAND,
   KORTIX_CLI_INSTALL_COMMAND,
+  getKortixCliInstallCommand,
 } from './kortix-cli';
 
 test('uses the mutable dev CLI channel on dev builds', () => {

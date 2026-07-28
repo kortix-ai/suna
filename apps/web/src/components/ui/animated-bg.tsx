@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { motion, useMotionValue, useTransform } from 'motion/react';
 import type { TargetAndTransition } from 'motion/react';
-import { useEffect, useState, useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 type Tone = 'light' | 'medium' | 'dark';
 
@@ -73,13 +73,7 @@ const LeftArc = ({
           <stop offset="1" stopColor={c3} />
         </linearGradient>
 
-        <filter
-          id={`Ledge_${uid}`}
-          x="-50%"
-          y="-50%"
-          width="200%"
-          height="200%"
-        >
+        <filter id={`Ledge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" />
         </filter>
 
@@ -89,12 +83,7 @@ const LeftArc = ({
           </g>
         </mask>
 
-        <pattern
-          id={`Lgrain_${uid}`}
-          patternUnits="userSpaceOnUse"
-          width="100"
-          height="100"
-        >
+        <pattern id={`Lgrain_${uid}`} patternUnits="userSpaceOnUse" width="100" height="100">
           <image
             href="/grain-texture.png"
             x="0"
@@ -109,10 +98,7 @@ const LeftArc = ({
       <g opacity={opacity}>
         <g
           style={{
-            filter:
-              blurAmount && blurAmount > 0
-                ? `blur(${blurAmount}px)`
-                : undefined,
+            filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined,
           }}
         >
           <path d={d} fill={`url(#L0_${tone}_${uid})`} />
@@ -125,13 +111,7 @@ const LeftArc = ({
           opacity={0.6}
           pointerEvents="none"
         >
-          <rect
-            x="0"
-            y="0"
-            width="120%"
-            height="120%"
-            fill={`url(#Lgrain_${uid})`}
-          />
+          <rect x="0" y="0" width="120%" height="120%" fill={`url(#Lgrain_${uid})`} />
         </g>
       </g>
     </svg>
@@ -188,13 +168,7 @@ const RightArc = ({
           <stop offset="1" stopOpacity="0" />
         </linearGradient>
 
-        <filter
-          id={`Redge_${uid}`}
-          x="-50%"
-          y="-50%"
-          width="200%"
-          height="200%"
-        >
+        <filter id={`Redge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" />
         </filter>
 
@@ -204,12 +178,7 @@ const RightArc = ({
           </g>
         </mask>
 
-        <pattern
-          id={`Rgrain_${uid}`}
-          patternUnits="userSpaceOnUse"
-          width="100"
-          height="100"
-        >
+        <pattern id={`Rgrain_${uid}`} patternUnits="userSpaceOnUse" width="100" height="100">
           <image
             href="/grain-texture.png"
             x="0"
@@ -224,10 +193,7 @@ const RightArc = ({
       <g opacity={opacity}>
         <g
           style={{
-            filter:
-              blurAmount && blurAmount > 0
-                ? `blur(${blurAmount}px)`
-                : undefined,
+            filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined,
           }}
         >
           <path d={d} fill={`url(#R0_${tone}_${uid})`} />
@@ -239,13 +205,7 @@ const RightArc = ({
           opacity={0.6}
           pointerEvents="none"
         >
-          <rect
-            x="0"
-            y="0"
-            width="120%"
-            height="120%"
-            fill={`url(#Rgrain_${uid})`}
-          />
+          <rect x="0" y="0" width="120%" height="120%" fill={`url(#Rgrain_${uid})`} />
         </g>
       </g>
     </svg>
@@ -284,10 +244,7 @@ const Arc = ({
   };
 
   // Convert blur strings to numbers for Safari compatibility
-  const blurValues = useMemo(
-    () => cfg.blur.map((b) => parseFloat(b)),
-    [cfg.blur],
-  );
+  const blurValues = useMemo(() => cfg.blur.map((b) => Number.parseFloat(b)), [cfg.blur]);
 
   // Use motion value for better performance (no re-renders)
   const animationProgress = useMotionValue(0);
@@ -329,7 +286,7 @@ const Arc = ({
         duration,
         delay: cfg.delay,
         ease: [0.85, 0, 0.06, 1.01],
-        repeat: Infinity,
+        repeat: Number.POSITIVE_INFINITY,
         repeatType: 'loop',
         times: [0, 0.33, 0.66, 1],
       }}
@@ -341,19 +298,9 @@ const Arc = ({
       }}
     >
       {left ? (
-        <LeftArc
-          size={cfg.size}
-          tone={cfg.tone}
-          opacity={cfg.opacity}
-          blurAmount={currentBlur}
-        />
+        <LeftArc size={cfg.size} tone={cfg.tone} opacity={cfg.opacity} blurAmount={currentBlur} />
       ) : (
-        <RightArc
-          size={cfg.size}
-          tone={cfg.tone}
-          opacity={cfg.opacity}
-          blurAmount={currentBlur}
-        />
+        <RightArc size={cfg.size} tone={cfg.tone} opacity={cfg.opacity} blurAmount={currentBlur} />
       )}
     </motion.div>
   );
@@ -410,7 +357,7 @@ export function AnimatedBg({
   // Helper function to apply blur multiplier
   const adjustBlur = (blurValues: string[]): string[] => {
     return blurValues.map((blur) => {
-      const value = parseFloat(blur);
+      const value = Number.parseFloat(blur);
       return `${value * blurMultiplier}px`;
     });
   };
@@ -523,10 +470,7 @@ export function AnimatedBg({
   ];
 
   // Helper function to merge custom arcs with defaults
-  const mergeArcs = (
-    defaultArcs: ArcCfg[],
-    customArcs?: Partial<ArcCfg>[],
-  ): ArcCfg[] => {
+  const mergeArcs = (defaultArcs: ArcCfg[], customArcs?: Partial<ArcCfg>[]): ArcCfg[] => {
     if (!customArcs || customArcs.length === 0) return defaultArcs;
 
     return customArcs.map((customArc, i) => {
@@ -535,12 +479,8 @@ export function AnimatedBg({
         pos: customArc.pos || defaultArc.pos,
         size: customArc.size || defaultArc.size,
         tone: customArc.tone || defaultArc.tone,
-        opacity:
-          customArc.opacity !== undefined
-            ? customArc.opacity
-            : defaultArc.opacity,
-        delay:
-          customArc.delay !== undefined ? customArc.delay : defaultArc.delay,
+        opacity: customArc.opacity !== undefined ? customArc.opacity : defaultArc.opacity,
+        delay: customArc.delay !== undefined ? customArc.delay : defaultArc.delay,
         x: customArc.x || defaultArc.x,
         y: customArc.y || defaultArc.y,
         scale: customArc.scale || defaultArc.scale,
@@ -552,12 +492,8 @@ export function AnimatedBg({
   const baseLeft = variant === 'header' ? headerLeft : heroLeft;
   const baseRight = variant === 'header' ? headerRight : heroRight;
 
-  const left = customArcs?.left
-    ? mergeArcs(baseLeft, customArcs.left)
-    : baseLeft;
-  const right = customArcs?.right
-    ? mergeArcs(baseRight, customArcs.right)
-    : baseRight;
+  const left = customArcs?.left ? mergeArcs(baseLeft, customArcs.left) : baseLeft;
+  const right = customArcs?.right ? mergeArcs(baseRight, customArcs.right) : baseRight;
 
   return (
     <div

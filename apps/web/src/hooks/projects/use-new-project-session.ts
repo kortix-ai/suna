@@ -6,23 +6,23 @@ import { useCallback, useRef } from 'react';
 
 import { errorToast, loadingToast } from '@/components/ui/toast';
 import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
+import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { warmProjectSessionKey } from '@/hooks/projects/use-warm-project-session';
 import {
   buildWarmSessionClaimInput,
   resolveWarmSessionForSend,
   shouldFallbackFromWarmClaim,
 } from '@/hooks/projects/warm-session-create';
-import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { warmProjectSessionKey } from '@/hooks/projects/use-warm-project-session';
 import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import {
-  claimWarmProjectSession,
   type ProjectSession,
   type SessionConnectorBindings,
+  claimWarmProjectSession,
   createProjectSession,
 } from '@kortix/sdk';
+import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
@@ -124,9 +124,7 @@ export function useNewProjectSession(
         );
         if (!selectedWarmSession) return createNormalSession();
 
-        router.prefetch(
-          `/projects/${projectId}/sessions/${selectedWarmSession.session_id}`,
-        );
+        router.prefetch(`/projects/${projectId}/sessions/${selectedWarmSession.session_id}`);
         try {
           const claimed = await claimWarmProjectSession(
             projectId,

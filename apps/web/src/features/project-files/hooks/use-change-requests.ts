@@ -1,7 +1,16 @@
 'use client';
 
+import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  type ChangeRequest,
+  type ChangeRequestDetailResponse,
+  type ChangeRequestDiffResponse,
+  type ChangeRequestMergePreview,
+  type ChangeRequestMergeResponse,
+  type ChangeRequestStatus,
+  type CommitSessionResult,
+  type VersionDiffPreview,
   commitSessionChangesRequest,
   createChangeRequest,
   fetchChangeRequest,
@@ -13,17 +22,8 @@ import {
   performMerge,
   performReopen,
   performRequestChanges,
-  type ChangeRequest,
-  type ChangeRequestDetailResponse,
-  type ChangeRequestDiffResponse,
-  type ChangeRequestMergePreview,
-  type ChangeRequestMergeResponse,
-  type ChangeRequestStatus,
-  type CommitSessionResult,
-  type VersionDiffPreview,
 } from '../api/change-requests';
 import { useProjectContext } from '../context';
-import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 
 export const changeRequestKeys = {
   all: ['project-files', 'change-requests'] as const,
@@ -168,7 +168,13 @@ export function useOpenChangeRequest(options?: { projectId?: string }) {
   return useMutation<
     ChangeRequest,
     Error,
-    { title: string; description?: string; head_ref: string; base_ref?: string; session_id?: string }
+    {
+      title: string;
+      description?: string;
+      head_ref: string;
+      base_ref?: string;
+      session_id?: string;
+    }
   >({
     mutationFn: (input) => createChangeRequest(projectId, input),
     onSuccess: invalidate,

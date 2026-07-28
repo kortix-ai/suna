@@ -1,4 +1,4 @@
-import { discoveryJson, OAUTH_AUTHORIZATION_SERVER_METADATA } from '@/lib/agent-discovery';
+import { OAUTH_AUTHORIZATION_SERVER_METADATA, discoveryJson } from '@/lib/agent-discovery';
 
 export const dynamic = 'force-static';
 

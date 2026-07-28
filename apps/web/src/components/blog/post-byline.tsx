@@ -1,6 +1,6 @@
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import { formatPostDate, type Author } from '@/lib/blog';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { type Author, formatPostDate } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 
 /**
@@ -29,12 +29,7 @@ export function PostByline({
         size={compact ? 'sm' : 'md'}
       />
       <div className="min-w-0">
-        <div
-          className={cn(
-            'font-medium text-foreground',
-            compact ? 'text-xs' : 'text-sm',
-          )}
-        >
+        <div className={cn('font-medium text-foreground', compact ? 'text-xs' : 'text-sm')}>
           {author.name}
         </div>
         <InlineMeta className={compact ? 'mt-0' : 'mt-0.5'}>

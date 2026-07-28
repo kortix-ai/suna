@@ -1,6 +1,6 @@
 'use client';
 
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { type KortixProject, listProjectsForAccount } from '@kortix/sdk';
 import { Loader2, LogIn, MessagesSquare, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -81,7 +81,9 @@ export function TemplateSessionInstallDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogTitle className="sr-only">Set up {title ?? 'this automation'} with the agent</DialogTitle>
+        <DialogTitle className="sr-only">
+          Set up {title ?? 'this automation'} with the agent
+        </DialogTitle>
 
         <div className="flex flex-col p-6">
           <div className="flex items-center gap-2.5">
@@ -95,9 +97,9 @@ export function TemplateSessionInstallDialog({
           </div>
 
           <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-            We&apos;ll open a chat in your project and an agent will walk you through it — ask for the
-            details it needs, connect your accounts, and turn it on when you&apos;re ready. Nothing runs
-            until you say go.
+            We&apos;ll open a chat in your project and an agent will walk you through it — ask for
+            the details it needs, connect your accounts, and turn it on when you&apos;re ready.
+            Nothing runs until you say go.
           </p>
 
           <div className="mt-5">
@@ -113,10 +115,12 @@ export function TemplateSessionInstallDialog({
                   <LogIn className="size-5" />
                 </span>
                 <div>
-                  <p className="text-foreground text-sm font-medium">Sign in to install this automation</p>
+                  <p className="text-foreground text-sm font-medium">
+                    Sign in to install this automation
+                  </p>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-xs text-xs leading-relaxed">
-                    Sign in to pick a project and open the install chat — we&apos;ll bring you right back
-                    here.
+                    Sign in to pick a project and open the install chat — we&apos;ll bring you right
+                    back here.
                   </p>
                 </div>
               </div>
@@ -150,7 +154,12 @@ export function TemplateSessionInstallDialog({
           </div>
 
           <div className="mt-5 flex items-center justify-between gap-2">
-            <Button variant="ghost" size="sm" disabled={opening} onClick={() => onOpenChange(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={opening}
+              onClick={() => onOpenChange(false)}
+            >
               Cancel
             </Button>
             {!authLoading && !user ? (

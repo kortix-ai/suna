@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import type { PanelMode } from '@/stores/user-preferences-store';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { PanelMode } from '@/stores/user-preferences-store';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel, shouldDiscardPendingPrimaryOpen } from './index';
@@ -149,7 +149,7 @@ describe('shouldDiscardPendingPrimaryOpen (W7)', () => {
     expect(shouldDiscardPendingPrimaryOpen('advanced', null, 's1')).toBe(false);
   });
 
-  test('end to end: Advanced mode consumes this session\'s pending request via the store', () => {
+  test("end to end: Advanced mode consumes this session's pending request via the store", () => {
     useKortixComputerStore.getState().reset();
     useKortixComputerStore.getState().requestPrimaryOpen('s1');
     expect(

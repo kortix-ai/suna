@@ -34,12 +34,7 @@ export function Slide({
         className,
       )}
     >
-      <div
-        className={cn(
-          'mx-auto w-full max-w-6xl px-6 py-24 sm:py-28 lg:px-0',
-          innerClassName,
-        )}
-      >
+      <div className={cn('mx-auto w-full max-w-6xl px-6 py-24 sm:py-28 lg:px-0', innerClassName)}>
         {children}
       </div>
     </div>
@@ -71,10 +66,7 @@ export function SectionHead({
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <p
-      className={cn(
-        'text-muted-foreground font-mono text-xs tracking-wider uppercase',
-        className,
-      )}
+      className={cn('text-muted-foreground font-mono text-xs tracking-wider uppercase', className)}
     >
       {children}
     </p>
@@ -264,7 +256,9 @@ export function MiniCard({
   className?: string;
 }) {
   return (
-    <div className={cn('border-border bg-card flex flex-col gap-2 rounded-sm border p-6', className)}>
+    <div
+      className={cn('border-border bg-card flex flex-col gap-2 rounded-sm border p-6', className)}
+    >
       {label ? (
         <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
           {label}

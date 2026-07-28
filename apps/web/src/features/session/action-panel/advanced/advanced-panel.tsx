@@ -6,12 +6,9 @@ import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { ActionNavigator } from '../shared/action-navigator';
 import { collectToolParts } from '../shared/collect-tool-parts';
-import {
-  ToolPartRenderer,
-  ToolSurfaceContext,
-} from '../../tool/tool-renderers';
 
 /**
  * Side-panel "Actions" view.

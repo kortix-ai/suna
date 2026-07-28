@@ -34,11 +34,7 @@ import {
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import {
-  type SessionAuditAction,
-  listProjectPolicies,
-  setProjectPolicies,
-} from '@kortix/sdk';
+import { type SessionAuditAction, listProjectPolicies, setProjectPolicies } from '@kortix/sdk';
 import { ShieldAlert } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';

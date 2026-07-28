@@ -1,14 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import {
-  useProjectSessionTabsStore,
-  CUSTOMIZE_TAB_ID,
-} from '@/stores/project-session-tabs-store';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { isDesktop } from '@/lib/desktop';
+import { CUSTOMIZE_TAB_ID, useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 /**
  * Project-shell keyboard shortcuts — equivalents to the legacy dashboard's
@@ -59,8 +56,7 @@ export function useProjectShellShortcuts({
       const custMatch = pathname?.match(/^\/projects\/([^/]+)\/customize/);
       const urlProject = sessMatch?.[1] ?? custMatch?.[1] ?? null;
       const activeTabId = sessMatch?.[2] ?? (custMatch ? CUSTOMIZE_TAB_ID : null);
-      const tabs =
-        useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
+      const tabs = useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
 
       const hrefForTab = (id: string) =>
         id === CUSTOMIZE_TAB_ID
@@ -142,7 +138,7 @@ export function useProjectShellShortcuts({
       if (modHeld && !modOther && !e.shiftKey) {
         const digitMatch = e.code.match(/^Digit(\d)$/);
         if (digitMatch) {
-          const num = parseInt(digitMatch[1], 10);
+          const num = Number.parseInt(digitMatch[1], 10);
           if (num >= 1 && num <= 8) {
             if (tabs[num - 1]) {
               e.preventDefault();
@@ -164,5 +160,13 @@ export function useProjectShellShortcuts({
     // DesktopChrome captures Cmd+R. Capturing guarantees Ctrl+W et al. fire.
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [projectId, pathname, router, tabSwitchModifier, onNewSession, closeProjectTab, reopenLastClosed]);
+  }, [
+    projectId,
+    pathname,
+    router,
+    tabSwitchModifier,
+    onNewSession,
+    closeProjectTab,
+    reopenLastClosed,
+  ]);
 }

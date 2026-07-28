@@ -1,7 +1,7 @@
-import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import type { ProjectSession } from '@kortix/sdk';
 import { runningSessionWarmupTargets } from './session-cache-warmer-targets';
 
 const keeperSource = readFileSync(

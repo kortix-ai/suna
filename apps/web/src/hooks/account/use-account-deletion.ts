@@ -1,11 +1,11 @@
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   cancelAccountDeletion,
   deleteAccountImmediately,
   getAccountDeletionStatus,
   requestAccountDeletion,
 } from '@kortix/sdk';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export interface AccountDeletionStatus {
   has_pending_deletion: boolean;

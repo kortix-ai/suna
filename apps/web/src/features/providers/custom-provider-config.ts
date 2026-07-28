@@ -22,9 +22,7 @@ export function normalizeCustomProviderForm(
   };
 }
 
-export function validateCustomProviderForm(
-  form: CustomProviderFormValues,
-): string | null {
+export function validateCustomProviderForm(form: CustomProviderFormValues): string | null {
   const normalized = normalizeCustomProviderForm(form);
 
   if (!normalized.providerID || !normalized.name || !normalized.baseURL) {

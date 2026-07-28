@@ -1,6 +1,6 @@
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 export interface AnnouncementData {
   component: string;
@@ -39,7 +39,10 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
 
       closeAnnouncement: () => {
         const { currentAnnouncement, dismissedAnnouncements } = get();
-        if (currentAnnouncement && !dismissedAnnouncements.includes(currentAnnouncement.component)) {
+        if (
+          currentAnnouncement &&
+          !dismissedAnnouncements.includes(currentAnnouncement.component)
+        ) {
           set({
             isOpen: false,
             currentAnnouncement: null,
@@ -59,7 +62,7 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
         if (isOpen) return;
 
         const pending = PENDING_ANNOUNCEMENTS.find(
-          (a) => !dismissedAnnouncements.includes(a.component)
+          (a) => !dismissedAnnouncements.includes(a.component),
         );
 
         if (pending) {
@@ -71,6 +74,6 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
       name: 'announcement-store-v2',
       storage: createSafeJSONStorage(),
       partialize: (state) => ({ dismissedAnnouncements: state.dismissedAnnouncements }),
-    }
-  )
+    },
+  ),
 );

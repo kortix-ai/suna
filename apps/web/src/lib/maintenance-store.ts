@@ -10,7 +10,7 @@ import {
   getMaintenanceConfig as sdkGetMaintenanceConfig,
   setMaintenanceConfig as sdkSetMaintenanceConfig,
 } from '@kortix/sdk';
-import { createClient, type EdgeConfigClient } from '@vercel/edge-config';
+import { type EdgeConfigClient, createClient } from '@vercel/edge-config';
 
 // ---------------------------------------------------------------------------
 // Types

@@ -9,9 +9,9 @@
  *   - Active tunnel connection tracking
  */
 
-import { create } from 'zustand';
-import { createTunnelEventStream, type SSEStream } from '@kortix/sdk';
 import type { TunnelPermissionRequest } from '@/hooks/tunnel/use-tunnel';
+import { type SSEStream, createTunnelEventStream } from '@kortix/sdk';
+import { create } from 'zustand';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

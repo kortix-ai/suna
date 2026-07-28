@@ -30,11 +30,7 @@ export interface AccountMeta {
  * every project regardless of the group's role.
  */
 export function isOverridingAccountRole(meta: AccountMeta): boolean {
-  return (
-    meta.isSuperAdmin ||
-    meta.accountRole === 'owner' ||
-    meta.accountRole === 'admin'
-  );
+  return meta.isSuperAdmin || meta.accountRole === 'owner' || meta.accountRole === 'admin';
 }
 
 /**
@@ -73,9 +69,10 @@ function overrideRank(meta: AccountMeta | undefined): number {
  * want those N rows to be the first N in the list. Tie-break: ascending
  * addedAt so older members stay near the top within each tier.
  */
-export function sortGroupMembersByOverride<
-  T extends { user_id: string; added_at: string },
->(members: T[], metaByUserId: Map<string, AccountMeta>): T[] {
+export function sortGroupMembersByOverride<T extends { user_id: string; added_at: string }>(
+  members: T[],
+  metaByUserId: Map<string, AccountMeta>,
+): T[] {
   return [...members].sort((a, b) => {
     const ra = overrideRank(metaByUserId.get(a.user_id));
     const rb = overrideRank(metaByUserId.get(b.user_id));

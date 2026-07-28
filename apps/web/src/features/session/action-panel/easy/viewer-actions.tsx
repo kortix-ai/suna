@@ -76,11 +76,7 @@ export function PanelWidthButton({ isMobile }: { isMobile: boolean }) {
         aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
         className="size-7 active:scale-[0.96]"
       >
-        {isExpanded ? (
-          <Minimize2 className="size-3.5" />
-        ) : (
-          <Maximize2 className="size-3.5" />
-        )}
+        {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
       </Button>
     </Hint>
   );

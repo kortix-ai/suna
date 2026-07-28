@@ -5,11 +5,11 @@ import { useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMarketplaceItem, useMarketplaces, useMarketplaceItems } from '@/hooks/marketplace';
+import { useMarketplaceItem, useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 import { MarketplaceDetail, useDetailNav } from './marketplace-detail';
 import { MarketplaceExplore } from './marketplace-explore';
-import { MarketplaceSurfaceProvider, type MarketplaceSurface } from './marketplace-surface';
+import { type MarketplaceSurface, MarketplaceSurfaceProvider } from './marketplace-surface';
 
 /** Stable empty set — installing is agent-driven now (no registry-lock to
  *  read), so there's no "installed" state to track here; kept as an empty

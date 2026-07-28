@@ -6,6 +6,8 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
   DiagnosticsDisplay,
+  ToolOutputFallback,
+  ToolRunningContext,
   getToolDiagnostics,
   isErrorOutput,
   partInput,
@@ -13,8 +15,6 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
-  ToolOutputFallback,
-  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -48,7 +48,9 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       trigger={{
         title: 'Write',
-        subtitle: isStalePending ? undefined : filename || (isStalePending ? 'Working...' : undefined),
+        subtitle: isStalePending
+          ? undefined
+          : filename || (isStalePending ? 'Working...' : undefined),
         args: directory ? [directory] : undefined,
       }}
       onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
@@ -70,7 +72,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isStalePending ? (
-        <div className='p-4 pt-0'>
+        <div className="p-4 pt-0">
           <TextShimmer>
             {tHardcodedUi.raw(
               'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',

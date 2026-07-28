@@ -2,45 +2,40 @@
 
 import { useTranslations } from 'next-intl';
 
-import * as React from 'react';
-import { useCallback, useState } from 'react';
-import { PanelRight } from 'lucide-react';
-import { useRouter, usePathname } from 'next/navigation';
-import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
 } from '@/components/ui/sheet';
 import {
-  useRightSidebar,
   SIDEBAR_RIGHT_WIDTH,
   SIDEBAR_RIGHT_WIDTH_ICON,
+  useRightSidebar,
 } from '@/components/ui/sidebar-right-provider';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { useCreatePty } from '@kortix/sdk/react';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { SANDBOX_PORTS } from '@kortix/sdk';
 import {
+  type MenuItemDef,
+  type NavSubGroup,
   getNavItemsClustered,
   isItemActive,
   navSubGroupLabels,
-  type MenuItemDef,
-  type NavSubGroup,
 } from '@/lib/menu-registry';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { SANDBOX_PORTS } from '@kortix/sdk';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { useCreatePty } from '@kortix/sdk/react';
+import { PanelRight } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import * as React from 'react';
+import { useCallback, useState } from 'react';
 import { Button } from '../ui/button';
-
 
 // ============================================================================
 // Main Right Sidebar — Quick actions (no file explorer — that's /files now)
@@ -48,14 +43,7 @@ import { Button } from '../ui/button';
 
 export function SidebarRight() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const {
-    state,
-    open,
-    openMobile,
-    setOpenMobile,
-    toggleSidebar,
-    isMobile,
-  } = useRightSidebar();
+  const { state, open, openMobile, setOpenMobile, toggleSidebar, isMobile } = useRightSidebar();
 
   const router = useRouter();
   const pathname = normalizeAppPathname(usePathname());
@@ -80,8 +68,6 @@ export function SidebarRight() {
     }
   }, [createPty]);
 
-
-
   /**
    * Open a well-known sandbox service as a preview tab.
    * All modes route through the backend proxy — no direct localhost access.
@@ -92,7 +78,7 @@ export function SidebarRight() {
    */
   const openSandboxServiceTab = useCallback(
     (containerPort: string, title: string) => {
-      const url = getServiceUrl(parseInt(containerPort, 10));
+      const url = getServiceUrl(Number.parseInt(containerPort, 10));
 
       const tabId = `preview:${containerPort}`;
       const tabHref = `/p/${containerPort}`;
@@ -104,7 +90,7 @@ export function SidebarRight() {
         href: tabHref,
         metadata: {
           url,
-          port: parseInt(containerPort, 10),
+          port: Number.parseInt(containerPort, 10),
           originalUrl: `http://localhost:${containerPort}/`,
         },
       });
@@ -113,37 +99,42 @@ export function SidebarRight() {
   );
 
   /** Generic handler for any registry item in the right sidebar */
-  const handleItemAction = useCallback((item: MenuItemDef) => {
-    switch (item.kind) {
-      case 'navigate': {
-        const tabType = (item.tabType || 'page') as any;
-        const tabId = item.tabId || `page:${item.href}`;
-        openTabAndNavigate(
-          {
-            id: tabId,
-            title: item.label,
-            type: tabType,
-            href: item.href!,
-            ...(item.tabType === 'preview' ? { metadata: { url: '', port: 0, originalUrl: '', path: '/' } } : {}),
-          },
-          router,
-        );
-        break;
+  const handleItemAction = useCallback(
+    (item: MenuItemDef) => {
+      switch (item.kind) {
+        case 'navigate': {
+          const tabType = (item.tabType || 'page') as any;
+          const tabId = item.tabId || `page:${item.href}`;
+          openTabAndNavigate(
+            {
+              id: tabId,
+              title: item.label,
+              type: tabType,
+              href: item.href!,
+              ...(item.tabType === 'preview'
+                ? { metadata: { url: '', port: 0, originalUrl: '', path: '/' } }
+                : {}),
+            },
+            router,
+          );
+          break;
+        }
+        case 'sandboxService':
+          if (item.actionId === 'openAgentBrowser') {
+            openSandboxServiceTab(SANDBOX_PORTS.BROWSER_VIEWER, item.label);
+          }
+          break;
+        case 'action':
+          if (item.actionId === 'newTerminal') {
+            handleNewTerminal();
+          } else if (item.actionId === 'openProviderModal') {
+            useProviderModalStore.getState().openProviderModal('connected');
+          }
+          break;
       }
-      case 'sandboxService':
-        if (item.actionId === 'openAgentBrowser') {
-          openSandboxServiceTab(SANDBOX_PORTS.BROWSER_VIEWER, item.label);
-        }
-        break;
-      case 'action':
-        if (item.actionId === 'newTerminal') {
-          handleNewTerminal();
-        } else if (item.actionId === 'openProviderModal') {
-          useProviderModalStore.getState().openProviderModal('connected');
-        }
-        break;
-    }
-  }, [router, openSandboxServiceTab, handleNewTerminal]);
+    },
+    [router, openSandboxServiceTab, handleNewTerminal],
+  );
 
   // Get registry items for the right sidebar
   const quickActionClusters = getNavItemsClustered('rightSidebar', 'quickActions');
@@ -163,15 +154,23 @@ export function SidebarRight() {
             side="right"
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>{tHardcodedUi.raw('componentsSidebarSidebarRight.line168JsxTextQuickActions')}</SheetTitle>
-              <SheetDescription>{tHardcodedUi.raw('componentsSidebarSidebarRight.line169JsxTextQuickActionsAndNavigation')}</SheetDescription>
+              <SheetTitle>
+                {tHardcodedUi.raw('componentsSidebarSidebarRight.line168JsxTextQuickActions')}
+              </SheetTitle>
+              <SheetDescription>
+                {tHardcodedUi.raw(
+                  'componentsSidebarSidebarRight.line169JsxTextQuickActionsAndNavigation',
+                )}
+              </SheetDescription>
             </SheetHeader>
             <div className="flex h-full w-full flex-col">
               {/* ====== HEADER ====== */}
               <div className="flex flex-col pt-3 pb-0 overflow-visible">
                 <div className="relative flex h-[32px] items-center px-3 justify-between">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">{tHardcodedUi.raw('componentsSidebarSidebarRight.line177JsxTextQuickActions')}</span>
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
+                      {tHardcodedUi.raw('componentsSidebarSidebarRight.line177JsxTextQuickActions')}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -184,7 +183,10 @@ export function SidebarRight() {
                     const subGroup = cluster[0]?.subGroup as NavSubGroup | undefined;
                     const label = subGroup ? navSubGroupLabels[subGroup] : undefined;
                     return (
-                      <div key={subGroup ?? clusterIdx} className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}>
+                      <div
+                        key={subGroup ?? clusterIdx}
+                        className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}
+                      >
                         {label && (
                           <div className="px-3 pb-1.5 pt-1">
                             <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
@@ -197,7 +199,8 @@ export function SidebarRight() {
                             const Icon = item.icon;
                             const isTerminal = item.actionId === 'newTerminal';
                             const isDisabled = isTerminal && createPty.isPending;
-                            const label = isTerminal && createPty.isPending ? 'Creating...' : item.label;
+                            const label =
+                              isTerminal && createPty.isPending ? 'Creating...' : item.label;
                             return (
                               <Button
                                 key={item.id}
@@ -239,7 +242,8 @@ export function SidebarRight() {
                                 variant="sidebar"
                                 className={cn(
                                   'rounded-lg',
-                                  active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                                  active &&
+                                    'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                                 )}
                               >
                                 <Icon className="h-4 w-4 flex-shrink-0" />
@@ -260,8 +264,8 @@ export function SidebarRight() {
     );
   }
 
-  const effectiveGap = obHide ? '0px' : (open ? SIDEBAR_RIGHT_WIDTH : SIDEBAR_RIGHT_WIDTH_ICON);
-  const effectivePanel = obHide ? '0px' : (open ? SIDEBAR_RIGHT_WIDTH : SIDEBAR_RIGHT_WIDTH_ICON);
+  const effectiveGap = obHide ? '0px' : open ? SIDEBAR_RIGHT_WIDTH : SIDEBAR_RIGHT_WIDTH_ICON;
+  const effectivePanel = obHide ? '0px' : open ? SIDEBAR_RIGHT_WIDTH : SIDEBAR_RIGHT_WIDTH_ICON;
 
   return (
     <>
@@ -275,7 +279,9 @@ export function SidebarRight() {
       >
         {/* Rail — thin hoverable strip on the left edge to toggle */}
         <button
-          aria-label={tHardcodedUi.raw('componentsSidebarSidebarRight.line283JsxAttrAriaLabelToggleSidebar')}
+          aria-label={tHardcodedUi.raw(
+            'componentsSidebarSidebarRight.line283JsxAttrAriaLabelToggleSidebar',
+          )}
           tabIndex={-1}
           onClick={toggleSidebar}
           title={tHardcodedUi.raw('componentsSidebarSidebarRight.line286JsxAttrTitleToggleSidebar')}
@@ -299,7 +305,6 @@ export function SidebarRight() {
           data-side="right"
           className="bg-sidebar text-sidebar-foreground flex h-full w-full flex-col"
         >
-
           {/* ====== HEADER ======
               Sits in the same vertical band as the inset's tab bar so
               the toggle button is aligned with back / forward / home.
@@ -318,7 +323,9 @@ export function SidebarRight() {
             )}
           >
             {state === 'expanded' && (
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">{tHardcodedUi.raw('componentsSidebarSidebarRight.line327JsxTextQuickActions')}</span>
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
+                {tHardcodedUi.raw('componentsSidebarSidebarRight.line327JsxTextQuickActions')}
+              </span>
             )}
             <button
               className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
@@ -330,10 +337,12 @@ export function SidebarRight() {
           </div>
 
           {/* ====== CONTENT ====== */}
-          <div className={cn(
-            'flex min-h-0 flex-1 flex-col relative',
-            state === 'collapsed' ? 'overflow-visible' : 'overflow-hidden',
-          )}>
+          <div
+            className={cn(
+              'flex min-h-0 flex-1 flex-col relative',
+              state === 'collapsed' ? 'overflow-visible' : 'overflow-hidden',
+            )}
+          >
             {/* --- Collapsed: icon buttons (registry-driven, clustered) ---
                 The header above contains the expand toggle; this stack
                 is purely the registry-driven icons. Starts immediately
@@ -342,7 +351,9 @@ export function SidebarRight() {
               data-sidebar="content-collapsed"
               className={cn(
                 'absolute inset-0 px-2 pt-2 flex flex-col items-center overflow-visible',
-                state === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+                state === 'collapsed'
+                  ? 'opacity-100 pointer-events-auto'
+                  : 'opacity-0 pointer-events-none',
               )}
             >
               {/* Quick action clusters */}
@@ -393,7 +404,8 @@ export function SidebarRight() {
                               variant="sidebar"
                               className={cn(
                                 'h-8 w-full justify-center rounded-lg px-0 py-2',
-                                active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                                active &&
+                                  'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                               )}
                             >
                               <Icon className="h-4 w-4 text-sidebar-foreground" />
@@ -408,21 +420,27 @@ export function SidebarRight() {
                   </div>
                 </div>
               ))}
-
             </div>
 
             {/* --- Expanded: action list (registry-driven, clustered) --- */}
-            <div className={cn(
-              'flex flex-col h-full',
-              state === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto',
-            )}>
+            <div
+              className={cn(
+                'flex flex-col h-full',
+                state === 'collapsed'
+                  ? 'opacity-0 pointer-events-none'
+                  : 'opacity-100 pointer-events-auto',
+              )}
+            >
               <nav className="flex-1 px-3 pt-2 overflow-y-auto">
                 {/* Quick action clusters with section labels */}
                 {quickActionClusters.map((cluster, clusterIdx) => {
                   const subGroup = cluster[0]?.subGroup as NavSubGroup | undefined;
                   const label = subGroup ? navSubGroupLabels[subGroup] : undefined;
                   return (
-                    <div key={subGroup ?? clusterIdx} className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}>
+                    <div
+                      key={subGroup ?? clusterIdx}
+                      className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}
+                    >
                       {label && (
                         <div className="px-3 pb-1.5 pt-1">
                           <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
@@ -435,7 +453,8 @@ export function SidebarRight() {
                           const Icon = item.icon;
                           const isTerminal = item.actionId === 'newTerminal';
                           const isDisabled = isTerminal && createPty.isPending;
-                          const label = isTerminal && createPty.isPending ? 'Creating...' : item.label;
+                          const label =
+                            isTerminal && createPty.isPending ? 'Creating...' : item.label;
                           return (
                             <Button
                               key={item.id}
@@ -478,7 +497,8 @@ export function SidebarRight() {
                               variant="sidebar"
                               className={cn(
                                 'rounded-lg',
-                                active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                                active &&
+                                  'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                               )}
                             >
                               <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
@@ -491,12 +511,10 @@ export function SidebarRight() {
                   );
                 })}
               </nav>
-
             </div>
           </div>
         </div>
       </div>
-
     </>
   );
 }

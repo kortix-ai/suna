@@ -5,10 +5,10 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
   MD_FLUSH_CLASSES,
+  ToolEmptyState,
   partInput,
   partMetadata,
   partOutput,
-  ToolEmptyState,
 } from '@/features/session/tool/shared/infrastructure';
 import {
   type ParsedQuestion,

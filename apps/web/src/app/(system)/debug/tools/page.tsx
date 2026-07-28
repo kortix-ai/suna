@@ -823,9 +823,7 @@ const EASY_PARTS = [
       { query: 'Acme Corp pricing plans 2026' },
       JSON.stringify({
         query: 'Acme Corp pricing plans 2026',
-        results: [
-          { title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' },
-        ],
+        results: [{ title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' }],
       }),
     ),
   ),
@@ -929,10 +927,7 @@ const EASY_PARTS = [
   // as something the user can open.
   part(
     'write',
-    errored(
-      { filePath: '/workspace/reports/failed-draft.md' },
-      'ENOSPC: no space left on device',
-    ),
+    errored({ filePath: '/workspace/reports/failed-draft.md' }, 'ENOSPC: no space left on device'),
   ),
 
   // 5. create — image_gen, its own step (Outputs card, kind "image"). Uses a
@@ -941,7 +936,10 @@ const EASY_PARTS = [
   part(
     'image_gen',
     done(
-      { action: 'generate', prompt: 'Minimal editorial cover image for a pricing comparison report' },
+      {
+        action: 'generate',
+        prompt: 'Minimal editorial cover image for a pricing comparison report',
+      },
       JSON.stringify({
         path: '/workspace/outputs/pricing-cover.png',
         replicate_url: '/wallpapers/nebula-dark.jpg',
@@ -955,16 +953,13 @@ const EASY_PARTS = [
   // BLOCKER 2 — a raw path/URL must never reach a non-technical user); the
   // fixed narration must show a basename instead ("Showed you
   // pricing-comparison.html").
-  part(
-    'show',
-    done(
-      { type: 'file', path: '/workspace/reports/pricing-comparison.html' },
-      '',
-    ),
-  ),
+  part('show', done({ type: 'file', path: '/workspace/reports/pricing-comparison.html' }, '')),
 
   // 7. Still going — the run isn't finished, so Progress shows the shimmer.
-  part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
+  part(
+    'bash',
+    running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' }),
+  ),
 ];
 
 const EASY_MESSAGES: MessageWithParts[] = [

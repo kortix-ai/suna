@@ -1,14 +1,8 @@
 'use client';
+import { BasicTool, partInput } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  BasicTool,
-  partInput,
-} from '@/features/session/tool/shared/infrastructure';
-import {
-  StopCircle,
-} from 'lucide-react';
-
+import { StopCircle } from 'lucide-react';
 
 export function AgentStopTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -44,4 +38,3 @@ function parseTaskRows(
   }
   return rows;
 }
-

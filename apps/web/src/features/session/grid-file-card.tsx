@@ -1,12 +1,8 @@
 'use client';
 
-import { cn } from '@/lib/utils';
 import { sandboxExplorerSource } from '@/features/files/sandbox-explorer-source';
-import {
-  FileExplorerSourceProvider,
-  FileThumbnail,
-  getFileIcon,
-} from '@/features/project-files';
+import { FileExplorerSourceProvider, FileThumbnail, getFileIcon } from '@/features/project-files';
+import { cn } from '@/lib/utils';
 
 interface GridFileCardProps {
   filePath: string;

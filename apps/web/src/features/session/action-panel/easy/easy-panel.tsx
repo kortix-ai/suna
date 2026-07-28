@@ -33,20 +33,20 @@ import {
   useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk';
+import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { FileText, Terminal as TerminalIcon } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
-import { clampIndex, type FollowMode } from '../shared/action-navigator-logic';
+import { type FollowMode, clampIndex } from '../shared/action-navigator-logic';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
-import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
+import { type OutputItem, deriveContext, deriveOutputs } from '../shared/derive-panels';
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
@@ -58,11 +58,12 @@ import {
   CloseButton,
   type Detail,
   DetailLayer,
-  terminalLayerMotion,
   ToolParts,
+  terminalLayerMotion,
 } from './detail-view';
 import {
   deriveIsRunning,
+  focusIndexForCall,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
@@ -70,7 +71,6 @@ import {
   quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
-  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
@@ -349,7 +349,7 @@ export const EasyPanel = memo(function EasyPanel({
       const present =
         output.kind === 'presentation' && output.presentationName
           ? () => {
-              const kortixMasterPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
+              const kortixMasterPort = Number.parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
               const sandboxBaseUrl = getServiceUrl(kortixMasterPort)?.replace(/\/+$/, '');
               if (!sandboxBaseUrl) return;
               track('present_opened');

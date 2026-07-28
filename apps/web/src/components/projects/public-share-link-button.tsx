@@ -4,17 +4,10 @@ import { useMutation } from '@tanstack/react-query';
 import { Link2, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  createSessionPublicShare,
-  type CreateSessionPublicShareInput,
-} from '@kortix/sdk';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { type CreateSessionPublicShareInput, createSessionPublicShare } from '@kortix/sdk';
 
 export function PublicShareLinkButton({
   projectId,

@@ -1,6 +1,6 @@
 'use client';
 
-import { createFilesStore, type FilesStoreApi } from '@/features/file-browser/store/files-store';
+import { type FilesStoreApi, createFilesStore } from '@/features/file-browser/store/files-store';
 
 const MAX_SESSION_FILE_STORES = 20;
 const stores = new Map<string, FilesStoreApi>();

@@ -15,7 +15,10 @@ export function companySlugFromId(marketplaceId: string): string {
 
 /** Decode a company path segment back to a marketplace id. */
 export function companyIdFromSlug(slug: string): string {
-  return slug.split(COMPANY_SEP).map((part) => decodeURIComponent(part)).join('/');
+  return slug
+    .split(COMPANY_SEP)
+    .map((part) => decodeURIComponent(part))
+    .join('/');
 }
 
 export interface ItemPathParts {

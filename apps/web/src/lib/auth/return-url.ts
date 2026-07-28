@@ -42,9 +42,15 @@ export function sanitizeAuthReturnUrl(
     return fallback;
   }
 
-  if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => {
-    return trimmedValue === prefix || trimmedValue.startsWith(`${prefix}/`) || trimmedValue.startsWith(`${prefix}?`);
-  })) {
+  if (
+    LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => {
+      return (
+        trimmedValue === prefix ||
+        trimmedValue.startsWith(`${prefix}/`) ||
+        trimmedValue.startsWith(`${prefix}?`)
+      );
+    })
+  ) {
     return fallback;
   }
 

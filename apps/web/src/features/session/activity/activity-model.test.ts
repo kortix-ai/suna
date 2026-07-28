@@ -99,14 +99,21 @@ describe('buildActivityItems — the regression', () => {
 
   test('real prose DOES split a run — narration is a paragraph break', () => {
     const items = buildActivityItems(
-      wrap([tool('bash'), tool('bash'), text('Now let me build the deck.'), tool('bash'), tool('bash')]),
+      wrap([
+        tool('bash'),
+        tool('bash'),
+        text('Now let me build the deck.'),
+        tool('bash'),
+        tool('bash'),
+      ]),
     );
     expect(items.map((i) => i.type)).toEqual(['group', 'text', 'group']);
   });
 });
 
 describe('buildActivityItems — density', () => {
-  const mixed = () => wrap([tool('read'), step('finish'), tool('bash'), tool('write'), tool('bash')]);
+  const mixed = () =>
+    wrap([tool('read'), step('finish'), tool('bash'), tool('write'), tool('bash')]);
 
   test('detailed groups only like with like', () => {
     const items = buildActivityItems(mixed(), { density: 'detailed' });
@@ -178,8 +185,12 @@ describe('summarizeItems', () => {
   });
 
   test('duration spans the whole run, not the sum of its parts', () => {
-    const a = tool('bash', { state: { status: 'completed', time: { start: 0, end: 5_000 } } } as Partial<ToolPart>);
-    const b = tool('bash', { state: { status: 'completed', time: { start: 4_000, end: 9_000 } } } as Partial<ToolPart>);
+    const a = tool('bash', {
+      state: { status: 'completed', time: { start: 0, end: 5_000 } },
+    } as Partial<ToolPart>);
+    const b = tool('bash', {
+      state: { status: 'completed', time: { start: 4_000, end: 9_000 } },
+    } as Partial<ToolPart>);
     const summary = summarizeItems(buildActivityItems(wrap([a, b])));
     expect(summary.durationMs).toBe(9_000);
   });
@@ -259,9 +270,12 @@ describe('partitionForNarrative — what the shipping default hides, and where',
 
   test('a FAILED step is never folded, and ends the run it interrupted', () => {
     const boom = tool('bash', { state: { status: 'error', error: 'boom' } } as Partial<ToolPart>);
-    const items = buildActivityItems(wrap([tool('bash'), text('x'), boom, text('y'), tool('bash')]), {
-      density: 'simple',
-    });
+    const items = buildActivityItems(
+      wrap([tool('bash'), text('x'), boom, text('y'), tool('bash')]),
+      {
+        density: 'simple',
+      },
+    );
     const fold = partitionForNarrative(items);
     const foldedIds = fold.runs.flatMap((r) => r.entries.map((e) => e.part.id));
     expect(foldedIds).not.toContain((boom as unknown as ToolPart).id);
@@ -269,10 +283,13 @@ describe('partitionForNarrative — what the shipping default hides, and where',
 
   test('a permission-locked step is never folded — approval must be legible', () => {
     const locked = tool('bash') as unknown as ToolPart;
-    const items = buildActivityItems(wrap([tool('bash'), locked as unknown as Part, tool('bash')]), {
-      density: 'simple',
-      lockedCallIds: new Set([locked.callID]),
-    });
+    const items = buildActivityItems(
+      wrap([tool('bash'), locked as unknown as Part, tool('bash')]),
+      {
+        density: 'simple',
+        lockedCallIds: new Set([locked.callID]),
+      },
+    );
     const fold = partitionForNarrative(items, new Set([locked.callID]));
     const foldedIds = fold.runs.flatMap((r) => r.entries.map((e) => e.part.id));
     expect(foldedIds).not.toContain(locked.id);
@@ -356,10 +373,9 @@ describe('partitionForNarrative — order is preserved', () => {
   });
 
   test('children and entries agree on the step count', () => {
-    const items = buildActivityItems(
-      wrap([reasoning('thinking'), tool('bash'), tool('bash')]),
-      { density: 'simple' },
-    );
+    const items = buildActivityItems(wrap([reasoning('thinking'), tool('bash'), tool('bash')]), {
+      density: 'simple',
+    });
     const run = partitionForNarrative(items).runs[0];
     expect(run.children.filter((c) => c.kind === 'step')).toHaveLength(run.entries.length);
   });

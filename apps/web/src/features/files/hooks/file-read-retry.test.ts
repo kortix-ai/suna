@@ -22,11 +22,7 @@ describe('file read retry policy', () => {
     expect(UPLOADED_FILE_READ_MAX_RETRIES).toBe(30);
     expect(shouldRetryFileRead('/workspace/uploads/report.pdf', 0, err)).toBe(true);
     expect(
-      shouldRetryFileRead(
-        '/workspace/uploads/report.pdf',
-        UPLOADED_FILE_READ_MAX_RETRIES - 1,
-        err,
-      ),
+      shouldRetryFileRead('/workspace/uploads/report.pdf', UPLOADED_FILE_READ_MAX_RETRIES - 1, err),
     ).toBe(true);
     expect(
       shouldRetryFileRead('/workspace/uploads/report.pdf', UPLOADED_FILE_READ_MAX_RETRIES, err),

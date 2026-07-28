@@ -12,9 +12,7 @@ mock.module('@kortix/sdk', () => ({
 }));
 
 mock.module('@/lib/marketplace-client', () => ({
-  listDefaultProjectMarketplaceItems: async () => [
-    { id: 'kortix-starter:agent-browser' },
-  ],
+  listDefaultProjectMarketplaceItems: async () => [{ id: 'kortix-starter:agent-browser' }],
 }));
 
 describe('ensureFirstProject provisioning', () => {
@@ -52,7 +50,9 @@ describe('isManagedGitUnavailableError', () => {
   test('true for the not-configured message with no status', async () => {
     const { isManagedGitUnavailableError } = await import('./ensure-first-project');
     expect(
-      isManagedGitUnavailableError(new Error('Managed git provider "github" is not configured on this server')),
+      isManagedGitUnavailableError(
+        new Error('Managed git provider "github" is not configured on this server'),
+      ),
     ).toBe(true);
   });
 

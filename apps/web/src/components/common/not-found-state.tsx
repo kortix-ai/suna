@@ -2,9 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import Link from 'next/link';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 import { motion } from 'motion/react';
+import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 
@@ -68,9 +68,7 @@ export function NotFoundCard({
       </h1>
       <p className="px-2 text-sm leading-relaxed text-foreground/60 sm:text-base">
         {description ??
-          tHardcodedUi.raw(
-            'appNotFound.line70JsxTextThePageYouAposReLookingForDoesn',
-          )}
+          tHardcodedUi.raw('appNotFound.line70JsxTextThePageYouAposReLookingForDoesn')}
       </p>
 
       <div className="mt-1 flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-center">

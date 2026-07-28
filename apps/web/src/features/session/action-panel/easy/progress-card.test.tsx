@@ -51,7 +51,13 @@ describe('ProgressCard — settled outcomes', () => {
 
   test('failed run says so, never a bare step count', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard steps={steps} isRunning={false} elapsedMs={5000} outcome="failed" waitingOnUser={false} />,
+      <ProgressCard
+        steps={steps}
+        isRunning={false}
+        elapsedMs={5000}
+        outcome="failed"
+        waitingOnUser={false}
+      />,
     );
     expect(html).toContain('Something went wrong');
     expect(html).not.toContain('Done ·');
@@ -59,7 +65,13 @@ describe('ProgressCard — settled outcomes', () => {
 
   test('user-stopped run says so', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard steps={steps} isRunning={false} elapsedMs={5000} outcome="stopped" waitingOnUser={false} />,
+      <ProgressCard
+        steps={steps}
+        isRunning={false}
+        elapsedMs={5000}
+        outcome="stopped"
+        waitingOnUser={false}
+      />,
     );
     expect(html).toContain('Stopped by you');
   });
@@ -133,7 +145,9 @@ describe('ProgressCard — expanded rows', () => {
     // header (before `<ul`) also narrates the current/last step, so the check
     // has to look past it rather than at the raw document order.
     const body = html.slice(html.indexOf('<ul'));
-    expect(body.indexOf('Read the brief')).toBeLessThan(body.indexOf('The sandbox connection failed'));
+    expect(body.indexOf('Read the brief')).toBeLessThan(
+      body.indexOf('The sandbox connection failed'),
+    );
   });
 
   test('a running row has no duration next to it', () => {

@@ -3,11 +3,11 @@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   BasicTool,
+  ToolOutputFallback,
   looksLikeError,
   partInput,
   partOutput,
   partStatus,
-  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';

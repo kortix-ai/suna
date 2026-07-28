@@ -1,7 +1,4 @@
-import type {
-  AttachedFile,
-  TrackedMention,
-} from '@/features/session/session-chat-input';
+import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { create } from 'zustand';
 
 interface PendingFilesState {
@@ -29,11 +26,7 @@ export interface PendingQueuedMessage {
 
 interface PendingQueueState {
   messages: PendingQueuedMessage[];
-  queueMessage: (
-    text: string,
-    files?: AttachedFile[],
-    mentions?: TrackedMention[],
-  ) => void;
+  queueMessage: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   removeMessage: (id: string) => void;
   consumePendingQueue: () => PendingQueuedMessage[];
 }

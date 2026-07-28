@@ -17,6 +17,7 @@ import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  type AccountState,
   cancelScheduledChange,
   cancelSubscription,
   claimPerSeatBilling,
@@ -29,7 +30,6 @@ import {
   reactivateSubscription,
   scheduleDowngrade,
   syncSubscription,
-  type AccountState,
 } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
 
@@ -223,7 +223,7 @@ export function useAccountState(options?: UseAccountStateOptions) {
  * Account state with periodic refresh during streaming.
  * Use this in components that display credits during agent runs.
  */
-export function useAccountStateWithStreaming(isStreaming: boolean = false) {
+export function useAccountStateWithStreaming(isStreaming = false) {
   // Inherit the BillingAccountProvider if one is wrapping us — keeps the
   // streaming variant aligned with the static one on /accounts/[id].
   const accountId = useBillingAccountId();

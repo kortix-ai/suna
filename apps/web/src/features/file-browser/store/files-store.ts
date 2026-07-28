@@ -1,8 +1,8 @@
 'use client';
 
-import { createContext, createElement, useContext, useRef, type ReactNode } from 'react';
+import { type ReactNode, createContext, createElement, useContext, useRef } from 'react';
 import { useStore } from 'zustand';
-import { createStore, type StoreApi } from 'zustand/vanilla';
+import { type StoreApi, createStore } from 'zustand/vanilla';
 
 export type FilesView = 'browser' | 'viewer' | 'history';
 export type ViewMode = 'grid' | 'list';
@@ -173,9 +173,17 @@ const initialState: FilesStoreState = {
   targetLine: null,
   showHidden: false,
   rootPath: null,
-  viewMode: (typeof window !== 'undefined' ? localStorage.getItem('files-view-mode') as ViewMode : null) || 'grid',
-  sortBy: (typeof window !== 'undefined' ? localStorage.getItem('files-sort-by') as SortField : null) || 'name',
-  sortOrder: (typeof window !== 'undefined' ? localStorage.getItem('files-sort-order') as SortOrder : null) || 'asc',
+  viewMode:
+    (typeof window !== 'undefined'
+      ? (localStorage.getItem('files-view-mode') as ViewMode)
+      : null) || 'grid',
+  sortBy:
+    (typeof window !== 'undefined' ? (localStorage.getItem('files-sort-by') as SortField) : null) ||
+    'name',
+  sortOrder:
+    (typeof window !== 'undefined'
+      ? (localStorage.getItem('files-sort-order') as SortOrder)
+      : null) || 'asc',
   expandedDirs: new Set(['/workspace']),
   isSidebarCollapsed: false,
   panelMode: 'welcome',
@@ -185,263 +193,273 @@ export function createFilesStore(): FilesStoreApi {
   return createStore<FilesStore>()((set, get) => ({
     ...initialState,
 
-  navigateToPath: (path: string) => {
-    const { rootPath } = get();
-    let normalized = path || '/workspace';
-    // Clamp to rootPath when set — prevent escaping the project directory
-    if (rootPath && !isWithinRoot(normalized, rootPath)) {
-      normalized = rootPath;
-    }
-    set({
-      currentPath: normalized,
-      view: 'browser',
-      selectedFilePath: null,
-      panelMode: 'welcome',
-    });
-    // Auto-expand the target directory in tree (skip for root /)
-    if (normalized !== '/') get().expandDir(normalized);
-  },
-
-  setRootPath: (path: string | null) => {
-    set({ rootPath: path });
-  },
-
-  openFile: (filePath: string, targetLine?: number) => {
-    // Don't change currentPath - keep user in their current folder
-    // Just open the file in viewer and reveal it in the tree
-
-    set({
-      selectedFilePath: filePath,
-      view: 'viewer',
-      panelMode: 'viewer',
-      filePathList: [filePath],
-      currentFileIndex: 0,
-      isSearchOpen: false,
-      targetLine: targetLine ?? null,
-      // REMOVED: currentPath: parentDir - don't jump to file's folder
-    });
-    // Reveal the file in the tree
-    get().revealPath(filePath);
-  },
-
-  clearTargetLine: () => {
-    set({ targetLine: null });
-  },
-
-  openFileWithList: (filePath: string, fileList: string[], index: number) => {
-    // Don't change currentPath - keep user in their current folder
-
-    set({
-      selectedFilePath: filePath,
-      view: 'viewer',
-      panelMode: 'viewer',
-      filePathList: fileList,
-      currentFileIndex: index,
-      isSearchOpen: false,
-      // REMOVED: currentPath: parentDir - don't jump to file's folder
-    });
-    get().revealPath(filePath);
-  },
-
-  goBackToBrowser: () => {
-    set({
-      view: 'browser',
-      panelMode: 'welcome',
-      selectedFilePath: null,
-    });
-  },
-
-  nextFile: () => {
-    const { filePathList, currentFileIndex } = get();
-    if (currentFileIndex < filePathList.length - 1) {
-      const nextIndex = currentFileIndex + 1;
+    navigateToPath: (path: string) => {
+      const { rootPath } = get();
+      let normalized = path || '/workspace';
+      // Clamp to rootPath when set — prevent escaping the project directory
+      if (rootPath && !isWithinRoot(normalized, rootPath)) {
+        normalized = rootPath;
+      }
       set({
-        currentFileIndex: nextIndex,
-        selectedFilePath: filePathList[nextIndex],
+        currentPath: normalized,
+        view: 'browser',
+        selectedFilePath: null,
+        panelMode: 'welcome',
       });
-    }
-  },
+      // Auto-expand the target directory in tree (skip for root /)
+      if (normalized !== '/') get().expandDir(normalized);
+    },
 
-  prevFile: () => {
-    const { filePathList, currentFileIndex } = get();
-    if (currentFileIndex > 0) {
-      const prevIndex = currentFileIndex - 1;
+    setRootPath: (path: string | null) => {
+      set({ rootPath: path });
+    },
+
+    openFile: (filePath: string, targetLine?: number) => {
+      // Don't change currentPath - keep user in their current folder
+      // Just open the file in viewer and reveal it in the tree
+
       set({
-        currentFileIndex: prevIndex,
-        selectedFilePath: filePathList[prevIndex],
+        selectedFilePath: filePath,
+        view: 'viewer',
+        panelMode: 'viewer',
+        filePathList: [filePath],
+        currentFileIndex: 0,
+        isSearchOpen: false,
+        targetLine: targetLine ?? null,
+        // REMOVED: currentPath: parentDir - don't jump to file's folder
       });
-    }
-  },
+      // Reveal the file in the tree
+      get().revealPath(filePath);
+    },
 
-  toggleSearch: () => {
-    set((s) => ({ isSearchOpen: !s.isSearchOpen }));
-  },
+    clearTargetLine: () => {
+      set({ targetLine: null });
+    },
 
-  closeSearch: () => {
-    set({ isSearchOpen: false });
-  },
+    openFileWithList: (filePath: string, fileList: string[], index: number) => {
+      // Don't change currentPath - keep user in their current folder
 
-  setUnsavedContent: (filePath: string, content: string) => {
-    set((state) => ({
-      unsavedFileContent: {
-        ...state.unsavedFileContent,
-        [filePath]: content,
-      },
-    }));
-  },
+      set({
+        selectedFilePath: filePath,
+        view: 'viewer',
+        panelMode: 'viewer',
+        filePathList: fileList,
+        currentFileIndex: index,
+        isSearchOpen: false,
+        // REMOVED: currentPath: parentDir - don't jump to file's folder
+      });
+      get().revealPath(filePath);
+    },
 
-  getUnsavedContent: (filePath: string) => {
-    return get().unsavedFileContent[filePath];
-  },
+    goBackToBrowser: () => {
+      set({
+        view: 'browser',
+        panelMode: 'welcome',
+        selectedFilePath: null,
+      });
+    },
 
-  clearUnsavedContent: (filePath: string) => {
-    set((state) => {
-      const { [filePath]: _, ...restContent } = state.unsavedFileContent;
-      const { [filePath]: __, ...restState } = state.unsavedFileState;
-      return {
-        unsavedFileContent: restContent,
-        unsavedFileState: restState,
-      };
-    });
-  },
+    nextFile: () => {
+      const { filePathList, currentFileIndex } = get();
+      if (currentFileIndex < filePathList.length - 1) {
+        const nextIndex = currentFileIndex + 1;
+        set({
+          currentFileIndex: nextIndex,
+          selectedFilePath: filePathList[nextIndex],
+        });
+      }
+    },
 
-  setUnsavedState: (filePath: string, hasUnsaved: boolean) => {
-    set((state) => ({
-      unsavedFileState: {
-        ...state.unsavedFileState,
-        [filePath]: hasUnsaved,
-      },
-    }));
-  },
+    prevFile: () => {
+      const { filePathList, currentFileIndex } = get();
+      if (currentFileIndex > 0) {
+        const prevIndex = currentFileIndex - 1;
+        set({
+          currentFileIndex: prevIndex,
+          selectedFilePath: filePathList[prevIndex],
+        });
+      }
+    },
 
-  getUnsavedState: (filePath: string) => {
-    return get().unsavedFileState[filePath] ?? false;
-  },
+    toggleSearch: () => {
+      set((s) => ({ isSearchOpen: !s.isSearchOpen }));
+    },
 
-  openHistory: (filePath: string) => {
-    set({
-      view: 'history',
-      panelMode: 'history',
-      historyFilePath: filePath,
-      selectedCommitHash: null,
-      isSearchOpen: false,
-    });
-  },
+    closeSearch: () => {
+      set({ isSearchOpen: false });
+    },
 
-  selectCommit: (commitHash: string | null) => {
-    set({ selectedCommitHash: commitHash });
-  },
+    setUnsavedContent: (filePath: string, content: string) => {
+      set((state) => ({
+        unsavedFileContent: {
+          ...state.unsavedFileContent,
+          [filePath]: content,
+        },
+      }));
+    },
 
-  closeHistory: () => {
-    const { selectedFilePath } = get();
-    set({
-      view: selectedFilePath ? 'viewer' : 'browser',
-      panelMode: selectedFilePath ? 'viewer' : 'welcome',
-      historyFilePath: null,
-      selectedCommitHash: null,
-    });
-  },
+    getUnsavedContent: (filePath: string) => {
+      return get().unsavedFileContent[filePath];
+    },
 
-  copyToClipboard: (path, name, type) => {
-    set({ clipboard: { path, name, type, operation: 'copy' } });
-  },
+    clearUnsavedContent: (filePath: string) => {
+      set((state) => {
+        const { [filePath]: _, ...restContent } = state.unsavedFileContent;
+        const { [filePath]: __, ...restState } = state.unsavedFileState;
+        return {
+          unsavedFileContent: restContent,
+          unsavedFileState: restState,
+        };
+      });
+    },
 
-  cutToClipboard: (path, name, type) => {
-    set({ clipboard: { path, name, type, operation: 'cut' } });
-  },
+    setUnsavedState: (filePath: string, hasUnsaved: boolean) => {
+      set((state) => ({
+        unsavedFileState: {
+          ...state.unsavedFileState,
+          [filePath]: hasUnsaved,
+        },
+      }));
+    },
 
-  clearClipboard: () => {
-    set({ clipboard: null });
-  },
+    getUnsavedState: (filePath: string) => {
+      return get().unsavedFileState[filePath] ?? false;
+    },
 
-  reset: () => {
-    set(initialState);
-  },
+    openHistory: (filePath: string) => {
+      set({
+        view: 'history',
+        panelMode: 'history',
+        historyFilePath: filePath,
+        selectedCommitHash: null,
+        isSearchOpen: false,
+      });
+    },
 
-  // ── Explorer tree actions ────────────────────────────────────
+    selectCommit: (commitHash: string | null) => {
+      set({ selectedCommitHash: commitHash });
+    },
 
-  toggleDir: (path: string) => {
-    set((state) => {
-      const next = new Set(state.expandedDirs);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
+    closeHistory: () => {
+      const { selectedFilePath } = get();
+      set({
+        view: selectedFilePath ? 'viewer' : 'browser',
+        panelMode: selectedFilePath ? 'viewer' : 'welcome',
+        historyFilePath: null,
+        selectedCommitHash: null,
+      });
+    },
+
+    copyToClipboard: (path, name, type) => {
+      set({ clipboard: { path, name, type, operation: 'copy' } });
+    },
+
+    cutToClipboard: (path, name, type) => {
+      set({ clipboard: { path, name, type, operation: 'cut' } });
+    },
+
+    clearClipboard: () => {
+      set({ clipboard: null });
+    },
+
+    reset: () => {
+      set(initialState);
+    },
+
+    // ── Explorer tree actions ────────────────────────────────────
+
+    toggleDir: (path: string) => {
+      set((state) => {
+        const next = new Set(state.expandedDirs);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        return { expandedDirs: next };
+      });
+    },
+
+    expandDir: (path: string) => {
+      set((state) => {
+        if (state.expandedDirs.has(path)) return state;
+        const next = new Set(state.expandedDirs);
         next.add(path);
-      }
-      return { expandedDirs: next };
-    });
-  },
+        return { expandedDirs: next };
+      });
+    },
 
-  expandDir: (path: string) => {
-    set((state) => {
-      if (state.expandedDirs.has(path)) return state;
-      const next = new Set(state.expandedDirs);
-      next.add(path);
-      return { expandedDirs: next };
-    });
-  },
+    collapseDir: (path: string) => {
+      set((state) => {
+        if (!state.expandedDirs.has(path)) return state;
+        const next = new Set(state.expandedDirs);
+        next.delete(path);
+        return { expandedDirs: next };
+      });
+    },
 
-  collapseDir: (path: string) => {
-    set((state) => {
-      if (!state.expandedDirs.has(path)) return state;
-      const next = new Set(state.expandedDirs);
-      next.delete(path);
-      return { expandedDirs: next };
-    });
-  },
+    revealPath: (filePath: string) => {
+      set((state) => {
+        const next = new Set(state.expandedDirs);
+        const parts = filePath.split('/');
+        // Build ancestor paths and expand each
+        for (let i = 1; i < parts.length; i++) {
+          const ancestor = parts.slice(0, i).join('/');
+          if (ancestor) next.add(ancestor);
+        }
+        return { expandedDirs: next };
+      });
+    },
 
-  revealPath: (filePath: string) => {
-    set((state) => {
-      const next = new Set(state.expandedDirs);
-      const parts = filePath.split('/');
-      // Build ancestor paths and expand each
-      for (let i = 1; i < parts.length; i++) {
-        const ancestor = parts.slice(0, i).join('/');
-        if (ancestor) next.add(ancestor);
-      }
-      return { expandedDirs: next };
-    });
-  },
+    toggleSidebar: () => {
+      set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed }));
+    },
 
-  toggleSidebar: () => {
-    set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed }));
-  },
+    setSidebarCollapsed: (collapsed: boolean) => {
+      set({ isSidebarCollapsed: collapsed });
+    },
 
-  setSidebarCollapsed: (collapsed: boolean) => {
-    set({ isSidebarCollapsed: collapsed });
-  },
+    toggleHidden: () => {
+      set((s) => ({ showHidden: !s.showHidden }));
+    },
 
-  toggleHidden: () => {
-    set((s) => ({ showHidden: !s.showHidden }));
-  },
+    // ── Google Drive view actions ────────────────────────────────
 
-  // ── Google Drive view actions ────────────────────────────────
+    setViewMode: (mode: ViewMode) => {
+      set({ viewMode: mode });
+      try {
+        localStorage.setItem('files-view-mode', mode);
+      } catch {}
+    },
 
-  setViewMode: (mode: ViewMode) => {
-    set({ viewMode: mode });
-    try { localStorage.setItem('files-view-mode', mode); } catch {}
-  },
+    toggleViewMode: () => {
+      const next = get().viewMode === 'grid' ? 'list' : 'grid';
+      set({ viewMode: next });
+      try {
+        localStorage.setItem('files-view-mode', next);
+      } catch {}
+    },
 
-  toggleViewMode: () => {
-    const next = get().viewMode === 'grid' ? 'list' : 'grid';
-    set({ viewMode: next });
-    try { localStorage.setItem('files-view-mode', next); } catch {}
-  },
+    setSortBy: (field: SortField) => {
+      set({ sortBy: field });
+      try {
+        localStorage.setItem('files-sort-by', field);
+      } catch {}
+    },
 
-  setSortBy: (field: SortField) => {
-    set({ sortBy: field });
-    try { localStorage.setItem('files-sort-by', field); } catch {}
-  },
-
-  setSortOrder: (order: SortOrder) => {
-    set({ sortOrder: order });
-    try { localStorage.setItem('files-sort-order', order); } catch {}
-  },
+    setSortOrder: (order: SortOrder) => {
+      set({ sortOrder: order });
+      try {
+        localStorage.setItem('files-sort-order', order);
+      } catch {}
+    },
 
     toggleSortOrder: () => {
       const next = get().sortOrder === 'asc' ? 'desc' : 'asc';
       set({ sortOrder: next });
-      try { localStorage.setItem('files-sort-order', next); } catch {}
+      try {
+        localStorage.setItem('files-sort-order', next);
+      } catch {}
     },
   }));
 }

@@ -190,7 +190,9 @@ export default function CreditTransactions({ accountId }: Props) {
                   <TableHead>Type</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead className="text-center">
-                    {tHardcodedUi.raw('componentsBillingCreditTransactions.line198JsxTextCreditType')}
+                    {tHardcodedUi.raw(
+                      'componentsBillingCreditTransactions.line198JsxTextCreditType',
+                    )}
                   </TableHead>
                   <TableHead className="text-right">Credits</TableHead>
                   <TableHead className="text-right">
@@ -236,7 +238,12 @@ export default function CreditTransactions({ accountId }: Props) {
                 {data.pagination.total} transactions
               </p>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={offset === 0}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrevPage}
+                  disabled={offset === 0}
+                >
                   Previous
                 </Button>
                 <Button

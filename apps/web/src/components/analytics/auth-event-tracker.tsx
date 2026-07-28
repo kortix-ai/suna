@@ -1,8 +1,8 @@
 'use client';
 
+import { type AuthMethod, trackLogin, trackSignUp } from '@/lib/analytics/gtm';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { trackSignUp, trackLogin, AuthMethod } from '@/lib/analytics/gtm';
 
 /**
  * Tracks auth events (sign_up, login) from URL parameters
@@ -19,10 +19,14 @@ export function AuthEventTracker() {
 
     if (authEvent && authMethod) {
       // Map provider to AuthMethod format
-      const method: AuthMethod = 
-        authMethod === 'google' ? 'Google' :
-        authMethod === 'apple' ? 'Apple' :
-        authMethod === 'github' ? 'GitHub' : 'Email';
+      const method: AuthMethod =
+        authMethod === 'google'
+          ? 'Google'
+          : authMethod === 'apple'
+            ? 'Apple'
+            : authMethod === 'github'
+              ? 'GitHub'
+              : 'Email';
 
       if (authEvent === 'signup') {
         trackSignUp(method);
@@ -34,11 +38,9 @@ export function AuthEventTracker() {
       const params = new URLSearchParams(searchParams?.toString() || '');
       params.delete('auth_event');
       params.delete('auth_method');
-      
-      const newUrl = params.toString() 
-        ? `${pathname}?${params.toString()}`
-        : pathname;
-      
+
+      const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+
       // Replace URL without triggering navigation
       window.history.replaceState({}, '', newUrl);
     }
@@ -46,4 +48,3 @@ export function AuthEventTracker() {
 
   return null;
 }
-

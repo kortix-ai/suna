@@ -125,9 +125,7 @@ export function SendStopControl({
                       : !canSubmit || submitDisabled
                   }
                   onClick={onSubmit}
-                  aria-label={
-                    modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
-                  }
+                  aria-label={modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'}
                   className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                 >
                   {disabled ? (

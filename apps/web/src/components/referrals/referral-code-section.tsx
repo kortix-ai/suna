@@ -2,11 +2,11 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Copy, Share2, Check } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/lib/toast';
 import { copyToClipboard } from '@/lib/utils/clipboard';
+import { Check, Copy, Share2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
 
 interface ReferralCodeSectionProps {
@@ -72,7 +72,8 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Input type="text"
+            <Input
+              type="text"
               value={referralCode?.referral_url || ''}
               readOnly
               className="text-xs sm:text-sm font-mono pr-10"
@@ -81,11 +82,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => handleCopy(referralCode?.referral_url || '')}
             >
-              {copiedLink ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
+              {copiedLink ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </div>
           </div>
           <Button

@@ -39,7 +39,7 @@ describe('content', () => {
     expect(html).toContain('Reusable capabilities and slash commands your agents can call.');
   });
 
-  test('keeps the two-column card grid from perplexity/08-skills-list.png', () => {
+  test('keeps the two-column card grid from the design references', () => {
     expect(html).toContain('sm:grid-cols-2');
   });
 });

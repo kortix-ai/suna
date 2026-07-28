@@ -127,9 +127,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                           value={report.prompt}
                         />
                       )}
-                      {report.session && (
-                        <ToolField label="Session" value={report.session} mono />
-                      )}
+                      {report.session && <ToolField label="Session" value={report.session} mono />}
                     </div>
                     {report.filesRead.length > 0 && (
                       <ToolSection

@@ -1,9 +1,9 @@
 'use client';
 
-import * as React from 'react';
-import { Search, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { Search, X } from 'lucide-react';
+import * as React from 'react';
 
 /**
  * Standardized search bar for page-level search/filter.

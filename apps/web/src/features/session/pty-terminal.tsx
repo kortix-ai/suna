@@ -1,14 +1,14 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState, useImperativeHandle, forwardRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Terminal as XTerm, ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { type ITheme, Terminal as XTerm } from '@xterm/xterm';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import '@xterm/xterm/css/xterm.css';
-import { getPtyWebSocketUrl, useUpdatePty } from '@kortix/sdk/react';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import type { Pty } from '@kortix/sdk';
+import { getPtyWebSocketUrl, useUpdatePty } from '@kortix/sdk/react';
 import { classifyPtyClose, shouldExpirePtyConnect } from './pty-connection';
 
 // ============================================================================
@@ -82,21 +82,23 @@ function safeFit(fitAddon: FitAddon | null, container: HTMLDivElement | null) {
 }
 
 function sanitizeTerminalChunk(chunk: string): string {
-  return chunk
-    // Cursor shell integration sometimes emits OSC 697 payloads.
-    // If an upstream proxy strips control bytes, only JSON remains visible.
-    .replace(/\x1b]697;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\{"cursor":\d+\}/g, '')
-    // Terminal capability-query *responses* that occasionally get echoed back
-    // into the output stream (e.g. when a prior client answered a query at an
-    // idle prompt): OSC color reports, DECRQM mode status, cursor-position and
-    // device-attribute reports. They render as garbage like
-    // `10;rgb:..`, `2004;2$y`, `R` — strip them so they never show.
-    .replace(/\x1b\][0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\]4;[0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[\??[0-9;]*\$y/g, '')
-    .replace(/\x1b\[\d+;\d+R/g, '')
-    .replace(/\x1b\[\?[0-9;]*c/g, '');
+  return (
+    chunk
+      // Cursor shell integration sometimes emits OSC 697 payloads.
+      // If an upstream proxy strips control bytes, only JSON remains visible.
+      .replace(/\x1b]697;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+      .replace(/\{"cursor":\d+\}/g, '')
+      // Terminal capability-query *responses* that occasionally get echoed back
+      // into the output stream (e.g. when a prior client answered a query at an
+      // idle prompt): OSC color reports, DECRQM mode status, cursor-position and
+      // device-attribute reports. They render as garbage like
+      // `10;rgb:..`, `2004;2$y`, `R` — strip them so they never show.
+      .replace(/\x1b\][0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
+      .replace(/\x1b\]4;[0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
+      .replace(/\x1b\[\??[0-9;]*\$y/g, '')
+      .replace(/\x1b\[\d+;\d+R/g, '')
+      .replace(/\x1b\[\?[0-9;]*c/g, '')
+  );
 }
 
 // Responses xterm auto-generates when something queries terminal capabilities:
@@ -117,14 +119,10 @@ function isTerminalReport(data: string): boolean {
 
 let globalPtyConnectionId = 0;
 
-export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(function PtyTerminal({
-  pty,
-  className,
-  hidden,
-  serverUrl,
-  onStatusChange,
-  onUnavailable,
-}, ref) {
+export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(function PtyTerminal(
+  { pty, className, hidden, serverUrl, onStatusChange, onUnavailable },
+  ref,
+) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -143,10 +141,13 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const updatePty = useUpdatePty({ serverUrl, onError: () => {} });
 
-  const updateStatus = useCallback((s: ConnectionStatus) => {
-    setStatus(s);
-    onStatusChange?.(s);
-  }, [onStatusChange]);
+  const updateStatus = useCallback(
+    (s: ConnectionStatus) => {
+      setStatus(s);
+      onStatusChange?.(s);
+    },
+    [onStatusChange],
+  );
 
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -183,7 +184,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       wsRef.current.onmessage = null;
       wsRef.current.onerror = null;
       wsRef.current.onclose = null;
-      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+      if (
+        wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING
+      ) {
         wsRef.current.close();
       }
       wsRef.current = null;
@@ -191,12 +195,15 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   }, []);
 
   // Send resize to server via HTTP PATCH
-  const sendResize = useCallback((cols: number, rows: number) => {
-    if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
-    resizeTimeoutRef.current = setTimeout(() => {
-      updatePty.mutate({ id: pty.id, size: { rows, cols } });
-    }, 100);
-  }, [pty.id, updatePty]);
+  const sendResize = useCallback(
+    (cols: number, rows: number) => {
+      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+      resizeTimeoutRef.current = setTimeout(() => {
+        updatePty.mutate({ id: pty.id, size: { rows, cols } });
+      }, 100);
+    },
+    [pty.id, updatePty],
+  );
 
   // Initialize xterm + connect WebSocket (all in one effect to avoid stale closures)
   useEffect(() => {
@@ -392,7 +399,9 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         });
 
         if (!hadErrorRef.current) {
-          term.writeln(`\r\n\x1b[33mConnection closed${event.code ? ` (${event.code})` : ''}${event.reason ? ': ' + event.reason : ''}\x1b[0m`);
+          term.writeln(
+            `\r\n\x1b[33mConnection closed${event.code ? ` (${event.code})` : ''}${event.reason ? ': ' + event.reason : ''}\x1b[0m`,
+          );
         }
 
         if (action === 'replace') {

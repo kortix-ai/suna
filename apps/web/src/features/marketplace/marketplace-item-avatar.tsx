@@ -12,6 +12,7 @@ import {
   Globe,
   Layers,
   Lightbulb,
+  type LucideIcon,
   PenTool,
   Puzzle,
   Rocket,
@@ -20,7 +21,6 @@ import {
   Wand2,
   Wrench,
   Zap,
-  type LucideIcon,
 } from 'lucide-react';
 
 import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';

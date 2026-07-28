@@ -1,5 +1,5 @@
-import * as React from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { type VariantProps, cva } from 'class-variance-authority';
+import type * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -27,13 +27,7 @@ function Tag({
   variant,
   ...props
 }: React.ComponentProps<'span'> & VariantProps<typeof tagVariants>) {
-  return (
-    <span
-      data-slot="tag"
-      className={cn(tagVariants({ variant }), className)}
-      {...props}
-    />
-  );
+  return <span data-slot="tag" className={cn(tagVariants({ variant }), className)} {...props} />;
 }
 
 export { Tag, tagVariants };

@@ -4,8 +4,6 @@ interface HelpLayoutProps {
   children: React.ReactNode;
 }
 
-export default function HelpLayout({
-  children,
-}: HelpLayoutProps) {
+export default function HelpLayout({ children }: HelpLayoutProps) {
   return <HelpLayoutClient>{children}</HelpLayoutClient>;
 }

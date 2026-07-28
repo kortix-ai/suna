@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import type { FileCommitDiff, FileHistoryResult } from '@/features/file-browser/types';
 import { useRuntimeStore } from '@kortix/sdk/react';
-import { getFileHistory, getFileCommitDiff, getFileAtCommit } from '../api/git-history';
-import type { FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
+import { useQuery } from '@tanstack/react-query';
+import { getFileAtCommit, getFileCommitDiff, getFileHistory } from '../api/git-history';
 
 export const fileHistoryKeys = {
   all: ['runtime-files', 'history'] as const,
@@ -36,9 +36,7 @@ export function useFileHistory(
   const skip = options?.skip ?? 0;
 
   return useQuery<FileHistoryResult>({
-    queryKey: filePath
-      ? fileHistoryKeys.filePaged(serverUrl, filePath, skip, limit)
-      : [],
+    queryKey: filePath ? fileHistoryKeys.filePaged(serverUrl, filePath, skip, limit) : [],
     queryFn: () => getFileHistory(filePath!, limit, skip),
     enabled: !!filePath && options?.enabled !== false,
     staleTime: 30_000,
@@ -72,9 +70,7 @@ export function useFileCommitDiff(
 
   return useQuery<FileCommitDiff>({
     queryKey:
-      filePath && commitHash
-        ? fileHistoryKeys.commitDiff(serverUrl, filePath, commitHash)
-        : [],
+      filePath && commitHash ? fileHistoryKeys.commitDiff(serverUrl, filePath, commitHash) : [],
     queryFn: () => getFileCommitDiff(filePath!, commitHash!),
     enabled: !!filePath && !!commitHash && options?.enabled !== false,
     staleTime: 5 * 60_000, // Commit diffs are immutable
@@ -95,12 +91,10 @@ export function useFileAtCommit(
 
   return useQuery<string>({
     queryKey:
-      filePath && commitHash
-        ? fileHistoryKeys.fileAtCommit(serverUrl, filePath, commitHash)
-        : [],
+      filePath && commitHash ? fileHistoryKeys.fileAtCommit(serverUrl, filePath, commitHash) : [],
     queryFn: () => getFileAtCommit(filePath!, commitHash!),
     enabled: !!filePath && !!commitHash && options?.enabled !== false,
-    staleTime: Infinity, // File content at a commit never changes
+    staleTime: Number.POSITIVE_INFINITY, // File content at a commit never changes
     gcTime: 10 * 60_000,
     refetchOnWindowFocus: false,
   });

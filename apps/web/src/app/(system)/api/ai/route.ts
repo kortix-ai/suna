@@ -1,7 +1,7 @@
 import {
+  type PublicContentKind,
   absoluteUrl,
   getPublicContentRecords,
-  type PublicContentKind,
 } from '@/lib/seo/public-content';
 import { consumeAiIndexRateLimit } from '@/lib/seo/rate-limit';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react';
 import type { DemoScenario } from '../types';
 import { matchScenario } from './scenarios';
 

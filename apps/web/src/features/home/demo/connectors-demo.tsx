@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * Connectors, signed out — ux-references/perplexity/06-connectors-list.png.
+ * Connectors, signed out.
  *
- * Perplexity serves its connector catalogue to anonymous visitors. Ours is
+ * A public catalogue would serve anonymous visitors. Ours is
  * project-scoped: `listDiscoverIntegrations` and `listPipedreamApps` both hit
  * `/executor/projects/:projectId/…` and answer 401 with no session. So this
  * renders the same ProjectSectionPage over a CURATED STATIC list instead —

@@ -43,9 +43,9 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import {
+  type TunnelConnection,
   useDeleteTunnelConnection,
   useTunnelConnections,
-  type TunnelConnection,
 } from '@/hooks/tunnel/use-tunnel';
 import { useTunnelRealtimeSync } from '@/hooks/tunnel/use-tunnel-realtime';
 import { useCopy } from '@/hooks/use-copy';

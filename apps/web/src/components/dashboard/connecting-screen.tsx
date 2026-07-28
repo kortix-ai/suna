@@ -2,27 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { AlertCircle, ArrowLeft, ArrowLeftRight, Power, RefreshCw, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import {
-  AlertCircle,
-  ArrowLeft,
-  ArrowLeftRight,
-  Power,
-  RefreshCw,
-  WifiOff,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
-import {
-  STAGE_LABELS,
-  type ProvisioningStageInfo,
-} from '@/lib/provisioning-stages';
+import { type ProvisioningStageInfo, STAGE_LABELS } from '@/lib/provisioning-stages';
 import { type SandboxRecoveryPhase, useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 /**
@@ -99,10 +85,7 @@ export function ConnectingScreen({
   if (stopped) {
     return (
       <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
-        <StoppedView
-          label={stopped.name || labelOverride || serverLabel}
-          onBack={handleSwitch}
-        />
+        <StoppedView label={stopped.name || labelOverride || serverLabel} onBack={handleSwitch} />
       </FullScreenShell>
     );
   }
@@ -129,19 +112,12 @@ export function ConnectingScreen({
   if (!forceConnecting && status === 'connected' && healthy !== false) return null;
 
   const isMidSessionDrop =
-    !forceConnecting &&
-    wasConnected &&
-    initialCheckDone &&
-    status !== 'connected';
+    !forceConnecting && wasConnected && initialCheckDone && status !== 'connected';
 
   if (isMidSessionDrop) {
     return (
       <>
-        <ReconnectPill
-          status={status}
-          disconnectedAt={disconnectedAt}
-          onSwitch={handleSwitch}
-        />
+        <ReconnectPill status={status} disconnectedAt={disconnectedAt} onSwitch={handleSwitch} />
       </>
     );
   }
@@ -150,7 +126,9 @@ export function ConnectingScreen({
     return (
       <>
         <HealthPill
-          title={tHardcodedUi.raw('componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded')}
+          title={tHardcodedUi.raw(
+            'componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded',
+          )}
           detail={runtimeSummary}
           onSwitch={handleSwitch}
         />
@@ -177,13 +155,7 @@ export function ConnectingScreen({
     );
   }
 
-  return (
-    <CompactConnectingSignal
-      title={title}
-      overrideStage={overrideStage}
-      minimal={minimal}
-    />
-  );
+  return <CompactConnectingSignal title={title} overrideStage={overrideStage} minimal={minimal} />;
 }
 
 export interface ConnectingScreenProps {
@@ -339,17 +311,13 @@ function ProvisioningView({
 }) {
   const pct = Math.max(0, Math.min(100, progress));
   const stageText =
-    stageLabel ||
-    (currentStage ? STAGE_LABELS[currentStage] : undefined) ||
-    'Preparing workspace';
+    stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing workspace';
 
   return (
     <>
       <KortixLogo size={40} />
 
-      <p className="text-sm font-normal text-foreground/55 max-w-[320px] truncate">
-        {label}
-      </p>
+      <p className="text-sm font-normal text-foreground/55 max-w-[320px] truncate">{label}</p>
 
       <DeterminateProgress pct={pct} />
 
@@ -416,7 +384,9 @@ function ErrorView({
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-sm font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{' '}{label}
+        <h1 className="text-sm font-medium text-foreground/90">
+          {tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{' '}
+          {label}
         </h1>
         {(serverType || location) && (
           <p className="font-mono text-xs text-muted-foreground/35">
@@ -464,8 +434,14 @@ function StoppedView({
 
       <div className="flex flex-col items-center gap-1">
         <h1 className="text-sm font-medium text-foreground/90">
-          {label}{tHardcodedUi.raw('componentsDashboardConnectingScreen.line469JsxTextIsStopped')}</h1>
-        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line472JsxTextOpenANewSessionOrReturnToProjects')}</p>
+          {label}
+          {tHardcodedUi.raw('componentsDashboardConnectingScreen.line469JsxTextIsStopped')}
+        </h1>
+        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
+          {tHardcodedUi.raw(
+            'componentsDashboardConnectingScreen.line472JsxTextOpenANewSessionOrReturnToProjects',
+          )}
+        </p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -524,7 +500,9 @@ function UnreachableView({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const isRestartRecovering = recoveryPhase !== 'idle';
-  const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
+  const secondsSinceRestart = restartRequestedAt
+    ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000))
+    : null;
 
   return (
     <>
@@ -537,31 +515,50 @@ function UnreachableView({
 
       <div className="flex flex-col items-center gap-1.5">
         <h1 className="text-sm font-medium text-foreground/90">
-          {recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
+          {recoveryPhase === 'restarting_host'
+            ? 'Rebooting host'
+            : recoveryPhase === 'restarting_runtime'
+              ? 'Restarting runtime services'
+              : recoveryPhase === 'restarting_workload'
+                ? 'Restarting workload'
+                : degraded
+                  ? 'Workspace services unavailable'
+                  : 'Workspace offline'}
         </h1>
         <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
           {recoveryPhase === 'restarting_host'
             ? 'The host reboot was accepted. Waiting for the machine and services to come back online.'
             : recoveryPhase === 'restarting_runtime'
               ? 'The runtime restart was accepted. Waiting for core services to come back online.'
-            : recoveryPhase === 'restarting_workload'
-              ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
-            : degraded
-              ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
-            : 'This workspace is unreachable. Return to projects and open or create another session.'}
+              : recoveryPhase === 'restarting_workload'
+                ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
+                : degraded
+                  ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
+                  : 'This workspace is unreachable. Return to projects and open or create another session.'}
         </p>
         {sandboxId ? (
-          <p className="text-xs font-mono text-muted-foreground/35">Sandbox {sandboxId.slice(0, 8)}</p>
+          <p className="text-xs font-mono text-muted-foreground/35">
+            Sandbox {sandboxId.slice(0, 8)}
+          </p>
         ) : null}
         {isRestartRecovering && secondsSinceRestart ? (
-          <p className="text-xs font-mono text-muted-foreground/35">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line564JsxTextRecovering')}{secondsSinceRestart}s</p>
+          <p className="text-xs font-mono text-muted-foreground/35">
+            {tHardcodedUi.raw('componentsDashboardConnectingScreen.line564JsxTextRecovering')}
+            {secondsSinceRestart}s
+          </p>
         ) : null}
       </div>
 
       <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/45">
         <RefreshCw className="h-3 w-3 animate-spin" />
         <span>
-          {recoveryPhase === 'restarting_host' ? 'Waiting for host and services' : recoveryPhase === 'restarting_runtime' ? 'Waiting for core runtime' : recoveryPhase === 'restarting_workload' ? 'Waiting for workload and services' : 'Retrying automatically'}
+          {recoveryPhase === 'restarting_host'
+            ? 'Waiting for host and services'
+            : recoveryPhase === 'restarting_runtime'
+              ? 'Waiting for core runtime'
+              : recoveryPhase === 'restarting_workload'
+                ? 'Waiting for workload and services'
+                : 'Retrying automatically'}
         </span>
         {reconnectAttempts > 0 && !isRestartRecovering && (
           <span className="font-mono tabular-nums text-muted-foreground/35">
@@ -598,9 +595,7 @@ function ReconnectPill({
   onSwitch: () => void;
 }) {
   const elapsed = useElapsedTime(disconnectedAt);
-  const label = status === 'unreachable'
-      ? 'Unreachable'
-      : 'Reconnecting';
+  const label = status === 'unreachable' ? 'Unreachable' : 'Reconnecting';
 
   return (
     <div className="fixed bottom-6 right-6 z-[60] animate-in slide-in-from-bottom-3 fade-in duration-300">
@@ -612,18 +607,10 @@ function ReconnectPill({
 
         <span className="whitespace-nowrap text-xs text-muted-foreground">
           {label}
-          {elapsed ? (
-            <span className="text-muted-foreground/40"> · {elapsed}</span>
-          ) : null}
+          {elapsed ? <span className="text-muted-foreground/40"> · {elapsed}</span> : null}
         </span>
 
-        <Button
-          type="button"
-          onClick={onSwitch}
-          variant="muted"
-          size="xs"
-          className="rounded-full"
-        >
+        <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
           <ArrowLeftRight className="h-2.5 w-2.5" />
           Projects
         </Button>
@@ -654,13 +641,7 @@ function HealthPill({
           {detail ? <span className="text-muted-foreground/40"> · {detail}</span> : null}
         </span>
 
-        <Button
-          type="button"
-          onClick={onSwitch}
-          variant="muted"
-          size="xs"
-          className="rounded-full"
-        >
+        <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
           <ArrowLeftRight className="h-2.5 w-2.5" />
           Projects
         </Button>

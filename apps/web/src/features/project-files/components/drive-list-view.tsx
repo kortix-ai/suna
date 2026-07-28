@@ -24,17 +24,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
+import { type SortField, useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
 import { chalkColors } from '@kortix/shared';
 import { ArrowDown, ArrowUp, Folder, FolderCog, MoreVertical } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState } from 'react';
-import { useFilesStore, type SortField } from '@/features/file-browser/store/files-store';
-import type { FileNode } from '@/features/file-browser/types';
 import { FileDriveMenuItems, FolderDriveMenuItems } from './drive-grid-view';
 import { getFileIcon } from './file-icon';
-import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
-import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 const ELEVATED_DIR_META: Record<string, string> = {
   '.kortix': 'Project config, tasks, context',

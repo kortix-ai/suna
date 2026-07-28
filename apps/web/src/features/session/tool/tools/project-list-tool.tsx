@@ -1,25 +1,17 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Folder,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Folder } from 'lucide-react';
+import { useMemo } from 'react';
 
-
-import {
-  type ProjectEntry,
-  parseProjectListOutput,
-} from '@/lib/utils/kortix-tool-output';
+import { type ProjectEntry, parseProjectListOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
@@ -62,4 +54,3 @@ ToolRegistry.register('project_list', ProjectListTool);
 ToolRegistry.register('project-list', ProjectListTool);
 ToolRegistry.register('oc-project_list', ProjectListTool);
 ToolRegistry.register('oc-project-list', ProjectListTool);
-

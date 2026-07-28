@@ -117,7 +117,8 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
           </p>
           <p className="text-muted-foreground mt-0.5 text-xs">
             When enabled, members must complete a second-factor challenge before any IAM-gated
-            action. Super-admins and Personal Access Tokens are exempt. Members enroll an authenticator under Settings → Security.
+            action. Super-admins and Personal Access Tokens are exempt. Members enroll an
+            authenticator under Settings → Security.
           </p>
         </div>
         {statusQuery.isLoading ? (
@@ -147,8 +148,8 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
           <ModalHeader>
             <ModalTitle>Require MFA for this account?</ModalTitle>
             <ModalDescription>
-              Members without a verified second factor will be blocked from every IAM-gated
-              action until they enrol. CLI tokens (PATs) are unaffected.
+              Members without a verified second factor will be blocked from every IAM-gated action
+              until they enrol. CLI tokens (PATs) are unaffected.
             </ModalDescription>
           </ModalHeader>
 
@@ -162,8 +163,8 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
 
             {previewQuery.data && previewQuery.data.will_lock_out_account && (
               <InfoBanner tone="destructive" icon={AlertTriangle}>
-                Nobody would retain access. Promote a super-admin or have at least one member
-                enrol MFA before enabling.
+                Nobody would retain access. Promote a super-admin or have at least one member enrol
+                MFA before enabling.
               </InfoBanner>
             )}
 
@@ -237,9 +238,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
             <Button
               size="sm"
               onClick={() => flipMutation.mutate(true)}
-              disabled={
-                flipMutation.isPending || previewQuery.data?.will_lock_out_account === true
-              }
+              disabled={flipMutation.isPending || previewQuery.data?.will_lock_out_account === true}
               className="gap-1.5"
             >
               {flipMutation.isPending && <Loading className="size-3.5 shrink-0" />}

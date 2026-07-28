@@ -8,7 +8,7 @@
  * above that rail, and then a THIRD fixed rail on the right holding four
  * always-expanded cards (assignments, governance, model, access scope). Three
  * rails and two search fields for one screen — see
- * ux-references/perplexity/{08,09}.
+ * the design references.
  *
  * Now:
  *   - The shell is the shared project-section page: one h1, ONE line of

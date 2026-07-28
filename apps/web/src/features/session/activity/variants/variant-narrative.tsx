@@ -15,9 +15,9 @@
  * search — is one word in "14 steps" until the reader asks to see it.
  */
 
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Loading from '@/components/ui/loading';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { cn } from '@/lib/utils';
 import { type ReasoningPart, type Turn, isTextPart, isToolPart } from '@/ui';
@@ -32,7 +32,6 @@ import {
 import { WorkStepRow } from '../work-step-row';
 import { AssistantProse, UserBubble, useTurnParts, useTurns } from './shared';
 import type { ChatVariantProps } from './types';
-
 
 function isErrored(entry: ActivityEntry): boolean {
   return (entry.part.state as { status?: string } | undefined)?.status === 'error';
@@ -115,7 +114,12 @@ export function VariantNarrative({ messages, sessionId, isBusy }: ChatVariantPro
   return (
     <div className="space-y-10">
       {turns.map((turn) => (
-        <TurnBody key={turn.userMessage.info.id} turn={turn} sessionId={sessionId} isBusy={isBusy} />
+        <TurnBody
+          key={turn.userMessage.info.id}
+          turn={turn}
+          sessionId={sessionId}
+          isBusy={isBusy}
+        />
       ))}
     </div>
   );

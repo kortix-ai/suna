@@ -3,8 +3,8 @@ import * as React from 'react';
 
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { dialogContentZ, DialogDepthProvider, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
-import { cva, VariantProps } from 'class-variance-authority';
+import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import { type VariantProps, cva } from 'class-variance-authority';
 import { buttonVariants } from './button';
 
 const Dialog = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
@@ -69,34 +69,47 @@ const DialogContent = React.forwardRef<
       showOverlay?: boolean;
       overlayClassName?: string;
     }
->(({ className, children, hideCloseButton = false, showOverlay = true, overlayClassName, style, ...props }, ref) => {
-  const depth = useDialogDepth();
+>(
+  (
+    {
+      className,
+      children,
+      hideCloseButton = false,
+      showOverlay = true,
+      overlayClassName,
+      style,
+      ...props
+    },
+    ref,
+  ) => {
+    const depth = useDialogDepth();
 
-  return (
-    <DialogPortal>
-      {showOverlay && <DialogOverlay className={overlayClassName} />}
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(DialogVariants({ variant: 'default' }), className)}
-        style={{ zIndex: dialogContentZ(depth), ...style }}
-        {...props}
-      >
-        {children}
-        {!hideCloseButton && (
-          <DialogPrimitive.Close
-            className={cn(
-              buttonVariants({ variant: 'ghost', size: 'icon' }),
-              'absolute top-3 right-3',
-            )}
-          >
-            <Icon.Close className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
-    </DialogPortal>
-  );
-});
+    return (
+      <DialogPortal>
+        {showOverlay && <DialogOverlay className={overlayClassName} />}
+        <DialogPrimitive.Content
+          ref={ref}
+          className={cn(DialogVariants({ variant: 'default' }), className)}
+          style={{ zIndex: dialogContentZ(depth), ...style }}
+          {...props}
+        >
+          {children}
+          {!hideCloseButton && (
+            <DialogPrimitive.Close
+              className={cn(
+                buttonVariants({ variant: 'ghost', size: 'icon' }),
+                'absolute top-3 right-3',
+              )}
+            >
+              <Icon.Close className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  },
+);
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

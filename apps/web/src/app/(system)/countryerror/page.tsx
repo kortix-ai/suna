@@ -2,12 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import Link from 'next/link';
-import { Globe, Mail } from 'lucide-react';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { AnimatedBg } from '@/components/ui/animated-bg';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Globe, Mail } from 'lucide-react';
+import Link from 'next/link';
 
 export default function CountryError() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -22,10 +22,16 @@ export default function CountryError() {
           <KortixLogo size={28} className="sm:w-8 sm:h-8" />
 
           {/* Title */}
-          <h1 className="text-2xl sm:text-3xl md:text-5xl font-normal tracking-tight text-foreground leading-tight text-center">{tHardcodedUi.raw('appCountryerrorPage.line23JsxTextNotAvailableInYourCountry')}</h1>
+          <h1 className="text-2xl sm:text-3xl md:text-5xl font-normal tracking-tight text-foreground leading-tight text-center">
+            {tHardcodedUi.raw('appCountryerrorPage.line23JsxTextNotAvailableInYourCountry')}
+          </h1>
 
           {/* Description */}
-          <p className="text-sm sm:text-base text-foreground/60 text-center leading-relaxed px-2">{tHardcodedUi.raw('appCountryerrorPage.line28JsxTextWeReSorryKortixIsCurrentlyUnavailableIn')}</p>
+          <p className="text-sm sm:text-base text-foreground/60 text-center leading-relaxed px-2">
+            {tHardcodedUi.raw(
+              'appCountryerrorPage.line28JsxTextWeReSorryKortixIsCurrentlyUnavailableIn',
+            )}
+          </p>
 
           {/* Status Card */}
           <Card className="w-full h-24 bg-card border border-border">
@@ -35,8 +41,14 @@ export default function CountryError() {
                   <Globe className="h-6 w-6 text-blue-500" />
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appCountryerrorPage.line41JsxTextRegionRestricted')}</span>
-                  <span className="text-sm text-foreground/60">{tHardcodedUi.raw('appCountryerrorPage.line44JsxTextServiceNotAvailableInYourLocation')}</span>
+                  <span className="text-sm font-medium text-foreground">
+                    {tHardcodedUi.raw('appCountryerrorPage.line41JsxTextRegionRestricted')}
+                  </span>
+                  <span className="text-sm text-foreground/60">
+                    {tHardcodedUi.raw(
+                      'appCountryerrorPage.line44JsxTextServiceNotAvailableInYourLocation',
+                    )}
+                  </span>
                 </div>
               </div>
             </CardContent>
@@ -61,7 +73,9 @@ export default function CountryError() {
           </div>
 
           {/* Footer text */}
-          <p className="text-sm text-foreground/40 text-center">{tHardcodedUi.raw('appCountryerrorPage.line71JsxTextIfYouBelieveThisIsAnErrorPlease')}</p>
+          <p className="text-sm text-foreground/40 text-center">
+            {tHardcodedUi.raw('appCountryerrorPage.line71JsxTextIfYouBelieveThisIsAnErrorPlease')}
+          </p>
         </div>
       </div>
     </div>

@@ -101,8 +101,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
   // Use-cases section is on by default; hide it by setting NEXT_PUBLIC_USE_CASES_ENABLED=false.
   const filteredNavLinks = siteConfig.nav.links.filter(
-    (link) =>
-      process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' || link.href !== '/use-cases',
+    (link) => process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' || link.href !== '/use-cases',
   );
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();

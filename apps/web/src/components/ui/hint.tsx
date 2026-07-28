@@ -1,10 +1,10 @@
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export type HintProps = {
   label?: React.ReactNode;
   children?: React.ReactNode;
-  side?: "top" | "right" | "bottom" | "left";
-  align?: "start" | "center" | "end";
+  side?: 'top' | 'right' | 'bottom' | 'left';
+  align?: 'start' | 'center' | 'end';
   sideOffset?: number;
   alignOffset?: number;
   className?: string;
@@ -15,8 +15,8 @@ const Hint = ({
   label,
   children,
   className,
-  side = "right",
-  align = "center",
+  side = 'right',
+  align = 'center',
   sideOffset = 10,
   alignOffset = 10,
   content,

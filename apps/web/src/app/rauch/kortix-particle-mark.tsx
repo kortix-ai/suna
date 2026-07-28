@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import {
-  advanceParticle,
   BRANDMARK_SRC,
+  type Particle,
+  advanceParticle,
   buildBrandmarkParticles,
   getParticleMarkSize,
-  type Particle,
 } from './particle-mark';
 
 /**

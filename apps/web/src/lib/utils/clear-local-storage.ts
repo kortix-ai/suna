@@ -12,13 +12,15 @@ export const clearUserLocalStorage = () => {
     // Clear tab state so it doesn't leak across accounts
     localStorage.removeItem('kortix-tabs');
     // Clear pattern-based keys
-    Object.keys(localStorage).forEach(key => {
+    Object.keys(localStorage).forEach((key) => {
       if (key.startsWith('maintenance-dismissed-')) {
         localStorage.removeItem(key);
       }
     });
     // Clear sessionStorage runtime connection flag
-    try { sessionStorage.removeItem('kortix-runtime-was-connected'); } catch {}
+    try {
+      sessionStorage.removeItem('kortix-runtime-was-connected');
+    } catch {}
 
     console.log('✅ Local storage cleared on logout');
   } catch (error) {

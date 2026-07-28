@@ -8,10 +8,10 @@ import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { getProjectSession } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { getProjectSession } from '@kortix/sdk';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';

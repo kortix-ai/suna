@@ -19,7 +19,7 @@
  */
 
 import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
-import { usePermission, usePermissions, type UsePermissionResult } from '@/lib/use-permission';
+import { type UsePermissionResult, usePermission, usePermissions } from '@/lib/use-permission';
 import { getProject } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';

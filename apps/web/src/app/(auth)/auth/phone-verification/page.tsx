@@ -4,12 +4,7 @@ import { signOut } from '@/app/(auth)/auth/actions';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import {
-  AuthMobileLogo,
-  Rise,
-  StepHeader,
-  SuccessStrip,
-} from '@/features/auth/auth-primitives';
+import { AuthMobileLogo, Rise, StepHeader, SuccessStrip } from '@/features/auth/auth-primitives';
 import { OtpVerification } from '@/features/auth/phone-verification/otp-verification';
 import { PhoneInput } from '@/features/auth/phone-verification/phone-input';
 import {

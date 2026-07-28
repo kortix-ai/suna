@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
-import { formatDuration } from '@kortix/sdk/turns';
 import { cn } from '@/lib/utils';
+import { formatDuration } from '@kortix/sdk/turns';
 
 /**
  * The assistant turn's "pending" shell — the Kortix logomark on top, and beneath

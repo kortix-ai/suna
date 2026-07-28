@@ -13,11 +13,9 @@ export {
   // Main hook
   useAccountState,
   useAccountStateWithStreaming,
-
   // Query keys for manual invalidation if needed
   accountStateKeys,
   invalidateAccountState,
-
   // Mutation hooks
   useCreateCheckoutSession,
   useCreatePerSeatCheckout,
@@ -28,10 +26,8 @@ export {
   useScheduleDowngrade,
   useCancelScheduledChange,
   useSyncSubscription,
-
   // Usage history (transactions ledger lives in ./use-transactions below)
   useUsageHistory,
-
   // Selectors for extracting data
   accountStateSelectors,
 } from './use-account-state';

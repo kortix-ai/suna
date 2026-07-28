@@ -3,10 +3,9 @@
 /**
  * Skills — one flat screen for skills AND commands.
  *
- * Modelled on ux-references/perplexity/08-skills-list.png: a title, one line, a
- * search box top right, a row of pills with the primary action, then a 2-column
- * card grid. Detail is a modal (09), not the 264px name-rail + third column the
- * split layout used.
+ * A title, one line of description, a search box top right, a row of pills with
+ * the primary action, then a 2-column card grid. Detail is a modal, not the
+ * 264px name-rail + third column the split layout used.
  *
  * The Commands pill is a RESTORED feature, not a new one: `commands` has always
  * been a real Customize section with its own IAM leaves and its own rail entry,

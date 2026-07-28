@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildCells, COLS, RAMP, ROWS } from './kortix-hyper-logo.cells';
+import { COLS, RAMP, ROWS, buildCells } from './kortix-hyper-logo.cells';
 
 describe('buildCells', () => {
   test('builds one cell per grid position', () => {

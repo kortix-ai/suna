@@ -31,7 +31,7 @@ const bestSelfHostedAgentPlatforms: BlogPostEntry = {
   slug: 'best-self-hosted-ai-agent-platforms',
   title: 'The best self-hosted AI agent platforms, honestly compared',
   description:
-    "Six open-source, self-hostable AI agent platforms compared by what each is great at and where it stops — Kortix, CrewAI, AutoGen, Dify, LangGraph, and n8n — so you can pick the one that fits the work you actually need done.",
+    'Six open-source, self-hostable AI agent platforms compared by what each is great at and where it stops — Kortix, CrewAI, AutoGen, Dify, LangGraph, and n8n — so you can pick the one that fits the work you actually need done.',
   date: '2026-07-19',
   author: 'team',
   cover: '/banner.png',
@@ -47,7 +47,7 @@ const bestSelfHostedAgentPlatforms: BlogPostEntry = {
   blocks: [
     {
       type: 'lead',
-      text: "Most \"best self-hosted AI agent platform\" lists are ten tools that all do the same thing with different logos. This isn't that. The honest question is narrower: what kind of work do you need an agent to do, and which open-source platform actually runs that work end to end on infrastructure you own? Here are six that are genuinely self-hostable, what each one is great at, and — more usefully — where each one stops.",
+      text: 'Most "best self-hosted AI agent platform" lists are ten tools that all do the same thing with different logos. This isn\'t that. The honest question is narrower: what kind of work do you need an agent to do, and which open-source platform actually runs that work end to end on infrastructure you own? Here are six that are genuinely self-hostable, what each one is great at, and — more usefully — where each one stops.',
     },
     {
       type: 'logos',
@@ -63,7 +63,7 @@ const bestSelfHostedAgentPlatforms: BlogPostEntry = {
     { type: 'h2', text: 'What we mean by self-hosted' },
     {
       type: 'p',
-      text: 'A self-hosted AI agent platform is open-source (or source-available) software you run on your own cloud, VPC, or on-prem — not a vendor-hosted SaaS. The agent code, the model calls, and the data all stay inside your walls. That rules out hosted-only agent builders and anything that ships as a managed cloud. What\'s left splits cleanly into three shapes: **frameworks** (libraries you build agents with), **app platforms** (visual builders for LLM apps and chatbots), and **runtimes** (a platform that hosts and governs agents that do real work). They are not interchangeable.',
+      text: "A self-hosted AI agent platform is open-source (or source-available) software you run on your own cloud, VPC, or on-prem — not a vendor-hosted SaaS. The agent code, the model calls, and the data all stay inside your walls. That rules out hosted-only agent builders and anything that ships as a managed cloud. What's left splits cleanly into three shapes: **frameworks** (libraries you build agents with), **app platforms** (visual builders for LLM apps and chatbots), and **runtimes** (a platform that hosts and governs agents that do real work). They are not interchangeable.",
     },
     { type: 'h2', text: '1. Kortix — the agent runtime built as a company OS' },
     {
@@ -95,7 +95,7 @@ const bestSelfHostedAgentPlatforms: BlogPostEntry = {
     { type: 'h2', text: '3. AutoGen — the research-grade multi-agent framework' },
     {
       type: 'p',
-      text: 'AutoGen is Microsoft Research\'s open-source framework for building multi-agent conversations. Its strength is the research lineage: agent-to-agent dialogue, group chat patterns, and flexible tool-calling are first-class. Like CrewAI it is a framework you run yourself, not a managed platform.',
+      text: "AutoGen is Microsoft Research's open-source framework for building multi-agent conversations. Its strength is the research lineage: agent-to-agent dialogue, group chat patterns, and flexible tool-calling are first-class. Like CrewAI it is a framework you run yourself, not a managed platform.",
     },
     {
       type: 'ul',
@@ -121,7 +121,7 @@ const bestSelfHostedAgentPlatforms: BlogPostEntry = {
     { type: 'h2', text: '5. LangGraph — the stateful agent graph framework' },
     {
       type: 'p',
-      text: 'LangGraph is LangChain\'s open-source framework for building stateful, graph-structured agent flows. Where CrewAI optimizes for role-based crews, LangGraph optimizes for explicit graphs of state and control flow — cycles, branches, checkpoints, and memory. It is a library, self-hosted wherever it runs.',
+      text: "LangGraph is LangChain's open-source framework for building stateful, graph-structured agent flows. Where CrewAI optimizes for role-based crews, LangGraph optimizes for explicit graphs of state and control flow — cycles, branches, checkpoints, and memory. It is a library, self-hosted wherever it runs.",
     },
     {
       type: 'ul',

@@ -5,12 +5,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  type GridLayout,
+  type Token,
   buildFieldSvg,
   buildTokens,
   computeGrid,
   svgToDataUri,
-  type GridLayout,
-  type Token,
 } from './kortix-letter-field.cells';
 
 export interface KortixLetterFieldProps {
@@ -71,7 +71,10 @@ export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldP
     };
   }, []);
 
-  const tokens = useMemo<Token[]>(() => buildTokens(grid.tokenCount, seed), [grid.tokenCount, seed]);
+  const tokens = useMemo<Token[]>(
+    () => buildTokens(grid.tokenCount, seed),
+    [grid.tokenCount, seed],
+  );
 
   // Render the letter field as a CSS `background-image` SVG. The decorative
   // tokens live ONLY inside the SVG image — they never appear as text in the

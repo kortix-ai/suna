@@ -1,10 +1,10 @@
-'use server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants'
+'use server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants';
 
 export async function createClient() {
-  const cookieStore = await cookies()
+  const cookieStore = await cookies();
 
   // IMPORTANT: NEXT_PUBLIC_ vars are inlined at build time by Next.js, so in
   // Docker containers they contain placeholder values from the build host.
@@ -24,31 +24,25 @@ export async function createClient() {
     process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  return createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookieOptions: {
-        name: KORTIX_SUPABASE_AUTH_COOKIE,
-        path: '/',
-        sameSite: 'lax',
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: {
+      name: KORTIX_SUPABASE_AUTH_COOKIE,
+      path: '/',
+      sameSite: 'lax',
+    },
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
       },
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        } catch {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored if you have middleware refreshing
+          // user sessions.
+        }
       },
-    }
-  )
+    },
+  });
 }

@@ -1,5 +1,5 @@
-import { create } from 'zustand';
 import { trackCtaUpgrade } from '@/lib/analytics/gtm';
+import { create } from 'zustand';
 
 /**
  * Store for the "New Instance" modal.

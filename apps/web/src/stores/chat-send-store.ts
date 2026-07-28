@@ -44,9 +44,7 @@ export const useChatSendStore = create<ChatSendState>()((set, get) => ({
   sendToSession: async (sessionId, text) => {
     const sender = get().senders[sessionId];
     if (!sender) {
-      throw new Error(
-        'The conversation is still loading — open it and try again in a moment.',
-      );
+      throw new Error('The conversation is still loading — open it and try again in a moment.');
     }
     await sender(text);
   },

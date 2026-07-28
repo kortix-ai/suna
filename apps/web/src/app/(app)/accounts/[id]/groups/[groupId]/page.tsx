@@ -8,12 +8,12 @@ import { useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import {
+  type AccountMeta,
   countOverridingMembers,
   floatCurrentUserFirst,
   formatExpiry,
   isOverridingAccountRole,
   sortGroupMembersByOverride,
-  type AccountMeta,
 } from '@/components/iam/iam-display-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
+  type GroupProjectGrant,
   addGroupMembers,
   deleteGroup,
   getGroup,
@@ -55,18 +56,17 @@ import {
   listGroupProjectGrants,
   removeGroupMember,
   updateGroup,
-  type GroupProjectGrant,
 } from '@/lib/iam-client';
+import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import {
+  type ProjectRole,
   attachGroupToProject,
   detachGroupFromProject,
   getAccount,
   listAccountMembers,
   listProjectsForAccount,
-  type ProjectRole,
 } from '@kortix/sdk';
-import { usePermission } from '@/lib/use-permission';
 
 // Entity row dialect shared with the customize section views.
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';

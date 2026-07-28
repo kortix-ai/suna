@@ -16,6 +16,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
+import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
 import { Eye, Pencil, TrashSolid } from '@mynaui/icons-react';
 import {
@@ -28,13 +31,10 @@ import {
   Scissors,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import type { FileNode } from '@/features/file-browser/types';
+import { type ComponentType, type ReactNode, useCallback, useRef, useState } from 'react';
 import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
-import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
-import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 interface DriveGridItemProps {
   node: FileNode;

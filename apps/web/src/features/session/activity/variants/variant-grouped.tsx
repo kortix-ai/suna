@@ -15,8 +15,8 @@
  * of a forced-open wall of rows, and reasoning demoted to a quiet aside.
  */
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Loading from '@/components/ui/loading';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { cn } from '@/lib/utils';
@@ -29,10 +29,10 @@ import {
   FileText,
   Globe,
   Layers,
+  type LucideIcon,
   PenLine,
   Search,
   Terminal,
-  type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -133,7 +133,9 @@ function ActivityRow({ entry, sessionId }: { entry: ActivityEntry; sessionId: st
               {duration}
             </span>
           )}
-          {running && <Loading variant="spokes" className="text-muted-foreground/50 size-2.5 shrink-0" />}
+          {running && (
+            <Loading variant="spokes" className="text-muted-foreground/50 size-2.5 shrink-0" />
+          )}
           <ChevronRight
             className={cn(
               'size-3 shrink-0 opacity-0 transition-transform group-hover/row:opacity-60',
@@ -187,14 +189,21 @@ function SingleActivity({
             'cursor-pointer transition-colors select-none',
           )}
         >
-          <Icon className={cn('text-muted-foreground/50 size-3.5 shrink-0', running && 'animate-pulse-heartbeat')} />
+          <Icon
+            className={cn(
+              'text-muted-foreground/50 size-3.5 shrink-0',
+              running && 'animate-pulse-heartbeat',
+            )}
+          />
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{stepLabel(part)}</span>
           {duration && (
             <span className="text-muted-foreground/40 shrink-0 font-mono text-[11px] tabular-nums">
               {duration}
             </span>
           )}
-          {running && <Loading variant="spokes" className="text-muted-foreground/50 size-3 shrink-0" />}
+          {running && (
+            <Loading variant="spokes" className="text-muted-foreground/50 size-3 shrink-0" />
+          )}
           <ChevronRight
             className={cn(
               'size-3 shrink-0 opacity-0 transition-transform group-hover/act:opacity-100',
@@ -317,7 +326,14 @@ function ReasoningBlock({ parts, streaming }: { parts: ReasoningPart[]; streamin
         .trim(),
     [parts],
   );
-  const preview = useMemo(() => text.split('\n').find((line) => line.trim())?.trim() ?? '', [text]);
+  const preview = useMemo(
+    () =>
+      text
+        .split('\n')
+        .find((line) => line.trim())
+        ?.trim() ?? '',
+    [text],
+  );
   if (!text) return null;
 
   return (
@@ -331,10 +347,15 @@ function ReasoningBlock({ parts, streaming }: { parts: ReasoningPart[]; streamin
           )}
         >
           <Brain
-            className={cn('text-muted-foreground/50 size-3.5 shrink-0', streaming && 'animate-pulse-heartbeat')}
+            className={cn(
+              'text-muted-foreground/50 size-3.5 shrink-0',
+              streaming && 'animate-pulse-heartbeat',
+            )}
           />
           <span className="min-w-0 flex-1 truncate text-xs italic">{preview || 'Thinking'}</span>
-          {streaming && <Loading variant="spokes" className="text-muted-foreground/50 size-3 shrink-0" />}
+          {streaming && (
+            <Loading variant="spokes" className="text-muted-foreground/50 size-3 shrink-0" />
+          )}
           <ChevronRight
             className={cn(
               'size-3 shrink-0 opacity-0 transition-transform group-hover/think:opacity-100',
@@ -363,13 +384,22 @@ export function VariantGrouped({ messages, sessionId, isBusy }: ChatVariantProps
   return (
     <div className="space-y-8">
       {turns.map((turn) => (
-        <TurnBody key={turn.userMessage.info.id} turn={turn} sessionId={sessionId} isBusy={isBusy} />
+        <TurnBody
+          key={turn.userMessage.info.id}
+          turn={turn}
+          sessionId={sessionId}
+          isBusy={isBusy}
+        />
       ))}
     </div>
   );
 }
 
-function TurnBody({ turn, sessionId, isBusy }: { turn: Turn; sessionId: string; isBusy?: boolean }) {
+function TurnBody({
+  turn,
+  sessionId,
+  isBusy,
+}: { turn: Turn; sessionId: string; isBusy?: boolean }) {
   const parts = useTurnParts(turn);
   const items = buildActivityItems(parts, { density: 'detailed' });
 
@@ -418,7 +448,9 @@ function TurnBody({ turn, sessionId, isBusy }: { turn: Turn; sessionId: string; 
                 />
               );
             case 'deliverable':
-              return <ToolPartRenderer key={item.key} part={item.entry.part} sessionId={sessionId} />;
+              return (
+                <ToolPartRenderer key={item.key} part={item.entry.part} sessionId={sessionId} />
+              );
             case 'passthrough':
               // Todos, questions, sub-agent cards — tools with their own
               // dedicated UI. They are never machinery to fold away.

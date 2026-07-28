@@ -25,9 +25,7 @@ export function BillingAccountProvider({
   children: React.ReactNode;
 }) {
   return (
-    <BillingAccountContext.Provider value={accountId}>
-      {children}
-    </BillingAccountContext.Provider>
+    <BillingAccountContext.Provider value={accountId}>{children}</BillingAccountContext.Provider>
   );
 }
 

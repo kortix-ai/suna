@@ -68,9 +68,7 @@ export function ProgressCard({
         <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
           <span className="text-kortix-orange truncate text-sm">Waiting for your answer</span>
           {duration && (
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {duration}
-            </span>
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{duration}</span>
           )}
         </div>
       );
@@ -87,9 +85,7 @@ export function ProgressCard({
             {outcome === 'stopped' ? 'Stopped by you' : 'Something went wrong'}
           </span>
           {duration && (
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {duration}
-            </span>
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{duration}</span>
           )}
         </div>
       );
@@ -111,7 +107,8 @@ export function ProgressCard({
   // The step actively narrating right now — the last one still running, else
   // just the last step's own label (a boundary between two done steps has
   // nothing better to say), else the generic fallback.
-  const currentStep = [...steps].reverse().find((s) => s.status === 'running') ?? steps[steps.length - 1];
+  const currentStep =
+    [...steps].reverse().find((s) => s.status === 'running') ?? steps[steps.length - 1];
 
   const OUTCOME_LINE: Record<RunOutcome, string> = {
     succeeded: `Done · ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`,

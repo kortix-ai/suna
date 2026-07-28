@@ -6,13 +6,13 @@
  * translates to "Checkpoint" / "Version" for users.
  */
 
+import type { FileCommitDiff, FileHistoryResult, GitCommit } from '@/features/file-browser/types';
 import {
+  type ProjectCommit,
   getProjectCommit,
   getProjectCommitDiff,
   getProjectFileHistory,
-  type ProjectCommit,
 } from '@kortix/sdk';
-import type { FileCommitDiff, FileHistoryResult, GitCommit } from '@/features/file-browser/types';
 
 function toGitCommit(c: ProjectCommit): GitCommit {
   const timestamp = Number(new Date(c.committed_at || c.authored_at).getTime()) || Date.now();
@@ -64,9 +64,10 @@ export async function getFileCommitDiff(
   ]);
 
   const file = commit.files.find((f) => f.path === path || f.old_path === path);
-  const status = file?.status === 'copied' || file?.status === 'typechange'
-    ? 'modified'
-    : (file?.status ?? 'modified');
+  const status =
+    file?.status === 'copied' || file?.status === 'typechange'
+      ? 'modified'
+      : (file?.status ?? 'modified');
 
   return {
     commitHash: commit.hash,

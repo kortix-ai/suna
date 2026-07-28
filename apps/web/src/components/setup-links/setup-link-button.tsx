@@ -1,7 +1,5 @@
 'use client';
 
-import React, { useState } from 'react';
-import { KeyRound, Plug } from 'lucide-react';
 import {
   Modal,
   ModalBody,
@@ -11,9 +9,11 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
-import { SecretIntakeForm } from './secret-intake-form';
+import { KeyRound, Plug } from 'lucide-react';
+import React, { useState } from 'react';
 import { ConnectorIntake } from './connector-intake';
-import { setupLinkChipLabel, type SetupLinkKind } from './util';
+import { SecretIntakeForm } from './secret-intake-form';
+import { type SetupLinkKind, setupLinkChipLabel } from './util';
 
 function textOf(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return '';
@@ -68,9 +68,7 @@ export function SetupLinkButton({
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>
-              {kind === 'secret' ? 'Add a project secret' : 'Connect an app'}
-            </ModalTitle>
+            <ModalTitle>{kind === 'secret' ? 'Add a project secret' : 'Connect an app'}</ModalTitle>
             <ModalDescription>
               {kind === 'secret'
                 ? 'Enter the value below. It’s encrypted and the agent never sees it.'

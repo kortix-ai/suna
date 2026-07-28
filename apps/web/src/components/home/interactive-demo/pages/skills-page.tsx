@@ -2,8 +2,8 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { Plus, Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';

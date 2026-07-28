@@ -48,7 +48,8 @@ export function FactorRow({
         </span>
         <div className="min-w-0">
           <div className="text-foreground truncate text-sm font-medium">
-            {factor.friendly_name || (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
+            {factor.friendly_name ||
+              (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
           </div>
           <div className="text-muted-foreground text-xs">
             {factor.factor_type === 'phone' ? 'SMS' : 'Authenticator app (TOTP)'}
@@ -74,9 +75,11 @@ export function FactorRow({
 
 export function SecurityTab() {
   const queryClient = useQueryClient();
-  const [enrolling, setEnrolling] = useState<{ factorId: string; qr: string; secret?: string } | null>(
-    null,
-  );
+  const [enrolling, setEnrolling] = useState<{
+    factorId: string;
+    qr: string;
+    secret?: string;
+  } | null>(null);
   const [code, setCode] = useState('');
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
 
@@ -154,8 +157,8 @@ export function SecurityTab() {
           <div>
             <h3 className="text-foreground text-sm font-medium">Two-factor authentication</h3>
             <p className="text-muted-foreground mt-1 text-xs">
-              Add an authenticator app (TOTP) as a second factor. Accounts with
-              “Require MFA” enforce a verified factor before any gated action.
+              Add an authenticator app (TOTP) as a second factor. Accounts with “Require MFA”
+              enforce a verified factor before any gated action.
             </p>
           </div>
           {verified.length > 0 && (
@@ -175,8 +178,8 @@ export function SecurityTab() {
         <div className="space-y-2">
           {factors.length === 0 && !enrolling && (
             <InfoBanner tone="info" title="No second factor enrolled">
-              If your organization requires MFA, you’ll be blocked from gated
-              actions until you enroll an authenticator here.
+              If your organization requires MFA, you’ll be blocked from gated actions until you
+              enroll an authenticator here.
             </InfoBanner>
           )}
           {factors.map((f) => (
@@ -188,10 +191,12 @@ export function SecurityTab() {
       {enrolling ? (
         <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
           <div>
-            <h4 className="text-foreground text-sm font-medium">Scan with your authenticator app</h4>
+            <h4 className="text-foreground text-sm font-medium">
+              Scan with your authenticator app
+            </h4>
             <p className="text-muted-foreground mt-1 text-xs">
-              Use 1Password, Google Authenticator, or any TOTP app — then enter
-              the 6-digit code it shows.
+              Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code it
+              shows.
             </p>
           </div>
           <div className="flex items-start gap-4">

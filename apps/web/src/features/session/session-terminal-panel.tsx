@@ -3,14 +3,14 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import {
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
 } from '@/features/session/pty-connection';
-import { useCreatePty, useRuntimePtyList, type Pty } from '@kortix/sdk/react';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import { type Pty, useCreatePty, useRuntimePtyList } from '@kortix/sdk/react';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import { requestRuntimeReconnect } from '@kortix/sdk/react';
 import { Plus, Terminal } from 'lucide-react';
 import { useTranslations } from 'next-intl';

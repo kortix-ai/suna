@@ -22,7 +22,7 @@ export function useReferralCode(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: REFERRALS_QUERY_KEYS.code,
     queryFn: getReferralCode,
-    staleTime: Infinity,
+    staleTime: Number.POSITIVE_INFINITY,
     enabled,
   });
 }

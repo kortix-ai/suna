@@ -117,7 +117,8 @@ export function stepDetail(part: Pick<ToolPart, 'tool' | 'state'>): StepDetail {
   }
 
   const arg = firstPathArg(input);
-  const verb = TOOL_VERBS[name] ?? name.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  const verb =
+    TOOL_VERBS[name] ?? name.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
   // Full path, not just the basename: in an expanded list two files can share
   // a name, and the folder is what tells them apart.
   return { verb, mono: arg ?? '', shell: false };

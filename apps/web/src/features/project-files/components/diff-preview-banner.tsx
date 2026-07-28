@@ -2,9 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertCircle, Check, Minus } from 'lucide-react';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
+import { AlertCircle, Check, Minus } from 'lucide-react';
 import type { VersionDiffPreview } from '../api/change-requests';
 
 interface DiffPreviewBannerProps {
@@ -22,18 +22,17 @@ interface DiffPreviewBannerProps {
  *   - nothing to merge → warning, blocks submit (parent gates the button)
  *   - has changes      → success file-count + line summary
  */
-export function DiffPreviewBanner({
-  loading,
-  error,
-  preview,
-  className,
-}: DiffPreviewBannerProps) {
+export function DiffPreviewBanner({ loading, error, preview, className }: DiffPreviewBannerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (loading) {
     return (
       <InfoBanner tone="neutral" className={className}>
         <span className="flex items-center gap-2">
-          <Loading className="h-3.5 w-3.5 shrink-0" />{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff')}</span>
+          <Loading className="h-3.5 w-3.5 shrink-0" />
+          {tHardcodedUi.raw(
+            'featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff',
+          )}
+        </span>
       </InfoBanner>
     );
   }
@@ -43,7 +42,9 @@ export function DiffPreviewBanner({
       <InfoBanner
         tone="warning"
         icon={AlertCircle}
-        title={tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line44JsxAttrTitleCouldnTComputeTheDiff')}
+        title={tHardcodedUi.raw(
+          'featuresProjectFilesComponentsDiffPreviewBanner.line44JsxAttrTitleCouldnTComputeTheDiff',
+        )}
         className={className}
       >
         {error.message}
@@ -55,13 +56,21 @@ export function DiffPreviewBanner({
 
   if (preview.is_same_ref) {
     return (
-      <InfoBanner tone="warning" icon={Minus} className={className}>{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line57JsxTextSameVersionOnBothSidesPickDifferentVersions')}</InfoBanner>
+      <InfoBanner tone="warning" icon={Minus} className={className}>
+        {tHardcodedUi.raw(
+          'featuresProjectFilesComponentsDiffPreviewBanner.line57JsxTextSameVersionOnBothSidesPickDifferentVersions',
+        )}
+      </InfoBanner>
     );
   }
 
   if (preview.is_up_to_date || preview.files_changed === 0) {
     return (
-      <InfoBanner tone="warning" icon={Minus} className={className}>{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds')}</InfoBanner>
+      <InfoBanner tone="warning" icon={Minus} className={className}>
+        {tHardcodedUi.raw(
+          'featuresProjectFilesComponentsDiffPreviewBanner.line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds',
+        )}
+      </InfoBanner>
     );
   }
 

@@ -2,10 +2,10 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useState } from 'react';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
  * Detect whether a URL string is a local sandbox filesystem path
@@ -13,18 +13,18 @@ import { cn } from '@/lib/utils';
  * Matches the pattern used in tool-renderers.tsx.
  */
 function isLocalSandboxFilePath(value: string): boolean {
-	if (!value) return false;
-	if (/^(https?:|data:|blob:)/i.test(value)) return false;
-	return value.startsWith('/');
+  if (!value) return false;
+  if (/^(https?:|data:|blob:)/i.test(value)) return false;
+  return value.startsWith('/');
 }
 
 interface SandboxImageProps {
-	/** Raw src — may be a sandbox filesystem path or a valid URL */
-	src: string;
-	alt?: string;
-	className?: string;
-	/** When true, wraps the image in an ImagePreview dialog for full-size viewing */
-	preview?: boolean;
+  /** Raw src — may be a sandbox filesystem path or a valid URL */
+  src: string;
+  alt?: string;
+  className?: string;
+  /** When true, wraps the image in an ImagePreview dialog for full-size viewing */
+  preview?: boolean;
 }
 
 /**
@@ -39,73 +39,79 @@ interface SandboxImageProps {
  */
 export function SandboxImage({ src, alt = 'Image', className, preview }: SandboxImageProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-	const isLocalPath = isLocalSandboxFilePath(src);
+  const isLocalPath = isLocalSandboxFilePath(src);
 
-	// Strip /workspace/ prefix since the SDK expects paths relative to project root
-	const fileContentPath = useMemo(() => {
-		if (!isLocalPath) return null;
-		return src.replace(/^\/workspace\//, '');
-	}, [isLocalPath, src]);
+  // Strip /workspace/ prefix since the SDK expects paths relative to project root
+  const fileContentPath = useMemo(() => {
+    if (!isLocalPath) return null;
+    return src.replace(/^\/workspace\//, '');
+  }, [isLocalPath, src]);
 
-	const { data: fileContentData, isLoading } = useFileContent(
-		fileContentPath,
-		{ enabled: !!fileContentPath },
-	);
+  const { data: fileContentData, isLoading } = useFileContent(fileContentPath, {
+    enabled: !!fileContentPath,
+  });
 
-	// Convert base64 to blob URL (same pattern as tool-renderers.tsx)
-	const [blobUrl, setBlobUrl] = useState<string | null>(null);
-	const hasBase64 = fileContentData?.encoding === 'base64' && !!fileContentData?.content;
-	useEffect(() => {
-		if (!(fileContentData?.encoding === 'base64' && fileContentData.content)) {
-			setBlobUrl(null);
-			return;
-		}
-		const binary = atob(fileContentData.content);
-		const bytes = new Uint8Array(binary.length);
-		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-		const blob = new Blob([bytes], { type: fileContentData.mimeType || 'image/png' });
-		const url = URL.createObjectURL(blob);
-		setBlobUrl(url);
-		return () => {
-			URL.revokeObjectURL(url);
-		};
-	}, [fileContentData]);
+  // Convert base64 to blob URL (same pattern as tool-renderers.tsx)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const hasBase64 = fileContentData?.encoding === 'base64' && !!fileContentData?.content;
+  useEffect(() => {
+    if (!(fileContentData?.encoding === 'base64' && fileContentData.content)) {
+      setBlobUrl(null);
+      return;
+    }
+    const binary = atob(fileContentData.content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: fileContentData.mimeType || 'image/png' });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [fileContentData]);
 
-	// Priority: blob URL from sandbox fetch > original src (if already a valid URL)
-	const resolvedSrc = isLocalPath ? blobUrl : src;
+  // Priority: blob URL from sandbox fetch > original src (if already a valid URL)
+  const resolvedSrc = isLocalPath ? blobUrl : src;
 
-	// Loading state — show skeleton while fetching from sandbox
-	if (isLocalPath && (isLoading || (hasBase64 && !blobUrl))) {
-		return (
-			<div className={cn('animate-pulse bg-muted/40 rounded', className)} style={{ minHeight: 80, minWidth: 80 }} />
-		);
-	}
+  // Loading state — show skeleton while fetching from sandbox
+  if (isLocalPath && (isLoading || (hasBase64 && !blobUrl))) {
+    return (
+      <div
+        className={cn('animate-pulse bg-muted/40 rounded', className)}
+        style={{ minHeight: 80, minWidth: 80 }}
+      />
+    );
+  }
 
-	// Error state — fetch completed but no blob URL (file not found, etc.)
-	if (isLocalPath && !isLoading && !resolvedSrc) {
-		return (
-			<div className={cn('flex items-center justify-center bg-muted/20 rounded text-muted-foreground text-xs', className)} style={{ minHeight: 80, minWidth: 80 }}>{tHardcodedUi.raw('componentsSessionSandboxImage.line96JsxTextImageUnavailable')}</div>
-		);
-	}
+  // Error state — fetch completed but no blob URL (file not found, etc.)
+  if (isLocalPath && !isLoading && !resolvedSrc) {
+    return (
+      <div
+        className={cn(
+          'flex items-center justify-center bg-muted/20 rounded text-muted-foreground text-xs',
+          className,
+        )}
+        style={{ minHeight: 80, minWidth: 80 }}
+      >
+        {tHardcodedUi.raw('componentsSessionSandboxImage.line96JsxTextImageUnavailable')}
+      </div>
+    );
+  }
 
-	if (!resolvedSrc) return null;
+  if (!resolvedSrc) return null;
 
-	const img = (
-		/* eslint-disable-next-line @next/next/no-img-element */
-		<img
-			src={resolvedSrc}
-			alt={alt}
-			className={className}
-		/>
-	);
+  const img = (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img src={resolvedSrc} alt={alt} className={className} />
+  );
 
-	if (preview) {
-		return (
-			<ImagePreview src={resolvedSrc} alt={alt}>
-				{img}
-			</ImagePreview>
-		);
-	}
+  if (preview) {
+    return (
+      <ImagePreview src={resolvedSrc} alt={alt}>
+        {img}
+      </ImagePreview>
+    );
+  }
 
-	return img;
+  return img;
 }

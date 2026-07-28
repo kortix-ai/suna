@@ -1,36 +1,20 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import {
-  getFileCommitDiff,
-  getFileHistory,
-} from '../api/git-history';
-import { useProjectContext } from '../context';
 import type { FileCommitDiff, FileHistoryResult } from '@/features/file-browser/types';
+import { useQuery } from '@tanstack/react-query';
+import { getFileCommitDiff, getFileHistory } from '../api/git-history';
+import { useProjectContext } from '../context';
 
 export const fileHistoryKeys = {
   all: ['project-files', 'history'] as const,
   file: (projectId: string, ref: string, filePath: string) =>
     ['project-files', 'history', projectId, ref, filePath] as const,
-  filePaged: (
-    projectId: string,
-    ref: string,
-    filePath: string,
-    skip: number,
-    limit: number,
-  ) => ['project-files', 'history', projectId, ref, filePath, skip, limit] as const,
-  commitDiff: (
-    projectId: string,
-    ref: string,
-    filePath: string,
-    commitHash: string,
-  ) => ['project-files', 'history', 'diff', projectId, ref, filePath, commitHash] as const,
-  fileAtCommit: (
-    projectId: string,
-    ref: string,
-    filePath: string,
-    commitHash: string,
-  ) => ['project-files', 'history', 'content', projectId, ref, filePath, commitHash] as const,
+  filePaged: (projectId: string, ref: string, filePath: string, skip: number, limit: number) =>
+    ['project-files', 'history', projectId, ref, filePath, skip, limit] as const,
+  commitDiff: (projectId: string, ref: string, filePath: string, commitHash: string) =>
+    ['project-files', 'history', 'diff', projectId, ref, filePath, commitHash] as const,
+  fileAtCommit: (projectId: string, ref: string, filePath: string, commitHash: string) =>
+    ['project-files', 'history', 'content', projectId, ref, filePath, commitHash] as const,
 };
 
 /**
@@ -76,8 +60,7 @@ export function useFileCommitDiff(
         ? fileHistoryKeys.commitDiff(projectId, ref, filePath, commitHash)
         : ['project-files', 'history', 'diff', 'idle'],
     queryFn: () => getFileCommitDiff(projectId, filePath as string, commitHash as string),
-    enabled:
-      Boolean(projectId && filePath && commitHash) && options?.enabled !== false,
+    enabled: Boolean(projectId && filePath && commitHash) && options?.enabled !== false,
     staleTime: 5 * 60_000,
   });
 }

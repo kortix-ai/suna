@@ -4,7 +4,8 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/features/layout/app-header';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useRouter } from 'next/navigation';
-import React, { useEffect } from 'react';
+import type React from 'react';
+import { useEffect } from 'react';
 
 type LayoutProps = { children: React.ReactNode };
 

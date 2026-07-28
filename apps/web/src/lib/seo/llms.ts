@@ -1,8 +1,8 @@
 import {
+  type PublicContentKind,
   absoluteUrl,
   getPublicContentRecords,
   resolvePublicMarkdown,
-  type PublicContentKind,
 } from '@/lib/seo/public-content';
 import { siteMetadata } from '@/lib/site-metadata';
 

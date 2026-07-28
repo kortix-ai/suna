@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  OPACITY_BY_KIND,
+  PROPER,
+  SOURCE,
+  type Token,
   buildFieldSvg,
   buildTokens,
   computeGrid,
-  OPACITY_BY_KIND,
-  PROPER,
   shuffleWithSpaces,
-  SOURCE,
   svgEscape,
   svgToDataUri,
-  type Token,
 } from './kortix-letter-field.cells';
 
 describe('buildTokens', () => {

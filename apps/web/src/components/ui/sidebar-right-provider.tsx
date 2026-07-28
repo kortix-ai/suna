@@ -1,8 +1,8 @@
 'use client';
 
-import * as React from 'react';
 import { useIsMobile } from '@/hooks/utils';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
+import * as React from 'react';
 
 const SIDEBAR_RIGHT_COOKIE_NAME = 'sidebar_right_state';
 const SIDEBAR_RIGHT_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -19,15 +19,12 @@ type RightSidebarContextProps = {
   toggleSidebar: () => void;
 };
 
-const RightSidebarContext =
-  React.createContext<RightSidebarContextProps | null>(null);
+const RightSidebarContext = React.createContext<RightSidebarContextProps | null>(null);
 
 export function useRightSidebar() {
   const context = React.useContext(RightSidebarContext);
   if (!context) {
-    throw new Error(
-      'useRightSidebar must be used within a RightSidebarProvider.',
-    );
+    throw new Error('useRightSidebar must be used within a RightSidebarProvider.');
   }
   return context;
 }
@@ -66,11 +63,7 @@ export function RightSidebarProvider({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDocumentModalOpen) return;
 
-      if (
-        event.key === 'b' &&
-        event.shiftKey &&
-        (event.metaKey || event.ctrlKey)
-      ) {
+      if (event.key === 'b' && event.shiftKey && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         toggleSidebar();
       }

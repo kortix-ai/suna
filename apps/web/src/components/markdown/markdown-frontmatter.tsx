@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
-import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import React from 'react';
 import { UnifiedMarkdown } from './unified-markdown';
 
 /**

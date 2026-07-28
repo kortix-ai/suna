@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { ChevronLeft, ChevronRight, Grid2x2, Maximize, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 export type SlideDef = { id: string; label: string; node: ReactNode };
 
@@ -56,7 +56,7 @@ export function Deck({
   /* Hash sync (#1-based) + back/forward. */
   useEffect(() => {
     const fromHash = () => {
-      const n = parseInt(window.location.hash.replace('#', ''), 10);
+      const n = Number.parseInt(window.location.hash.replace('#', ''), 10);
       if (!Number.isNaN(n) && n >= 1 && n <= total) setIndex(n - 1);
     };
     fromHash();
@@ -114,7 +114,7 @@ export function Deck({
           break;
         default:
           if (/^[1-9]$/.test(e.key)) {
-            const n = parseInt(e.key, 10) - 1;
+            const n = Number.parseInt(e.key, 10) - 1;
             if (n < total) go(n);
           }
       }

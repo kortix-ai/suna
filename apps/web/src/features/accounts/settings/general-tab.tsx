@@ -44,9 +44,9 @@ import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { DangerTriangleSolid } from '@mynaui/icons-react';
 import { Clock } from 'lucide-react';
-import { AnimatePresence, motion, MotionConfig } from 'motion/react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
-import * as React from 'react';
+import type * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { LanguageSwitcher } from './language-switcher';
 

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SharingSelection,
   intentToSelection,
   isSharingComplete,
   selectionToIntent,
-  type SharingSelection,
 } from './sharing-intent';
 
 describe('selectionToIntent', () => {

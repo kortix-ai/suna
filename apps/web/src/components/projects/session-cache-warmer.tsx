@@ -4,11 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 
-import {
-  listProjectSessions,
-  projectSessionStartSeed,
-  sessionStartKey,
-} from '@kortix/sdk';
+import { listProjectSessions, projectSessionStartSeed, sessionStartKey } from '@kortix/sdk';
 import { prefetchSession } from '@kortix/sdk/react';
 import { runningSessionWarmupTargets } from './session-cache-warmer-targets';
 

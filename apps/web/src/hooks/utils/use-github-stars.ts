@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export function useGitHubStars(_owner?: string, _repo?: string) {
   const [stars, setStars] = useState<number | null>(null);

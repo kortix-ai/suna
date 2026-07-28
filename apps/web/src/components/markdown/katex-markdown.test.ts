@@ -44,16 +44,12 @@ describe('normalizeLatexDelimiters', () => {
 
   test('leaves delimiters inside fenced code unchanged', () => {
     const markdown = '```tex\n\\(x\\)\n\\[y\\]\n```\n\nThen \\(z\\).';
-    expect(normalizeLatexDelimiters(markdown)).toBe(
-      '```tex\n\\(x\\)\n\\[y\\]\n```\n\nThen $z$.',
-    );
+    expect(normalizeLatexDelimiters(markdown)).toBe('```tex\n\\(x\\)\n\\[y\\]\n```\n\nThen $z$.');
   });
 
   test('leaves delimiters inside CRLF fenced code unchanged', () => {
     const markdown = '```tex\r\n\\(x\\)\r\n```\r\n\r\nThen \\(z\\).';
-    expect(normalizeLatexDelimiters(markdown)).toBe(
-      '```tex\r\n\\(x\\)\r\n```\r\n\r\nThen $z$.',
-    );
+    expect(normalizeLatexDelimiters(markdown)).toBe('```tex\r\n\\(x\\)\r\n```\r\n\r\nThen $z$.');
   });
 
   test('keeps existing dollar delimiters unchanged', () => {

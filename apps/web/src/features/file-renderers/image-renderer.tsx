@@ -8,7 +8,8 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { ImageOff, Maximize2, Minimize2, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** What sits behind the artwork. Only meaningful for formats that can be
  *  transparent — an SVG logo is unreadable on the one background that happens

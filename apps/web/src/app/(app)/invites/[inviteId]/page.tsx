@@ -15,10 +15,10 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
+  type AccountInviteDescribe,
   acceptAccountInvite,
   declineAccountInvite,
   describeAccountInvite,
-  type AccountInviteDescribe,
 } from '@kortix/sdk';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };

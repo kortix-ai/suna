@@ -1,4 +1,4 @@
-import { toast as sonnerToast, type ExternalToast } from 'sonner';
+import { type ExternalToast, toast as sonnerToast } from 'sonner';
 
 export const toast = Object.assign(
   (message: string | React.ReactNode, data?: ExternalToast) => sonnerToast(message, data),
@@ -12,7 +12,7 @@ export const toast = Object.assign(
     custom: sonnerToast.custom,
     message: sonnerToast.message,
     dismiss: sonnerToast.dismiss,
-  }
+  },
 );
 
 // Re-export everything else from sonner

@@ -1,8 +1,8 @@
+import type { ChatVariantDefinition } from './types';
 import { VariantActivityCard } from './variant-activity-card';
 import { VariantAdaptive } from './variant-adaptive';
 import { VariantGrouped } from './variant-grouped';
 import { VariantNarrative } from './variant-narrative';
-import type { ChatVariantDefinition } from './types';
 
 /**
  * The three explorations, in increasing order of how much they hide by default.

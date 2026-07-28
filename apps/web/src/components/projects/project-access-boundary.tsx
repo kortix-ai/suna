@@ -1,5 +1,6 @@
 'use client';
 
+import { useLastProjectStore } from '@/stores/last-project-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -12,10 +13,9 @@ import {
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
-import { useLastProjectStore } from '@/stores/last-project-store';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,8 +33,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
+import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 
 interface ProjectAccessBoundaryProps {
   projectId: string;

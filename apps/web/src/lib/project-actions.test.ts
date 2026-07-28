@@ -34,7 +34,7 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     expect(isCustomizeSectionVisible('settings', can)).toBe(true);
   });
 
-  test("the reported role (customize.read + secret.read) sees the sections it can read", () => {
+  test('the reported role (customize.read + secret.read) sees the sections it can read', () => {
     const can = canFrom([
       PROJECT_ACTIONS.PROJECT_READ,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
@@ -60,6 +60,8 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
 
   test('the probe list is READ leaves only (no customize.write) + deduped', () => {
     expect(CUSTOMIZE_SECTION_GATE_ACTIONS).not.toContain(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    expect(new Set(CUSTOMIZE_SECTION_GATE_ACTIONS).size).toBe(CUSTOMIZE_SECTION_GATE_ACTIONS.length);
+    expect(new Set(CUSTOMIZE_SECTION_GATE_ACTIONS).size).toBe(
+      CUSTOMIZE_SECTION_GATE_ACTIONS.length,
+    );
   });
 });

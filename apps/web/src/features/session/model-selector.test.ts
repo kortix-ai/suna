@@ -59,7 +59,11 @@ describe('pickerGroupId', () => {
   });
 
   test('a non-gateway (native) provider model groups under its own providerID unchanged', () => {
-    const m = model({ providerID: 'anthropic', modelID: 'claude-opus-4-8', providerName: 'Anthropic' });
+    const m = model({
+      providerID: 'anthropic',
+      modelID: 'claude-opus-4-8',
+      providerName: 'Anthropic',
+    });
     expect(pickerGroupId(m)).toBe('anthropic');
   });
 });

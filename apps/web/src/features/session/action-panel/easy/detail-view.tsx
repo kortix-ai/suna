@@ -29,9 +29,9 @@ import type { ToolPart } from '@/ui';
 import { ChevronLeft, ChevronRight, PanelLeft, X } from 'lucide-react';
 import {
   AnimatePresence,
-  motion,
   type TargetAndTransition,
   type Transition,
+  motion,
   useReducedMotion,
 } from 'motion/react';
 import { type ReactNode, type RefObject, useEffect, useRef, useSyncExternalStore } from 'react';

@@ -22,5 +22,3 @@ describe('formatDuration', () => {
     expect(formatDuration(0)).toBe('0s');
   });
 });
-
-

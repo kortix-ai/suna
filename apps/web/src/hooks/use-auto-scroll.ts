@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * useAutoScroll — ChatGPT-style scroll.
@@ -93,7 +93,10 @@ function isFarFromBottom(el: HTMLDivElement, spacerHeight: number): boolean {
  */
 const WORKING_IDLE_GRACE_MS = 1500;
 
-export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAutoScrollOptions): UseAutoScrollReturn {
+export function useAutoScroll({
+  working: workingRaw,
+  hasContent = false,
+}: UseAutoScrollOptions): UseAutoScrollReturn {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const spacerElRef = useRef<HTMLDivElement>(null);
@@ -141,9 +144,7 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const vh = el.clientHeight;
     const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
     const last = turns[turns.length - 1];
-    let h = last
-      ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET)
-      : vh;
+    let h = last ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET) : vh;
 
     // Cap the spacer ONLY on fresh loads of an existing conversation (no
     // streaming yet this mount) — there the whitespace would look broken.
@@ -170,7 +171,10 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     let rafId = 0;
     const schedule = () => {
       if (rafId) return;
-      rafId = requestAnimationFrame(() => { rafId = 0; recalcSpacer(); });
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        recalcSpacer();
+      });
     };
 
     const ro = new ResizeObserver(schedule);
@@ -181,7 +185,11 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
 
     recalcSpacer();
 
-    return () => { ro.disconnect(); mo.disconnect(); cancelAnimationFrame(rafId); };
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, [recalcSpacer, working, hasContent]);
 
   // ── isAtBottom (DOM-measured, uses measureTarget) ─────────────────
@@ -209,7 +217,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const target = measureTarget(el, content);
     if (target !== null) el.scrollTop = target;
     // Release the guard after a frame so the instant scroll settles.
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 50);
   }, [recalcSpacer]);
 
   // ── Smooth scroll: last turn at top ───────────────────────────────
@@ -226,7 +236,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const target = measureTarget(el, content);
     if (target !== null) el.scrollTo({ top: target, behavior: 'smooth' });
     // Release the guard after smooth scroll completes (~400ms is typical).
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 500);
   }, [recalcSpacer]);
 
   const scrollToLastTurn = useCallback(() => scrollToBottom(), [scrollToBottom]);
@@ -245,7 +257,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     programmaticScrollRef.current = true;
     clearTimeout(programmaticScrollTimer.current);
     el.scrollTop = el.scrollHeight - el.clientHeight;
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 50);
   }, [recalcSpacer]);
 
   const smoothScrollToAbsoluteBottom = useCallback(() => {
@@ -257,7 +271,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     programmaticScrollRef.current = true;
     clearTimeout(programmaticScrollTimer.current);
     el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior: 'smooth' });
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 500);
   }, [recalcSpacer]);
 
   // On working → idle: deliberately NO re-anchor. The spacer keeps its full
@@ -311,7 +327,10 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     };
 
     rafIdRef.current = requestAnimationFrame(tick);
-    return () => { active = false; cancelAnimationFrame(rafIdRef.current); };
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafIdRef.current);
+    };
   }, [working, hasContent, isAtBottom, recalcSpacer]);
 
   // ── Wheel intent ──────────────────────────────────────────────────
@@ -351,7 +370,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const el = scrollRef.current;
     if (!el) return;
     let startY = 0;
-    const onStart = (e: TouchEvent) => { startY = e.touches[0]?.clientY ?? 0; };
+    const onStart = (e: TouchEvent) => {
+      startY = e.touches[0]?.clientY ?? 0;
+    };
     const onMove = (e: TouchEvent) => {
       const dy = startY - (e.touches[0]?.clientY ?? 0);
       if (Math.abs(dy) > 6) {
@@ -376,7 +397,10 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     };
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: true });
-    return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchmove', onMove); };
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+    };
   }, [working, hasContent]);
 
   // ── Keyboard / scrollbar drag catch-all ───────────────────────────
@@ -403,5 +427,15 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     return () => el.removeEventListener('scroll', handle);
   }, [working, hasContent]);
 
-  return { scrollRef, contentRef, spacerElRef, showScrollButton, scrollToBottom, scrollToLastTurn, scrollToEnd, scrollToAbsoluteBottom, smoothScrollToAbsoluteBottom };
+  return {
+    scrollRef,
+    contentRef,
+    spacerElRef,
+    showScrollButton,
+    scrollToBottom,
+    scrollToLastTurn,
+    scrollToEnd,
+    scrollToAbsoluteBottom,
+    smoothScrollToAbsoluteBottom,
+  };
 }

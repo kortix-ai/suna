@@ -1,5 +1,5 @@
 import { getServerPublicEnv } from '@/lib/public-env-server';
-import { Metadata } from 'next';
+import type { Metadata } from 'next';
 
 export async function generateMetadata({
   params,

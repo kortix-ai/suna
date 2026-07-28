@@ -43,7 +43,11 @@ function Crumbs({ crumbs }: { crumbs: MarketplaceCrumb[] }) {
                   <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
                 ) : crumb.onClick ? (
                   <BreadcrumbLink asChild>
-                    <button type="button" onClick={crumb.onClick} className="truncate cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={crumb.onClick}
+                      className="truncate cursor-pointer"
+                    >
                       {crumb.label}
                     </button>
                   </BreadcrumbLink>

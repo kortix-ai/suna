@@ -17,11 +17,11 @@ import {
   invalidateAccountState,
   useCreatePortalSession,
 } from '@/hooks/billing';
-import { getAccountState, type AccountState } from '@kortix/sdk';
 import { isBillingEnabled } from '@/lib/config';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { type AccountState, getAccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';

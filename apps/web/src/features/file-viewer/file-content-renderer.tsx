@@ -16,15 +16,12 @@ import {
 } from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getAuthToken } from '@/lib/auth-token';
-import {
-  getActiveStaticFileHealthUrl,
-  getActiveStaticFilePreviewUrl,
-} from '@kortix/sdk/react';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { toSandboxAbsolutePath } from '@kortix/sdk';
+import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
   AlertTriangle,
   Braces,
@@ -41,7 +38,8 @@ import {
   RotateCcw,
   Save,
 } from 'lucide-react';
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
 
 // ---------------------------------------------------------------------------
@@ -886,7 +884,11 @@ export function FileContentRenderer({
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer fileContent={fileContent.content} fileName={fileName} className="h-full" />
+              <PdfRenderer
+                fileContent={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+              />
             </Suspense>
           )}
 

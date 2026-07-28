@@ -1,12 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { useState } from 'react';
 
 interface ImagePreviewProps {
   src: string;
@@ -23,11 +19,7 @@ export function ImagePreview({ src, alt = 'Image preview', children }: ImagePrev
 
   return (
     <>
-      <button
-        type="button"
-        className="cursor-zoom-in"
-        onClick={() => setOpen(true)}
-      >
+      <button type="button" className="cursor-zoom-in" onClick={() => setOpen(true)}>
         {children}
       </button>
 

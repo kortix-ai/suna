@@ -1,10 +1,10 @@
 'use client';
 
 import type { FileSource } from '@/features/file-viewer';
+import { FilePathBreadcrumbs } from '@/features/project-files';
+import { downloadFile, uploadFile } from './api/runtime-files';
 import { useFileContent } from './hooks';
 import { useBinaryBlob } from './hooks/use-binary-blob';
-import { downloadFile, uploadFile } from './api/runtime-files';
-import { FilePathBreadcrumbs } from '@/features/project-files';
 
 /**
  * Live-workspace data source for the shared file viewer/modal. The hooks are

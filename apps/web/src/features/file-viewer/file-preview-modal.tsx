@@ -18,17 +18,17 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
+  type ComponentType,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ComponentType,
-  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
-import { FileSourceProvider, type FileSource } from './file-source';
+import { type FileSource, FileSourceProvider } from './file-source';
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [

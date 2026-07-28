@@ -13,8 +13,8 @@
  * for the same call.
  */
 
-import type { ToolPart } from '@/ui';
 import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
+import type { ToolPart } from '@/ui';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
@@ -194,10 +194,7 @@ function statusOf(part: ToolPart): string | undefined {
   return (part.state as { status?: string } | undefined)?.status;
 }
 
-export function deriveOutputs(
-  parts: ToolPart[],
-  opts?: { latestRun?: Set<string> },
-): OutputItem[] {
+export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string> }): OutputItem[] {
   const out: OutputItem[] = [];
   // key → index into `out`. Later occurrences of a key REPLACE the row in
   // place (last-write-wins): a file rewritten in run 5 is the run-5 file, and
@@ -313,7 +310,8 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
   if (!path) return null;
 
   const name = basename(path) || path;
-  const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
+  const title =
+    typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
   const description =
     typeof payload.description === 'string' && payload.description.trim()
       ? payload.description.trim()
@@ -398,9 +396,7 @@ function appOutput(
 ): AppOutputItem {
   const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
   const description =
-    typeof rawDescription === 'string' && rawDescription.trim()
-      ? rawDescription.trim()
-      : undefined;
+    typeof rawDescription === 'string' && rawDescription.trim() ? rawDescription.trim() : undefined;
 
   let fallback = url;
   try {

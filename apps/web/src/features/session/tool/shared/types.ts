@@ -1,5 +1,5 @@
-import type { ComponentType } from 'react';
 import type { ToolPart } from '@/ui';
+import type { ComponentType } from 'react';
 
 export interface ToolProps {
   part: ToolPart;

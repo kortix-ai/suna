@@ -47,8 +47,7 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
           account: 'default',
           credential: 'shared',
         });
-      } catch {
-      }
+      } catch {}
 
       const { token, app } = await pipedreamConnect(projectId, slug);
       if (!token || !app) throw new Error('This app is not available to connect right now');

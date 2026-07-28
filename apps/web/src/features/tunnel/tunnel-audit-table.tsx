@@ -6,12 +6,12 @@ import { useTranslations } from 'next-intl';
  * TunnelAuditTable — paginated audit log viewer for tunnel operations.
  */
 
-import React, { useState } from 'react';
-import { CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useTunnelAuditLogs } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
+import { CheckCircle2, ChevronLeft, ChevronRight, Clock, XCircle } from 'lucide-react';
+import React, { useState } from 'react';
 
 interface TunnelAuditTableProps {
   tunnelId: string;
@@ -23,11 +23,19 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
   const { data, isLoading } = useTunnelAuditLogs(tunnelId, page);
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line23JsxTextLoadingAuditLogs')}</div>;
+    return (
+      <div className="text-sm text-muted-foreground">
+        {tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line23JsxTextLoadingAuditLogs')}
+      </div>
+    );
   }
 
   if (!data || data.data.length === 0) {
-    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line27JsxTextNoAuditLogsYet')}</div>;
+    return (
+      <div className="text-sm text-muted-foreground">
+        {tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line27JsxTextNoAuditLogsYet')}
+      </div>
+    );
   }
 
   const { data: logs, pagination } = data;

@@ -26,10 +26,10 @@ import {
   useCreatePerSeatCheckout,
   useCreatePortalSession,
 } from '@/hooks/billing';
-import type { AccountState } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import type { AccountState } from '@kortix/sdk';
 import { formatCredits } from '@kortix/shared';
 import { CreditCardPlusSolid } from '@mynaui/icons-react';
 import { useQueryClient } from '@tanstack/react-query';

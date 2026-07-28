@@ -2,23 +2,18 @@
 import { Badge } from '@/components/ui/badge';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { StatusDot } from '@/components/ui/status';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Terminal,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Terminal } from 'lucide-react';
+import { useMemo } from 'react';
 
 export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -56,38 +51,37 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       {status === 'completed' && isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="pty_spawn" />
       ) : (
-      <div className="space-y-2 px-3 py-2">
-        {command && (
-          <div className="font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
-            <span className="text-muted-foreground/50 select-none">$</span>{' '}
-            <span className="text-foreground/80">{command}</span>
-          </div>
-        )}
-        {(processStatus || ptyId || pid || workdir) && (
-          <InlineMeta>
-            {processStatus && (
-              <Badge
-                variant={processStatus === 'running' ? 'success' : 'muted'}
-                size="sm"
-                className="gap-1"
-              >
-                {processStatus === 'running' && <StatusDot tone="success" pulse />}
-                {processStatus}
-              </Badge>
-            )}
-            {ptyId && <span className="font-mono">{ptyId}</span>}
-            {pid && <span className="font-mono">PID {pid}</span>}
-            {workdir && (
-              <span className="font-mono" title={workdir}>
-                {workdir}
-              </span>
-            )}
-          </InlineMeta>
-        )}
-      </div>
+        <div className="space-y-2 px-3 py-2">
+          {command && (
+            <div className="font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+              <span className="text-muted-foreground/50 select-none">$</span>{' '}
+              <span className="text-foreground/80">{command}</span>
+            </div>
+          )}
+          {(processStatus || ptyId || pid || workdir) && (
+            <InlineMeta>
+              {processStatus && (
+                <Badge
+                  variant={processStatus === 'running' ? 'success' : 'muted'}
+                  size="sm"
+                  className="gap-1"
+                >
+                  {processStatus === 'running' && <StatusDot tone="success" pulse />}
+                  {processStatus}
+                </Badge>
+              )}
+              {ptyId && <span className="font-mono">{ptyId}</span>}
+              {pid && <span className="font-mono">PID {pid}</span>}
+              {workdir && (
+                <span className="font-mono" title={workdir}>
+                  {workdir}
+                </span>
+              )}
+            </InlineMeta>
+          )}
+        </div>
       )}
     </BasicTool>
   );
 }
 ToolRegistry.register('pty_spawn', PtySpawnTool);
-

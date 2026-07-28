@@ -13,11 +13,11 @@ import {
 import {
   BasicTool,
   MD_FLUSH_CLASSES,
+  ToolOutputFallback,
   parseJsonFailure,
   partInput,
   partOutput,
   partStatus,
-  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {

@@ -22,5 +22,4 @@
  * use the `useShowPersonalContact()` hook — it ANDs this flag with a paid-plan
  * check so the concierge is a perk for paying customers, not free accounts.
  */
-export const SHOW_PERSONAL_CONTACT =
-  process.env.NEXT_PUBLIC_KORTIX_PERSONAL_CONTACT === 'true';
+export const SHOW_PERSONAL_CONTACT = process.env.NEXT_PUBLIC_KORTIX_PERSONAL_CONTACT === 'true';

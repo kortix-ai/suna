@@ -1,8 +1,8 @@
+import { useBillingAccountId } from '@/stores/billing-account-context';
+import { getBillingTransactionsSummary, listBillingTransactions } from '@kortix/sdk';
+import { dollarsToCredits } from '@kortix/shared';
 import { useQuery } from '@tanstack/react-query';
 import { accountStateKeys } from './use-account-state';
-import { useBillingAccountId } from '@/stores/billing-account-context';
-import { dollarsToCredits } from '@kortix/shared';
-import { getBillingTransactionsSummary, listBillingTransactions } from '@kortix/sdk';
 
 export interface CreditTransaction {
   id: string;
@@ -44,15 +44,13 @@ export interface TransactionsSummary {
 }
 
 export function useTransactions(
-  limit: number = 50,
-  offset: number = 0,
+  limit = 50,
+  offset = 0,
   typeFilter?: string | string[],
   options?: { enabled?: boolean },
 ) {
   const accountId = useBillingAccountId();
-  const normalizedTypeFilter = Array.isArray(typeFilter)
-    ? typeFilter.join(',')
-    : typeFilter;
+  const normalizedTypeFilter = Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter;
 
   return useQuery<TransactionsResponse>({
     // Scope the cache slot by account so the BillingTab's history block
@@ -87,10 +85,15 @@ export function useTransactions(
   });
 }
 
-export function useTransactionsSummary(days: number = 30) {
+export function useTransactionsSummary(days = 30) {
   const accountId = useBillingAccountId();
   return useQuery<TransactionsSummary>({
-    queryKey: [...accountStateKeys.transactions(), 'summary', days, { accountId: accountId ?? null }],
+    queryKey: [
+      ...accountStateKeys.transactions(),
+      'summary',
+      days,
+      { accountId: accountId ?? null },
+    ],
     queryFn: async () => {
       const data = await getBillingTransactionsSummary({
         days,

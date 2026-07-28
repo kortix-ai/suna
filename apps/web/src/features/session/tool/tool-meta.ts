@@ -6,8 +6,8 @@
  * 2. Extracting a one-line identity for any tool call (primary arg).
  */
 
-import type { ToolPart } from '@/ui';
 import { truncate as sharedTruncate } from '@/lib/utils/string';
+import type { ToolPart } from '@/ui';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
 
@@ -81,8 +81,7 @@ export function getToolPrimaryArg(part: ToolPart): string {
     case 'grep': {
       const pat = input.pattern ?? input.query;
       const where = input.path ?? input.include;
-      if (pat && where)
-        return `"${truncate(String(pat), 40)}" in ${basename(String(where))}`;
+      if (pat && where) return `"${truncate(String(pat), 40)}" in ${basename(String(where))}`;
       if (pat) return `"${truncate(String(pat), 60)}"`;
       return '';
     }
@@ -161,9 +160,7 @@ export function contextToolTrigger(part: ToolPart): {
     case 'project_list':
       return { title: 'Workspace', subtitle: sub };
     default: {
-      const display = n
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const display = n.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
       return { title: display, subtitle: sub };
     }
   }

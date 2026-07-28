@@ -12,8 +12,8 @@ import {
   FileExplorerPage,
   FileExplorerSourceProvider,
   FilesStoreProvider,
-  gitRefExplorerSource,
   ProjectFilesProvider,
+  gitRefExplorerSource,
   useSelectedVersion,
 } from '@/features/project-files';
 import { getProject } from '@kortix/sdk';

@@ -17,10 +17,7 @@ import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
-import {
-  getOAuthConsentRequest,
-  submitOAuthConsent,
-} from '@kortix/sdk';
+import { getOAuthConsentRequest, submitOAuthConsent } from '@kortix/sdk';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
@@ -119,13 +116,16 @@ function OAuthConsent() {
       }
 
       const backendUrl = getEnv().BACKEND_URL || '';
-      const data = await submitOAuthConsent({
-        requestId,
-        approved,
-      }, {
-        backendUrl,
-        accessToken: session.access_token,
-      });
+      const data = await submitOAuthConsent(
+        {
+          requestId,
+          approved,
+        },
+        {
+          backendUrl,
+          accessToken: session.access_token,
+        },
+      );
 
       if (data.redirect_uri) {
         window.location.href = data.redirect_uri;

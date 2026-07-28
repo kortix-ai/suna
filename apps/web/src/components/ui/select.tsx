@@ -5,7 +5,7 @@ import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import * as React from 'react';
-import { ButtonProps } from './button';
+import type { ButtonProps } from './button';
 
 const Select = SelectPrimitive.Root;
 

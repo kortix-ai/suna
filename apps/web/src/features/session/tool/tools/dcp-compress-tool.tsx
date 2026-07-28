@@ -1,23 +1,17 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
+  isErrorOutput,
   partInput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Loader2,
-  Scissors,
-} from 'lucide-react';
-import {
-  useContext,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Loader2, Scissors } from 'lucide-react';
+import { useContext } from 'react';
 
 export function DCPCompressTool({ part }: ToolProps) {
   const input = partInput(part);
@@ -52,4 +46,3 @@ export function DCPCompressTool({ part }: ToolProps) {
   );
 }
 ToolRegistry.register('compress', DCPCompressTool);
-

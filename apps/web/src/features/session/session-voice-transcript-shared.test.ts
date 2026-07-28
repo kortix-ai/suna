@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { relativeTurnTime, turnSpeakerLabel, voiceTranscriptKey } from './session-voice-transcript-shared';
+import {
+  relativeTurnTime,
+  turnSpeakerLabel,
+  voiceTranscriptKey,
+} from './session-voice-transcript-shared';
 
 describe('turnSpeakerLabel', () => {
   test('a tool-role turn is labeled by its speaker (the tool name)', () => {

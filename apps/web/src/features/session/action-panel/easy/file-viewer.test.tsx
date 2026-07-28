@@ -1,5 +1,5 @@
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { describe, expect, test } from 'bun:test';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { isRich } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';

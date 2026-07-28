@@ -1,3 +1,4 @@
+import { tags as t } from '@lezer/highlight';
 /**
  * CodeMirror theme that mirrors Pierre Dark / Pierre Light, the same palette
  * used by Shiki (markdown code blocks, file thumbnails) and `@pierre/diffs`.
@@ -11,7 +12,6 @@
  * matched to Pierre's semantic categories.
  */
 import { createTheme } from '@uiw/codemirror-themes';
-import { tags as t } from '@lezer/highlight';
 
 // ---------- Pierre Dark palette ----------
 const dark = {
@@ -93,12 +93,19 @@ function buildTheme(theme: 'light' | 'dark', p: typeof dark) {
       gutterBorder: 'transparent',
     },
     styles: [
-      { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: p.comment, fontStyle: 'italic' },
+      {
+        tag: [t.comment, t.lineComment, t.blockComment, t.docComment],
+        color: p.comment,
+        fontStyle: 'italic',
+      },
       { tag: [t.string, t.special(t.string), t.regexp], color: p.string },
       { tag: t.regexp, color: p.regexp },
       { tag: [t.number, t.bool, t.null], color: p.number },
       { tag: t.atom, color: p.enumMember },
-      { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.modifier, t.operatorKeyword], color: p.keyword },
+      {
+        tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.modifier, t.operatorKeyword],
+        color: p.keyword,
+      },
       { tag: t.definitionKeyword, color: p.keyword },
       { tag: [t.variableName, t.propertyName], color: p.variable },
       { tag: [t.local(t.variableName), t.special(t.variableName)], color: p.variable },

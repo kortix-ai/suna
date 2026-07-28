@@ -46,10 +46,7 @@ export function getWorkspaceEntryName(path: string): string {
   return normalized.split('/').filter(Boolean).pop() || normalized;
 }
 
-export function toWorkspaceSearchEntry(
-  path: string,
-  isDir = false,
-): WorkspaceSearchEntry {
+export function toWorkspaceSearchEntry(path: string, isDir = false): WorkspaceSearchEntry {
   const normalized = normalizeWorkspacePath(path);
   return {
     path: normalized,
@@ -81,7 +78,9 @@ export function parseWorkspacePaths(
 export function workspaceQueryLooksPathLike(query: string): boolean {
   const normalized = normalizeSearchQuery(query);
   if (!normalized) return false;
-  return normalized.includes('/') || normalized.startsWith('.') || normalized.startsWith('workspace');
+  return (
+    normalized.includes('/') || normalized.startsWith('.') || normalized.startsWith('workspace')
+  );
 }
 
 function isSubsequence(haystack: string, needle: string): boolean {
@@ -94,16 +93,10 @@ function isSubsequence(haystack: string, needle: string): boolean {
 }
 
 function pathSegmentsMatch(path: string, query: string): boolean {
-  const querySegments = stripWorkspacePrefix(query)
-    .toLowerCase()
-    .split('/')
-    .filter(Boolean);
+  const querySegments = stripWorkspacePrefix(query).toLowerCase().split('/').filter(Boolean);
   if (querySegments.length < 2) return false;
 
-  const pathSegments = stripWorkspacePrefix(path)
-    .toLowerCase()
-    .split('/')
-    .filter(Boolean);
+  const pathSegments = stripWorkspacePrefix(path).toLowerCase().split('/').filter(Boolean);
 
   let pathIndex = 0;
   for (const segment of querySegments) {
@@ -143,10 +136,7 @@ function getEntryVariants(entry: WorkspaceSearchEntry) {
   return { absolute, relative, basename, depth };
 }
 
-export function workspaceEntryMatchesQuery(
-  entry: WorkspaceSearchEntry,
-  query: string,
-): boolean {
+export function workspaceEntryMatchesQuery(entry: WorkspaceSearchEntry, query: string): boolean {
   const q = getQueryVariants(query);
   if (!q.normalized) return true;
 
@@ -155,17 +145,15 @@ export function workspaceEntryMatchesQuery(
   if (q.normalized && entryVariants.absolute.includes(q.normalized)) return true;
   if (q.relative && entryVariants.relative.includes(q.relative)) return true;
   if (q.basename && entryVariants.basename.includes(q.basename)) return true;
-  if (q.pathLike && q.relative && pathSegmentsMatch(entryVariants.absolute, q.relative)) return true;
+  if (q.pathLike && q.relative && pathSegmentsMatch(entryVariants.absolute, q.relative))
+    return true;
   if (q.basename.length >= 2 && isSubsequence(entryVariants.basename, q.basename)) return true;
   if (q.relative.length >= 3 && isSubsequence(entryVariants.relative, q.relative)) return true;
 
   return false;
 }
 
-export function rankWorkspaceSearchEntry(
-  entry: WorkspaceSearchEntry,
-  query: string,
-): number {
+export function rankWorkspaceSearchEntry(entry: WorkspaceSearchEntry, query: string): number {
   const q = getQueryVariants(query);
   const entryVariants = getEntryVariants(entry);
   const dirPenalty = q.looksFileLike && entry.isDir ? 25 : 0;
@@ -263,9 +251,5 @@ export function mergeWorkspaceSearchEntries(
   query: string,
   options?: WorkspaceSearchOptions,
 ): WorkspaceSearchEntry[] {
-  return searchIndexedWorkspaceEntries(
-    [...primary, ...fallback],
-    query,
-    options,
-  );
+  return searchIndexedWorkspaceEntries([...primary, ...fallback], query, options);
 }

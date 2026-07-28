@@ -153,7 +153,7 @@ export function SidebarSectionLabel({
 
 /**
  * A Customize child: plain text, no icon, no box. That restraint is what makes
- * the sidebar feel light — see ux-references/perplexity/01-home-search.png.
+ * the sidebar feel light.
  */
 export function SidebarPlainLink({
   href,

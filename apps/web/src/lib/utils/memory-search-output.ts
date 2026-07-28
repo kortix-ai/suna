@@ -78,7 +78,12 @@ function parseArrayOutput(parsed: Record<string, unknown>): ParsedMemorySearchOu
   const labelRaw = asString(parsed.label ?? parsed.title ?? '').trim();
   const sourceHint = parseSource(parsed.source);
   const label =
-    labelRaw || (sourceHint === 'ltm' ? 'LTM Search' : sourceHint === 'obs' ? 'Observation Search' : 'Memory Search');
+    labelRaw ||
+    (sourceHint === 'ltm'
+      ? 'LTM Search'
+      : sourceHint === 'obs'
+        ? 'Observation Search'
+        : 'Memory Search');
   const query = asString(parsed.query ?? parsed.search_query ?? parsed.searchQuery).trim();
   const declared = parsed.total ?? parsed.count ?? parsed.results_count;
   const declaredResults =
@@ -138,7 +143,8 @@ export function parseMemorySearchOutput(rawOutput: unknown): ParsedMemorySearchO
 
   const hits: ParsedMemorySearchHit[] = [];
 
-  const detailedBlockRe = /\[(LTM|obs)\/(\w+)\]\s*#([^\s]+)(?:\s*\(confidence:\s*([\d.]+)\))?\s*\n\s{2,}(.+?)(?:\n\s{2,}Files:\s*(.+?))?(?=\n\s*\[(?:LTM|obs)\/|$)/g;
+  const detailedBlockRe =
+    /\[(LTM|obs)\/(\w+)\]\s*#([^\s]+)(?:\s*\(confidence:\s*([\d.]+)\))?\s*\n\s{2,}(.+?)(?:\n\s{2,}Files:\s*(.+?))?(?=\n\s*\[(?:LTM|obs)\/|$)/g;
   let detailMatch: RegExpExecArray | null = detailedBlockRe.exec(body);
   while (detailMatch) {
     matched = true;
@@ -159,7 +165,8 @@ export function parseMemorySearchOutput(rawOutput: unknown): ParsedMemorySearchO
   }
 
   if (hits.length === 0) {
-    const compactRe = /#([^\s\]]+)\s*\[([^\]]+)\]\s*[\u2014-]\s*([\s\S]*?)(?=(?:\s+#([^\s\]]+)\s*\[)|$)/g;
+    const compactRe =
+      /#([^\s\]]+)\s*\[([^\]]+)\]\s*[\u2014-]\s*([\s\S]*?)(?=(?:\s+#([^\s\]]+)\s*\[)|$)/g;
     let compactMatch: RegExpExecArray | null = compactRe.exec(body);
     const inferredSource = parseSource(label);
     while (compactMatch) {

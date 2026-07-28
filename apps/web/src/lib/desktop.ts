@@ -17,8 +17,7 @@ export const DESKTOP_UA_TOKEN = 'KortixDesktop';
  * and 302s to it — same pattern as the CLI's `/install`. Override with
  * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
  */
-export const DESKTOP_DOWNLOAD_URL =
-  process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
+export const DESKTOP_DOWNLOAD_URL = process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
 
 /** Build a per-platform download URL, e.g. desktopDownloadUrl('macos'). */
 export function desktopDownloadUrl(platform?: 'macos' | 'windows' | 'linux'): string {
@@ -142,7 +141,7 @@ export const DESKTOP_URL_SCHEME = 'kortix';
  * `http://localhost:3000` in dev, `https://kortix.com` in prod) so the
  * Supabase redirect URL allowlist only needs the standard callbacks.
  */
-export function authRedirectUrl(path: string = '/auth/callback'): string {
+export function authRedirectUrl(path = '/auth/callback'): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   if (typeof window === 'undefined') return cleanPath;
   const origin = window.location.origin;
@@ -165,7 +164,7 @@ const clampZoom = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
 export function getDesktopZoom(): number {
   if (typeof window === 'undefined') return 1;
   try {
-    const v = parseFloat(window.localStorage.getItem(ZOOM_KEY) || '');
+    const v = Number.parseFloat(window.localStorage.getItem(ZOOM_KEY) || '');
     return Number.isFinite(v) ? clampZoom(v) : 1;
   } catch {
     return 1;
@@ -173,7 +172,11 @@ export function getDesktopZoom(): number {
 }
 
 async function invokeSetZoom(scale: number): Promise<void> {
-  const t = (window as unknown as { __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } } }).__TAURI__;
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
   if (!t?.core?.invoke) return;
   try {
     await t.core.invoke('set_zoom', { scale });
@@ -206,9 +209,11 @@ export const zoomReset = () => setDesktopZoom(1);
 
 function tauriInvoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> | null {
   if (typeof window === 'undefined') return null;
-  const t = (window as unknown as {
-    __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
-  }).__TAURI__;
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
   if (!t?.core?.invoke) return null;
   return t.core.invoke(cmd, args) as Promise<T>;
 }

@@ -1,17 +1,14 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Layers,
-} from 'lucide-react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Layers } from 'lucide-react';
 
 export function SessionStatsTool({ part }: ToolProps) {
   const output = partOutput(part);
@@ -33,4 +30,3 @@ ToolRegistry.register('session_stats', SessionStatsTool);
 ToolRegistry.register('session-stats', SessionStatsTool);
 ToolRegistry.register('oc-session_stats', SessionStatsTool);
 ToolRegistry.register('oc-session-stats', SessionStatsTool);
-

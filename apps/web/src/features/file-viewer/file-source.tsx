@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, type ComponentType, type ReactNode } from 'react';
+import { type ComponentType, type ReactNode, createContext, useContext } from 'react';
 
 /**
  * Minimal file-content shape the renderer needs. Mirrors each feature's
@@ -88,9 +88,7 @@ export function FileSourceProvider({
 export function useFileSource(): FileSource {
   const ctx = useContext(FileSourceContext);
   if (!ctx) {
-    throw new Error(
-      'useFileSource: a <FileSourceProvider> must wrap <FileContentRenderer>',
-    );
+    throw new Error('useFileSource: a <FileSourceProvider> must wrap <FileContentRenderer>');
   }
   return ctx;
 }

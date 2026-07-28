@@ -1,13 +1,14 @@
 'use client';
 
-import * as React from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useAnnouncementStore } from '@/stores/announcement-store';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import * as React from 'react';
 import { announcementRegistry } from './registry';
 
 export function AnnouncementDialog() {
-  const { isOpen, currentAnnouncement, closeAnnouncement, showPendingAnnouncement } = useAnnouncementStore();
+  const { isOpen, currentAnnouncement, closeAnnouncement, showPendingAnnouncement } =
+    useAnnouncementStore();
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -35,10 +36,7 @@ export function AnnouncementDialog() {
         <VisuallyHidden>
           <DialogTitle>Announcement</DialogTitle>
         </VisuallyHidden>
-        <Component
-          onClose={closeAnnouncement}
-          {...(currentAnnouncement.props || {})}
-        />
+        <Component onClose={closeAnnouncement} {...(currentAnnouncement.props || {})} />
       </DialogContent>
     </Dialog>
   );

@@ -3,7 +3,7 @@ import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { createServerClient } from '@supabase/ssr';
 import { getRequestConfig } from 'next-intl/server';
 import { cookies, headers } from 'next/headers';
-import { defaultLocale, type Locale } from './config';
+import { type Locale, defaultLocale } from './config';
 import { getUserLocale, normalizeLocale } from './locale';
 
 export default getRequestConfig(async ({ requestLocale }) => {

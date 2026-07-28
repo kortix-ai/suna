@@ -9,8 +9,8 @@ import {
 } from '@/features/session/session-files-explorer-logic';
 import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import {
-  SessionVersionHeader,
   type SessionPanelMode,
+  SessionVersionHeader,
 } from '@/features/session/session-version-header';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useEffect, useRef, useState } from 'react';

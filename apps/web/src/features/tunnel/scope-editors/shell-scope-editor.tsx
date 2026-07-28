@@ -2,12 +2,18 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState } from 'react';
-import { X, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Plus, X } from 'lucide-react';
+import React, { useState } from 'react';
 import type { ShellScope } from '../types';
 
 const SUGGESTED_COMMANDS = ['git', 'node', 'npm', 'npx', 'pnpm', 'bun', 'python', 'ls', 'cat'];
@@ -46,13 +52,22 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
     <div className="space-y-4">
       {/* Allowed Commands */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line46JsxTextAllowedCommands')}</Label>
+        <Label className="text-xs font-medium text-muted-foreground">
+          {tHardcodedUi.raw(
+            'componentsTunnelScopeEditorsShellScopeEditor.line46JsxTextAllowedCommands',
+          )}
+        </Label>
         {scope.commands.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {scope.commands.map((cmd) => (
               <Badge key={cmd} variant="secondary" className="gap-1 pr-1 font-mono text-xs">
                 {cmd}
-                <Button onClick={() => removeCommand(cmd)} variant="ghost" size="icon-xs" className="ml-0.5">
+                <Button
+                  onClick={() => removeCommand(cmd)}
+                  variant="ghost"
+                  size="icon-xs"
+                  className="ml-0.5"
+                >
                   <X className="h-3 w-3" />
                 </Button>
               </Badge>
@@ -65,10 +80,17 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
             value={commandInput}
             onChange={(e) => setCommandInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCommand())}
-            placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line65JsxAttrPlaceholderEGGitNodePython')}
+            placeholder={tHardcodedUi.raw(
+              'componentsTunnelScopeEditorsShellScopeEditor.line65JsxAttrPlaceholderEGGitNodePython',
+            )}
             className="flex-1 rounded-2xl border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <Button variant="outline" size="sm" onClick={() => addCommand()} disabled={!commandInput.trim()}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => addCommand()}
+            disabled={!commandInput.trim()}
+          >
             <Plus className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -91,23 +113,33 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
 
       {/* Working Directory */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line91JsxTextWorkingDirectory')}</Label>
+        <Label className="text-xs font-medium text-muted-foreground">
+          {tHardcodedUi.raw(
+            'componentsTunnelScopeEditorsShellScopeEditor.line91JsxTextWorkingDirectory',
+          )}
+        </Label>
         <input
           type="text"
           value={scope.workingDir || ''}
           onChange={(e) => onChange({ ...scope, workingDir: e.target.value || undefined })}
-          placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line96JsxAttrPlaceholderHomeUserProjectOptional')}
+          placeholder={tHardcodedUi.raw(
+            'componentsTunnelScopeEditorsShellScopeEditor.line96JsxAttrPlaceholderHomeUserProjectOptional',
+          )}
           className="w-full rounded-2xl border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
       </div>
 
       {/* Max Timeout */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line103JsxTextMaxTimeout')}</Label>
+        <Label className="text-xs font-medium text-muted-foreground">
+          {tHardcodedUi.raw(
+            'componentsTunnelScopeEditorsShellScopeEditor.line103JsxTextMaxTimeout',
+          )}
+        </Label>
         <Select
           value={String(scope.maxTimeout || 0)}
           onValueChange={(v) => {
-            const num = parseInt(v, 10);
+            const num = Number.parseInt(v, 10);
             onChange({ ...scope, maxTimeout: num || undefined });
           }}
         >
@@ -116,7 +148,9 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
           </SelectTrigger>
           <SelectContent>
             {TIMEOUT_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>

@@ -25,9 +25,7 @@ describe('warm project session send', () => {
         code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
       }),
     ).toBe(true);
-    expect(
-      shouldFallbackFromWarmClaim({ code: 'WARM_SESSION_ALREADY_CLAIMED' }),
-    ).toBe(true);
+    expect(shouldFallbackFromWarmClaim({ code: 'WARM_SESSION_ALREADY_CLAIMED' })).toBe(true);
     expect(shouldFallbackFromWarmClaim({ code: 'PAYMENT_REQUIRED' })).toBe(false);
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getItemsForSurface, type MenuItemDef } from './menu-registry';
+import { type MenuItemDef, getItemsForSurface } from './menu-registry';
 import { WALLPAPERS } from './wallpapers';
 
 function matchesPaletteQuery(item: MenuItemDef, query: string): boolean {

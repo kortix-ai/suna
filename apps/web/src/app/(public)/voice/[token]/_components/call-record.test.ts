@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { mergeCallRecord, toCallRecordEntries, unrecordedLive, type RawCallTurn } from './call-record';
+import {
+  type RawCallTurn,
+  mergeCallRecord,
+  toCallRecordEntries,
+  unrecordedLive,
+} from './call-record';
 import type { CallRecordEntry, LiveUtterance } from './types';
 
 function turn(partial: Partial<RawCallTurn> & { cursor: number }): RawCallTurn {
@@ -65,7 +70,12 @@ describe('toCallRecordEntries — who actually said it', () => {
   test('the two agent-side sources stay distinguishable — the whole point of reading speaker', () => {
     const entries = toCallRecordEntries([
       turn({ cursor: 1, role: 'agent', speaker: 'kortix', text: 'Tests are green.' }),
-      turn({ cursor: 2, role: 'agent', speaker: 'Kortix Voice', text: 'Good news, tests are green!' }),
+      turn({
+        cursor: 2,
+        role: 'agent',
+        speaker: 'Kortix Voice',
+        text: 'Good news, tests are green!',
+      }),
     ]);
     expect(entries.map((e) => e.kind)).toEqual(['kortix', 'voice']);
   });
@@ -96,7 +106,9 @@ describe('toCallRecordEntries — tool calls are not speech', () => {
     ['run_command: deploy → exit -1', 'exit -1'],
   ] as const) {
     test(`recognises the outcome vocabulary: ${outcome}`, () => {
-      const [e] = toCallRecordEntries([turn({ cursor: 1, role: 'tool', speaker: 'run_command', text })]);
+      const [e] = toCallRecordEntries([
+        turn({ cursor: 1, role: 'tool', speaker: 'run_command', text }),
+      ]);
       expect(e!.outcome).toBe(outcome);
       expect(e!.text).not.toContain('→');
     });
@@ -104,9 +116,19 @@ describe('toCallRecordEntries — tool calls are not speech', () => {
 
   test('ask_kortix has no outcome and keeps its whole request', () => {
     const [e] = toCallRecordEntries([
-      turn({ cursor: 1, role: 'tool', speaker: 'ask_kortix', text: 'ask_kortix: what broke the build?' }),
+      turn({
+        cursor: 1,
+        role: 'tool',
+        speaker: 'ask_kortix',
+        text: 'ask_kortix: what broke the build?',
+      }),
     ]);
-    expect(e).toMatchObject({ kind: 'tool', name: 'ask_kortix', text: 'what broke the build?', outcome: null });
+    expect(e).toMatchObject({
+      kind: 'tool',
+      name: 'ask_kortix',
+      text: 'what broke the build?',
+      outcome: null,
+    });
   });
 
   test('the settle row that closes a hand-off renders as name + outcome, nothing doubled', () => {
@@ -132,7 +154,12 @@ describe('toCallRecordEntries — tool calls are not speech', () => {
     // The bug the fixed outcome vocabulary exists to prevent: "arrow" is not a
     // result, so the request must survive whole.
     const [e] = toCallRecordEntries([
-      turn({ cursor: 1, role: 'tool', speaker: 'ask_kortix', text: 'ask_kortix: rename a → b in the schema' }),
+      turn({
+        cursor: 1,
+        role: 'tool',
+        speaker: 'ask_kortix',
+        text: 'ask_kortix: rename a → b in the schema',
+      }),
     ]);
     expect(e!.text).toBe('rename a → b in the schema');
     expect(e!.outcome).toBeNull();
@@ -140,21 +167,31 @@ describe('toCallRecordEntries — tool calls are not speech', () => {
 
   test('only the FINAL arrow segment is treated as the outcome', () => {
     const [e] = toCallRecordEntries([
-      turn({ cursor: 1, role: 'tool', speaker: 'run_command', text: 'run_command: echo a → b → ok' }),
+      turn({
+        cursor: 1,
+        role: 'tool',
+        speaker: 'run_command',
+        text: 'run_command: echo a → b → ok',
+      }),
     ]);
     expect(e!.text).toBe('echo a → b');
     expect(e!.outcome).toBe('ok');
   });
 
   test('falls back to a generic name when the tool row lost its speaker', () => {
-    const [e] = toCallRecordEntries([turn({ cursor: 1, role: 'tool', speaker: null, text: 'something happened' })]);
+    const [e] = toCallRecordEntries([
+      turn({ cursor: 1, role: 'tool', speaker: null, text: 'something happened' }),
+    ]);
     expect(e).toMatchObject({ kind: 'tool', name: 'tool', text: 'something happened' });
   });
 });
 
 describe('mergeCallRecord', () => {
   test('appends new cursors in order', () => {
-    const merged = mergeCallRecord([entry({ cursor: 1 })], [entry({ cursor: 2 }), entry({ cursor: 3 })]);
+    const merged = mergeCallRecord(
+      [entry({ cursor: 1 })],
+      [entry({ cursor: 2 }), entry({ cursor: 3 })],
+    );
     expect(merged.map((e) => e.cursor)).toEqual([1, 2, 3]);
   });
 
@@ -203,7 +240,9 @@ describe('unrecordedLive — the tail must not repeat the record', () => {
 
   test('matching is one-for-one, so saying the same thing twice retires two lines', () => {
     const live = [utterance({ id: 's1', text: 'yes' }), utterance({ id: 's2', text: 'yes' })];
-    expect(unrecordedLive(live, [entry({ cursor: 1, text: 'yes' })]).map((u) => u.id)).toEqual(['s2']);
+    expect(unrecordedLive(live, [entry({ cursor: 1, text: 'yes' })]).map((u) => u.id)).toEqual([
+      's2',
+    ]);
     expect(
       unrecordedLive(live, [entry({ cursor: 1, text: 'yes' }), entry({ cursor: 2, text: 'yes' })]),
     ).toEqual([]);
@@ -211,15 +250,21 @@ describe('unrecordedLive — the tail must not repeat the record', () => {
 
   test('a tool line can never retire a spoken one — nobody said it', () => {
     const live = [utterance({ id: 's1', text: 'bun test' })];
-    const record = [entry({ cursor: 1, kind: 'tool', name: 'run_command', text: 'bun test', outcome: 'ok' })];
+    const record = [
+      entry({ cursor: 1, kind: 'tool', name: 'run_command', text: 'bun test', outcome: 'ok' }),
+    ];
     expect(unrecordedLive(live, record)).toHaveLength(1);
   });
 
   test("the Kortix agent's own recorded line retires the voice echo of it", () => {
     // Both are role 'agent' server-side; either one landing means the words
     // are in the record, so the live copy is redundant.
-    const live = [utterance({ id: 's1', text: 'The deploy finished.', isLocal: false, name: 'Kortix' })];
-    const record = [entry({ cursor: 1, kind: 'kortix', name: 'Kortix agent', text: 'The deploy finished.' })];
+    const live = [
+      utterance({ id: 's1', text: 'The deploy finished.', isLocal: false, name: 'Kortix' }),
+    ];
+    const record = [
+      entry({ cursor: 1, kind: 'kortix', name: 'Kortix agent', text: 'The deploy finished.' }),
+    ];
     expect(unrecordedLive(live, record)).toEqual([]);
   });
 });

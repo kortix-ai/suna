@@ -95,9 +95,7 @@ export default function TokenDetailPage() {
       </div>
 
       {!tokensQuery.isLoading && !token && tokenId ? (
-        <InfoBanner tone="neutral">
-          This token doesn&apos;t exist or has been revoked.
-        </InfoBanner>
+        <InfoBanner tone="neutral">This token doesn&apos;t exist or has been revoked.</InfoBanner>
       ) : null}
 
       {token && accountId ? (

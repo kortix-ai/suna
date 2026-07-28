@@ -3,7 +3,7 @@
 import { ShaderSafe } from '@/components/ui/shader-safe';
 import { useWallpaperTheme } from '@/components/ui/wallpaper-shaders';
 import dynamic from 'next/dynamic';
-import { memo, type ReactNode } from 'react';
+import { type ReactNode, memo } from 'react';
 
 const GrainGradient = dynamic(
   () => import('@paper-design/shaders-react').then((m) => m.GrainGradient),

@@ -11,10 +11,10 @@ import { AuthPendingScreen } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
+  type LinkableGitHubInstallation,
   linkGitHubInstallation,
   listLinkableGitHubInstallations,
   saveGitHubInstallation,
-  type LinkableGitHubInstallation,
 } from '@kortix/sdk';
 import { Github } from 'lucide-react';
 

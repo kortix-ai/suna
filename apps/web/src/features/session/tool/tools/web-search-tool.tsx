@@ -2,22 +2,22 @@
 
 import {
   BasicTool,
+  ToolOutputFallback,
   isErrorOutput,
   partInput,
   partOutput,
   partStatus,
-  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
 import { Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
 import {
-  parseWebSearchOutput,
   type WebSearchQueryResult,
+  parseWebSearchOutput,
 } from '@/features/session/tool/shared/web-helpers';
 
 const VISIBLE_SOURCES = 8;

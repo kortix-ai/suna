@@ -14,8 +14,8 @@
 import { Button } from '@/components/ui/button';
 import { buildDemoMessages } from '@/features/session/activity/demo-transcript';
 import { CHAT_VARIANTS } from '@/features/session/activity/variants';
-import { VariantCurrent } from '@/features/session/activity/variants/variant-current';
 import type { ChatVariantDefinition } from '@/features/session/activity/variants/types';
+import { VariantCurrent } from '@/features/session/activity/variants/variant-current';
 import { cn } from '@/lib/utils';
 import { Columns2, Moon, Rows3, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -117,10 +117,7 @@ export default function ChatVariantsPage() {
         {shown.map((variant) => (
           <section
             key={variant.id}
-            className={cn(
-              'flex min-w-0 flex-col',
-              layout === 'single' && 'w-full max-w-[52rem]',
-            )}
+            className={cn('flex min-w-0 flex-col', layout === 'single' && 'w-full max-w-[52rem]')}
           >
             <div className="mb-4 px-4">
               <h2 className="text-sm font-semibold">{variant.name}</h2>

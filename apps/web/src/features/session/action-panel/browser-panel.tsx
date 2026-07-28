@@ -29,10 +29,7 @@ import {
 } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useTabStore } from '@/stores/tab-store';
-import {
-  createSessionPublicShare,
-  type CreateSessionPublicShareInput,
-} from '@kortix/sdk';
+import { type CreateSessionPublicShareInput, createSessionPublicShare } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -44,7 +41,8 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GrRefresh } from 'react-icons/gr';
 import { TbExternalLink } from 'react-icons/tb';
 

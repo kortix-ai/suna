@@ -1,18 +1,15 @@
 'use client';
 
-import React from 'react';
-import { LucideIcon } from 'lucide-react';
 import { AnimatedBg } from '@/components/ui/animated-bg';
+import type { LucideIcon } from 'lucide-react';
+import type React from 'react';
 
 interface PageHeaderProps {
   icon: LucideIcon;
   children: React.ReactNode;
 }
 
-export const PageHeader: React.FC<PageHeaderProps> = ({
-  icon: Icon,
-  children,
-}) => {
+export const PageHeader: React.FC<PageHeaderProps> = ({ icon: Icon, children }) => {
   return (
     <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl flex items-center justify-center border bg-background/80">
       <AnimatedBg variant="header" blurMultiplier={1.3} sizeMultiplier={1.1} />

@@ -1,5 +1,6 @@
 import { describe, expect, it, test } from 'bun:test';
 import type { ToolPart } from '@/ui';
+import { ToolRegistry } from '../../tool/tool-renderers';
 import {
   type StepFamily,
   familyForTool,
@@ -7,7 +8,6 @@ import {
   narrateFailedStep,
   narrateStep,
 } from './narration';
-import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
 
 function part(tool: string, input: Record<string, unknown> = {}, output?: string): ToolPart {
@@ -316,7 +316,9 @@ describe('registry coverage', () => {
       // 'other' is legal, but a *registered* tool landing there means the map
       // has fallen behind — surface it loudly.
       if (family === 'other') {
-        throw new Error(`Registered tool "${key}" has no narration family — add it to narration.ts`);
+        throw new Error(
+          `Registered tool "${key}" has no narration family — add it to narration.ts`,
+        );
       }
     }
   });
@@ -344,7 +346,9 @@ describe('narrateStep - presentation_gen must resolve its own action, not always
   });
 
   it('never narrates list_presentations (read-only) as a mutation', () => {
-    const line = narrateStep('create', [part('presentation_gen', { action: 'list_presentations' })]);
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'list_presentations' }),
+    ]);
     expect(line.toLowerCase()).not.toContain('built');
     expect(line.toLowerCase()).not.toContain('made');
     expect(line.toLowerCase()).not.toContain('delet');
@@ -380,9 +384,9 @@ describe('narrateStep - presentation_gen must resolve its own action, not always
   });
 
   it('falls back to a vague-but-true sentence when action is unrecognized (singular)', () => {
-    expect(narrateStep('create', [part('presentation_gen', { action: 'some_future_action' })])).toBe(
-      'Worked on a presentation',
-    );
+    expect(
+      narrateStep('create', [part('presentation_gen', { action: 'some_future_action' })]),
+    ).toBe('Worked on a presentation');
   });
 
   it('falls back to a vague-but-true sentence when action is missing/unrecognized (grouped)', () => {
@@ -513,7 +517,9 @@ describe('narrateStep - trigger_test is a dry run, not a mutation', () => {
 
   it('still says "Adjusted" for pause/resume (genuine control actions)', () => {
     expect(narrateStep('automations', [part('trigger_pause')]).toLowerCase()).toContain('adjusted');
-    expect(narrateStep('automations', [part('trigger_resume')]).toLowerCase()).toContain('adjusted');
+    expect(narrateStep('automations', [part('trigger_resume')]).toLowerCase()).toContain(
+      'adjusted',
+    );
   });
 });
 
@@ -542,7 +548,10 @@ describe('narrateStep - projects/skills are count-aware, not just parts[0]', () 
   });
 
   it('reports the count for multiple skills instead of only naming the first', () => {
-    const line = narrateStep('skills', [part('skill', { name: 'alpha' }), part('skill', { name: 'beta' })]);
+    const line = narrateStep('skills', [
+      part('skill', { name: 'alpha' }),
+      part('skill', { name: 'beta' }),
+    ]);
     expect(line).toContain('2 skills');
   });
 
@@ -624,9 +633,7 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
   });
 
   it('never renders an unparseable url — falls back to the generic "a link" label', () => {
-    const line = narrateStep('create', [
-      part('show', { url: '/internal/x?token=secret' }),
-    ]);
+    const line = narrateStep('create', [part('show', { url: '/internal/x?token=secret' })]);
     expect(line).not.toContain('token');
     expect(line).not.toContain('/internal');
     expect(line).toBe('Showed you a link');
@@ -680,8 +687,22 @@ describe('narrateStep - task_update/agent_task_update resolve their own action f
 
 describe('narrateFailedStep (W7)', () => {
   const FAMILIES: StepFamily[] = [
-    'explore', 'edit', 'run', 'web', 'create', 'plan', 'delegate', 'sessions',
-    'memory', 'apps', 'automations', 'projects', 'skills', 'ask', 'retired', 'other',
+    'explore',
+    'edit',
+    'run',
+    'web',
+    'create',
+    'plan',
+    'delegate',
+    'sessions',
+    'memory',
+    'apps',
+    'automations',
+    'projects',
+    'skills',
+    'ask',
+    'retired',
+    'other',
   ];
 
   it('every family produces failure phrasing with no raw identifiers', () => {
@@ -718,4 +739,3 @@ describe('narrateFailedStep (W7)', () => {
     expect(s).not.toContain('Send Message');
   });
 });
-

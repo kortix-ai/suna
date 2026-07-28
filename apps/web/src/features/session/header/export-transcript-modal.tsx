@@ -22,17 +22,14 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRuntimeSession } from '@kortix/sdk/react';
-import {
-  loadSessionTranscriptMessages,
-  useSessionSync,
-} from '@kortix/sdk/react';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
+  type TranscriptOptions,
   formatTranscript,
   getTranscriptFilename,
-  type TranscriptOptions,
 } from '@kortix/sdk';
+import { useRuntimeSession } from '@kortix/sdk/react';
+import { loadSessionTranscriptMessages, useSessionSync } from '@kortix/sdk/react';
 import { Check, Copy, Download } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

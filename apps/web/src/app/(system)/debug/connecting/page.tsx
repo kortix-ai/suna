@@ -2,9 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useState } from 'react';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import type { Stage } from '@/components/dashboard/connecting-screen';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
  * /debug/connecting
@@ -81,7 +81,10 @@ export default function DebugConnectingPage() {
     return () => clearInterval(id);
   }, [variant]);
 
-  const screen = useMemo(() => renderVariant(variant, animatedPct, tHardcodedUi), [variant, animatedPct, tHardcodedUi]);
+  const screen = useMemo(
+    () => renderVariant(variant, animatedPct, tHardcodedUi),
+    [variant, animatedPct, tHardcodedUi],
+  );
 
   const groups = Array.from(new Set(VARIANTS.map((v) => v.group)));
 
@@ -92,8 +95,12 @@ export default function DebugConnectingPage() {
       {/* Control panel — fixed, out of the way of the centered content */}
       <div className="pointer-events-auto fixed right-5 top-5 z-[100] w-[260px] overflow-hidden rounded-2xl border border-border/50 bg-background/95 shadow-2xl shadow-black/20 backdrop-blur-xl">
         <div className="border-b border-border/40 px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/60">{tHardcodedUi.raw('appDebugConnectingPage.line93JsxTextConnectingScreen')}</p>
-          <p className="mt-0.5 text-sm font-medium text-foreground">{tHardcodedUi.raw('appDebugConnectingPage.line96JsxTextDebugHarness')}</p>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+            {tHardcodedUi.raw('appDebugConnectingPage.line93JsxTextConnectingScreen')}
+          </p>
+          <p className="mt-0.5 text-sm font-medium text-foreground">
+            {tHardcodedUi.raw('appDebugConnectingPage.line96JsxTextDebugHarness')}
+          </p>
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto p-2">
@@ -117,9 +124,7 @@ export default function DebugConnectingPage() {
                   <span
                     className={
                       'h-1.5 w-1.5 flex-shrink-0 rounded-full transition-colors ' +
-                      (variant === v.id
-                        ? 'bg-foreground/80'
-                        : 'bg-foreground/15')
+                      (variant === v.id ? 'bg-foreground/80' : 'bg-foreground/15')
                     }
                   />
                   <span className="truncate">{v.label}</span>
@@ -130,10 +135,13 @@ export default function DebugConnectingPage() {
         </div>
 
         <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-xs leading-relaxed text-muted-foreground/50">{tHardcodedUi.raw('appDebugConnectingPage.line135JsxTextNotLinkedFromTheAppVisit')}{' '}
+          <p className="text-xs leading-relaxed text-muted-foreground/50">
+            {tHardcodedUi.raw('appDebugConnectingPage.line135JsxTextNotLinkedFromTheAppVisit')}{' '}
             <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs">
               /debug/connecting
-            </code>{' '}{tHardcodedUi.raw('appDebugConnectingPage.line139JsxTextAnyTime')}</p>
+            </code>{' '}
+            {tHardcodedUi.raw('appDebugConnectingPage.line139JsxTextAnyTime')}
+          </p>
         </div>
       </div>
     </>
@@ -161,9 +169,7 @@ function renderVariant(
 
   switch (variant) {
     case 'connecting':
-      return (
-        <ConnectingScreen forceConnecting labelOverride="sandbox-83e1c69c-3" />
-      );
+      return <ConnectingScreen forceConnecting labelOverride="sandbox-83e1c69c-3" />;
     case 'connecting-with-title':
       return (
         <ConnectingScreen
@@ -182,7 +188,13 @@ function renderVariant(
       return <ConnectingScreen forceConnecting overrideStage={'restoring' as Stage} />;
 
     case 'minimal-signing-in':
-      return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appDebugConnectingPage.line185JsxAttrTitleSigningIn')} />;
+      return (
+        <ConnectingScreen
+          forceConnecting
+          minimal
+          title={tHardcodedUi.raw('appDebugConnectingPage.line185JsxAttrTitleSigningIn')}
+        />
+      );
     case 'minimal-authorizing':
       return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
     case 'minimal-no-title':
@@ -192,7 +204,9 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line195JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line195JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: 0,
             stageLabel: 'Preparing workspace',
@@ -203,7 +217,9 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line206JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line206JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: animatedPct,
             stageLabel:
@@ -221,7 +237,9 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line224JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line224JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: 42,
             stageLabel: 'Installing runtime',
@@ -233,7 +251,9 @@ function renderVariant(
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title={tHardcodedUi.raw('appDebugConnectingPage.line236JsxAttrTitleProvisioningWorkspace')}
+          title={tHardcodedUi.raw(
+            'appDebugConnectingPage.line236JsxAttrTitleProvisioningWorkspace',
+          )}
           provisioning={{
             progress: 60,
             stages: MOCK_STAGES,
@@ -248,8 +268,7 @@ function renderVariant(
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
           error={{
-            message:
-              'Image pull failed: manifest unknown: registry returned 404 for tag v1.42.0.',
+            message: 'Image pull failed: manifest unknown: registry returned 404 for tag v1.42.0.',
           }}
         />
       );
@@ -267,9 +286,7 @@ function renderVariant(
       );
 
     case 'stopped':
-      return (
-        <ConnectingScreen stopped={{ name: 'sandbox-83e1c69c-3' }} />
-      );
+      return <ConnectingScreen stopped={{ name: 'sandbox-83e1c69c-3' }} />;
 
     case 'unreachable':
       // Simulate unreachable by rendering with provisioning? No — we need the

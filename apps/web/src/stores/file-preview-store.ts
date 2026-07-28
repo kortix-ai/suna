@@ -1,8 +1,5 @@
+import { getActivePanelSessionId, openFileInSessionPanel } from '@/stores/session-browser-store';
 import { create } from 'zustand';
-import {
-  getActivePanelSessionId,
-  openFileInSessionPanel,
-} from '@/stores/session-browser-store';
 
 interface FilePreviewState {
   /** Whether the preview dialog is open */

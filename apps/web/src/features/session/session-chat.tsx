@@ -128,45 +128,6 @@ import {
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import type { ProviderListResponse } from '@kortix/sdk/react';
-import {
-  type KortixSendError,
-  type ModelKey,
-  type UseSessionResult,
-  abandonOptimisticSend,
-  applyOptimisticAbort,
-  ascendingId,
-  beginOptimisticSend,
-  classifySendError,
-  clearStartStash,
-  formatModelString,
-  formatPromptModel,
-  parseModelKey,
-  readStartStash,
-  recoverFromSendFailure,
-  rejectQuestion,
-  replayStartStash,
-  replyToPermission,
-  replyToQuestion,
-  sendAndRecover,
-  useAbortRuntimeSession,
-  useExecuteRuntimeCommand,
-  usePermissionSelfHeal,
-  useProjectConfig,
-  useQuestionSelfHeal,
-  useRuntimeAgents,
-  useRuntimeCommands,
-  useRuntimeConfig,
-  useRuntimePendingStore,
-  useRuntimeProviders,
-  useRuntimeReady,
-  useRuntimeSession,
-  useRuntimeSessions,
-  useSessionModelSelection,
-  useSessionStateStore,
-  useSessionSync,
-} from '@kortix/sdk/react';
-import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -208,7 +169,46 @@ import {
   shouldShowToolPart,
   splitUserParts,
 } from '@/ui';
+import type { ProviderListResponse } from '@kortix/sdk/react';
+import {
+  type KortixSendError,
+  type ModelKey,
+  type UseSessionResult,
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  ascendingId,
+  beginOptimisticSend,
+  classifySendError,
+  clearStartStash,
+  formatModelString,
+  formatPromptModel,
+  parseModelKey,
+  readStartStash,
+  recoverFromSendFailure,
+  rejectQuestion,
+  replayStartStash,
+  replyToPermission,
+  replyToQuestion,
+  sendAndRecover,
+  useAbortRuntimeSession,
+  useExecuteRuntimeCommand,
+  usePermissionSelfHeal,
+  useProjectConfig,
+  useQuestionSelfHeal,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useRuntimeProviders,
+  useRuntimeReady,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionModelSelection,
+  useSessionStateStore,
+  useSessionSync,
+} from '@kortix/sdk/react';
 import { SandboxUrlDetector } from './sandbox-url-detector';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -5618,8 +5618,7 @@ export function SessionChat({
                         {(() => {
                           const { cleanText: afterReply, replyContext: optReply } =
                             parseReplyContext(optimisticPrompt || '');
-                            const { cleanText: afterFiles, files } =
-                              parseFileReferences(afterReply);
+                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
                           const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
                           const { cleanText: afterFileMentions } =
                             parseFileMentionReferences(afterProjects);
@@ -5765,10 +5764,10 @@ export function SessionChat({
                           commands={commands}
                           disableToolNavigation={disableToolNavigation}
                           onPermissionReply={handlePermissionReply}
-                            onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
-                            rewindDisabled={
-                              !!readOnly || !sessionState || isBusy || sessionState.rewindPending
-                            }
+                          onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                          rewindDisabled={
+                            !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                          }
                         />
                       </div>
                     );
@@ -5858,100 +5857,100 @@ export function SessionChat({
 
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
-          <>
-        <SessionChatInput
-          onSend={async (text, files, mentions) => {
-            await handleSend(text, files, mentions);
-            if (failedStartDraft) {
-              clearStartStash(sessionId);
-              usePendingFilesStore.getState().consumePendingFiles();
-              setFailedStartDraft(null);
-            }
-          }}
-          prefill={
-                rewindDraft
-                  ? {
-                      text: rewindDraft.text,
-                      id: rewindDraft.id,
-                      mode: 'replace',
-                    }
-                  : failedStartDraft
-              ? {
-                  text: failedStartDraft.text,
-                  files: failedStartDraft.files,
-                  id: failedStartDraft.id,
-                  mode: 'merge',
-                }
-              : sessionPrefill
-                ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                : null
-          }
-          isBusy={isBusy}
-          queuedMessages={queuedMessages}
-          onQueueMessage={handleQueueMessage}
-          onRemoveQueuedMessage={handleRemoveQueuedMessage}
-          onStop={handleStop}
-          escCount={escCount}
-          agents={local.agent.list}
-          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-          agentSelectorLocked={!!lockedAgentName}
-          commands={chatCommands}
-          onCommand={handleCommand}
-          models={local.model.list}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={handleModelChange}
-          modelDefaultControls={chatModelDefaultControls}
-          variants={local.model.variant.list}
-          selectedVariant={local.model.variant.current ?? null}
-          onVariantChange={handleVariantChange}
-          messages={messages}
-          sessionId={sessionId}
-          projectId={projectId}
-          onFileSearch={handleFileSearch}
-          providers={providers}
-          modelRequired
-          modelsLoading={providersLoading}
-          threadContext={threadContext}
-          onContextClick={handleContextClick}
-          replyTo={replyTo}
-          onClearReply={handleClearReply}
-          // Only lock the input into question-answer mode while the session is
-          // actually busy (a live question keeps the run busy). If a question
-          // chip is ever showing while the session is idle — e.g. a dead /
-          // abandoned question the agent left behind — the input stays unlocked
-          // so a typed message is sent to the agent instead of being swallowed
-          // as a custom answer.
-          lockForQuestion={!!renderedQuestion && isBusy}
-          // Same dead-prompt guard as questions: only lock while the agent is
-          // actually paused on the decision (isBusy), so a stale card can't
-          // swallow the composer on an idle session.
-          lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-          onCustomAnswer={handleCustomAnswer}
-          questionButtonLabel={renderedQuestion ? questionAction.label : null}
-          questionCanAct={questionAction.canAct}
-          onQuestionAction={handleQuestionAction}
-          inputSlot={chatInputSlot}
-        />
-            <ConfirmDialog
-              open={!!rewindTarget}
-              onOpenChange={(open) => !open && setRewindTarget(null)}
-              title="Edit from this message?"
-              description={
-                <>
-                  <p>This rewinds the same session and restores its files to this message.</p>
-                  <p className="mt-2">
-                    You can restore the removed path until you send a replacement prompt.
-                  </p>
-                </>
+        <>
+          <SessionChatInput
+            onSend={async (text, files, mentions) => {
+              await handleSend(text, files, mentions);
+              if (failedStartDraft) {
+                clearStartStash(sessionId);
+                usePendingFilesStore.getState().consumePendingFiles();
+                setFailedStartDraft(null);
               }
-              confirmLabel="Rewind session"
-              confirmVariant="destructive"
-              confirmIcon={<RotateCcw className="size-3.5" />}
-              isPending={sessionState?.rewindPending}
-              onConfirm={() => void handleConfirmRewind()}
-            />
-          </>
+            }}
+            prefill={
+              rewindDraft
+                ? {
+                    text: rewindDraft.text,
+                    id: rewindDraft.id,
+                    mode: 'replace',
+                  }
+                : failedStartDraft
+                  ? {
+                      text: failedStartDraft.text,
+                      files: failedStartDraft.files,
+                      id: failedStartDraft.id,
+                      mode: 'merge',
+                    }
+                  : sessionPrefill
+                    ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                    : null
+            }
+            isBusy={isBusy}
+            queuedMessages={queuedMessages}
+            onQueueMessage={handleQueueMessage}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
+            onStop={handleStop}
+            escCount={escCount}
+            agents={local.agent.list}
+            selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+            onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+            agentSelectorLocked={!!lockedAgentName}
+            commands={chatCommands}
+            onCommand={handleCommand}
+            models={local.model.list}
+            selectedModel={local.model.currentKey ?? null}
+            onModelChange={handleModelChange}
+            modelDefaultControls={chatModelDefaultControls}
+            variants={local.model.variant.list}
+            selectedVariant={local.model.variant.current ?? null}
+            onVariantChange={handleVariantChange}
+            messages={messages}
+            sessionId={sessionId}
+            projectId={projectId}
+            onFileSearch={handleFileSearch}
+            providers={providers}
+            modelRequired
+            modelsLoading={providersLoading}
+            threadContext={threadContext}
+            onContextClick={handleContextClick}
+            replyTo={replyTo}
+            onClearReply={handleClearReply}
+            // Only lock the input into question-answer mode while the session is
+            // actually busy (a live question keeps the run busy). If a question
+            // chip is ever showing while the session is idle — e.g. a dead /
+            // abandoned question the agent left behind — the input stays unlocked
+            // so a typed message is sent to the agent instead of being swallowed
+            // as a custom answer.
+            lockForQuestion={!!renderedQuestion && isBusy}
+            // Same dead-prompt guard as questions: only lock while the agent is
+            // actually paused on the decision (isBusy), so a stale card can't
+            // swallow the composer on an idle session.
+            lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+            onCustomAnswer={handleCustomAnswer}
+            questionButtonLabel={renderedQuestion ? questionAction.label : null}
+            questionCanAct={questionAction.canAct}
+            onQuestionAction={handleQuestionAction}
+            inputSlot={chatInputSlot}
+          />
+          <ConfirmDialog
+            open={!!rewindTarget}
+            onOpenChange={(open) => !open && setRewindTarget(null)}
+            title="Edit from this message?"
+            description={
+              <>
+                <p>This rewinds the same session and restores its files to this message.</p>
+                <p className="mt-2">
+                  You can restore the removed path until you send a replacement prompt.
+                </p>
+              </>
+            }
+            confirmLabel="Rewind session"
+            confirmVariant="destructive"
+            confirmIcon={<RotateCcw className="size-3.5" />}
+            isPending={sessionState?.rewindPending}
+            onConfirm={() => void handleConfirmRewind()}
+          />
+        </>
       )}
     </div>
   );

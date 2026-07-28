@@ -61,7 +61,9 @@ describe('SessionSiteHeader "more actions" menu — destructive last, technical 
     const deleteIndex = source.indexOf('<TrashSolid');
     const exportIndex = source.indexOf('Export conversation');
     const compactIndex = source.indexOf('Summarize conversation');
-    const renameIndex = source.indexOf("'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53'");
+    const renameIndex = source.indexOf(
+      "'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53'",
+    );
 
     expect(deleteIndex).toBeGreaterThan(exportIndex);
     expect(deleteIndex).toBeGreaterThan(compactIndex);
@@ -77,11 +79,17 @@ describe('SessionSiteHeader "more actions" menu — destructive last, technical 
     expect(source).toContain('Summarize conversation');
 
     const exportItemStart = source.indexOf('Export conversation') - 400;
-    const exportItem = source.slice(Math.max(0, exportItemStart), source.indexOf('Export conversation'));
+    const exportItem = source.slice(
+      Math.max(0, exportItemStart),
+      source.indexOf('Export conversation'),
+    );
     expect(exportItem).toContain('text-muted-foreground');
 
     const compactItemStart = source.indexOf('Summarize conversation') - 400;
-    const compactItem = source.slice(Math.max(0, compactItemStart), source.indexOf('Summarize conversation'));
+    const compactItem = source.slice(
+      Math.max(0, compactItemStart),
+      source.indexOf('Summarize conversation'),
+    );
     expect(compactItem).toContain('text-muted-foreground');
   });
 });

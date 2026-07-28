@@ -1,9 +1,9 @@
 'use client';
 
-import type { LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 export function SectionHeader({
   icon: Icon,
@@ -50,12 +50,7 @@ const TONE_STYLES: Record<NonNullable<StatPillProps['tone']>, string> = {
 
 export function StatPill({ label, value, hint, tone = 'default', className }: StatPillProps) {
   return (
-    <div
-      className={cn(
-        'rounded-2xl border border-border/60 bg-card p-4 min-w-0',
-        className,
-      )}
-    >
+    <div className={cn('rounded-2xl border border-border/60 bg-card p-4 min-w-0', className)}>
       <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
         {label}
       </div>

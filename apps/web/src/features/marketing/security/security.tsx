@@ -7,8 +7,8 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
-import { Heatmap } from '@paper-design/shaders-react';
 import { ShaderSafe } from '@/components/ui/shader-safe';
+import { Heatmap } from '@paper-design/shaders-react';
 import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';

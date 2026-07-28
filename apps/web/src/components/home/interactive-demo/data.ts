@@ -4,9 +4,9 @@ import {
   Database,
   FileText,
   GitPullRequest,
+  type LucideIcon,
   MessageSquare,
   Search,
-  type LucideIcon,
 } from 'lucide-react';
 import { FaUsers } from 'react-icons/fa';
 import type { IconType } from 'react-icons/lib';

@@ -1,24 +1,24 @@
-"use client";
+'use client';
 
-import { cn } from "@/lib/utils";
-import Link from "next/link";
-import { Children, isValidElement, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import { CodeBlock } from "./markdown-code-block";
+import { cn } from '@/lib/utils';
+import Link from 'next/link';
+import { Children, type ReactNode, isValidElement } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import rehypeKatex from 'rehype-katex';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import { CodeBlock } from './markdown-code-block';
 
 interface ThinkingMarkdownProps {
   children: string;
 }
 
 const getTextContent = (value: ReactNode): string => {
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map(getTextContent).join("");
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(getTextContent).join('');
   if (isValidElement<{ children?: ReactNode }>(value))
-    return getTextContent(value.props.children ?? "");
-  return "";
+    return getTextContent(value.props.children ?? '');
+  return '';
 };
 
 const components: Components = {
@@ -28,10 +28,10 @@ const components: Components = {
       return <pre>{children}</pre>;
     }
 
-    const className = firstChild.props.className ?? "";
+    const className = firstChild.props.className ?? '';
     const languageMatch = /language-([\w-]+)/.exec(className);
-    const language = languageMatch?.[1] ?? "";
-    const rawCode = getTextContent(firstChild.props.children).replace(/\n$/, "");
+    const language = languageMatch?.[1] ?? '';
+    const rawCode = getTextContent(firstChild.props.children).replace(/\n$/, '');
 
     return <CodeBlock code={rawCode} language={language} />;
   },
@@ -77,7 +77,7 @@ const components: Components = {
   li: ({ children }) => <li className="text-primary/80 leading-relaxed">{children}</li>,
   a: ({ children, href }) => (
     <Link
-      href={href ?? "#"}
+      href={href ?? '#'}
       target="_blank"
       className="text-actrun-blue gap-1.5 rounded-md bg-transparent text-sm leading-relaxed font-medium underline underline-offset-auto"
     >
@@ -97,8 +97,8 @@ const components: Components = {
   th: ({ children, className }) => (
     <th
       className={cn(
-        "bg-card border-b px-4 py-2 text-left text-[0.95rem] font-semibold [&[align=center]]:text-center [&[align=right]]:text-right",
-        "text-[0.95rem]",
+        'bg-card border-b px-4 py-2 text-left text-[0.95rem] font-semibold [&[align=center]]:text-center [&[align=right]]:text-right',
+        'text-[0.95rem]',
         className,
       )}
     >
@@ -106,15 +106,15 @@ const components: Components = {
     </th>
   ),
   tr: ({ children, className }) => (
-    <tr className={cn("border-border bg-background border-b last:border-b-0", className)}>
+    <tr className={cn('border-border bg-background border-b last:border-b-0', className)}>
       {children}
     </tr>
   ),
   td: ({ children, className }) => (
     <td
       className={cn(
-        "px-4 py-2 text-left text-[0.95rem] font-normal [&[align=center]]:text-center [&[align=right]]:text-right",
-        "text-[0.95rem]",
+        'px-4 py-2 text-left text-[0.95rem] font-normal [&[align=center]]:text-center [&[align=right]]:text-right',
+        'text-[0.95rem]',
         className,
       )}
     >
@@ -133,9 +133,9 @@ export function ThinkingMarkdown({ children }: ThinkingMarkdownProps) {
   return (
     <div
       className={cn(
-        "text-primary/85 space-y-4 text-sm",
-        "[&_.shiki]:!bg-transparent [&_.shiki_pre]:!bg-transparent",
-        "[&_.shiki_span]:!bg-transparent",
+        'text-primary/85 space-y-4 text-sm',
+        '[&_.shiki]:!bg-transparent [&_.shiki_pre]:!bg-transparent',
+        '[&_.shiki_span]:!bg-transparent',
       )}
     >
       <ReactMarkdown

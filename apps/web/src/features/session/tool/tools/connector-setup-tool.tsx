@@ -1,23 +1,18 @@
 'use client';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Plug,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Plug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-
+import { useMemo } from 'react';
 
 import { parseConnectorSetupOutput } from '@/lib/utils/kortix-tool-output';
 
@@ -58,7 +53,9 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
         ) : (
           <div className="p-3">
             <TextShimmer>
-              {tHardcodedUi.raw('componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors')}
+              {tHardcodedUi.raw(
+                'componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors',
+              )}
             </TextShimmer>
           </div>
         )}
@@ -70,4 +67,3 @@ ToolRegistry.register('connector_setup', ConnectorSetupTool);
 ToolRegistry.register('connector-setup', ConnectorSetupTool);
 ToolRegistry.register('oc-connector_setup', ConnectorSetupTool);
 ToolRegistry.register('oc-connector-setup', ConnectorSetupTool);
-

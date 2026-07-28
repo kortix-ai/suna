@@ -13,9 +13,10 @@ describe('buildNewSessionCreateInput', () => {
   });
 
   it('carries the sandbox slug through alongside the agent', () => {
-    expect(
-      buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' }),
-    ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
+    expect(buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'builder',
+      sandbox_slug: 'node22',
+    });
   });
 
   it('binds only the sandbox slug when no agent is picked', () => {

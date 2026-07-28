@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useMemo } from 'react';
 
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
@@ -59,7 +59,12 @@ export function getContextLimit(
   return 200000;
 }
 
-export function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
+export function TokenProgress({
+  messages,
+  models,
+  selectedModel,
+  onContextClick,
+}: TokenProgressProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
   const contextLimit = useMemo(

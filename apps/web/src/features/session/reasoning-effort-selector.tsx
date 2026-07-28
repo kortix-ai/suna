@@ -54,10 +54,10 @@ import {
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
-import { modelKeyToWire } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
+import { modelKeyToWire } from '@kortix/sdk/react';
 import { useGatewayRoutingPolicy } from '@kortix/sdk/react';
 
 export interface ReasoningEffortModelKey {

@@ -13,7 +13,7 @@
 // The capability lists below mirror the role → action mapping in
 // apps/api/src/iam/role-perms.ts. If you change one, change the other.
 
-import type { ProjectRole, AccountRole } from '@kortix/sdk';
+import type { AccountRole, ProjectRole } from '@kortix/sdk';
 
 export interface ProjectRoleDescriptor {
   /** "Manager" — what the role is called everywhere. */
@@ -56,17 +56,15 @@ export interface AccountRoleDescriptor {
 export const ACCOUNT_ROLE_DESCRIPTORS: Record<AccountRole, AccountRoleDescriptor> = {
   owner: {
     label: 'Owner',
-    blurb:
-      'Full control. Can transfer ownership, delete the account, and manage billing.',
+    blurb: 'Full control. Can transfer ownership, delete the account, and manage billing.',
   },
   admin: {
     label: 'Admin',
-    blurb:
-      'Everything except deleting the account or transferring ownership.',
+    blurb: 'Everything except deleting the account or transferring ownership.',
   },
   member: {
     label: 'Member',
     blurb:
-      'No implicit project access. Sees only projects they\'ve been added to (directly or via a group).',
+      "No implicit project access. Sees only projects they've been added to (directly or via a group).",
   },
 };

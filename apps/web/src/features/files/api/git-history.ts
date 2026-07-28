@@ -6,8 +6,8 @@
  * it, and return structured data.
  */
 
+import type { FileCommitDiff, FileHistoryResult, GitCommit } from '@/features/file-browser/types';
 import { runPtyCommand } from '@kortix/sdk/react';
-import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -103,8 +103,8 @@ function parseNumstat(raw: string): { additions: number; deletions: number } {
   for (const line of lines) {
     const parts = line.split('\t');
     if (parts.length >= 2) {
-      const a = parseInt(parts[0], 10);
-      const d = parseInt(parts[1], 10);
+      const a = Number.parseInt(parts[0], 10);
+      const d = Number.parseInt(parts[1], 10);
       if (!isNaN(a)) additions += a;
       if (!isNaN(d)) deletions += d;
     }
@@ -140,13 +140,13 @@ export async function getFileHistory(
   skip = 0,
 ): Promise<FileHistoryResult> {
   const format = [
-    '%H',   // full hash
-    '%h',   // short hash
-    '%an',  // author name
-    '%ae',  // author email
-    '%aI',  // author date ISO
-    '%s',   // subject
-    '%b',   // body
+    '%H', // full hash
+    '%h', // short hash
+    '%an', // author name
+    '%ae', // author email
+    '%aI', // author date ISO
+    '%s', // subject
+    '%b', // body
   ].join(FIELD_SEP);
 
   // Request one extra to detect if there are more
@@ -254,10 +254,7 @@ export async function getFileCommitDiff(
  * @param commitHash - The commit hash
  * @returns The file content as a string (empty if file didn't exist)
  */
-export async function getFileAtCommit(
-  filePath: string,
-  commitHash: string,
-): Promise<string> {
+export async function getFileAtCommit(filePath: string, commitHash: string): Promise<string> {
   const cmd = `git show ${commitHash}:"${filePath}" 2>/dev/null || echo ""`;
   const raw = await runGitCommand(cmd);
   return raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();

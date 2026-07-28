@@ -19,11 +19,11 @@
  * `ToolPartRenderer` directly, outside and after whatever card precedes them.
  */
 
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { cn } from '@/lib/utils';
 import { type ReasoningPart, type Turn, isTextPart, isToolPart } from '@/ui';
 import {
@@ -121,7 +121,11 @@ function StepRow({
             <Icon className="text-muted-foreground size-3" />
           </span>
           {running ? (
-            <TextShimmer duration={1} spread={2} className="min-w-0 flex-1 truncate text-left text-xs">
+            <TextShimmer
+              duration={1}
+              spread={2}
+              className="min-w-0 flex-1 truncate text-left text-xs"
+            >
               {label}
             </TextShimmer>
           ) : (
@@ -302,7 +306,14 @@ function ReasoningNote({ parts, streaming }: { parts: ReasoningPart[]; streaming
         .trim(),
     [parts],
   );
-  const preview = useMemo(() => text.split('\n').find((line) => line.trim())?.trim() ?? '', [text]);
+  const preview = useMemo(
+    () =>
+      text
+        .split('\n')
+        .find((line) => line.trim())
+        ?.trim() ?? '',
+    [text],
+  );
   if (!text) return null;
 
   return (
@@ -348,13 +359,22 @@ export function VariantActivityCard({ messages, sessionId, isBusy }: ChatVariant
   return (
     <div className="space-y-8">
       {turns.map((turn) => (
-        <TurnBody key={turn.userMessage.info.id} turn={turn} sessionId={sessionId} isBusy={isBusy} />
+        <TurnBody
+          key={turn.userMessage.info.id}
+          turn={turn}
+          sessionId={sessionId}
+          isBusy={isBusy}
+        />
       ))}
     </div>
   );
 }
 
-function TurnBody({ turn, sessionId, isBusy }: { turn: Turn; sessionId: string; isBusy?: boolean }) {
+function TurnBody({
+  turn,
+  sessionId,
+  isBusy,
+}: { turn: Turn; sessionId: string; isBusy?: boolean }) {
   const parts = useTurnParts(turn);
   // 'simple' — a burst is a burst, regardless of which tools it mixes.
   const items = buildActivityItems(parts, { density: 'simple' });

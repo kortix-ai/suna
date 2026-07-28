@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { isHeicFile, convertHeicBlobToJpeg } from '@/lib/utils/heic-convert';
+import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
+import { useEffect, useState } from 'react';
 
 /**
  * Converts a HEIC blob to a renderable JPEG blob URL.
@@ -16,7 +16,10 @@ export function useHeicBlob(
   const needsConversion = isHeicFile(fileName);
 
   useEffect(() => {
-    if (!blob) { setUrl(null); return; }
+    if (!blob) {
+      setUrl(null);
+      return;
+    }
 
     if (!needsConversion) {
       const u = URL.createObjectURL(blob);
@@ -38,9 +41,14 @@ export function useHeicBlob(
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
       })
-      .finally(() => { if (!cancelled) setIsConverting(false); });
+      .finally(() => {
+        if (!cancelled) setIsConverting(false);
+      });
 
-    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [blob, needsConversion]);
 
   return { url, isConverting };

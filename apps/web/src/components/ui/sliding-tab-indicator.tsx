@@ -1,14 +1,14 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { motion, useReducedMotion, type Transition } from 'motion/react';
+import { type Transition, motion, useReducedMotion } from 'motion/react';
 import {
+  type ComponentPropsWithoutRef,
+  type ReactNode,
   useCallback,
   useLayoutEffect,
   useRef,
   useState,
-  type ComponentPropsWithoutRef,
-  type ReactNode,
 } from 'react';
 
 type IndicatorRect = {

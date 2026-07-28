@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   CROSSFADE_TRANSITION,
-  detailCardVariants,
   DetailLayer,
   DetailSidebarToggle,
   SLIDE_TRANSITION,
+  detailCardVariants,
   terminalLayerMotion,
 } from './detail-view';
 

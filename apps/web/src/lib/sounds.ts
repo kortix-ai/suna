@@ -22,7 +22,7 @@
  * -----------------------------------------------------------------------
  */
 
-import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
+import { type SoundEvent, type SoundPack, useSoundStore } from '@/stores/sound-store';
 
 // ============================================================================
 // Audio cache — reuse HTMLAudioElement instances to avoid re-fetching files
@@ -57,9 +57,8 @@ const SYNTH_CONFIG: Record<SoundEvent, { freq: number; duration: number; type: O
 
 function playSynthFallback(event: SoundEvent, volume: number) {
   try {
-    const AudioCtx = (typeof AudioContext !== 'undefined')
-      ? AudioContext
-      : (window as any).webkitAudioContext;
+    const AudioCtx =
+      typeof AudioContext !== 'undefined' ? AudioContext : (window as any).webkitAudioContext;
     if (!AudioCtx) return;
 
     const ctx = new AudioCtx();

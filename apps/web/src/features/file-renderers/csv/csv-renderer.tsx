@@ -3,7 +3,7 @@
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { FileSpreadsheet } from 'lucide-react';
-import { lazy, Suspense } from 'react';
+import { Suspense, lazy } from 'react';
 
 const CsvViewer = lazy(() => import('./csv-viewer').then((m) => ({ default: m.CsvViewer })));
 

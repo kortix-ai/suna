@@ -3,6 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 import { searchWorkspaceFiles } from '@/features/files';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/utils/file-utils';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import type {
   Agent,
   Command,
@@ -11,16 +15,18 @@ import type {
   Session,
 } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import { isImageFile } from '@/lib/utils/file-utils';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import { ArrowUpLeft, Clock, Reply, Terminal, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import {
+  mergeFailedSubmissionFiles,
+  mergeFailedSubmissionMentions,
+  mergeFailedSubmissionText,
+} from './composer-draft-recovery';
+import { resolveComposerResetOnSend } from './composer-reset';
 import { AttachmentPreview } from './composer/attachment-preview';
 import { ComposerToolbar } from './composer/composer-toolbar';
 import { MentionPopover } from './composer/mention-popover';
@@ -28,19 +34,13 @@ import { SlashCommandPopover } from './composer/slash-command-popover';
 import { TodoChip } from './composer/todo-chip';
 import type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 import {
-  mergeFailedSubmissionFiles,
-  mergeFailedSubmissionMentions,
-  mergeFailedSubmissionText,
-} from './composer-draft-recovery';
-import { resolveComposerResetOnSend } from './composer-reset';
-import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
   resolveAvailableSelectedModel,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import { type ModelDefaultControls } from './model-selector';
+import type { ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 // Re-exported for backward compatibility — `AgentSelector` moved to

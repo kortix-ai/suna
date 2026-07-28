@@ -24,8 +24,9 @@ export function toEndUserUsageRows(breakdown: UsageBreakdownItem[] | undefined):
   // deprecated alias an older server may still be the only one sending.
   const attributed = (breakdown ?? [])
     .map((item) => ({ item, ref: item.end_user_ref ?? item.origin_ref }))
-    .filter((entry): entry is { item: UsageBreakdownItem; ref: string } =>
-      typeof entry.ref === 'string' && entry.ref.length > 0,
+    .filter(
+      (entry): entry is { item: UsageBreakdownItem; ref: string } =>
+        typeof entry.ref === 'string' && entry.ref.length > 0,
     )
     .map((entry) => ({ ...entry.item, origin_ref: entry.ref }));
   const total = attributed.reduce((sum, item) => sum + (item.cost ?? 0), 0);

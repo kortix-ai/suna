@@ -114,7 +114,11 @@ describe('mapApiReviewItem', () => {
         title: 'Approve: gmail.messages.send',
         risk: 'high',
         // connector_id is an opaque UUID — the connector NAME comes from the path.
-        detail: { execution_id: 'ex-1', action_path: 'gmail.messages.send', connector_id: 'uuid-x' },
+        detail: {
+          execution_id: 'ex-1',
+          action_path: 'gmail.messages.send',
+          connector_id: 'uuid-x',
+        },
       },
       'P',
     );

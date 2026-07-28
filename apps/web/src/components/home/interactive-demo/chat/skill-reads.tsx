@@ -4,8 +4,8 @@ import { cn } from '@/lib/utils';
 import { BookOpen, Check } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import type { DemoPhase } from './use-demo-conversation';
 import { skillDescription } from './match-skills';
+import type { DemoPhase } from './use-demo-conversation';
 
 const READ_STAGGER_MS = 380;
 
@@ -77,7 +77,6 @@ export function SkillsRead({
                     <span className="border-muted-foreground/40 border-t-foreground ml-auto size-3.5 shrink-0 animate-spin rounded-full border-[1.5px]" />
                   )}
                 </div>
-
               </button>
             </motion.div>
           );

@@ -1,8 +1,8 @@
 'use client';
 
-import * as React from 'react';
-import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
+import { useTheme } from 'next-themes';
+import * as React from 'react';
 
 interface KortixLoaderProps {
   /**
@@ -130,18 +130,13 @@ export function KortixLoader({
 
   // Colors based on variant
   const borderColor =
-    effectiveVariant === 'white'
-      ? 'rgba(255, 255, 255, 0.15)'
-      : 'rgba(0, 0, 0, 0.1)';
+    effectiveVariant === 'white' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)';
   const spinnerColor = effectiveVariant === 'white' ? '#ffffff' : '#000000';
 
   // Don't render during SSR - render a placeholder instead
   if (!mounted) {
     return (
-      <div
-        className={cn('flex items-center justify-center', className)}
-        style={style}
-      >
+      <div className={cn('flex items-center justify-center', className)} style={style}>
         <div
           style={{
             width: loaderSize,
@@ -153,10 +148,7 @@ export function KortixLoader({
   }
 
   return (
-    <div
-      className={cn('flex items-center justify-center', className)}
-      style={style}
-    >
+    <div className={cn('flex items-center justify-center', className)} style={style}>
       <div
         style={{
           width: loaderSize,

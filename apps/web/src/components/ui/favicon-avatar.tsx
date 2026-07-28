@@ -27,7 +27,10 @@ export function FaviconAvatar({ value, size = 'xs', className, alt = '' }: Favic
   const src = faviconUrlForValue(value);
 
   return (
-    <Avatar data-slot="favicon-avatar" className={cn('bg-muted/60 rounded', sizes.avatar, className)}>
+    <Avatar
+      data-slot="favicon-avatar"
+      className={cn('bg-muted/60 rounded', sizes.avatar, className)}
+    >
       {src ? (
         <AvatarImage
           src={src}

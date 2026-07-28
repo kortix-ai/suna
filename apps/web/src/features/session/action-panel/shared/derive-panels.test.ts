@@ -1,5 +1,5 @@
-import type { ToolPart } from '@/ui';
 import { describe, expect, it } from 'bun:test';
+import type { ToolPart } from '@/ui';
 import { deriveContext, deriveOutputs } from './derive-panels';
 
 function part(
@@ -472,7 +472,11 @@ describe('deriveContext', () => {
     });
     const { web } = deriveContext([
       part('web_search', { query: 'marko' }, { output: searchOutput }),
-      part('web_fetch', { url: 'https://markokraemer.com' }, { output: '<html><title>Marko</title></html>' }),
+      part(
+        'web_fetch',
+        { url: 'https://markokraemer.com' },
+        { output: '<html><title>Marko</title></html>' },
+      ),
     ]);
     expect(web).toHaveLength(1);
   });
@@ -722,7 +726,12 @@ describe('deriveOutputs — a show whose items arrive as a JSON STRING', () => {
 });
 
 function partOf(tool: string, callID: string, input: Record<string, unknown>): ToolPart {
-  return { type: 'tool', tool, callID, state: { status: 'completed', input } } as unknown as ToolPart;
+  return {
+    type: 'tool',
+    tool,
+    callID,
+    state: { status: 'completed', input },
+  } as unknown as ToolPart;
 }
 
 describe('deriveOutputs — titles (W3)', () => {

@@ -1,8 +1,8 @@
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
-import { useLastProjectStore } from '@/stores/last-project-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useLastProjectStore } from '@/stores/last-project-store';
+import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 
 /**
  * Wipe ALL client-side state tied to the signed-in user.

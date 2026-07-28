@@ -1,6 +1,6 @@
 'use client';
 
-import { cmdLine, meta, ok, t, type Line } from '@/components/home/interactive-demo/cli/terminal';
+import { type Line, cmdLine, meta, ok, t } from '@/components/home/interactive-demo/cli/terminal';
 import { useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {

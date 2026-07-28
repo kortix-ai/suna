@@ -120,7 +120,9 @@ describe('public SEO/AEO content coverage', () => {
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {
     const resolved = resolvePublicMarkdown(['docs', 'index.md']);
-    expect(resolved?.markdown).toContain('Create a project, start a session, and merge your first change request');
+    expect(resolved?.markdown).toContain(
+      'Create a project, start a session, and merge your first change request',
+    );
     expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
 
@@ -251,13 +253,7 @@ describe('bounded public agent index', () => {
     // file. When present, every docs and marketing record — which previously
     // had null last_modified — should carry a real ISO timestamp so
     // recency-aware AEO retrievers no longer deprioritize 42% of the index.
-    const manifestPath = path.join(
-      process.cwd(),
-      'src',
-      'lib',
-      'seo',
-      'content-timestamps.json',
-    );
+    const manifestPath = path.join(process.cwd(), 'src', 'lib', 'seo', 'content-timestamps.json');
     const hasManifest = fs.existsSync(manifestPath);
     if (!hasManifest) {
       // Fresh clone / test run without a prior build — skip rather than fail;

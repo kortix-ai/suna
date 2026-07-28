@@ -1,7 +1,7 @@
-import { normalizeProviderList } from '@kortix/sdk/react';
-import type { ProviderListResponse } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { GatewayCatalogModel } from '@kortix/sdk';
+import { normalizeProviderList } from '@kortix/sdk/react';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 
 // ============================================================================
 // Flat model list helper

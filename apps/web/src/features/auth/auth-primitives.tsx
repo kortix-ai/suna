@@ -12,9 +12,9 @@ import { useRef } from 'react';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import {
+  CODE_LENGTH,
   applyBackspace,
   applyBoxInput,
-  CODE_LENGTH,
   insertDigits,
 } from '@/features/auth/code-input-logic';
 import { cn } from '@/lib/utils';

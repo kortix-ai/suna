@@ -7,9 +7,7 @@ export function mergeFailedSubmissionText(current: string, submitted: string): s
 }
 
 function attachedFileKey(file: AttachedFile): string {
-  return file.kind === 'local'
-    ? `local:${file.localUrl}`
-    : `remote:${file.url}:${file.filename}`;
+  return file.kind === 'local' ? `local:${file.localUrl}` : `remote:${file.url}:${file.filename}`;
 }
 
 export function mergeFailedSubmissionFiles(

@@ -2,12 +2,12 @@
 
 import { Badge } from '@/components/ui/badge';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { cn } from '@/lib/utils';
 import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
-import { Check, ChevronRight, Clock, ExternalLink, Loader2, MessageCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 import { stripAnsi } from '@/ui';
+import { Check, ChevronRight, Clock, ExternalLink, Loader2, MessageCircle } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
 
 export function formatBashOutput(rawOutput: string): {
   content: string;
@@ -203,9 +203,9 @@ export function parseSessionMessagesOutput(output: string): ParsedSessionMessage
     const content = rawContent.replace(/^\s*Tools used:\s*.+$/m, '').trim();
 
     messages.push({
-      index: parseInt(m[1], 10),
+      index: Number.parseInt(m[1], 10),
       role: m[2].toLowerCase(),
-      cost: parseFloat(m[3]),
+      cost: Number.parseFloat(m[3]),
       content,
       tools: toolsMatch?.[1],
     });
@@ -245,9 +245,7 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
             </span>
             <span className="text-muted-foreground/50 ml-auto text-xs">#{msg.index}</span>
             {msg.cost > 0 && (
-              <span className="text-muted-foreground/50 text-xs">
-                ${msg.cost.toFixed(4)}
-              </span>
+              <span className="text-muted-foreground/50 text-xs">${msg.cost.toFixed(4)}</span>
             )}
           </div>
           <div className="px-2.5 py-1.5">
@@ -289,4 +287,3 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
     </div>
   );
 }
-

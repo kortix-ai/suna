@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
+import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
-import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 
 interface PublicShareMeta {
   share: {

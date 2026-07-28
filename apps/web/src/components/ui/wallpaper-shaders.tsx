@@ -3,7 +3,7 @@
 import { useReducedMotion } from 'motion/react';
 import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
-import { memo, type ReactNode } from 'react';
+import { type ReactNode, memo } from 'react';
 
 const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
   ssr: false,

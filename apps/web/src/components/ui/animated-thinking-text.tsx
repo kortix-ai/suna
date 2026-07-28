@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const THINKING_MESSAGES = [
   'Considering next steps...',
@@ -34,14 +34,9 @@ interface AnimatedThinkingTextProps {
   className?: string;
 }
 
-function AnimatedThinkingTextComponent({
-  statusText,
-  className,
-}: AnimatedThinkingTextProps) {
+function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinkingTextProps) {
   // ── core state ──
-  const [msgIdx, setMsgIdx] = useState(() =>
-    Math.floor(Math.random() * THINKING_MESSAGES.length),
-  );
+  const [msgIdx, setMsgIdx] = useState(() => Math.floor(Math.random() * THINKING_MESSAGES.length));
   const [phase, setPhase] = useState<Phase>('typing');
   const [visibleText, setVisibleText] = useState('');
   const [opacity, setOpacity] = useState(1);
@@ -52,21 +47,16 @@ function AnimatedThinkingTextComponent({
   const shimmerNodeRef = useRef<HTMLSpanElement>(null);
 
   // refs that survive across renders
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const charRef = useRef(0);
   const shimmersDone = useRef(0);
   const prevStatus = useRef(statusText);
-  const fullText = useRef(
-    statusText || THINKING_MESSAGES[msgIdx % THINKING_MESSAGES.length],
-  );
+  const fullText = useRef(statusText || THINKING_MESSAGES[msgIdx % THINKING_MESSAGES.length]);
 
   // Resolve the target message for the *current* render.
   // We keep it in a ref so the single‑effect loop always reads the latest.
   const resolveText = useCallback(
-    (idx: number) =>
-      statusText || THINKING_MESSAGES[idx % THINKING_MESSAGES.length],
+    (idx: number) => statusText || THINKING_MESSAGES[idx % THINKING_MESSAGES.length],
     [statusText],
   );
 
@@ -142,10 +132,7 @@ function AnimatedThinkingTextComponent({
           timerRef.current = setTimeout(runSweep, SHIMMER_GAP);
         } else {
           // ambient → clear and move on
-          timerRef.current = setTimeout(
-            () => setPhase('clearing'),
-            SHIMMER_GAP,
-          );
+          timerRef.current = setTimeout(() => setPhase('clearing'), SHIMMER_GAP);
         }
       }, SHIMMER_DURATION);
     };
@@ -221,8 +208,7 @@ function AnimatedThinkingTextComponent({
         style={{
           opacity,
           filter: `blur(${blur}px)`,
-          transitionDuration:
-            phase === 'clearing' ? `${CLEAR_DURATION}ms` : '0ms',
+          transitionDuration: phase === 'clearing' ? `${CLEAR_DURATION}ms` : '0ms',
           ...shimmerStyle,
         }}
       >

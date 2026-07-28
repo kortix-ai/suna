@@ -12,8 +12,8 @@
 // marketing site for those browsers.
 import {
   safeSessionGetItem,
-  safeSessionSetItem,
   safeSessionRemoveItem,
+  safeSessionSetItem,
 } from '@/lib/storage/managed-storage';
 
 // Extend the Window interface to include dataLayer
@@ -50,13 +50,11 @@ export interface ContainerLoadData {
  * Only these page types should trigger routeChange events
  */
 export const TRACKED_PAGE_TYPES = ['home', 'auth', 'plans', 'order_confirm'] as const;
-export type TrackedPageType = typeof TRACKED_PAGE_TYPES[number];
+export type TrackedPageType = (typeof TRACKED_PAGE_TYPES)[number];
 
 export function getPageContext(pathname: string): ContainerLoadData {
   // Determine language from document or default to 'en'
-  const language = typeof document !== 'undefined'
-    ? document.documentElement.lang || 'en'
-    : 'en';
+  const language = typeof document !== 'undefined' ? document.documentElement.lang || 'en' : 'en';
 
   // Map pathname to page context
   // Homepage
@@ -110,7 +108,11 @@ export function getPageContext(pathname: string): ContainerLoadData {
   }
 
   // Workspace/Threads - NOT tracked for routeChange (internal navigation)
-  if (pathname.startsWith('/projects') || pathname.startsWith('/workspace') || pathname.startsWith('/thread')) {
+  if (
+    pathname.startsWith('/projects') ||
+    pathname.startsWith('/workspace') ||
+    pathname.startsWith('/thread')
+  ) {
     return {
       master_group: 'Platform',
       content_group: 'Dashboard',
@@ -228,7 +230,8 @@ export function trackRouteChange(pathname: string, searchParams?: string) {
   const pageContext = getPageContext(pathname);
 
   // Determine if this is an order confirmation (returning from Stripe checkout)
-  const isOrderConfirm = pathname === '/dashboard' && searchParams?.includes('subscription=activated');
+  const isOrderConfirm =
+    pathname === '/dashboard' && searchParams?.includes('subscription=activated');
   const effectivePageType = isOrderConfirm ? 'order_confirm' : pageContext.page_type;
 
   // Only track documented pages (Homepage, Auth, Dashboard, Plans, Order Confirm)
@@ -457,14 +460,14 @@ export function trackSendAuthLink() {
 // =============================================================================
 
 export interface PurchaseItem {
-  item_id: string;          // e.g., "tier_2_20", "tier_6_50", "free"
-  item_name: string;        // e.g., "Plus", "Pro", "Basic"
+  item_id: string; // e.g., "tier_2_20", "tier_6_50", "free"
+  item_name: string; // e.g., "Plus", "Pro", "Basic"
   coupon?: string;
   discount?: number;
-  item_brand: string;       // "Kortix AI"
-  item_category: string;    // "Plans"
-  item_list_id: string;     // "plans_listing"
-  item_list_name: string;   // "Plans Listing"
+  item_brand: string; // "Kortix AI"
+  item_category: string; // "Plans"
+  item_list_id: string; // "plans_listing"
+  item_list_name: string; // "Plans Listing"
   price: number;
   quantity: number;
 }
@@ -510,7 +513,7 @@ export function trackPurchase(data: PurchaseData) {
       currency: data.currency,
       coupon: data.coupon ?? '',
       customer_type: data.customer_type,
-      items: data.items.map(item => ({
+      items: data.items.map((item) => ({
         item_id: item.item_id,
         item_name: item.item_name,
         coupon: item.coupon ?? '',
@@ -550,10 +553,10 @@ export function trackPurchase(data: PurchaseData) {
  * previous_tier = user's tier before checkout (to determine customer_type)
  */
 export function storeCheckoutData(data: {
-  item_id: string;       // e.g., "pro_yearly" - matches add_to_cart format
-  item_name: string;     // e.g., "Pro Yearly" - matches add_to_cart format
-  price: number;         // Full product price (before discounts)
-  value: number;         // Actual transaction value (after discounts)
+  item_id: string; // e.g., "pro_yearly" - matches add_to_cart format
+  item_name: string; // e.g., "Pro Yearly" - matches add_to_cart format
+  price: number; // Full product price (before discounts)
+  value: number; // Actual transaction value (after discounts)
   currency: string;
   billing_period: string;
   coupon?: string;
@@ -561,10 +564,13 @@ export function storeCheckoutData(data: {
   previous_tier?: string; // User's tier before checkout (e.g., "free", "tier_2_20")
 }) {
   if (typeof window === 'undefined') return;
-  safeSessionSetItem('gtm_checkout_data', JSON.stringify({
-    ...data,
-    timestamp: Date.now(),
-  }));
+  safeSessionSetItem(
+    'gtm_checkout_data',
+    JSON.stringify({
+      ...data,
+      timestamp: Date.now(),
+    }),
+  );
 }
 
 /**
@@ -613,14 +619,14 @@ export function clearCheckoutData() {
 // =============================================================================
 
 export interface PlanItemData {
-  item_id: string;         // e.g., "pro_monthly", "plus_yearly", "ultra_monthly"
-  item_name: string;       // e.g., "Pro Monthly", "Plus Yearly", "Ultra"
+  item_id: string; // e.g., "pro_monthly", "plus_yearly", "ultra_monthly"
+  item_name: string; // e.g., "Pro Monthly", "Plus Yearly", "Ultra"
   coupon?: string;
   discount?: number;
-  item_brand: string;      // "Kortix AI"
-  item_category: string;   // "Plans"
-  item_list_id: string;    // "plans_listing"
-  item_list_name: string;  // "Plans Listing"
+  item_brand: string; // "Kortix AI"
+  item_category: string; // "Plans"
+  item_list_id: string; // "plans_listing"
+  item_list_name: string; // "Plans Listing"
   price: number;
   quantity: number;
 }
@@ -642,18 +648,20 @@ export function trackSelectItem(item: PlanItemData) {
     ecommerce: {
       item_list_id: 'plans_listing',
       item_list_name: 'Plans Listing',
-      items: [{
-        item_id: item.item_id,
-        item_name: item.item_name,
-        coupon: item.coupon ?? '',
-        discount: item.discount ?? 0,
-        item_brand: item.item_brand,
-        item_category: item.item_category,
-        item_list_id: item.item_list_id,
-        item_list_name: item.item_list_name,
-        price: item.price,
-        quantity: item.quantity,
-      }],
+      items: [
+        {
+          item_id: item.item_id,
+          item_name: item.item_name,
+          coupon: item.coupon ?? '',
+          discount: item.discount ?? 0,
+          item_brand: item.item_brand,
+          item_category: item.item_category,
+          item_list_id: item.item_list_id,
+          item_list_name: item.item_list_name,
+          price: item.price,
+          quantity: item.quantity,
+        },
+      ],
     },
   };
 
@@ -681,18 +689,20 @@ export function trackViewItem(item: PlanItemData, currency: string, value: numbe
     ecommerce: {
       currency: currency,
       value: value,
-      items: [{
-        item_id: item.item_id,
-        item_name: item.item_name,
-        coupon: item.coupon ?? '',
-        discount: item.discount ?? 0,
-        item_brand: item.item_brand,
-        item_category: item.item_category,
-        item_list_id: item.item_list_id,
-        item_list_name: item.item_list_name,
-        price: item.price,
-        quantity: item.quantity,
-      }],
+      items: [
+        {
+          item_id: item.item_id,
+          item_name: item.item_name,
+          coupon: item.coupon ?? '',
+          discount: item.discount ?? 0,
+          item_brand: item.item_brand,
+          item_category: item.item_category,
+          item_list_id: item.item_list_id,
+          item_list_name: item.item_list_name,
+          price: item.price,
+          quantity: item.quantity,
+        },
+      ],
     },
   };
 
@@ -720,18 +730,20 @@ export function trackAddToCart(item: PlanItemData, currency: string, value: numb
     ecommerce: {
       currency: currency,
       value: value,
-      items: [{
-        item_id: item.item_id,
-        item_name: item.item_name,
-        coupon: item.coupon ?? '',
-        discount: item.discount ?? 0,
-        item_brand: item.item_brand,
-        item_category: item.item_category,
-        item_list_id: item.item_list_id,
-        item_list_name: item.item_list_name,
-        price: item.price,
-        quantity: item.quantity,
-      }],
+      items: [
+        {
+          item_id: item.item_id,
+          item_name: item.item_name,
+          coupon: item.coupon ?? '',
+          discount: item.discount ?? 0,
+          item_brand: item.item_brand,
+          item_category: item.item_category,
+          item_list_id: item.item_list_id,
+          item_list_name: item.item_list_name,
+          price: item.price,
+          quantity: item.quantity,
+        },
+      ],
     },
   };
 

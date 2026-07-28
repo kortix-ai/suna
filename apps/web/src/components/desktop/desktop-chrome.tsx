@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import {
+  type DesktopPlatform,
   desktopPlatform,
   desktopWindow,
   getDesktopZoom,
@@ -11,7 +12,6 @@ import {
   zoomIn,
   zoomOut,
   zoomReset,
-  type DesktopPlatform,
 } from '@/lib/desktop';
 import { useEffect, useState } from 'react';
 

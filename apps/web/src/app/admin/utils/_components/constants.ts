@@ -1,5 +1,14 @@
-import { Info, AlertTriangle, AlertCircle, ShieldOff, Zap, Globe, Database, Shield } from 'lucide-react';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Database,
+  Globe,
+  Info,
+  Shield,
+  ShieldOff,
+  Zap,
+} from 'lucide-react';
 
 export const MAINTENANCE_LEVELS: {
   value: MaintenanceLevel;
@@ -64,5 +73,5 @@ export const AVAILABLE_SERVICES = [
   { id: 'authentication', label: 'Authentication', icon: Shield },
 ] as const;
 
-export type ServiceId = typeof AVAILABLE_SERVICES[number]['id'];
-export type ServiceLabel = typeof AVAILABLE_SERVICES[number]['label'];
+export type ServiceId = (typeof AVAILABLE_SERVICES)[number]['id'];
+export type ServiceLabel = (typeof AVAILABLE_SERVICES)[number]['label'];

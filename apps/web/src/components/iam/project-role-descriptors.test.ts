@@ -8,15 +8,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   ACCOUNT_ROLE_DESCRIPTORS,
-  PROJECT_ROLE_DESCRIPTORS,
   PROJECT_ROLES_ASCENDING,
+  PROJECT_ROLE_DESCRIPTORS,
 } from './project-role-descriptors';
 
 describe('PROJECT_ROLE_DESCRIPTORS', () => {
   test('covers every project role', () => {
-    expect(Object.keys(PROJECT_ROLE_DESCRIPTORS).sort()).toEqual(
-      ['editor', 'manager', 'member'],
-    );
+    expect(Object.keys(PROJECT_ROLE_DESCRIPTORS).sort()).toEqual(['editor', 'manager', 'member']);
   });
 
   test('every descriptor has non-empty label, blurb, and summary', () => {
@@ -84,9 +82,7 @@ describe('PROJECT_ROLES_ASCENDING', () => {
 
 describe('ACCOUNT_ROLE_DESCRIPTORS', () => {
   test('covers every account role', () => {
-    expect(Object.keys(ACCOUNT_ROLE_DESCRIPTORS).sort()).toEqual(
-      ['admin', 'member', 'owner'],
-    );
+    expect(Object.keys(ACCOUNT_ROLE_DESCRIPTORS).sort()).toEqual(['admin', 'member', 'owner']);
   });
 
   test('member blurb explains they need explicit project access', () => {

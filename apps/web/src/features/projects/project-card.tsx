@@ -11,7 +11,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
 import { relativeTime } from '@/lib/kortix/task-meta';
-import { KortixProject } from '@kortix/sdk';
+import type { KortixProject } from '@kortix/sdk';
 import { ArrowUpRight, Pencil, TrashSolid } from '@mynaui/icons-react';
 import { MoreHorizontal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -86,7 +86,11 @@ const ProjectCard = ({
               onSelect={onArchive}
               disabled={archiving || !canManageProject}
             >
-              {archiving ? <Loading className="size-4 shrink-0" /> : <TrashSolid className="size-4" />}
+              {archiving ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <TrashSolid className="size-4" />
+              )}
               Archive
             </DropdownMenuItem>
           </DropdownMenuContent>

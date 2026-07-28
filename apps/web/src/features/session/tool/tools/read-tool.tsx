@@ -5,15 +5,15 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
+  ToolOutputFallback,
+  ToolRunningContext,
+  ToolSurfaceContext,
   isErrorOutput,
   partInput,
   partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
-  ToolOutputFallback,
-  ToolRunningContext,
-  ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -62,7 +62,9 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       <BasicTool
         trigger={{
           title: 'Read',
-          subtitle: isStalePending ? undefined : filename || (isStalePending ? 'Working...' : undefined),
+          subtitle: isStalePending
+            ? undefined
+            : filename || (isStalePending ? 'Working...' : undefined),
           args: directory ? [directory] : undefined,
         }}
         onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
@@ -101,7 +103,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             })}
           </div>
         ) : isStalePending ? (
-          <div className='p-4 pt-0'>
+          <div className="p-4 pt-0">
             <TextShimmer>
               {tHardcodedUi.raw(
                 'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',

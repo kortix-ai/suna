@@ -10,7 +10,9 @@ mock.module('@/lib/env-config', () => ({
   getEnv: () => mockEnv,
 }));
 
-const { isBillingEnabled, isManagedProviderEnabled, isAccountCreationRestricted } = await import('./config');
+const { isBillingEnabled, isManagedProviderEnabled, isAccountCreationRestricted } = await import(
+  './config'
+);
 
 describe('isBillingEnabled', () => {
   test('mirrors the runtime env BILLING_ENABLED flag', () => {

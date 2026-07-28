@@ -1,8 +1,8 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -22,17 +22,17 @@ import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCopy } from '@/hooks/use-copy';
-import {
-  createAccountToken,
-  listAccountTokens,
-  revokeAccountToken,
-  type AccountToken,
-  type CreatedAccountToken,
-} from '@kortix/sdk';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import {
+  type AccountToken,
+  type CreatedAccountToken,
+  createAccountToken,
+  listAccountTokens,
+  revokeAccountToken,
+} from '@kortix/sdk';
+import { type KortixProject, listProjectsForAccount } from '@kortix/sdk';
 import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, KeyRound, X } from 'lucide-react';
@@ -313,8 +313,8 @@ export function CliTokensTab() {
               </Button>
             }
           >
-            Verify your second factor to manage API keys. Already verified? This
-            list refreshes automatically once your session steps up.
+            Verify your second factor to manage API keys. Already verified? This list refreshes
+            automatically once your session steps up.
           </InfoBanner>
         ) : (
           <div className="border-destructive bg-destructive/5 text-destructive rounded-2xl border p-4 text-sm">

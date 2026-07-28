@@ -3,7 +3,7 @@
 import { TrashSolid } from '@mynaui/icons-react';
 import { Check, Copy, Info, Monitor, MoreHorizontal, ScrollText, Shield } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import {
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useTunnelConnection, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
+import { type TunnelConnection, useTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
 import { TunnelAuditTable } from './tunnel-audit-table';

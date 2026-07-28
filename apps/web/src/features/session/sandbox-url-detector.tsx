@@ -2,32 +2,33 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ExternalLink,
-  Globe,
-  MonitorPlay,
-  Copy,
-  Check,
-  RefreshCw,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { UnifiedMarkdown } from '@/components/markdown';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { openTabAndNavigate } from '@/stores/tab-store';
+import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { cn } from '@/lib/utils';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
+  type DetectedLocalhostUrl,
   detectLocalhostUrls,
   toInternalUrl,
-  type DetectedLocalhostUrl,
 } from '@/lib/utils/sandbox-url';
-import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Globe,
+  Maximize2,
+  Minimize2,
+  MonitorPlay,
+  RefreshCw,
+} from 'lucide-react';
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface SandboxUrlDetectorProps {
   content: string;
@@ -140,9 +141,7 @@ function InlineIframePreview({
       <div className="flex items-center gap-1.5 h-8 px-2.5 bg-muted/40 border-b border-border/30 shrink-0">
         <div className="flex-1 flex items-center gap-1.5 min-w-0">
           <Globe className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="text-xs text-muted-foreground font-mono truncate">
-            localhost:{port}
-          </span>
+          <span className="text-xs text-muted-foreground font-mono truncate">localhost:{port}</span>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -161,16 +160,10 @@ function InlineIframePreview({
               onClick={() => setExpanded((v) => !v)}
               className="p-1 rounded hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
             >
-              {expanded ? (
-                <Minimize2 className="h-3 w-3" />
-              ) : (
-                <Maximize2 className="h-3 w-3" />
-              )}
+              {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">
-            {expanded ? 'Collapse' : 'Expand'}
-          </TooltipContent>
+          <TooltipContent side="top">{expanded ? 'Collapse' : 'Expand'}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -187,11 +180,12 @@ function InlineIframePreview({
         {hasError && (
           <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
             <div className="text-center text-muted-foreground">
-              <p className="text-xs">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line186JsxTextFailedToLoad')}</p>
-              <button
-                onClick={handleRefresh}
-                className="text-xs text-primary hover:underline mt-1"
-              >
+              <p className="text-xs">
+                {tHardcodedUi.raw(
+                  'componentsThreadContentSandboxUrlDetector.line186JsxTextFailedToLoad',
+                )}
+              </p>
+              <button onClick={handleRefresh} className="text-xs text-primary hover:underline mt-1">
                 Retry
               </button>
             </div>
@@ -271,40 +265,52 @@ function SandboxPreviewCard({
     <div className="my-3">
       <div className="group/card relative rounded-2xl border border-border/50 bg-muted/20 overflow-hidden transition-colors duration-200 hover:border-border/80 hover:bg-muted/30">
         {/* Top accent gradient — color reflects reachability */}
-        <div className={cn(
-          'absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent to-transparent',
-          isReachable ? 'via-emerald-500/50' : isChecking ? 'via-amber-500/40' : 'via-red-500/40',
-        )} />
+        <div
+          className={cn(
+            'absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent to-transparent',
+            isReachable ? 'via-emerald-500/50' : isChecking ? 'via-amber-500/40' : 'via-red-500/40',
+          )}
+        />
 
         <div className="flex items-center gap-3 px-3.5 py-2.5">
           {/* Status icon */}
           <div className="relative flex-shrink-0">
-            <div className={cn(
-              'w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
-              isReachable
-                ? 'bg-emerald-500/8 border-emerald-500/15 group-hover/card:bg-emerald-500/12'
-                : isChecking
-                  ? 'bg-amber-500/8 border-amber-500/15'
-                  : 'bg-red-500/8 border-red-500/15',
-            )}>
-              <Globe className={cn(
-                'w-4 h-4',
+            <div
+              className={cn(
+                'w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
                 isReachable
-                  ? 'text-emerald-600 dark:text-emerald-400'
+                  ? 'bg-emerald-500/8 border-emerald-500/15 group-hover/card:bg-emerald-500/12'
                   : isChecking
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-red-600 dark:text-red-400',
-              )} />
+                    ? 'bg-amber-500/8 border-amber-500/15'
+                    : 'bg-red-500/8 border-red-500/15',
+              )}
+            >
+              <Globe
+                className={cn(
+                  'w-4 h-4',
+                  isReachable
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : isChecking
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-red-600 dark:text-red-400',
+                )}
+              />
             </div>
             {/* Status dot */}
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               {isReachable && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/50" />
               )}
-              <span className={cn(
-                'relative inline-flex rounded-full h-2.5 w-2.5 ring-[1.5px] ring-background',
-                isReachable ? 'bg-emerald-500' : isChecking ? 'bg-amber-500 animate-pulse' : 'bg-red-500',
-              )} />
+              <span
+                className={cn(
+                  'relative inline-flex rounded-full h-2.5 w-2.5 ring-[1.5px] ring-background',
+                  isReachable
+                    ? 'bg-emerald-500'
+                    : isChecking
+                      ? 'bg-amber-500 animate-pulse'
+                      : 'bg-red-500',
+                )}
+              />
             </span>
           </div>
 
@@ -324,7 +330,11 @@ function SandboxPreviewCard({
               )}
             </div>
             <p className="text-xs text-muted-foreground/60 leading-tight mt-0.5 group-hover/link:text-muted-foreground/80 transition-colors">
-              {isReachable ? 'Service running' : isChecking ? 'Checking port...' : 'Port not reachable'}
+              {isReachable
+                ? 'Service running'
+                : isChecking
+                  ? 'Checking port...'
+                  : 'Port not reachable'}
             </p>
           </button>
 
@@ -370,9 +380,7 @@ function SandboxPreviewCard({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">
-                {copied ? 'Copied!' : 'Copy URL'}
-              </TooltipContent>
+              <TooltipContent side="top">{copied ? 'Copied!' : 'Copy URL'}</TooltipContent>
             </Tooltip>
 
             {/* Open in browser */}
@@ -387,7 +395,11 @@ function SandboxPreviewCard({
                   <ExternalLink className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line385JsxTextOpenInBrowser')}</TooltipContent>
+              <TooltipContent side="top">
+                {tHardcodedUi.raw(
+                  'componentsThreadContentSandboxUrlDetector.line385JsxTextOpenInBrowser',
+                )}
+              </TooltipContent>
             </Tooltip>
 
             {/* Open as tab — primary action */}
@@ -512,7 +524,11 @@ function SandboxUrlChip({
               <ExternalLink className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line509JsxTextOpenInBrowser')}</TooltipContent>
+          <TooltipContent side="top">
+            {tHardcodedUi.raw(
+              'componentsThreadContentSandboxUrlDetector.line509JsxTextOpenInBrowser',
+            )}
+          </TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -524,7 +540,11 @@ function SandboxUrlChip({
               <MonitorPlay className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line521JsxTextOpenPreview')}</TooltipContent>
+          <TooltipContent side="top">
+            {tHardcodedUi.raw(
+              'componentsThreadContentSandboxUrlDetector.line521JsxTextOpenPreview',
+            )}
+          </TooltipContent>
         </Tooltip>
       </div>
     </div>
@@ -593,13 +613,13 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
       {/* Compact chips for URLs found inside code blocks (examples/docs) */}
       {codeBlockUrls.length > 0 && (
         <div className="mt-3 flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground/50 font-medium uppercase tracking-wider">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line590JsxTextEndpointsMentionedInCode')}</span>
+          <span className="text-xs text-muted-foreground/50 font-medium uppercase tracking-wider">
+            {tHardcodedUi.raw(
+              'componentsThreadContentSandboxUrlDetector.line590JsxTextEndpointsMentionedInCode',
+            )}
+          </span>
           {codeBlockUrls.map(({ detected: d, proxyUrl }) => (
-            <SandboxUrlChip
-              key={`code-${d.port}-${d.path}`}
-              detected={d}
-              proxyUrl={proxyUrl}
-            />
+            <SandboxUrlChip key={`code-${d.port}-${d.path}`} detected={d} proxyUrl={proxyUrl} />
           ))}
         </div>
       )}

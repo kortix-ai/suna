@@ -1,25 +1,13 @@
 'use client';
 
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from 'react';
-import { cn } from '@/lib/utils';
-import {
-  Modal,
-  ModalBody,
-  ModalClose,
-  ModalContent,
-  ModalTitle,
-} from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
-import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw, Copy, Check } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
+import { cn } from '@/lib/utils';
+import { Check, Copy, Maximize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 // Global cache for rendered Mermaid diagrams
 const mermaidCache = new Map<string, string>();
@@ -80,9 +68,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-    const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(
-      null,
-    );
+    const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
     // Inline-card control: copy the diagram source.
     const [copied, setCopied] = useState(false);
@@ -151,15 +137,13 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       const touch1 = touches[0];
       const touch2 = touches[1];
       return Math.sqrt(
-        Math.pow(touch2.clientX - touch1.clientX, 2) +
-          Math.pow(touch2.clientY - touch1.clientY, 2),
+        Math.pow(touch2.clientX - touch1.clientX, 2) + Math.pow(touch2.clientY - touch1.clientY, 2),
       );
     };
 
     const getTouchCenter = (touches: React.TouchList) => {
       if (touches.length === 0) return { x: 0, y: 0 };
-      if (touches.length === 1)
-        return { x: touches[0].clientX, y: touches[0].clientY };
+      if (touches.length === 1) return { x: touches[0].clientX, y: touches[0].clientY };
 
       const touch1 = touches[0];
       const touch2 = touches[1];
@@ -320,10 +304,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             setError(null);
           }
 
-          console.log(
-            '🎯 Starting Mermaid rendering for chart:',
-            chart.substring(0, 50) + '...',
-          );
+          console.log('🎯 Starting Mermaid rendering for chart:', chart.substring(0, 50) + '...');
 
           // Basic syntax validation before attempting to render
           const trimmedChart = chart.trim();
@@ -360,8 +341,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           ];
 
           const hasValidStarter = validStarters.some(
-            (starter) =>
-              firstLine.startsWith(starter) || firstLine.includes(starter),
+            (starter) => firstLine.startsWith(starter) || firstLine.includes(starter),
           );
 
           if (!hasValidStarter) {
@@ -402,9 +382,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           } catch (renderError) {
             // Handle specific Mermaid parsing errors
             const errorMessage =
-              renderError instanceof Error
-                ? renderError.message
-                : String(renderError);
+              renderError instanceof Error ? renderError.message : String(renderError);
             console.error('🚨 Mermaid parsing error:', errorMessage);
 
             // Remove any error elements that Mermaid might have added to the DOM
@@ -414,10 +392,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             }
 
             // Throw a more user-friendly error
-            if (
-              errorMessage.includes('Parse error') ||
-              errorMessage.includes('Syntax error')
-            ) {
+            if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
               throw new Error(`Diagram syntax error: ${errorMessage}`);
             } else if (errorMessage.includes('UnknownDiagramError')) {
               throw new Error('unsupported_diagram_type');
@@ -428,10 +403,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
           if (!mounted) return;
 
-          console.log(
-            '✅ Chart rendered successfully, SVG length:',
-            result.svg.length,
-          );
+          console.log('✅ Chart rendered successfully, SVG length:', result.svg.length);
 
           // Cache the result
           mermaidCache.set(chartHash, result.svg);
@@ -448,8 +420,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           cleanupTimer = setTimeout(cleanupMermaidErrors, 50);
 
           if (mounted) {
-            const errorMessage =
-              err instanceof Error ? err.message : 'Failed to render diagram';
+            const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
 
             // Check if it's an unsupported diagram type
             if (
@@ -457,9 +428,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
               errorMessage.includes('No diagram type detected')
             ) {
               // For unsupported diagrams, show as code block instead of large error
-              console.log(
-                '🔄 Unsupported Mermaid diagram type, falling back to code block',
-              );
+              console.log('🔄 Unsupported Mermaid diagram type, falling back to code block');
               setError('unsupported_diagram_type');
             } else {
               setError(errorMessage);
@@ -507,9 +476,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           <div className={cn('my-2', className)}>
             <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
               <span>⚠️</span>
-              <span>
-                Unsupported diagram type (not available in Mermaid 11.x)
-              </span>
+              <span>Unsupported diagram type (not available in Mermaid 11.x)</span>
             </div>
             <pre className="text-xs p-3 bg-muted/50 border rounded-lg overflow-x-auto whitespace-pre-wrap font-mono">
               {chart}
@@ -520,12 +487,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
       // For other errors, show the full error UI
       return (
-        <div
-          className={cn(
-            'p-4 bg-muted/30 border border-border/40 rounded-lg',
-            className,
-          )}
-        >
+        <div className={cn('p-4 bg-muted/30 border border-border/40 rounded-lg', className)}>
           <div className="text-sm text-muted-foreground font-medium mb-2">
             Failed to render Mermaid diagram
           </div>
@@ -634,12 +596,22 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
                   </Button>
                 </Hint>
                 <Hint label="Zoom out" side="bottom">
-                  <Button variant="outline" size="icon" onClick={handleZoomOut} aria-label="Zoom out">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleZoomOut}
+                    aria-label="Zoom out"
+                  >
                     <ZoomOut className="size-4" />
                   </Button>
                 </Hint>
                 <Hint label="Rotate" side="bottom">
-                  <Button variant="outline" size="icon" onClick={handleRotate} aria-label="Rotate diagram">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRotate}
+                    aria-label="Rotate diagram"
+                  >
                     <RotateCcw className="size-4" />
                   </Button>
                 </Hint>

@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import * as React from 'react';
+import type * as React from 'react';
 import { GoCheckCircleFill } from 'react-icons/go';
 import { HiOutlineExclamationCircle, HiOutlineXCircle } from 'react-icons/hi';
 import { toast } from 'sonner';
@@ -138,7 +138,7 @@ export const progressToast = (message: string, options?: ToastOptions): string |
         </div>
       </div>
     ),
-    toastData(options, options?.duration ?? Infinity, isMobile),
+    toastData(options, options?.duration ?? Number.POSITIVE_INFINITY, isMobile),
   );
 };
 
@@ -174,7 +174,7 @@ export const loadingToast = <T,>(
         </div>
       </div>
     ),
-    toastData(options, Infinity, isMobile),
+    toastData(options, Number.POSITIVE_INFINITY, isMobile),
   );
 
   return promise.then(

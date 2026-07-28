@@ -3,7 +3,6 @@
 import { useTranslations } from 'next-intl';
 
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -11,17 +10,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import {
   useGrantTunnelPermission,
   useRevokeTunnelPermission,
   useTunnelPermissions,
 } from '@/hooks/tunnel/use-tunnel';
+import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
 import { Fragment, useMemo, useState } from 'react';
 import type { ScopeInfo } from './types';
-import { EXPIRY_OPTIONS, getExpiresAt, SCOPE_REGISTRY } from './types';
-import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
+import { EXPIRY_OPTIONS, SCOPE_REGISTRY, getExpiresAt } from './types';
 
 interface TunnelScopeTogglesProps {
   tunnelId: string;
@@ -39,7 +39,9 @@ function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
   return result;
 }
 
-export function buildActiveScopeMap(permissions: TunnelPermission[] | undefined): Map<string, string> {
+export function buildActiveScopeMap(
+  permissions: TunnelPermission[] | undefined,
+): Map<string, string> {
   const map = new Map<string, string>();
   if (!permissions) return map;
   for (const p of permissions) {
@@ -127,7 +129,7 @@ export function TunnelScopeToggles({ tunnelId, canWrite = false }: TunnelScopeTo
 
       {Object.entries(groups).map(([category, scopes], index) => (
         <Fragment key={category}>
-          {index > 0 && <Separator className='opacity-50'/>}
+          {index > 0 && <Separator className="opacity-50" />}
           <div>
             <Label>{category}</Label>
             <div className="space-y-2">

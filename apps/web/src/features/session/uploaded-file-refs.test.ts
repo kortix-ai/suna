@@ -2,14 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import {
-  buildOptimisticPromptTextWithUploads,
-  buildPromptPartsWithUploads,
-  optimisticUploadedFileRef,
-  optimisticUploadPath,
-  sanitizeUploadFilename,
-  uploadedFileRefXml,
   UPLOADS_DIR,
   type UploadFileForPrompt,
+  buildOptimisticPromptTextWithUploads,
+  buildPromptPartsWithUploads,
+  optimisticUploadPath,
+  optimisticUploadedFileRef,
+  sanitizeUploadFilename,
+  uploadedFileRefXml,
 } from './uploaded-file-refs';
 
 function localFile(name: string, type = 'text/plain'): Extract<AttachedFile, { kind: 'local' }> {

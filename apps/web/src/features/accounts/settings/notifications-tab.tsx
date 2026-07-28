@@ -10,14 +10,14 @@ import {
   CheckCircleSolid,
   DangerTriangleSolid,
   EyeOffSolid,
-  Icon as MynaIcon,
+  type Icon as MynaIcon,
   QuestionCircleSolid,
   ShieldCheckSolid,
 } from '@mynaui/icons-react';
-import { Volume2, type LucideIcon } from 'lucide-react';
+import { type LucideIcon, Volume2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 interface NotificationToggleProps {
   icon: LucideIcon | MynaIcon | IconType;

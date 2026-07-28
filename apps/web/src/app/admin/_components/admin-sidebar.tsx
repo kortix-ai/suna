@@ -2,17 +2,17 @@
 
 import { useTranslations } from 'next-intl';
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
 import {
-  ArrowLeft,
   Activity,
+  ArrowLeft,
   Boxes,
+  type LucideIcon,
   ShieldCheck,
   Users,
   Wrench,
-  type LucideIcon,
 } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 
 import {
   Sidebar,
@@ -73,7 +73,9 @@ export function AdminSidebar() {
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
-            <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line86JsxTextKortixConsole')}</span>
+            <span className="text-xs text-muted-foreground">
+              {tHardcodedUi.raw('appAdminComponentsAdminSidebar.line86JsxTextKortixConsole')}
+            </span>
           </div>
         </Link>
       </SidebarHeader>
@@ -94,11 +96,15 @@ export function AdminSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip={tHardcodedUi.raw('appAdminComponentsAdminSidebar.line127JsxAttrTooltipLeaveAdminConsole')}
+              tooltip={tHardcodedUi.raw(
+                'appAdminComponentsAdminSidebar.line127JsxAttrTooltipLeaveAdminConsole',
+              )}
               onClick={() => router.push('/projects')}
             >
               <ArrowLeft />
-              <span>{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}</span>
+              <span>
+                {tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

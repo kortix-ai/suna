@@ -6,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
-import { getAllUseCases } from '@/lib/use-cases';
 import { siteMetadata } from '@/lib/site-metadata';
+import { getAllUseCases } from '@/lib/use-cases';
 
 const TITLE = 'Use Cases';
 const EYEBROW = 'Loop Engineering';

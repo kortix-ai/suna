@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, FolderRoot } from 'lucide-react';
 import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import { cn } from '@/lib/utils';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { ChevronRight, FolderRoot } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getFileIcon } from './file-icon';
 
 // ---------------------------------------------------------------------------
@@ -188,20 +188,23 @@ export function FileBreadcrumbs() {
 
   if (isEditing) {
     return (
-      <div
-        className="flex items-center gap-1 text-sm min-w-0 flex-1"
-        onKeyDown={handleKeyDown}
-      >
+      <div className="flex items-center gap-1 text-sm min-w-0 flex-1" onKeyDown={handleKeyDown}>
         <input
           ref={inputRef}
           type="text"
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }
+            if (e.key === 'Enter') {
+              navigateToPath(editValue.trim() || '/');
+              setIsEditing(false);
+            }
             if (e.key === 'Escape') setIsEditing(false);
           }}
-          onBlur={() => { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }}
+          onBlur={() => {
+            navigateToPath(editValue.trim() || '/');
+            setIsEditing(false);
+          }}
           className="flex-1 min-w-0 h-7 px-2 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
           placeholder="/path/to/folder"
         />
@@ -210,10 +213,7 @@ export function FileBreadcrumbs() {
   }
 
   return (
-    <div
-      className="min-w-0 flex-1"
-      onKeyDown={handleKeyDown}
-    >
+    <div className="min-w-0 flex-1" onKeyDown={handleKeyDown}>
       <BreadcrumbSegments
         segments={segments}
         onSegmentClick={handleSegmentClick}
@@ -247,10 +247,7 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
   const rootPath = useFilesStore((s) => s.rootPath);
   const homePath = rootPath || '/workspace';
 
-  const segments = useMemo(
-    () => filePath.split('/').filter(Boolean),
-    [filePath],
-  );
+  const segments = useMemo(() => filePath.split('/').filter(Boolean), [filePath]);
 
   const fileName = segments[segments.length - 1] || '';
 

@@ -38,45 +38,42 @@ const isUuid = (s: string): boolean => UUID_RE.test(s);
 
 // ─── IAM action-code map ─────────────────────────────────────────────────
 
-const IAM_ACTION_MAP: Record<
-  string,
-  { title: string; kind: HumanizedAuditAction['kind'] }
-> = {
-  'iam.group.create':         { title: 'Created group',                 kind: 'create' },
-  'iam.group.update':         { title: 'Updated group',                 kind: 'update' },
-  'iam.group.delete':         { title: 'Deleted group',                 kind: 'delete' },
-  'iam.group.members.add':    { title: 'Added member to group',         kind: 'attach' },
-  'iam.group.members.remove': { title: 'Removed member from group',     kind: 'detach' },
-  'iam.member.super_admin.grant':  { title: 'Granted super-admin',      kind: 'grant'  },
-  'iam.member.super_admin.revoke': { title: 'Revoked super-admin',      kind: 'revoke' },
-  'iam.member.role.change':   { title: 'Changed member role',           kind: 'update' },
-  'iam.project.group.attach': { title: 'Attached group to project',     kind: 'attach' },
-  'iam.project.group.detach': { title: 'Detached group from project',   kind: 'detach' },
+const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction['kind'] }> = {
+  'iam.group.create': { title: 'Created group', kind: 'create' },
+  'iam.group.update': { title: 'Updated group', kind: 'update' },
+  'iam.group.delete': { title: 'Deleted group', kind: 'delete' },
+  'iam.group.members.add': { title: 'Added member to group', kind: 'attach' },
+  'iam.group.members.remove': { title: 'Removed member from group', kind: 'detach' },
+  'iam.member.super_admin.grant': { title: 'Granted super-admin', kind: 'grant' },
+  'iam.member.super_admin.revoke': { title: 'Revoked super-admin', kind: 'revoke' },
+  'iam.member.role.change': { title: 'Changed member role', kind: 'update' },
+  'iam.project.group.attach': { title: 'Attached group to project', kind: 'attach' },
+  'iam.project.group.detach': { title: 'Detached group from project', kind: 'detach' },
   'iam.project.group.update': { title: 'Changed group role on project', kind: 'update' },
-  'iam.member.invite':        { title: 'Invited member',                kind: 'create' },
-  'iam.member.remove':        { title: 'Removed member',                kind: 'delete' },
-  'iam.mfa_required.enable':  { title: 'Required MFA for the account',  kind: 'update' },
-  'iam.mfa_required.disable': { title: 'Disabled MFA requirement',      kind: 'update' },
-  'iam.session_policy.update':{ title: 'Updated session policy',        kind: 'update' },
-  'iam.pat_policy.update':    { title: 'Updated PAT policy',            kind: 'update' },
-  'iam.sso.provider.update':  { title: 'Updated SSO provider',          kind: 'update' },
-  'iam.sso.provider.delete':  { title: 'Removed SSO provider',          kind: 'delete' },
-  'iam.sso.mapping.create':   { title: 'Added SSO group mapping',       kind: 'create' },
-  'iam.sso.mapping.delete':   { title: 'Removed SSO group mapping',     kind: 'delete' },
-  'iam.scim.token.create':    { title: 'Created SCIM token',            kind: 'create' },
-  'iam.scim.token.revoke':    { title: 'Revoked SCIM token',            kind: 'revoke' },
-  'iam.service_account.create':  { title: 'Created service account',    kind: 'create' },
-  'iam.service_account.disable': { title: 'Disabled service account',   kind: 'update' },
-  'iam.service_account.delete':  { title: 'Deleted service account',    kind: 'delete' },
-  'iam.audit.export':         { title: 'Exported audit log',            kind: 'export' },
-  'iam.policy_template.apply':{ title: 'Applied policy template',        kind: 'grant'  },
+  'iam.member.invite': { title: 'Invited member', kind: 'create' },
+  'iam.member.remove': { title: 'Removed member', kind: 'delete' },
+  'iam.mfa_required.enable': { title: 'Required MFA for the account', kind: 'update' },
+  'iam.mfa_required.disable': { title: 'Disabled MFA requirement', kind: 'update' },
+  'iam.session_policy.update': { title: 'Updated session policy', kind: 'update' },
+  'iam.pat_policy.update': { title: 'Updated PAT policy', kind: 'update' },
+  'iam.sso.provider.update': { title: 'Updated SSO provider', kind: 'update' },
+  'iam.sso.provider.delete': { title: 'Removed SSO provider', kind: 'delete' },
+  'iam.sso.mapping.create': { title: 'Added SSO group mapping', kind: 'create' },
+  'iam.sso.mapping.delete': { title: 'Removed SSO group mapping', kind: 'delete' },
+  'iam.scim.token.create': { title: 'Created SCIM token', kind: 'create' },
+  'iam.scim.token.revoke': { title: 'Revoked SCIM token', kind: 'revoke' },
+  'iam.service_account.create': { title: 'Created service account', kind: 'create' },
+  'iam.service_account.disable': { title: 'Disabled service account', kind: 'update' },
+  'iam.service_account.delete': { title: 'Deleted service account', kind: 'delete' },
+  'iam.audit.export': { title: 'Exported audit log', kind: 'export' },
+  'iam.policy_template.apply': { title: 'Applied policy template', kind: 'grant' },
   // These were briefly dead (V1 policies removed in PR5) but a DB-backed
   // custom-role/policy surface was rebuilt in Phase 3 of feat/iam-rbac-v1
   // (June 2026, accounts/iam/custom-roles.ts) at the same action codes —
   // this map now covers LIVE activity again, not just historical rows.
-  'iam.policy.create':        { title: 'Created IAM policy',             kind: 'create' },
-  'iam.policy.update':        { title: 'Updated IAM policy',             kind: 'update' },
-  'iam.policy.delete':        { title: 'Deleted IAM policy',             kind: 'delete' },
+  'iam.policy.create': { title: 'Created IAM policy', kind: 'create' },
+  'iam.policy.update': { title: 'Updated IAM policy', kind: 'update' },
+  'iam.policy.delete': { title: 'Deleted IAM policy', kind: 'delete' },
 };
 
 // ─── HTTP path patterns ──────────────────────────────────────────────────
@@ -147,8 +144,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       // Revoke action on the Pending Invitations card.
       if (s[3] === 'pending-invites') {
         if (m === 'GET') return { title: 'Listed pending project invites', kind: 'read' };
-        if (m === 'DELETE')
-          return { title: 'Revoked pending project invitation', kind: 'revoke' };
+        if (m === 'DELETE') return { title: 'Revoked pending project invitation', kind: 'revoke' };
       }
       if (m === 'POST' && s[3] === 'invite')
         return { title: 'Invited project member', kind: 'create' };
@@ -166,16 +162,12 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
   (m, s) => {
     if (s[0] === 'projects' && s[2] === 'sessions') {
       const tail = s.slice(3); // after /sessions
-      if (m === 'POST' && tail.length === 0)
-        return { title: 'Started session', kind: 'create' };
+      if (m === 'POST' && tail.length === 0) return { title: 'Started session', kind: 'create' };
       if (m === 'POST' && tail[1] === 'exec')
         return { title: 'Ran session command', kind: 'update' };
-      if (m === 'POST' && tail[1] === 'stop')
-        return { title: 'Stopped session', kind: 'update' };
-      if (m === 'DELETE' && tail.length === 1)
-        return { title: 'Deleted session', kind: 'delete' };
-      if (m === 'PATCH' && tail.length === 1)
-        return { title: 'Updated session', kind: 'update' };
+      if (m === 'POST' && tail[1] === 'stop') return { title: 'Stopped session', kind: 'update' };
+      if (m === 'DELETE' && tail.length === 1) return { title: 'Deleted session', kind: 'delete' };
+      if (m === 'PATCH' && tail.length === 1) return { title: 'Updated session', kind: 'update' };
     }
     return null;
   },
@@ -203,8 +195,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
     if (s[0] === 'accounts' && s[2] === 'members') {
       if (m === 'POST' && s.length === 3)
         return { title: 'Added member to account', kind: 'create' };
-      if (m === 'PATCH' && s.length === 4)
-        return { title: 'Changed member role', kind: 'update' };
+      if (m === 'PATCH' && s.length === 4) return { title: 'Changed member role', kind: 'update' };
       if (m === 'DELETE' && s.length === 4)
         return { title: 'Removed member from account', kind: 'delete' };
     }
@@ -231,8 +222,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       const slug = s[4] && s[4] !== ':id' ? s[4] : null;
       if (m === 'POST' && s[5] === 'apply')
         return { title: 'Applied policy template', detail: slug ?? undefined, kind: 'grant' };
-      if (m === 'GET')
-        return { title: 'Listed policy templates', kind: 'read' };
+      if (m === 'GET') return { title: 'Listed policy templates', kind: 'read' };
     }
     return null;
   },
@@ -255,15 +245,12 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
   (m, s) => {
     if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'members') {
       const tail = s.slice(4); // after /members/:userId
-      if (tail[1] === 'super-admin')
-        return { title: 'Set super-admin status', kind: 'grant' };
-      if (tail[1] === 'project-access')
-        return { title: 'Listed project access', kind: 'read' };
+      if (tail[1] === 'super-admin') return { title: 'Set super-admin status', kind: 'grant' };
+      if (tail[1] === 'project-access') return { title: 'Listed project access', kind: 'read' };
       if (tail[1] === 'groups') return { title: 'Listed member groups', kind: 'read' };
       if (tail[1]?.startsWith('effective'))
         return { title: 'Checked effective permissions', kind: 'read' };
-      if (tail[1] === 'boundary')
-        return { title: 'Updated permission boundary', kind: 'update' };
+      if (tail[1] === 'boundary') return { title: 'Updated permission boundary', kind: 'update' };
     }
     return null;
   },
@@ -272,10 +259,8 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
     if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'groups') {
       const tail = s.slice(4); // after /groups
       if (m === 'POST' && tail.length === 0) return { title: 'Created group', kind: 'create' };
-      if (m === 'PATCH' && tail.length === 1)
-        return { title: 'Updated group', kind: 'update' };
-      if (m === 'DELETE' && tail.length === 1)
-        return { title: 'Deleted group', kind: 'delete' };
+      if (m === 'PATCH' && tail.length === 1) return { title: 'Updated group', kind: 'update' };
+      if (m === 'DELETE' && tail.length === 1) return { title: 'Deleted group', kind: 'delete' };
       if (tail[1] === 'members') {
         if (m === 'POST') return { title: 'Added member to group', kind: 'attach' };
         if (m === 'DELETE') return { title: 'Removed member from group', kind: 'detach' };
@@ -311,8 +296,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (s[3] === 'service-accounts') {
         if (m === 'POST' && s.length === 4)
           return { title: 'Created service account', kind: 'create' };
-        if (s[5] === 'disable')
-          return { title: 'Disabled service account', kind: 'update' };
+        if (s[5] === 'disable') return { title: 'Disabled service account', kind: 'update' };
         if (m === 'DELETE' && s.length === 5)
           return { title: 'Deleted service account', kind: 'delete' };
       }
@@ -405,11 +389,11 @@ export const KIND_DOT_CLASS: Record<HumanizedAuditAction['kind'], string> = {
   create: 'bg-emerald-500/70',
   update: 'bg-amber-500/70',
   delete: 'bg-rose-500/70',
-  grant:  'bg-violet-500/70',
+  grant: 'bg-violet-500/70',
   revoke: 'bg-rose-500/70',
   attach: 'bg-sky-500/70',
   detach: 'bg-zinc-400/70',
-  read:   'bg-zinc-300/60',
+  read: 'bg-zinc-300/60',
   export: 'bg-sky-500/70',
-  other:  'bg-zinc-300/60',
+  other: 'bg-zinc-300/60',
 };

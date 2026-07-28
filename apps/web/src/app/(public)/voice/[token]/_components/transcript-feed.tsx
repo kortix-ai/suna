@@ -2,14 +2,14 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import Hint from '@/components/ui/hint';
 import { IconAgent, IconMessage, IconTerminal } from '@/components/ui/kortix-icons';
 import { StatusDot } from '@/components/ui/status';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useRef } from 'react';
 
-import { buildFeed, elapsedLabel, outcomeTone, type FeedRow } from './feed';
+import { type FeedRow, buildFeed, elapsedLabel, outcomeTone } from './feed';
 import type { CallRecordEntry, LiveUtterance } from './types';
 
 /** Only auto-scroll if the reader was already near the bottom — never yank
@@ -224,7 +224,9 @@ function SpeechRow({
   );
 
   return (
-    <div className={cn('group flex flex-col gap-1', side === 'right' ? 'items-end' : 'items-start')}>
+    <div
+      className={cn('group flex flex-col gap-1', side === 'right' ? 'items-end' : 'items-start')}
+    >
       {showLabel && (
         <div className="flex items-center gap-1.5 px-1">
           {tone === 'kortix' ? (
@@ -330,9 +332,7 @@ function ToolRow({ row }: { row: FeedRow }) {
               {entry.outcome}
             </Badge>
           ) : null}
-          {took && (
-            <span className="text-muted-foreground/60 text-xs tabular-nums">{took}</span>
-          )}
+          {took && <span className="text-muted-foreground/60 text-xs tabular-nums">{took}</span>}
           <Timestamp at={entry.at} className="ml-auto" />
         </div>
         {entry.text && (

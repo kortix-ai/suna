@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { nextMarketplaceItemsPageParam } from './marketplace';
 import type { ItemsPage, MarketplaceItem } from '@/lib/marketplace-client';
+import { nextMarketplaceItemsPageParam } from './marketplace';
 
 function page(overrides: Partial<ItemsPage> = {}): ItemsPage {
   return {

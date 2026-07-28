@@ -1,16 +1,16 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-block';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   Ban,
   CalendarClock,
@@ -21,10 +21,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { useMemo } from 'react';
 
 export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -212,9 +209,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
           <div className="border-border/30 mt-2 border-t pt-2">
             <ToolSection label="Prompt">
               <OutputBlock
-                text={
-                  input.prompt.slice(0, 400) + (input.prompt.length > 400 ? '...' : '')
-                }
+                text={input.prompt.slice(0, 400) + (input.prompt.length > 400 ? '...' : '')}
               />
             </ToolSection>
           </div>

@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { createClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
+import { createClient } from '@/lib/supabase/client';
 import { useTunnelStore } from '@/stores/tunnel-store';
-import { createTunnelEventStream, type SSEStream } from '@kortix/sdk';
+import { type SSEStream, createTunnelEventStream } from '@kortix/sdk';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { tunnelKeys } from './use-tunnel';
 import type { TunnelPermissionRequest } from './use-tunnel';
 
@@ -20,7 +20,9 @@ export function useTunnelRealtimeSync() {
 
     async function connect() {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.access_token || cancelled) return;
 
       if (sseStreamRef.current) {

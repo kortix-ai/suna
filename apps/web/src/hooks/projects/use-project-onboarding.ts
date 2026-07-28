@@ -18,13 +18,10 @@
  * optimistically updates the cache so the wizard fades out instantly.
  */
 
-import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 
-import {
-  getProjectDetail,
-  setProjectOnboardingComplete,
-} from '@kortix/sdk';
+import { getProjectDetail, setProjectOnboardingComplete } from '@kortix/sdk';
 
 export type ProjectOnboardingStatus = 'pending' | 'completed';
 

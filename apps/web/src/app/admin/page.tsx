@@ -2,20 +2,15 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect } from 'react';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { Activity, ArrowRight, LayoutDashboard, type LucideIcon, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Activity, ArrowRight, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { useEffect } from 'react';
 
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
 
-import {
-  SectionContainer,
-  SectionHeader,
-  StatPill,
-  StatRow,
-} from './_components/section-header';
+import { SectionContainer, SectionHeader, StatPill, StatRow } from './_components/section-header';
 
 const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
   instances: '/admin/ops',
@@ -41,7 +36,9 @@ export default function AdminOverviewPage() {
       <SectionHeader
         icon={LayoutDashboard}
         title={tHardcodedUi.raw('appAdminPage.line40JsxAttrTitleAdminOverview')}
-        description={tHardcodedUi.raw('appAdminPage.line41JsxAttrDescriptionProductionSupportEntrypointOperationsIsTheSourceOf')}
+        description={tHardcodedUi.raw(
+          'appAdminPage.line41JsxAttrDescriptionProductionSupportEntrypointOperationsIsTheSourceOf',
+        )}
       />
 
       <StatRow>
@@ -69,13 +66,17 @@ export default function AdminOverviewPage() {
           href="/admin/ops"
           icon={Activity}
           title="Operations"
-          description={tHardcodedUi.raw('appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd')}
+          description={tHardcodedUi.raw(
+            'appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd',
+          )}
         />
         <QuickLink
           href="/admin/utils"
           icon={Wrench}
           title="Maintenance"
-          description={tHardcodedUi.raw('appAdminPage.line75JsxAttrDescriptionSupportWorkflowsForAccountAccessTechnicalIssuesAnd')}
+          description={tHardcodedUi.raw(
+            'appAdminPage.line75JsxAttrDescriptionSupportWorkflowsForAccountAccessTechnicalIssuesAnd',
+          )}
         />
       </div>
     </SectionContainer>

@@ -2,22 +2,23 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Slider } from '@/components/ui/slider';
+import { cn } from '@/lib/utils';
 import {
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
+  Download,
+  Info,
   Maximize,
   Minimize,
+  Pause,
+  Play,
   RotateCcw,
-  Info,
-  Download,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import type React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface VideoRendererProps {
   url: string;
@@ -193,7 +194,12 @@ export function VideoRenderer({
   // Compact view for inline display
   if (compact) {
     return (
-      <div className={cn('relative rounded-2xl overflow-hidden bg-black/5 dark:bg-black/20', className)}>
+      <div
+        className={cn(
+          'relative rounded-2xl overflow-hidden bg-black/5 dark:bg-black/20',
+          className,
+        )}
+      >
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
             <KortixLoader size="medium" />
@@ -201,7 +207,11 @@ export function VideoRenderer({
         )}
         {hasError ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-            <p className="text-muted-foreground font-medium text-sm">{tHardcodedUi.raw('componentsFileRenderersVideoRenderer.line201JsxTextFailedToLoadVideo')}</p>
+            <p className="text-muted-foreground font-medium text-sm">
+              {tHardcodedUi.raw(
+                'componentsFileRenderersVideoRenderer.line201JsxTextFailedToLoadVideo',
+              )}
+            </p>
           </div>
         ) : (
           <div className="relative group">
@@ -229,11 +239,7 @@ export function VideoRenderer({
                 className="h-12 w-12 rounded-full bg-white/90 dark:bg-black/90 hover:bg-white dark:hover:bg-black shadow-lg"
                 onClick={togglePlay}
               >
-                {isPlaying ? (
-                  <Pause className="h-6 w-6" />
-                ) : (
-                  <Play className="h-6 w-6 ml-0.5" />
-                )}
+                {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-0.5" />}
               </Button>
             </div>
             {/* Progress bar at bottom */}
@@ -267,8 +273,16 @@ export function VideoRenderer({
       {/* Error state */}
       {hasError ? (
         <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-          <p className="text-white font-medium mb-2">{tHardcodedUi.raw('componentsFileRenderersVideoRenderer.line267JsxTextFailedToLoadVideo')}</p>
-          <p className="text-sm text-white/60">{tHardcodedUi.raw('componentsFileRenderersVideoRenderer.line268JsxTextTheVideoCouldNotBePlayed')}</p>
+          <p className="text-white font-medium mb-2">
+            {tHardcodedUi.raw(
+              'componentsFileRenderersVideoRenderer.line267JsxTextFailedToLoadVideo',
+            )}
+          </p>
+          <p className="text-sm text-white/60">
+            {tHardcodedUi.raw(
+              'componentsFileRenderersVideoRenderer.line268JsxTextTheVideoCouldNotBePlayed',
+            )}
+          </p>
         </div>
       ) : (
         <>
@@ -304,7 +318,7 @@ export function VideoRenderer({
           <div
             className={cn(
               'absolute top-0 left-0 right-0 p-4 transition-opacity duration-200 bg-gradient-to-b from-black/60 to-transparent',
-              showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              showControls ? 'opacity-100' : 'opacity-0 pointer-events-none',
             )}
           >
             <div className="flex items-center justify-end gap-2">
@@ -336,7 +350,9 @@ export function VideoRenderer({
               <div className="space-y-2">
                 <div className="flex justify-between gap-6">
                   <span className="text-white/60">Resolution</span>
-                  <span className="font-medium">{videoInfo.width} × {videoInfo.height}</span>
+                  <span className="font-medium">
+                    {videoInfo.width} × {videoInfo.height}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-6">
                   <span className="text-white/60">Duration</span>
@@ -350,7 +366,7 @@ export function VideoRenderer({
           <div
             className={cn(
               'absolute bottom-0 left-0 right-0 p-4 transition-opacity duration-200 bg-gradient-to-t from-black/80 to-transparent',
-              showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              showControls ? 'opacity-100' : 'opacity-0 pointer-events-none',
             )}
           >
             {/* Progress bar */}
@@ -372,11 +388,7 @@ export function VideoRenderer({
                 className="w-9 p-0 text-white hover:bg-white/20"
                 onClick={togglePlay}
               >
-                {isPlaying ? (
-                  <Pause className="h-5 w-5" />
-                ) : (
-                  <Play className="h-5 w-5 ml-0.5" />
-                )}
+                {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
               </Button>
 
               <Button
@@ -425,11 +437,7 @@ export function VideoRenderer({
                 className="w-9 p-0 text-white hover:bg-white/20"
                 onClick={toggleFullscreen}
               >
-                {isFullscreen ? (
-                  <Minimize className="h-5 w-5" />
-                ) : (
-                  <Maximize className="h-5 w-5" />
-                )}
+                {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
               </Button>
             </div>
           </div>
@@ -450,7 +458,10 @@ export function InlineVideoPlayer({
   return (
     <VideoRenderer
       url={url}
-      className={cn('w-80 aspect-video rounded-2xl border border-neutral-200 dark:border-neutral-700/50', className)}
+      className={cn(
+        'w-80 aspect-video rounded-2xl border border-neutral-200 dark:border-neutral-700/50',
+        className,
+      )}
       compact
       loop
     />

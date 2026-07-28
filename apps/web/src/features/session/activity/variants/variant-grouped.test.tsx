@@ -16,13 +16,18 @@ function tool(name: string, input: Record<string, unknown> = {}): ToolPart {
 }
 
 function entry(part: ToolPart) {
-  return { part, message: { info: { id: 'msg-1', role: 'assistant' } } as unknown as MessageWithParts };
+  return {
+    part,
+    message: { info: { id: 'msg-1', role: 'assistant' } } as unknown as MessageWithParts,
+  };
 }
 
 describe('stepLabel', () => {
   test("the model's description wins for a bash step", () => {
     expect(
-      stepLabel(tool('bash', { description: 'Build slide 3 — Weblogs', command: 'python3 present.py' })),
+      stepLabel(
+        tool('bash', { description: 'Build slide 3 — Weblogs', command: 'python3 present.py' }),
+      ),
     ).toBe('Build slide 3 — Weblogs');
   });
 

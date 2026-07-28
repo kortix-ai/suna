@@ -19,8 +19,8 @@ import {
   FileLock2,
   FileSearch,
   FileSignature,
-  Files,
   FileText,
+  Files,
   Filter,
   Flag,
   FlaskConical,
@@ -57,8 +57,8 @@ import {
   UserMinus,
   UserPlus,
   UserRoundSearch,
-  Users,
   UserSearch,
+  Users,
   Wallet,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
@@ -205,7 +205,9 @@ function OrbitCover({ center, satellites }: { center: ReactNode; satellites: Rea
           <div
             key={i}
             className="absolute top-1/2 left-1/2"
-            style={{ transform: `translate(-50%,-50%) rotate(${angle}deg) translate(84px) rotate(${-angle}deg)` }}
+            style={{
+              transform: `translate(-50%,-50%) rotate(${angle}deg) translate(84px) rotate(${-angle}deg)`,
+            }}
           >
             {node}
           </div>
@@ -303,7 +305,11 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'dependency-upgrades': () => (
     <HeroCover>
-      <img src="/usecases/logos/github.svg" alt="GitHub" className="size-9 object-contain sm:size-11" />
+      <img
+        src="/usecases/logos/github.svg"
+        alt="GitHub"
+        className="size-9 object-contain sm:size-11"
+      />
     </HeroCover>
   ),
   'inbox-triage': () => (

@@ -2,12 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import { usePathname } from 'next/navigation';
-import Link from 'next/link';
 import { ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
@@ -55,13 +55,21 @@ export function AdminShell({
             <ShieldCheck className="h-7 w-7 text-muted-foreground" />
           </div>
           <div className="space-y-1">
-            <h1 className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAdminComponentsAdminShell.line55JsxTextAdminAccessRequired')}</h1>
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminComponentsAdminShell.line57JsxTextYourAccountDoesnAposTHaveAdminPermissions')}</p>
+            <h1 className="text-lg font-semibold tracking-tight">
+              {tHardcodedUi.raw('appAdminComponentsAdminShell.line55JsxTextAdminAccessRequired')}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {tHardcodedUi.raw(
+                'appAdminComponentsAdminShell.line57JsxTextYourAccountDoesnAposTHaveAdminPermissions',
+              )}
+            </p>
           </div>
           <Link
             href="/projects"
             className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
-          >{tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}</Link>
+          >
+            {tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}
+          </Link>
         </div>
       </div>
     );

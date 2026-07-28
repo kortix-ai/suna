@@ -5,12 +5,12 @@
  */
 
 import {
+  CheckCircle2,
   Circle,
   CircleDot,
   CircleDotDashed,
-  CheckCircle2,
-  XCircle,
   type LucideIcon,
+  XCircle,
 } from 'lucide-react';
 /** Canonical task statuses (inlined; formerly from the /kortix/tasks board API). */
 export type KortixTaskStatus =
@@ -103,7 +103,10 @@ export const ALL_STATUSES: KortixTaskStatus[] = [
 
 /** Linear-style short ID — KTX-XXXX from the trailing chars of the task id. */
 export function shortTaskId(id: string): string {
-  const tail = id.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase();
+  const tail = id
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(-4)
+    .toUpperCase();
   return `KTX-${tail || '0000'}`;
 }
 

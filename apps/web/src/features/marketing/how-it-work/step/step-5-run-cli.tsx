@@ -7,7 +7,7 @@ import { GitBranch, MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
-import { useStep5Director, type Step5Phase } from '../step-director';
+import { type Step5Phase, useStep5Director } from '../step-director';
 import { useStepShowcaseStart } from '../use-step-showcase';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 

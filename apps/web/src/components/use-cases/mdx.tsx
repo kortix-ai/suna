@@ -1,4 +1,4 @@
-import { Children, isValidElement, cloneElement, type ReactNode } from 'react';
+import { Children, type ReactNode, cloneElement, isValidElement } from 'react';
 
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { cn } from '@/lib/utils';
@@ -97,10 +97,7 @@ export function Step({
         </h3>
       </div>
       <div
-        className={cn(
-          'text-muted-foreground mt-4 pl-9 text-[0.95rem] leading-relaxed',
-          proseReset,
-        )}
+        className={cn('text-muted-foreground mt-4 pl-9 text-[0.95rem] leading-relaxed', proseReset)}
       >
         {children}
       </div>

@@ -7,8 +7,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { KortixAccount } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
+import type { KortixAccount } from '@kortix/sdk';
 import { useTranslations } from 'next-intl';
 import { Icon } from '../icon/icon';
 

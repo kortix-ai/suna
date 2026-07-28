@@ -62,13 +62,13 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { useRuntimeProviders } from '@kortix/sdk/react';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk';
+import { type PipedreamApp, listConnectors, listPipedreamApps } from '@kortix/sdk';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
@@ -119,7 +119,10 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   // Pipedream configured (default true), so this is a no-op there.
   const connectorsEnabled = isConnectorsEnabled();
   const steps = useMemo<StepId[]>(
-    () => (connectorsEnabled ? ['welcome', 'tools', 'slack', 'model', 'done'] : ['welcome', 'slack', 'model', 'done']),
+    () =>
+      connectorsEnabled
+        ? ['welcome', 'tools', 'slack', 'model', 'done']
+        : ['welcome', 'slack', 'model', 'done'],
     [connectorsEnabled],
   );
   const stepId = steps[index] ?? 'welcome';
@@ -527,8 +530,8 @@ function ToolsStep({
         {/* Custom — wire up any OpenAPI / Postman / GraphQL / MCP / HTTP service directly. */}
         <TabsContent value="custom" className="mt-0">
           <p className="text-muted-foreground mb-3 text-sm leading-6">
-            Have your own API? Connect a custom OpenAPI, Postman, GraphQL, MCP, or HTTP service so your agent
-            can call it directly.
+            Have your own API? Connect a custom OpenAPI, Postman, GraphQL, MCP, or HTTP service so
+            your agent can call it directly.
           </p>
           <div className="max-h-[46vh] overflow-y-auto pr-1">
             <Suspense fallback={<Skeleton className="h-64 w-full rounded-2xl" />}>
@@ -737,13 +740,8 @@ function SlackGlyph() {
 
 function ModelStep() {
   const { data: providers, isLoading } = useRuntimeProviders();
-  const {
-    openConnectProvider,
-    openUpgrade,
-    modal,
-    hasSelectableModels,
-    showUpgradeOption,
-  } = useModelConnectionGate(flattenModels(providers));
+  const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
+    useModelConnectionGate(flattenModels(providers));
 
   return (
     <div className="flex flex-col gap-5">

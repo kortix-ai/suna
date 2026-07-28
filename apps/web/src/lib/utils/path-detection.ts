@@ -11,30 +11,146 @@
 
 const COMMON_EXTENSIONS = new Set([
   // Code
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'mts', 'cts',
-  'py', 'pyi', 'rb', 'go', 'rs', 'java', 'kt', 'kts', 'scala',
-  'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 'hxx', 'cs', 'fs', 'fsx',
-  'swift', 'm', 'mm', 'zig', 'nim', 'lua', 'r', 'jl', 'ex', 'exs',
-  'erl', 'hrl', 'clj', 'cljs', 'cljc', 'dart', 'v', 'sv', 'vhd',
-  'php', 'pl', 'pm', 'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'mts',
+  'cts',
+  'py',
+  'pyi',
+  'rb',
+  'go',
+  'rs',
+  'java',
+  'kt',
+  'kts',
+  'scala',
+  'c',
+  'h',
+  'cpp',
+  'cc',
+  'cxx',
+  'hpp',
+  'hxx',
+  'cs',
+  'fs',
+  'fsx',
+  'swift',
+  'm',
+  'mm',
+  'zig',
+  'nim',
+  'lua',
+  'r',
+  'jl',
+  'ex',
+  'exs',
+  'erl',
+  'hrl',
+  'clj',
+  'cljs',
+  'cljc',
+  'dart',
+  'v',
+  'sv',
+  'vhd',
+  'php',
+  'pl',
+  'pm',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ps1',
+  'bat',
+  'cmd',
   // Web
-  'html', 'htm', 'css', 'scss', 'sass', 'less', 'styl', 'vue', 'svelte',
-  'astro', 'mdx',
+  'html',
+  'htm',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  'styl',
+  'vue',
+  'svelte',
+  'astro',
+  'mdx',
   // Data / config
-  'json', 'jsonc', 'json5', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
-  'env', 'xml', 'csv', 'tsv', 'sql', 'graphql', 'gql', 'proto', 'avro',
+  'json',
+  'jsonc',
+  'json5',
+  'yaml',
+  'yml',
+  'toml',
+  'ini',
+  'cfg',
+  'conf',
+  'env',
+  'xml',
+  'csv',
+  'tsv',
+  'sql',
+  'graphql',
+  'gql',
+  'proto',
+  'avro',
   // Docs
-  'md', 'markdown', 'txt', 'rst', 'adoc', 'tex', 'bib', 'org',
+  'md',
+  'markdown',
+  'txt',
+  'rst',
+  'adoc',
+  'tex',
+  'bib',
+  'org',
   // Build / tooling
-  'dockerfile', 'makefile', 'cmake', 'gradle', 'sbt', 'lock',
-  'gitignore', 'eslintrc', 'prettierrc', 'editorconfig', 'npmrc',
+  'dockerfile',
+  'makefile',
+  'cmake',
+  'gradle',
+  'sbt',
+  'lock',
+  'gitignore',
+  'eslintrc',
+  'prettierrc',
+  'editorconfig',
+  'npmrc',
   // Images / media (so users can preview them)
-  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'ico', 'bmp',
-  'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'flac',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'svg',
+  'webp',
+  'avif',
+  'ico',
+  'bmp',
+  'mp4',
+  'webm',
+  'mov',
+  'mp3',
+  'wav',
+  'ogg',
+  'flac',
   // Documents
-  'pdf', 'docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt',
+  'pdf',
+  'docx',
+  'xlsx',
+  'pptx',
+  'doc',
+  'xls',
+  'ppt',
   // Misc
-  'wasm', 'map', 'snap', 'patch', 'diff', 'log',
+  'wasm',
+  'map',
+  'snap',
+  'patch',
+  'diff',
+  'log',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -42,8 +158,17 @@ const COMMON_EXTENSIONS = new Set([
 // ---------------------------------------------------------------------------
 
 const COMMON_NON_FILES = new Set([
-  'e.g.', 'i.e.', 'etc.', 'vs.', 'v1.', 'v2.', 'v3.',
-  'n/a', 'w/o', 'w/', 'i/o',
+  'e.g.',
+  'i.e.',
+  'etc.',
+  'vs.',
+  'v1.',
+  'v2.',
+  'v3.',
+  'n/a',
+  'w/o',
+  'w/',
+  'i/o',
 ]);
 
 // URL protocols — skip anything that looks like a URL
@@ -99,16 +224,16 @@ function isEmbeddedInUrl(text: string, matchStart: number): boolean {
  */
 // Build the regex as a single string, then compile it.
 const FILE_PATH_PATTERN = [
-  "(?:^|(?<=[\\s\"'`({\\[,;|=>]))",   // lookbehind: start or delimiter
-  "(",                                  // group 1 open
-    "(?:\\.{0,2}/|~/)?",               //   optional prefix: / ./ ../ ~/
-    "(?:[\\w@.][\\w@.\\-]*/)+",        //   one or more dir segments
-    "[\\w@.\\-]+",                      //   filename
-    "\\.\\w{1,10}",                     //   .extension
-  ")",                                  // group 1 close
-  "(:\\d{1,6}(?::\\d{1,6})?)?",        // group 2: optional :line:col
-  "(?=$|[\\s\"'`()}\\[\\],;|<])",      // lookahead: end or delimiter
-].join("");
+  '(?:^|(?<=[\\s"\'`({\\[,;|=>]))', // lookbehind: start or delimiter
+  '(', // group 1 open
+  '(?:\\.{0,2}/|~/)?', //   optional prefix: / ./ ../ ~/
+  '(?:[\\w@.][\\w@.\\-]*/)+', //   one or more dir segments
+  '[\\w@.\\-]+', //   filename
+  '\\.\\w{1,10}', //   .extension
+  ')', // group 1 close
+  '(:\\d{1,6}(?::\\d{1,6})?)?', // group 2: optional :line:col
+  '(?=$|[\\s"\'`()}\\[\\],;|<])', // lookahead: end or delimiter
+].join('');
 
 /**
  * Pre-compiled global regex for scanning text.
@@ -201,8 +326,8 @@ export function detectFilePaths(text: string): PathMatch[] {
     let column: number | undefined;
     if (lineColPart) {
       const parts = lineColPart.slice(1).split(':');
-      lineNumber = parseInt(parts[0], 10);
-      if (parts[1]) column = parseInt(parts[1], 10);
+      lineNumber = Number.parseInt(parts[0], 10);
+      if (parts[1]) column = Number.parseInt(parts[1], 10);
     }
 
     matches.push({

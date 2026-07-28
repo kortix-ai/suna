@@ -17,10 +17,7 @@ import type { ProjectSession } from '@kortix/sdk';
 // `useSession` then handed straight to the page.
 
 const pageSource = readFileSync(
-  join(
-    import.meta.dir,
-    '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
-  ),
+  join(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 

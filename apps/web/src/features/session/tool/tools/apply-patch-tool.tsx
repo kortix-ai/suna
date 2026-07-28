@@ -1,41 +1,30 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
-import { DiffStat, } from '@/components/ui/status';
+import { DiffStat } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
+  InlineDiffView,
   ToolOutputFallback,
   ToolRunningContext,
-  InlineDiffView,
+  isErrorOutput,
+  partMetadata,
   partOutput,
   partStatus,
-  partMetadata,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import {
-  ChevronRight,
-  FileCode2,
-} from 'lucide-react';
+import { getDirectory, getFilename } from '@/ui';
+import { ChevronRight, FileCode2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import {
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
-import {
-  getDirectory,
-  getFilename,
-} from '@/ui';
-
+import { useContext, useMemo, useState } from 'react';
 
 import {
   PATCH_TYPE_STYLE,
-  RawPatchDiffView,
   type PatchFileLite,
+  RawPatchDiffView,
 } from '@/features/session/tool/shared/patch-helpers';
 
 export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {

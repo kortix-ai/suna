@@ -1,4 +1,4 @@
-import { Folder, FileText } from 'lucide-react';
+import { FileText, Folder } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 

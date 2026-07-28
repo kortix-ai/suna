@@ -25,7 +25,12 @@ interface CompactDialogProps {
   onCompactStart?: () => void;
 }
 
-export function CompactModal({ sessionId, open, onOpenChange, onCompactStart }: CompactDialogProps) {
+export function CompactModal({
+  sessionId,
+  open,
+  onOpenChange,
+  onCompactStart,
+}: CompactDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const summarize = useSummarizeRuntimeSession();
 

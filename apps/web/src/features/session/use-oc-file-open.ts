@@ -1,14 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
   getRuntimePathInfo,
   getRuntimeProjectInfo,
-  runtimeKeys,
   readRuntimeTextFile,
+  runtimeKeys,
 } from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * Module-level cache of candidate prefixes.
@@ -39,7 +39,9 @@ function toRelative(absPath: string, prefixes: string[]): string {
  * as a fallback if the cache is empty. This prevents duplicate /project/current
  * and /path requests that were previously made on every tool-view mount.
  */
-async function fetchPrefixesFromSdk(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
+async function fetchPrefixesFromSdk(
+  queryClient?: ReturnType<typeof useQueryClient>,
+): Promise<string[]> {
   if (cachedPrefixes && cachedPrefixes.length > 0) return cachedPrefixes;
   if (prefixFetchPromise) return prefixFetchPromise;
 
@@ -49,7 +51,9 @@ async function fetchPrefixesFromSdk(queryClient?: ReturnType<typeof useQueryClie
   return prefixFetchPromise;
 }
 
-async function fetchPrefixesFromSdkUncached(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
+async function fetchPrefixesFromSdkUncached(
+  queryClient?: ReturnType<typeof useQueryClient>,
+): Promise<string[]> {
   const candidates: string[] = [];
 
   // 1) Try React Query cache first (shared with other hooks)
@@ -158,7 +162,9 @@ export function useOcFileOpen() {
         setPrefixes(result);
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [queryClient]);
 
   /** Sync: convert absolute → relative for display */
@@ -166,7 +172,7 @@ export function useOcFileOpen() {
     (absPath: string): string => {
       if (!absPath || !absPath.startsWith('/')) return absPath;
       // Try component state first, then module cache (may be updated by file API probe)
-      const pfx = prefixes.length > 0 ? prefixes : (cachedPrefixes || []);
+      const pfx = prefixes.length > 0 ? prefixes : cachedPrefixes || [];
       if (pfx.length > 0) return toRelative(absPath, pfx);
       return absPath;
     },

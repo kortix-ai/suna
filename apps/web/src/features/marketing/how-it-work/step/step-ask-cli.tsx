@@ -1,11 +1,11 @@
 'use client';
 
 import { DraggableCliPanel } from '@/components/home/interactive-demo/cli/draggable-cli-panel';
-import { cmdLine, t, type Line } from '@/components/home/interactive-demo/cli/terminal';
+import { type Line, cmdLine, t } from '@/components/home/interactive-demo/cli/terminal';
 import { motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
-import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal, type StepCliBlock } from '../step-cli-terminal';
+import { STEP_CLI_PANEL_ANCHOR, type StepCliBlock, StepCliTerminal } from '../step-cli-terminal';
 import { useStepShowcaseStart } from '../use-step-showcase';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 

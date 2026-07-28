@@ -17,10 +17,10 @@
  * aliases must always resolve to the same family and the same sentence.
  */
 
-import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
-import { parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
 import { safeHttpUrl } from '@/lib/safe-url';
 import type { ToolPart } from '@/ui';
+import { parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
+import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 
 export type StepFamily =
   | 'explore'
@@ -52,8 +52,13 @@ assign('explore', ['read', 'glob', 'grep', 'list']);
 assign('edit', ['write', 'edit', 'morph_edit', 'apply_patch']);
 assign('run', ['bash', 'pty_spawn', 'pty_read', 'pty_write', 'pty_input', 'pty_kill']);
 assign('web', [
-  'web_search', 'websearch', 'web_fetch', 'webfetch',
-  'scrape_webpage', 'scrapewebpage', 'image_search',
+  'web_search',
+  'websearch',
+  'web_fetch',
+  'webfetch',
+  'scrape_webpage',
+  'scrapewebpage',
+  'image_search',
 ]);
 assign('create', ['image_gen', 'video_gen', 'presentation_gen', 'show', 'show_user']);
 
@@ -71,47 +76,89 @@ assign('plan', ['todo_write', 'todowrite']);
 // model happened to emit.
 assign('delegate', [
   // spawn a helper agent to do work (renders AgentSpawnTool / SessionSpawnTool)
-  'agent_spawn', 'agent_task', 'agent_task_create', 'agent_task_start',
-  'task', 'task_create', 'task_start',
-  'session_spawn', 'session_start_background',
+  'agent_spawn',
+  'agent_task',
+  'agent_task_create',
+  'agent_task_start',
+  'task',
+  'task_create',
+  'task_start',
+  'session_spawn',
+  'session_start_background',
   // send an instruction/update to a running helper (AgentMessageTool / AgentTaskUpdateTool)
-  'agent_message', 'agent_task_message', 'task_message',
-  'agent_task_update', 'task_update',
+  'agent_message',
+  'agent_task_message',
+  'task_message',
+  'agent_task_update',
+  'task_update',
   'session_message',
   // read-only status check on helpers/tasks (AgentStatusTool / TaskListTool)
-  'agent_status', 'agent_task_list', 'agent_task_get', 'task_list', 'task_get',
+  'agent_status',
+  'agent_task_list',
+  'agent_task_get',
+  'task_list',
+  'task_get',
   // stop a running helper (AgentStopTool)
-  'agent_stop', 'agent_task_cancel', 'task_cancel',
+  'agent_stop',
+  'agent_task_cancel',
+  'task_cancel',
   // mark a helper's task done (TaskDoneTool)
-  'agent_task_approve', 'task_approve', 'task_done',
+  'agent_task_approve',
+  'task_approve',
+  'task_done',
   // remove a task (TaskDeleteTool)
   'task_delete',
 ]);
 // Genuine read-only lookups of past/other session state — no delegation happens here.
 assign('sessions', [
-  'session_get', 'session_read', 'session_search',
-  'session_lineage', 'session_stats', 'session_list', 'session_list_background',
+  'session_get',
+  'session_read',
+  'session_search',
+  'session_lineage',
+  'session_stats',
+  'session_list',
+  'session_list_background',
   'session_list_spawned',
 ]);
 assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
 assign('apps', [
-  'connector_get', 'connector_list', 'connector_setup',
-  'kortix_executor_call', 'kortix_executor_connectors',
-  'kortix_executor_describe', 'kortix_executor_discover',
+  'connector_get',
+  'connector_list',
+  'connector_setup',
+  'kortix_executor_call',
+  'kortix_executor_connectors',
+  'kortix_executor_describe',
+  'kortix_executor_discover',
 ]);
 assign('automations', [
-  'triggers', 'trigger_create', 'trigger_delete', 'trigger_get', 'trigger_list',
-  'trigger_pause', 'trigger_resume', 'trigger_test', 'trigger_update',
+  'triggers',
+  'trigger_create',
+  'trigger_delete',
+  'trigger_get',
+  'trigger_list',
+  'trigger_pause',
+  'trigger_resume',
+  'trigger_test',
+  'trigger_update',
 ]);
 assign('projects', [
-  'project_create', 'project_delete', 'project_get',
-  'project_list', 'project_select', 'project_update',
+  'project_create',
+  'project_delete',
+  'project_get',
+  'project_list',
+  'project_select',
+  'project_update',
 ]);
 assign('skills', ['skill']);
 assign('ask', ['question', 'ask']);
 assign('retired', [
-  'integration_list', 'integration_connect', 'integration_search', 'integration_actions',
-  'integration_run', 'integration_request', 'integration_exec',
+  'integration_list',
+  'integration_connect',
+  'integration_search',
+  'integration_actions',
+  'integration_run',
+  'integration_request',
+  'integration_exec',
 ]);
 
 export function familyForTool(toolName: string): StepFamily | 'hidden' {
@@ -559,7 +606,8 @@ function mixedCreateSentence(keys: string[]): string {
   const segments: string[] = [];
   (Object.keys(counts) as CreateMedia[]).forEach((media) => {
     const c = counts[media];
-    if (c) segments.push(`${c} ${plural(c, CREATE_MEDIA_NOUN[media], `${CREATE_MEDIA_NOUN[media]}s`)}`);
+    if (c)
+      segments.push(`${c} ${plural(c, CREATE_MEDIA_NOUN[media], `${CREATE_MEDIA_NOUN[media]}s`)}`);
   });
   return `Worked on ${joinWithAnd(segments)}`;
 }

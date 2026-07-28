@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
-import { HelpSidebar } from '@/components/help/help-sidebar';
 import { HelpSearchModal } from '@/components/help/help-search-modal';
+import { HelpSidebar } from '@/components/help/help-sidebar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { useEffect, useState } from 'react';
 
 export function HelpLayoutClient({ children }: { children: React.ReactNode }) {
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -37,4 +37,3 @@ export function HelpLayoutClient({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

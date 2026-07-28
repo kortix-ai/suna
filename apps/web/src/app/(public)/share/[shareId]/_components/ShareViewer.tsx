@@ -2,27 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
-import { cn } from '@/lib/utils';
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import {
-  AlertTriangle,
-  Copy,
-  Check,
-  ThumbsUp,
-  ThumbsDown,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/lib/toast';
-import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '@/lib/utils';
+import { AlertTriangle, Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 
 // ============================================================================
 // Data fetching — GENUINELY anonymous, server-to-sandbox. `shareId` is the
@@ -48,13 +37,18 @@ import { motion, AnimatePresence } from 'motion/react';
 // ============================================================================
 
 import {
-  getPublicSessionShare,
-  getPublicSessionShareMessages,
   type PublicSessionShareMeta,
   type PublicSessionTranscript,
   type PublicSessionTranscriptMessage,
+  getPublicSessionShare,
+  getPublicSessionShareMessages,
 } from '@kortix/sdk';
-import { describeShareError, toShareLoadError, transcriptUnavailableMessage, type ShareLoadError } from './share-load-error';
+import {
+  type ShareLoadError,
+  describeShareError,
+  toShareLoadError,
+  transcriptUnavailableMessage,
+} from './share-load-error';
 
 interface ShareData {
   meta: PublicSessionShareMeta;
@@ -85,11 +79,19 @@ export function ShareViewer({ shareId }: { shareId: string }) {
     setError(null);
 
     fetchShareData(shareId)
-      .then((result) => { if (!cancelled) setData(result); })
-      .catch((err) => { if (!cancelled) setError(toShareLoadError(err)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then((result) => {
+        if (!cancelled) setData(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(toShareLoadError(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [shareId]);
 
   const messages = useMemo(() => {
@@ -105,7 +107,11 @@ export function ShareViewer({ shareId }: { shareId: string }) {
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <KortixLoader size="medium" />
-          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appShareShareidComponentsShareviewer.line147JsxTextLoadingSharedSession')}</p>
+          <p className="text-sm text-muted-foreground">
+            {tHardcodedUi.raw(
+              'appShareShareidComponentsShareviewer.line147JsxTextLoadingSharedSession',
+            )}
+          </p>
         </div>
       </div>
     );
@@ -200,11 +206,17 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
                   className="px-2.5 cursor-pointer gap-1.5"
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  <span className="hidden sm:inline text-sm">{copied ? 'Copied!' : 'Copy Link'}</span>
+                  <span className="hidden sm:inline text-sm">
+                    {copied ? 'Copied!' : 'Copy Link'}
+                  </span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}>
-                <p>{tHardcodedUi.raw('appShareShareidComponentsShareviewer.line252JsxTextCopyShareLink')}</p>
+                <p>
+                  {tHardcodedUi.raw(
+                    'appShareShareidComponentsShareviewer.line252JsxTextCopyShareLink',
+                  )}
+                </p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -339,10 +351,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
               className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
               onClick={handleLike}
             >
-              <ThumbsUp
-                className="h-3.5 w-3.5"
-                fill={liked ? 'currentColor' : 'none'}
-              />
+              <ThumbsUp className="h-3.5 w-3.5" fill={liked ? 'currentColor' : 'none'} />
             </Button>
           </motion.div>
         )}
@@ -363,10 +372,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
               className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
               onClick={handleDislike}
             >
-              <ThumbsDown
-                className="h-3.5 w-3.5"
-                fill={disliked ? 'currentColor' : 'none'}
-              />
+              <ThumbsDown className="h-3.5 w-3.5" fill={disliked ? 'currentColor' : 'none'} />
             </Button>
           </motion.div>
         )}

@@ -1,15 +1,9 @@
 'use client';
+import { BasicTool, partInput } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  BasicTool,
-  partInput,
-} from '@/features/session/tool/shared/infrastructure';
-import {
-  Trash2,
-} from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-
 
 export function ProjectDeleteTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -74,4 +68,3 @@ function extractWorkerPreview(cleaned: string): string | null {
   if (!first) return null;
   return first.length > 120 ? first.slice(0, 120).trim() + '…' : first;
 }
-

@@ -60,11 +60,15 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
         ) : null}
 
         <p className="text-muted-foreground border-border border-t px-4 py-3 text-xs">
-          {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextAddingATeammateb0681f04')}
+          {tI18nHardcoded.raw(
+            'autoFeaturesBillingSeatManagementCardJsxTextAddingATeammateb0681f04',
+          )}
           {seats.price_per_seat_usd}
           {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextMoAndGrants5da9d984')}
           {seats.price_per_seat_usd}{' '}
-          {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextOfWalletCreditsc4eec42f')}
+          {tI18nHardcoded.raw(
+            'autoFeaturesBillingSeatManagementCardJsxTextOfWalletCreditsc4eec42f',
+          )}
         </p>
       </div>
     </section>

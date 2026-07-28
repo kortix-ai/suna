@@ -1,7 +1,6 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import type * as GlideDataGrid from "@glideapps/glide-data-grid"
+import type * as GlideDataGrid from '@glideapps/glide-data-grid';
 import type {
   DataEditorRef,
   GridCell,
@@ -10,104 +9,101 @@ import type {
   GridSelection,
   Item,
   Theme,
-} from "@glideapps/glide-data-grid"
+} from '@glideapps/glide-data-grid';
+import { CompactSelection, emptyGridSelection } from '@glideapps/glide-data-grid';
+import * as React from 'react';
+
+import '@glideapps/glide-data-grid/dist/index.css';
+
 import {
-  CompactSelection,
-  emptyGridSelection,
-} from "@glideapps/glide-data-grid"
+  ChevronLeft,
+  ChevronRight,
+  CircleMinus,
+  CirclePlus,
+  Download,
+  Ellipsis,
+  Search,
+} from 'lucide-react';
+import Papa from 'papaparse';
 
-import "@glideapps/glide-data-grid/dist/index.css"
-
-import { ChevronLeft, ChevronRight, CircleMinus, CirclePlus, Download, Ellipsis, Search } from "lucide-react"
-import Papa from "papaparse"
-
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { Spinner } from "@/features/file-renderers/shared/spinner"
-import { ViewerFileName } from "@/features/file-renderers/shared/viewer-file-name"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
+import { cn } from '@/lib/utils';
 
-const ZOOM_OPTIONS = [0.75, 1, 1.25, 1.5, 2] as const
-const CSV_SEARCH_BATCH_ROW_COUNT = 500
-const CSV_SEARCH_DEBOUNCE_MS = 300
+const ZOOM_OPTIONS = [0.75, 1, 1.25, 1.5, 2] as const;
+const CSV_SEARCH_BATCH_ROW_COUNT = 500;
+const CSV_SEARCH_DEBOUNCE_MS = 300;
 
-type GlideDataGridModule = typeof GlideDataGrid
+type GlideDataGridModule = typeof GlideDataGrid;
 type CsvViewerProps = {
-  className?: string
-  data?: string
-  fileName?: string
-  search?: boolean
-  showToolbar?: boolean
+  className?: string;
+  data?: string;
+  fileName?: string;
+  search?: boolean;
+  showToolbar?: boolean;
   /** Extra controls rendered in this toolbar, after zoom/search and before the
    *  file menu — the same slot pdf/docx/xlsx expose, so a caller adds actions
    *  to the ONE header this viewer already draws. */
-  toolbarActions?: React.ReactNode
-}
+  toolbarActions?: React.ReactNode;
+};
 
 type CsvSearchResult = {
-  col: number
-  row: number
-  displayValue: string
-  columnTitle: string
-}
+  col: number;
+  row: number;
+  displayValue: string;
+  columnTitle: string;
+};
 
 function toDisplayString(value: unknown): string {
-  return value === null || value === undefined ? "" : String(value)
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function normalizeHeaderTitle(header: string, index: number): string {
-  const trimmed = header.trim()
-  return trimmed.length > 0 ? trimmed : `Column ${index + 1}`
+  const trimmed = header.trim();
+  return trimmed.length > 0 ? trimmed : `Column ${index + 1}`;
 }
 
 function columnIndexToA1(col: number) {
-  let columnNumber = col + 1
-  let columnName = ""
+  let columnNumber = col + 1;
+  let columnName = '';
 
   while (columnNumber > 0) {
-    const remainder = (columnNumber - 1) % 26
-    columnName = String.fromCharCode(65 + remainder) + columnName
-    columnNumber = Math.floor((columnNumber - 1) / 26)
+    const remainder = (columnNumber - 1) % 26;
+    columnName = String.fromCharCode(65 + remainder) + columnName;
+    columnNumber = Math.floor((columnNumber - 1) / 26);
   }
 
-  return columnName
+  return columnName;
 }
 
 function cellAddressToA1(col: number, row: number) {
-  return `${columnIndexToA1(col)}${row + 1}`
+  return `${columnIndexToA1(col)}${row + 1}`;
 }
 
 function cellMatchesQuery(displayValue: string, query: string) {
-  return displayValue.toLowerCase().includes(query)
+  return displayValue.toLowerCase().includes(query);
 }
 
 function createSingleCellSelection(cell: Item): GridSelection {
-  const [col, row] = cell
+  const [col, row] = cell;
 
   return {
     columns: CompactSelection.empty(),
@@ -117,158 +113,136 @@ function createSingleCellSelection(cell: Item): GridSelection {
       range: { x: col, y: row, width: 1, height: 1 },
       rangeStack: [],
     },
-  }
+  };
 }
 
-async function findCsvSearchResults(
-  headers: string[],
-  rows: string[][],
-  rawQuery: string
-) {
-  const query = rawQuery.trim().toLowerCase()
-  if (!query) return []
+async function findCsvSearchResults(headers: string[], rows: string[][], rawQuery: string) {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return [];
 
-  const results: CsvSearchResult[] = []
+  const results: CsvSearchResult[] = [];
   const columnCount = Math.max(
     headers.length,
-    rows.reduce((maxCount, row) => Math.max(maxCount, row.length), 0)
-  )
+    rows.reduce((maxCount, row) => Math.max(maxCount, row.length), 0),
+  );
 
   for (
     let batchStartRow = 0;
     batchStartRow < rows.length;
     batchStartRow += CSV_SEARCH_BATCH_ROW_COUNT
   ) {
-    const batchEndRow = Math.min(
-      batchStartRow + CSV_SEARCH_BATCH_ROW_COUNT,
-      rows.length
-    )
+    const batchEndRow = Math.min(batchStartRow + CSV_SEARCH_BATCH_ROW_COUNT, rows.length);
 
     for (let row = batchStartRow; row < batchEndRow; row += 1) {
-      const rowValues = rows[row] ?? []
+      const rowValues = rows[row] ?? [];
 
       for (let col = 0; col < columnCount; col += 1) {
-        const displayValue = rowValues[col] ?? ""
-        if (!cellMatchesQuery(displayValue, query)) continue
+        const displayValue = rowValues[col] ?? '';
+        if (!cellMatchesQuery(displayValue, query)) continue;
 
         results.push({
           col,
           row,
           displayValue,
           columnTitle: headers[col] ?? `Column ${col + 1}`,
-        })
+        });
       }
     }
 
     if (batchEndRow < rows.length) {
       await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0)
-      })
+        window.setTimeout(resolve, 0);
+      });
     }
   }
 
-  return results
+  return results;
 }
 
 function parseDelimitedText(text: string): {
-  headers: string[]
-  rows: string[][]
-  error: string | null
+  headers: string[];
+  rows: string[][];
+  error: string | null;
 } {
   const results = Papa.parse<Record<string, unknown>>(text, {
     header: true,
-    skipEmptyLines: "greedy",
-  })
+    skipEmptyLines: 'greedy',
+  });
 
   const objectRows = Array.isArray(results.data)
     ? results.data.filter(
         (row): row is Record<string, unknown> =>
-          !!row && typeof row === "object" && !Array.isArray(row)
+          !!row && typeof row === 'object' && !Array.isArray(row),
       )
-    : []
+    : [];
   const metaFields = Array.isArray(results.meta.fields)
     ? results.meta.fields.map((field) => String(field))
-    : []
+    : [];
   const fieldKeys =
     metaFields.length > 0
       ? metaFields
-      : Object.keys(objectRows[0] ?? {}).filter(
-          (key) => key !== "__parsed_extra"
-        )
+      : Object.keys(objectRows[0] ?? {}).filter((key) => key !== '__parsed_extra');
   const extraColumnCount = objectRows.reduce((maxCount, row) => {
-    const extras = row.__parsed_extra
-    return Array.isArray(extras) ? Math.max(maxCount, extras.length) : maxCount
-  }, 0)
+    const extras = row.__parsed_extra;
+    return Array.isArray(extras) ? Math.max(maxCount, extras.length) : maxCount;
+  }, 0);
   const headers = [
     ...fieldKeys.map((field, index) => normalizeHeaderTitle(field, index)),
-    ...Array.from(
-      { length: extraColumnCount },
-      (_, index) => `Extra ${index + 1}`
-    ),
-  ]
+    ...Array.from({ length: extraColumnCount }, (_, index) => `Extra ${index + 1}`),
+  ];
 
   const rows = objectRows.map((row) => {
-    const baseValues = fieldKeys.map((fieldKey) =>
-      toDisplayString(row[fieldKey])
-    )
+    const baseValues = fieldKeys.map((fieldKey) => toDisplayString(row[fieldKey]));
     const extras = Array.isArray(row.__parsed_extra)
       ? row.__parsed_extra.map((value) => toDisplayString(value))
-      : []
+      : [];
     const paddedExtras =
       extras.length >= extraColumnCount
         ? extras.slice(0, extraColumnCount)
-        : [
-            ...extras,
-            ...Array.from(
-              { length: extraColumnCount - extras.length },
-              () => ""
-            ),
-          ]
+        : [...extras, ...Array.from({ length: extraColumnCount - extras.length }, () => '')];
 
-    return [...baseValues, ...paddedExtras]
-  })
+    return [...baseValues, ...paddedExtras];
+  });
 
   const firstError =
-    Array.isArray(results.errors) && results.errors.length > 0
-      ? results.errors[0]
-      : null
+    Array.isArray(results.errors) && results.errors.length > 0 ? results.errors[0] : null;
 
   return {
     headers,
     rows,
     error:
       rows.length === 0 && firstError
-        ? String(firstError.message ?? "Could not parse CSV file.")
+        ? String(firstError.message ?? 'Could not parse CSV file.')
         : null,
-  }
+  };
 }
 
 function ensureCsvExtension(fileName: string) {
-  const lowerFileName = fileName.toLowerCase()
-  return lowerFileName.endsWith(".csv") || lowerFileName.endsWith(".tsv")
+  const lowerFileName = fileName.toLowerCase();
+  return lowerFileName.endsWith('.csv') || lowerFileName.endsWith('.tsv')
     ? fileName
-    : `${fileName}.csv`
+    : `${fileName}.csv`;
 }
 
 function downloadTextFile(text: string, fileName: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }))
-  const anchor = document.createElement("a")
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const anchor = document.createElement('a');
 
-  anchor.href = url
-  anchor.download = fileName
-  anchor.rel = "noopener"
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function CsvFileActionsMenu({
   downloadDisabled,
   onDownload,
 }: {
-  downloadDisabled: boolean
-  onDownload: () => void
+  downloadDisabled: boolean;
+  onDownload: () => void;
 }) {
   return (
     <DropdownMenu>
@@ -290,15 +264,15 @@ function CsvFileActionsMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }
 
 function ToolbarTooltip({
   label,
   children,
 }: {
-  label: string
-  children: React.ReactNode
+  label: string;
+  children: React.ReactNode;
 }) {
   return (
     <Tooltip>
@@ -307,7 +281,7 @@ function ToolbarTooltip({
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
-  )
+  );
 }
 
 function CsvSearchPopover({
@@ -318,145 +292,131 @@ function CsvSearchPopover({
   controlsDisabled,
   onGridSelectionChange,
 }: {
-  headers: string[]
-  rows: string[][]
-  gridRef: React.RefObject<DataEditorRef | null>
-  dataIdentity: string
-  controlsDisabled: boolean
-  onGridSelectionChange: (selection: GridSelection) => void
+  headers: string[];
+  rows: string[][];
+  gridRef: React.RefObject<DataEditorRef | null>;
+  dataIdentity: string;
+  controlsDisabled: boolean;
+  onGridSelectionChange: (selection: GridSelection) => void;
 }) {
-  const [searchDraft, setSearchDraft] = React.useState("")
-  const [searchQuery, setSearchQuery] = React.useState("")
-  const [searchResults, setSearchResults] = React.useState<CsvSearchResult[]>(
-    []
-  )
-  const [activeResultIndex, setActiveResultIndex] = React.useState(0)
-  const [isSearching, setIsSearching] = React.useState(false)
-  const searchRequestIdRef = React.useRef(0)
-  const appliedResultKeyRef = React.useRef("")
-  const activeResult = searchResults[activeResultIndex] ?? null
-  const activeResultKey = activeResult
-    ? `${activeResult.row}:${activeResult.col}`
-    : ""
-  const hasActiveQuery = Boolean(searchQuery.trim())
+  const [searchDraft, setSearchDraft] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchResults, setSearchResults] = React.useState<CsvSearchResult[]>([]);
+  const [activeResultIndex, setActiveResultIndex] = React.useState(0);
+  const [isSearching, setIsSearching] = React.useState(false);
+  const searchRequestIdRef = React.useRef(0);
+  const appliedResultKeyRef = React.useRef('');
+  const activeResult = searchResults[activeResultIndex] ?? null;
+  const activeResultKey = activeResult ? `${activeResult.row}:${activeResult.col}` : '';
+  const hasActiveQuery = Boolean(searchQuery.trim());
   const resultLabel = isSearching
-    ? "Searching"
+    ? 'Searching'
     : !hasActiveQuery
-      ? "No search"
+      ? 'No search'
       : searchResults.length
         ? `${activeResultIndex + 1} / ${searchResults.length}`
-        : "No results"
+        : 'No results';
 
   const runSearch = React.useCallback(
     (rawQuery: string) => {
-      const nextQuery = rawQuery.trim()
-      const requestId = searchRequestIdRef.current + 1
-      searchRequestIdRef.current = requestId
-      appliedResultKeyRef.current = ""
-      setSearchQuery(nextQuery)
-      setActiveResultIndex(0)
+      const nextQuery = rawQuery.trim();
+      const requestId = searchRequestIdRef.current + 1;
+      searchRequestIdRef.current = requestId;
+      appliedResultKeyRef.current = '';
+      setSearchQuery(nextQuery);
+      setActiveResultIndex(0);
 
       if (!nextQuery) {
-        setSearchResults([])
-        setIsSearching(false)
-        return
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
       }
 
-      setIsSearching(true)
+      setIsSearching(true);
       void findCsvSearchResults(headers, rows, nextQuery)
         .then((nextResults) => {
-          if (searchRequestIdRef.current !== requestId) return
-          setSearchResults(nextResults)
+          if (searchRequestIdRef.current !== requestId) return;
+          setSearchResults(nextResults);
         })
         .catch(() => {
-          if (searchRequestIdRef.current !== requestId) return
-          setSearchResults([])
+          if (searchRequestIdRef.current !== requestId) return;
+          setSearchResults([]);
         })
         .finally(() => {
-          if (searchRequestIdRef.current !== requestId) return
-          setIsSearching(false)
-        })
+          if (searchRequestIdRef.current !== requestId) return;
+          setIsSearching(false);
+        });
     },
-    [headers, rows]
-  )
+    [headers, rows],
+  );
 
   React.useEffect(() => {
-    const trimmedDraft = searchDraft.trim()
+    const trimmedDraft = searchDraft.trim();
 
     if (!trimmedDraft) {
-      runSearch("")
-      return
+      runSearch('');
+      return;
     }
 
-    setIsSearching(true)
+    setIsSearching(true);
     const timeoutId = window.setTimeout(() => {
-      runSearch(searchDraft)
-    }, CSV_SEARCH_DEBOUNCE_MS)
+      runSearch(searchDraft);
+    }, CSV_SEARCH_DEBOUNCE_MS);
 
-    return () => window.clearTimeout(timeoutId)
-  }, [runSearch, searchDraft])
+    return () => window.clearTimeout(timeoutId);
+  }, [runSearch, searchDraft]);
 
   const clearSearch = React.useCallback(() => {
-    searchRequestIdRef.current += 1
-    setSearchDraft("")
-    setSearchQuery("")
-    setSearchResults([])
-    setActiveResultIndex(0)
-    setIsSearching(false)
-    appliedResultKeyRef.current = ""
-    onGridSelectionChange(emptyGridSelection)
-  }, [onGridSelectionChange])
+    searchRequestIdRef.current += 1;
+    setSearchDraft('');
+    setSearchQuery('');
+    setSearchResults([]);
+    setActiveResultIndex(0);
+    setIsSearching(false);
+    appliedResultKeyRef.current = '';
+    onGridSelectionChange(emptyGridSelection);
+  }, [onGridSelectionChange]);
 
   const goToRelativeResult = React.useCallback(
     (direction: 1 | -1) => {
-      if (!searchResults.length) return
+      if (!searchResults.length) return;
 
       setActiveResultIndex((currentIndex) => {
-        return (
-          (currentIndex + direction + searchResults.length) %
-          searchResults.length
-        )
-      })
+        return (currentIndex + direction + searchResults.length) % searchResults.length;
+      });
     },
-    [searchResults.length]
-  )
+    [searchResults.length],
+  );
 
   React.useEffect(() => {
-    searchRequestIdRef.current += 1
-    setSearchDraft("")
-    setSearchQuery("")
-    setSearchResults([])
-    setActiveResultIndex(0)
-    setIsSearching(false)
-    appliedResultKeyRef.current = ""
-    onGridSelectionChange(emptyGridSelection)
-  }, [dataIdentity, onGridSelectionChange])
+    searchRequestIdRef.current += 1;
+    setSearchDraft('');
+    setSearchQuery('');
+    setSearchResults([]);
+    setActiveResultIndex(0);
+    setIsSearching(false);
+    appliedResultKeyRef.current = '';
+    onGridSelectionChange(emptyGridSelection);
+  }, [dataIdentity, onGridSelectionChange]);
 
   React.useEffect(() => {
-    if (!activeResult) return
+    if (!activeResult) return;
 
-    if (appliedResultKeyRef.current === activeResultKey) return
-    appliedResultKeyRef.current = activeResultKey
+    if (appliedResultKeyRef.current === activeResultKey) return;
+    appliedResultKeyRef.current = activeResultKey;
 
-    const cell: Item = [activeResult.col, activeResult.row]
-    onGridSelectionChange(createSingleCellSelection(cell))
+    const cell: Item = [activeResult.col, activeResult.row];
+    onGridSelectionChange(createSingleCellSelection(cell));
 
     const frame = window.requestAnimationFrame(() => {
-      gridRef.current?.scrollTo(
-        activeResult.col,
-        activeResult.row,
-        "both",
-        48,
-        48,
-        {
-          vAlign: "center",
-          hAlign: "center",
-        }
-      )
-    })
+      gridRef.current?.scrollTo(activeResult.col, activeResult.row, 'both', 48, 48, {
+        vAlign: 'center',
+        hAlign: 'center',
+      });
+    });
 
-    return () => window.cancelAnimationFrame(frame)
-  }, [activeResult, activeResultKey, gridRef, onGridSelectionChange])
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeResult, activeResultKey, gridRef, onGridSelectionChange]);
 
   return (
     <Popover>
@@ -481,15 +441,15 @@ function CsvSearchPopover({
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key !== "Enter") return
+              if (event.key !== 'Enter') return;
 
-              event.preventDefault()
+              event.preventDefault();
               if (event.shiftKey && searchResults.length) {
-                goToRelativeResult(-1)
+                goToRelativeResult(-1);
               } else if (searchResults.length) {
-                goToRelativeResult(1)
+                goToRelativeResult(1);
               } else if (searchDraft.trim()) {
-                runSearch(searchDraft)
+                runSearch(searchDraft);
               }
             }}
           />
@@ -498,9 +458,7 @@ function CsvSearchPopover({
               <div className="truncate">
                 {searchResults.length ? (
                   <>
-                    <span className="text-primary">
-                      {activeResultIndex + 1}
-                    </span>
+                    <span className="text-primary">{activeResultIndex + 1}</span>
                     {` / ${searchResults.length}`}
                   </>
                 ) : (
@@ -509,8 +467,7 @@ function CsvSearchPopover({
               </div>
               {activeResult ? (
                 <div className="mt-0.5 truncate">
-                  {activeResult.columnTitle}!
-                  {cellAddressToA1(activeResult.col, activeResult.row)}
+                  {activeResult.columnTitle}!{cellAddressToA1(activeResult.col, activeResult.row)}
                 </div>
               ) : null}
             </div>
@@ -540,50 +497,42 @@ function CsvSearchPopover({
             </div>
           </div>
           <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={clearSearch}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={clearSearch}>
               Clear
             </Button>
           </div>
         </div>
       </PopoverContent>
     </Popover>
-  )
+  );
 }
 
 function readIsDarkTheme() {
-  return (
-    typeof document !== "undefined" &&
-    document.documentElement.classList.contains("dark")
-  )
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 }
 
 function useIsDarkTheme() {
-  const [isDark, setIsDark] = React.useState(readIsDarkTheme)
+  const [isDark, setIsDark] = React.useState(readIsDarkTheme);
 
   React.useEffect(() => {
-    if (typeof document === "undefined") return
+    if (typeof document === 'undefined') return;
 
-    const updateTheme = () => setIsDark(readIsDarkTheme())
+    const updateTheme = () => setIsDark(readIsDarkTheme());
 
-    updateTheme()
+    updateTheme();
 
-    if (typeof MutationObserver === "undefined") return
+    if (typeof MutationObserver === 'undefined') return;
 
-    const observer = new MutationObserver(updateTheme)
+    const observer = new MutationObserver(updateTheme);
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class"],
-    })
+      attributeFilter: ['class'],
+    });
 
-    return () => observer.disconnect()
-  }, [])
+    return () => observer.disconnect();
+  }, []);
 
-  return isDark
+  return isDark;
 }
 
 export function CsvViewer({
@@ -594,82 +543,75 @@ export function CsvViewer({
   showToolbar = true,
   toolbarActions,
 }: CsvViewerProps) {
-  const gridRef = React.useRef<DataEditorRef | null>(null)
-  const isDark = useIsDarkTheme()
-  const [glide, setGlide] = React.useState<GlideDataGridModule | null>(null)
-  const [zoom, setZoom] = React.useState<(typeof ZOOM_OPTIONS)[number]>(1)
-  const [gridSelection, setGridSelection] =
-    React.useState<GridSelection>(emptyGridSelection)
+  const gridRef = React.useRef<DataEditorRef | null>(null);
+  const isDark = useIsDarkTheme();
+  const [glide, setGlide] = React.useState<GlideDataGridModule | null>(null);
+  const [zoom, setZoom] = React.useState<(typeof ZOOM_OPTIONS)[number]>(1);
+  const [gridSelection, setGridSelection] = React.useState<GridSelection>(emptyGridSelection);
   const [parsed, setParsed] = React.useState(() =>
-    data ? parseDelimitedText(data) : { headers: [], rows: [], error: null }
-  )
-  const [dataRevision, setDataRevision] = React.useState(0)
+    data ? parseDelimitedText(data) : { headers: [], rows: [], error: null },
+  );
+  const [dataRevision, setDataRevision] = React.useState(0);
 
   const dataIdentity = React.useMemo(
     () =>
-      `${dataRevision}:${parsed.headers.join("\u0001")}:${parsed.rows.length}:${parsed.error ?? ""}`,
-    [dataRevision, parsed.error, parsed.headers, parsed.rows.length]
-  )
+      `${dataRevision}:${parsed.headers.join('\u0001')}:${parsed.rows.length}:${parsed.error ?? ''}`,
+    [dataRevision, parsed.error, parsed.headers, parsed.rows.length],
+  );
 
-  const handleGridSelectionChange = React.useCallback(
-    (selection: GridSelection) => {
-      setGridSelection(selection)
-    },
-    []
-  )
+  const handleGridSelectionChange = React.useCallback((selection: GridSelection) => {
+    setGridSelection(selection);
+  }, []);
 
   React.useEffect(() => {
     if (data) {
-      setParsed(parseDelimitedText(data))
-      setDataRevision((revision) => revision + 1)
+      setParsed(parseDelimitedText(data));
+      setDataRevision((revision) => revision + 1);
     }
-  }, [data])
+  }, [data]);
 
   React.useEffect(() => {
     if (!search) {
-      setGridSelection(emptyGridSelection)
+      setGridSelection(emptyGridSelection);
     }
-  }, [search])
+  }, [search]);
 
   React.useEffect(() => {
-    let mounted = true
+    let mounted = true;
 
-    void import("@glideapps/glide-data-grid").then((module) => {
+    void import('@glideapps/glide-data-grid').then((module) => {
       if (mounted) {
-        setGlide(module)
+        setGlide(module);
       }
-    })
+    });
 
     return () => {
-      mounted = false
-    }
-  }, [])
+      mounted = false;
+    };
+  }, []);
 
-  const columnCount = Math.max(1, parsed.headers.length)
-  const scale = React.useCallback(
-    (value: number) => Math.round(value * zoom),
-    [zoom]
-  )
-  const searchDisabled = Boolean(parsed.error) || parsed.rows.length === 0
+  const columnCount = Math.max(1, parsed.headers.length);
+  const scale = React.useCallback((value: number) => Math.round(value * zoom), [zoom]);
+  const searchDisabled = Boolean(parsed.error) || parsed.rows.length === 0;
 
   const theme = React.useMemo<Partial<Theme>>(
     () => ({
-      accentColor: isDark ? "#60a5fa" : "#2563eb",
-      accentLight: isDark ? "#1d4ed826" : "#dbeafe",
-      accentFg: "#ffffff",
-      textDark: isDark ? "#e5e5e5" : "#171717",
-      textMedium: isDark ? "#a3a3a3" : "#525252",
-      textLight: isDark ? "#737373" : "#a3a3a3",
-      textBubble: isDark ? "#f5f5f5" : "#171717",
-      textHeader: isDark ? "#f5f5f5" : "#171717",
-      textGroupHeader: isDark ? "#a3a3a3" : "#525252",
-      bgCell: isDark ? "#0a0a0a" : "#ffffff",
-      bgCellMedium: isDark ? "#171717" : "#fafafa",
-      bgHeader: isDark ? "#171717" : "#fafafa",
-      bgHeaderHasFocus: isDark ? "#262626" : "#f5f5f5",
-      bgHeaderHovered: isDark ? "#262626" : "#f5f5f5",
-      borderColor: isDark ? "#262626" : "#e5e5e5",
-      horizontalBorderColor: isDark ? "#262626" : "#e5e5e5",
+      accentColor: isDark ? '#60a5fa' : '#2563eb',
+      accentLight: isDark ? '#1d4ed826' : '#dbeafe',
+      accentFg: '#ffffff',
+      textDark: isDark ? '#e5e5e5' : '#171717',
+      textMedium: isDark ? '#a3a3a3' : '#525252',
+      textLight: isDark ? '#737373' : '#a3a3a3',
+      textBubble: isDark ? '#f5f5f5' : '#171717',
+      textHeader: isDark ? '#f5f5f5' : '#171717',
+      textGroupHeader: isDark ? '#a3a3a3' : '#525252',
+      bgCell: isDark ? '#0a0a0a' : '#ffffff',
+      bgCellMedium: isDark ? '#171717' : '#fafafa',
+      bgHeader: isDark ? '#171717' : '#fafafa',
+      bgHeaderHasFocus: isDark ? '#262626' : '#f5f5f5',
+      bgHeaderHovered: isDark ? '#262626' : '#f5f5f5',
+      borderColor: isDark ? '#262626' : '#e5e5e5',
+      horizontalBorderColor: isDark ? '#262626' : '#e5e5e5',
       cellHorizontalPadding: scale(8),
       cellVerticalPadding: Math.max(2, scale(3)),
       headerIconSize: scale(18),
@@ -679,8 +621,8 @@ export function CsvViewer({
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       editorFontSize: `${scale(13)}px`,
     }),
-    [isDark, scale]
-  )
+    [isDark, scale],
+  );
 
   const columns = React.useMemo<GridColumn[]>(
     () =>
@@ -689,13 +631,13 @@ export function CsvViewer({
         title: parsed.headers[index] ?? `Column ${index + 1}`,
         width: scale(index === 0 ? 180 : 160),
       })),
-    [columnCount, parsed.headers, scale]
-  )
+    [columnCount, parsed.headers, scale],
+  );
 
   const getCellContent = React.useCallback(
     ([col, row]: Item): GridCell => {
-      const value = parsed.rows[row]?.[col] ?? ""
-      const textKind = glide?.GridCellKind.Text as GridCellKind.Text
+      const value = parsed.rows[row]?.[col] ?? '';
+      const textKind = glide?.GridCellKind.Text as GridCellKind.Text;
 
       return {
         kind: textKind,
@@ -703,133 +645,107 @@ export function CsvViewer({
         displayData: value,
         allowOverlay: true,
         readonly: true,
-      }
+      };
     },
-    [glide, parsed.rows]
-  )
+    [glide, parsed.rows],
+  );
 
   function stepZoom(direction: -1 | 1) {
-    const index = ZOOM_OPTIONS.indexOf(zoom)
-    const nextIndex = Math.min(
-      ZOOM_OPTIONS.length - 1,
-      Math.max(0, index + direction)
-    )
-    setZoom(ZOOM_OPTIONS[nextIndex])
+    const index = ZOOM_OPTIONS.indexOf(zoom);
+    const nextIndex = Math.min(ZOOM_OPTIONS.length - 1, Math.max(0, index + direction));
+    setZoom(ZOOM_OPTIONS[nextIndex]);
   }
 
   function handleDownload() {
     const text = Papa.unparse({
       fields: parsed.headers,
       data: parsed.rows,
-    })
+    });
 
-    downloadTextFile(
-      text,
-      ensureCsvExtension("data.csv"),
-      "text/csv;charset=utf-8"
-    )
+    downloadTextFile(text, ensureCsvExtension('data.csv'), 'text/csv;charset=utf-8');
   }
 
   return (
-    <div
-      className={cn(
-        "flex h-[560px] w-full flex-col overflow-hidden bg-background",
-        className
-      )}
-    >
+    <div className={cn('flex h-[560px] w-full flex-col overflow-hidden bg-background', className)}>
       {showToolbar ? (
-      <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
-        <ViewerFileName fileName={fileName} fallback="CSV" />
-        <TooltipProvider>
-          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
-            <div className="flex flex-none items-center gap-1">
-              <ToolbarTooltip label="Zoom out">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="active:scale-[0.96] transition-transform"
-                  aria-label="Zoom out"
-                  disabled={zoom <= ZOOM_OPTIONS[0]}
-                  onClick={() => stepZoom(-1)}
+        <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
+          <ViewerFileName fileName={fileName} fallback="CSV" />
+          <TooltipProvider>
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+              <div className="flex flex-none items-center gap-1">
+                <ToolbarTooltip label="Zoom out">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="active:scale-[0.96] transition-transform"
+                    aria-label="Zoom out"
+                    disabled={zoom <= ZOOM_OPTIONS[0]}
+                    onClick={() => stepZoom(-1)}
+                  >
+                    <CircleMinus className="size-4" />
+                  </Button>
+                </ToolbarTooltip>
+                <Select
+                  value={zoom.toString()}
+                  onValueChange={(value) => setZoom(Number(value) as (typeof ZOOM_OPTIONS)[number])}
                 >
-                  <CircleMinus
-                    className="size-4"
+                  <SelectTrigger
+                    size="sm"
+                    className="w-[84px] min-w-[84px] tabular-nums"
+                    aria-label="Zoom level"
+                  >
+                    <SelectValue>{Math.round(zoom * 100)}%</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {ZOOM_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option.toString()}>
+                        {Math.round(option * 100)}%
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <ToolbarTooltip label="Zoom in">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="active:scale-[0.96] transition-transform"
+                    aria-label="Zoom in"
+                    disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
+                    onClick={() => stepZoom(1)}
+                  >
+                    <CirclePlus className="size-4" />
+                  </Button>
+                </ToolbarTooltip>
+              </div>
+              {toolbarActions ? (
+                <>
+                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  {toolbarActions}
+                </>
+              ) : null}
+              {search ? (
+                <>
+                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  <CsvSearchPopover
+                    headers={parsed.headers}
+                    rows={parsed.rows}
+                    gridRef={gridRef}
+                    dataIdentity={dataIdentity}
+                    controlsDisabled={searchDisabled}
+                    onGridSelectionChange={handleGridSelectionChange}
                   />
-                </Button>
-              </ToolbarTooltip>
-              <Select
-                value={zoom.toString()}
-                onValueChange={(value) =>
-                  setZoom(Number(value) as (typeof ZOOM_OPTIONS)[number])
+                </>
+              ) : null}
+              <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+              <CsvFileActionsMenu
+                downloadDisabled={
+                  Boolean(parsed.error) || (parsed.headers.length === 0 && parsed.rows.length === 0)
                 }
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-[84px] min-w-[84px] tabular-nums"
-                  aria-label="Zoom level"
-                >
-                  <SelectValue>{Math.round(zoom * 100)}%</SelectValue>
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {ZOOM_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option.toString()}>
-                      {Math.round(option * 100)}%
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <ToolbarTooltip label="Zoom in">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="active:scale-[0.96] transition-transform"
-                  aria-label="Zoom in"
-                  disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
-                  onClick={() => stepZoom(1)}
-                >
-                  <CirclePlus className="size-4" />
-                </Button>
-              </ToolbarTooltip>
+                onDownload={handleDownload}
+              />
             </div>
-            {toolbarActions ? (
-              <>
-                <Separator
-                  orientation="vertical"
-                  className="mx-1 h-4 self-center"
-                />
-                {toolbarActions}
-              </>
-            ) : null}
-            {search ? (
-              <>
-                <Separator
-                  orientation="vertical"
-                  className="mx-1 h-4 self-center"
-                />
-                <CsvSearchPopover
-                  headers={parsed.headers}
-                  rows={parsed.rows}
-                  gridRef={gridRef}
-                  dataIdentity={dataIdentity}
-                  controlsDisabled={searchDisabled}
-                  onGridSelectionChange={handleGridSelectionChange}
-                />
-              </>
-            ) : null}
-            <Separator
-              orientation="vertical"
-              className="mx-1 h-4 self-center"
-            />
-            <CsvFileActionsMenu
-              downloadDisabled={
-                Boolean(parsed.error) ||
-                (parsed.headers.length === 0 && parsed.rows.length === 0)
-              }
-              onDownload={handleDownload}
-            />
-          </div>
-        </TooltipProvider>
-      </div>
+          </TooltipProvider>
+        </div>
       ) : null}
       <div className="min-h-0 flex-1">
         {parsed.error ? (
@@ -859,9 +775,7 @@ export function CsvViewer({
             rowMarkers="number"
             rowSelectionMode="multi"
             gridSelection={search ? gridSelection : undefined}
-            onGridSelectionChange={
-              search ? handleGridSelectionChange : undefined
-            }
+            onGridSelectionChange={search ? handleGridSelectionChange : undefined}
             scrollToActiveCell={search}
             keybindings={{ search: true }}
             smoothScrollX
@@ -876,5 +790,5 @@ export function CsvViewer({
         )}
       </div>
     </div>
-  )
+  );
 }

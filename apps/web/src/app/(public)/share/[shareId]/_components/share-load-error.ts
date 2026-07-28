@@ -25,7 +25,10 @@ export function toShareLoadError(err: unknown): ShareLoadError {
  * documents for every other public-share surface: unknown token, revoked or
  * expired token, and a session whose sandbox hasn't been provisioned yet.
  */
-export function describeShareError(error: ShareLoadError | null): { title: string; description: string } {
+export function describeShareError(error: ShareLoadError | null): {
+  title: string;
+  description: string;
+} {
   if (error?.status === 404) {
     return {
       title: 'Share Not Found',
@@ -53,5 +56,7 @@ export function describeShareError(error: ShareLoadError | null): { title: strin
 /** Copy for a transient in-band transcript failure (still a 200 — see
  *  `PublicSessionTranscript.available`), e.g. OpenCode not ready yet. */
 export function transcriptUnavailableMessage(reason: string | null): string {
-  return reason ? `Conversation temporarily unavailable — ${reason}.` : 'Conversation temporarily unavailable.';
+  return reason
+    ? `Conversation temporarily unavailable — ${reason}.`
+    : 'Conversation temporarily unavailable.';
 }

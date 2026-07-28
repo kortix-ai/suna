@@ -1,6 +1,6 @@
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
-import { isTextPart, type TextPart, type Turn } from '@/ui';
+import { type TextPart, type Turn, isTextPart } from '@/ui';
 
 export interface MinimapItem {
   id: string;
@@ -48,7 +48,7 @@ export function downsampleDashes(items: MinimapItem[], max = MAX_DASHES): Minima
 export function nearestDashIndex(dashes: MinimapDash[], activeIndex: number): number {
   if (activeIndex < 0) return -1;
   let best = -1;
-  let bestDist = Infinity;
+  let bestDist = Number.POSITIVE_INFINITY;
   for (const dash of dashes) {
     const dist = Math.abs(dash.index - activeIndex);
     if (dist < bestDist) {

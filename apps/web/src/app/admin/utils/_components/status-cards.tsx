@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import type { MaintenanceLevel } from '@/lib/maintenance-store';
 import { cn } from '@/lib/utils';
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { MAINTENANCE_LEVELS } from "./constants";
-import type { MaintenanceLevel } from "@/lib/maintenance-store";
+import { MAINTENANCE_LEVELS } from './constants';
 
 interface MaintenanceLevelCardProps {
   level: MaintenanceLevel;
@@ -40,7 +40,14 @@ export function MaintenanceLevelCard({ level, isSelected, onClick }: Maintenance
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{config.label}</span>
               {isSelected && (
-                <Badge className={cn('text-xs px-1.5 py-0', config.bgColor, config.color, config.borderColor)}>
+                <Badge
+                  className={cn(
+                    'text-xs px-1.5 py-0',
+                    config.bgColor,
+                    config.color,
+                    config.borderColor,
+                  )}
+                >
                   Active
                 </Badge>
               )}

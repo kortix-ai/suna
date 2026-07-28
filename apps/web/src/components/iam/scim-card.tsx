@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
 import {
   type CreatedScimToken,
   type ScimToken,
@@ -58,7 +59,6 @@ import {
   listScimTokens,
   revokeScimToken,
 } from '@/lib/iam-client';
-import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
 import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {

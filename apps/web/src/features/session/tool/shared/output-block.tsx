@@ -21,10 +21,7 @@ export function OutputBlock({
   return (
     <div
       data-scrollable
-      className={cn(
-        'bg-muted/20 max-h-96 overflow-auto rounded-sm px-3 py-2',
-        className,
-      )}
+      className={cn('bg-muted/20 max-h-96 overflow-auto rounded-sm px-3 py-2', className)}
     >
       {markdown ? (
         <UnifiedMarkdown content={text} />

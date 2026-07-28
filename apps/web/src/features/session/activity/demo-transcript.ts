@@ -110,7 +110,9 @@ function show(title: string, url: string, ms = 300): Part[] {
   ];
 }
 
-function todo(items: Array<{ content: string; status: 'completed' | 'in_progress' | 'pending' }>): Part[] {
+function todo(
+  items: Array<{ content: string; status: 'completed' | 'in_progress' | 'pending' }>,
+): Part[] {
   return [
     {
       id: nextId('part'),
@@ -184,42 +186,136 @@ export function buildDemoMessages(): MessageWithParts[] {
       ),
 
       // The "checking the toolchain" burst — three shells, invisible to a user.
-      ...bash('ls ~/.opencode/skills/presentations/ 2>/dev/null', 'Check the skill is installed', 'presentation.py', 300),
-      ...bash(`ls /workspace/.kortix/opencode/skills/presentations/ && which bun`, 'Locate the presentation script', '/usr/bin/bun', 260),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT --help`, 'Check the script runs', 'usage: presentation.py …', 1_100),
+      ...bash(
+        'ls ~/.opencode/skills/presentations/ 2>/dev/null',
+        'Check the skill is installed',
+        'presentation.py',
+        300,
+      ),
+      ...bash(
+        `ls /workspace/.kortix/opencode/skills/presentations/ && which bun`,
+        'Locate the presentation script',
+        '/usr/bin/bun',
+        260,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT --help`,
+        'Check the script runs',
+        'usage: presentation.py …',
+        1_100,
+      ),
 
       text(
         'Good, the presentation tool works. Now let me plan the deck. I’ll build a ~9-slide deck covering Jason Calacanis’s life, career, investing thesis, key wins, portfolio breakdown, and influence. I’ll commit to a premium dark + single teal accent motif throughout.',
       ),
 
       // The wall of ten near-identical builds — the exact failure in the screenshot.
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 1`, 'Build slide 1 — title', '', 1_400),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 2`, 'Build slide 2 — early life', '', 1_200),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 3`, 'Build slide 3 — Weblogs', '', 1_150),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 4`, 'Build slide 4 — Mahalo', '', 1_050),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 5`, 'Build slide 5 — This Week in Startups', '', 1_300),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 6`, 'Build slide 6 — investing thesis', '', 1_250),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 7`, 'Build slide 7 — Uber and Robinhood', '', 1_180),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 8`, 'Build slide 8 — portfolio breakdown', '', 1_220),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 9`, 'Build slide 9 — LAUNCH and the syndicate', '', 1_090),
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 10`, 'Build slide 10 — influence and legacy', '', 1_010),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 1`,
+        'Build slide 1 — title',
+        '',
+        1_400,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 2`,
+        'Build slide 2 — early life',
+        '',
+        1_200,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 3`,
+        'Build slide 3 — Weblogs',
+        '',
+        1_150,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 4`,
+        'Build slide 4 — Mahalo',
+        '',
+        1_050,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 5`,
+        'Build slide 5 — This Week in Startups',
+        '',
+        1_300,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 6`,
+        'Build slide 6 — investing thesis',
+        '',
+        1_250,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 7`,
+        'Build slide 7 — Uber and Robinhood',
+        '',
+        1_180,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 8`,
+        'Build slide 8 — portfolio breakdown',
+        '',
+        1_220,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 9`,
+        'Build slide 9 — LAUNCH and the syndicate',
+        '',
+        1_090,
+      ),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT build --slide 10`,
+        'Build slide 10 — influence and legacy',
+        '',
+        1_010,
+      ),
 
       text('10-slide deck built. Let me validate all slides and start the viewer to preview them.'),
 
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT validate --slide 1`, 'Validate slide 1', 'OK 1920x1080', 4_000),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT validate --slide 1`,
+        'Validate slide 1',
+        'OK 1920x1080',
+        4_000,
+      ),
 
-      text('Slide 1 validates perfectly at 1920×1080. Let me validate all slides and check the rest at the same time.'),
+      text(
+        'Slide 1 validates perfectly at 1920×1080. Let me validate all slides and check the rest at the same time.',
+      ),
 
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT validate --all`, 'Validate every slide', 'All 10 slides OK — 1920x1080, no overflow', 3_200),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT validate --all`,
+        'Validate every slide',
+        'All 10 slides OK — 1920x1080, no overflow',
+        3_200,
+      ),
 
-      text('All 10 slides validate perfectly — exact 1920×1080, no overflow. Let me export to PDF and start the viewer for live preview.'),
+      text(
+        'All 10 slides validate perfectly — exact 1920×1080, no overflow. Let me export to PDF and start the viewer for live preview.',
+      ),
 
-      ...bash(`cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT export --pdf`, 'Export the deck to PDF', 'Wrote calacanis.pdf', 5_400),
-      ...bash('cd /workspace && ls -la presentations/calacanis/ && pdftoppm -jpeg -r 96 calacanis.pdf thumb', 'Render preview thumbnails', 'thumb-01.jpg … thumb-10.jpg', 2_600),
+      ...bash(
+        `cd /workspace && SCRIPT=${SCRIPT} && python3 $SCRIPT export --pdf`,
+        'Export the deck to PDF',
+        'Wrote calacanis.pdf',
+        5_400,
+      ),
+      ...bash(
+        'cd /workspace && ls -la presentations/calacanis/ && pdftoppm -jpeg -r 96 calacanis.pdf thumb',
+        'Render preview thumbnails',
+        'thumb-01.jpg … thumb-10.jpg',
+        2_600,
+      ),
       ...write('/workspace/presentations/calacanis/index.html'),
       ...write('/workspace/presentations/calacanis/manifest.json'),
       ...read('/workspace/presentations/calacanis/manifest.json'),
-      ...bash('cd /workspace/presentations/calacanis && python3 -m http.server 3000 &', 'Start the preview server', 'Serving on :3000', 700),
+      ...bash(
+        'cd /workspace/presentations/calacanis && python3 -m http.server 3000 &',
+        'Start the preview server',
+        'Serving on :3000',
+        700,
+      ),
 
       ...show('Calacanis — 10 slides', 'https://preview.kortix.dev/calacanis'),
 

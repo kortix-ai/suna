@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isShowContentUnavailable, type ShowAvailabilityInput } from './show-availability';
+import { type ShowAvailabilityInput, isShowContentUnavailable } from './show-availability';
 
 const base: ShowAvailabilityInput = {
   running: false,
@@ -25,7 +25,9 @@ describe('isShowContentUnavailable', () => {
   });
 
   test('never hides while the tool is still running (artifact may be materializing)', () => {
-    expect(isShowContentUnavailable({ ...base, running: true, contentStatus: 'error' })).toBe(false);
+    expect(isShowContentUnavailable({ ...base, running: true, contentStatus: 'error' })).toBe(
+      false,
+    );
   });
 
   test('never hides a carousel wholesale', () => {

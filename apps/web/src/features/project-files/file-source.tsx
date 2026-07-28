@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
 import type { FileSource } from '@/features/file-viewer';
+import { useMemo } from 'react';
+import { downloadFile, uploadFile } from './api/runtime-files';
+import { FilePathBreadcrumbs } from './components/file-breadcrumbs';
+import { useProjectContext } from './context';
 import { useFileContent } from './hooks';
 import { useBinaryBlob } from './hooks/use-binary-blob';
-import { downloadFile, uploadFile } from './api/runtime-files';
-import { useProjectContext } from './context';
-import { FilePathBreadcrumbs } from './components/file-breadcrumbs';
 
 /**
  * Project git-ref data source for the shared file viewer/modal. Downloads are

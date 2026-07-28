@@ -13,15 +13,15 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Icon } from '@/features/icon/icon';
-import { getCurrentInstanceIdFromPathname } from '@kortix/sdk/instance-routes';
 import {
-  getInstanceTabs,
-  getPreferenceTabs,
   type SettingsTab,
   type SettingsTabId,
+  getInstanceTabs,
+  getPreferenceTabs,
 } from '@/lib/menu-registry';
-import { listSandboxes, type SandboxInfo } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
+import { type SandboxInfo, listSandboxes } from '@kortix/sdk';
+import { getCurrentInstanceIdFromPathname } from '@kortix/sdk/instance-routes';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound, ShieldCheck } from 'lucide-react';
 import { usePathname } from 'next/navigation';
@@ -30,9 +30,9 @@ import { useEffect, useState } from 'react';
 import { AppearanceTab } from './appearance-tab';
 import { CliTokensTab } from './cli-tokens-tab';
 import { GeneralTab } from './general-tab';
-import { SecurityTab } from './security-tab';
 import { KeyboardShortcutsTab } from './keyboard-shortcuts-tab';
 import { NotificationsTab } from './notifications-tab';
+import { SecurityTab } from './security-tab';
 import { SoundsTab } from './sounds-tab';
 
 type TabId = SettingsTabId;

@@ -74,7 +74,12 @@ describe('foldAskSettlements — one hand-off is one row, not two', () => {
   });
 
   test('a second hand-off is its own row — a settle never closes two asks', () => {
-    const rows = foldAskSettlements([ask(1, 'first'), settled(2), ask(3, 'second'), settled(4, 'timed out')]);
+    const rows = foldAskSettlements([
+      ask(1, 'first'),
+      settled(2),
+      ask(3, 'second'),
+      settled(4, 'timed out'),
+    ]);
     expect(rows.map((r) => [r.entry.text, r.entry.outcome])).toEqual([
       ['first', 'answered'],
       ['second', 'timed out'],
@@ -104,7 +109,13 @@ describe('foldAskSettlements — one hand-off is one row, not two', () => {
   });
 
   test('other tools are untouched — run_command settles inline, in one row', () => {
-    const cmd = entry({ cursor: 1, kind: 'tool', name: 'run_command', text: 'bun test', outcome: 'ok' });
+    const cmd = entry({
+      cursor: 1,
+      kind: 'tool',
+      name: 'run_command',
+      text: 'bun test',
+      outcome: 'ok',
+    });
     const rows = foldAskSettlements([cmd]);
     expect(rows).toEqual([{ entry: cmd, pending: false, settledAt: null }]);
   });

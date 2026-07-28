@@ -73,7 +73,11 @@ export default async function MarketplaceItemPage({ params }: { params: Promise<
 
   return (
     <PublicMarketplaceProvider>
-      <MarketplaceDetailPublic data={detail} company={companySummary} otherProjects={otherProjects} />
+      <MarketplaceDetailPublic
+        data={detail}
+        company={companySummary}
+        otherProjects={otherProjects}
+      />
     </PublicMarketplaceProvider>
   );
 }

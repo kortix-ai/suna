@@ -117,7 +117,7 @@ export function DemoQualifierModal({
     // every enterprise CTA can open it) — the embed script loads lazily on
     // open, not on every page paint.
     if (!open) return;
-    (async function () {
+    (async () => {
       const cal = await getCalApi({ namespace: calNamespace });
       cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
       cal('on', {

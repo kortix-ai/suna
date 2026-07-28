@@ -57,8 +57,8 @@ import {
   completeRuntimeProviderOAuth,
   getRuntimeConfig,
   getRuntimeProviderAuthMethods,
-  runtimeKeys,
   refreshRuntimeConfiguration,
+  runtimeKeys,
   setRuntimeProviderApiKey,
   updateRuntimeConfig,
 } from '@kortix/sdk/react';

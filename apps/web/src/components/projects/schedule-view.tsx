@@ -58,21 +58,19 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { copyToClipboard } from '@/lib/utils/clipboard';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import {
   CRON_PRESETS,
   DEFAULT_CRON_EXPR,
   type FilterRow,
   SESSION_KEY_PLACEHOLDER,
+  SESSION_MODES,
   SESSION_MODE_HELP,
   SESSION_MODE_LABEL,
-  SESSION_MODES,
   type SessionMode,
   TIMEZONES,
   buildCurlExample,
@@ -90,11 +88,11 @@ import {
   sameFilter,
   slugifyName,
 } from '@/features/workspace/automations/cron';
-import { type ModelKey, modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import { useRuntimeProviders, useVisibleAgents } from '@kortix/sdk/react';
+import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
@@ -106,6 +104,8 @@ import {
   updateProjectTrigger,
   upsertProjectSecret,
 } from '@kortix/sdk';
+import { type ModelKey, modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
+import { useRuntimeProviders, useVisibleAgents } from '@kortix/sdk/react';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,

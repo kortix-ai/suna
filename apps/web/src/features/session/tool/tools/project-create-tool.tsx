@@ -1,22 +1,16 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  ChevronRight,
-  Plus,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ChevronRight, Plus } from 'lucide-react';
+import { useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
 
@@ -30,7 +24,10 @@ export function ProjectCreateTool({ part }: ToolProps) {
 
   if (isErrorOutput(output)) {
     return (
-      <BasicTool icon={<Plus />} trigger={{ title: 'Workspace', subtitle: displayName || 'failed' }}>
+      <BasicTool
+        icon={<Plus />}
+        trigger={{ title: 'Workspace', subtitle: displayName || 'failed' }}
+      >
         <ToolOutputFallback output={output} toolName="project_create" />
       </BasicTool>
     );
@@ -62,4 +59,3 @@ ToolRegistry.register('project_create', ProjectCreateTool);
 ToolRegistry.register('project-create', ProjectCreateTool);
 ToolRegistry.register('oc-project_create', ProjectCreateTool);
 ToolRegistry.register('oc-project-create', ProjectCreateTool);
-

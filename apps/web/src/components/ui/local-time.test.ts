@@ -39,9 +39,7 @@ describe('formatInTimeZone — hydration-safe server rendering', () => {
   test('UTC date format is stable for a near-midnight-UTC instant', () => {
     // This is what the server (and the first client render) produces. It must
     // be a fixed, well-known string — never timezone-dependent.
-    expect(formatInTimeZone(NEAR_MIDNIGHT_UTC, DATE_FORMAT, 'UTC')).toBe(
-      'June 7, 2026',
-    );
+    expect(formatInTimeZone(NEAR_MIDNIGHT_UTC, DATE_FORMAT, 'UTC')).toBe('June 7, 2026');
   });
 
   test('UTC datetime format is stable for a near-midnight-UTC instant', () => {
@@ -61,9 +59,7 @@ describe('formatInTimeZone — hydration-safe server rendering', () => {
     try {
       for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Pacific/Kiritimati']) {
         process.env.TZ = tz;
-        expect(formatInTimeZone(NEAR_MIDNIGHT_UTC, DATETIME_FORMAT, 'UTC')).toBe(
-          baseline,
-        );
+        expect(formatInTimeZone(NEAR_MIDNIGHT_UTC, DATETIME_FORMAT, 'UTC')).toBe(baseline);
       }
     } finally {
       // `delete process.env.TZ` does not reset Bun's cached Intl default

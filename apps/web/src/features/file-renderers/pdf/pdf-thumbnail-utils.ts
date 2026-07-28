@@ -1,87 +1,84 @@
-import type { PdfDocumentObject, PdfEngine } from "@embedpdf/models"
+import type { PdfDocumentObject, PdfEngine } from '@embedpdf/models';
 
-const PDFIUM_WASM_PATH = "/pdfium/pdfium.wasm"
+const PDFIUM_WASM_PATH = '/pdfium/pdfium.wasm';
 
 // The pdfium engine runs inside a `blob:`-URL Web Worker. A root-relative path
 // (e.g. "/pdfium/pdfium.wasm") has no usable base inside that worker and throws
 // on `fetch`, so the URL must be absolutized against the document origin before
 // it is handed to the worker.
 function resolvePdfiumWasmUrl(): string {
-  if (typeof window === "undefined") return PDFIUM_WASM_PATH
-  return new URL(PDFIUM_WASM_PATH, window.location.origin).href
+  if (typeof window === 'undefined') return PDFIUM_WASM_PATH;
+  return new URL(PDFIUM_WASM_PATH, window.location.origin).href;
 }
 
-let sharedEnginePromise: Promise<PdfEngine> | null = null
-const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>()
-const thumbnailUrlCache = new Map<string, Promise<string | null>>()
+let sharedEnginePromise: Promise<PdfEngine> | null = null;
+const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>();
+const thumbnailUrlCache = new Map<string, Promise<string | null>>();
 
 export function loadSharedPdfEngine() {
-  sharedEnginePromise ??= import("@embedpdf/engines/pdfium-worker-engine").then(
-    ({ createPdfiumEngine }) => createPdfiumEngine(resolvePdfiumWasmUrl(), {})
-  )
+  sharedEnginePromise ??= import('@embedpdf/engines/pdfium-worker-engine').then(
+    ({ createPdfiumEngine }) => createPdfiumEngine(resolvePdfiumWasmUrl(), {}),
+  );
 
-  return sharedEnginePromise
+  return sharedEnginePromise;
 }
 
 export async function loadPdfDocument(url: string) {
-  let documentPromise = pdfDocumentCache.get(url)
+  let documentPromise = pdfDocumentCache.get(url);
 
   if (!documentPromise) {
     documentPromise = loadSharedPdfEngine().then((engine) =>
       engine
         .openDocumentUrl(
           { id: url, url },
-          { mode: url.startsWith("blob:") ? "full-fetch" : "auto" }
+          { mode: url.startsWith('blob:') ? 'full-fetch' : 'auto' },
         )
-        .toPromise()
-    )
-    pdfDocumentCache.set(url, documentPromise)
+        .toPromise(),
+    );
+    pdfDocumentCache.set(url, documentPromise);
   }
 
-  return documentPromise
+  return documentPromise;
 }
 
 export async function getPdfPageCount(url: string) {
-  return (await loadPdfDocument(url)).pageCount
+  return (await loadPdfDocument(url)).pageCount;
 }
 
 export function renderPdfThumbnailUrl({
-  dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
+  dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1,
   pageIndex,
   url,
   width,
 }: {
-  dpr?: number
-  pageIndex: number
-  url: string
-  width: number
+  dpr?: number;
+  pageIndex: number;
+  url: string;
+  width: number;
 }) {
-  const cacheKey = `${url}#${pageIndex}@${width}x${dpr}`
-  let thumbnailPromise = thumbnailUrlCache.get(cacheKey)
+  const cacheKey = `${url}#${pageIndex}@${width}x${dpr}`;
+  let thumbnailPromise = thumbnailUrlCache.get(cacheKey);
 
   if (!thumbnailPromise) {
     thumbnailPromise = (async () => {
-      const [engine, document] = await Promise.all([
-        loadSharedPdfEngine(),
-        loadPdfDocument(url),
-      ])
-      const page = document.pages[pageIndex]
+      const [engine, document] = await Promise.all([loadSharedPdfEngine(), loadPdfDocument(url)]);
+      const page = document.pages[pageIndex];
 
-      if (!page) return null
+      if (!page) return null;
 
       const blob = await engine
         .renderThumbnail(document, page, {
           dpr,
-          imageType: "image/png",
+          imageType: 'image/png',
           scaleFactor: width / page.size.width,
           withAnnotations: true,
         })
-        .toPromise()
+        .toPromise();
 
-      return URL.createObjectURL(blob)
-    })()
-    thumbnailUrlCache.set(cacheKey, thumbnailPromise)
+      return URL.createObjectURL(blob);
+    })();
+    thumbnailUrlCache.set(cacheKey, thumbnailPromise);
   }
 
-  return thumbnailPromise
+  return thumbnailPromise;
 }

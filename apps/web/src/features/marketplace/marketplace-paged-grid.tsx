@@ -13,12 +13,12 @@ import { cn } from '@/lib/utils';
 import Loading from '../../components/ui/loading';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 import {
+  type MarketplaceGridRow,
   buildMarketplaceGridRows,
   flattenMarketplaceItems,
   marketplaceGridRowKey,
   shouldFetchNextMarketplacePage,
   shouldVirtualizeMarketplacePagedGrid,
-  type MarketplaceGridRow,
 } from './marketplace-grid';
 
 /**
@@ -66,7 +66,10 @@ export function MarketplacePagedGrid({
   emptyAction?: ReactNode;
   header?: (info: { total: number; count: number }) => ReactNode;
 }) {
-  const itemsQuery = useInfiniteMarketplaceItems({ query, type, source, publicOnly }, { initialData });
+  const itemsQuery = useInfiniteMarketplaceItems(
+    { query, type, source, publicOnly },
+    { initialData },
+  );
   const items = useMemo(
     () => flattenMarketplaceItems(itemsQuery.data?.pages ?? []),
     [itemsQuery.data],
@@ -104,7 +107,12 @@ export function MarketplacePagedGrid({
 
   if (items.length === 0) {
     return (
-      <EmptyState icon={PackageSearch} title={emptyTitle} description={emptyDescription} action={emptyAction} />
+      <EmptyState
+        icon={PackageSearch}
+        title={emptyTitle}
+        description={emptyDescription}
+        action={emptyAction}
+      />
     );
   }
 
@@ -169,7 +177,12 @@ function useInfiniteScrollSentinel({
     if (!node || !hasNextPage) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (shouldFetchNextMarketplacePage(!!entry?.isIntersecting, { hasNextPage, isFetchingNextPage })) {
+        if (
+          shouldFetchNextMarketplacePage(!!entry?.isIntersecting, {
+            hasNextPage,
+            isFetchingNextPage,
+          })
+        ) {
           fetchNextPage();
         }
       },

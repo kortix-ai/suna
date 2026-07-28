@@ -2,30 +2,25 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo, useState } from 'react';
-import { Copy, Check, ChevronDown, ChevronRight, Network } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Accordion,
+  AccordionContent,
   AccordionItem,
   AccordionTrigger,
-  AccordionContent,
 } from '@/components/ui/accordion';
-import type { MessageWithParts } from '@/ui/types';
-import { childMapByParent, allDescendantIds, getSessionCost, formatCost } from '@kortix/sdk/turns';
-import type { ModelPricingLookup } from '@kortix/sdk/turns';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useModelPricingLookup } from '@/lib/model-pricing';
+import { cn } from '@/lib/utils';
+import type { MessageWithParts } from '@/ui/types';
+import type { AssistantMessage, Message, Part, Session } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
-import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
+import { allDescendantIds, childMapByParent, formatCost, getSessionCost } from '@kortix/sdk/turns';
+import type { ModelPricingLookup } from '@kortix/sdk/turns';
+import { Check, ChevronDown, ChevronRight, Copy, Network } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 // ============================================================================
 // Context metrics — ported 1:1 from SolidJS session-context-metrics.ts
@@ -53,7 +48,12 @@ interface Metrics {
 function tokenTotal(msg: AssistantMessage) {
   if (!msg.tokens) return 0;
   const t = msg.tokens;
-  return (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + ((t.cache?.read ?? 0) + (t.cache?.write ?? 0));
+  return (
+    (t.input ?? 0) +
+    (t.output ?? 0) +
+    (t.reasoning ?? 0) +
+    ((t.cache?.read ?? 0) + (t.cache?.write ?? 0))
+  );
 }
 
 function getSessionContextMetrics(
@@ -112,10 +112,10 @@ interface BreakdownSegment {
 }
 
 const BREAKDOWN_COLORS: Record<BreakdownKey, string> = {
-  system: 'var(--color-blue-400)',      // blue
-  user: 'var(--color-emerald-400)',     // green
+  system: 'var(--color-blue-400)', // blue
+  user: 'var(--color-emerald-400)', // green
   assistant: 'var(--color-violet-400)', // purple
-  tool: 'var(--color-amber-400)',       // yellow
+  tool: 'var(--color-amber-400)', // yellow
   other: 'var(--color-muted-foreground)', // gray
 };
 
@@ -127,9 +127,15 @@ const BREAKDOWN_LABELS: Record<BreakdownKey, string> = {
   other: 'Other',
 };
 
-function estimateTokens(chars: number) { return Math.ceil(chars / 4); }
+function estimateTokens(chars: number) {
+  return Math.ceil(chars / 4);
+}
 
-function estimateBreakdown(messages: MessageWithParts[], input: number, systemPrompt?: string): BreakdownSegment[] {
+function estimateBreakdown(
+  messages: MessageWithParts[],
+  input: number,
+  systemPrompt?: string,
+): BreakdownSegment[] {
   if (!input) return [];
 
   const counts = messages.reduce(
@@ -146,15 +152,17 @@ function estimateBreakdown(messages: MessageWithParts[], input: number, systemPr
       if (msg.info.role !== 'assistant') return acc;
       const result = msg.parts.reduce(
         (sum, part) => {
-          if (part.type === 'text') return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
-          if (part.type === 'reasoning') return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
+          if (part.type === 'text')
+            return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
+          if (part.type === 'reasoning')
+            return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
           if (part.type === 'tool') {
             const state = (part as any).state;
             const inputLen = Object.keys(state?.input ?? {}).length * 16;
             let toolLen = inputLen;
-            if (state?.status === 'pending') toolLen += (state.raw?.length ?? 0);
-            else if (state?.status === 'completed') toolLen += (state.output?.length ?? 0);
-            else if (state?.status === 'error') toolLen += (state.error?.length ?? 0);
+            if (state?.status === 'pending') toolLen += state.raw?.length ?? 0;
+            else if (state?.status === 'completed') toolLen += state.output?.length ?? 0;
+            else if (state?.status === 'error') toolLen += state.error?.length ?? 0;
             return { assistant: sum.assistant, tool: sum.tool + toolLen };
           }
           return sum;
@@ -216,8 +224,11 @@ function createFormatter(locale = 'en-US') {
     time(value: number | undefined) {
       if (!value) return '—';
       return new Date(value).toLocaleString(locale, {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
       });
     },
   };
@@ -240,7 +251,11 @@ function Stat({ label, value }: { label: string; value: string | React.ReactNode
 // Raw message accordion item
 // ============================================================================
 
-function RawMessage({ message, parts, formatTime }: {
+function RawMessage({
+  message,
+  parts,
+  formatTime,
+}: {
   message: Message;
   parts: Part[];
   formatTime: (v: number | undefined) => string;
@@ -382,7 +397,15 @@ function sumTreeCosts(node: SubSessionCostInfo): {
     cacheReadTokens += sub.cacheReadTokens;
     cacheWriteTokens += sub.cacheWriteTokens;
   }
-  return { cost, messages, inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWriteTokens };
+  return {
+    cost,
+    messages,
+    inputTokens,
+    outputTokens,
+    reasoningTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+  };
 }
 
 // ============================================================================
@@ -411,7 +434,11 @@ function SubSessionTreeNode({
         )}
       >
         {hasChildren ? (
-          expanded ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+          expanded ? (
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+          )
         ) : (
           <div className="size-3 shrink-0" />
         )}
@@ -424,9 +451,7 @@ function SubSessionTreeNode({
             (tree: {formatCost(totals.cost)})
           </span>
         )}
-        <span className="shrink-0 text-muted-foreground/60 text-xs">
-          {node.messages} msgs
-        </span>
+        <span className="shrink-0 text-muted-foreground/60 text-xs">{node.messages} msgs</span>
       </button>
       {expanded && hasChildren && (
         <div className="flex flex-col">
@@ -464,10 +489,7 @@ export function SessionContextModal({
   const [copiedAll, setCopiedAll] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
 
-  const rawMessages = useMemo(
-    () => (messages ?? []).map((m) => m.info),
-    [messages],
-  );
+  const rawMessages = useMemo(() => (messages ?? []).map((m) => m.info), [messages]);
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -523,24 +545,30 @@ export function SessionContextModal({
     return sumTreeCosts(subSessionTree);
   }, [subSessionTree]);
 
-  const stats = useMemo(() => [
-    { label: 'Session', value: session?.title ?? session?.id ?? '—' },
-    { label: 'Messages', value: counts.all.toLocaleString() },
-    { label: 'Provider', value: ctx?.providerLabel ?? '—' },
-    { label: 'Model', value: ctx?.modelLabel ?? '—' },
-    { label: 'Context Limit', value: fmt.number(ctx?.limit) },
-    { label: 'Total Tokens', value: fmt.number(ctx?.total) },
-    { label: 'Usage', value: fmt.percent(ctx?.usage) },
-    { label: 'Input Tokens', value: fmt.number(ctx?.input) },
-    { label: 'Output Tokens', value: fmt.number(ctx?.output) },
-    { label: 'Reasoning Tokens', value: fmt.number(ctx?.reasoning) },
-    { label: 'Cache Tokens', value: `${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}` },
-    { label: 'User Messages', value: counts.user.toLocaleString() },
-    { label: 'Assistant Messages', value: counts.assistant.toLocaleString() },
-    { label: 'Total Cost', value: formatCost(metrics.totalCost) },
-    { label: 'Session Created', value: fmt.time(session?.time?.created) },
-    { label: 'Last Activity', value: fmt.time(ctx?.message?.time?.created) },
-  ], [session, counts, ctx, fmt, metrics.totalCost]);
+  const stats = useMemo(
+    () => [
+      { label: 'Session', value: session?.title ?? session?.id ?? '—' },
+      { label: 'Messages', value: counts.all.toLocaleString() },
+      { label: 'Provider', value: ctx?.providerLabel ?? '—' },
+      { label: 'Model', value: ctx?.modelLabel ?? '—' },
+      { label: 'Context Limit', value: fmt.number(ctx?.limit) },
+      { label: 'Total Tokens', value: fmt.number(ctx?.total) },
+      { label: 'Usage', value: fmt.percent(ctx?.usage) },
+      { label: 'Input Tokens', value: fmt.number(ctx?.input) },
+      { label: 'Output Tokens', value: fmt.number(ctx?.output) },
+      { label: 'Reasoning Tokens', value: fmt.number(ctx?.reasoning) },
+      {
+        label: 'Cache Tokens',
+        value: `${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`,
+      },
+      { label: 'User Messages', value: counts.user.toLocaleString() },
+      { label: 'Assistant Messages', value: counts.assistant.toLocaleString() },
+      { label: 'Total Cost', value: formatCost(metrics.totalCost) },
+      { label: 'Session Created', value: fmt.time(session?.time?.created) },
+      { label: 'Last Activity', value: fmt.time(ctx?.message?.time?.created) },
+    ],
+    [session, counts, ctx, fmt, metrics.totalCost],
+  );
 
   const handleCopyAll = () => {
     navigator.clipboard.writeText(JSON.stringify(messages, null, 2));
@@ -550,16 +578,14 @@ export function SessionContextModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col" aria-describedby={undefined}>
+      <DialogContent
+        className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col"
+        aria-describedby={undefined}
+      >
         <DialogHeader className="flex-shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-semibold">Context</DialogTitle>
-            <Button
-              onClick={handleCopyAll}
-              variant="outline"
-              size="toolbar"
-              className="mr-8"
-            >
+            <Button onClick={handleCopyAll} variant="outline" size="toolbar" className="mr-8">
               {copiedAll ? <Check className="size-3" /> : <Copy className="size-3" />}
               {copiedAll ? 'Copied!' : 'Copy All JSON'}
             </Button>
@@ -572,26 +598,70 @@ export function SessionContextModal({
             <div className="flex flex-col gap-3 p-4 rounded-2xl border border-primary/20 bg-primary/5">
               <div className="flex items-center gap-2">
                 <Network className="size-4 text-primary" />
-                <div className="text-sm font-semibold text-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line558JsxTextAggregateTotals')}<span className="ml-2 text-xs font-normal text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line560JsxTextThisSession')}{descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
+                <div className="text-sm font-semibold text-foreground">
+                  {tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line558JsxTextAggregateTotals',
+                  )}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionContextModal.line560JsxTextThisSession',
+                    )}
+                    {descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
                   </span>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line565JsxAttrLabelTotalCost')} value={
-                  <span className="text-primary font-semibold">{formatCost(aggregateTotals.cost)}</span>
-                } />
-                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line568JsxAttrLabelTotalMessages')} value={aggregateTotals.messages.toLocaleString()} />
-                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line569JsxAttrLabelInputTokens')} value={fmt.number(aggregateTotals.inputTokens)} />
-                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line570JsxAttrLabelOutputTokens')} value={fmt.number(aggregateTotals.outputTokens)} />
-                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line571JsxAttrLabelReasoningTokens')} value={fmt.number(aggregateTotals.reasoningTokens)} />
-                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line572JsxAttrLabelCacheTokens')} value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`} />
+                <Stat
+                  label={tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line565JsxAttrLabelTotalCost',
+                  )}
+                  value={
+                    <span className="text-primary font-semibold">
+                      {formatCost(aggregateTotals.cost)}
+                    </span>
+                  }
+                />
+                <Stat
+                  label={tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line568JsxAttrLabelTotalMessages',
+                  )}
+                  value={aggregateTotals.messages.toLocaleString()}
+                />
+                <Stat
+                  label={tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line569JsxAttrLabelInputTokens',
+                  )}
+                  value={fmt.number(aggregateTotals.inputTokens)}
+                />
+                <Stat
+                  label={tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line570JsxAttrLabelOutputTokens',
+                  )}
+                  value={fmt.number(aggregateTotals.outputTokens)}
+                />
+                <Stat
+                  label={tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line571JsxAttrLabelReasoningTokens',
+                  )}
+                  value={fmt.number(aggregateTotals.reasoningTokens)}
+                />
+                <Stat
+                  label={tHardcodedUi.raw(
+                    'componentsSessionSessionContextModal.line572JsxAttrLabelCacheTokens',
+                  )}
+                  value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`}
+                />
               </div>
             </div>
           )}
 
           {/* This session label when sub-sessions exist */}
           {hasSubSessions && (
-            <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{tHardcodedUi.raw('componentsSessionSessionContextModal.line580JsxTextThisSessionOnly')}</div>
+            <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+              {tHardcodedUi.raw(
+                'componentsSessionSessionContextModal.line580JsxTextThisSessionOnly',
+              )}
+            </div>
           )}
 
           {/* Stats grid — 1:1 from SolidJS */}
@@ -604,20 +674,33 @@ export function SessionContextModal({
           {/* Context breakdown bar — 1:1 from SolidJS */}
           {breakdown.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line594JsxTextContextBreakdown')}</div>
+              <div className="text-xs text-muted-foreground">
+                {tHardcodedUi.raw(
+                  'componentsSessionSessionContextModal.line594JsxTextContextBreakdown',
+                )}
+              </div>
               <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
                 {breakdown.map((segment) => (
                   <div
                     key={segment.key}
                     className="h-full"
-                    style={{ width: `${segment.width}%`, backgroundColor: BREAKDOWN_COLORS[segment.key] }}
+                    style={{
+                      width: `${segment.width}%`,
+                      backgroundColor: BREAKDOWN_COLORS[segment.key],
+                    }}
                   />
                 ))}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {breakdown.map((segment) => (
-                  <div key={segment.key} className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <div className="size-2 rounded-sm" style={{ backgroundColor: BREAKDOWN_COLORS[segment.key] }} />
+                  <div
+                    key={segment.key}
+                    className="flex items-center gap-1 text-xs text-muted-foreground"
+                  >
+                    <div
+                      className="size-2 rounded-sm"
+                      style={{ backgroundColor: BREAKDOWN_COLORS[segment.key] }}
+                    />
                     <div>{BREAKDOWN_LABELS[segment.key]}</div>
                     <div className="text-muted-foreground/60">{segment.percent}%</div>
                   </div>
@@ -629,7 +712,11 @@ export function SessionContextModal({
           {/* Sub-session cost tree */}
           {hasSubSessions && subSessionTree && subSessionTree.children.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown')}</div>
+              <div className="text-xs text-muted-foreground">
+                {tHardcodedUi.raw(
+                  'componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown',
+                )}
+              </div>
               <div className="border rounded-2xl p-3 bg-muted/20">
                 {subSessionTree.children.map((child) => (
                   <SubSessionTreeNode key={child.id} node={child} />
@@ -640,7 +727,9 @@ export function SessionContextModal({
 
           {/* Raw messages — 1:1 from SolidJS */}
           <div className="flex flex-col gap-2">
-            <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line631JsxTextRawMessages')}{counts.all})
+            <div className="text-xs text-muted-foreground">
+              {tHardcodedUi.raw('componentsSessionSessionContextModal.line631JsxTextRawMessages')}
+              {counts.all})
             </div>
             <Accordion type="multiple" className="border rounded-2xl overflow-hidden">
               {(messages ?? []).map((msg) => (

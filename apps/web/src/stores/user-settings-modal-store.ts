@@ -1,5 +1,5 @@
-import { create } from 'zustand';
 import type { SettingsTabId } from '@/lib/menu-registry';
+import { create } from 'zustand';
 
 /**
  * Single source of truth for opening the UserSettingsModal from anywhere —

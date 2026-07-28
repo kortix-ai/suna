@@ -14,7 +14,7 @@
  * why the section now has a landing page rather than auto-selecting whichever
  * connector happened to sort first.
  *
- * Reference: ux-references/perplexity/06-connectors-list.png.
+ *
  */
 
 import {

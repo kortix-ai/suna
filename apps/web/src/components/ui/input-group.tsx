@@ -1,14 +1,14 @@
 'use client';
 
-import { cva, type VariantProps } from 'class-variance-authority';
+import { type VariantProps, cva } from 'class-variance-authority';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input, InputProps } from '@/components/ui/input';
+import { Input, type InputProps } from '@/components/ui/input';
 import {
-  Textarea,
   type AutosizeTextAreaProps,
   type AutosizeTextAreaRef,
+  Textarea,
 } from '@/components/ui/textarea';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';

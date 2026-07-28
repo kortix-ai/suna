@@ -1,8 +1,8 @@
 'use client';
 
-import { use, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTabStore } from '@/stores/tab-store';
+import { useRouter } from 'next/navigation';
+import { use, useEffect } from 'react';
 
 /**
  * Preview route handler for /p/[port].

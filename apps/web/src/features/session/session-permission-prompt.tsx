@@ -20,16 +20,13 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRuntimeConfig, useUpdateRuntimeConfig } from '@kortix/sdk/react';
-import {
-  allowAllPermissionsForSession,
-  resetSessionPermissions,
-} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
+import { useRuntimeConfig, useUpdateRuntimeConfig } from '@kortix/sdk/react';
+import { allowAllPermissionsForSession, resetSessionPermissions } from '@kortix/sdk/react';
+import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { ShieldCheck } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

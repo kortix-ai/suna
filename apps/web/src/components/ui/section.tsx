@@ -30,13 +30,7 @@ const SPACING: Record<NonNullable<SectionProps['spacing']>, string> = {
   loose: 'mt-14',
 };
 
-export function Section({
-  label,
-  action,
-  spacing = 'default',
-  className,
-  children,
-}: SectionProps) {
+export function Section({ label, action, spacing = 'default', className, children }: SectionProps) {
   return (
     <section className={cn(SPACING[spacing], 'first:mt-0', className)}>
       {(label || action) && (

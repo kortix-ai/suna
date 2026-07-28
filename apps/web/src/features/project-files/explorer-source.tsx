@@ -1,13 +1,13 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
-import type { FileSource } from '@/features/file-viewer';
 import type {
   FileCommitDiff,
   FileHistoryResult,
   FileNode,
   GitFileStatus,
 } from '@/features/file-browser/types';
+import type { FileSource } from '@/features/file-viewer';
+import { type ReactNode, createContext, useContext } from 'react';
 
 /**
  * Data-access contract for the shared Drive-style file explorer

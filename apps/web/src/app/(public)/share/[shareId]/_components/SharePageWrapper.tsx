@@ -3,7 +3,8 @@
 import { AppProviders } from '@/features/layout/app-providers';
 import { createClient } from '@/lib/supabase/client';
 import { useParams } from 'next/navigation';
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import type React from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { MobileAppBanner } from './MobileAppBanner';
 
 const PresentationViewerWrapper = lazy(() =>

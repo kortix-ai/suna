@@ -4,23 +4,23 @@ import { Separator } from '@/components/ui/separator';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
+  StructuredOutput,
+  ToolRunningContext,
   partInput,
   partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
-  StructuredOutput,
-  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 
 import {
-  formatBashOutput,
   InlineSessionMessagesList,
+  SessionMetadataList,
+  formatBashOutput,
   parseSessionMessagesOutput,
   parseSessionMetadataOutput,
-  SessionMetadataList,
 } from '@/features/session/tool/shared/session-helpers';
 import {
   hasStructuredContent,

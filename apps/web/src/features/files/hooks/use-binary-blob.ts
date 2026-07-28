@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { readFileAsBlob } from '../api/runtime-files';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 
@@ -47,7 +47,9 @@ export function useBinaryBlob(filePath: string | null): {
     queryFn: async () => {
       const blob = await readFileAsBlob(filePath!);
       if (blob.size === 0) {
-        throw new Error('File is empty (0 bytes). It may still be generating — try again in a moment.');
+        throw new Error(
+          'File is empty (0 bytes). It may still be generating — try again in a moment.',
+        );
       }
       return blob;
     },
@@ -82,10 +84,13 @@ export function useBinaryBlob(filePath: string | null): {
   }, [cachedBlob]);
 
   // ── Stable return value ──────────────────────────────────────────────
-  return useMemo(() => ({
-    blobUrl,
-    blob: cachedBlob,
-    isLoading: query.isLoading,
-    error: query.error?.message ?? null,
-  }), [blobUrl, cachedBlob, query.isLoading, query.error?.message]);
+  return useMemo(
+    () => ({
+      blobUrl,
+      blob: cachedBlob,
+      isLoading: query.isLoading,
+      error: query.error?.message ?? null,
+    }),
+    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
+  );
 }

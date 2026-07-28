@@ -6,7 +6,7 @@
  * Connectors, Skills, Automations, Agents and Settings are all the same page:
  * a title, ONE line of description, a search field, a row of filter pills with
  * one primary action, then content. Rails, cards-in-cards and nested tab bars
- * are what this replaces — see ux-references/perplexity/{06,08,10,12}.
+ * are what this replaces.
  *
  * `state` exists because every section view re-implemented the same five-branch
  * ladder (loading → forbidden → error → empty → no results → content) by hand;

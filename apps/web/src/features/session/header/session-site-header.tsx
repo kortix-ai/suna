@@ -16,11 +16,11 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useChatDetail } from '@/features/session/activity/chat-detail';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
-import { useChatDetail } from '@/features/session/activity/chat-detail';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -29,11 +29,7 @@ import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useReadyChip } from '@/stores/kortix-computer-store';
-import {
-  listProjectSessions,
-  restartProjectSession,
-  stopProjectSession,
-} from '@kortix/sdk';
+import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -42,10 +38,10 @@ import {
   FolderOpen,
   Globe,
   Layers,
+  ListTree,
   MoreHorizontal,
   PanelLeft,
   PanelRight,
-  ListTree,
   RotateCcw,
   Square,
   SquareTerminal,

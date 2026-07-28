@@ -2,7 +2,7 @@
 
 import { SCENARIOS } from '../chat/scenarios';
 import type { ActiveModel, PageId, ProjectCard, ProjectStatus } from '../types';
-import { meta, ok, t, type Line, type Span } from './terminal';
+import { type Line, type Span, meta, ok, t } from './terminal';
 
 /* ───────────────────────────────────────────────────────────────────────────
  * The CLI movie. A flat list of commands; each command is a list of `Beat`s the
@@ -279,7 +279,12 @@ export const SCRIPT: Command[] = [
       nav('security'),
       wait(220),
       fx((a) => a.inviteMember()),
-      okLine(t('Invited '), t('alex@acme.ai', 'fg'), t(' as member '), t('(pending signup)', 'faded')),
+      okLine(
+        t('Invited '),
+        t('alex@acme.ai', 'fg'),
+        t(' as member '),
+        t('(pending signup)', 'faded'),
+      ),
       wait(1400),
     ],
   },

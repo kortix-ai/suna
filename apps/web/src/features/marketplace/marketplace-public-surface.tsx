@@ -1,10 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, type ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 
 import { marketplaceItemHref } from '@/lib/marketplace-slug';
-import { MarketplaceSurfaceProvider, type MarketplaceSurface } from './marketplace-surface';
+import { type MarketplaceSurface, MarketplaceSurfaceProvider } from './marketplace-surface';
 
 /** Provides the public marketplace surface (route-based navigation, no project
  *  binding, no installed state) to the shared cards/detail. Wrap the public

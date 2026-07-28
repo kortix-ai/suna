@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  type Particle,
   advanceParticle,
   buildBrandmarkParticles,
   getParticleMarkSize,
-  type Particle,
 } from './particle-mark';
 
 describe('getParticleMarkSize', () => {

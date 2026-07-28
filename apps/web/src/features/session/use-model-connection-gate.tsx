@@ -16,9 +16,9 @@ import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import {
+  type ModelKey,
   connectedGatewayProviderIdsFromSecretNames,
   hasUsableModel,
-  type ModelKey,
 } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
@@ -101,9 +101,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   );
   const modelsByKey = useMemo(
     () =>
-      new Map(
-        baseModels.map((model) => [`${model.providerID}:${model.modelID}`, model] as const),
-      ),
+      new Map(baseModels.map((model) => [`${model.providerID}:${model.modelID}`, model] as const)),
     [baseModels],
   );
   const isSelectableModel = useCallback(

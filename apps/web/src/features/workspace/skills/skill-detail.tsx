@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Skill / command detail — ux-references/perplexity/09-skill-detail.png.
+ * Skill / command detail.
  *
  * A MODAL, not a rail nested inside the page: left is About + Files, right is
  * the file itself (frontmatter, then the rendered markdown). The old screen put

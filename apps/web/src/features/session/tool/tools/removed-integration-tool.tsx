@@ -1,7 +1,5 @@
 'use client';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   ToolOutputFallback,
@@ -9,25 +7,20 @@ import {
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import { useSessionStateStore } from '@kortix/sdk/react';
 import {
-  Plug,
-} from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import {
+  type MessageWithParts,
+  type ToolPart,
   getChildSessionError,
   getRetryInfo,
   getRetryMessage,
-  type MessageWithParts,
-  type ToolPart,
 } from '@/ui';
-
+import { useSessionStateStore } from '@kortix/sdk/react';
+import { Plug } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useState } from 'react';
 
 export function RemovedIntegrationTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -147,4 +140,3 @@ function SubAgentStatusBanner({
 
   return null;
 }
-

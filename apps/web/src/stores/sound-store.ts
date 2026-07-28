@@ -1,8 +1,8 @@
 'use client';
 
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types

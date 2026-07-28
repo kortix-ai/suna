@@ -2,12 +2,12 @@
 
 import {
   AnimatePresence,
-  motion,
   type DOMMotionComponents,
   type HTMLMotionProps,
   type MotionProps,
+  motion,
 } from 'motion/react';
-import { useEffect, useRef, useState, type ComponentType, type RefAttributes } from 'react';
+import { type ComponentType, type RefAttributes, useEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 

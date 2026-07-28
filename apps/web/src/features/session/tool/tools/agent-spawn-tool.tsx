@@ -3,26 +3,26 @@
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
+  ToolOutputFallback,
+  ToolSurfaceContext,
   firstMeaningfulLine,
   getAgentCardLabel,
   parseJsonFailure,
   partInput,
   partOutput,
   partStatus,
-  ToolOutputFallback,
-  ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useRuntimeMessages } from '@kortix/sdk/react';
 import {
+  type MessageWithParts,
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
-  type MessageWithParts,
 } from '@/ui';
+import { useRuntimeMessages } from '@kortix/sdk/react';
 import { Check, Cpu } from 'lucide-react';
 import { useContext, useMemo, useState } from 'react';
 

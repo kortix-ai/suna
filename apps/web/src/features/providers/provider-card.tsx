@@ -1,9 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { ChevronRight } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { ProviderLogo } from './provider-branding';
 
 // ─── Standardized tokens ─────────────────────────────────────────────────────

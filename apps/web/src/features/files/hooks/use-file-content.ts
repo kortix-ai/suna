@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { readFile } from '../api/runtime-files';
 import type { FileContent } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { readFile } from '../api/runtime-files';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 
@@ -28,10 +28,7 @@ export function useFileContent(
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
     queryFn: () => readFile(filePath!),
-    enabled:
-      !!filePath &&
-      !isSystemDirectoryPath(filePath) &&
-      options?.enabled !== false,
+    enabled: !!filePath && !isSystemDirectoryPath(filePath) && options?.enabled !== false,
     staleTime: options?.staleTime ?? 10_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,

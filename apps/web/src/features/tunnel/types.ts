@@ -1,9 +1,4 @@
-import {
-  HardDrive,
-  Terminal,
-  Monitor,
-  type LucideIcon,
-} from 'lucide-react';
+import { HardDrive, type LucideIcon, Monitor, Terminal } from 'lucide-react';
 
 export interface FilesystemScope {
   paths: string[];
@@ -70,14 +65,69 @@ export interface ScopeInfo {
 }
 
 export const SCOPE_REGISTRY: ScopeInfo[] = [
-  { key: 'files:read',            capability: 'filesystem', label: 'Read files',          description: 'Read and list local files and directories',    category: 'Filesystem', grantScope: { operations: ['read', 'list'] } },
-  { key: 'files:write',           capability: 'filesystem', label: 'Write files',         description: 'Create and modify local files',                category: 'Filesystem', grantScope: { operations: ['write'] } },
-  { key: 'files:delete',          capability: 'filesystem', label: 'Delete files',        description: 'Delete local files and directories',           category: 'Filesystem', grantScope: { operations: ['delete'] } },
-  { key: 'shell:exec',            capability: 'shell',      label: 'Execute commands',    description: 'Run shell commands in terminal',               category: 'Shell' },
-  { key: 'desktop:computer_use',   capability: 'desktop',    label: 'CUA driver',          description: 'Install, start, and inspect CUA Driver',        category: 'Computer Use', grantScope: { features: ['computer_use'] } },
-  { key: 'desktop:apps',           capability: 'desktop',    label: 'Applications',        description: 'List, launch, focus, and close apps',           category: 'Computer Use', grantScope: { features: ['apps', 'windows'] } },
-  { key: 'desktop:observe',        capability: 'desktop',    label: 'Observe screen',      description: 'Read windows, UI trees, and screenshots',       category: 'Computer Use', grantScope: { features: ['screenshot', 'windows', 'accessibility'] } },
-  { key: 'desktop:input',          capability: 'desktop',    label: 'Control input',       description: 'Click, type, hotkey, scroll, and drag',         category: 'Computer Use', grantScope: { features: ['mouse', 'keyboard', 'accessibility'] } },
+  {
+    key: 'files:read',
+    capability: 'filesystem',
+    label: 'Read files',
+    description: 'Read and list local files and directories',
+    category: 'Filesystem',
+    grantScope: { operations: ['read', 'list'] },
+  },
+  {
+    key: 'files:write',
+    capability: 'filesystem',
+    label: 'Write files',
+    description: 'Create and modify local files',
+    category: 'Filesystem',
+    grantScope: { operations: ['write'] },
+  },
+  {
+    key: 'files:delete',
+    capability: 'filesystem',
+    label: 'Delete files',
+    description: 'Delete local files and directories',
+    category: 'Filesystem',
+    grantScope: { operations: ['delete'] },
+  },
+  {
+    key: 'shell:exec',
+    capability: 'shell',
+    label: 'Execute commands',
+    description: 'Run shell commands in terminal',
+    category: 'Shell',
+  },
+  {
+    key: 'desktop:computer_use',
+    capability: 'desktop',
+    label: 'CUA driver',
+    description: 'Install, start, and inspect CUA Driver',
+    category: 'Computer Use',
+    grantScope: { features: ['computer_use'] },
+  },
+  {
+    key: 'desktop:apps',
+    capability: 'desktop',
+    label: 'Applications',
+    description: 'List, launch, focus, and close apps',
+    category: 'Computer Use',
+    grantScope: { features: ['apps', 'windows'] },
+  },
+  {
+    key: 'desktop:observe',
+    capability: 'desktop',
+    label: 'Observe screen',
+    description: 'Read windows, UI trees, and screenshots',
+    category: 'Computer Use',
+    grantScope: { features: ['screenshot', 'windows', 'accessibility'] },
+  },
+  {
+    key: 'desktop:input',
+    capability: 'desktop',
+    label: 'Control input',
+    description: 'Click, type, hotkey, scroll, and drag',
+    category: 'Computer Use',
+    grantScope: { features: ['mouse', 'keyboard', 'accessibility'] },
+  },
 ];
 
 export interface ExpiryOption {
@@ -106,7 +156,11 @@ export function getCapabilityInfo(key: string): CapabilityInfo | undefined {
 export function getDefaultScope(capability: string): PermissionScope {
   switch (capability) {
     case 'filesystem':
-      return { paths: [], operations: ['read', 'list'], excludePatterns: [] } satisfies FilesystemScope;
+      return {
+        paths: [],
+        operations: ['read', 'list'],
+        excludePatterns: [],
+      } satisfies FilesystemScope;
     case 'shell':
       return { commands: [], workingDir: '' } satisfies ShellScope;
     default:

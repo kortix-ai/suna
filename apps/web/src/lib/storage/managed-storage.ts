@@ -28,7 +28,7 @@
  * deliberately NOT registered, so they survive a reclaim.
  */
 
-import { createJSONStorage, type StateStorage } from 'zustand/middleware';
+import { type StateStorage, createJSONStorage } from 'zustand/middleware';
 
 /** Registered prefixes for caches that are safe to evict to reclaim quota. */
 const disposableFamilies = new Set<string>();

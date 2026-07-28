@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState, type HTMLAttributes } from 'react';
+import { type HTMLAttributes, useCallback, useEffect, useRef, useState } from 'react';
 
 export type CliDragHandleProps = HTMLAttributes<HTMLDivElement> & {
   onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;

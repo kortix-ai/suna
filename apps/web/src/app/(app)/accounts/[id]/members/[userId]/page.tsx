@@ -39,20 +39,20 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
+  type MemberGroupSummary,
+  type MemberProjectAccess,
   listMemberGroups,
   listMemberProjectAccess,
   setMemberSuperAdmin,
-  type MemberGroupSummary,
-  type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
+import { type AccountRole, getAccount, listAccountMembers } from '@kortix/sdk';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',

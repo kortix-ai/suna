@@ -14,12 +14,7 @@ export function ConnectingScreen() {
   return (
     <div className="bg-background flex min-h-screen flex-col items-center justify-center gap-4 px-4">
       {/* eslint-disable-next-line @next/next/no-img-element -- small static brand mark, not worth next/image */}
-      <img
-        src="/kortix-symbol.svg"
-        alt=""
-        className="dark:invert-0 size-10 invert"
-        aria-hidden
-      />
+      <img src="/kortix-symbol.svg" alt="" className="dark:invert-0 size-10 invert" aria-hidden />
       <div className="text-muted-foreground flex items-center gap-2 text-sm">
         <Loading className="size-4 shrink-0" />
         Connecting to your Kortix call…

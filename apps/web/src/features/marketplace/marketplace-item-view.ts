@@ -14,7 +14,9 @@ export function emptyReadmeCopy(type: string): string {
 
 /** Type-aware meta-line count label for a card/detail (e.g. "3 items" for a
  *  bundle's member count, "12 files" for everything else). */
-export function itemCountLabel(item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>): {
+export function itemCountLabel(
+  item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>,
+): {
   count: number;
   unit: string;
 } {

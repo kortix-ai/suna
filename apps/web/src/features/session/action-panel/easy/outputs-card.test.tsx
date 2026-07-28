@@ -1,5 +1,5 @@
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { describe, expect, test } from 'bun:test';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { OutputItem } from '../shared/derive-panels';
 import { OutputRows, OutputsCard } from './outputs-card';
@@ -7,7 +7,12 @@ import { OutputRows, OutputsCard } from './outputs-card';
 /** A minimal file output — defaults to a plausible scaffolding-free file so
  * callers only need to override what the test cares about. */
 function out(overrides: Partial<OutputItem> & Pick<OutputItem, 'name'>): OutputItem {
-  return { callID: `c-${overrides.name}`, kind: 'file', path: overrides.name, ...overrides } as OutputItem;
+  return {
+    callID: `c-${overrides.name}`,
+    kind: 'file',
+    path: overrides.name,
+    ...overrides,
+  } as OutputItem;
 }
 
 function renderOutputRows(outputs: OutputItem[]): string {

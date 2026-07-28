@@ -12,10 +12,10 @@
 
 import { useAuth } from '@/features/providers/auth-provider';
 import {
-  probeEffectivePermission,
-  probeEffectivePermissions,
   type PermissionProbeInput,
   type PermissionProbeTarget,
+  probeEffectivePermission,
+  probeEffectivePermissions,
 } from '@/lib/iam-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -109,7 +109,9 @@ export function usePermissionsFor(
       memberUserId,
       // Stable key: action + scope per probe, joined. Avoids serializing
       // unrelated object identity that React refs swap each render.
-      probes.map((p) => `${p.action}|${p.resourceType ?? ''}|${p.resourceId ?? ''}`).join(','),
+      probes
+        .map((p) => `${p.action}|${p.resourceType ?? ''}|${p.resourceId ?? ''}`)
+        .join(','),
     ],
     queryFn: () => probeEffectivePermissions(accountId!, memberUserId!, probes),
     enabled: !!accountId && !!memberUserId && probes.length > 0,

@@ -4,20 +4,16 @@
 // Access Token can live, requires expiry on every mint, and auto-revokes
 // idle tokens. Project-scoped tokens (sandbox-injected) are exempt.
 
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  type PatPolicy,
-  getPatPolicy,
-  updatePatPolicy,
-} from '@/lib/iam-client';
+import { type PatPolicy, getPatPolicy, updatePatPolicy } from '@/lib/iam-client';
 
 const MAX_LIFETIME = 365 * 2;
 const MAX_IDLE = 365;
@@ -92,8 +88,8 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
       <div className="space-y-0.5">
         <p className="text-foreground text-sm font-medium">CLI token lifecycle</p>
         <p className="text-muted-foreground text-xs">
-          Apply to Personal Access Tokens (CLI / programmatic clients). Sandbox-injected tokens
-          are exempt — their lifetime is bound to the sandbox itself.
+          Apply to Personal Access Tokens (CLI / programmatic clients). Sandbox-injected tokens are
+          exempt — their lifetime is bound to the sandbox itself.
         </p>
       </div>
 
@@ -132,8 +128,8 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
                     variant="popover"
                   />
                   <p className="text-muted-foreground text-xs">
-                    Refuses PATs whose requested expires_at is further out than this many days
-                    from now.
+                    Refuses PATs whose requested expires_at is further out than this many days from
+                    now.
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -147,8 +143,7 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
                     variant="popover"
                   />
                   <p className="text-muted-foreground text-xs">
-                    Tokens not used in this many days are auto-revoked on the next sign-in
-                    attempt.
+                    Tokens not used in this many days are auto-revoked on the next sign-in attempt.
                   </p>
                 </div>
               </div>
@@ -160,7 +155,12 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
 
         {canManage && !query.isLoading && (
           <div className="border-border flex items-center justify-end border-t px-4 py-3">
-            <Button size="sm" onClick={handleSave} disabled={mutation.isPending} className="gap-1.5">
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={mutation.isPending}
+              className="gap-1.5"
+            >
               {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
               Save policy
             </Button>

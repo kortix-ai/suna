@@ -15,8 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import {
   Form,
   FormControl,
@@ -26,7 +24,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Item,
   ItemActions,
@@ -35,6 +32,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -49,14 +47,24 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useDebounce } from '@/hooks/use-debounce';
 import { githubInstallationLabel, isGitHubAppInstallationId } from '@/lib/github-installations';
-import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
+  type MarketplaceItem,
   getMarketplaceItem,
   listMarketplaceItems,
-  type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
+  isManagedGitUnavailableError,
+  isProjectLimitError,
+} from '@/lib/onboarding/ensure-first-project';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import {
+  type KortixAccount,
+  type KortixProject,
   createProjectRepo,
   getManagedGitStatus,
   linkRepository,
@@ -65,14 +73,9 @@ import {
   listGitHubRepositories,
   listProjectsForAccount,
   provisionProject,
-  type KortixAccount,
-  type KortixProject,
 } from '@kortix/sdk';
-import { cn } from '@/lib/utils';
-import { useDebounce } from '@/hooks/use-debounce';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -80,10 +83,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { RepositoryPicker } from './github-import-pickers';
 import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
-import {
-  startProjectOnboardingSession,
-  startTemplateSetupSession,
-} from './template-setup-session';
+import { startProjectOnboardingSession, startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -99,7 +99,10 @@ const managedProjectSchema = z.object({
       z
         .string()
         .min(1, 'Project name is required')
-        .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
+        .max(
+          PROJECT_NAME_MAX_LENGTH,
+          `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+        ),
     ),
 });
 
@@ -222,10 +225,8 @@ export const ProjectCreateModal = ({
 
   const selectedInstallationId = githubForm.watch('installationId');
   const selectedRepo = githubForm.watch('repo');
-  const {
-    debouncedValue: debouncedRepositorySearch,
-    isLoading: isDebouncingRepositorySearch,
-  } = useDebounce(repositorySearch.trim(), 300);
+  const { debouncedValue: debouncedRepositorySearch, isLoading: isDebouncingRepositorySearch } =
+    useDebounce(repositorySearch.trim(), 300);
 
   function resetAndClose() {
     setMode('managed');
@@ -276,37 +277,37 @@ export const ProjectCreateModal = ({
   }
 
   async function finishCreatedProject(project: KortixProject) {
-      successToast('Project created');
-      queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
-        upsertProject(projects, project),
-      );
-      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
-        upsertProject(projects, project),
-      );
-      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    successToast('Project created');
+    queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
+      upsertProject(projects, project),
+    );
+    queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+      upsertProject(projects, project),
+    );
+    void queryClient.invalidateQueries({ queryKey: ['projects'] });
     void queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' });
 
-      if (effectiveSourceItemId) {
-        const sessionId = await startTemplateSetupSession(project, {
-          itemId: effectiveSourceItemId,
-          title: sourceItemQuery.data?.title ?? 'this project',
-        });
-        if (sessionId) {
-          resetAndClose();
-          router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
-          return;
-        }
-      }
-
-      const onboardingSessionId = await startProjectOnboardingSession(project);
-      if (onboardingSessionId) {
+    if (effectiveSourceItemId) {
+      const sessionId = await startTemplateSetupSession(project, {
+        itemId: effectiveSourceItemId,
+        title: sourceItemQuery.data?.title ?? 'this project',
+      });
+      if (sessionId) {
         resetAndClose();
-        router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+        router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
         return;
       }
+    }
 
+    const onboardingSessionId = await startProjectOnboardingSession(project);
+    if (onboardingSessionId) {
       resetAndClose();
-      router.replace(`/projects/${project.project_id}`);
+      router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+      return;
+    }
+
+    resetAndClose();
+    router.replace(`/projects/${project.project_id}`);
   }
 
   const createMutation = useMutation({
@@ -334,7 +335,8 @@ export const ProjectCreateModal = ({
         const gitSettingsAccountId =
           effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast("Managed git isn't set up on this server", {
-          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          description:
+            'An admin needs to connect GitHub in Git settings before projects can be created.',
           ...(gitSettingsAccountId
             ? {
                 button: (
@@ -1271,7 +1273,12 @@ function TemplatePicker({
         </div>
       </ModalBody>
       <ModalFooter>
-        <Button type="button" variant="outline-ghost" className="w-full sm:w-auto" onClick={onCancel}>
+        <Button
+          type="button"
+          variant="outline-ghost"
+          className="w-full sm:w-auto"
+          onClick={onCancel}
+        >
           Back
         </Button>
       </ModalFooter>

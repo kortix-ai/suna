@@ -4,13 +4,13 @@ import type { CliPanelAnchor } from '@/components/home/interactive-demo/cli/drag
 import {
   KORTIX_CMD_CLASS,
   KORTIX_CMD_STYLE,
-  LineView,
   type Line,
+  LineView,
 } from '@/components/home/interactive-demo/cli/terminal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, type HTMLAttributes } from 'react';
+import { type HTMLAttributes, useEffect, useRef } from 'react';
 
 /** Default floating CLI panel anchor for how-it-works steps (bottom-right, not top-left). */
 export const STEP_CLI_PANEL_ANCHOR: CliPanelAnchor = 'bottom-right';

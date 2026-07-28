@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * One card in the Skills grid — ux-references/perplexity/08-skills-list.png.
+ * One card in the Skills grid.
  *
  * Name, two lines of description, a ⋮ menu. The whole card opens the detail
  * modal; the menu carries the actions that used to live in the detail toolbar

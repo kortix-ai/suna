@@ -2,17 +2,18 @@
 
 import { useTranslations } from 'next-intl';
 
-import { cn } from '@/lib/utils';
-import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 function isMobileDevice(): boolean {
   if (typeof window === 'undefined') return false;
   const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
   const ua = userAgent.toLowerCase();
-  const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i;
+  const mobileRegex =
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i;
   const isIOSSimulator = ua.includes('macintosh') && navigator.maxTouchPoints > 0;
   return mobileRegex.test(ua) || isIOSSimulator;
 }
@@ -78,8 +79,9 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
 
   return (
     <div
-      className={cn('fixed top-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out', 
-        isVisible ? 'translate-y-0' : '-translate-y-full'
+      className={cn(
+        'fixed top-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out',
+        isVisible ? 'translate-y-0' : '-translate-y-full',
       )}
     >
       <div className="bg-background/95 backdrop-blur-md border-b border-border/50 px-3 py-2.5 safe-area-top">
@@ -91,18 +93,16 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground text-sm leading-tight">
-              Kortix
-            </h3>
-            <p className="text-xs text-muted-foreground leading-tight">{tHardcodedUi.raw('appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp')}</p>
+            <h3 className="font-semibold text-foreground text-sm leading-tight">Kortix</h3>
+            <p className="text-xs text-muted-foreground leading-tight">
+              {tHardcodedUi.raw(
+                'appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp',
+              )}
+            </p>
           </div>
 
           {/* Open button */}
-          <Button
-            onClick={handleOpenInApp}
-            size="sm"
-            className="px-4 text-xs"
-          >
+          <Button onClick={handleOpenInApp} size="sm" className="px-4 text-xs">
             Open
           </Button>
 

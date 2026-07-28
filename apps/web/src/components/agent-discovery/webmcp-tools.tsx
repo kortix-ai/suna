@@ -61,9 +61,7 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
         const needle = String(query).trim().toLocaleLowerCase();
         return (body.data ?? [])
           .filter((item) =>
-            `${item.title ?? ''} ${item.description ?? ''}`
-              .toLocaleLowerCase()
-              .includes(needle),
+            `${item.title ?? ''} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle),
           )
           .slice(0, 10);
       },

@@ -61,7 +61,7 @@ export function parsePresentationSlidePath(filePath: string | null): {
     return {
       isValid: true,
       presentationName: match[1],
-      slideNumber: parseInt(match[2], 10),
+      slideNumber: Number.parseInt(match[2], 10),
     };
   }
 
@@ -136,7 +136,7 @@ export async function downloadPresentation(
     const blob = await convertRuntimePresentation(format, sandboxUrl, presentationPath, {
       onGenerating: () => {
         toast.info(`Generating ${format.toUpperCase()}… this can take a moment for large decks`, {
-            duration: 6000,
+          duration: 6000,
         });
       },
     });

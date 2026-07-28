@@ -18,7 +18,7 @@ import { useEffect, useRef } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { RiCpuLine } from 'react-icons/ri';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
-import { useStep2Director, type Step2View } from '../step-director';
+import { type Step2View, useStep2Director } from '../step-director';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
 function CostTrackingPanel() {

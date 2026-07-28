@@ -19,10 +19,10 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
+  type ScrapeResult,
   looksLikeHtml,
   resolveScrapeResults,
   wsDomain,
-  type ScrapeResult,
 } from '@/features/session/tool/shared/web-helpers';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';

@@ -41,11 +41,13 @@ import { DriveListView } from './drive-list-view';
 import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
-import { requestedFilesRightPanel, type FilesRightPanel } from './file-route-state';
+import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
 
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
 
-export function FileExplorerPage({ embedded = false }: { embedded?: boolean; shareContext?: unknown } = {}) {
+export function FileExplorerPage({
+  embedded = false,
+}: { embedded?: boolean; shareContext?: unknown } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);

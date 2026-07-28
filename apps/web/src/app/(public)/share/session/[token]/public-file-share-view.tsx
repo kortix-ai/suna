@@ -7,13 +7,13 @@ import { useEffect, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
-  FileContentRenderer,
-  FileSourceProvider,
-  getFileCategory,
   type BinaryBlobResult,
   type FileContent,
+  FileContentRenderer,
   type FileContentResult,
   type FileSource,
+  FileSourceProvider,
+  getFileCategory,
 } from '@/features/file-viewer';
 import { cn } from '@/lib/utils';
 import { SHARE_FILE_IFRAME_CLASS } from './share-layout';

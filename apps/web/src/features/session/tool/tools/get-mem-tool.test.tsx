@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import type { ToolPart } from '@/ui';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ToolPart } from '@/ui';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { GetMemTool } from './get-mem-tool';

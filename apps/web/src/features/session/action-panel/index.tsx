@@ -58,9 +58,7 @@ export function ActionPanel({
   // Hooks can't be conditional, so this subscribes unconditionally and only
   // acts when `shouldDiscardPendingPrimaryOpen` says so (i.e. mode is
   // 'advanced' and the pending request belongs to this session).
-  const pendingPrimaryOpenSessionId = useKortixComputerStore(
-    (s) => s.pendingPrimaryOpenSessionId,
-  );
+  const pendingPrimaryOpenSessionId = useKortixComputerStore((s) => s.pendingPrimaryOpenSessionId);
   useEffect(() => {
     if (!shouldDiscardPendingPrimaryOpen(mode, pendingPrimaryOpenSessionId, sessionId)) return;
     useKortixComputerStore.getState().consumePrimaryOpen(sessionId);

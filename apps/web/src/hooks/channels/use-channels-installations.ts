@@ -1,6 +1,11 @@
 'use client';
 
 import {
+  type EmailInstallation,
+  type EmailMode,
+  type EmailSenderPolicy,
+  type SlackInstallation,
+  type SlackMode,
   connectEmail,
   connectSlack,
   disconnectEmail,
@@ -11,11 +16,6 @@ import {
   getSlackManifest,
   getSlackMode,
   updateEmailPolicy,
-  type EmailInstallation,
-  type EmailMode,
-  type EmailSenderPolicy,
-  type SlackInstallation,
-  type SlackMode,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -59,7 +59,9 @@ export function useSlackMode(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 60_000,
     queryFn: () =>
-      projectId ? getSlackMode(projectId) : ({ oauth_available: false, install_url: null } satisfies SlackMode),
+      projectId
+        ? getSlackMode(projectId)
+        : ({ oauth_available: false, install_url: null } satisfies SlackMode),
   });
 }
 

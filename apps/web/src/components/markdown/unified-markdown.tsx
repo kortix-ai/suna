@@ -5,10 +5,10 @@ import { useTranslations } from 'next-intl';
 import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
-  buildKatexRehypePlugins,
-  isKatexClassName,
   KATEX_FENCE_LANGUAGES,
   KATEX_RENDER_OPTIONS,
+  buildKatexRehypePlugins,
+  isKatexClassName,
   katexRemarkPlugins,
   normalizeClassName,
   prepareMarkdownForKatex,
@@ -38,10 +38,10 @@ import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  codeToHtml,
-  getSingletonHighlighter,
   type Highlighter,
   type ShikiTransformer,
+  codeToHtml,
+  getSingletonHighlighter,
 } from 'shiki';
 import { Streamdown } from 'streamdown';
 

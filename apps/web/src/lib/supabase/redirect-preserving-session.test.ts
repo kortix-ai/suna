@@ -30,7 +30,10 @@ describe('redirectPreservingCookies', () => {
 
   test('no cookies staged on the source means no cookies on the redirect', () => {
     const staged = NextResponse.next();
-    const redirect = redirectPreservingCookies(new URL('https://kortix.local/auth'), staged.cookies);
+    const redirect = redirectPreservingCookies(
+      new URL('https://kortix.local/auth'),
+      staged.cookies,
+    );
     expect(redirect.cookies.getAll()).toEqual([]);
   });
 });

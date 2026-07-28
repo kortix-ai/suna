@@ -1,24 +1,17 @@
 'use client';
 import {
-  stripMarkupForToolOutput,
-} from '@/features/session/tool/tool-renderers-sanitization';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Terminal,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { stripMarkupForToolOutput } from '@/features/session/tool/tool-renderers-sanitization';
+import { Terminal } from 'lucide-react';
+import { useMemo } from 'react';
 
 export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -51,4 +44,3 @@ export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
   );
 }
 ToolRegistry.register('pty_kill', PtyKillTool);
-

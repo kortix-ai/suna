@@ -7,8 +7,8 @@ import { HelpCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
   ACCOUNT_ROLE_DESCRIPTORS,
-  PROJECT_ROLE_DESCRIPTORS,
   PROJECT_ROLES_ASCENDING,
+  PROJECT_ROLE_DESCRIPTORS,
 } from './project-role-descriptors';
 
 const ACCOUNT_ROLES_DESCENDING: AccountRole[] = ['owner', 'admin', 'member'];

@@ -61,7 +61,11 @@ export function withPipedreamOverlayEscape(): () => void {
  * never shared with the team. Shared by the connectors view and the
  * connect-to-start gate so both drive one implementation.
  */
-export function usePipedreamConnectMember(projectId: string, slug: string, onConnected: () => void) {
+export function usePipedreamConnectMember(
+  projectId: string,
+  slug: string,
+  onConnected: () => void,
+) {
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
       const profile = await reconcileMemberConnectionProfile(projectId, {

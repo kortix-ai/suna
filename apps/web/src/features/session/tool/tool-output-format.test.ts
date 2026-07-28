@@ -100,8 +100,7 @@ describe('parseEmbeddedFailure', () => {
     const output = JSON.stringify({
       query: 'best financial benchmarks',
       success: false,
-      error:
-        'Error: 402 Error: {"error":true,"message":"Insufficient credits","status":402}',
+      error: 'Error: 402 Error: {"error":true,"message":"Insufficient credits","status":402}',
     });
     expect(parseEmbeddedFailure(output)).toEqual({
       message: 'Insufficient credits',

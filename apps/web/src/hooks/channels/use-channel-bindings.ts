@@ -1,11 +1,11 @@
 'use client';
 
 import {
-  listChannelBindings,
-  updateChannelBinding,
   type ChannelBinding,
   type ChannelBindingsResponse,
   type UpdateChannelBindingInput,
+  listChannelBindings,
+  updateChannelBinding,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

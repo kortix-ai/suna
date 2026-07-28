@@ -10,11 +10,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import {
-  type AgentConfigBlock,
-  getAgentConfig,
-  updateAgentConfig,
-} from '@kortix/sdk';
+import { type AgentConfigBlock, getAgentConfig, updateAgentConfig } from '@kortix/sdk';
 
 export function agentConfigQueryKey(projectId: string, agentName: string) {
   return ['agent-config', projectId, agentName] as const;

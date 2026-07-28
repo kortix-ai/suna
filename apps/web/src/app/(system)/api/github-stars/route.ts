@@ -5,7 +5,7 @@ export const revalidate = 300; // cache for 5 minutes
 export async function GET() {
   try {
     const res = await fetch('https://api.github.com/repos/kortix-ai/suna', {
-      headers: { 'Accept': 'application/vnd.github.v3+json' },
+      headers: { Accept: 'application/vnd.github.v3+json' },
       next: { revalidate: 300 },
       signal: AbortSignal.timeout(5000),
     });

@@ -1,18 +1,15 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Trash2,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-
 
 export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -55,4 +52,3 @@ function extractSkillFiles(output: string): string[] {
   }
   return files;
 }
-

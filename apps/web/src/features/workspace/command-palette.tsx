@@ -24,7 +24,6 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
@@ -32,8 +31,6 @@ import { projectSettingsHref, resolveLegacyCustomizeHref } from '@/lib/project-n
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { featureFlags } from '@kortix/sdk/feature-flags';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { systemReload } from '@kortix/sdk';
 import {
   type ExperimentalFeatureKey,
@@ -45,6 +42,9 @@ import {
   listProjectSessions,
   listProjectsForAccount,
 } from '@kortix/sdk';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDown,
@@ -76,12 +76,6 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@kortix/sdk/react';
-import { useCreatePty } from '@kortix/sdk/react';
-import {
-  useCreateRuntimeSession,
-  useRuntimeMessages,
-} from '@kortix/sdk/react';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -104,6 +98,9 @@ import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
+import { useModelStore } from '@kortix/sdk/react';
+import { useCreatePty } from '@kortix/sdk/react';
+import { useCreateRuntimeSession, useRuntimeMessages } from '@kortix/sdk/react';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersSolid } from '@mynaui/icons-react';
 import { useTheme } from 'next-themes';
@@ -617,7 +614,11 @@ export function CommandPalette() {
       .filter((m) => {
         if (
           !q &&
-          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
+          !modelStore.isVisible({
+            providerID: m.providerID,
+            modelID: m.modelID,
+            provider: m.provider,
+          })
         )
           return false;
         return (

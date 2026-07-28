@@ -1,10 +1,10 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { RefreshCw, ServerOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DriveExplorer, FileExplorerSourceProvider } from '@/features/project-files';
 import { useRuntimeStore } from '@kortix/sdk/react';
+import { RefreshCw, ServerOff } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
 

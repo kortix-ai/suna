@@ -42,7 +42,7 @@
  */
 
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { type VariantProps, cva } from 'class-variance-authority';
 import * as React from 'react';
 
 import { Icon } from '@/features/icon/icon';
@@ -161,8 +161,7 @@ const ModalVariants = cva(
 );
 
 interface ModalContentProps
-  extends
-    React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>,
+  extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>,
     VariantProps<typeof ModalVariants> {
   closeClassName?: string;
   modalClassName?: string;
@@ -176,7 +175,7 @@ const ModalContentInner = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   ModalContentProps
 >(
-    (
+  (
     {
       side = 'bottom',
       animation = 'default',

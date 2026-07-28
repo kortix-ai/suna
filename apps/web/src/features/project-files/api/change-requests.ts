@@ -5,6 +5,14 @@
  */
 
 import {
+  type ChangeRequest,
+  type ChangeRequestDetailResponse,
+  type ChangeRequestDiffResponse,
+  type ChangeRequestMergePreview,
+  type ChangeRequestMergeResponse,
+  type ChangeRequestStatus,
+  type CommitSessionResult,
+  type VersionDiffPreview,
   closeChangeRequest,
   commitSessionChanges,
   getChangeRequest,
@@ -16,14 +24,6 @@ import {
   openChangeRequest,
   reopenChangeRequest,
   requestChangesOnChangeRequest,
-  type ChangeRequest,
-  type ChangeRequestDetailResponse,
-  type ChangeRequestDiffResponse,
-  type ChangeRequestMergePreview,
-  type ChangeRequestMergeResponse,
-  type ChangeRequestStatus,
-  type CommitSessionResult,
-  type VersionDiffPreview,
 } from '@kortix/sdk';
 
 export type {
@@ -37,10 +37,7 @@ export type {
   VersionDiffPreview,
 };
 
-export async function fetchChangeRequests(
-  projectId: string,
-  status?: ChangeRequestStatus | 'all',
-) {
+export async function fetchChangeRequests(projectId: string, status?: ChangeRequestStatus | 'all') {
   return listChangeRequests(projectId, status);
 }
 
@@ -52,10 +49,7 @@ export async function fetchChangeRequestDiff(projectId: string, crId: string) {
   return getChangeRequestDiff(projectId, crId);
 }
 
-export async function fetchChangeRequestMergePreview(
-  projectId: string,
-  crId: string,
-) {
+export async function fetchChangeRequestMergePreview(projectId: string, crId: string) {
   return getChangeRequestMergePreview(projectId, crId);
 }
 
@@ -88,10 +82,7 @@ export async function performRequestChanges(projectId: string, crId: string, fee
   return requestChangesOnChangeRequest(projectId, crId, feedback);
 }
 
-export async function fetchVersionDiff(
-  projectId: string,
-  input: { from: string; into: string },
-) {
+export async function fetchVersionDiff(projectId: string, input: { from: string; into: string }) {
   return getVersionDiff(projectId, input);
 }
 

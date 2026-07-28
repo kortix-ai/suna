@@ -1,12 +1,5 @@
-import {
-  createActiveSandboxProxyContext,
-  type ActiveSandboxProxyContext,
-} from '@kortix/sdk/react';
-import {
-  getProxyBaseUrl,
-  proxyLocalhostUrl,
-  rewriteLocalhostUrl,
-} from '@/lib/utils/sandbox-url';
+import { getProxyBaseUrl, proxyLocalhostUrl, rewriteLocalhostUrl } from '@/lib/utils/sandbox-url';
+import { type ActiveSandboxProxyContext, createActiveSandboxProxyContext } from '@kortix/sdk/react';
 
 export type SandboxProxyContext = ActiveSandboxProxyContext;
 
@@ -30,9 +23,6 @@ export function rewriteSandboxPath(
   return rewriteLocalhostUrl(port, path, context.subdomainOpts);
 }
 
-export function getSandboxServiceUrl(
-  port: number,
-  context: SandboxProxyContext,
-): string {
+export function getSandboxServiceUrl(port: number, context: SandboxProxyContext): string {
   return getProxyBaseUrl(port, context.subdomainOpts);
 }

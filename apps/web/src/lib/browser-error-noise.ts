@@ -88,10 +88,7 @@ function isFirstPartyResolvedSource(filename: unknown): boolean {
   return normalizeString(filename).includes('apps/web/src/');
 }
 
-const KNOWN_TEST_NOISE_MESSAGES = [
-  'E2E FINAL:',
-  'E2E test:',
-] as const;
+const KNOWN_TEST_NOISE_MESSAGES = ['E2E FINAL:', 'E2E test:'] as const;
 
 const KNOWN_DOM_MUTATION_NOISE_MESSAGES = [
   "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
@@ -100,7 +97,7 @@ const KNOWN_DOM_MUTATION_NOISE_MESSAGES = [
 
 const KNOWN_HYDRATION_NOISE_MESSAGES = [
   'Minified React error #418',
-  "Hydration failed because the server rendered",
+  'Hydration failed because the server rendered',
 ] as const;
 
 // Transient "the session runtime / sandbox URL hasn't pinned yet" throws. The
@@ -187,14 +184,13 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 // → last frame) is the Next.js webpack runtime chunk, so a genuine app
 // TypeError with the same message text — e.g. calling `.call(...)` on an
 // `undefined` value inside app code — still reports normally.
-const STALE_WEBPACK_RUNTIME_CALL_MESSAGE =
-  "Cannot read properties of undefined (reading 'call')";
+const STALE_WEBPACK_RUNTIME_CALL_MESSAGE = "Cannot read properties of undefined (reading 'call')";
 
 function isWebpackRuntimeChunkFilename(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return (
-    /^app:\/\/\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
-    || /^https?:\/\/[^/]+\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
+    /^app:\/\/\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized) ||
+    /^https?:\/\/[^/]+\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
   );
 }
 
@@ -211,9 +207,7 @@ function isWebpackRuntimeChunkFilename(filename: unknown): boolean {
 // visitors hit it. Suppress this distinctive message so it stops paging
 // Better Stack; a genuine first-party regex regression surfaces with a
 // different message on modern browsers (which all support lookbehind).
-const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
-  'invalid group specifier name',
-] as const;
+const OLD_WEBKIT_REGEX_NOISE_PATTERNS = ['invalid group specifier name'] as const;
 
 // Paper Shaders (`@paper-design/shaders-react`) null-WebGL-context crash class.
 // On GPUs/browsers without working WebGL2 (context loss, blacklisted driver,
@@ -815,8 +809,7 @@ function isInpageWalletInjectedSource(filename: unknown): boolean {
 // could swallow a real app plain-object rejection; the frame+payload-aware
 // `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
 // safe gate.
-const SYNTHETIC_OBJECT_REJECTION_PATTERN =
-  /^Object captured as promise rejection with keys:/;
+const SYNTHETIC_OBJECT_REJECTION_PATTERN = /^Object captured as promise rejection with keys:/;
 
 function extractSerializedRejectionStack(extra: unknown): string {
   if (!extra || typeof extra !== 'object') return '';
@@ -885,8 +878,8 @@ function rejectedObjectHasExtensionStack(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const stack = (value as { stack?: unknown }).stack;
   return (
-    typeof stack === 'string'
-    && EXTENSION_PROTOCOL_PREFIXES.some((prefix) => stack.includes(prefix))
+    typeof stack === 'string' &&
+    EXTENSION_PROTOCOL_PREFIXES.some((prefix) => stack.includes(prefix))
   );
 }
 
@@ -905,8 +898,10 @@ function isBareImageLoadNoiseMessage(message: unknown): boolean {
 
 function isBrowserBundleSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
-  return normalized.startsWith('app:///_next/static/')
-    || /^https?:\/\/[^/]+\/_next\/static\//.test(normalized);
+  return (
+    normalized.startsWith('app:///_next/static/') ||
+    /^https?:\/\/[^/]+\/_next\/static\//.test(normalized)
+  );
 }
 
 function extractMessage(value: unknown): string {
@@ -961,10 +956,7 @@ export function isStorageSecurityErrorNoise(input: {
   if (!STORAGE_SECURITY_ERROR_NOISE_PATTERNS.some((re) => re.test(stripped))) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   // Negative guard: a resolved first-party frame means our own code is the
   // direct-access culprit — keep reporting so the call site can be fixed.
   return !sources.some(isFirstPartyResolvedSource);
@@ -1034,10 +1026,7 @@ const SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER = 'No error message';
 
 function isMessageEmptyOrPlaceholder(message: unknown): boolean {
   const normalized = normalizeString(message).trim();
-  return (
-    normalized === ''
-    || normalized === SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER
-  );
+  return normalized === '' || normalized === SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER;
 }
 
 /**
@@ -1121,10 +1110,7 @@ export function isUserscriptManagerNoise(input: {
   filename?: unknown;
   frames?: Array<{ filename?: unknown }>;
 }): boolean {
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   return sources.some(isUserscriptManagerInjectedSource);
 }
 
@@ -1151,10 +1137,7 @@ export function isTronLinkProxyNoise(input: {
   if (!TRONLINK_PROXY_NOISE_PATTERNS.some((re) => re.test(stripped))) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   return sources.some(
     (filename) => isTronLinkInjectedSource(filename) || isExtensionSource(filename),
   );
@@ -1184,10 +1167,7 @@ export function isInpageWalletStreamNoise(input: {
   if (!INPAGE_WALLET_STREAM_NOISE_PATTERNS.some((re) => re.test(stripped))) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   return sources.some(
     (filename) => isInpageWalletInjectedSource(filename) || isExtensionSource(filename),
   );
@@ -1200,8 +1180,10 @@ export function isKnownTestNoiseMessage(message: unknown): boolean {
 
 export function isLikelyDomMutationNoise(message: unknown): boolean {
   const normalized = normalizeString(message);
-  return containsKnownPattern(normalized, KNOWN_DOM_MUTATION_NOISE_MESSAGES)
-    || containsKnownPattern(normalized, KNOWN_HYDRATION_NOISE_MESSAGES);
+  return (
+    containsKnownPattern(normalized, KNOWN_DOM_MUTATION_NOISE_MESSAGES) ||
+    containsKnownPattern(normalized, KNOWN_HYDRATION_NOISE_MESSAGES)
+  );
 }
 
 /**
@@ -1230,10 +1212,11 @@ export function isRuntimeNotReadyNoiseMessage(message: unknown): boolean {
 export function isExpectedBillingGateMessage(message: unknown): boolean {
   const normalized = normalizeString(message).trim();
   return BILLING_GATE_EXPECTED_MESSAGES.some(
-    (expected) => normalized === expected
-      || normalized === `ApiError: ${expected}`
-      || normalized === `Unhandled promise rejection: ${expected}`
-      || normalized === `Unhandled promise rejection: ApiError: ${expected}`,
+    (expected) =>
+      normalized === expected ||
+      normalized === `ApiError: ${expected}` ||
+      normalized === `Unhandled promise rejection: ${expected}` ||
+      normalized === `Unhandled promise rejection: ApiError: ${expected}`,
   );
 }
 
@@ -1252,10 +1235,11 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
 export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
   const normalized = normalizeString(message).trim();
   return COMPACTION_NO_MODEL_EXPECTED_MESSAGES.some(
-    (expected) => normalized === expected
-      || normalized === `Error: ${expected}`
-      || normalized === `Unhandled promise rejection: ${expected}`
-      || normalized === `Unhandled promise rejection: Error: ${expected}`,
+    (expected) =>
+      normalized === expected ||
+      normalized === `Error: ${expected}` ||
+      normalized === `Unhandled promise rejection: ${expected}` ||
+      normalized === `Unhandled promise rejection: Error: ${expected}`,
   );
 }
 
@@ -1353,9 +1337,7 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  */
 export function isPaperShaderNullContextNoise(message: unknown): boolean {
   const stripped = stripErrorWrappers(normalizeString(message));
-  return PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS.some((pattern) =>
-    stripped.includes(pattern),
-  );
+  return PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS.some((pattern) => stripped.includes(pattern));
 }
 
 /**
@@ -1400,10 +1382,7 @@ export function isPaperShaderWebGLUnsupportedNoise(input: {
   // (its `[A-Za-z]+Error:` requires a leading prefix). Sentry capture paths
   // can deliver either shape, so additionally strip a leading bare `Error: `
   // here — mirroring `isBareImageLoadNoiseMessage`'s explicit `Error: ` form.
-  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(
-    /^Error: /,
-    '',
-  );
+  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
   if (stripped !== PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE) {
     return false;
   }
@@ -1441,8 +1420,7 @@ function isMinifiedChunkSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   if (!normalized) return false;
   return (
-    normalized.includes('/_next/static/chunks/')
-    || /[?&]dpl=dpl_[A-Za-z0-9]+/.test(normalized)
+    normalized.includes('/_next/static/chunks/') || /[?&]dpl=dpl_[A-Za-z0-9]+/.test(normalized)
   );
 }
 
@@ -1469,10 +1447,7 @@ export function isOldBrowserSyntaxParseError(input: {
   if (!OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS.some((re) => re.test(stripped))) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   return sources.some((filename) => isMinifiedChunkSource(filename));
 }
 
@@ -1498,16 +1473,11 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
 }): boolean {
   const message = stripErrorWrappers(normalizeString(input.message));
   if (
-    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES.some(
-      (noise) => message === noise,
-    )
+    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES.some((noise) => message === noise)
   ) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
 }
 
@@ -1537,17 +1507,10 @@ export function isAndroidWebViewNativeBridgePostEventNoise(input: {
   frames?: Array<{ filename?: unknown }>;
 }): boolean {
   const message = stripErrorWrappers(normalizeString(input.message));
-  if (
-    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES.some(
-      (noise) => message === noise,
-    )
-  ) {
+  if (!ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES.some((noise) => message === noise)) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   // Positive anchor: the synthetic Android nav-performance-logger bridge
   // source (the framed sibling shape, forward-compat with #4610's evidence).
   if (sources.some((filename) => isAndroidNavPerfLoggerFrame(filename))) {
@@ -1607,10 +1570,7 @@ export function isIOSWebViewWebKitBridgeNoise(input: {
   }
   // Collect every source location — the window.onerror `filename` (runtime
   // gate) and any stacktrace frames (Sentry gate) — for the anchors.
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
   // code accessed `window.webkit.messageHandlers` and threw → a real first-
   // party regression; keep reporting so the call site can be found + fixed.
@@ -1627,8 +1587,8 @@ export function isIOSWebViewWebKitBridgeNoise(input: {
   const hasInstrumentedFunction = frames.some((frame) =>
     IOS_WEBVIEW_INSTRUMENTED_FUNCTION_NAMES.has(normalizeString(frame?.function)),
   );
-  const hasInstrumentedSource = sources.some((filename) =>
-    normalizeString(filename) === IOS_WEBVIEW_INSTRUMENTED_FRAME_SOURCE,
+  const hasInstrumentedSource = sources.some(
+    (filename) => normalizeString(filename) === IOS_WEBVIEW_INSTRUMENTED_FRAME_SOURCE,
   );
   // Without the positive anchor (no `app:///` frame and no instrumentation
   // function) we cannot confirm the iOS WebView origin — keep reporting rather
@@ -1713,12 +1673,8 @@ const REACT_UPDATE_DEPTH_NOISE_PATTERN = /^Minified React error #185\b/;
 // specific third-party anchor.
 const EMBEDPDF_TILING_CALLBACK_FRAME_MARKER = 'onTileRendering';
 
-function frameMatchesEmbedPdfTilingCallback(
-  frame: { function?: unknown } | undefined,
-): boolean {
-  return normalizeString(frame?.function).includes(
-    EMBEDPDF_TILING_CALLBACK_FRAME_MARKER,
-  );
+function frameMatchesEmbedPdfTilingCallback(frame: { function?: unknown } | undefined): boolean {
+  return normalizeString(frame?.function).includes(EMBEDPDF_TILING_CALLBACK_FRAME_MARKER);
 }
 
 const STACK_OVERFLOW_NOISE_PATTERN = /^Maximum call stack size exceeded\.?$/;
@@ -1753,10 +1709,7 @@ export function isUnresolvableStackOverflowNoise(input: {
   if (!STACK_OVERFLOW_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
     return false;
   }
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   // Negative guard #1: a resolved first-party `apps/web/src/…` frame → our own
   // code is recursing; keep reporting so the call site can be found + fixed.
   if (sources.some(isFirstPartyResolvedSource)) {
@@ -1856,11 +1809,7 @@ function frameMatchesEmbedPdfTilingViewportAdvance(
   frame: { filename?: unknown; function?: unknown } | undefined,
 ): boolean {
   const fn = normalizeString(frame?.function);
-  if (
-    EMBEDPDF_TILING_VIEWPORT_ADVANCE_FRAME_MARKERS.some((marker) =>
-      fn.includes(marker),
-    )
-  ) {
+  if (EMBEDPDF_TILING_VIEWPORT_ADVANCE_FRAME_MARKERS.some((marker) => fn.includes(marker))) {
     return true;
   }
   return normalizeString(frame?.filename).includes(EMBEDPDF_TILING_CHUNK_MARKER);
@@ -2164,8 +2113,7 @@ export function isNonErrorUndefinedRejectionNoise(input: {
 // `OperationError` rejection the negative guard exists to preserve; the
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
-const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN =
-  /^Instance dropped in popErrorScope$/;
+const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN = /^Instance dropped in popErrorScope$/;
 
 /**
  * Whether a Sentry event is the browser-internal DOM/binding
@@ -2293,18 +2241,14 @@ export function isConnectionClosedNoise(input: {
   // `Error: Connection closed.` is the form an `onunhandledrejection` of an
   // `Error` instance serializes to, so strip that leading `Error: ` too before
   // anchoring on the library's exact canonical close string.
-  const stripped = stripErrorWrappers(normalizeString(input.message))
-    .replace(/^Error: /, '');
+  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
   if (!CONNECTION_CLOSED_NOISE_PATTERN.test(stripped)) {
     return false;
   }
   // Collect every source location — the window.onerror `filename` (runtime
   // gate) and any stacktrace frames (Sentry gate) — for the first-party
   // negative guard.
-  const sources = [
-    input.filename,
-    ...(input.frames ?? []).map((frame) => frame?.filename),
-  ];
+  const sources = [input.filename, ...(input.frames ?? []).map((frame) => frame?.filename)];
   // Negative guard: a resolved first-party `apps/web/src/…` frame means our
   // own websocket/SSE handling threw `Connection closed.` → actionable
   // regression; keep reporting so the call site can be found + fixed.
@@ -2313,7 +2257,6 @@ export function isConnectionClosedNoise(input: {
   }
   return true;
 }
-
 
 // Bare lowercase `network error` rejection noise — the canonical Axios /
 // `XMLHttpRequest` transport-abort message. Axios throws this (or the
@@ -2424,8 +2367,10 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   error?: unknown;
   reason?: unknown;
 }): boolean {
-  const message = [input.message, extractMessage(input.error), extractMessage(input.reason)]
-    .find((value) => Boolean(value)) ?? '';
+  const message =
+    [input.message, extractMessage(input.error), extractMessage(input.reason)].find((value) =>
+      Boolean(value),
+    ) ?? '';
 
   if (isKnownBrowserNoiseMessage(message)) {
     return true;
@@ -2460,7 +2405,6 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   if (isConnectionClosedNoise({ message, filename: input.filename })) {
     return true;
   }
-
 
   // Browser-native <img> / next/image load failures can surface as this exact
   // message through window.onerror. Keep this exact: pptx-react-viewer throws
@@ -2636,8 +2580,8 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // extension content-script frame, so this is conservative. See
   // `isExtensionRejectedObjectNoise` / `rejectedObjectHasExtensionStack`.
   if (
-    rejectedObjectHasExtensionStack(input.reason)
-    || rejectedObjectHasExtensionStack(input.error)
+    rejectedObjectHasExtensionStack(input.reason) ||
+    rejectedObjectHasExtensionStack(input.error)
   ) {
     return true;
   }
@@ -2652,7 +2596,9 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
-  return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
+  return (
+    isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage')
+  );
 }
 
 export function shouldIgnoreSentryBrowserNoise(event: {
@@ -2699,8 +2645,10 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // browser bundle frame here so a same-worded server exception is not hidden.
   // The client config additionally has an anchored ignoreErrors regex for
   // frame-less browser events.
-  if (isBareImageLoadNoiseMessage(message)
-    && frames.some((frame) => isBrowserBundleSource(frame.filename))) {
+  if (
+    isBareImageLoadNoiseMessage(message) &&
+    frames.some((frame) => isBrowserBundleSource(frame.filename))
+  ) {
     return true;
   }
 
@@ -3058,7 +3006,6 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   if (isConnectionClosedNoise({ message, frames })) {
     return true;
   }
-
 
   if (frames.some((frame) => isExtensionSource(frame.filename))) {
     return true;

@@ -6,10 +6,10 @@ import { useIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import type { Turn } from '@/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  type MinimapItem,
   downsampleDashes,
   extractUserText,
   nearestDashIndex,
-  type MinimapItem,
 } from './chat-minimap-items';
 
 interface ChatMinimapProps {

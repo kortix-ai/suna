@@ -22,7 +22,8 @@ export function summarizeScope(capability: string, scope: PermissionScope): stri
       const fs = scope as { paths?: string[]; operations?: string[] };
       const parts: string[] = [];
       if (fs.operations?.length) parts.push(fs.operations.join(', '));
-      if (fs.paths?.length) parts.push(fs.paths.length === 1 ? fs.paths[0] : `${fs.paths.length} paths`);
+      if (fs.paths?.length)
+        parts.push(fs.paths.length === 1 ? fs.paths[0] : `${fs.paths.length} paths`);
       return parts.length ? parts.join(' on ') : 'Unrestricted access';
     }
     case 'shell': {

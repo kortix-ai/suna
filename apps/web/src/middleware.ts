@@ -1,6 +1,7 @@
-import { locales, type Locale } from '@/i18n/config';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { type Locale, locales } from '@/i18n/config';
+import { parseLastProjectCookie } from '@/lib/home/last-project-cookie';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 // Route tables + their matchers live in lib/routing/route-tables so they can be
 // unit-tested — the desktop allowlist especially, which is the only thing
 // keeping the marketing site out of the desktop window.
@@ -12,7 +13,6 @@ import {
   isStaticPublicRoute,
   supportsMarkdownNegotiation,
 } from '@/lib/routing/route-tables';
-import { parseLastProjectCookie } from '@/lib/home/last-project-cookie';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
@@ -274,7 +274,10 @@ export async function middleware(request: NextRequest) {
       /invalid.*(jwt|token)/i.test(message)
     ) {
       for (const { name } of request.cookies.getAll()) {
-        if (name === KORTIX_SUPABASE_AUTH_COOKIE || name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)) {
+        if (
+          name === KORTIX_SUPABASE_AUTH_COOKIE ||
+          name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
+        ) {
           supabaseResponse.cookies.delete(name);
         }
       }
@@ -309,7 +312,8 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,
   // same convention as the Supabase vars below.
   const disableLandingPage =
-    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE || process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
+      process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   if (disableLandingPage) {
     const isMarketingContent = isSelfHostMarketingContent(pathname);
     if (isMarketingContent) {

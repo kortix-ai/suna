@@ -10,7 +10,7 @@
  * stay pure — no React, no implicit ambient state.
  */
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { type ReactNode, createContext, useContext } from 'react';
 
 export interface ProjectFilesContextValue {
   projectId: string;
@@ -29,9 +29,7 @@ export function ProjectFilesProvider({
   value: ProjectFilesContextValue;
   children: ReactNode;
 }) {
-  return (
-    <ProjectFilesContext.Provider value={value}>{children}</ProjectFilesContext.Provider>
-  );
+  return <ProjectFilesContext.Provider value={value}>{children}</ProjectFilesContext.Provider>;
 }
 
 /**
@@ -48,9 +46,7 @@ export function useProjectContext(): ProjectFilesContextValue | null {
 export function useProjectContextStrict(): ProjectFilesContextValue {
   const ctx = useContext(ProjectFilesContext);
   if (!ctx) {
-    throw new Error(
-      'useProjectContextStrict: <ProjectFilesProvider> is missing in the tree',
-    );
+    throw new Error('useProjectContextStrict: <ProjectFilesProvider> is missing in the tree');
   }
   return ctx;
 }
