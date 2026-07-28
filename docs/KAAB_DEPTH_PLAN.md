@@ -117,7 +117,9 @@ priority list.
 
 ## Phase 2 — finish the demo (it is the spec people copy)
 
-Done: `end_user_ref` stamping, charge-by-end-user.
+Done: `end_user_ref` stamping, charge-by-end-user, and a session list scoped to
+the signed-in end-user (forced server-side — the browser cannot ask for another
+end-user's list, and an unfiltered request no longer returns everybody's).
 
 Remaining, in order of what teaches the most:
 
@@ -136,6 +138,18 @@ Remaining, in order of what teaches the most:
    get wrong.
 6. **Per-end-user concurrency cap** — currently `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT`
    defaults to 0 (off) and is set in no chart, so it is dark everywhere.
+
+## Shipped since this plan was written
+
+- **Session list filters by `end_user_ref`** (indexed, server-side), so a wrapper
+  no longer pulls the whole project to find one customer — and the demo scopes
+  its list to the signed-in end-user rather than showing everyone's.
+- **Mid-session agent switch re-mints the token grant.** Connectors and Kortix
+  CLI actions now follow the agent that actually runs; secrets keep refusing the
+  switch, for the reason that difference exists (secrets are already in the box).
+- **Executor tokens are revoked when their sandbox is gone.** They had no
+  expiry and were exempt from idle-revoke, so every session ever run left a live
+  bearer behind.
 
 ## Phase 3 — prove it, don't assert it
 

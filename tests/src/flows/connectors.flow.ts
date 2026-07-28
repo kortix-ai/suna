@@ -82,13 +82,16 @@ flow(
   'CONN-5',
   {
     domain: 'connectors',
+    // This flow mutates kortix.yaml. Run it after the parallel lanes so it can
+    // reuse the shared managed repository without racing read-only flows.
+    global: true,
     routes: [
       'GET /v1/executor/projects/:projectId/policies',
       'PUT /v1/executor/projects/:projectId/policies',
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.sharedProject();
     await ctx.step('read policies → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

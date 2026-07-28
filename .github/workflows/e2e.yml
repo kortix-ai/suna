@@ -48,6 +48,20 @@ on:
         required: false
       KE2E_DATABASE_URL:
         required: false
+      STAGING_SUPABASE_URL:
+        required: false
+      STAGING_SUPABASE_ANON_KEY:
+        required: false
+      STAGING_SUPABASE_SERVICE_ROLE_KEY:
+        required: false
+      STAGING_DATABASE_URL:
+        required: false
+      STAGING_INTERNAL_SERVICE_KEY:
+        required: false
+      STAGING_STRIPE_SECRET_KEY:
+        required: false
+      STAGING_STRIPE_WEBHOOK_SECRET:
+        required: false
 
 concurrency:
   group: ke2e-${{ inputs.base_url || 'dev' }}
@@ -112,10 +126,10 @@ jobs:
           KE2E_API_URL: ${{ steps.target.outputs.base }}
           KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
           KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-          KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
-          KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
-          KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
-          KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+          KE2E_SUPABASE_URL: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_SUPABASE_URL || secrets.KE2E_SUPABASE_URL }}
+          KE2E_SUPABASE_ANON_KEY: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_SUPABASE_ANON_KEY || secrets.KE2E_SUPABASE_ANON_KEY }}
+          KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY || secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
+          KE2E_DATABASE_URL: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_DATABASE_URL || secrets.KE2E_DATABASE_URL }}
 
       - name: Run ke2e
         run: |
@@ -129,11 +143,14 @@ jobs:
           KE2E_LIVE_CONFIRM: "ci"
           KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
           KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-          KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
-          KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
-          KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
+          KE2E_SUPABASE_URL: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_SUPABASE_URL || secrets.KE2E_SUPABASE_URL }}
+          KE2E_SUPABASE_ANON_KEY: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_SUPABASE_ANON_KEY || secrets.KE2E_SUPABASE_ANON_KEY }}
+          KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY || secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
           KE2E_ADMIN_TOKEN: ${{ secrets.KE2E_ADMIN_TOKEN }}
-          KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+          KE2E_DATABASE_URL: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_DATABASE_URL || secrets.KE2E_DATABASE_URL }}
+          KE2E_INTERNAL_SERVICE_KEY: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_INTERNAL_SERVICE_KEY || '' }}
+          KE2E_STRIPE_SECRET_KEY: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_STRIPE_SECRET_KEY || '' }}
+          KE2E_STRIPE_WEBHOOK_SECRET: ${{ startsWith(inputs.base_url, 'https://staging-api.kortix.com/') && secrets.STAGING_STRIPE_WEBHOOK_SECRET || '' }}
 
       - name: Secret-leak guard on artifacts
         if: always()

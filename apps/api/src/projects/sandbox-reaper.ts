@@ -43,6 +43,7 @@ import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
 import { hasActiveExecutionLease } from './execution-lease';
 import { preserveEstablishedRuntime } from './runtime-identity';
+import { revokeSessionExecutorTokens } from '../repositories/account-tokens';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;
@@ -710,6 +711,7 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
     .select({
       sandboxId: sessionSandboxes.sandboxId,
       sessionId: sessionSandboxes.sessionId,
+      accountId: sessionSandboxes.accountId,
       externalId: sessionSandboxes.externalId,
       metadata: sessionSandboxes.metadata,
       status: sessionSandboxes.status,
@@ -720,6 +722,15 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
   if (!row) return false;
   if (!row.externalId) return false;
   await preserveEstablishedRuntime(row, 'provider_webhook_removed', now);
+  // The box is GONE at the provider — unlike an idle stop, nothing can wake it,
+  // so its executor token is now a bearer credential with no owner. Nothing
+  // else ever expires these (no expiresAt, exempt from PAT idle-revoke).
+  await revokeSessionExecutorTokens(row.sessionId, row.accountId).catch((err) =>
+    console.error(
+      `[reaper] FAILED to revoke executor tokens for removed sandbox ${externalId} (session ${row.sessionId}):`,
+      err,
+    ),
+  );
   invalidateProviderCache(externalId);
   return true;
 }

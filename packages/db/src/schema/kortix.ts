@@ -605,6 +605,11 @@ export const projectSessions = kortixSchema.table(
     // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
     // NULL, so it indexes only live backend sessions — a small fraction of the
     // table, and nothing at all for non-KaaB projects.
+    // Supports the KaaB "list this end-user's sessions" filter, which spans ALL
+    // statuses — the partial active-only index below cannot serve it.
+    index('idx_project_sessions_project_origin')
+      .on(table.projectId, table.originRef)
+      .where(sql`${table.originRef} is not null`),
     index('idx_project_sessions_account_origin_active')
       .on(table.accountId, table.originRef)
       .where(

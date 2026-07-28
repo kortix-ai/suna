@@ -121,6 +121,22 @@ Two things to know:
 
 The dashboard shows the same data under **Credits → Spend by end-user**.
 
+### List one end-user's sessions
+
+The same handle filters the session list, server-side:
+
+```bash
+curl -sS "$KORTIX_API_URL/projects/$PROJECT_ID/sessions?end_user_ref=your-app-user-123" \
+  -H "Authorization: Bearer $KORTIX_API_KEY"
+```
+
+```ts
+await kortix.project(projectId).sessions.list({ end_user_ref: 'your-app-user-123' });
+```
+
+Every status is included, so completed sessions come back too. The deprecated
+`origin_ref` spelling also works; sending both with different values is a `400`.
+
 ## 3. Bring each user's own connector
 
 Store a user's credential **once** through the connection-profile broker, get a
@@ -239,8 +255,9 @@ starting a second one. Replaying a key with a **different** body — different
 | `403` | `CONNECTOR_NOT_ASSIGNED` | The session's agent isn't granted a connector you named. **The first error most wrappers hit** — list the alias under that agent's `connectors:` in your manifest. |
 | `403` | `REQUIRE_CONNECTORS_INTERACTIVE_ONLY` | `require_connectors` is interactive-only. A backend key acts for no single person — bind an explicit `profile_id` with `connector_bindings`. |
 | `403` | `origin_override_forbidden` | A non-backend caller tried to set `end_user_ref` or `secrets`. |
+| `503` | `AGENT_SWITCH_GRANT_UNAPPLIED` | A mid-session agent switch was legal but its token re-mint could not be written. Retryable. |
 | `409` | `CONNECTOR_CONNECTION_REQUIRED` | Interactive only: the user hasn't connected their own account. The body names which connector. |
-| `409` | `END_USER_REF_CONFLICT` | You sent `end_user_ref` and the deprecated `origin_ref` with different values. |
+| `409` | `END_USER_REF_CONFLICT` | You sent `end_user_ref` and the deprecated `origin_ref` with different values. On session **create** it is a `409`; on the session **list** filter it is a `400`. |
 | `409` | `IDEMPOTENCY_KEY_CONFLICT` | The key collided with a different operation. Unlike the other idempotency errors, the fix is a **higher-entropy key** — the uniqueness index is global. |
 | `429` | `concurrent_session_limit` / `per_origin_session_limit` | Account-wide, or per-end-user when the operator enables it. Retry with backoff. |
 | `402` | `subscription_required` / `insufficient_credits` | Billing — not retryable without operator action. |
@@ -281,8 +298,13 @@ Each message names the agent that runs it. A switch to an agent with a
 and **retrying cannot succeed**, because re-scoping cannot un-read what the
 session already loaded. Offer a new session, not a retry.
 
-Note the current limitation: a switch re-scopes *secrets* but not *connectors* —
-the sandbox token's connector grant is minted once from the create-time agent.
+A switch that changes only **connectors** or **Kortix CLI actions** is allowed
+and *re-mints* the session token: the new agent runs with exactly the grant its
+own manifest entry declares. Those gates check the token at call time, so
+re-pointing it works — unlike secrets, which are already in the box. If the
+re-mint cannot be written the prompt is refused (`503
+AGENT_SWITCH_GRANT_UNAPPLIED`) rather than run under the previous agent's
+authority.
 
 ## Isolation between your end-users
 

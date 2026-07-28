@@ -313,10 +313,28 @@ an opaque string you choose; Kortix never resolves it to a login.
   about its value.
 - **It resolves nothing.** It does not pull that user's connectors or secrets —
   pass those explicitly (`connector_bindings`, `secrets`).
-- **It does not list sessions.** No endpoint filters sessions by `end_user_ref`, so
-  "show me this end-user's sessions" still needs your own mapping.
 
-**What it DOES drive — metering and caps:**
+**What it DOES drive — listing, metering and caps:**
+
+```
+GET /v1/projects/{projectId}/sessions?end_user_ref=user-123
+```
+
+Returns only the sessions started for that end-user, filtered server-side — you
+do not have to pull the whole project and filter yourself, and the response never
+contains another end-user's rows. It spans every status, so finished sessions
+come back too. In the SDK:
+
+```ts
+await kortix.project(projectId).sessions.list({ end_user_ref: 'user-123' });
+```
+
+The deprecated `?origin_ref=` spelling works too. Sending both with *different*
+values is refused (`400 END_USER_REF_CONFLICT`) rather than one silently winning;
+sending both with the same value is fine. A blank handle is a `400`, not
+"list everything".
+
+**Metering and caps:**
 
 ```
 GET /v1/usage?end_user_ref=user-123     # that end-user's spend (totals + breakdown)
@@ -426,6 +444,11 @@ await s.send(prompt);
 - **Nothing widens.** `secrets` only narrows within the agent's grant;
   `connector_bindings` credentials are broker-resolved server-side and never
   enter the sandbox.
+- **A session's token dies with its sandbox.** The executor token injected into a
+  sandbox is revoked when the session is deleted or the provider reports the box
+  removed — so an exfiltrated token stops working instead of outliving the
+  session that justified it. An *idle stop* deliberately does not revoke: the box
+  can be woken and is still the same container, holding the same token.
 
 See also the runnable, end-to-end version of this flow —
 [`packages/sdk/examples/09-kaab-backend-wrapper.ts`](../packages/sdk/examples/09-kaab-backend-wrapper.ts)
@@ -506,12 +529,24 @@ before.
 | `runtime_context` | **no** | Create-only. |
 | `end_user_ref` | **no** | Create-only, and it is what usage attribution keys on. |
 
-**Known limitation.** A mid-session agent switch re-scopes *secrets* but not
-*connectors*: the in-sandbox token's grant is minted once from the create-time
-agent and is not re-minted. A switched agent therefore keeps the boot agent's
-connector authority. Operators who need per-agent connector governance enforced
-on switch can set `KORTIX_ENFORCE_SESSION_AGENT_LOCK=1`, which refuses the
-switch outright.
+**A mid-session agent switch is governed, and the two halves are governed
+differently — on purpose.**
+
+- **Connectors and Kortix CLI actions are re-minted.** The switched-to agent's
+  own grant is written onto the session token before the prompt runs, so it
+  reaches exactly the connectors its manifest entry declares. These gates read
+  the token at *call* time, so re-pointing it re-scopes every subsequent call.
+- **Secrets refuse the switch** (`409 AGENT_SWITCH_REQUIRES_NEW_SESSION`) when
+  the two agents declare different `secrets`. There is nothing to re-scope: by
+  the time the switch is visible, the first agent's secrets are already in the
+  sandbox's env file, in every shell it spawned, and in its own context.
+  Narrowing later cannot un-read them. Agents with the *same* secrets grant
+  switch freely.
+
+If the re-mint cannot be applied, the prompt is refused with
+`503 AGENT_SWITCH_GRANT_UNAPPLIED` rather than run under the previous agent's
+authority. Operators who want *any* agent change refused, regardless of grants,
+can still set `KORTIX_ENFORCE_SESSION_AGENT_LOCK=1`.
 
 ## Session isolation between your end-users
 

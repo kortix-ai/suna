@@ -282,3 +282,18 @@ test('stopProjectSession POSTs to /stop', async () => {
   expect(last().method).toBe('POST');
   expect(result.status).toBe('stopped');
 });
+
+test('listProjectSessions filters by end_user_ref, URL-encoding the handle', async () => {
+  // A wrapper's end-user handle is opaque — it can contain anything, including
+  // characters that would otherwise break out of the query string.
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { end_user_ref: 'user@acme.com' });
+  expect(last().url).toContain('/projects/P1/sessions?end_user_ref=user%40acme.com');
+});
+
+test('listProjectSessions combines scope and end_user_ref', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { scope: 'project', end_user_ref: 'u-1' });
+  expect(last().url).toContain('scope=project');
+  expect(last().url).toContain('end_user_ref=u-1');
+});

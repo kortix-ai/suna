@@ -8,6 +8,10 @@ import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
 } from '../../projects/lib/secret-grant';
+import {
+  SessionGrantRemintError,
+  remintGrantForAgentSwitch,
+} from '../../projects/lib/session-token-grant';
 import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
 import {
   captureTitleAfterRuntimeEvent,
@@ -424,6 +428,17 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
   // We could not establish what this agent may read. 503 rather than 502: the
   // sandbox is fine, our ability to VERIFY entitlement is what failed, and
   // retrying is the correct client response.
+  // The switch was legal but we could not rewrite the token's grant to match the
+  // agent now running. 503 for the same reason as above — and refusing is the
+  // point: forwarding would run the new agent against the OLD agent's connector
+  // and CLI grants, which is exactly the escalation the re-mint closes.
+  if (err instanceof SessionGrantRemintError) {
+    return jsonProxyError(
+      { error: err.message, code: 'AGENT_SWITCH_GRANT_UNAPPLIED' },
+      503,
+      origin,
+    );
+  }
   if (err instanceof SecretGrantResolutionError) {
     return jsonProxyError(
       { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
@@ -747,6 +762,18 @@ export async function forwardToSandbox(
             // The secret grant is resolved from the agent this prompt actually
             // runs, not the session's create-time column — see
             // projects/lib/secret-grant.ts.
+            requestedAgent,
+          });
+          // The env sync above already refused a secret-boundary switch, so
+          // reaching here means the switch is legal. Re-point the token's
+          // connector/CLI grant at the agent that will actually run — it was
+          // frozen at mint from the BOOT agent, and those gates read it at call
+          // time. Only on a real switch: an ordinary turn resolves to the
+          // session's own agent and skips the manifest read entirely.
+          await remintGrantForAgentSwitch({
+            projectId: record.projectId,
+            sessionId: record.sessionId,
+            sessionAgent,
             requestedAgent,
           });
         } catch (err) {

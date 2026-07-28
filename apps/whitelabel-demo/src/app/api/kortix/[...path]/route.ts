@@ -20,7 +20,12 @@
  */
 
 import { getRequestSession } from '@/server/auth';
-import { injectEndUserRef, isSessionCreate } from '@/server/end-user';
+import {
+  injectEndUserRef,
+  isSessionCreate,
+  isSessionList,
+  scopeSessionListToEndUser,
+} from '@/server/end-user';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
@@ -65,7 +70,15 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   if (!policy.allow) return jsonError(policy.status, policy.reason);
 
   const url = new URL(req.url);
-  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${url.search}`;
+  // The session list is scoped to the signed-in end-user server-side; without
+  // this the browser sees (and can ask for) every OTHER Lumen user's sessions.
+  let upstreamSearch = url.search;
+  if (isSessionList(req.method, upstreamPath)) {
+    const scoped = scopeSessionListToEndUser(url.search, session.userId);
+    if (scoped.action === 'reject') return jsonError(403, scoped.reason);
+    upstreamSearch = scoped.search;
+  }
+  const upstreamUrl = `${upstreamBase()}/${upstreamPath}${upstreamSearch}`;
 
   // Kortix-as-a-Backend: every upstream call carries ONE credential (the
   // wrapper's API key), so upstream cannot tell Lumen's users apart by itself.
