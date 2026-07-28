@@ -1,14 +1,14 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
 import { logger as appLogger } from '../lib/logger';
+import { db } from '../shared/db';
+import type { ProjectSessionRow } from './lib/serializers';
 import {
+  type OpencodeSessionLite,
   listSandboxOpencodeSessions,
   resolveRootSessionId,
-  type OpencodeSessionLite,
 } from './opencode-mapping';
-import type { ProjectSessionRow } from './lib/serializers';
 
 // Title-sync is best-effort enrichment for deferred post-prompt capture. It can
 // fan out one sandbox round-trip per active sandbox when an explicit maintenance
@@ -171,12 +171,14 @@ export async function syncRowFromSandbox(input: {
   const metadata = (input.row.metadata ?? {}) as Record<string, unknown>;
   const currentName = typeof metadata.name === 'string' ? metadata.name : null;
   const rawRootTitle = snapshots.find((entry) => entry.id === resolvedRootId)?.title ?? null;
-  // Only a REAL summarizer title may become (or replace) the name — the
-  // placeholder default must never be persisted, and a real title arriving
-  // later must replace a previously frozen placeholder.
+  // Only a REAL summarizer title may become the name — the placeholder default
+  // must never be persisted. A real title we already hold (e.g. one generated
+  // from the first prompt by session-title-generate, the authoritative source)
+  // WINS: the harness summarizer is a fallback and must never clobber it. So
+  // the harness title only fills in when the current name is empty/placeholder.
   const rootTitle = isPlaceholderOpencodeTitle(rawRootTitle) ? null : rawRootTitle;
-  const nextName =
-    rootTitle ?? (isPlaceholderOpencodeTitle(currentName) ? null : currentName);
+  const hasRealCurrentName = Boolean(currentName) && !isPlaceholderOpencodeTitle(currentName);
+  const nextName = hasRealCurrentName ? currentName : rootTitle;
   const pinChanged = input.row.opencodeSessionId !== resolvedRootId;
   const nameChanged = Boolean(nextName) && nextName !== currentName;
   const sessionsChanged = !sameSessions(metadata.opencode_sessions, scopedSessions);
@@ -202,12 +204,14 @@ export async function syncRowFromSandbox(input: {
     )
     .returning();
 
-  return updated ?? {
-    ...input.row,
-    opencodeSessionId: resolvedRootId,
-    metadata: nextMetadata,
-    updatedAt: new Date(),
-  };
+  return (
+    updated ?? {
+      ...input.row,
+      opencodeSessionId: resolvedRootId,
+      metadata: nextMetadata,
+      updatedAt: new Date(),
+    }
+  );
 }
 
 export async function syncOpenCodeTitlesForSessions(input: {

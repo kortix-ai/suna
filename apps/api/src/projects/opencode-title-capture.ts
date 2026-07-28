@@ -44,6 +44,11 @@ async function persistTitle(input: {
 }): Promise<void> {
   const metadata = (input.row.metadata ?? {}) as Record<string, unknown>;
   if (metadata.name === input.title) return;
+  // A real title we already hold (e.g. from session-title-generate, the
+  // authoritative first-prompt source) must never be clobbered by a harness
+  // summarizer title arriving later — only fill in over empty/placeholder.
+  const currentName = typeof metadata.name === 'string' ? metadata.name : null;
+  if (currentName && !isPlaceholderOpencodeTitle(currentName)) return;
   await db
     .update(projectSessions)
     .set({
@@ -143,12 +148,9 @@ export function captureTitleAfterRuntimeEvent(
   ) {
     return Promise.resolve();
   }
-  const key = [
-    input.projectId,
-    input.sessionId,
-    input.opencodeSessionId,
-    input.title.trim(),
-  ].join(':');
+  const key = [input.projectId, input.sessionId, input.opencodeSessionId, input.title.trim()].join(
+    ':',
+  );
   const existing = immediate.get(key);
   if (existing) return existing;
 

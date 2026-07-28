@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
+import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import {
   AgentSecretGrantMismatchError,
@@ -12,12 +13,15 @@ import {
   SessionGrantRemintError,
   remintGrantForAgentSwitch,
 } from '../../projects/lib/session-token-grant';
-import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
 import {
   captureTitleAfterRuntimeEvent,
   scheduleTitleCaptureAfterPrompt,
 } from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
+import {
+  extractFirstPromptText,
+  generateSessionTitleFromFirstPrompt,
+} from '../../projects/session-title-generate';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
@@ -756,10 +760,22 @@ export async function forwardToSandbox(
           body = bodyWithoutPromptAgent(body, incomingHeaders);
         }
         // A prompt is the one moment this sandbox is guaranteed awake, and
-        // OpenCode's summarizer titles the session seconds after the first
-        // reply — capture it on a deferred timer instead of hoping a session
-        // list gets requested while the box is still up (the frozen
-        // "New session - <date>" rows). Fire-and-forget; never blocks the prompt.
+        // Kortix-owned title: generate it ourselves from this first prompt via
+        // the internal gateway (the authoritative source). The OpenCode
+        // summarizer capture below stays as a fallback that never clobbers a
+        // real title. Both are fire-and-forget and never block the prompt.
+        if (userId) {
+          const firstPromptText = extractFirstPromptText(body, incomingHeaders);
+          if (firstPromptText) {
+            void generateSessionTitleFromFirstPrompt({
+              sessionId: record.sessionId,
+              projectId: record.projectId,
+              accountId: record.accountId,
+              userId,
+              firstPromptText,
+            });
+          }
+        }
         scheduleTitleCaptureAfterPrompt({
           sessionId: record.sessionId,
           projectId: record.projectId,
@@ -1040,6 +1056,18 @@ export async function forwardToSandbox(
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
       if (acpPromptSession && upstream.ok) {
+        if (userId) {
+          const firstPromptText = extractFirstPromptText(body, incomingHeaders);
+          if (firstPromptText) {
+            void generateSessionTitleFromFirstPrompt({
+              sessionId: record.sessionId,
+              projectId: record.projectId,
+              accountId: record.accountId,
+              userId,
+              firstPromptText,
+            });
+          }
+        }
         scheduleTitleCaptureAfterPrompt({
           sessionId: record.sessionId,
           projectId: record.projectId,

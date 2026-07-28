@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -34,7 +34,7 @@ const optStr = z.string().optional().default('');
 const optStrDefault = (def: string) => z.string().optional().default(def);
 
 /** Optional URL string with a custom default. Not required, just validated if present. */
-  const optUrl = (def: string) =>
+const optUrl = (def: string) =>
   z
     .string()
     .optional()
@@ -48,7 +48,7 @@ const optInt = (def: number) =>
     .optional()
     .default(String(def))
     .transform((v) => {
-      const n = parseInt(v, 10);
+      const n = Number.parseInt(v, 10);
       return Number.isNaN(n) ? def : n;
     });
 
@@ -143,6 +143,11 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Kortix-owned session titles: on a session's first prompt, generate the
+  // title ourselves via the internal LLM gateway (using the session's own
+  // model) instead of relying on the harness summarizer. On by default; the
+  // kill-switch falls the whole path back to the OpenCode title sync.
+  SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -888,6 +893,7 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
@@ -1303,7 +1309,7 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
 };
 
-export function getToolCost(toolName: string, resultCount: number = 0): number {
+export function getToolCost(toolName: string, resultCount = 0): number {
   const pricing = TOOL_PRICING[toolName];
   if (!pricing) {
     return 0.01;
