@@ -13,6 +13,7 @@ import { loadEnv, type Env } from "./env";
 import { log } from "./log";
 import { partitionParallelFlows } from "./lanes";
 import { mapWithConcurrency } from "./concurrency";
+import { ke2eRetryDelayMs } from "./client";
 import {
   summarize,
   type Assertion,
@@ -145,7 +146,7 @@ async function runOneFlow(
       // Never retry assertion failures — only infra signals.
       const retryable = !(err instanceof AssertionError) && (err as any)?.ke2eRetryable === true;
       if (!retryable || attempt >= maxAttempts) break;
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
     }
   }
   const reason = (lastError as Error)?.message ?? String(lastError);
