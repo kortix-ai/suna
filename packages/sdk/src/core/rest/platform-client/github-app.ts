@@ -12,6 +12,104 @@
 
 import { backendApi } from '../../http/api-client';
 
+export interface ManagedGitHubCandidate {
+  connection_id: string;
+  integration_id: string;
+  display_name: string;
+  installation_id: string | null;
+  owner: {
+    login: string;
+    type: 'Organization';
+  } | null;
+  status: 'connected' | 'needs_reconnect' | 'error';
+  selected: boolean;
+  repository_selection?: string;
+  permissions: Record<string, unknown>;
+}
+
+export interface ManagedGitHubConnectSession {
+  token: string;
+  expires_at: string;
+  connect_link: string;
+}
+
+export interface ManagedGitHubStatus {
+  configured: boolean;
+  owner: string | null;
+  slug: string | null;
+  installation_id: string | null;
+  source: 'nango' | 'db' | 'env' | 'pat' | 'none';
+  selected: ManagedGitHubCandidate | null;
+  candidates?: ManagedGitHubCandidate[];
+  reason?: string;
+}
+
+export async function getManagedGitHubStatus(): Promise<ManagedGitHubStatus> {
+  const response = await backendApi.get<ManagedGitHubStatus>('/platform/github-app/status', {
+    showErrors: false,
+  });
+  if (response.error) throw response.error;
+  if (!response.data) throw new Error('Managed GitHub status request failed');
+  return response.data;
+}
+
+export async function createManagedGitHubConnectSession(): Promise<ManagedGitHubConnectSession> {
+  const response = await backendApi.post<ManagedGitHubConnectSession>(
+    '/platform/github-app/connect-session',
+    {},
+    { showErrors: false },
+  );
+  if (response.error) throw response.error;
+  if (!response.data) throw new Error('Managed GitHub Connect session request failed');
+  return response.data;
+}
+
+export async function listManagedGitHubCandidates(): Promise<ManagedGitHubCandidate[]> {
+  const response = await backendApi.get<{ candidates: ManagedGitHubCandidate[] }>(
+    '/platform/github-app/candidates',
+    { showErrors: false },
+  );
+  if (response.error) throw response.error;
+  if (!response.data) throw new Error('Managed GitHub candidate request failed');
+  return response.data.candidates;
+}
+
+export async function selectManagedGitHubCandidate(
+  connectionId: string,
+): Promise<{ candidate: ManagedGitHubCandidate }> {
+  const response = await backendApi.post<{ candidate: ManagedGitHubCandidate }>(
+    '/platform/github-app/select',
+    { connection_id: connectionId },
+    { showErrors: false },
+  );
+  if (response.error) throw response.error;
+  if (!response.data) throw new Error('Managed GitHub candidate selection failed');
+  return response.data;
+}
+
+export async function createManagedGitHubReconnectSession(
+  connectionId: string,
+): Promise<ManagedGitHubConnectSession> {
+  const response = await backendApi.post<ManagedGitHubConnectSession>(
+    '/platform/github-app/reconnect-session',
+    { connection_id: connectionId },
+    { showErrors: false },
+  );
+  if (response.error) throw response.error;
+  if (!response.data) throw new Error('Managed GitHub reconnect session request failed');
+  return response.data;
+}
+
+export async function disconnectManagedGitHubConnection(): Promise<{ ok: true }> {
+  const response = await backendApi.delete<{ ok: true }>('/platform/github-app/connection', {
+    showErrors: false,
+  });
+  if (response.error) throw response.error;
+  if (!response.data) throw new Error('Managed GitHub disconnect request failed');
+  return response.data;
+}
+
+/** @deprecated Use `ManagedGitHubStatus`. */
 export interface GitHubAppStatus {
   configured: boolean;
   owner: string | null;
@@ -22,19 +120,15 @@ export interface GitHubAppStatus {
    *  KORTIX_GITHUB_APP_ (or GITHUB_APP_) env vars (the hosted deployment).
    *  'pat' = a personal/fine-grained access token, via `setGitHubAppPat` or
    *  `MANAGED_GIT_GITHUB_TOKEN`. 'none' = unconfigured. */
-  source: 'db' | 'env' | 'pat' | 'none';
+  source: 'nango' | 'db' | 'env' | 'pat' | 'none';
 }
 
-/** Whether a GitHub App is configured for this platform, and (if so) which one. */
+/** @deprecated Use `getManagedGitHubStatus`. */
 export async function getGitHubAppStatus(): Promise<GitHubAppStatus> {
-  const response = await backendApi.get<GitHubAppStatus>('/platform/github-app/status', {
-    showErrors: false,
-  });
-  if (response.error) throw response.error;
-  if (!response.data) throw new Error('GitHub App status request failed');
-  return response.data;
+  return getManagedGitHubStatus();
 }
 
+/** @deprecated Managed GitHub setup uses Nango Connect. */
 export interface GitHubAppManifestStartInput {
   /** GitHub org to own the new App; omit to create it under the caller's personal account. */
   org?: string;
@@ -50,6 +144,8 @@ export interface GitHubAppManifestStart {
 }
 
 /**
+ * @deprecated Use `createManagedGitHubConnectSession`.
+ *
  * Start the GitHub App "manifest" creation flow. The caller must submit a
  * same-origin-free POST form to `${github_create_url}?state=${state}` with a
  * single hidden `manifest` field set to `JSON.stringify(manifest)` — GitHub
@@ -79,6 +175,8 @@ export interface GitHubAppExistingInput {
 }
 
 /**
+ * @deprecated Managed GitHub setup uses Nango Connect.
+ *
  * "Paste an existing GitHub App" — an alternative to the manifest flow for an
  * operator who already has an App (created by hand, or shared across
  * instances). Validated against GitHub server-side before being stored.
@@ -109,6 +207,8 @@ export interface GitHubAppPatInput {
 }
 
 /**
+ * @deprecated Managed GitHub setup uses Nango Connect.
+ *
  * Configure managed-git via a personal/fine-grained access token instead of a
  * GitHub App. Validated against GitHub server-side before being stored.
  */
@@ -121,12 +221,7 @@ export async function setGitHubAppPat(input: GitHubAppPatInput): Promise<{ ok: t
   return response.data;
 }
 
-/** Disconnect managed-git entirely (clears both the App and PAT configuration). */
+/** @deprecated Use `disconnectManagedGitHubConnection`. */
 export async function disconnectGitHubApp(): Promise<{ ok: true }> {
-  const response = await backendApi.delete<{ ok: true }>('/platform/github-app', {
-    showErrors: false,
-  });
-  if (response.error) throw response.error;
-  if (!response.data) throw new Error('GitHub App disconnect request failed');
-  return response.data;
+  return disconnectManagedGitHubConnection();
 }

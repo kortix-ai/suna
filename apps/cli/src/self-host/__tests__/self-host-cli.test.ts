@@ -90,6 +90,11 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_PUBLIC_AUTH_METHODS).toBe('password');
     expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
     expect(env.DAYTONA_SERVER_URL).toBe('https://app.daytona.io/api');
+    expect(env.NANGO_BASE_URL).toBe('https://api.nango.dev');
+    expect(env.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID).toBe('');
+    expect(env.NANGO_GITHUB_MANAGED_INTEGRATION_ID).toBe('');
+    expect(env.GITHUB_CREDENTIAL_RESOLUTION).toBe('nango_only');
+    expect(env.KORTIX_GIT_PROXY).toBe('true');
 
     // Default channel is "stable" — a plain moving Docker tag, no signing/TUF.
     expect(env.KORTIX_CHANNEL).toBe('stable');
@@ -157,8 +162,13 @@ describe('kortix self-host (generic Docker CLI)', () => {
 
   test('--local-images (dev mode): sets KORTIX_IMAGE_PULL=never and forces auto-update off, even over --auto-update on', async () => {
     const { code } = await run([
-      'init', '--yes',
-      '--version', 'branch-local', '--local-images', '--auto-update', 'on',
+      'init',
+      '--yes',
+      '--version',
+      'branch-local',
+      '--local-images',
+      '--auto-update',
+      'on',
     ]);
     expect(code).toBe(0);
     const env = readEnv();
@@ -237,10 +247,15 @@ describe('kortix self-host (generic Docker CLI)', () => {
     const instanceDir = join(configRoot, instance);
     expect(readEnv().KORTIX_INSTANCE_DIR).toBe(instanceDir);
 
-    const compose = readCompose() as { services: Record<string, {
-      volumes?: string[];
-      working_dir?: string;
-    }> };
+    const compose = readCompose() as {
+      services: Record<
+        string,
+        {
+          volumes?: string[];
+          working_dir?: string;
+        }
+      >;
+    };
     const updater = compose.services['kortix-updater'];
     expect(updater?.working_dir).toBe('${KORTIX_INSTANCE_DIR}');
     expect(updater?.volumes).toContain('${KORTIX_INSTANCE_DIR}:${KORTIX_INSTANCE_DIR}');
@@ -372,7 +387,12 @@ describe('kortix self-host (generic Docker CLI)', () => {
 
     test('env set also works directly and survives a later plain init', async () => {
       await run(['init', '--yes']);
-      await run(['env', 'set', 'KORTIX_BILLING_INTERNAL_ENABLED=true', 'KORTIX_PUBLIC_BILLING_ENABLED=true']);
+      await run([
+        'env',
+        'set',
+        'KORTIX_BILLING_INTERNAL_ENABLED=true',
+        'KORTIX_PUBLIC_BILLING_ENABLED=true',
+      ]);
       expect(readEnv().KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
 
       const { code } = await run(['init', '--yes']);
@@ -387,8 +407,12 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const compose = readCompose();
       const frontendEnv = (compose.services.frontend as any).environment;
       expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
-      expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}');
-      expect(frontendEnv.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}');
+      expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe(
+        '${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}',
+      );
+      expect(frontendEnv.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe(
+        '${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}',
+      );
 
       // kortix-api gets these via `env_file: .env` (loads every .env key) —
       // no explicit `environment:` entry, since one would win over env_file
@@ -484,7 +508,8 @@ describe('kortix self-host (generic Docker CLI)', () => {
     test('a named tunnel (token + hostname) can be configured via env set, restarting only cloudflared when active', async () => {
       await run(['init', '--yes', '--tunnel', 'cloudflare']);
       const { code } = await run([
-        'env', 'set',
+        'env',
+        'set',
         'CLOUDFLARE_TUNNEL_TOKEN=faketoken',
         'CLOUDFLARE_TUNNEL_HOSTNAME=kortix-tunnel.example.com',
       ]);
@@ -514,8 +539,9 @@ describe('kortix self-host (generic Docker CLI)', () => {
     await run(['init', '--yes']);
 
     const fresh = await run(['doctor', '--json']);
-    const freshCheck = (JSON.parse(fresh.stdout).checks as Array<{ name: string; ok: boolean }>)
-      .find((c) => c.name === 'instance-dir');
+    const freshCheck = (
+      JSON.parse(fresh.stdout).checks as Array<{ name: string; ok: boolean }>
+    ).find((c) => c.name === 'instance-dir');
     expect(freshCheck?.ok).toBe(true);
 
     // Simulate the instance directory having moved on disk (or
@@ -533,8 +559,9 @@ describe('kortix self-host (generic Docker CLI)', () => {
     );
 
     const stale = await run(['doctor', '--json']);
-    const staleCheck = (JSON.parse(stale.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
-      .find((c) => c.name === 'instance-dir');
+    const staleCheck = (
+      JSON.parse(stale.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>
+    ).find((c) => c.name === 'instance-dir');
     expect(staleCheck?.ok).toBe(false);
     expect(staleCheck?.detail).toContain('stale');
   });
@@ -545,11 +572,19 @@ describe('kortix self-host (generic Docker CLI)', () => {
   // hook/callback URLs unreachable over the public internet). The dispatch
   // case is kept as a no-op alias (not removed outright) so a script that
   // still calls it doesn't hard-fail.
-  test('connect-github is a deprecated no-op alias: exits 0 and points at the dashboard instead of running the App-manifest flow', async () => {
+  test('connect-github points to Nango settings without requesting GitHub credentials', async () => {
     await run(['init', '--yes']);
     const { code, stdout } = await run(['connect-github']);
     expect(code).toBe(0);
     expect(stdout).toContain('deprecated');
+    expect(stdout).toContain('NANGO_API_KEY');
+    expect(stdout).toContain('NANGO_WEBHOOK_SIGNING_KEY');
+    expect(stdout).toContain('NANGO_GITHUB_ACCOUNT_INTEGRATION_ID');
+    expect(stdout).toContain('NANGO_GITHUB_MANAGED_INTEGRATION_ID');
+    expect(stdout).toContain(readEnv().PUBLIC_URL);
     expect(stdout.toLowerCase()).toContain('settings');
+    expect(stdout).not.toContain('KORTIX_GITHUB_APP_PRIVATE_KEY');
+    expect(stdout).not.toContain('MANAGED_GIT_GITHUB_TOKEN');
+    expect(stdout.toLowerCase()).not.toContain('personal access token');
   });
 });

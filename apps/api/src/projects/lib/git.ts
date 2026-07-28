@@ -4,8 +4,24 @@ import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
-import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
-import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
+import {
+  getBackend,
+  managedGithubInstallId,
+  managedGithubToken,
+  parseBasicAuthHeader,
+  type GitConnectionRef,
+  type GitScope,
+  type UpstreamGit,
+} from '../git-backends';
+import {
+  buildGitHubAppInstallUrl,
+  createInstallationToken,
+  getRepo,
+  getRepositoryBranch,
+  isGithubAppConfigured,
+  type GitHubAuthContext,
+  type GitHubRepo,
+} from '../github';
 import {
   type AccountGithubCredentialResolution,
   GitHubCredentialResolutionError,
@@ -13,8 +29,18 @@ import {
   withFreshAccountGithubRead,
 } from '../nango/account-credential';
 import { validateNangoRepositoryImport } from '../nango/repository-operations';
+import { managedGithubConnectionService } from '../../platform/services/managed-github-runtime';
+import type { ManagedGithubCredentialResolution } from '../../platform/services/managed-github-connection';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
+import {
+  accountGithubInstallationStates,
+  accountGithubInstallations,
+  accountMembers,
+  projectGitConnections,
+  projectGitCredentials,
+  projects,
+  sessionSandboxes,
+} from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -26,7 +52,14 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/dispatcher';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import {
+  PROJECT_GIT_AUTH_SECRET_NAME,
+  ProjectGitConnectionRow,
+  ProjectGitCredentialRow,
+  ProjectRow,
+  normalizeJsonObject,
+  normalizeString,
+} from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request. Each DB statement is a fast same-region roundtrip (~3ms measured,
@@ -55,7 +88,6 @@ export async function getAccountMembership(userId: string, accountId: string) {
   return loadAccountMembership(userId, accountId);
 }
 
-
 export async function listAccountGitHubInstallations(accountId: string) {
   return await db
     .select()
@@ -63,8 +95,10 @@ export async function listAccountGitHubInstallations(accountId: string) {
     .where(eq(accountGithubInstallations.accountId, accountId));
 }
 
-
-export async function getAccountGitHubInstallation(accountId: string, installationId?: string | null) {
+export async function getAccountGitHubInstallation(
+  accountId: string,
+  installationId?: string | null,
+) {
   const rows = await listAccountGitHubInstallations(accountId);
   if (installationId) {
     return rows.find((row) => row.installationId === installationId) ?? null;
@@ -72,8 +106,10 @@ export async function getAccountGitHubInstallation(accountId: string, installati
   return rows[0] ?? null;
 }
 
-
-export async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
+export async function createGitHubInstallationInstallUrl(
+  accountId: string,
+  userId: string,
+): Promise<string | null> {
   if (!isGithubAppConfigured()) return null;
   const nonce = randomUUID();
   const installUrl = buildGitHubAppInstallUrl(
@@ -92,7 +128,6 @@ export async function createGitHubInstallationInstallUrl(accountId: string, user
   return installUrl;
 }
 
-
 export async function consumeGitHubInstallationState(input: {
   accountId: string;
   userId: string;
@@ -106,13 +141,15 @@ export async function consumeGitHubInstallationState(input: {
       installationId: input.installationId,
       consumedAt: now,
     })
-    .where(and(
-      eq(accountGithubInstallationStates.stateNonce, input.nonce),
-      eq(accountGithubInstallationStates.accountId, input.accountId),
-      eq(accountGithubInstallationStates.userId, input.userId),
-      isNull(accountGithubInstallationStates.consumedAt),
-      gt(accountGithubInstallationStates.expiresAt, now),
-    ))
+    .where(
+      and(
+        eq(accountGithubInstallationStates.stateNonce, input.nonce),
+        eq(accountGithubInstallationStates.accountId, input.accountId),
+        eq(accountGithubInstallationStates.userId, input.userId),
+        isNull(accountGithubInstallationStates.consumedAt),
+        gt(accountGithubInstallationStates.expiresAt, now),
+      ),
+    )
     .returning({ stateNonce: accountGithubInstallationStates.stateNonce });
 
   if (updated.length === 1) return 'consumed';
@@ -123,12 +160,14 @@ export async function consumeGitHubInstallationState(input: {
       consumedAt: accountGithubInstallationStates.consumedAt,
     })
     .from(accountGithubInstallationStates)
-    .where(and(
-      eq(accountGithubInstallationStates.stateNonce, input.nonce),
-      eq(accountGithubInstallationStates.accountId, input.accountId),
-      eq(accountGithubInstallationStates.userId, input.userId),
-      gt(accountGithubInstallationStates.expiresAt, now),
-    ))
+    .where(
+      and(
+        eq(accountGithubInstallationStates.stateNonce, input.nonce),
+        eq(accountGithubInstallationStates.accountId, input.accountId),
+        eq(accountGithubInstallationStates.userId, input.userId),
+        gt(accountGithubInstallationStates.expiresAt, now),
+      ),
+    )
     .limit(1);
 
   if (state?.consumedAt && state.installationId === input.installationId) {
@@ -137,7 +176,6 @@ export async function consumeGitHubInstallationState(input: {
 
   return 'invalid';
 }
-
 
 export class GitHubInstallationRequiredError extends Error {
   constructor(public readonly accountId: string) {
@@ -157,12 +195,7 @@ async function resolveImportedDefaultBranch(
   try {
     await getRepositoryBranch({ owner: owner!, repo: repoName!, branch, auth });
   } catch (error) {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'status' in error &&
-      error.status === 404
-    ) {
+    if (typeof error === 'object' && error !== null && 'status' in error && error.status === 404) {
       throw new Error(`Selected branch "${branch}" does not exist in ${repo.full_name}`);
     }
     throw error;
@@ -170,8 +203,10 @@ async function resolveImportedDefaultBranch(
   return branch;
 }
 
-
-export async function resolveGitHubRepoAuth(accountId: string, installationId?: string | null): Promise<{
+export async function resolveGitHubRepoAuth(
+  accountId: string,
+  installationId?: string | null,
+): Promise<{
   auth: GitHubAuthContext;
   authSource: 'nango';
   installation: typeof accountGithubInstallations.$inferSelect;
@@ -179,12 +214,7 @@ export async function resolveGitHubRepoAuth(accountId: string, installationId?: 
   const installation = await getAccountGitHubInstallation(accountId, installationId);
   const resolvedInstallationId = installation?.installationId ?? installationId ?? '';
   if (!resolvedInstallationId) {
-    throw new GitHubCredentialResolutionError(
-      'github_connection_required',
-      409,
-      accountId,
-      '',
-    );
+    throw new GitHubCredentialResolutionError('github_connection_required', 409, accountId, '');
   }
   const resolved = await resolveAccountGithubCredential({
     accountId,
@@ -202,7 +232,6 @@ export async function resolveGitHubRepoAuth(accountId: string, installationId?: 
     installation: resolved.installation,
   };
 }
-
 
 export interface ProjectGitRemote {
   /** github | gitlab | bitbucket | generic */
@@ -223,8 +252,9 @@ export interface ProjectGitRemote {
   managed: boolean;
 }
 
-
-export async function getProjectGitConnection(projectId: string): Promise<ProjectGitConnectionRow | null> {
+export async function getProjectGitConnection(
+  projectId: string,
+): Promise<ProjectGitConnectionRow | null> {
   const [row] = await db
     .select()
     .from(projectGitConnections)
@@ -232,7 +262,6 @@ export async function getProjectGitConnection(projectId: string): Promise<Projec
     .limit(1);
   return row ?? null;
 }
-
 
 export async function upsertProjectGitConnection(input: {
   accountId: string;
@@ -295,7 +324,6 @@ export async function upsertProjectGitConnection(input: {
   return row;
 }
 
-
 export async function getProjectGitCredential(
   projectId: string,
   provider: string,
@@ -303,14 +331,15 @@ export async function getProjectGitCredential(
   const [row] = await db
     .select()
     .from(projectGitCredentials)
-    .where(and(
-      eq(projectGitCredentials.projectId, projectId),
-      eq(projectGitCredentials.provider, provider),
-    ))
+    .where(
+      and(
+        eq(projectGitCredentials.projectId, projectId),
+        eq(projectGitCredentials.provider, provider),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
-
 
 export async function upsertProjectGitCredential(input: {
   accountId: string;
@@ -340,7 +369,6 @@ export async function upsertProjectGitCredential(input: {
   return row;
 }
 
-
 export function emptyGitRemote(): ProjectGitRemote {
   return {
     provider: 'generic',
@@ -356,8 +384,10 @@ export function emptyGitRemote(): ProjectGitRemote {
   };
 }
 
-
-export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnectionRow | null): ProjectGitRemote {
+export function getProjectGitRemote(
+  project: ProjectRow,
+  connection?: ProjectGitConnectionRow | null,
+): ProjectGitRemote {
   if (connection) {
     return {
       provider: connection.provider,
@@ -426,7 +456,10 @@ export function resolveUpstreamUrl(project: ProjectRow, remote: ProjectGitRemote
 
 /** Provider-neutral connection ref consumed by git backends. */
 
-export function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote): GitConnectionRef {
+export function buildConnectionRef(
+  project: ProjectRow,
+  remote: ProjectGitRemote,
+): GitConnectionRef {
   return {
     provider: remote.provider,
     upstreamUrl: resolveUpstreamUrl(project, remote),
@@ -440,7 +473,6 @@ export function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote
     metadata: {},
   };
 }
-
 
 export async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
@@ -458,6 +490,7 @@ export interface ProjectNangoGitAuthDependencies {
     accountId: string;
     installationId: string;
   }): Promise<AccountGithubCredentialResolution>;
+  resolveManagedCredential?(): Promise<ManagedGithubCredentialResolution>;
 }
 
 export async function resolveNangoProjectGitAuth(
@@ -465,12 +498,13 @@ export async function resolveNangoProjectGitAuth(
     project: Pick<ProjectRow, 'projectId' | 'accountId' | 'repoUrl'>;
     remote: Pick<
       ProjectGitRemote,
-      'provider' | 'authMethod' | 'ref' | 'installationId' | 'repoOwner' | 'repoName'
+      'provider' | 'authMethod' | 'ref' | 'installationId' | 'repoOwner' | 'repoName' | 'managed'
     >;
     mode: 'nango_preferred' | 'nango_only';
   },
   dependencies: ProjectNangoGitAuthDependencies = {
     resolveAccountCredential: resolveAccountGithubCredential,
+    resolveManagedCredential: () => managedGithubConnectionService.resolveSelectedCredential(),
   },
 ): Promise<{
   auth: GitHubAuthContext;
@@ -499,6 +533,54 @@ export async function resolveNangoProjectGitAuth(
       input.project.accountId,
       installationId ?? '',
     );
+  }
+
+  if (input.remote.managed) {
+    const resolved = await (
+      dependencies.resolveManagedCredential ??
+      (() => managedGithubConnectionService.resolveSelectedCredential())
+    )();
+    if (
+      resolved.setting.connectionId !== connectionId ||
+      resolved.setting.installationId !== installationId ||
+      resolved.credential.connectionId !== connectionId ||
+      resolved.credential.installationId !== installationId
+    ) {
+      throw new GitHubCredentialResolutionError(
+        'github_reconnect_required',
+        409,
+        input.project.accountId,
+        installationId,
+      );
+    }
+
+    const parsedRepo = parseGitHubRepoUrl(input.project.repoUrl);
+    const owner = resolved.setting.owner.login;
+    if (
+      (input.remote.repoOwner && input.remote.repoOwner.toLowerCase() !== owner.toLowerCase()) ||
+      (parsedRepo && parsedRepo.owner.toLowerCase() !== owner.toLowerCase()) ||
+      (input.remote.repoName &&
+        parsedRepo &&
+        input.remote.repoName.toLowerCase() !== parsedRepo.repo.toLowerCase())
+    ) {
+      throw new GitHubCredentialResolutionError(
+        'github_provider_failed',
+        502,
+        input.project.accountId,
+        installationId,
+      );
+    }
+
+    return {
+      auth: {
+        token: resolved.credential.installationToken,
+        source: 'nango',
+        owner,
+        ownerType: resolved.setting.owner.type,
+        installationId,
+      },
+      authSource: 'nango',
+    };
   }
 
   const resolved = await dependencies.resolveAccountCredential({
@@ -568,14 +650,20 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     const pat = managedGithubToken();
     if (pat) {
       return {
-        auth: { token: pat, source: 'pat', owner: remote.repoOwner ?? undefined, ownerType: 'Organization' },
+        auth: {
+          token: pat,
+          source: 'pat',
+          owner: remote.repoOwner ?? undefined,
+          ownerType: 'Organization',
+        },
         authSource: 'pat',
       };
     }
 
     const installId = remote.installationId ?? managedGithubInstallId();
     if (installId && isGithubAppConfigured()) {
-      const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
+      const repoName =
+        remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
       try {
         const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
         return {
@@ -603,9 +691,9 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     if (!repo) return { authSource: 'none' };
     const installation = remote.installationId
       ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
-      : (await listAccountGitHubInstallations(project.accountId)).find(
+      : ((await listAccountGitHubInstallations(project.accountId)).find(
           (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
-        ) ?? null;
+        ) ?? null);
     if (!installation) return { authSource: 'none' };
     if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
       return { authSource: 'none' };
@@ -657,11 +745,12 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   return { authSource: 'none' };
 }
 
-
-export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & {
-  gitAuthToken: string | null;
-  gitAuthHeaders: Record<string, string>;
-}> {
+export async function withProjectGitAuth(project: ProjectRow): Promise<
+  ProjectRow & {
+    gitAuthToken: string | null;
+    gitAuthHeaders: Record<string, string>;
+  }
+> {
   const upstream = await resolveProjectUpstream(project, 'write');
   const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
   return {
@@ -700,7 +789,6 @@ export async function resolveProjectUpstream(
   const backend = getBackend(ref.provider);
   return backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
 }
-
 
 export type GitProxyAuth =
   | { ok: true; project: ProjectRow }
@@ -798,12 +886,14 @@ export async function authorizeGitProxy(
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
-        .where(and(
-          eq(sessionSandboxes.sandboxId, result.sandboxId),
-          eq(sessionSandboxes.projectId, projectId),
-          eq(sessionSandboxes.accountId, result.accountId),
-          inArray(sessionSandboxes.status, ['provisioning', 'active']),
-        ))
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, result.sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, result.accountId),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
+          ),
+        )
         .limit(1);
       if (!sandbox) {
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
@@ -821,7 +911,6 @@ export async function authorizeGitProxy(
 
   return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };
 }
-
 
 export async function resolveGitHubImport(input: {
   accountId: string;
@@ -842,15 +931,11 @@ export async function resolveGitHubImport(input: {
 
   const installations = await listAccountGitHubInstallations(input.accountId);
   const selectedInstallation = input.installationId
-    ? installations.find(
-        (candidate) => candidate.installationId === input.installationId,
-      ) ?? null
-    : installations.find(
-        (candidate) =>
-          candidate.ownerLogin.toLowerCase() === parsed.owner.toLowerCase(),
-      ) ?? null;
-  const resolvedInstallationId =
-    selectedInstallation?.installationId ?? input.installationId ?? '';
+    ? (installations.find((candidate) => candidate.installationId === input.installationId) ?? null)
+    : (installations.find(
+        (candidate) => candidate.ownerLogin.toLowerCase() === parsed.owner.toLowerCase(),
+      ) ?? null);
+  const resolvedInstallationId = selectedInstallation?.installationId ?? input.installationId ?? '';
   if (!resolvedInstallationId) {
     throw new GitHubCredentialResolutionError(
       'github_connection_required',
@@ -904,7 +989,6 @@ export async function resolveGitHubImport(input: {
   );
 }
 
-
 /**
  * Validate an existing GitHub repo using a caller-supplied PAT — the
  * App-free link path. The PAT just needs read+write on the repo; we verify
@@ -939,11 +1023,9 @@ export async function resolveGitHubImportWithPat(input: {
   }
   return {
     repo,
-    defaultBranch: await resolveImportedDefaultBranch(
-      repo,
-      input.defaultBranch,
-      { token: input.token },
-    ),
+    defaultBranch: await resolveImportedDefaultBranch(repo, input.defaultBranch, {
+      token: input.token,
+    }),
   };
 }
 

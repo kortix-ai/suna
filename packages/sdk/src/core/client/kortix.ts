@@ -25,6 +25,14 @@ import { getSessionHealth } from '../session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { setCurrentRuntime } from '../session/current-runtime';
 import {
+  createManagedGitHubConnectSession,
+  createManagedGitHubReconnectSession,
+  disconnectManagedGitHubConnection,
+  getManagedGitHubStatus,
+  listManagedGitHubCandidates,
+  selectManagedGitHubCandidate,
+} from '../rest/platform-client/github-app';
+import {
   clearSessionRuntime,
   getSessionRuntime,
   type SessionRuntimeEntry,
@@ -274,6 +282,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
   /** Deployment-wide flag: is the easy-connect (Pipedream) provider configured? Not project-scoped. */
   const connectStatus = P.getConnectStatus;
+
+  /** Platform-administrator operations. */
+  const platform = {
+    github: {
+      status: getManagedGitHubStatus,
+      createConnectSession: createManagedGitHubConnectSession,
+      listCandidates: listManagedGitHubCandidates,
+      selectCandidate: selectManagedGitHubCandidate,
+      createReconnectSession: createManagedGitHubReconnectSession,
+      disconnect: disconnectManagedGitHubConnection,
+    },
+  };
 
   /**
    * Public marketplace catalog browse (`/v1/marketplace/*`) — top-level and
@@ -753,7 +773,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           throw new ApiError(
             'Session sandbox has no external_id — cannot resolve its runtime URL',
             {
-            code: 'RUNTIME_UNAVAILABLE',
+              code: 'RUNTIME_UNAVAILABLE',
             },
           );
         }
@@ -1029,6 +1049,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     session,
     /** GitHub App installation + repository linking (account-scoped). */
     github,
+    /** Platform-administrator operations. */
+    platform,
     /** Billing read surface — credits/subscription/tier/transactions (not project-scoped). */
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */

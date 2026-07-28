@@ -1,93 +1,115 @@
 'use client';
 
-// Self-host: one coherent "managed-git" setup card covering all three ways
-// to configure it — create a GitHub App in-app (manifest flow, recommended),
-// paste in credentials for an App that already exists, or a personal/
-// fine-grained access token for the quickest path. No CLI, no SSH.
-//
-// On the hosted Kortix deployment (source 'env') the App is configured by
-// the operator via env vars — this card still renders there, but as a
-// read-only "Connected via environment" summary; the separate cloud
-// `GitHubConnectionCard` (per-account App installs) is what a hosted
-// customer actually uses, gated on `source === 'env'` at the call site in
-// accounts/[id]/page.tsx.
-
+import Nango, { type ConnectUIEvent } from '@nangohq/frontend';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, FileCode2, Github, KeyRound } from 'lucide-react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Check, Github, Link2, RefreshCw, RotateCcw, Unplug } from 'lucide-react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
-  type GitHubAppStatus,
-  disconnectGitHubApp,
-  getGitHubAppStatus,
-  setGitHubAppFromExisting,
-  setGitHubAppPat,
-  startGitHubAppManifest,
+  type ManagedGitHubCandidate,
+  type ManagedGitHubConnectSession,
+  createManagedGitHubConnectSession,
+  createManagedGitHubReconnectSession,
+  disconnectManagedGitHubConnection,
+  getManagedGitHubStatus,
+  listManagedGitHubCandidates,
+  selectManagedGitHubCandidate,
 } from '@kortix/sdk';
 
-export const GITHUB_APP_STATUS_KEY = ['github-app-status'];
+const GITHUB_APP_STATUS_KEY = ['managed-github-status'];
+const GITHUB_CANDIDATES_KEY = ['managed-github-candidates'];
 
-/** Shared so the accounts page can gate the cloud `GitHubConnectionCard` on
- *  the same status this card renders from — one query, one source of truth. */
-export function useGitHubAppStatus(enabled = true) {
+function useGitHubAppStatus(enabled = true) {
   return useQuery({
     queryKey: GITHUB_APP_STATUS_KEY,
-    queryFn: () => getGitHubAppStatus(),
+    queryFn: () => getManagedGitHubStatus(),
     staleTime: 10_000,
     enabled,
   });
 }
 
-/**
- * Build + submit a same-window POST form to GitHub's "create app from
- * manifest" endpoint. GitHub only accepts the manifest via a POST body field
- * (`manifest`, JSON-stringified) with `state` as a query param on the
- * action URL — a GET or a client-side redirect won't do, so this constructs
- * a real <form> in the DOM and submits it, which navigates the browser away
- * from the SPA to GitHub.
- */
-function submitManifestForm(
-  githubCreateUrl: string,
-  state: string,
-  manifest: Record<string, unknown>,
-) {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = `${githubCreateUrl}${githubCreateUrl.includes('?') ? '&' : '?'}state=${encodeURIComponent(state)}`;
-  form.style.display = 'none';
-  const field = document.createElement('input');
-  field.type = 'hidden';
-  field.name = 'manifest';
-  field.value = JSON.stringify(manifest);
-  form.appendChild(field);
-  document.body.appendChild(form);
-  form.submit();
+function connectEventError(event: Extract<ConnectUIEvent, { type: 'error' }>): Error {
+  return new Error(event.payload.errorMessage || 'GitHub authorization failed.');
 }
 
-type SetupMethod = 'manifest' | 'existing-app' | 'pat';
+function openConnectUi(session: ManagedGitHubConnectSession): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let connectUi: { close(): void } | null = null;
 
-function methodLabel(source: GitHubAppStatus['source']): string {
-  switch (source) {
-    case 'db':
-      return 'GitHub App';
-    case 'env':
-      return 'GitHub App (environment)';
-    case 'pat':
-      return 'Personal access token';
-    default:
-      return '';
+    const finish = (result: string | null, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      connectUi?.close();
+      if (error) reject(error);
+      else resolve(result);
+    };
+
+    try {
+      const nango = new Nango({ connectSessionToken: session.token });
+      connectUi = nango.openConnectUI({
+        detectClosedAuthWindow: true,
+        onEvent: (event) => {
+          if (event.type === 'connect') {
+            finish(event.payload.connectionId);
+            return;
+          }
+          if (event.type === 'error') {
+            finish(null, connectEventError(event));
+            return;
+          }
+          if (event.type === 'close') finish(null);
+        },
+      });
+    } catch (error) {
+      finish(
+        null,
+        error instanceof Error ? error : new Error('GitHub authorization could not open.'),
+      );
+    }
+  });
+}
+
+function isForbidden(error: unknown): boolean {
+  const candidate = error as {
+    status?: number;
+    response?: { status?: number };
+    message?: string;
+  } | null;
+  const status = candidate?.status ?? candidate?.response?.status;
+  return (
+    status === 401 ||
+    status === 403 ||
+    /\b(401|403|forbidden|unauthorized|admin access)\b/i.test(candidate?.message ?? '')
+  );
+}
+
+function candidateBadge(candidate: ManagedGitHubCandidate) {
+  if (candidate.selected && candidate.status === 'connected') {
+    return (
+      <Badge variant="success" size="sm">
+        Selected
+      </Badge>
+    );
   }
+  if (candidate.status === 'connected') {
+    return (
+      <Badge variant="secondary" size="sm">
+        Available
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="warning" size="sm">
+      Reconnect
+    </Badge>
+  );
 }
 
 interface GitHubAppSetupCardProps {
@@ -96,108 +118,66 @@ interface GitHubAppSetupCardProps {
 
 export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  const [org, setOrg] = useState('');
-  const [method, setMethod] = useState<SetupMethod>('manifest');
-  const [reconfiguring, setReconfiguring] = useState(false);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
-  const [appId, setAppId] = useState('');
-  const [appPrivateKey, setAppPrivateKey] = useState('');
-  const [appInstallationId, setAppInstallationId] = useState('');
-
-  const [patToken, setPatToken] = useState('');
-  const [patOwner, setPatOwner] = useState('');
-
   const statusQuery = useGitHubAppStatus(canManage);
-
-  // GitHub's install flow ends with the backend 302-ing back here with
-  // `?github=connected` once the app is created + installed. Surface it once,
-  // strip the param so a refresh doesn't re-toast, and refetch status so the
-  // connected view appears without a manual reload.
-  const githubReturnFlag = searchParams.get('github');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only reacts to the `github` flag — re-running on every searchParams/queryClient identity change (incl. our own replace() below) would loop.
-  useEffect(() => {
-    if (githubReturnFlag !== 'connected') return;
-    successToast('GitHub connected');
-    const next = new URLSearchParams(searchParams.toString());
-    next.delete('github');
-    const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
-  }, [githubReturnFlag]);
-
-  const startMutation = useMutation({
-    mutationFn: () => startGitHubAppManifest({ org: org.trim() || undefined }),
-    onSuccess: ({ github_create_url, manifest, state }) => {
-      // Guard: never POST a malformed manifest to GitHub — that's what produces
-      // the opaque "'url' wasn't supplied" error page. If the homepage url is
-      // missing, surface a clear message instead of bouncing to GitHub.
-      if (!manifest || typeof manifest.url !== 'string' || !manifest.url.startsWith('http')) {
-        // eslint-disable-next-line no-console
-        console.error('[github-app] manifest is malformed, not submitting:', manifest);
-        errorToast('GitHub setup failed', {
-          description:
-            'The app manifest came back without a valid homepage URL. Retry, or use the token option below.',
-        });
-        return;
-      }
-      // eslint-disable-next-line no-console
-      console.debug('[github-app] submitting manifest to GitHub:', manifest);
-      submitManifestForm(github_create_url, state, manifest);
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to start GitHub App setup'),
+  const candidatesQuery = useQuery({
+    queryKey: GITHUB_CANDIDATES_KEY,
+    queryFn: () => listManagedGitHubCandidates(),
+    staleTime: 5_000,
+    enabled: canManage,
   });
 
-  function onSetupSuccess(message: string) {
-    successToast(message);
-    setReconfiguring(false);
-    queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
-  }
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY }),
+      queryClient.invalidateQueries({ queryKey: GITHUB_CANDIDATES_KEY }),
+    ]);
+  };
 
-  const appMutation = useMutation({
-    mutationFn: () =>
-      setGitHubAppFromExisting({
-        appId: appId.trim(),
-        privateKey: appPrivateKey.trim(),
-        installationId: appInstallationId.trim(),
-      }),
-    onSuccess: () => {
-      setAppId('');
-      setAppPrivateKey('');
-      setAppInstallationId('');
-      onSetupSuccess('GitHub App connected');
+  const connectMutation = useMutation({
+    mutationFn: async () => openConnectUi(await createManagedGitHubConnectSession()),
+    onSuccess: async (connectionId) => {
+      if (!connectionId) return;
+      successToast('GitHub authorization added');
+      await refresh();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect the GitHub App'),
+    onError: (error: Error) => errorToast(error.message || 'GitHub authorization failed'),
   });
 
-  const patMutation = useMutation({
-    mutationFn: () => setGitHubAppPat({ token: patToken.trim(), owner: patOwner.trim() }),
-    onSuccess: () => {
-      setPatToken('');
-      setPatOwner('');
-      onSetupSuccess('GitHub token connected');
+  const reconnectMutation = useMutation({
+    mutationFn: async (connectionId: string) =>
+      openConnectUi(await createManagedGitHubReconnectSession(connectionId)),
+    onSuccess: async (connectionId) => {
+      if (!connectionId) return;
+      successToast('GitHub authorization refreshed');
+      await refresh();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect the token'),
+    onError: (error: Error) => errorToast(error.message || 'GitHub reconnect failed'),
+  });
+
+  const selectMutation = useMutation({
+    mutationFn: (connectionId: string) => selectManagedGitHubCandidate(connectionId),
+    onSuccess: async () => {
+      successToast('Managed GitHub connection selected');
+      await refresh();
+    },
+    onError: (error: Error) => errorToast(error.message || 'GitHub selection failed'),
   });
 
   const disconnectMutation = useMutation({
-    mutationFn: () => disconnectGitHubApp(),
-    onSuccess: () => {
-      successToast('GitHub disconnected');
+    mutationFn: () => disconnectManagedGitHubConnection(),
+    onSuccess: async () => {
       setConfirmDisconnectOpen(false);
-      setReconfiguring(false);
-      queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
+      successToast('Managed GitHub disconnected');
+      await refresh();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
+    onError: (error: Error) => errorToast(error.message || 'GitHub disconnect failed'),
   });
 
   if (!canManage) return null;
 
-  if (statusQuery.isLoading) {
+  if (statusQuery.isLoading || candidatesQuery.isLoading) {
     return (
       <div className="space-y-4">
         <div className="space-y-1.5">
@@ -209,311 +189,143 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     );
   }
 
-  // Account GitHub App connections render independently on the Git tab. Hide
-  // this server-level operator panel from account admins who are not platform
-  // admins. Other errors remain visible and retryable.
-  if (statusQuery.isError || !statusQuery.data) {
-    // Robust auth-failure detection: the SDK's ApiError carries `.status`, but
-    // depending on the failure path the code can sit on `.response.status` or
-    // only in the message — a non-admin must NEVER see the scary generic error.
-    const err = statusQuery.error as {
-      status?: number;
-      response?: { status?: number };
-      message?: string;
-    } | null;
-    const status = err?.status ?? err?.response?.status;
-    const forbidden =
-      status === 403 ||
-      status === 401 ||
-      /\b(403|401|forbidden|unauthorized|admin access)\b/i.test(err?.message ?? '');
-    if (forbidden) return null;
+  if (statusQuery.isError || candidatesQuery.isError) {
+    const error = statusQuery.error ?? candidatesQuery.error;
+    if (isForbidden(error)) return null;
     return (
       <div className="space-y-2">
         <p className="text-foreground text-sm font-medium">Managed GitHub</p>
-        <p className="text-muted-foreground text-sm">
-          Could not load the GitHub connection status.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
+        <p className="text-muted-foreground text-sm">Could not load the GitHub connection.</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
+          <RefreshCw className="size-4" />
           Retry
         </Button>
       </div>
     );
   }
 
-  const status: GitHubAppStatus = statusQuery.data;
-  const showSetup = !status.configured || reconfiguring;
+  const status = statusQuery.data;
+  const candidates = candidatesQuery.data ?? [];
+  const selected = status?.selected ?? null;
+  const busy =
+    connectMutation.isPending ||
+    reconnectMutation.isPending ||
+    selectMutation.isPending ||
+    disconnectMutation.isPending;
 
   return (
     <div className="space-y-4">
-      <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">Managed GitHub</p>
-        <p className="text-muted-foreground text-xs">
-          {status.configured
-            ? 'Powers repository creation and pushes for this instance.'
-            : 'Every Kortix project is a git repository the server creates and pushes to on your behalf — connect GitHub to enable projects.'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">Managed GitHub</p>
+          <p className="text-muted-foreground text-xs">
+            {selected
+              ? `${selected.owner?.login ?? selected.display_name} owns new managed repositories.`
+              : 'No managed GitHub connection is selected.'}
+          </p>
+        </div>
+        <Button type="button" size="sm" disabled={busy} onClick={() => connectMutation.mutate()}>
+          {connectMutation.isPending ? (
+            <Loading className="size-4" />
+          ) : (
+            <Github className="size-4" />
+          )}
+          Connect GitHub
+        </Button>
       </div>
 
-      {showSetup ? (
-        <div className="space-y-3">
-          {reconfiguring ? (
-            <div className="flex items-center justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setReconfiguring(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : null}
-
-          <Tabs value={method} onValueChange={(v) => setMethod(v as SetupMethod)}>
-            <TabsList type="underline" className="flex w-full items-center justify-start">
-              <TabsTrigger value="manifest" className="w-fit flex-none gap-1.5">
-                Create GitHub App
-                <Badge variant="highlight" size="xs">
-                  Recommended
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="existing-app" className="w-fit flex-none">
-                Paste an existing App
-              </TabsTrigger>
-              <TabsTrigger value="pat" className="w-fit flex-none">
-                Use a token
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="manifest" className="space-y-3 pt-4">
-              <p className="text-muted-foreground text-xs">
-                Creates a GitHub App owned by your org — scoped permissions, revocable anytime, no
-                long-lived token to leak. You&apos;ll pick which repos to grant at install.
-              </p>
-              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">GitHub organization (optional)</Label>
-                  <Input
-                    value={org}
-                    onChange={(e) => setOrg(e.target.value)}
-                    placeholder="e.g. acme-inc"
-                    disabled={startMutation.isPending}
-                    variant="popover"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    Leave blank to create the App under your personal GitHub account instead of an
-                    organization.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={startMutation.isPending}
-                  onClick={() => startMutation.mutate()}
-                >
-                  {startMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : (
-                    <Github className="size-4" />
-                  )}
-                  {startMutation.isPending ? 'Redirecting to GitHub' : 'Create GitHub App'}
-                </Button>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="existing-app" className="space-y-3 pt-4">
-              <p className="text-muted-foreground text-xs">
-                Already have a GitHub App — created by hand, or shared from another instance? Paste
-                its credentials and installation below.
-              </p>
-              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">App ID</Label>
-                  <Input
-                    value={appId}
-                    onChange={(e) => setAppId(e.target.value)}
-                    placeholder="123456"
-                    disabled={appMutation.isPending}
-                    variant="popover"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Private key (PEM)</Label>
-                  <Textarea
-                    value={appPrivateKey}
-                    onChange={(e) => setAppPrivateKey(e.target.value)}
-                    placeholder="-----BEGIN RSA PRIVATE KEY-----"
-                    disabled={appMutation.isPending}
-                    rows={5}
-                    className="resize-y font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Installation ID</Label>
-                  <Input
-                    value={appInstallationId}
-                    onChange={(e) => setAppInstallationId(e.target.value)}
-                    placeholder="987654"
-                    disabled={appMutation.isPending}
-                    variant="popover"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    From the App&apos;s installation URL:
-                    github.com/settings/installations/&lt;id&gt;
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={
-                    appMutation.isPending ||
-                    !appId.trim() ||
-                    !appPrivateKey.trim() ||
-                    !appInstallationId.trim()
-                  }
-                  onClick={() => appMutation.mutate()}
-                >
-                  {appMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : (
-                    <FileCode2 className="size-4" />
-                  )}
-                  {appMutation.isPending ? 'Connecting' : 'Connect App'}
-                </Button>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="pat" className="space-y-3 pt-4">
-              <p className="text-muted-foreground text-xs">
-                Quickest to set up, but a plain token rather than a scoped, revocable App. Create a
-                dedicated fine-grained token (GitHub → Settings → Developer settings → Fine-grained
-                tokens) — don&apos;t paste your everyday personal token.
-              </p>
-              <div className="bg-muted/50 rounded-md border px-3 py-2.5 text-xs">
-                <p className="mb-1 font-medium">Token settings that make this work</p>
-                <ul className="text-muted-foreground list-disc space-y-0.5 pl-4">
-                  <li>
-                    <span className="text-foreground">Resource owner</span>: the user or org that
-                    should own project repos — must match the owner field below.
-                  </li>
-                  <li>
-                    <span className="text-foreground">Repository access</span>: All repositories —
-                    Kortix creates a new repo per project, so a fixed repo list can&apos;t cover
-                    future ones.
-                  </li>
-                  <li>
-                    <span className="text-foreground">Permissions</span>: Administration — Read and
-                    write (create repos, manage collaborators) · Contents — Read and write (push,
-                    pull, branches). Metadata: Read is added automatically. Nothing else.
-                  </li>
-                  <li>
-                    Org tokens may need approval under the org&apos;s Settings → Third-party Access
-                    → Personal access tokens.
-                  </li>
-                </ul>
-              </div>
-              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Personal / fine-grained access token</Label>
-                  <Input
-                    type="password"
-                    value={patToken}
-                    onChange={(e) => setPatToken(e.target.value)}
-                    placeholder="github_pat_..."
-                    disabled={patMutation.isPending}
-                    variant="popover"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">GitHub owner (user or org)</Label>
-                  <Input
-                    value={patOwner}
-                    onChange={(e) => setPatOwner(e.target.value)}
-                    placeholder="e.g. acme-inc"
-                    disabled={patMutation.isPending}
-                    variant="popover"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={patMutation.isPending || !patToken.trim() || !patOwner.trim()}
-                  onClick={() => patMutation.mutate()}
-                >
-                  {patMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : (
-                    <KeyRound className="size-4" />
-                  )}
-                  {patMutation.isPending ? 'Connecting' : 'Connect token'}
-                </Button>
-              </div>
-            </TabsContent>
-          </Tabs>
+      {candidates.length === 0 ? (
+        <div className="border-border flex min-h-20 items-center border-y py-4">
+          <p className="text-muted-foreground text-sm">No GitHub connections available.</p>
         </div>
       ) : (
-        <div className="bg-popover flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3.5">
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-foreground truncate text-sm font-medium">
-                {status.owner ?? 'Managed GitHub'}
-              </span>
-              <Badge variant="success" size="sm">
-                Connected
-              </Badge>
-            </div>
-            <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-              <span>{methodLabel(status.source)}</span>
-              {status.slug ? (
-                <a
-                  href={`https://github.com/apps/${status.slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1"
-                >
-                  {status.slug}
-                  <ExternalLink className="size-3" />
-                </a>
-              ) : null}
-              {status.installation_id ? <span>Installation {status.installation_id}</span> : null}
-            </div>
-          </div>
-          {status.source === 'env' ? (
-            <span className="text-muted-foreground text-xs">Configured via environment</span>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setReconfiguring(true)}
+        <div className="divide-border divide-y border-y">
+          {candidates.map((candidate) => {
+            const reconnecting =
+              reconnectMutation.isPending &&
+              reconnectMutation.variables === candidate.connection_id;
+            const selecting =
+              selectMutation.isPending && selectMutation.variables === candidate.connection_id;
+            return (
+              <div
+                key={candidate.connection_id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
               >
-                Reconfigure
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                onClick={() => setConfirmDisconnectOpen(true)}
-              >
-                Disconnect
-              </Button>
-            </div>
-          )}
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-foreground truncate text-sm font-medium">
+                      {candidate.owner?.login ?? candidate.display_name}
+                    </span>
+                    {candidateBadge(candidate)}
+                  </div>
+                  <div className="text-muted-foreground flex flex-wrap gap-x-3 text-xs">
+                    <span>{candidate.display_name}</span>
+                    {candidate.installation_id ? (
+                      <span>Installation {candidate.installation_id}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!candidate.selected && candidate.status === 'connected' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => selectMutation.mutate(candidate.connection_id)}
+                    >
+                      {selecting ? <Loading className="size-4" /> : <Check className="size-4" />}
+                      Select
+                    </Button>
+                  ) : null}
+                  {candidate.selected || candidate.status !== 'connected' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => reconnectMutation.mutate(candidate.connection_id)}
+                    >
+                      {reconnecting ? (
+                        <Loading className="size-4" />
+                      ) : (
+                        <RotateCcw className="size-4" />
+                      )}
+                      Reconnect
+                    </Button>
+                  ) : null}
+                  {candidate.selected ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Disconnect managed GitHub"
+                      title="Disconnect"
+                      disabled={busy}
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setConfirmDisconnectOpen(true)}
+                    >
+                      <Unplug className="size-4" />
+                    </Button>
+                  ) : (
+                    <Link2 className="text-muted-foreground size-4" aria-hidden="true" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       <ConfirmDialog
         open={confirmDisconnectOpen}
         onOpenChange={setConfirmDisconnectOpen}
-        title="Disconnect GitHub?"
-        description="Projects that already have a repo keep working, but Kortix won't be able to create new managed repos until you reconnect."
+        title="Disconnect managed GitHub?"
+        description="Managed projects keep their repositories. Git operations stop until an administrator reconnects and selects a connection."
         confirmLabel="Disconnect"
         confirmVariant="destructive"
+        confirmIcon={<Unplug className="size-4" />}
         onConfirm={() => disconnectMutation.mutate()}
         isPending={disconnectMutation.isPending}
       />

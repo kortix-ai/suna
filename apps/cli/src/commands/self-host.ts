@@ -32,11 +32,7 @@ import {
   servicesForKeys,
   type SecretDef,
 } from '../self-host/secrets-registry.ts';
-import {
-  namedTunnelConfigured,
-  reachabilityMode,
-  resolveTunnelUrl,
-} from '../self-host/tunnel.ts';
+import { namedTunnelConfigured, reachabilityMode, resolveTunnelUrl } from '../self-host/tunnel.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const CHANNELS = ['stable', 'latest'] as const;
@@ -201,6 +197,13 @@ interface SelfHostEnv {
   SAML_ENABLED: string;
   SAML_PRIVATE_KEY: string;
   DAYTONA_API_KEY: string;
+  NANGO_API_KEY: string;
+  NANGO_WEBHOOK_SIGNING_KEY: string;
+  NANGO_BASE_URL: string;
+  NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: string;
+  NANGO_GITHUB_MANAGED_INTEGRATION_ID: string;
+  GITHUB_CREDENTIAL_RESOLUTION: string;
+  KORTIX_GIT_PROXY: string;
   KORTIX_GITHUB_APP_ID: string;
   KORTIX_GITHUB_APP_PRIVATE_KEY: string;
   KORTIX_GITHUB_APP_SLUG: string;
@@ -326,10 +329,14 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     throw new Error(`--tunnel only supports "cloudflare", got "${tunnelRaw}"`);
   }
   if (restrictAccountCreationOn && restrictAccountCreationOff) {
-    throw new Error('--restrict-account-creation and --no-restrict-account-creation are mutually exclusive');
+    throw new Error(
+      '--restrict-account-creation and --no-restrict-account-creation are mutually exclusive',
+    );
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
-    throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
+    throw new Error(
+      'instance must start with a letter and contain only letters, digits, dots, underscores, or dashes',
+    );
   }
   return {
     instance,
@@ -417,31 +424,48 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   writeInstanceConfig({
     schema_version: 1,
     instance: flags.instance,
-    ...(flags.release || existingConfig?.release ? { release: flags.release ?? existingConfig?.release } : {}),
+    ...(flags.release || existingConfig?.release
+      ? { release: flags.release ?? existingConfig?.release }
+      : {}),
   });
   renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
 }
 
-function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refreshed: boolean): void {
+function renderInitSummary(
+  instance: string,
+  dir: string,
+  env: SelfHostEnv,
+  refreshed: boolean,
+): void {
   process.stdout.write(`\n  ${C.bold}Kortix self-host${C.reset}\n\n`);
-  process.stdout.write(`${status.ok(refreshed ? 'Self-host config refreshed' : 'Self-host config created')}\n`);
+  process.stdout.write(
+    `${status.ok(refreshed ? 'Self-host config refreshed' : 'Self-host config created')}\n`,
+  );
   process.stdout.write(`  ${C.dim}instance  ${C.reset}${instance}\n`);
   process.stdout.write(`  ${C.dim}config    ${C.reset}${dir}\n\n`);
   process.stdout.write(`  ${C.dim}Dashboard ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}API       ${C.reset}${env.API_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`,
+  );
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
   renderIntegrationSummary(env);
-  process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use selfhost${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
+  process.stdout.write(
+    `  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`,
+  );
+  process.stdout.write(
+    `  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`,
+  );
+  process.stdout.write(
+    `  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use selfhost${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`,
+  );
   renderAfterStartNote();
 }
 
@@ -520,7 +544,14 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
   const up = compose(flags.instance, ['up', '-d']);
   if (up !== 0) return up;
-  const refreshApp = compose(flags.instance, ['up', '-d', '--force-recreate', '--no-deps', 'kortix-api', 'frontend']);
+  const refreshApp = compose(flags.instance, [
+    'up',
+    '-d',
+    '--force-recreate',
+    '--no-deps',
+    'kortix-api',
+    'frontend',
+  ]);
   if (refreshApp !== 0) return refreshApp;
 
   // Tunnel reachability mode only: the cloudflared quick-tunnel URL is
@@ -534,7 +565,9 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   registerLocalHost(DEFAULT_HOST_NAME, env.API_PUBLIC_URL, env.PUBLIC_URL);
   process.stdout.write(`${status.ok('Self-hosted Kortix is starting')}\n`);
   process.stdout.write(`${C.dim}  Dashboard: ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
-  process.stdout.write(`${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`);
+  process.stdout.write(
+    `${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`,
+  );
   renderIntegrationSummary(env);
   renderAfterStartNote();
   return 0;
@@ -548,17 +581,25 @@ async function selfHostRestart(flags: GlobalFlags): Promise<number> {
 
 function selfHostPlan(flags: GlobalFlags): number {
   if (!existsSync(composePath(flags.instance)) || !existsSync(envPath(flags.instance))) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   const code = compose(flags.instance, ['config', '--quiet']);
   if (code !== 0) return code;
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify({
-      instance: flags.instance,
-      valid: true,
-      compose_file: composePath(flags.instance),
-    }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          instance: flags.instance,
+          valid: true,
+          compose_file: composePath(flags.instance),
+        },
+        null,
+        2,
+      )}\n`,
+    );
   } else {
     process.stdout.write(`${status.ok(`Docker Compose plan is valid for ${flags.instance}`)}\n`);
     process.stdout.write(`${C.dim}No changes were applied.${C.reset}\n`);
@@ -587,7 +628,8 @@ function selfHostDoctor(flags: GlobalFlags): number {
     checks.push({
       name,
       ok: !result.error && result.status === 0,
-      detail: result.error?.message ?? (result.stdout || result.stderr).trim().split(/\r?\n/, 1)[0] ?? '',
+      detail:
+        result.error?.message ?? (result.stdout || result.stderr).trim().split(/\r?\n/, 1)[0] ?? '',
     });
   }
   if (existsSync(composePath(flags.instance)) && existsSync(envPath(flags.instance))) {
@@ -595,10 +637,14 @@ function selfHostDoctor(flags: GlobalFlags): number {
       'docker',
       [
         'compose',
-        '--project-name', composeProject(flags.instance),
-        '--env-file', envPath(flags.instance),
-        '-f', composePath(flags.instance),
-        'config', '--quiet',
+        '--project-name',
+        composeProject(flags.instance),
+        '--env-file',
+        envPath(flags.instance),
+        '-f',
+        composePath(flags.instance),
+        'config',
+        '--quiet',
       ],
       { cwd: instanceDir(flags.instance), encoding: 'utf8' },
     );
@@ -625,9 +671,10 @@ function selfHostDoctor(flags: GlobalFlags): number {
     checks.push({
       name: 'instance-dir',
       ok: recorded === actual,
-      detail: recorded === actual
-        ? actual
-        : `stale KORTIX_INSTANCE_DIR="${recorded}" (actual: ${actual}) — run \`kortix self-host configure\` (or any of init/start/update/env set) to reconcile`,
+      detail:
+        recorded === actual
+          ? actual
+          : `stale KORTIX_INSTANCE_DIR="${recorded}" (actual: ${actual}) — run \`kortix self-host configure\` (or any of init/start/update/env set) to reconcile`,
     });
   }
   const ok = checks.every((check) => check.ok);
@@ -636,7 +683,9 @@ function selfHostDoctor(flags: GlobalFlags): number {
   } else {
     process.stdout.write(`\n  ${C.bold}kortix self-host doctor${C.reset}\n\n`);
     for (const check of checks) {
-      process.stdout.write(`${check.ok ? status.ok(check.name) : status.err(check.name)} ${C.dim}${check.detail}${C.reset}\n`);
+      process.stdout.write(
+        `${check.ok ? status.ok(check.name) : status.err(check.name)} ${C.dim}${check.detail}${C.reset}\n`,
+      );
     }
     process.stdout.write('\n');
   }
@@ -679,7 +728,9 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
 
-  process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${env.KORTIX_VERSION}${C.reset}\n\n`);
+  process.stdout.write(
+    `  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${env.KORTIX_VERSION}${C.reset}\n\n`,
+  );
 
   // Ensure Supabase/Caddy/cloudflared (and any not-yet-created app-tier
   // container) exist without recreating anything already running —
@@ -698,15 +749,15 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // point at `status` for what the in-flight run's outcome ends up being.
   if (rollout === 75) {
     process.stderr.write(
-      `${status.err('Another update is already in progress (nightly scheduler or a concurrent `update`) — this run was skipped, not failed.')}\n`
-      + `${C.dim}Check the outcome once it finishes: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}\n`,
+      `${status.err('Another update is already in progress (nightly scheduler or a concurrent `update`) — this run was skipped, not failed.')}\n` +
+        `${C.dim}Check the outcome once it finishes: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}\n`,
     );
     return rollout;
   }
   if (rollout !== 0) {
     process.stderr.write(
-      `${status.err('The update did not complete cleanly.')}\n`
-      + `${C.dim}Details: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}${C.dim} (per-service outcome, drift, last error)${C.reset}\n`,
+      `${status.err('The update did not complete cleanly.')}\n` +
+        `${C.dim}Details: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}${C.dim} (per-service outcome, drift, last error)${C.reset}\n`,
     );
     return rollout;
   }
@@ -813,7 +864,7 @@ function warnIfReachabilityUnconfigured(env: SelfHostEnv, flags: GlobalFlags): v
   if (shouldPrompt(flags)) return;
   if (reachabilityMode(env) !== 'local') return;
   process.stdout.write(
-    `\n${status.warn('No reachability configured — agent sessions can\'t run (the cloud sandbox must reach your API).')}\n` +
+    `\n${status.warn("No reachability configured — agent sessions can't run (the cloud sandbox must reach your API).")}\n` +
       `  ${C.dim}Pass ${C.reset}${C.cyan}--domain <d>${C.reset}${C.dim} or ${C.reset}${C.cyan}--tunnel cloudflare${C.reset}${C.dim}.${C.reset}\n\n`,
   );
 }
@@ -835,7 +886,11 @@ function warnIfReachabilityUnconfigured(env: SelfHostEnv, flags: GlobalFlags): v
  * state, since it's not a selectable option here — so re-running `configure`
  * doesn't reset a prior answer. No-ops under --yes / non-TTY.
  */
-async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshInit = false): Promise<void> {
+async function promptReachability(
+  env: SelfHostEnv,
+  flags: GlobalFlags,
+  isFreshInit = false,
+): Promise<void> {
   if (!shouldPrompt(flags)) return;
 
   process.stdout.write(`\n  ${C.bold}Reachability${C.reset}\n`);
@@ -856,12 +911,21 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshI
   );
 
   if (mode === 'domain') {
-    env.KORTIX_DOMAIN = await prompt('Enter your domain (recommended — VPS + DNS; its A/AAAA record — and the API subdomain\'s — must already point at this box)', env.KORTIX_DOMAIN || '');
+    env.KORTIX_DOMAIN = await prompt(
+      "Enter your domain (recommended — VPS + DNS; its A/AAAA record — and the API subdomain's — must already point at this box)",
+      env.KORTIX_DOMAIN || '',
+    );
     env.KORTIX_REACHABILITY_MODE = 'domain';
     // Both have sane derived defaults (see normalizeFullSupabaseEnv) — asked
     // here, with the derived value pre-filled, so enter-to-accept just works.
-    env.KORTIX_API_DOMAIN = await prompt('API subdomain (its own A/AAAA record must also point here)', env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`);
-    env.KORTIX_ACME_EMAIL = await prompt('ACME email (renewal/expiry notices for the automatic TLS certificate)', env.KORTIX_ACME_EMAIL || `admin@${env.KORTIX_DOMAIN}`);
+    env.KORTIX_API_DOMAIN = await prompt(
+      'API subdomain (its own A/AAAA record must also point here)',
+      env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`,
+    );
+    env.KORTIX_ACME_EMAIL = await prompt(
+      'ACME email (renewal/expiry notices for the automatic TLS certificate)',
+      env.KORTIX_ACME_EMAIL || `admin@${env.KORTIX_DOMAIN}`,
+    );
   } else {
     env.KORTIX_DOMAIN = '';
     env.KORTIX_REACHABILITY_MODE = 'tunnel';
@@ -870,8 +934,14 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshI
       namedTunnelConfigured(env),
     );
     if (useNamed) {
-      env.CLOUDFLARE_TUNNEL_TOKEN = await promptSecret('Cloudflare tunnel token', env.CLOUDFLARE_TUNNEL_TOKEN);
-      env.CLOUDFLARE_TUNNEL_HOSTNAME = await prompt('Public hostname bound to that tunnel', env.CLOUDFLARE_TUNNEL_HOSTNAME || '');
+      env.CLOUDFLARE_TUNNEL_TOKEN = await promptSecret(
+        'Cloudflare tunnel token',
+        env.CLOUDFLARE_TUNNEL_TOKEN,
+      );
+      env.CLOUDFLARE_TUNNEL_HOSTNAME = await prompt(
+        'Public hostname bound to that tunnel',
+        env.CLOUDFLARE_TUNNEL_HOSTNAME || '',
+      );
     } else {
       env.CLOUDFLARE_TUNNEL_TOKEN = '';
       env.CLOUDFLARE_TUNNEL_HOSTNAME = '';
@@ -999,21 +1069,31 @@ function compareSemver(a: string, b: string): number {
  * concrete version that tag currently points to (by matching digests).
  * Best-effort — returns nulls offline.
  */
-async function fetchPublishedVersions(repo: string, trackingTag: string): Promise<{ latest: string | null; trackingResolved: string | null }> {
+async function fetchPublishedVersions(
+  repo: string,
+  trackingTag: string,
+): Promise<{ latest: string | null; trackingResolved: string | null }> {
   try {
-    const res = await fetch(`https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100&ordering=last_updated`);
+    const res = await fetch(
+      `https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100&ordering=last_updated`,
+    );
     if (!res.ok) return { latest: null, trackingResolved: null };
-    const data = (await res.json()) as { results?: Array<{ name: string; digest?: string; images?: Array<{ digest?: string }> }> };
+    const data = (await res.json()) as {
+      results?: Array<{ name: string; digest?: string; images?: Array<{ digest?: string }> }>;
+    };
     const rows = data.results ?? [];
     const digestOf = (name: string): string => {
       const r = rows.find((x) => x.name === name);
       return r?.digest || r?.images?.[0]?.digest || '';
     };
-    const semvers = rows.map((r) => r.name).filter(isSemverTag).sort((a, b) => compareSemver(b, a));
+    const semvers = rows
+      .map((r) => r.name)
+      .filter(isSemverTag)
+      .sort((a, b) => compareSemver(b, a));
     const latest = semvers[0] ?? null;
     const trackingDigest = digestOf(trackingTag);
     const trackingResolved = trackingDigest
-      ? semvers.find((v) => digestOf(v) && digestOf(v) === trackingDigest) ?? null
+      ? (semvers.find((v) => digestOf(v) && digestOf(v) === trackingDigest) ?? null)
       : null;
     return { latest, trackingResolved };
   } catch {
@@ -1024,27 +1104,38 @@ async function fetchPublishedVersions(repo: string, trackingTag: string): Promis
 async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   const configured = env.KORTIX_VERSION || DEFAULT_CHANNEL;
-  const { latest, trackingResolved } = await fetchPublishedVersions(DEFAULT_API_IMAGE_REPO, configured);
+  const { latest, trackingResolved } = await fetchPublishedVersions(
+    DEFAULT_API_IMAGE_REPO,
+    configured,
+  );
 
   // What you're actually running: a pinned semver is itself; a moving tag
   // (stable/latest) resolves to whatever version that tag currently points to.
-  const running = isSemverTag(configured) ? configured : trackingResolved ?? latest ?? configured;
+  const running = isSemverTag(configured) ? configured : (trackingResolved ?? latest ?? configured);
 
   process.stdout.write(`\n  ${C.bold}kortix self-host version${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
   const tagNote = !isSemverTag(configured) ? `${C.dim} (tracking :${configured})${C.reset}` : '';
   process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}${running}${C.reset}${tagNote}\n`);
-  process.stdout.write(`  ${C.dim}latest   ${C.reset}${latest ?? C.dim + 'unknown (offline?)' + C.reset}\n`);
-  process.stdout.write(`  ${C.dim}channel  ${C.reset}${env.KORTIX_CHANNEL || DEFAULT_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}latest   ${C.reset}${latest ?? C.dim + 'unknown (offline?)' + C.reset}\n`,
+  );
+  process.stdout.write(
+    `  ${C.dim}channel  ${C.reset}${env.KORTIX_CHANNEL || DEFAULT_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`,
+  );
 
   // Update hint: only meaningful for a semver pin with a known newer release.
   if (latest) {
     if (isSemverTag(running) && compareSemver(running, latest) < 0) {
-      process.stdout.write(`  ${C.yellow}update   ${C.reset}${running} ${C.dim}→${C.reset} ${C.green}${latest}${C.reset}${C.dim} available — run ${C.reset}${C.cyan}kortix self-host update${C.reset}\n`);
+      process.stdout.write(
+        `  ${C.yellow}update   ${C.reset}${running} ${C.dim}→${C.reset} ${C.green}${latest}${C.reset}${C.dim} available — run ${C.reset}${C.cyan}kortix self-host update${C.reset}\n`,
+      );
     } else if (isSemverTag(running)) {
       process.stdout.write(`  ${C.green}up to date${C.reset}\n`);
     }
@@ -1055,13 +1146,17 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
   process.stdout.write('\n');
-  process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (current channel) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
+  process.stdout.write(
+    `  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (current channel) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`,
+  );
   return 0;
 }
 
 function composeCommand(flags: GlobalFlags, args: string[]): number {
   if (!existsSync(composePath(flags.instance))) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   return compose(flags.instance, args);
@@ -1103,9 +1198,19 @@ function readUpdaterReport(instance: string): UpdaterReport | null {
   const result = spawnSync(
     'docker',
     [
-      'compose', '--project-name', composeProject(instance),
-      '--env-file', envPath(instance), '-f', composePath(instance),
-      'run', '--rm', '--no-deps', '-T', 'kortix-updater', 'report',
+      'compose',
+      '--project-name',
+      composeProject(instance),
+      '--env-file',
+      envPath(instance),
+      '-f',
+      composePath(instance),
+      'run',
+      '--rm',
+      '--no-deps',
+      '-T',
+      'kortix-updater',
+      'report',
     ],
     { cwd: instanceDir(instance), encoding: 'utf8' },
   );
@@ -1139,22 +1244,30 @@ const OUTCOME_LABEL: Record<string, (text: string) => string> = {
  */
 function selfHostStatus(flags: GlobalFlags): number {
   if (!existsSync(composePath(flags.instance)) || !existsSync(envPath(flags.instance))) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   const env = loadEnvWithDefaults(flags)!;
   const report = readUpdaterReport(flags.instance);
 
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify({
-      instance: flags.instance,
-      auto_update: env.KORTIX_AUTO_UPDATE === 'true',
-      update_time: env.KORTIX_UPDATE_TIME,
-      update_tz: env.KORTIX_UPDATE_TZ,
-      update: report?.status ?? null,
-      drift: report?.drift ?? null,
-      lock: report?.lock ?? null,
-    }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          instance: flags.instance,
+          auto_update: env.KORTIX_AUTO_UPDATE === 'true',
+          update_time: env.KORTIX_UPDATE_TIME,
+          update_tz: env.KORTIX_UPDATE_TZ,
+          update: report?.status ?? null,
+          drift: report?.drift ?? null,
+          lock: report?.lock ?? null,
+        },
+        null,
+        2,
+      )}\n`,
+    );
     compose(flags.instance, ['ps']);
     return 0;
   }
@@ -1165,7 +1278,9 @@ function selfHostStatus(flags: GlobalFlags): number {
   process.stdout.write('\n');
 
   if (!report) {
-    process.stdout.write(`  ${status.err('update status unavailable')}${C.dim} (kortix-updater not reachable — is the stack running?)${C.reset}\n\n`);
+    process.stdout.write(
+      `  ${status.err('update status unavailable')}${C.dim} (kortix-updater not reachable — is the stack running?)${C.reset}\n\n`,
+    );
     return 0;
   }
 
@@ -1174,25 +1289,37 @@ function selfHostStatus(flags: GlobalFlags): number {
   const schedule = `${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ}`;
 
   // One terse line, as specified: last update, outcome, next window.
-  process.stdout.write(`  ${C.dim}last update  ${C.reset}${label}${report.status.finished_at ? `${C.dim} (${report.status.finished_at})${C.reset}` : ''}${C.dim} — auto-update ${schedule}${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}last update  ${C.reset}${label}${report.status.finished_at ? `${C.dim} (${report.status.finished_at})${C.reset}` : ''}${C.dim} — auto-update ${schedule}${C.reset}\n`,
+  );
   if (report.status.from_version || report.status.to_version) {
-    process.stdout.write(`  ${C.dim}version      ${C.reset}${report.status.from_version || '?'} ${C.dim}→${C.reset} ${report.status.to_version || '?'}\n`);
+    process.stdout.write(
+      `  ${C.dim}version      ${C.reset}${report.status.from_version || '?'} ${C.dim}→${C.reset} ${report.status.to_version || '?'}\n`,
+    );
   }
   if (report.status.detail) {
     process.stdout.write(`  ${C.dim}detail       ${C.reset}${report.status.detail}\n`);
   }
   if (report.lock?.locked) {
-    process.stdout.write(`  ${C.yellow}update currently running${C.reset}${C.dim} (${report.lock.holder || 'unknown holder'})${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.yellow}update currently running${C.reset}${C.dim} (${report.lock.holder || 'unknown holder'})${C.reset}\n`,
+    );
   }
 
   const drifted = (report.drift ?? []).filter((entry) => entry.drift);
   if (drifted.length > 0) {
-    process.stdout.write(`\n  ${status.err('drift detected')}${C.dim} — running image doesn't match the rendered config:${C.reset}\n`);
+    process.stdout.write(
+      `\n  ${status.err('drift detected')}${C.dim} — running image doesn't match the rendered config:${C.reset}\n`,
+    );
     for (const entry of drifted) {
-      process.stdout.write(`    ${C.red}✗${C.reset} ${entry.service} ${C.dim}(expected ${entry.expected_image})${C.reset}\n`);
+      process.stdout.write(
+        `    ${C.red}✗${C.reset} ${entry.service} ${C.dim}(expected ${entry.expected_image})${C.reset}\n`,
+      );
     }
   } else if (report.drift) {
-    process.stdout.write(`\n  ${status.ok('no drift')}${C.dim} — running images match the rendered config${C.reset}\n`);
+    process.stdout.write(
+      `\n  ${status.ok('no drift')}${C.dim} — running images match the rendered config${C.reset}\n`,
+    );
   }
   process.stdout.write('\n');
   return 0;
@@ -1201,7 +1328,9 @@ function selfHostStatus(flags: GlobalFlags): number {
 function selfHostOpen(flags: GlobalFlags): number {
   const env = loadEnv(flags.instance);
   if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   openInBrowser(env.PUBLIC_URL);
@@ -1253,7 +1382,9 @@ function selfHostEnvLs(args: string[], flags: GlobalFlags): number {
   const show = takeFlagBool(args, ['--show']);
   const env = loadEnvWithDefaults(flags);
   if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   const groups = groupSecretsByCategory(env);
@@ -1285,10 +1416,14 @@ function selfHostEnvLs(args: string[], flags: GlobalFlags): number {
             label: group.label,
             secrets: group.rows.map((row) => ({
               ...row,
-              value: show ? env[row.key] ?? '' : undefined,
+              value: show ? (env[row.key] ?? '') : undefined,
             })),
           })),
-          other: otherKeys.map((key) => ({ key, value: env[key] ?? '', updater_managed: isUpdaterManagedKey(key) })),
+          other: otherKeys.map((key) => ({
+            key,
+            value: env[key] ?? '',
+            updater_managed: isUpdaterManagedKey(key),
+          })),
           missing_required: missing,
         },
         null,
@@ -1298,18 +1433,28 @@ function selfHostEnvLs(args: string[], flags: GlobalFlags): number {
     return 0;
   }
 
-  process.stdout.write(`\n  ${C.bold}kortix self-host env${C.reset}${show ? C.dim + '  (values revealed — do not paste this output anywhere public)' + C.reset : ''}\n`);
-  process.stdout.write(`  ${C.dim}All values live in ${C.reset}${envPath(flags.instance)}${C.dim}, read only by this instance's Docker services.${C.reset}\n`);
+  process.stdout.write(
+    `\n  ${C.bold}kortix self-host env${C.reset}${show ? C.dim + '  (values revealed — do not paste this output anywhere public)' + C.reset : ''}\n`,
+  );
+  process.stdout.write(
+    `  ${C.dim}All values live in ${C.reset}${envPath(flags.instance)}${C.dim}, read only by this instance's Docker services.${C.reset}\n`,
+  );
   for (const group of groups) {
     if (group.rows.length === 0) continue;
     process.stdout.write(`\n  ${C.white}${C.bold}${group.label}${C.reset}\n`);
     for (const row of group.rows) {
       const rawValue = env[row.key] ?? '';
       const displayValue = show ? rawValue : row.masked;
-      const setMark = row.configured ? `${C.green}set${C.reset}` : row.required ? `${C.red}unset${C.reset}` : `${C.dim}unset${C.reset}`;
+      const setMark = row.configured
+        ? `${C.green}set${C.reset}`
+        : row.required
+          ? `${C.red}unset${C.reset}`
+          : `${C.dim}unset${C.reset}`;
       const kindMark = row.kind === 'generated' ? 'generated' : 'operator';
       const rotatableMark = row.rotatable ? 'rotatable' : '-';
-      const managedNote = row.updaterManaged ? ` ${C.yellow}(updater-managed — use --tag/--channel/--release)${C.reset}` : '';
+      const managedNote = row.updaterManaged
+        ? ` ${C.yellow}(updater-managed — use --tag/--channel/--release)${C.reset}`
+        : '';
       process.stdout.write(
         `    ${pad(row.key, 34)} ${pad(row.required ? 'required' : 'optional', 9)} ${pad(setMark, 12)} ${pad(kindMark, 10)} ${pad(rotatableMark, 10)} ${C.dim}${displayValue || '(unset)'}${C.reset}${managedNote}\n`,
       );
@@ -1317,11 +1462,17 @@ function selfHostEnvLs(args: string[], flags: GlobalFlags): number {
   }
 
   if (otherKeys.length > 0) {
-    process.stdout.write(`\n  ${C.white}${C.bold}Other configuration${C.reset}${C.dim} — ports, URLs, flags (not secrets)${C.reset}\n`);
+    process.stdout.write(
+      `\n  ${C.white}${C.bold}Other configuration${C.reset}${C.dim} — ports, URLs, flags (not secrets)${C.reset}\n`,
+    );
     for (const key of otherKeys) {
       const value = env[key] ?? '';
-      const managedNote = isUpdaterManagedKey(key) ? ` ${C.yellow}(updater-managed — use --tag/--channel/--release)${C.reset}` : '';
-      process.stdout.write(`    ${pad(key, 34)} ${C.dim}${value || '(unset)'}${C.reset}${managedNote}\n`);
+      const managedNote = isUpdaterManagedKey(key)
+        ? ` ${C.yellow}(updater-managed — use --tag/--channel/--release)${C.reset}`
+        : '';
+      process.stdout.write(
+        `    ${pad(key, 34)} ${C.dim}${value || '(unset)'}${C.reset}${managedNote}\n`,
+      );
     }
   }
 
@@ -1329,7 +1480,9 @@ function selfHostEnvLs(args: string[], flags: GlobalFlags): number {
   if (missing.length > 0) {
     process.stdout.write(`  ${C.yellow}Missing required:${C.reset}\n`);
     for (const item of missing) process.stdout.write(`    ${C.dim}- ${C.reset}${item.label}\n`);
-    process.stdout.write(`\n  ${C.dim}Fix: ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host configure${C.reset}\n\n`);
+    process.stdout.write(
+      `\n  ${C.dim}Fix: ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host configure${C.reset}\n\n`,
+    );
   } else {
     process.stdout.write(`  ${status.ok('All required secrets are set.')}\n\n`);
   }
@@ -1348,7 +1501,11 @@ function refuseUpdaterManagedKeyMessage(key: string): string {
  *  name absent from the Compose file, which would otherwise turn e.g.
  *  `env set CLOUDFLARE_TUNNEL_TOKEN=...` (settable ahead of actually
  *  switching to tunnel mode) into a hard failure instead of a silent no-op. */
-function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readonly string[]): number {
+function restartServicesForKeys(
+  instance: string,
+  env: SelfHostEnv,
+  keys: readonly string[],
+): number {
   const domainConfigured = Boolean(env.KORTIX_DOMAIN?.trim());
   const tunnelActive = reachabilityMode(env) === 'tunnel';
   const services = servicesForKeys(keys).filter((service) => {
@@ -1357,11 +1514,15 @@ function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readon
     return true;
   });
   if (services.length === 0) {
-    process.stdout.write(`${C.dim}  not active in the current reachability mode — nothing to restart.${C.reset}\n\n`);
+    process.stdout.write(
+      `${C.dim}  not active in the current reachability mode — nothing to restart.${C.reset}\n\n`,
+    );
     return 0;
   }
   if (!composeHasRunningServices(instance)) {
-    process.stdout.write(`${C.dim}  stack isn't running — this takes effect on the next ${C.reset}${C.cyan}kortix self-host start${C.reset}\n\n`);
+    process.stdout.write(
+      `${C.dim}  stack isn't running — this takes effect on the next ${C.reset}${C.cyan}kortix self-host start${C.reset}\n\n`,
+    );
     return 0;
   }
   const code = compose(instance, ['up', '-d', '--force-recreate', '--no-deps', ...services]);
@@ -1373,7 +1534,9 @@ function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readon
 async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   if (args.length === 0) {
@@ -1391,7 +1554,9 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
       return 2;
     }
     if (!shouldPrompt(flags)) {
-      process.stderr.write(`${status.err(`"${key}" needs a value.`)} Pass ${C.cyan}${key}=VALUE${C.reset}, or run this interactively.\n`);
+      process.stderr.write(
+        `${status.err(`"${key}" needs a value.`)} Pass ${C.cyan}${key}=VALUE${C.reset}, or run this interactively.\n`,
+      );
       return 2;
     }
     env[key] = await promptSecret(key, env[key] ?? '');
@@ -1466,16 +1631,26 @@ function freshTokenFor(key: string): string {
  *  mirrors the comment on SECRET_DEFS in secrets-registry.ts. Anything
  *  `operator`-kind gets a generic "use env set" refusal instead. */
 const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
-  SECRET_KEY_BASE: 'internal Supabase-infra encryption key — rotating it would invalidate already-issued sessions.',
-  REALTIME_DB_ENC_KEY: 'internal Supabase Realtime encryption key — rotating it would leave existing encrypted state undecryptable.',
-  VAULT_ENC_KEY: 'Postgres pgsodium vault encryption key — rotating it would leave already-encrypted data undecryptable.',
-  PG_META_CRYPTO_KEY: 'internal pg-meta crypto key — rotating it would leave already-encrypted data undecryptable.',
-  LOGFLARE_PUBLIC_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
-  LOGFLARE_PRIVATE_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
-  SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
-  SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
-  DASHBOARD_USERNAME: 'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
-  SAML_PRIVATE_KEY: 'the SAML SP signing key — rotating it changes your SP identity and breaks every already-registered IdP until you re-register with them. Set a new one deliberately with `env set SAML_PRIVATE_KEY=<base64-der>` if you understand that tradeoff.',
+  SECRET_KEY_BASE:
+    'internal Supabase-infra encryption key — rotating it would invalidate already-issued sessions.',
+  REALTIME_DB_ENC_KEY:
+    'internal Supabase Realtime encryption key — rotating it would leave existing encrypted state undecryptable.',
+  VAULT_ENC_KEY:
+    'Postgres pgsodium vault encryption key — rotating it would leave already-encrypted data undecryptable.',
+  PG_META_CRYPTO_KEY:
+    'internal pg-meta crypto key — rotating it would leave already-encrypted data undecryptable.',
+  LOGFLARE_PUBLIC_ACCESS_TOKEN:
+    'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
+  LOGFLARE_PRIVATE_ACCESS_TOKEN:
+    'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
+  SUPABASE_ANON_KEY:
+    'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  SUPABASE_SERVICE_ROLE_KEY:
+    'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  DASHBOARD_USERNAME:
+    'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
+  SAML_PRIVATE_KEY:
+    'the SAML SP signing key — rotating it changes your SP identity and breaks every already-registered IdP until you re-register with them. Set a new one deliberately with `env set SAML_PRIVATE_KEY=<base64-der>` if you understand that tradeoff.',
 };
 
 function refuseRotateMessage(key: string, def: SecretDef | undefined): string {
@@ -1490,7 +1665,9 @@ function refuseRotateMessage(key: string, def: SecretDef | undefined): string {
 async function selfHostEnvRotate(args: string[], flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
 
@@ -1500,7 +1677,9 @@ async function selfHostEnvRotate(args: string[], flags: GlobalFlags): Promise<nu
     return 2;
   }
   if (!allGenerated && args.length !== 1) {
-    process.stderr.write(`${status.err('Usage: kortix self-host env rotate <KEY> | --all-generated')}\n`);
+    process.stderr.write(
+      `${status.err('Usage: kortix self-host env rotate <KEY> | --all-generated')}\n`,
+    );
     return 2;
   }
   const keys = allGenerated ? [...ROTATABLE_GENERATED_KEYS] : [args[0]!];
@@ -1560,7 +1739,9 @@ async function selfHostUninstall(_args: string[], flags: GlobalFlags): Promise<n
   const hasConfig = existsSync(composePath(flags.instance)) || existsSync(envPath(flags.instance));
 
   if (!hasConfig) {
-    process.stdout.write(`${C.dim}  Instance "${flags.instance}" has no config at ${dir} — nothing to uninstall.${C.reset}\n`);
+    process.stdout.write(
+      `${C.dim}  Instance "${flags.instance}" has no config at ${dir} — nothing to uninstall.${C.reset}\n`,
+    );
     return 0;
   }
 
@@ -1572,7 +1753,9 @@ async function selfHostUninstall(_args: string[], flags: GlobalFlags): Promise<n
     );
     const typed = await prompt(`Type the instance name (${flags.instance}) to confirm`, '');
     if (!confirmsUninstall(typed, flags.instance)) {
-      process.stderr.write(`\n${status.err('Instance name did not match — aborted, nothing was removed.')}\n`);
+      process.stderr.write(
+        `\n${status.err('Instance name did not match — aborted, nothing was removed.')}\n`,
+      );
       return 1;
     }
   } else if (!flags.yes) {
@@ -1587,7 +1770,9 @@ async function selfHostUninstall(_args: string[], flags: GlobalFlags): Promise<n
   // before the .env it was derived from is deleted out from under it.
   const env = loadEnv(flags.instance);
   const host = getHost(DEFAULT_HOST_NAME);
-  const hostMatchesThisInstance = Boolean(env && host && host.url && host.url === env.API_PUBLIC_URL);
+  const hostMatchesThisInstance = Boolean(
+    env && host && host.url && host.url === env.API_PUBLIC_URL,
+  );
 
   if (existsSync(composePath(flags.instance))) {
     const code = compose(flags.instance, uninstallComposeArgs());
@@ -1613,7 +1798,9 @@ async function selfHostUninstall(_args: string[], flags: GlobalFlags): Promise<n
 async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    process.stderr.write(
+      `${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`,
+    );
     return 1;
   }
   // Same ordering as `init`: reachability first (the decision that determines
@@ -1645,21 +1832,20 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   return 0;
 }
 
-/**
- * `kortix self-host connect-github` — DEPRECATED. The GitHub App manifest
- * flow it used to run never worked reliably from a local machine (GitHub rejects the
- * flow's hook/callback URLs when they aren't reachable over the public
- * internet: "Hook url is not supported because it isn't reachable over the
- * public Internet"), while the frontend's in-app GitHub connection flow
- * (Settings → Git) works everywhere the dashboard itself loads — including
- * from a local machine, since it's the browser (not this CLI) driving the OAuth
- * dance. Kept as a no-op alias, not removed outright, so an existing script
- * that calls it doesn't hard-fail; it prints where to go instead and exits 0.
- */
-async function selfHostConnectGithub(_args: string[], _flags: GlobalFlags): Promise<number> {
+/** Compatibility alias for the browser-based Nango setup flow. */
+async function selfHostConnectGithub(_args: string[], flags: GlobalFlags): Promise<number> {
+  const env = loadEnvWithDefaults(flags);
+  const dashboardUrl = env?.PUBLIC_URL ?? DEFAULT_PUBLIC_URL;
   process.stdout.write(
     `\n  ${C.yellow}kortix self-host connect-github is deprecated.${C.reset}\n` +
-      `  ${C.dim}GitHub (projects) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
+      `  ${C.dim}Configure Nango with these API environment values:${C.reset}\n` +
+      `  ${C.cyan}NANGO_API_KEY${C.reset}\n` +
+      `  ${C.cyan}NANGO_WEBHOOK_SIGNING_KEY${C.reset}\n` +
+      `  ${C.cyan}NANGO_BASE_URL${C.reset}\n` +
+      `  ${C.cyan}NANGO_GITHUB_ACCOUNT_INTEGRATION_ID${C.reset}\n` +
+      `  ${C.cyan}NANGO_GITHUB_MANAGED_INTEGRATION_ID${C.reset}\n` +
+      `  ${C.cyan}KORTIX_GIT_PROXY=true${C.reset}\n` +
+      `  ${C.dim}Then open ${C.reset}${C.cyan}${dashboardUrl}${C.reset}${C.dim} and select the managed connection in Settings > Git.${C.reset}\n\n`,
   );
   return 0;
 }
@@ -1679,13 +1865,19 @@ async function configureUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): Prom
   const channel = await selectFrom(
     'Channel to track (stable is recommended; latest is bleeding-edge)',
     CHANNELS,
-    isChannel(env.KORTIX_CHANNEL) ? env.KORTIX_CHANNEL as Channel : DEFAULT_CHANNEL,
+    isChannel(env.KORTIX_CHANNEL) ? (env.KORTIX_CHANNEL as Channel) : DEFAULT_CHANNEL,
   );
   env.KORTIX_CHANNEL = channel;
   if (!isSemverTag(env.KORTIX_VERSION)) applyImagesForTag(env, channel);
-  const updateTime = await prompt('Daily update time (HH:MM, 24h)', env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME);
+  const updateTime = await prompt(
+    'Daily update time (HH:MM, 24h)',
+    env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME,
+  );
   env.KORTIX_UPDATE_TIME = UPDATE_TIME_PATTERN.test(updateTime) ? updateTime : DEFAULT_UPDATE_TIME;
-  const updateTz = await prompt('Timezone for that time (IANA, e.g. UTC)', env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ);
+  const updateTz = await prompt(
+    'Timezone for that time (IANA, e.g. UTC)',
+    env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ,
+  );
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
@@ -1710,9 +1902,15 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
 
   const customize = await confirm('Change the update time/timezone?', false);
   if (!customize) return;
-  const updateTime = await prompt('Daily update time (HH:MM, 24h)', env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME);
+  const updateTime = await prompt(
+    'Daily update time (HH:MM, 24h)',
+    env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME,
+  );
   env.KORTIX_UPDATE_TIME = UPDATE_TIME_PATTERN.test(updateTime) ? updateTime : DEFAULT_UPDATE_TIME;
-  const updateTz = await prompt('Timezone (IANA, e.g. UTC)', env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ);
+  const updateTz = await prompt(
+    'Timezone (IANA, e.g. UTC)',
+    env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ,
+  );
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
@@ -1739,7 +1937,9 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
   const currentProvider = sandboxProviders(env)[0];
-  const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
+  const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(
+    currentProvider ?? '',
+  )
     ? (currentProvider as SandboxProviderChoice)
     : 'daytona';
   let provider: SandboxProviderChoice = defaultProvider;
@@ -1762,14 +1962,23 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
 
   if (provider === 'daytona') {
     env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
-    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+    env.DAYTONA_SERVER_URL = await prompt(
+      'Daytona server URL',
+      env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api',
+    );
     env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   } else if (provider === 'e2b') {
     env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
   } else if (provider === 'platinum') {
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
-    env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
-    env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
+    env.PLATINUM_API_URL = await prompt(
+      'Platinum API URL',
+      env.PLATINUM_API_URL || 'https://api.platinum.dev',
+    );
+    env.PLATINUM_TEMPLATE = await prompt(
+      'Platinum template (optional — leave blank for the platform default)',
+      env.PLATINUM_TEMPLATE,
+    );
   }
   // local-docker: no credentials to collect — the local Docker socket IS the
   // "account". writeCompose()/renderFullDockerCompose() wires the socket
@@ -1791,10 +2000,20 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     if (pdMode === 'configure') {
       env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
       env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
-      env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
+      env.PIPEDREAM_CLIENT_SECRET = await promptSecret(
+        'Pipedream client secret',
+        env.PIPEDREAM_CLIENT_SECRET,
+      );
       env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
-      env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
-      env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+      env.PIPEDREAM_ENVIRONMENT = await selectFrom(
+        'Pipedream environment',
+        ['development', 'production'] as const,
+        env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production',
+      );
+      env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret(
+        'Pipedream webhook secret (optional)',
+        env.PIPEDREAM_WEBHOOK_SECRET,
+      );
     }
   }
 
@@ -1833,7 +2052,10 @@ export function shouldPullImages(env: Record<string, string>): boolean {
 }
 
 export function sandboxProviders(env: Record<string, string>): string[] {
-  return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return (env.ALLOWED_SANDBOX_PROVIDERS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /** The key each sandbox provider needs to be considered "ready" — mirrors
@@ -1857,7 +2079,19 @@ export function sandboxProviderConfigured(env: Record<string, string>): boolean 
 
 /** Managed git provider configured? Required to create/CRUD projects. */
 export function gitProviderConfigured(env: Record<string, string>): boolean {
-  if (env.MANAGED_GIT_PROVIDER !== 'github') return false;
+  const resolutionMode = env.GITHUB_CREDENTIAL_RESOLUTION?.trim().toLowerCase();
+  const nango = !!(
+    env.NANGO_API_KEY?.trim() &&
+    env.NANGO_WEBHOOK_SIGNING_KEY?.trim() &&
+    env.NANGO_BASE_URL?.trim() &&
+    env.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID?.trim() &&
+    env.NANGO_GITHUB_MANAGED_INTEGRATION_ID?.trim() &&
+    env.KORTIX_GIT_PROXY?.trim().toLowerCase() === 'true' &&
+    (resolutionMode === 'nango_only' || resolutionMode === 'nango_preferred')
+  );
+  if (nango) return true;
+  if (resolutionMode !== 'nango_preferred' || env.MANAGED_GIT_PROVIDER !== 'github') return false;
+
   const pat = !!(env.MANAGED_GIT_GITHUB_TOKEN && env.MANAGED_GIT_GITHUB_OWNER);
   const app = !!(
     env.KORTIX_GITHUB_APP_ID &&
@@ -1868,15 +2102,17 @@ export function gitProviderConfigured(env: Record<string, string>): boolean {
   return pat || app;
 }
 
-// Registry keys already covered by one of the composite checks above — a
-// scalar per-key "is it set" pass over SECRET_DEFS would either double-report
-// (e.g. MANAGED_GIT_GITHUB_OWNER alone) or under-report (a PAT-mode operator
-// never sets the App fields, and vice versa) the real requirement, which is
-// "git is configured EITHER via PAT OR via App", not "every one of these
-// fields is set". Skip them in the scalar pass; the composite checks report
-// the one accurate item instead.
+// Composite provider checks own these keys. The scalar pass would report
+// incomplete alternatives as separate failures.
 const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
   'DAYTONA_API_KEY',
+  'NANGO_API_KEY',
+  'NANGO_WEBHOOK_SIGNING_KEY',
+  'NANGO_BASE_URL',
+  'NANGO_GITHUB_ACCOUNT_INTEGRATION_ID',
+  'NANGO_GITHUB_MANAGED_INTEGRATION_ID',
+  'GITHUB_CREDENTIAL_RESOLUTION',
+  'KORTIX_GIT_PROXY',
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'MANAGED_GIT_GITHUB_INSTALL_ID',
@@ -1892,9 +2128,11 @@ const REQUIRED_SECRET_LABELS: Record<string, string> = {
   POSTGRES_PASSWORD: 'Postgres password (auto-generated — regenerate via `env rotate`)',
   SUPABASE_JWT_SECRET: 'Supabase JWT secret (auto-generated — regenerate via `env rotate`)',
   SUPABASE_ANON_KEY: 'Supabase anon key (auto-generated, derived from the JWT secret)',
-  SUPABASE_SERVICE_ROLE_KEY: 'Supabase service role key (auto-generated, derived from the JWT secret)',
+  SUPABASE_SERVICE_ROLE_KEY:
+    'Supabase service role key (auto-generated, derived from the JWT secret)',
   DASHBOARD_USERNAME: 'Supabase Studio dashboard username (auto-generated)',
-  DASHBOARD_PASSWORD: 'Supabase Studio dashboard password (auto-generated — regenerate via `env rotate`)',
+  DASHBOARD_PASSWORD:
+    'Supabase Studio dashboard password (auto-generated — regenerate via `env rotate`)',
   GATEWAY_INTERNAL_TOKEN: 'Gateway internal token (auto-generated — regenerate via `env rotate`)',
   INTERNAL_SERVICE_KEY: 'Internal service key (auto-generated — regenerate via `env rotate`)',
   API_KEY_SECRET: 'API key secret (auto-generated — regenerate via `env rotate`)',
@@ -1989,7 +2227,9 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
   missing = missingRequiredSecrets(env);
   if (missing.length === 0) return 0;
 
-  const lines = missing.map((item) => `    ${C.dim}- ${C.reset}${item.label}\n        ${C.cyan}${item.hint}${C.reset}`).join('\n');
+  const lines = missing
+    .map((item) => `    ${C.dim}- ${C.reset}${item.label}\n        ${C.cyan}${item.hint}${C.reset}`)
+    .join('\n');
   process.stdout.write(
     `\n${status.warn('Proceeding with required secrets missing:')}\n${lines}\n\n` +
       `  ${C.dim}This deployment will not be able to run agents until they are set.${C.reset}\n\n`,
@@ -2029,14 +2269,18 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
 
   process.stdout.write(`  ${C.dim}Integrations${C.reset}\n`);
   for (const row of rows) {
-    const marker = row.configured ? `${C.green}configured${C.reset}` : `${C.yellow}missing${C.reset}`;
+    const marker = row.configured
+      ? `${C.green}configured${C.reset}`
+      : `${C.yellow}missing${C.reset}`;
     process.stdout.write(`  ${C.dim}- ${C.reset}${row.name}: ${marker}`);
     if (!row.configured) process.stdout.write(`${C.dim} (${row.hint})${C.reset}`);
     process.stdout.write('\n');
   }
   const missing = rows.filter((row) => !row.configured).length;
   if (missing > 0) {
-    process.stdout.write(`  ${C.dim}Configure: ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}Configure: ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`,
+    );
   }
   process.stdout.write('\n');
 }
@@ -2098,12 +2342,7 @@ function composeHasRunningServices(instance: string): boolean {
   // "does this instance currently have at least one running container?"
   const result = spawnSync(
     'docker',
-    [
-      'ps',
-      '--quiet',
-      '--filter',
-      `label=com.docker.compose.project=${composeProject(instance)}`,
-    ],
+    ['ps', '--quiet', '--filter', `label=com.docker.compose.project=${composeProject(instance)}`],
     { cwd: instanceDir(instance), encoding: 'utf8', timeout: 3_000 },
   );
   return result.status === 0 && result.stdout.trim().length > 0;
@@ -2282,6 +2521,13 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     PLATINUM_API_URL: '',
     PLATINUM_TEMPLATE: '',
     PLATINUM_WEBHOOK_SECRET: '',
+    NANGO_API_KEY: '',
+    NANGO_WEBHOOK_SIGNING_KEY: '',
+    NANGO_BASE_URL: 'https://api.nango.dev',
+    NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: '',
+    NANGO_GITHUB_MANAGED_INTEGRATION_ID: '',
+    GITHUB_CREDENTIAL_RESOLUTION: 'nango_only',
+    KORTIX_GIT_PROXY: 'true',
     KORTIX_GITHUB_APP_ID: '',
     KORTIX_GITHUB_APP_PRIVATE_KEY: '',
     KORTIX_GITHUB_APP_SLUG: '',
@@ -2387,7 +2633,9 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // no host ports) once a domain is configured, else 1 (loopback host ports,
   // no LB) — must always track KORTIX_DOMAIN, the same signal
   // renderFullDockerCompose() uses to decide the Compose-side topology.
-  env.KORTIX_APP_REPLICAS = String(env.KORTIX_DOMAIN?.trim() ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS);
+  env.KORTIX_APP_REPLICAS = String(
+    env.KORTIX_DOMAIN?.trim() ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS,
+  );
 
   // KORTIX_URL — the PUBLIC origin cloud (Daytona) sandboxes and other
   // external callers (webhooks, Slack/Teams OAuth, git-proxy clone) reach this
@@ -2437,10 +2685,23 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 }
 
 function compose(instance: string, args: string[]): number {
-  const result = spawnSync('docker', ['compose', '--project-name', composeProject(instance), '--env-file', envPath(instance), '-f', composePath(instance), ...args], {
-    cwd: instanceDir(instance),
-    stdio: 'inherit',
-  });
+  const result = spawnSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      composeProject(instance),
+      '--env-file',
+      envPath(instance),
+      '-f',
+      composePath(instance),
+      ...args,
+    ],
+    {
+      cwd: instanceDir(instance),
+      stdio: 'inherit',
+    },
+  );
   if (result.error) {
     process.stderr.write(`${status.err(result.error.message)}\n`);
     return 1;
@@ -2456,9 +2717,17 @@ function readComposeLogs(instance: string, service: string): string {
   const result = spawnSync(
     'docker',
     [
-      'compose', '--project-name', composeProject(instance),
-      '--env-file', envPath(instance), '-f', composePath(instance),
-      'logs', '--no-color', '--no-log-prefix', service,
+      'compose',
+      '--project-name',
+      composeProject(instance),
+      '--env-file',
+      envPath(instance),
+      '-f',
+      composePath(instance),
+      'logs',
+      '--no-color',
+      '--no-log-prefix',
+      service,
     ],
     { cwd: instanceDir(instance), encoding: 'utf8' },
   );
@@ -2491,8 +2760,12 @@ async function reconcileTunnelReachability(instance: string, env: SelfHostEnv): 
     return 0;
   }
 
-  const ephemeralNote = namedTunnelConfigured(env) ? '' : `${C.dim} (ephemeral — changes on next restart)${C.reset}`;
-  process.stdout.write(`  ${C.dim}KORTIX_URL -> ${C.reset}${C.cyan}${result.url}${C.reset}${ephemeralNote}\n\n`);
+  const ephemeralNote = namedTunnelConfigured(env)
+    ? ''
+    : `${C.dim} (ephemeral — changes on next restart)${C.reset}`;
+  process.stdout.write(
+    `  ${C.dim}KORTIX_URL -> ${C.reset}${C.cyan}${result.url}${C.reset}${ephemeralNote}\n\n`,
+  );
 
   if (env.KORTIX_URL === result.url) return 0;
 
@@ -2506,10 +2779,16 @@ async function reconcileTunnelReachability(instance: string, env: SelfHostEnv): 
  *  `init`/`configure` summaries. */
 function describeReachability(env: SelfHostEnv): string {
   const mode = reachabilityMode(env);
-  if (mode === 'domain') return `${C.green}domain${C.reset}${C.dim} — ${env.API_PUBLIC_URL}${C.reset}`;
+  if (mode === 'domain')
+    return `${C.green}domain${C.reset}${C.dim} — ${env.API_PUBLIC_URL}${C.reset}`;
   if (mode === 'tunnel') {
-    const via = namedTunnelConfigured(env) ? 'named Cloudflare tunnel (stable)' : 'Cloudflare quick tunnel (ephemeral)';
-    const known = env.KORTIX_URL && !isLocalhostUrlOnPort(env.KORTIX_URL, Number(env.API_PORT)) ? env.KORTIX_URL : '(captured on next start)';
+    const via = namedTunnelConfigured(env)
+      ? 'named Cloudflare tunnel (stable)'
+      : 'Cloudflare quick tunnel (ephemeral)';
+    const known =
+      env.KORTIX_URL && !isLocalhostUrlOnPort(env.KORTIX_URL, Number(env.API_PORT))
+        ? env.KORTIX_URL
+        : '(captured on next start)';
     return `${C.green}tunnel${C.reset}${C.dim} — ${via} — ${known}${C.reset}`;
   }
   return `${C.yellow}not configured${C.reset}${C.dim} — agent sessions won't work: the cloud sandbox can't call back to this API${C.reset}`;
@@ -2535,12 +2814,14 @@ function registerLocalHost(name: string, apiUrl: string, dashboardUrl: string): 
   const sameHost = existing?.url === apiUrl;
   const host: Host = {
     url: apiUrl,
-    token: sameHost ? existing?.token ?? '' : '',
-    user_id: sameHost ? existing?.user_id ?? '' : '',
-    user_email: sameHost ? existing?.user_email ?? '' : '',
-    account_id: sameHost ? existing?.account_id ?? '' : '',
+    token: sameHost ? (existing?.token ?? '') : '',
+    user_id: sameHost ? (existing?.user_id ?? '') : '',
+    user_email: sameHost ? (existing?.user_email ?? '') : '',
+    account_id: sameHost ? (existing?.account_id ?? '') : '',
     dashboard_url: dashboardUrl,
-    logged_in_at: sameHost ? existing?.logged_in_at ?? new Date().toISOString() : new Date().toISOString(),
+    logged_in_at: sameHost
+      ? (existing?.logged_in_at ?? new Date().toISOString())
+      : new Date().toISOString(),
   };
   upsertHost(name, host, true);
 }
@@ -2589,7 +2870,9 @@ function samlPrivateKeyDer(): string {
 
 function supabaseJwt(role: string, secret: string): string {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ role, iss: 'supabase', iat: 1641024000, exp: 2114380800 }));
+  const payload = b64url(
+    JSON.stringify({ role, iss: 'supabase', iat: 1641024000, exp: 2114380800 }),
+  );
   const sig = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${sig}`;
 }
@@ -2599,7 +2882,8 @@ function b64url(value: string): string {
 }
 
 export function openInBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const cmd =
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   spawnSync(cmd, args, { stdio: 'ignore' });
 }

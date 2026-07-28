@@ -1,4 +1,10 @@
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
+import {
+  ACCOUNT_ACTIONS,
+  PROJECT_ACTIONS,
+  assertAuthorized,
+  authorize,
+  listAccessibleResources,
+} from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
@@ -6,7 +12,15 @@ import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { getBackend, getDefaultManagedProvider, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
+import {
+  getBackend,
+  getDefaultManagedProvider,
+  hasBackend,
+  managedGithubOwner,
+  managedGithubToken,
+  parseBasicAuthHeader,
+  type GitScope,
+} from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import {
   getGitHubAppInstallation,
@@ -30,13 +44,53 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
-import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
+import {
+  enforceProjectQuota,
+  grantProjectRole,
+  loadProjectForUser,
+  resolveProjectAccount,
+  assertProjectCapability,
+} from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
-import { buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
+import {
+  buildConnectionRef,
+  consumeGitHubInstallationState,
+  createGitHubInstallationInstallUrl,
+  getAccountGitHubInstallation,
+  getProjectGitConnection,
+  getProjectGitRemote,
+  listAccountGitHubInstallations,
+  resolveGitHubImport,
+  resolveProjectGitAuth,
+  resolveProjectUpstream,
+  upsertProjectGitConnection,
+  withProjectGitAuth,
+} from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
-import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import {
+  PROJECT_NAME_MAX_LENGTH,
+  UUID_V4_REGEX,
+  deriveProjectName,
+  normalizeRepoUrl,
+  normalizeString,
+  readBody,
+  requestAuditContext,
+  serializeGitHubInstallation,
+  serializeGitHubInstallations,
+  serializeProject,
+} from '../lib/serializers';
+import {
+  extractWebhookToken,
+  fireGitTrigger,
+  markGitTriggerFired,
+  renderPromptTemplate,
+  triggerFilterMatches,
+  triggersPausedForProject,
+  verifyWebhookSignature,
+  verifyWebhookToken,
+  webhookPayload,
+} from '../lib/triggers';
 import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
@@ -75,10 +129,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   const [project] = await db
     .select()
     .from(projects)
-    .where(and(
-      eq(projects.projectId, projectId),
-      eq(projects.status, 'active'),
-    ))
+    .where(and(eq(projects.projectId, projectId), eq(projects.status, 'active')))
     .limit(1);
   if (!project) return c.json({ error: 'Not found' }, 404);
 
@@ -134,9 +185,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     c.req.header('x-request-id') ??
     null;
   const staticAuthFingerprint =
-    c.req.header('x-kortix-token') ??
-    c.req.header('authorization') ??
-    '';
+    c.req.header('x-kortix-token') ?? c.req.header('authorization') ?? '';
   const idempotencyKey = deliveryId
     ? `trigger:webhook:${project.projectId}:${spec.slug}:${deliveryId}`
     : `trigger:webhook:${project.projectId}:${spec.slug}:${createHash('sha256')
@@ -149,7 +198,10 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // webhooks (acknowledged, not fired) so a repo deployed to two control planes
   // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
   if (triggersPausedForProject(project.metadata)) {
-    return c.json({ status: 'skipped', reason: 'triggers are paused server-side for this project' }, 200);
+    return c.json(
+      { status: 'skipped', reason: 'triggers are paused server-side for this project' },
+      200,
+    );
   }
 
   // Payload guard. A non-matching delivery is a successful no-op, NOT an error:
@@ -172,13 +224,16 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   if (result.status === 'queued') {
     await markGitTriggerFired(project.projectId, spec.slug, new Date());
-    return c.json({
-      status: 'queued',
-      command_id: result.commandId ?? null,
-      session_id: result.sessionId ?? null,
-      reason: result.reason ?? null,
-      deduped: result.deduped ?? false,
-    }, 202);
+    return c.json(
+      {
+        status: 'queued',
+        command_id: result.commandId ?? null,
+        session_id: result.sessionId ?? null,
+        reason: result.reason ?? null,
+        deduped: result.deduped ?? false,
+      },
+      202,
+    );
   }
   if (result.status === 'failed') {
     return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
@@ -186,14 +241,16 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
   // cron-fire path even when the webhook is the actual source.
   await markGitTriggerFired(project.projectId, spec.slug, new Date());
-  return c.json({
-    status: result.deduped ? 'deduped' : 'fired',
-    command_id: result.commandId ?? null,
-    session_id: result.sessionId ?? null,
-    deduped: result.deduped ?? false,
-  }, 202);
+  return c.json(
+    {
+      status: result.deduped ? 'deduped' : 'fired',
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      deduped: result.deduped ?? false,
+    },
+    202,
+  );
 });
-
 
 projectsApp.openapi(
   createRoute({
@@ -203,85 +260,76 @@ projectsApp.openapi(
     summary: 'GET /',
     ...auth,
     responses: {
-        200: json(z.array(ProjectSchema), 'Projects the caller can read'),
+      200: json(z.array(ProjectSchema), 'Projects the caller can read'),
     },
   }),
   async (c) => {
-  const scope = await resolveProjectAccount(c);
-  // Reach through `any` for non-typed context keys set by the auth
-  // middleware (the AppEnv only types userId/userEmail).
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-      | string
-      | undefined) ?? undefined;
-  const requestCtx = deriveRequestContext(c);
+    const scope = await resolveProjectAccount(c);
+    // Reach through `any` for non-typed context keys set by the auth
+    // middleware (the AppEnv only types userId/userEmail).
+    const actingTokenId =
+      ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ??
+      undefined;
+    const requestCtx = deriveRequestContext(c);
 
-  // Ask the IAM engine which projects the caller can READ. V2 returns
-  // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
-  // 'all' = account admin/owner (manager on every project); 'allow_only'
-  // = enumerated project IDs from direct project_members + group grants;
-  // 'none' = no access.
-  const accessible = await listAccessibleResources(
-    scope.userId,
-    scope.accountId,
-    'project.read',
-    'project',
-    actingTokenId,
-    requestCtx,
-  );
+    // Ask the IAM engine which projects the caller can READ. V2 returns
+    // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
+    // 'all' = account admin/owner (manager on every project); 'allow_only'
+    // = enumerated project IDs from direct project_members + group grants;
+    // 'none' = no access.
+    const accessible = await listAccessibleResources(
+      scope.userId,
+      scope.accountId,
+      'project.read',
+      'project',
+      actingTokenId,
+      requestCtx,
+    );
 
-  if (accessible.mode === 'none') return c.json([]);
+    if (accessible.mode === 'none') return c.json([]);
 
-  // Build the project rows + per-row project_members metadata used by
-  // the UI to label effective_role. We still consult project_members
-  // because the IAM engine bridges it into authorize() but doesn't
-  // hand the per-row role back here — and the UI wants the original
-  // manager/editor/viewer label, not just "allowed".
-  const grants = await db
-    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(
-      eq(projectMembers.accountId, scope.accountId),
-      eq(projectMembers.userId, scope.userId),
-    ));
-  const roleByProject = new Map(
-    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
-  );
+    // Build the project rows + per-row project_members metadata used by
+    // the UI to label effective_role. We still consult project_members
+    // because the IAM engine bridges it into authorize() but doesn't
+    // hand the per-row role back here — and the UI wants the original
+    // manager/editor/viewer label, not just "allowed".
+    const grants = await db
+      .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
+      .from(projectMembers)
+      .where(
+        and(eq(projectMembers.accountId, scope.accountId), eq(projectMembers.userId, scope.userId)),
+      );
+    const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
 
-  const baseWhere = and(
-    eq(projects.accountId, scope.accountId),
-    eq(projects.status, 'active'),
-  );
+    const baseWhere = and(eq(projects.accountId, scope.accountId), eq(projects.status, 'active'));
 
-  let rows: Array<typeof projects.$inferSelect>;
-  if (accessible.mode === 'all') {
-    rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
-  } else {
-    // mode === 'allow_only'. The 'none' case was returned above.
-    if (accessible.allowed.size === 0) return c.json([]);
-    rows = await db
-      .select()
-      .from(projects)
-      .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
-      .orderBy(desc(projects.updatedAt));
-  }
+    let rows: Array<typeof projects.$inferSelect>;
+    if (accessible.mode === 'all') {
+      rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
+    } else {
+      // mode === 'allow_only'. The 'none' case was returned above.
+      if (accessible.allowed.size === 0) return c.json([]);
+      rows = await db
+        .select()
+        .from(projects)
+        .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
+        .orderBy(desc(projects.updatedAt));
+    }
 
-  // Heuristic for effective_role label (UI only, NOT auth):
-  //   - account-manager → 'manager' (legacy owner/admin gets full label)
-  //   - explicit project_members row → that role
-  //   - otherwise → 'member' (engine allowed read but we don't know the
-  //     exact role; safe minimum for UI affordances)
-  const accountManager = isAccountManager(scope.accountRole);
-  return c.json(
-    rows.map((row) => {
-      const projectRole = roleByProject.get(row.projectId) ?? null;
-      const effectiveRole = accountManager
-        ? 'manager'
-        : projectRole ?? 'member';
-      return serializeProject(row, { projectRole, effectiveRole });
-    }),
-  );
-},
+    // Heuristic for effective_role label (UI only, NOT auth):
+    //   - account-manager → 'manager' (legacy owner/admin gets full label)
+    //   - explicit project_members row → that role
+    //   - otherwise → 'member' (engine allowed read but we don't know the
+    //     exact role; safe minimum for UI affordances)
+    const accountManager = isAccountManager(scope.accountRole);
+    return c.json(
+      rows.map((row) => {
+        const projectRole = roleByProject.get(row.projectId) ?? null;
+        const effectiveRole = accountManager ? 'manager' : (projectRole ?? 'member');
+        return serializeProject(row, { projectRole, effectiveRole });
+      }),
+    );
+  },
 );
 
 // POST /v1/projects
@@ -293,74 +341,74 @@ projectsApp.openapi(
     tags: ['projects'],
     summary: 'POST /',
     ...auth,
-      request: {
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        201: json(ProjectSchema, 'The created project'),
-        ...errors(400, 403, 404, 409, 429, 502, 503),
+      201: json(ProjectSchema, 'The created project'),
+      ...errors(400, 403, 404, 409, 429, 502, 503),
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
-  const scope = await resolveProjectAccount(c, body);
-  // IAM-gated. Engine consults super-admin bypass, direct + group
-  // policies, and legacy owner/admin bridges (in non-strict mode).
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+    const body = await readBody(c);
+    const scope = await resolveProjectAccount(c, body);
+    // IAM-gated. Engine consults super-admin bypass, direct + group
+    // policies, and legacy owner/admin bridges (in non-strict mode).
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  let repoUrl: string | null;
-  try {
-    repoUrl = normalizeRepoUrl(body.repo_url ?? body.repoUrl);
-  } catch (error) {
-    return c.json({ error: (error as Error).message || 'Invalid repo_url' }, 400);
-  }
-  if (!repoUrl) {
-    return c.json({ error: 'repo_url is required' }, 400);
-  }
+    let repoUrl: string | null;
+    try {
+      repoUrl = normalizeRepoUrl(body.repo_url ?? body.repoUrl);
+    } catch (error) {
+      return c.json({ error: (error as Error).message || 'Invalid repo_url' }, 400);
+    }
+    if (!repoUrl) {
+      return c.json({ error: 'repo_url is required' }, 400);
+    }
 
-  const quota = await enforceProjectQuota(c, scope.accountId);
-  if (quota) return quota;
+    const quota = await enforceProjectQuota(c, scope.accountId);
+    if (quota) return quota;
 
-  const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
-  const requestedBranch = normalizeString(body.default_branch ?? body.defaultBranch);
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
+    const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
+    const requestedBranch = normalizeString(body.default_branch ?? body.defaultBranch);
+    const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
-  let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
-  try {
-    imported = await resolveGitHubImport({
+    let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
+    try {
+      imported = await resolveGitHubImport({
+        accountId: scope.accountId,
+        repoUrl,
+        installationId: normalizeString(body.installation_id ?? body.installationId),
+        repositoryId: normalizeString(body.repository_id ?? body.repositoryId),
+        defaultBranch: requestedBranch,
+      });
+    } catch (error) {
+      return githubErrorResponse(c, error);
+    }
+
+    const row = await registerGitHubLinkedProject({
       accountId: scope.accountId,
-      repoUrl,
-      installationId: normalizeString(body.installation_id ?? body.installationId),
-      repositoryId: normalizeString(body.repository_id ?? body.repositoryId),
-      defaultBranch: requestedBranch,
+      userId: scope.userId,
+      repo: imported.repo,
+      installation: imported.installation,
+      name,
+      defaultBranch: imported.defaultBranch,
+      manifestPath,
     });
-  } catch (error) {
-    return githubErrorResponse(c, error);
-  }
 
-  const row = await registerGitHubLinkedProject({
-    accountId: scope.accountId,
-    userId: scope.userId,
-    repo: imported.repo,
-    installation: imported.installation,
-    name,
-    defaultBranch: imported.defaultBranch,
-    manifestPath,
-  });
+    kickProjectTemplatePrebuilds(
+      {
+        projectId: row.projectId,
+        repoUrl: row.repoUrl,
+        defaultBranch: row.defaultBranch,
+        manifestPath: row.manifestPath,
+        gitAuthToken: null,
+      },
+      { accountId: scope.accountId, source: 'project-create' },
+    );
 
-  kickProjectTemplatePrebuilds(
-    {
-      projectId: row.projectId,
-      repoUrl: row.repoUrl,
-      defaultBranch: row.defaultBranch,
-      manifestPath: row.manifestPath,
-      gitAuthToken: null,
-    },
-    { accountId: scope.accountId, source: 'project-create' },
-  );
-
-  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
-},
+    return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+  },
 );
 
 // GET /v1/projects/managed-git/status
@@ -405,300 +453,318 @@ projectsApp.openapi(
     tags: ['projects'],
     summary: 'POST /provision',
     ...auth,
-      request: {
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        201: json(z.any(), 'OK'),
-        ...errors(400, 403, 502, 503),
+      201: json(z.any(), 'OK'),
+      ...errors(400, 403, 502, 503),
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
-  const scope = await resolveProjectAccount(c, body);
-  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  // Managed-git provider, provider-agnostic via the backend registry. GitHub is
-  // the default + only active managed backend. Forgejo / Artifacts slot in here
-  // as drop-ins.
-  const provider =
-    normalizeString(body.provider) ??
-    getDefaultManagedProvider();
-  if (!hasBackend(provider)) {
-    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
-  }
-  const backend = getBackend(provider);
-  if (!(await backend.isConfigured())) {
-    return c.json(
-      { error: `Managed git provider "${provider}" is not configured on this server` },
-      503,
-    );
-  }
-
-  const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
-    return c.json(
-      { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
-      400,
-    );
-  }
-  // The column is varchar(255); without this check an over-long name (users
-  // paste whole task prompts here) passes the charset regex, provisions the
-  // upstream repo, then dies on the DB insert — a 500 plus an orphaned managed
-  // repo per retry. Reject BEFORE anything is created upstream.
-  if (name.length > PROJECT_NAME_MAX_LENGTH) {
-    return c.json(
-      { error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` },
-      400,
-    );
-  }
-
-  // "Clone project" — seed the new repo from a `registry:project` marketplace
-  // item instead of the blank starter. Resolved + type-checked BEFORE any
-  // upstream repo/DB row is created, same as the name checks above.
-  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
-  if (sourceItemId) {
-    const sourceItem = await getCatalogItemDetail(sourceItemId);
-    if (!sourceItem || sourceItem.type !== 'registry:project') {
-      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+    const body = await readBody(c);
+    const scope = await resolveProjectAccount(c, body);
+    if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+      return c.json({ error: 'Owner or admin role required' }, 403);
     }
-  }
 
-  // Managed repo name = a readable slug from the display name + the project's
-  // UUID, so managed repos under the shared org NEVER collide (two projects can
-  // share a name). We generate the project id up front to bake it into the repo
-  // name and reuse it as the project row id.
-  const projectId = randomUUID();
-  const baseSlug = (
-    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
-    'kortix-project'
-  ).slice(0, 40);
-  const repoSlug = `${baseSlug}-${projectId}`;
-  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+    // Managed-git provider, provider-agnostic via the backend registry. GitHub is
+    // the default + only active managed backend. Forgejo / Artifacts slot in here
+    // as drop-ins.
+    const provider = normalizeString(body.provider) ?? getDefaultManagedProvider();
+    if (!hasBackend(provider)) {
+      return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
+    }
+    const backend = getBackend(provider);
+    if (!(await backend.isConfigured())) {
+      return c.json(
+        { error: `Managed git provider "${provider}" is not configured on this server` },
+        503,
+      );
+    }
 
-  // Provision always mints a brand-new managed repo, so the quota check is a
-  // straight count — no repoUrl to treat as an idempotent re-link. Runs after
-  // request validation but before we create anything upstream.
-  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
-  if (provisionQuota) return provisionQuota;
+    const name =
+      normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
+    if (!name) return c.json({ error: 'name is required' }, 400);
+    if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
+      return c.json(
+        { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+        400,
+      );
+    }
+    // The column is varchar(255); without this check an over-long name (users
+    // paste whole task prompts here) passes the charset regex, provisions the
+    // upstream repo, then dies on the DB insert — a 500 plus an orphaned managed
+    // repo per retry. Reject BEFORE anything is created upstream.
+    if (name.length > PROJECT_NAME_MAX_LENGTH) {
+      return c.json({ error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` }, 400);
+    }
 
-  let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
-  try {
-    provisioned = await backend.createRepo({
-      accountId: scope.accountId,
-      projectId,
-      slug: repoSlug,
-      defaultBranch,
-      isPrivate: true,
-    });
-  } catch (error) {
-    return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
-  }
+    // "Clone project" — seed the new repo from a `registry:project` marketplace
+    // item instead of the blank starter. Resolved + type-checked BEFORE any
+    // upstream repo/DB row is created, same as the name checks above.
+    const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+    if (sourceItemId) {
+      const sourceItem = await getCatalogItemDetail(sourceItemId);
+      if (!sourceItem || sourceItem.type !== 'registry:project') {
+        return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+      }
+    }
 
-  const authMethod = provider === 'github' ? 'github_app' : 'managed';
-  const now = new Date();
-  const [row] = await db
-    .insert(projects)
-    .values({
-      projectId,
-      accountId: scope.accountId,
-      name,
-      repoUrl: provisioned.upstreamUrl,
-      defaultBranch: provisioned.defaultBranch,
-      // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml (kortix_version 2) — record that as the canonical path so
-      // a project created here is never labeled with a stale v1 filename. A
-      // CLI `kortix ship` that pushes its own files instead of seeding still
-      // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
-      // so this holds for both the web and CLI creation paths.
-      manifestPath: 'kortix.yaml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: provisioned.upstreamUrl,
-          upstream_url: provisioned.upstreamUrl,
-          default_branch: provisioned.defaultBranch,
-          provider,
-          managed: true,
-          auth: {
-            method: authMethod,
-            ref: provisioned.credentialRef,
-            installation_id: provisioned.installationId,
-          },
-          repo_id: provisioned.externalRepoId,
-          owner: provisioned.repoOwner,
-          name: provisioned.repoName,
-        },
-        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
-        // unification.md §2.1/§3 Phase 2): every project created through this
-        // route is "new" in the spec's sense — subject to declared-agent
-        // enforcement from birth, regardless of the platform-wide
-        // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
-        // createProjectSession). Pre-existing projects (this flag absent/false)
-        // keep the v1 adopt-to-govern behavior untouched.
-        require_declared_agents: true,
-      },
-      updatedAt: now,
-    })
-    .returning();
+    // Managed repo name = a readable slug from the display name + the project's
+    // UUID, so managed repos under the shared org NEVER collide (two projects can
+    // share a name). We generate the project id up front to bake it into the repo
+    // name and reuse it as the project row id.
+    const projectId = randomUUID();
+    const baseSlug = (
+      name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'kortix-project'
+    ).slice(0, 40);
+    const repoSlug = `${baseSlug}-${projectId}`;
+    const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
 
-  await grantProjectRole({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    userId: scope.userId,
-    role: 'manager',
-    grantedBy: scope.userId,
-  });
-  await upsertProjectGitConnection({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    provider,
-    repoUrl: provisioned.upstreamUrl,
-    upstreamUrl: provisioned.upstreamUrl,
-    managed: true,
-    repoOwner: provisioned.repoOwner,
-    repoName: provisioned.repoName,
-    externalRepoId: provisioned.externalRepoId,
-    defaultBranch: provisioned.defaultBranch,
-    authMethod,
-    installationId: provisioned.installationId,
-    credentialRef: provisioned.credentialRef,
-    visibility: 'private',
-    status: 'connected',
-    metadata: { seeded: false },
-  });
-  const connRef = buildConnectionRef(
-    row,
-    getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
-  );
+    // Provision always mints a brand-new managed repo, so the quota check is a
+    // straight count — no repoUrl to treat as an idempotent re-link. Runs after
+    // request validation but before we create anything upstream.
+    const provisionQuota = await enforceProjectQuota(c, scope.accountId);
+    if (provisionQuota) return provisionQuota;
 
-  // Resolve a push credential for seeding / the CLI's first push. The managed
-  // GitHub backend mints an installation token.
-  let internalPushToken = provisioned.initialToken;
-  let exportablePushToken = provisioned.initialToken;
-  if (!internalPushToken) {
-    const resolved = await resolveProjectGitAuth(row);
-    internalPushToken = resolved.auth?.token ?? null;
-    exportablePushToken = resolved.authSource === 'pat'
-      ? null
-      : resolved.auth?.token ?? null;
-  }
-  const writeUpstream = internalPushToken
-    ? backend.buildUpstream(connRef, internalPushToken, 'write')
-    : null;
-  const exportableCredential = exportablePushToken
-    ? parseBasicAuthHeader(
-        backend.buildUpstream(connRef, exportablePushToken, 'write').headers.Authorization,
-      )
-    : null;
-
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). The CLI leaves this false and pushes
-  // its own files on first `kortix ship`. If seeding fails we roll back the
-  // orphan repo + project so we never leave a half-created project behind.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
-  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
-  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
-  let seeded = false;
-  if (seedStarter) {
+    let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
     try {
-      if (!internalPushToken) throw new Error('no push credential resolved for seeding');
-      const seed = sourceItemId
-        ? await buildProjectSeedFilesFromItem({
-            id: sourceItemId,
-            projectName: name,
-            repoFullName: repoSlug,
-            extraMarketplaceItems: marketplaceItems,
-            now: now.toISOString(),
-          })
-        : await buildProjectSeedFiles({
-            projectName: name,
-            repoFullName: repoSlug,
-            template: starterTemplate,
-            marketplaceItems,
-            now: now.toISOString(),
-          });
-      if (backend.seedFiles) {
-        // Seed the project tip == the deterministic scaffold root (the constant
-        // 'kortix-project' render), byte-identical to the image-baked scaffold
-        // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
-        // the warm-seed's already-opencode-initialized /workspace with ZERO
-        // network (git.ts baked-checkout reuse fires when baseSha == scaffold
-        // root) — the single biggest spawn-latency win. The per-project name
-        // customization is applied in-sandbox at fork (not committed to the
-        // shared remote root) so the warm reuse is never broken by a divergent tip.
-        await backend.seedFiles(connRef, internalPushToken, seed.files, {
-          branch: provisioned.defaultBranch,
-          message: 'chore: scaffold Kortix project',
-          baseFiles: seed.baseFiles,
-        });
-      } else {
-        await seedRepoViaGitPush({
-          upstreamUrl: connRef.upstreamUrl,
-          token: internalPushToken,
-          files: seed.files,
-          branch: provisioned.defaultBranch,
-          commitMessage: 'chore: scaffold Kortix project',
-          baseFiles: seed.baseFiles,
-        });
-      }
-      seeded = true;
-
-      // Mirror the seeded manifest's declared default agent into
-      // project.metadata (see defaultAgentFromSeedFiles in ../seed-files.ts)
-      // so session creation resolves it from birth instead of falling back
-      // to the non-binding 'default' sentinel — see
-      // llm-gateway/resolution/default-model.ts's cachedSessionAgent for the
-      // defense-in-depth fallback that also covers pre-existing/CLI-created
-      // projects where this mirror is still stale.
-      const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
-      if (seededDefaultAgent) {
-        row.metadata = { ...((row.metadata as Record<string, unknown> | null) ?? {}), default_agent: seededDefaultAgent };
-        // FIX-J: persist ONLY `default_agent` via a SQL-side atomic merge (never
-        // the whole object) so this creation-seed write can't revert a pin the
-        // prebuild kick may have activated concurrently. `row.metadata` above is
-        // the in-memory copy the creation response serializes.
-        await db
-          .update(projects)
-          .set({ metadata: metadataMerge({ default_agent: seededDefaultAgent }), updatedAt: new Date() })
-          .where(eq(projects.projectId, row.projectId))
-          .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
-      }
+      provisioned = await backend.createRepo({
+        accountId: scope.accountId,
+        projectId,
+        slug: repoSlug,
+        defaultBranch,
+        isPrivate: true,
+      });
     } catch (error) {
-      try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
-      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
-      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
+      return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
     }
-  }
 
-  if (seeded) {
-    kickProjectTemplatePrebuilds(
-      {
-        projectId: row.projectId,
-        repoUrl: writeUpstream?.url ?? row.repoUrl,
-        defaultBranch: row.defaultBranch,
-        manifestPath: row.manifestPath,
-        gitAuthToken: internalPushToken,
-        gitAuthHeaders: writeUpstream?.headers ?? {},
-      },
-      { accountId: scope.accountId, source: 'project-create' },
+    const authMethod =
+      provider === 'github' ? (provisioned.credentialRef ? 'nango' : 'github_app') : 'managed';
+    const now = new Date();
+    const [row] = await db
+      .insert(projects)
+      .values({
+        projectId,
+        accountId: scope.accountId,
+        name,
+        repoUrl: provisioned.upstreamUrl,
+        defaultBranch: provisioned.defaultBranch,
+        // The starter this route seeds (buildProjectSeedFiles, below) ships
+        // kortix.yaml (kortix_version 2) — record that as the canonical path so
+        // a project created here is never labeled with a stale v1 filename. A
+        // CLI `kortix ship` that pushes its own files instead of seeding still
+        // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
+        // so this holds for both the web and CLI creation paths.
+        manifestPath: 'kortix.yaml',
+        status: 'active',
+        metadata: {
+          git: {
+            url: provisioned.upstreamUrl,
+            upstream_url: provisioned.upstreamUrl,
+            default_branch: provisioned.defaultBranch,
+            provider,
+            managed: true,
+            auth: {
+              method: authMethod,
+              ref: provisioned.credentialRef,
+              installation_id: provisioned.installationId,
+            },
+            repo_id: provisioned.externalRepoId,
+            owner: provisioned.repoOwner,
+            name: provisioned.repoName,
+          },
+          // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
+          // unification.md §2.1/§3 Phase 2): every project created through this
+          // route is "new" in the spec's sense — subject to declared-agent
+          // enforcement from birth, regardless of the platform-wide
+          // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
+          // createProjectSession). Pre-existing projects (this flag absent/false)
+          // keep the v1 adopt-to-govern behavior untouched.
+          require_declared_agents: true,
+        },
+        updatedAt: now,
+      })
+      .returning();
+
+    await grantProjectRole({
+      accountId: scope.accountId,
+      projectId: row.projectId,
+      userId: scope.userId,
+      role: 'manager',
+      grantedBy: scope.userId,
+    });
+    await upsertProjectGitConnection({
+      accountId: scope.accountId,
+      projectId: row.projectId,
+      provider,
+      repoUrl: provisioned.upstreamUrl,
+      upstreamUrl: provisioned.upstreamUrl,
+      managed: true,
+      repoOwner: provisioned.repoOwner,
+      repoName: provisioned.repoName,
+      externalRepoId: provisioned.externalRepoId,
+      defaultBranch: provisioned.defaultBranch,
+      authMethod,
+      installationId: provisioned.installationId,
+      credentialRef: provisioned.credentialRef,
+      visibility: 'private',
+      status: 'connected',
+      metadata: { seeded: false },
+    });
+    const connRef = buildConnectionRef(
+      row,
+      getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
     );
-  }
 
-  return c.json(
-    {
-      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      push_token: exportablePushToken,
-      git_username: exportableCredential?.username ?? null,
-      repo_id: provisioned.externalRepoId,
-      seeded,
-    },
-    201,
-  );
-},
+    // Resolve a push credential for seeding / the CLI's first push. The managed
+    // GitHub backend mints an installation token.
+    let internalPushToken = provisioned.initialToken;
+    let exportablePushToken = authMethod === 'nango' ? null : provisioned.initialToken;
+    if (!internalPushToken) {
+      const resolved = await resolveProjectGitAuth(row);
+      internalPushToken = resolved.auth?.token ?? null;
+      exportablePushToken =
+        resolved.authSource === 'pat' || resolved.authSource === 'nango'
+          ? null
+          : (resolved.auth?.token ?? null);
+    }
+    const writeUpstream = internalPushToken
+      ? backend.buildUpstream(connRef, internalPushToken, 'write')
+      : null;
+    const exportableCredential = exportablePushToken
+      ? parseBasicAuthHeader(
+          backend.buildUpstream(connRef, exportablePushToken, 'write').headers.Authorization,
+        )
+      : null;
+
+    // Seed the starter into the empty repo when the caller has no local working
+    // tree to push (web "Create project"). The CLI leaves this false and pushes
+    // its own files on first `kortix ship`. If seeding fails we roll back the
+    // orphan repo + project so we never leave a half-created project behind.
+    const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
+    const starterTemplate = normalizeStarterTemplateId(
+      body.starter_template ?? body.starterTemplate,
+    );
+    const marketplaceItems = normalizeMarketplaceItems(
+      body.marketplace_items ?? body.marketplaceItems,
+    );
+    let seeded = false;
+    if (seedStarter) {
+      try {
+        if (!internalPushToken) throw new Error('no push credential resolved for seeding');
+        const seed = sourceItemId
+          ? await buildProjectSeedFilesFromItem({
+              id: sourceItemId,
+              projectName: name,
+              repoFullName: repoSlug,
+              extraMarketplaceItems: marketplaceItems,
+              now: now.toISOString(),
+            })
+          : await buildProjectSeedFiles({
+              projectName: name,
+              repoFullName: repoSlug,
+              template: starterTemplate,
+              marketplaceItems,
+              now: now.toISOString(),
+            });
+        if (backend.seedFiles) {
+          // Seed the project tip == the deterministic scaffold root (the constant
+          // 'kortix-project' render), byte-identical to the image-baked scaffold
+          // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
+          // the warm-seed's already-opencode-initialized /workspace with ZERO
+          // network (git.ts baked-checkout reuse fires when baseSha == scaffold
+          // root) — the single biggest spawn-latency win. The per-project name
+          // customization is applied in-sandbox at fork (not committed to the
+          // shared remote root) so the warm reuse is never broken by a divergent tip.
+          await backend.seedFiles(connRef, internalPushToken, seed.files, {
+            branch: provisioned.defaultBranch,
+            message: 'chore: scaffold Kortix project',
+            baseFiles: seed.baseFiles,
+          });
+        } else {
+          await seedRepoViaGitPush({
+            upstreamUrl: connRef.upstreamUrl,
+            token: internalPushToken,
+            files: seed.files,
+            branch: provisioned.defaultBranch,
+            commitMessage: 'chore: scaffold Kortix project',
+            baseFiles: seed.baseFiles,
+          });
+        }
+        seeded = true;
+
+        // Mirror the seeded manifest's declared default agent into
+        // project.metadata (see defaultAgentFromSeedFiles in ../seed-files.ts)
+        // so session creation resolves it from birth instead of falling back
+        // to the non-binding 'default' sentinel — see
+        // llm-gateway/resolution/default-model.ts's cachedSessionAgent for the
+        // defense-in-depth fallback that also covers pre-existing/CLI-created
+        // projects where this mirror is still stale.
+        const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
+        if (seededDefaultAgent) {
+          row.metadata = {
+            ...((row.metadata as Record<string, unknown> | null) ?? {}),
+            default_agent: seededDefaultAgent,
+          };
+          // FIX-J: persist ONLY `default_agent` via a SQL-side atomic merge (never
+          // the whole object) so this creation-seed write can't revert a pin the
+          // prebuild kick may have activated concurrently. `row.metadata` above is
+          // the in-memory copy the creation response serializes.
+          await db
+            .update(projects)
+            .set({
+              metadata: metadataMerge({ default_agent: seededDefaultAgent }),
+              updatedAt: new Date(),
+            })
+            .where(eq(projects.projectId, row.projectId))
+            .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+        }
+      } catch (error) {
+        try {
+          await backend.deleteRepo(connRef);
+        } catch {
+          /* best effort */
+        }
+        await db
+          .delete(projects)
+          .where(eq(projects.projectId, row.projectId))
+          .catch(() => {});
+        return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
+      }
+    }
+
+    if (seeded) {
+      kickProjectTemplatePrebuilds(
+        {
+          projectId: row.projectId,
+          repoUrl: writeUpstream?.url ?? row.repoUrl,
+          defaultBranch: row.defaultBranch,
+          manifestPath: row.manifestPath,
+          gitAuthToken: internalPushToken,
+          gitAuthHeaders: writeUpstream?.headers ?? {},
+        },
+        { accountId: scope.accountId, source: 'project-create' },
+      );
+    }
+
+    return c.json(
+      {
+        ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+        push_token: exportablePushToken,
+        git_username: exportableCredential?.username ?? null,
+        repo_id: provisioned.externalRepoId,
+        seeded,
+      },
+      201,
+    );
+  },
 );
 
 // POST /v1/projects/:projectId/git-token
@@ -713,12 +779,12 @@ projectsApp.openapi(
     tags: ['github'],
     summary: 'POST /:projectId/git-token',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 409, 503),
+      200: json(z.any(), 'OK'),
+      ...errors(404, 409, 503),
     },
   }),
   async (c: any) => {
@@ -756,41 +822,41 @@ projectsApp.openapi(
       return c.json({ error: 'Project is not a managed repo' }, 409);
     }
 
-  // Provider-agnostic: resolve a fresh push credential through the backend seam
-  // (the managed GitHub backend mints an installation token). Never persisted
-  // in the sandbox/CLI git config.
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
-  if (gitAuth.authSource === 'pat') {
-    // This host's managed git runs on an org-wide token. Exporting it to a
-    // client would hand out write access to EVERY managed repo, so we refuse —
-    // clients push through the Kortix git proxy (`git_origin_url`) with their
-    // own Kortix token instead, which needs no provider credential client-side.
-    // Say so explicitly: the old message read as a server misconfiguration and
-    // sent people hunting for GitHub App settings that aren't the problem.
-    return c.json(
-      {
-        error:
-          "This host's managed git uses an org-wide token, which is never exported. " +
-          "Push through the project's Kortix git origin instead (git_origin_url) — " +
-          'run `kortix update` if your CLI still asks for a push token.',
-        git_origin_url: serializeProject(loaded.row).git_origin_url,
-      },
-      503,
-    );
-  }
-  const upstream = await resolveProjectUpstream(loaded.row, 'write');
-  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
-  if (!credential) {
-    return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
-  }
+    // Provider-agnostic: resolve a fresh push credential through the backend seam
+    // (the managed GitHub backend mints an installation token). Never persisted
+    // in the sandbox/CLI git config.
+    const gitAuth = await resolveProjectGitAuth(loaded.row);
+    if (gitAuth.authSource === 'pat') {
+      // This host's managed git runs on an org-wide token. Exporting it to a
+      // client would hand out write access to EVERY managed repo, so we refuse —
+      // clients push through the Kortix git proxy (`git_origin_url`) with their
+      // own Kortix token instead, which needs no provider credential client-side.
+      // Say so explicitly: the old message read as a server misconfiguration and
+      // sent people hunting for GitHub App settings that aren't the problem.
+      return c.json(
+        {
+          error:
+            "This host's managed git uses an org-wide token, which is never exported. " +
+            "Push through the project's Kortix git origin instead (git_origin_url) — " +
+            'run `kortix update` if your CLI still asks for a push token.',
+          git_origin_url: serializeProject(loaded.row).git_origin_url,
+        },
+        503,
+      );
+    }
+    const upstream = await resolveProjectUpstream(loaded.row, 'write');
+    const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
+    if (!credential) {
+      return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
+    }
 
-  return c.json({
-    push_token: credential.token,
-    git_username: credential.username,
-    repo_id: remote.externalRepoId,
-    repo_url: upstream?.url ?? loaded.row.repoUrl,
-  });
-},
+    return c.json({
+      push_token: credential.token,
+      git_username: credential.username,
+      repo_id: remote.externalRepoId,
+      repo_url: upstream?.url ?? loaded.row.repoUrl,
+    });
+  },
 );
 
 // POST /v1/projects/:projectId/git/collaborators
@@ -806,47 +872,56 @@ projectsApp.openapi(
     tags: ['github'],
     summary: 'POST /:projectId/git/collaborators',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404, 409, 502),
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Inviting a git collaborator grants a human standing access to the repo —
-  // membership-tier, not plain write. Gate on members.manage so an editor (or a
-  // scoped agent via the fold) can't add external collaborators.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Inviting a git collaborator grants a human standing access to the repo —
+    // membership-tier, not plain write. Gate on members.manage so an editor (or a
+    // scoped agent via the fold) can't add external collaborators.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
 
-  const body = await readBody(c);
-  const username = normalizeString(body.github_username ?? body.username ?? body.login);
-  if (!username) return c.json({ error: 'github_username is required' }, 400);
-  const permission = normalizeString(body.permission);
-  const scope: GitScope = permission === 'read' || permission === 'pull' ? 'read' : 'write';
+    const body = await readBody(c);
+    const username = normalizeString(body.github_username ?? body.username ?? body.login);
+    if (!username) return c.json({ error: 'github_username is required' }, 400);
+    const permission = normalizeString(body.permission);
+    const scope: GitScope = permission === 'read' || permission === 'pull' ? 'read' : 'write';
 
-  const remote = getProjectGitRemote(loaded.row, await getProjectGitConnection(projectId));
-  if (remote.provider !== 'github' || !remote.managed) {
-    return c.json({ error: 'Collaborator invites are only available for managed GitHub repos' }, 409);
-  }
-  const ref = buildConnectionRef(loaded.row, remote);
-  const backend = getBackend(remote.provider);
-  if (!backend.inviteCollaborator) {
-    return c.json({ error: 'This git backend does not support collaborator invites' }, 400);
-  }
+    const remote = getProjectGitRemote(loaded.row, await getProjectGitConnection(projectId));
+    if (remote.provider !== 'github' || !remote.managed) {
+      return c.json(
+        { error: 'Collaborator invites are only available for managed GitHub repos' },
+        409,
+      );
+    }
+    const ref = buildConnectionRef(loaded.row, remote);
+    const backend = getBackend(remote.provider);
+    if (!backend.inviteCollaborator) {
+      return c.json({ error: 'This git backend does not support collaborator invites' }, 400);
+    }
 
-  try {
-    const result = await backend.inviteCollaborator(ref, username, scope);
-    return c.json(result);
-  } catch (error) {
-    return c.json({ error: (error as Error).message || 'Failed to invite collaborator' }, 502);
-  }
-},
+    try {
+      const result = await backend.inviteCollaborator(ref, username, scope);
+      return c.json(result);
+    } catch (error) {
+      return c.json({ error: (error as Error).message || 'Failed to invite collaborator' }, 502);
+    }
+  },
 );
 
 projectsApp.route('/github', githubNangoConnectionsApp);
@@ -863,28 +938,32 @@ projectsApp.openapi(
     summary: 'GET /github/installation',
     ...auth,
     responses: {
-        200: json(z.any(), 'OK'),
+      200: json(z.any(), 'OK'),
     },
   }),
   async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+    const scope = await resolveProjectAccount(c);
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
-  const installUrl = canManageGit
-    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-    : null;
-  // No account-level GitHub App installation, but the server has a working
-  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
-  // account isn't told "GitHub isn't connected" just because it never
-  // installed an App (see serializeGitHubInstallations).
-  const patFallbackOwner =
-    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
-      ? managedGithubOwner()
+    const rows = await listAccountGitHubInstallations(scope.accountId);
+    const canManageGit = (
+      await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)
+    ).allowed;
+    const installUrl = canManageGit
+      ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
       : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
-},
+    // No account-level GitHub App installation, but the server has a working
+    // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+    // account isn't told "GitHub isn't connected" just because it never
+    // installed an App (see serializeGitHubInstallations).
+    const patFallbackOwner =
+      rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+        ? managedGithubOwner()
+        : null;
+    return c.json(
+      serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner),
+    );
+  },
 );
 
 // GET /v1/projects/github/installations?account_id=...
@@ -899,28 +978,32 @@ projectsApp.openapi(
     summary: 'GET /github/installations',
     ...auth,
     responses: {
-        200: json(z.any(), 'OK'),
+      200: json(z.any(), 'OK'),
     },
   }),
   async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+    const scope = await resolveProjectAccount(c);
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
-  const installUrl = canManageGit
-    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-    : null;
-  // No account-level GitHub App installation, but the server has a working
-  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
-  // account isn't told "GitHub isn't connected" just because it never
-  // installed an App (see serializeGitHubInstallations).
-  const patFallbackOwner =
-    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
-      ? managedGithubOwner()
+    const rows = await listAccountGitHubInstallations(scope.accountId);
+    const canManageGit = (
+      await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)
+    ).allowed;
+    const installUrl = canManageGit
+      ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
       : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
-},
+    // No account-level GitHub App installation, but the server has a working
+    // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+    // account isn't told "GitHub isn't connected" just because it never
+    // installed an App (see serializeGitHubInstallations).
+    const patFallbackOwner =
+      rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+        ? managedGithubOwner()
+        : null;
+    return c.json(
+      serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner),
+    );
+  },
 );
 
 async function upsertAccountGitHubInstallation(
@@ -1122,81 +1205,81 @@ projectsApp.openapi(
     tags: ['github'],
     summary: 'POST /github/installation',
     ...auth,
-      request: {
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 403, 502),
+      200: json(z.any(), 'OK'),
+      ...errors(400, 403, 502),
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
-  const state = normalizeString(body.state);
-  if (!state) return c.json({ error: 'state is required' }, 400);
-  const statePayload = verifyGitHubAppInstallStatePayload(state);
-  if (!statePayload?.accountId || !statePayload.nonce) {
-    return c.json({ error: 'invalid GitHub installation state' }, 400);
-  }
-
-  const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-
-  const installationId = normalizeString(body.installation_id ?? body.installationId);
-  if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
-  if (!/^[0-9]+$/.test(installationId)) {
-    return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
-  }
-  const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-  if (!githubUserToken) {
-    return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
-  }
-
-  let installation;
-  try {
-    installation = await getGitHubAppInstallation(installationId);
-  } catch (error) {
-    const message = (error as Error).message || 'Failed to verify GitHub App installation';
-    return c.json({ error: message }, 502);
-  }
-
-  try {
-    await verifyGitHubInstallationAdmin(githubUserToken, installation);
-  } catch (error) {
-    const message = (error as Error).message || 'GitHub administrator verification failed';
-    return c.json({ error: message }, 403);
-  }
-
-  const stateStatus = await consumeGitHubInstallationState({
-    accountId: scope.accountId,
-    userId: scope.userId,
-    nonce: statePayload.nonce,
-    installationId,
-  });
-  if (stateStatus === 'invalid') {
-    const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
-    if (existing?.installationId === installationId) {
-      return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
+    const body = await readBody(c);
+    const state = normalizeString(body.state);
+    if (!state) return c.json({ error: 'state is required' }, 400);
+    const statePayload = verifyGitHubAppInstallStatePayload(state);
+    if (!statePayload?.accountId || !statePayload.nonce) {
+      return c.json({ error: 'invalid GitHub installation state' }, 400);
     }
-    return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
-  }
 
-  try {
-    const row = await upsertAccountGitHubInstallation(
-      scope.accountId,
+    const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const installationId = normalizeString(body.installation_id ?? body.installationId);
+    if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
+    if (!/^[0-9]+$/.test(installationId)) {
+      return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
+    }
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
+    }
+
+    let installation;
+    try {
+      installation = await getGitHubAppInstallation(installationId);
+    } catch (error) {
+      const message = (error as Error).message || 'Failed to verify GitHub App installation';
+      return c.json({ error: message }, 502);
+    }
+
+    try {
+      await verifyGitHubInstallationAdmin(githubUserToken, installation);
+    } catch (error) {
+      const message = (error as Error).message || 'GitHub administrator verification failed';
+      return c.json({ error: message }, 403);
+    }
+
+    const stateStatus = await consumeGitHubInstallationState({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      nonce: statePayload.nonce,
       installationId,
-      installation,
-    );
-    return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
-  } catch (error) {
-    return c.json(
-      {
-        error: (error as Error).message || 'Failed to save the GitHub installation',
-      },
-      502,
-    );
-  }
-},
+    });
+    if (stateStatus === 'invalid') {
+      const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
+      if (existing?.installationId === installationId) {
+        return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
+      }
+      return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
+    }
+
+    try {
+      const row = await upsertAccountGitHubInstallation(
+        scope.accountId,
+        installationId,
+        installation,
+      );
+      return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to save the GitHub installation',
+        },
+        502,
+      );
+    }
+  },
 );
 
 // POST /v1/projects/link-repository

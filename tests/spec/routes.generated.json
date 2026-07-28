@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 511,
+  "count": 522,
   "routes": [
     {
       "method": "GET",
@@ -964,7 +964,23 @@
     },
     {
       "method": "GET",
+      "path": "/v1/platform/github-app/candidates"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/connect-session"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/platform/github-app/connection"
+    },
+    {
+      "method": "GET",
       "path": "/v1/platform/github-app/install-callback"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/legacy-status"
     },
     {
       "method": "GET",
@@ -977,6 +993,14 @@
     {
       "method": "POST",
       "path": "/v1/platform/github-app/pat"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/reconnect-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/select"
     },
     {
       "method": "GET",
@@ -1275,6 +1299,10 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/default"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application"
     },
@@ -1303,8 +1331,20 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/policies"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles/all"
     },
     {
       "method": "POST",
@@ -1633,6 +1673,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
     {
       "method": "GET",

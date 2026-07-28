@@ -3591,3 +3591,41 @@ Local verification:
 **Shippable to production: NOT YET.** The account `github-app-oauth`
 integration still has zero authorized connections. U7, U8, PR merge, Deploy
 Dev, deployed SHA proof, and deployed Nango verification remain.
+
+---
+
+### 2026-07-27 — session `nango-github-migration` (U7 claim)
+
+Completed the managed platform and self-host GitHub setup replacement.
+
+- Added managed Nango candidate, Connect, select, reconnect, and disconnect
+  contracts to the platform GitHub client.
+- Added `createKortix(...).platform.github` as the managed connection surface.
+- Kept the existing GitHub App method names as deprecated adapters.
+- Preserved every published SDK export.
+- Stored only the Nango connection ID, GitHub installation ID, owner metadata,
+  selector, and timestamps in the platform setting.
+
+TDD and local verification:
+
+- Focused API suites: **46 pass / 0 fail**.
+- API typecheck: exit 0.
+- SDK suite: **1315 pass / 0 fail** with **5813** assertions.
+- SDK typecheck: exit 0.
+- SDK packed-install smoke: pass.
+- CLI suite: **556 pass / 0 fail** with **1981** assertions.
+- CLI typecheck: exit 0.
+- Web suite: **2104 pass / 0 fail** with **6920** assertions.
+- Touched web ESLint: exit 0.
+- Web production build: exit 0.
+- React Doctor: **100 / 100** with no findings.
+- Browser proof selected the `Dusseauand` organization explicitly.
+- Browser network proof returned `200` for `POST /v1/platform/github-app/select`,
+  `GET /v1/platform/github-app/status`, and
+  `GET /v1/platform/github-app/candidates`.
+- The selected UI rendered `Selected`, `Reconnect`, and `Disconnect`.
+- The persisted setting contains eight metadata fields and no credential field.
+
+**Status:** U7 COMPLETE.
+
+**Shippable to production: YES** for U7 and the published SDK surface.

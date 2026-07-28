@@ -54,8 +54,10 @@ import {
   resetManagedGithubAppConfig,
   updateManagedGithubAppConfig,
 } from '../services/managed-github-app';
+import { managedGithubRouter } from './managed-github';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
+githubAppSetupRouter.route('/', managedGithubRouter);
 
 // ─── Manifest ────────────────────────────────────────────────────────────────
 
@@ -505,7 +507,7 @@ githubAppSetupRouter.openapi(
   },
 );
 
-// ─── GET /status ──────────────────────────────────────────────────────────────
+// ─── GET /legacy-status ───────────────────────────────────────────────────────
 //
 // `source` reports WHICH of the three managed-git methods (see module
 // docblock + `docs/specs` self-host git settings work) is active, in this
@@ -538,7 +540,7 @@ export function resolveInstallationOwnerType(
 }
 
 /**
- * Pure precedence rule behind `GET /status`'s `source` field — split out so
+ * Pure precedence rule behind `GET /legacy-status`'s `source` field — split out so
  * it's testable without a Hono context/DB (see unit-github-app-pat.test.ts).
  * Mirrors the accessors' own resolution order: App-DB > App-env > PAT.
  */
@@ -604,9 +606,9 @@ export function resetManagedGithubAppInstallationHealthCache(): void {
 githubAppSetupRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/status',
+    path: '/legacy-status',
     tags: ['platform'],
-    summary: 'Managed GitHub App configuration status',
+    summary: 'Deprecated managed GitHub App configuration status',
     ...auth,
     middleware: [supabaseAuth, requireAdmin] as const,
     responses: {

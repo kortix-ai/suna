@@ -71,22 +71,106 @@ export interface SecretDef {
  */
 export const SECRET_DEFS: SecretDef[] = [
   // Database & Supabase
-  { key: 'POSTGRES_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: true },
-  { key: 'SUPABASE_JWT_SECRET', category: 'database', kind: 'generated', required: true, rotatable: true },
-  { key: 'SUPABASE_ANON_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'SUPABASE_SERVICE_ROLE_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'DASHBOARD_USERNAME', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'DASHBOARD_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: true },
-  { key: 'S3_PROTOCOL_ACCESS_KEY_ID', category: 'database', kind: 'generated', required: false, rotatable: true },
-  { key: 'S3_PROTOCOL_ACCESS_KEY_SECRET', category: 'database', kind: 'generated', required: false, rotatable: true },
+  {
+    key: 'POSTGRES_PASSWORD',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
+  {
+    key: 'SUPABASE_JWT_SECRET',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
+  {
+    key: 'SUPABASE_ANON_KEY',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'SUPABASE_SERVICE_ROLE_KEY',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'DASHBOARD_USERNAME',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'DASHBOARD_PASSWORD',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
+  {
+    key: 'S3_PROTOCOL_ACCESS_KEY_ID',
+    category: 'database',
+    kind: 'generated',
+    required: false,
+    rotatable: true,
+  },
+  {
+    key: 'S3_PROTOCOL_ACCESS_KEY_SECRET',
+    category: 'database',
+    kind: 'generated',
+    required: false,
+    rotatable: true,
+  },
   // Internal Supabase-infra encryption keys — see the array-level comment
   // above for why these are generated-but-not-rotatable.
-  { key: 'SECRET_KEY_BASE', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'REALTIME_DB_ENC_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'VAULT_ENC_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'PG_META_CRYPTO_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'LOGFLARE_PUBLIC_ACCESS_TOKEN', category: 'database', kind: 'generated', required: true, rotatable: false },
-  { key: 'LOGFLARE_PRIVATE_ACCESS_TOKEN', category: 'database', kind: 'generated', required: true, rotatable: false },
+  {
+    key: 'SECRET_KEY_BASE',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'REALTIME_DB_ENC_KEY',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'VAULT_ENC_KEY',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'PG_META_CRYPTO_KEY',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'LOGFLARE_PUBLIC_ACCESS_TOKEN',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
+  {
+    key: 'LOGFLARE_PRIVATE_ACCESS_TOKEN',
+    category: 'database',
+    kind: 'generated',
+    required: true,
+    rotatable: false,
+  },
 
   // Auth / Email / SMTP
   { key: 'SMTP_HOST', category: 'auth_email', kind: 'operator', required: false },
@@ -104,7 +188,13 @@ export const SECRET_DEFS: SecretDef[] = [
   // for secrets with no other way to get set. NOT rotatable: regenerating it
   // changes the SAML SP's signing identity and breaks every already-registered
   // IdP until re-registered.
-  { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
+  {
+    key: 'SAML_PRIVATE_KEY',
+    category: 'auth_email',
+    kind: 'generated',
+    required: false,
+    rotatable: false,
+  },
 
   // Agent sandbox — three interchangeable providers (SandboxProviderName in
   // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
@@ -119,26 +209,81 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: false },
   { key: 'PLATINUM_WEBHOOK_SECRET', category: 'sandbox', kind: 'operator', required: false },
 
-  // Managed git — NOT init-required: configured in-app (Settings → Git,
-  // DB-backed) after `start`, not by the CLI. See missingRequiredSecrets() in
-  // commands/self-host.ts.
+  // Managed git. Nango owns provider credentials. The operator supplies these
+  // values through `kortix self-host env set`, then selects the installation
+  // in Settings -> Git.
+  { key: 'NANGO_API_KEY', category: 'managed_git', kind: 'operator', required: true },
+  { key: 'NANGO_WEBHOOK_SIGNING_KEY', category: 'managed_git', kind: 'operator', required: true },
+  { key: 'NANGO_BASE_URL', category: 'managed_git', kind: 'operator', required: true },
+  {
+    key: 'NANGO_GITHUB_ACCOUNT_INTEGRATION_ID',
+    category: 'managed_git',
+    kind: 'operator',
+    required: true,
+  },
+  {
+    key: 'NANGO_GITHUB_MANAGED_INTEGRATION_ID',
+    category: 'managed_git',
+    kind: 'operator',
+    required: true,
+  },
+  { key: 'KORTIX_GIT_PROXY', category: 'managed_git', kind: 'operator', required: true },
+  {
+    key: 'GITHUB_CREDENTIAL_RESOLUTION',
+    category: 'managed_git',
+    kind: 'operator',
+    required: true,
+  },
+
+  // Rollback-only values. The API reads these only in nango_preferred mode.
   { key: 'MANAGED_GIT_GITHUB_OWNER', category: 'managed_git', kind: 'operator', required: false },
   { key: 'MANAGED_GIT_GITHUB_TOKEN', category: 'managed_git', kind: 'operator', required: false },
-  { key: 'MANAGED_GIT_GITHUB_INSTALL_ID', category: 'managed_git', kind: 'operator', required: false },
+  {
+    key: 'MANAGED_GIT_GITHUB_INSTALL_ID',
+    category: 'managed_git',
+    kind: 'operator',
+    required: false,
+  },
   { key: 'KORTIX_GITHUB_APP_ID', category: 'managed_git', kind: 'operator', required: false },
-  { key: 'KORTIX_GITHUB_APP_PRIVATE_KEY', category: 'managed_git', kind: 'operator', required: false },
+  {
+    key: 'KORTIX_GITHUB_APP_PRIVATE_KEY',
+    category: 'managed_git',
+    kind: 'operator',
+    required: false,
+  },
   { key: 'KORTIX_GITHUB_APP_SLUG', category: 'managed_git', kind: 'operator', required: false },
   // Minted alongside the App by `connect-github`'s manifest-conversion
   // exchange. Not read by the API today (installation-token auth doesn't need
   // them) — kept so the App can be managed/re-verified later without
   // regenerating it from scratch.
-  { key: 'KORTIX_GITHUB_APP_CLIENT_ID', category: 'managed_git', kind: 'operator', required: false },
-  { key: 'KORTIX_GITHUB_APP_CLIENT_SECRET', category: 'managed_git', kind: 'operator', required: false },
-  { key: 'KORTIX_GITHUB_APP_WEBHOOK_SECRET', category: 'managed_git', kind: 'operator', required: false },
+  {
+    key: 'KORTIX_GITHUB_APP_CLIENT_ID',
+    category: 'managed_git',
+    kind: 'operator',
+    required: false,
+  },
+  {
+    key: 'KORTIX_GITHUB_APP_CLIENT_SECRET',
+    category: 'managed_git',
+    kind: 'operator',
+    required: false,
+  },
+  {
+    key: 'KORTIX_GITHUB_APP_WEBHOOK_SECRET',
+    category: 'managed_git',
+    kind: 'operator',
+    required: false,
+  },
   // Signs the GitHub App install-state HMAC (buildGitHubAppInstallState in
   // apps/api/src/projects/github.ts). `connect-github` generates this once
   // (if unset) alongside the App credentials.
-  { key: 'KORTIX_GITHUB_APP_STATE_SECRET', category: 'managed_git', kind: 'generated', required: false, rotatable: true },
+  {
+    key: 'KORTIX_GITHUB_APP_STATE_SECRET',
+    category: 'managed_git',
+    kind: 'generated',
+    required: false,
+    rotatable: true,
+  },
 
   // LLM — NOT init-required: BYOK via the frontend's model picker after
   // `start`, not collected by the CLI.
@@ -158,13 +303,42 @@ export const SECRET_DEFS: SecretDef[] = [
   // whose URL is ephemeral (re-captured on every start/update). Setting both
   // switches to a stable named tunnel instead.
   { key: 'CLOUDFLARE_TUNNEL_TOKEN', category: 'reachability', kind: 'operator', required: false },
-  { key: 'CLOUDFLARE_TUNNEL_HOSTNAME', category: 'reachability', kind: 'operator', required: false },
+  {
+    key: 'CLOUDFLARE_TUNNEL_HOSTNAME',
+    category: 'reachability',
+    kind: 'operator',
+    required: false,
+  },
 
   // Internal tokens
-  { key: 'GATEWAY_INTERNAL_TOKEN', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
-  { key: 'INTERNAL_SERVICE_KEY', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
-  { key: 'API_KEY_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
-  { key: 'TUNNEL_SIGNING_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
+  {
+    key: 'GATEWAY_INTERNAL_TOKEN',
+    category: 'internal_tokens',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
+  {
+    key: 'INTERNAL_SERVICE_KEY',
+    category: 'internal_tokens',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
+  {
+    key: 'API_KEY_SECRET',
+    category: 'internal_tokens',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
+  {
+    key: 'TUNNEL_SIGNING_SECRET',
+    category: 'internal_tokens',
+    kind: 'generated',
+    required: true,
+    rotatable: true,
+  },
 ];
 
 const SECRET_DEF_BY_KEY: ReadonlyMap<string, SecretDef> = new Map(
@@ -219,17 +393,47 @@ export function isUpdaterManagedKey(key: string): boolean {
 export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   // Database & Supabase
   POSTGRES_PASSWORD: [
-    'supabase-db', 'supabase-auth', 'supabase-rest', 'supabase-realtime',
-    'supabase-storage', 'supabase-meta', 'supabase-functions', 'supabase-supavisor',
-    'supabase-analytics', 'kortix-api',
+    'supabase-db',
+    'supabase-auth',
+    'supabase-rest',
+    'supabase-realtime',
+    'supabase-storage',
+    'supabase-meta',
+    'supabase-functions',
+    'supabase-supavisor',
+    'supabase-analytics',
+    'kortix-api',
   ],
   SUPABASE_JWT_SECRET: [
-    'supabase-db', 'supabase-kong', 'supabase-auth', 'supabase-rest', 'supabase-realtime',
-    'supabase-storage', 'supabase-meta', 'supabase-functions', 'supabase-analytics',
-    'kortix-api', 'frontend',
+    'supabase-db',
+    'supabase-kong',
+    'supabase-auth',
+    'supabase-rest',
+    'supabase-realtime',
+    'supabase-storage',
+    'supabase-meta',
+    'supabase-functions',
+    'supabase-analytics',
+    'kortix-api',
+    'frontend',
   ],
-  SUPABASE_ANON_KEY: ['supabase-kong', 'supabase-realtime', 'supabase-storage', 'supabase-meta', 'supabase-functions', 'frontend', 'kortix-api'],
-  SUPABASE_SERVICE_ROLE_KEY: ['supabase-kong', 'supabase-realtime', 'supabase-storage', 'supabase-meta', 'supabase-functions', 'kortix-api'],
+  SUPABASE_ANON_KEY: [
+    'supabase-kong',
+    'supabase-realtime',
+    'supabase-storage',
+    'supabase-meta',
+    'supabase-functions',
+    'frontend',
+    'kortix-api',
+  ],
+  SUPABASE_SERVICE_ROLE_KEY: [
+    'supabase-kong',
+    'supabase-realtime',
+    'supabase-storage',
+    'supabase-meta',
+    'supabase-functions',
+    'kortix-api',
+  ],
   DASHBOARD_USERNAME: ['supabase-kong'],
   DASHBOARD_PASSWORD: ['supabase-kong'],
   S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage'],
@@ -261,6 +465,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   PLATINUM_WEBHOOK_SECRET: ['kortix-api'],
 
   // Managed git
+  NANGO_API_KEY: ['kortix-api'],
+  NANGO_WEBHOOK_SIGNING_KEY: ['kortix-api'],
+  NANGO_BASE_URL: ['kortix-api'],
+  NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: ['kortix-api'],
+  NANGO_GITHUB_MANAGED_INTEGRATION_ID: ['kortix-api'],
+  KORTIX_GIT_PROXY: ['kortix-api'],
+  GITHUB_CREDENTIAL_RESOLUTION: ['kortix-api'],
   MANAGED_GIT_GITHUB_OWNER: ['kortix-api'],
   MANAGED_GIT_GITHUB_TOKEN: ['kortix-api'],
   MANAGED_GIT_GITHUB_INSTALL_ID: ['kortix-api'],

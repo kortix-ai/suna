@@ -31,6 +31,7 @@ let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
 let managedPat: string | null;
 let provisionedInitialToken: string | null;
+let provisionedCredentialRef: string | null;
 let existingAuthMethod: string;
 let existingCredentialRef: string | null;
 
@@ -45,9 +46,14 @@ function getTestAuth() {
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: any, init?: any) => {
-  const url = typeof input === 'string' ? input : input?.url ?? '';
+  const url = typeof input === 'string' ? input : (input?.url ?? '');
   if (typeof url === 'string' && /\/env\//.test(url)) {
-    return { ok: false, status: 404, json: async () => ({}), text: async () => '' } as unknown as Response;
+    return {
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+      text: async () => '',
+    } as unknown as Response;
   }
   return originalFetch(input, init);
 }) as typeof fetch;
@@ -74,19 +80,26 @@ const stubBackend = {
       repoOwner: REPO_OWNER,
       repoName: input.slug,
       installationId: INSTALL_ID,
-      credentialRef: null,
+      credentialRef: provisionedCredentialRef,
       defaultBranch: input.defaultBranch,
       initialToken: provisionedInitialToken,
     };
   },
-  deleteRepo: async () => { backendCalls.push('deleteRepo'); },
+  deleteRepo: async () => {
+    backendCalls.push('deleteRepo');
+  },
   buildUpstream: (ref: any, token: string | null) => ({
     url: ref.upstreamUrl,
     headers: token
       ? { Authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` }
       : {},
   }),
-  seedFiles: async (_ref: any, _token: string, files: Array<{ path: string; content: string }>, opts: { baseFiles?: Array<{ path: string; content: string }> }) => {
+  seedFiles: async (
+    _ref: any,
+    _token: string,
+    files: Array<{ path: string; content: string }>,
+    opts: { baseFiles?: Array<{ path: string; content: string }> },
+  ) => {
     backendCalls.push('seedFiles');
     seedFilePaths = files.map((file) => file.path).sort();
     seedBaseFilePaths = (opts.baseFiles ?? []).map((file) => file.path).sort();
@@ -166,12 +179,22 @@ mock.module('../projects/git', () => ({
   resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
 }));
 
-mock.module("../snapshots/builder", () => ({
-  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+mock.module('../snapshots/builder', () => ({
+  ensureSandboxImage: async () => ({
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+    contentHash: 'a'.repeat(64),
+    built: false,
+    isDefault: true,
+  }),
+  deleteSandboxImage: async () => ({
+    deleted: false,
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+  }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
-  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
@@ -179,15 +202,21 @@ mock.module("../snapshots/builder", () => ({
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
-  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: "kortix-ppwarm-test",
-    tip: "a".repeat(40),
+  ensurePlatformDefaultImage: async () => ({
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+    contentHash: 'a'.repeat(64),
     built: false,
-    provider: "daytona",
+    isDefault: true,
   }),
-  DEFAULT_SANDBOX_SLUG: "default",
+  resolveCommitSha: async () => 'a'.repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: 'kortix-ppwarm-test',
+    tip: 'a'.repeat(40),
+    built: false,
+    provider: 'daytona',
+  }),
+  DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -200,7 +229,9 @@ mock.module('../shared/resolve-account', () => ({
 
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
-    auth: { admin: { getUserById: async () => ({ data: { user: { email: 'ship@example.test' } } }) } },
+    auth: {
+      admin: { getUserById: async () => ({ data: { user: { email: 'ship@example.test' } } }) },
+    },
   }),
 }));
 
@@ -256,7 +287,12 @@ mock.module('../shared/db', () => ({
         where: () => {
           // The project-limit guard's count(*) query is awaited directly
           // (no .limit()). 0 keeps provision under any plan's cap.
-          if (table === projects && projection && typeof projection === 'object' && 'count' in projection) {
+          if (
+            table === projects &&
+            projection &&
+            typeof projection === 'object' &&
+            'count' in projection
+          ) {
             return Promise.resolve([{ count: 0 }]);
           }
           return {
@@ -382,6 +418,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     backendConfigured = true;
     managedPat = null;
     provisionedInitialToken = PUSH_TOKEN;
+    provisionedCredentialRef = null;
     existingAuthMethod = 'github_app';
     existingCredentialRef = null;
   });
@@ -451,6 +488,33 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.push_token).toBeNull();
+  });
+
+  test('persists managed Nango auth and never exports its internal seed token', async () => {
+    provisionedCredentialRef = 'managed-nango-connection';
+    provisionedInitialToken = 'nango-installation-token';
+
+    const res = await createApp().request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Nango Managed Project' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.push_token).toBeNull();
+    expect(body.git_username).toBeNull();
+    expect(insertedProject).toMatchObject({
+      metadata: {
+        git: {
+          auth: {
+            method: 'nango',
+            ref: 'managed-nango-connection',
+            installation_id: INSTALL_ID,
+          },
+        },
+      },
+    });
   });
 
   test('git-token fails closed when managed GitHub auth resolves to server-global PAT fallback', async () => {

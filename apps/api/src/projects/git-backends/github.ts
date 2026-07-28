@@ -1,4 +1,6 @@
+import { config } from '../../config';
 import { managedGithubAppConfig } from '../../platform/services/managed-github-app';
+import { managedGithubConnectionService } from '../../platform/services/managed-github-runtime';
 import {
   type GitHubAuthContext,
   addCollaborator,
@@ -145,110 +147,222 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
   };
 }
 
-export const githubBackend: GitHostBackend = {
-  id: 'github',
+export interface ManagedGithubBackendCredential {
+  connectionId: string;
+  installationId: string;
+  owner: string;
+  ownerType: 'Organization';
+  token: string;
+}
 
-  async isConfigured(): Promise<boolean> {
-    const owner = managedGithubOwner();
-    if (!owner) return false;
-    // PAT path: a straight org token needs no App creds at all.
-    if (managedGithubToken()) return true;
-    // App-installation path: an installation id is useless without the App's
-    // own id+private key to sign the JWT that mints installation tokens — so
-    // this flips true only once appId+privateKey+owner+installationId are ALL
-    // present (matches the DB config the in-app setup flow writes across its
-    // two steps: manifest-callback stores appId/privateKey, install-callback
-    // stores owner/installationId).
-    return Boolean(managedGithubInstallId() && isGithubAppConfigured());
-  },
+export interface GithubBackendDependencies {
+  credentialMode(): 'nango_preferred' | 'nango_only';
+  resolveManagedCredential(): Promise<ManagedGithubBackendCredential>;
+  legacyConfigured(): Promise<boolean>;
+  resolveLegacyAdminAuth(): Promise<GitHubAuthContext>;
+  mintLegacyWriteToken(ref: GitConnectionRef): Promise<string>;
+  createRepo: typeof ghCreateRepo;
+  deleteRepo(
+    input: Omit<Parameters<typeof ghDeleteRepo>[0], 'auth'> & { auth: GitHubAuthContext },
+  ): ReturnType<typeof ghDeleteRepo>;
+  addCollaborator(
+    input: Omit<Parameters<typeof addCollaborator>[0], 'auth'> & { auth: GitHubAuthContext },
+  ): ReturnType<typeof addCollaborator>;
+  seedRepo: typeof seedRepoViaGitPush;
+}
 
-  async createRepo(input: ProvisionInput): Promise<ProvisionedRepo> {
-    const auth = await managedAdminAuth();
-    const repo = await ghCreateRepo({
-      name: input.slug,
-      owner: auth.owner,
-      isPrivate: input.isPrivate,
-      autoInit: false,
-      auth,
-    });
+interface ResolvedBackendAuth {
+  auth: GitHubAuthContext;
+  connectionId: string | null;
+  installationId: string | null;
+}
+
+export function createGithubBackend(dependencies: GithubBackendDependencies): GitHostBackend {
+  const resolveManaged = async (): Promise<ResolvedBackendAuth> => {
+    const managed = await dependencies.resolveManagedCredential();
     return {
-      provider: 'github',
-      upstreamUrl: repo.clone_url,
-      externalRepoId: String(repo.id),
-      repoOwner: auth.owner ?? null,
-      repoName: repo.name,
-      // Recorded for the App path; null when running on a PAT.
-      installationId: managedGithubToken() ? null : managedGithubInstallId(),
-      credentialRef: null,
-      defaultBranch: repo.default_branch || input.defaultBranch,
-      initialToken: null,
+      auth: {
+        token: managed.token,
+        source: 'nango',
+        owner: managed.owner,
+        ownerType: managed.ownerType,
+        installationId: managed.installationId,
+      },
+      connectionId: managed.connectionId,
+      installationId: managed.installationId,
+    };
+  };
+
+  const resolveAdmin = async (): Promise<ResolvedBackendAuth> => {
+    try {
+      return await resolveManaged();
+    } catch (error) {
+      if (dependencies.credentialMode() === 'nango_only') throw error;
+      const auth = await dependencies.resolveLegacyAdminAuth();
+      return {
+        auth,
+        connectionId: null,
+        installationId: auth.installationId ?? null,
+      };
+    }
+  };
+
+  const assertConnectionMatch = (ref: GitConnectionRef, resolved: ResolvedBackendAuth): void => {
+    if (
+      resolved.connectionId &&
+      ((ref.credentialRef && ref.credentialRef !== resolved.connectionId) ||
+        (ref.installationId && ref.installationId !== resolved.installationId))
+    ) {
+      throw new Error('Managed GitHub connection does not match the selected Nango connection.');
+    }
+  };
+
+  const resolveWriteToken = async (ref: GitConnectionRef): Promise<string> => {
+    try {
+      const resolved = await resolveManaged();
+      assertConnectionMatch(ref, resolved);
+      return resolved.auth.token;
+    } catch (error) {
+      if (dependencies.credentialMode() === 'nango_only') throw error;
+      return dependencies.mintLegacyWriteToken(ref);
+    }
+  };
+
+  return {
+    id: 'github',
+
+    async isConfigured(): Promise<boolean> {
+      try {
+        await dependencies.resolveManagedCredential();
+        return true;
+      } catch {
+        return dependencies.credentialMode() === 'nango_preferred'
+          ? dependencies.legacyConfigured()
+          : false;
+      }
+    },
+
+    async createRepo(input: ProvisionInput): Promise<ProvisionedRepo> {
+      const resolved = await resolveAdmin();
+      const repo = await dependencies.createRepo({
+        name: input.slug,
+        owner: resolved.auth.owner,
+        isPrivate: input.isPrivate,
+        autoInit: false,
+        auth: resolved.auth,
+      });
+      return {
+        provider: 'github',
+        upstreamUrl: repo.clone_url,
+        externalRepoId: String(repo.id),
+        repoOwner: resolved.auth.owner ?? null,
+        repoName: repo.name,
+        installationId: resolved.installationId,
+        credentialRef: resolved.connectionId,
+        defaultBranch: repo.default_branch || input.defaultBranch,
+        initialToken: null,
+      };
+    },
+
+    async deleteRepo(ref: GitConnectionRef): Promise<void> {
+      if (!ref.repoOwner || !ref.repoName) return;
+      const resolved = await resolveAdmin();
+      assertConnectionMatch(ref, resolved);
+      await dependencies.deleteRepo({
+        owner: ref.repoOwner,
+        repo: ref.repoName,
+        auth: resolved.auth,
+      });
+    },
+
+    buildUpstream(ref: GitConnectionRef, token: string | null, _scope: GitScope): UpstreamGit {
+      return { url: ref.upstreamUrl, headers: token ? basicAuthHeader(token) : {} };
+    },
+
+    async seedFiles(
+      ref: GitConnectionRef,
+      token: string,
+      files: SeedFile[],
+      opts: { branch: string; message: string; baseFiles?: SeedFile[] },
+    ): Promise<void> {
+      await dependencies.seedRepo({
+        upstreamUrl: ref.upstreamUrl,
+        token,
+        files,
+        branch: opts.branch,
+        commitMessage: opts.message,
+        // Deterministic base commit (constant-var render) — committed FIRST so
+        // every project of this starter shares an identical root SHA with the
+        // image-baked scaffold (snapshots/build-context.ts). Without forwarding
+        // this, the project root was the project-named files commit → unrelated
+        // to the baked scaffold → every fresh session full-cloned through the
+        // tunnel instead of delta-fetching one tiny commit (2026-06-13).
+        baseFiles: opts.baseFiles,
+      });
+    },
+
+    /**
+     * Invite a GitHub user as a collaborator on a managed repo — lets the project
+     * creator pull "their" repo into their own GitHub account (clone/work on
+     * github.com directly). GitHub sends a pending invitation they accept.
+     */
+    async inviteCollaborator(
+      ref: GitConnectionRef,
+      username: string,
+      scope: GitScope,
+    ): Promise<InviteResult> {
+      if (!ref.managed) throw new Error('collaborator invites are only for managed repos');
+      if (!ref.repoOwner || !ref.repoName) throw new Error('repo coordinates are required');
+      const resolved = await resolveAdmin();
+      assertConnectionMatch(ref, resolved);
+      const invitation = await dependencies.addCollaborator({
+        owner: ref.repoOwner,
+        repo: ref.repoName,
+        username,
+        permission: scope === 'write' ? 'push' : 'pull',
+        auth: resolved.auth,
+      });
+      return {
+        username,
+        permission: scope === 'write' ? 'push' : 'pull',
+        invitationUrl: invitation?.html_url ?? null,
+        alreadyCollaborator: invitation === null,
+      };
+    },
+
+    async authedPushUrl(ref: GitConnectionRef): Promise<string> {
+      const token = await resolveWriteToken(ref);
+      return injectGitCredential(ref.upstreamUrl, token);
+    },
+  };
+}
+
+async function legacyGithubConfigured(): Promise<boolean> {
+  const owner = managedGithubOwner();
+  if (!owner) return false;
+  if (managedGithubToken()) return true;
+  return Boolean(managedGithubInstallId() && isGithubAppConfigured());
+}
+
+export const githubBackend: GitHostBackend = createGithubBackend({
+  credentialMode: () => config.GITHUB_CREDENTIAL_RESOLUTION,
+  resolveManagedCredential: async () => {
+    const resolved = await managedGithubConnectionService.resolveSelectedCredential();
+    return {
+      connectionId: resolved.credential.connectionId,
+      installationId: resolved.credential.installationId,
+      owner: resolved.setting.owner.login,
+      ownerType: resolved.setting.owner.type,
+      token: resolved.credential.installationToken,
     };
   },
-
-  async deleteRepo(ref: GitConnectionRef): Promise<void> {
-    if (!ref.repoOwner || !ref.repoName) return;
-    const auth = await managedAdminAuth();
-    await ghDeleteRepo({ owner: ref.repoOwner, repo: ref.repoName, auth });
-  },
-
-  buildUpstream(ref: GitConnectionRef, token: string | null, _scope: GitScope): UpstreamGit {
-    return { url: ref.upstreamUrl, headers: token ? basicAuthHeader(token) : {} };
-  },
-
-  async seedFiles(
-    ref: GitConnectionRef,
-    token: string,
-    files: SeedFile[],
-    opts: { branch: string; message: string; baseFiles?: SeedFile[] },
-  ): Promise<void> {
-    await seedRepoViaGitPush({
-      upstreamUrl: ref.upstreamUrl,
-      token,
-      files,
-      branch: opts.branch,
-      commitMessage: opts.message,
-      // Deterministic base commit (constant-var render) — committed FIRST so
-      // every project of this starter shares an identical root SHA with the
-      // image-baked scaffold (snapshots/build-context.ts). Without forwarding
-      // this, the project root was the project-named files commit → unrelated
-      // to the baked scaffold → every fresh session full-cloned through the
-      // tunnel instead of delta-fetching one tiny commit (2026-06-13).
-      baseFiles: opts.baseFiles,
-    });
-  },
-
-  /**
-   * Invite a GitHub user as a collaborator on a managed repo — lets the project
-   * creator pull "their" repo into their own GitHub account (clone/work on
-   * github.com directly). GitHub sends a pending invitation they accept.
-   */
-  async inviteCollaborator(
-    ref: GitConnectionRef,
-    username: string,
-    scope: GitScope,
-  ): Promise<InviteResult> {
-    if (!ref.managed) throw new Error('collaborator invites are only for managed repos');
-    if (!ref.repoOwner || !ref.repoName) throw new Error('repo coordinates are required');
-    const auth = await managedAdminAuth();
-    const invitation = await addCollaborator({
-      owner: ref.repoOwner,
-      repo: ref.repoName,
-      username,
-      permission: scope === 'write' ? 'push' : 'pull',
-      auth,
-    });
-    return {
-      username,
-      permission: scope === 'write' ? 'push' : 'pull',
-      invitationUrl: invitation?.html_url ?? null,
-      alreadyCollaborator: invitation === null,
-    };
-  },
-
-  async authedPushUrl(ref: GitConnectionRef): Promise<string> {
-    const token = await mintManagedWriteToken(ref);
-    return injectGitCredential(ref.upstreamUrl, token);
-  },
-};
+  legacyConfigured: legacyGithubConfigured,
+  resolveLegacyAdminAuth: managedAdminAuth,
+  mintLegacyWriteToken: mintManagedWriteToken,
+  createRepo: ghCreateRepo,
+  deleteRepo: ghDeleteRepo,
+  addCollaborator,
+  seedRepo: seedRepoViaGitPush,
+});
 
 export { managedGithubToken };

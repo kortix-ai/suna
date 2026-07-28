@@ -29,6 +29,7 @@ type ProjectNangoGitResolver = (
       installationId: string | null;
       repoOwner: string | null;
       repoName: string | null;
+      managed?: boolean;
     };
     mode: 'nango_preferred' | 'nango_only';
   },
@@ -38,6 +39,18 @@ type ProjectNangoGitResolver = (
       installationId: string;
     }): Promise<{
       installation: typeof accountGithubInstallations.$inferSelect;
+      credential: {
+        connectionId: string;
+        installationId: string;
+        installationToken: string;
+      };
+    }>;
+    resolveManagedCredential?(): Promise<{
+      setting: {
+        connectionId: string;
+        installationId: string;
+        owner: { login: string; type: 'Organization' };
+      };
       credential: {
         connectionId: string;
         installationId: string;
@@ -387,6 +400,61 @@ describe('project runtime GitHub Nango credential resolution', () => {
       authSource: 'nango',
     });
     expect(JSON.stringify(result)).not.toContain('user-token');
+  });
+
+  test('uses the selected managed connection for managed project runtime Git', async () => {
+    const resolve = await resolver();
+    let accountCalls = 0;
+    let managedCalls = 0;
+    const result = await resolve(
+      {
+        project: {
+          ...project,
+          repoUrl: 'https://github.com/kortix-managed/demo.git',
+        },
+        remote: {
+          ...remote,
+          ref: 'managed-connection',
+          repoOwner: 'kortix-managed',
+          managed: true,
+        },
+        mode: 'nango_only',
+      },
+      {
+        resolveAccountCredential: async () => {
+          accountCalls += 1;
+          throw new Error('account resolver must not run');
+        },
+        resolveManagedCredential: async () => {
+          managedCalls += 1;
+          return {
+            setting: {
+              connectionId: 'managed-connection',
+              installationId: INSTALLATION_ID,
+              owner: { login: 'kortix-managed', type: 'Organization' },
+            },
+            credential: {
+              connectionId: 'managed-connection',
+              installationId: INSTALLATION_ID,
+              installationToken: 'managed-installation-token',
+            },
+          };
+        },
+      },
+    );
+
+    expect(accountCalls).toBe(0);
+    expect(managedCalls).toBe(1);
+    expect(result).toEqual({
+      auth: {
+        token: 'managed-installation-token',
+        source: 'nango',
+        owner: 'kortix-managed',
+        ownerType: 'Organization',
+        installationId: INSTALLATION_ID,
+      },
+      authSource: 'nango',
+    });
   });
 
   test('rejects a project connection bound to another Nango connection', async () => {

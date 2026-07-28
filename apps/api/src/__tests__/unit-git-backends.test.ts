@@ -9,6 +9,7 @@ import {
   getBackend,
   getDefaultManagedBackend,
   getDefaultManagedProvider,
+  createGithubBackend,
   githubBackend,
   hasBackend,
   parseBasicAuthHeader,
@@ -70,7 +71,9 @@ describe('registry', () => {
 describe('basicAuthHeader', () => {
   test('encodes x-access-token:<token>', () => {
     const h = basicAuthHeader('tok123');
-    expect(h.Authorization).toBe(`Basic ${Buffer.from('x-access-token:tok123').toString('base64')}`);
+    expect(h.Authorization).toBe(
+      `Basic ${Buffer.from('x-access-token:tok123').toString('base64')}`,
+    );
   });
 
   test('parses a provider-selected basic username and token', () => {
@@ -86,7 +89,9 @@ describe('buildUpstream', () => {
   test('github: upstream url + basic auth header', () => {
     const up = githubBackend.buildUpstream(ref({}), 'ghs_abc', 'write');
     expect(up.url).toBe('https://github.com/kortix-managed/demo.git');
-    expect(up.headers.Authorization).toBe(`Basic ${Buffer.from('x-access-token:ghs_abc').toString('base64')}`);
+    expect(up.headers.Authorization).toBe(
+      `Basic ${Buffer.from('x-access-token:ghs_abc').toString('base64')}`,
+    );
   });
 
   test('github: no token → no auth header (anon)', () => {
@@ -96,11 +101,162 @@ describe('buildUpstream', () => {
 
   test('generic/BYO (github fallback): uses upstreamUrl verbatim + basic auth', () => {
     const up = getBackend('generic').buildUpstream(
-      ref({ provider: 'generic', upstreamUrl: 'https://example.com/org/repo.git', repoOwner: 'org', repoName: 'repo' }),
+      ref({
+        provider: 'generic',
+        upstreamUrl: 'https://example.com/org/repo.git',
+        repoOwner: 'org',
+        repoName: 'repo',
+      }),
       'tok',
       'read',
     );
     expect(up.url).toBe('https://example.com/org/repo.git');
-    expect(up.headers.Authorization).toBe(`Basic ${Buffer.from('x-access-token:tok').toString('base64')}`);
+    expect(up.headers.Authorization).toBe(
+      `Basic ${Buffer.from('x-access-token:tok').toString('base64')}`,
+    );
+  });
+});
+
+describe('managed GitHub Nango backend', () => {
+  function fixture(mode: 'nango_preferred' | 'nango_only' = 'nango_only') {
+    const calls: string[] = [];
+    let nangoError: Error | null = null;
+    const backend = createGithubBackend({
+      credentialMode: () => mode,
+      resolveManagedCredential: async () => {
+        calls.push('resolve:nango');
+        if (nangoError) throw nangoError;
+        return {
+          connectionId: 'managed-nango-connection',
+          installationId: '999',
+          owner: 'kortix-managed',
+          ownerType: 'Organization',
+          token: 'nango-installation-token',
+        };
+      },
+      legacyConfigured: async () => true,
+      resolveLegacyAdminAuth: async () => {
+        calls.push('resolve:legacy');
+        return {
+          token: 'legacy-token',
+          source: 'app_installation',
+          owner: 'legacy-owner',
+          ownerType: 'Organization',
+          installationId: '777',
+        };
+      },
+      mintLegacyWriteToken: async () => {
+        calls.push('mint:legacy');
+        return 'legacy-write-token';
+      },
+      createRepo: async (input) => {
+        calls.push(`create:${input.owner}:${input.auth?.source}`);
+        return {
+          id: 42,
+          name: input.name,
+          full_name: `${input.owner}/${input.name}`,
+          private: true,
+          html_url: `https://github.com/${input.owner}/${input.name}`,
+          clone_url: `https://github.com/${input.owner}/${input.name}.git`,
+          ssh_url: `git@github.com:${input.owner}/${input.name}.git`,
+          default_branch: 'main',
+          description: null,
+        };
+      },
+      deleteRepo: async ({ owner, repo, auth }) => {
+        calls.push(`delete:${owner}/${repo}:${auth.source}`);
+      },
+      addCollaborator: async ({ owner, repo, username, auth }) => {
+        calls.push(`invite:${owner}/${repo}:${username}:${auth.source}`);
+        return { html_url: 'https://github.com/invitation/1' };
+      },
+      seedRepo: async ({ token }) => {
+        calls.push(`seed:${token}`);
+      },
+    });
+    return {
+      backend,
+      calls,
+      setNangoError(error: Error | null) {
+        nangoError = error;
+      },
+    };
+  }
+
+  test('creates a repository with the selected Nango connection and persists its reference', async () => {
+    const { backend, calls } = fixture();
+    const repo = await backend.createRepo({
+      accountId: 'account-1',
+      projectId: 'project-1',
+      slug: 'demo',
+      defaultBranch: 'main',
+      isPrivate: true,
+    });
+
+    expect(repo).toMatchObject({
+      repoOwner: 'kortix-managed',
+      installationId: '999',
+      credentialRef: 'managed-nango-connection',
+      initialToken: null,
+    });
+    expect(calls).toEqual(['resolve:nango', 'create:kortix-managed:nango']);
+  });
+
+  test('resolves a fresh selected Nango credential for delete, collaborator, and external push', async () => {
+    const { backend, calls } = fixture();
+    const managedRef = ref({ credentialRef: 'managed-nango-connection' });
+
+    await backend.deleteRepo(managedRef);
+    await backend.inviteCollaborator?.(managedRef, 'octocat', 'write');
+    const pushUrl = await backend.authedPushUrl?.(managedRef);
+
+    expect(calls).toEqual([
+      'resolve:nango',
+      'delete:kortix-managed/demo:nango',
+      'resolve:nango',
+      'invite:kortix-managed/demo:octocat:nango',
+      'resolve:nango',
+    ]);
+    expect(pushUrl).toContain('x-access-token:nango-installation-token@github.com');
+  });
+
+  test('does not use legacy credentials in nango_only mode', async () => {
+    const fixtureState = fixture('nango_only');
+    fixtureState.setNangoError(new Error('Nango unavailable'));
+
+    await expect(
+      fixtureState.backend.createRepo({
+        accountId: 'account-1',
+        projectId: 'project-1',
+        slug: 'demo',
+        defaultBranch: 'main',
+        isPrivate: true,
+      }),
+    ).rejects.toThrow('Nango unavailable');
+    expect(fixtureState.calls).toEqual(['resolve:nango']);
+  });
+
+  test('uses legacy credentials only in nango_preferred mode', async () => {
+    const fixtureState = fixture('nango_preferred');
+    fixtureState.setNangoError(new Error('Nango unavailable'));
+
+    const repo = await fixtureState.backend.createRepo({
+      accountId: 'account-1',
+      projectId: 'project-1',
+      slug: 'demo',
+      defaultBranch: 'main',
+      isPrivate: true,
+    });
+
+    expect(repo).toMatchObject({
+      repoOwner: 'legacy-owner',
+      installationId: '777',
+      credentialRef: null,
+    });
+    expect(fixtureState.calls).toEqual([
+      'resolve:nango',
+      'resolve:legacy',
+      'create:legacy-owner:app_installation',
+    ]);
   });
 });
