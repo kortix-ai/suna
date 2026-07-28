@@ -1,6 +1,7 @@
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
+import { useLastProjectStore } from '@/stores/last-project-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 /**
@@ -27,6 +28,7 @@ export async function resetClientState(): Promise<void> {
 
   try {
     useCurrentAccountStore.getState().clear();
+    useLastProjectStore.getState().clear();
   } catch (error) {
     console.error('Failed to clear current-account store:', error);
   }

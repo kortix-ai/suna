@@ -12,6 +12,7 @@ import {
   isStaticPublicRoute,
   supportsMarkdownNegotiation,
 } from '@/lib/routing/route-tables';
+import { parseLastProjectCookie } from '@/lib/home/last-project-cookie';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
@@ -26,9 +27,6 @@ const AGENT_DISCOVERY_LINK_HEADER =
 
 // Routes that require authentication but are related to billing/setup
 const BILLING_ROUTES: string[] = [];
-
-// Routes that require authentication and active subscription
-const PROTECTED_ROUTES = ['/projects', '/accounts', '/invites', '/admin'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -172,6 +170,12 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // The marketing narrative moved from `/` to `/why`, so a bare locale root
+  // (/de, /it) has to follow it or those pages stop ranking.
+  if (pathSegments.length === 1 && locales.includes(firstSegment as Locale)) {
+    return NextResponse.redirect(new URL(`/${firstSegment}/why`, request.url));
+  }
+
   if (isStaticPublicRoute(pathname)) {
     return NextResponse.next();
   }
@@ -278,14 +282,20 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // FAST PATH: authenticated users hitting the homepage go straight to /projects.
+  // `/` is the product now, for signed-in and signed-out visitors alike, so
+  // there is nothing to bounce here. A signed-in user is resolved into their
+  // last project by the route itself; a signed-out one gets the gated shell.
+  //
+  // FAST PATH: skip that resolution when we already know where they were.
+  // Redirecting rather than rendering in place is deliberate — ProjectSwitcher
+  // keys off `pathname.startsWith('/projects/')` and ProjectShell's
+  // `?customize=` effect replaces to `/projects/{id}`, so a shell rendered at
+  // `/` would silently navigate away.
   if (pathname === '/' && user) {
-    return redirectPreservingSession(new URL('/projects', request.url));
-  }
-
-  // Desktop shell never shows the marketing homepage — bounce to /projects.
-  if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return redirectPreservingSession(new URL('/projects', request.url));
+    const lastProject = parseLastProjectCookie(request.headers.get('cookie'));
+    if (lastProject) {
+      return redirectPreservingSession(new URL(`/projects/${lastProject}`, request.url));
+    }
   }
 
   // Self-host: when the landing/marketing site is disabled

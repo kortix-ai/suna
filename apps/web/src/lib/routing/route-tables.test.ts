@@ -21,15 +21,24 @@ describe('matchesRoutePrefix', () => {
   test('does not match a longer slug that merely starts with the route', () => {
     // The whole point of the `/` boundary: /projects must not gate /projects-x.
     expect(matchesRoutePrefix('/projects-evil', '/projects')).toBe(false);
+  });
+
+  test('the root route is exact-only', () => {
+    // Otherwise every table listing '/' would also match '//evil.com'.
+    expect(matchesRoutePrefix('/', '/')).toBe(true);
     expect(matchesRoutePrefix('/pricing', '/')).toBe(false);
+    expect(matchesRoutePrefix('//evil.com', '/')).toBe(false);
+    expect(matchesRoutePrefix('/anything/deep', '/')).toBe(false);
   });
 });
 
 describe('isDesktopAllowedRoute — the security boundary', () => {
-  test('allows the product surfaces', () => {
+  test('allows the product surfaces and everything under them', () => {
     for (const route of DESKTOP_ALLOWED_ROUTES) {
       expect(isDesktopAllowedRoute(route)).toBe(true);
-      expect(isDesktopAllowedRoute(`${route}/nested/deep`)).toBe(true);
+      if (route !== '/') {
+        expect(isDesktopAllowedRoute(`${route}/nested/deep`)).toBe(true);
+      }
     }
   });
 
@@ -38,9 +47,13 @@ describe('isDesktopAllowedRoute — the security boundary', () => {
     expect(isDesktopAllowedRoute('/auth/callback')).toBe(true);
   });
 
+  test('allows the product root, which resolves into a project', () => {
+    expect(isDesktopAllowedRoute('/')).toBe(true);
+  });
+
   test('blocks the entire marketing surface', () => {
     for (const path of [
-      '/',
+      '/why',
       '/pricing',
       '/enterprise',
       '/blog',
@@ -68,6 +81,8 @@ describe('isDesktopAllowedRoute — the security boundary', () => {
   });
 
   test('blocks protocol-relative and traversal-shaped paths', () => {
+    // Regression: listing '/' in the allowlist made these pass, because
+    // '//evil.com'.startsWith('/' + '/') is true. The root route is exact-only.
     expect(isDesktopAllowedRoute('//evil.com')).toBe(false);
     expect(isDesktopAllowedRoute('//evil.com/projects')).toBe(false);
     expect(isDesktopAllowedRoute('/../projects')).toBe(false);
@@ -79,8 +94,9 @@ describe('isDesktopAllowedRoute — the security boundary', () => {
 });
 
 describe('isPublicRoute', () => {
-  test('the homepage and the marketing pages are public', () => {
+  test('the product root and the marketing pages are public', () => {
     expect(isPublicRoute('/')).toBe(true);
+    expect(isPublicRoute('/why')).toBe(true);
     expect(isPublicRoute('/pricing')).toBe(true);
     expect(isPublicRoute('/docs/cli')).toBe(true);
   });
@@ -92,9 +108,10 @@ describe('isPublicRoute', () => {
   });
 
   test('includes locale-prefixed marketing routes for SEO', () => {
-    expect(PUBLIC_ROUTES).toContain('/de');
+    // The narrative moved to /why, so the localized copies moved with it.
+    expect(PUBLIC_ROUTES).toContain('/de/why');
     expect(PUBLIC_ROUTES).toContain('/de/legal');
-    expect(isPublicRoute('/de')).toBe(true);
+    expect(isPublicRoute('/de/why')).toBe(true);
   });
 });
 
@@ -107,10 +124,16 @@ describe('isStaticPublicRoute', () => {
 });
 
 describe('isSelfHostMarketingContent', () => {
-  test('covers the homepage and the promo routes', () => {
-    expect(isSelfHostMarketingContent('/')).toBe(true);
+  test('covers the promo routes', () => {
+    expect(isSelfHostMarketingContent('/why')).toBe(true);
     expect(isSelfHostMarketingContent('/pricing')).toBe(true);
     expect(isSelfHostMarketingContent('/blog/a-post')).toBe(true);
+  });
+
+  test('does NOT treat the product root as marketing', () => {
+    // `/` is the app now. Treating it as marketing would make a self-host
+    // redirect its own product away from the root.
+    expect(isSelfHostMarketingContent('/')).toBe(false);
   });
 
   test('leaves functional public routes reachable on a self-host', () => {

@@ -1,5 +1,8 @@
 // Post-auth landing goes to the projects list.
-const DEFAULT_AUTH_RETURN_URL = '/projects';
+// `/` is the product now: it resolves the signed-in user into their last
+// project, or falls through to /projects when there is nothing to open. That
+// is strictly better than always landing on the grid.
+const DEFAULT_AUTH_RETURN_URL = '/';
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',

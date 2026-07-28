@@ -12,6 +12,8 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
 import { isBillingEnabled } from '@/lib/config';
+import { consumePendingPrompt } from '@/lib/home/pending-prompt';
+import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
@@ -34,6 +36,15 @@ export default function ProjectIndexPage() {
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
+
+  // A prompt typed on the logged-out homepage rides across sign-in and lands
+  // here. Prefill only — the user still presses send, because they have not yet
+  // seen a real composer and this is a billable action.
+  useEffect(() => {
+    if (!projectId) return;
+    const pending = consumePendingPrompt();
+    if (pending) useComposerPrefillStore.getState().setPrefill(projectId, pending);
+  }, [projectId]);
 
   const warmSession = useWarmProjectSession(projectId);
   const newSession = useNewProjectSession(

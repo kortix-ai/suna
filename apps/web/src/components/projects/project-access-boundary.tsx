@@ -12,9 +12,10 @@ import {
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
+import { useLastProjectStore } from '@/stores/last-project-store';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode, useEffect } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,16 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
     enabled: !!projectId,
     retry: false,
   });
+
+  // A project we can no longer open must stop being the landing target, or `/`
+  // sends the user here on every visit. Deliberately no router.replace('/') —
+  // that would create a / <-> /projects/{id} loop.
+  const failedStatus = query.isError ? errorStatus(query.error) : undefined;
+  useEffect(() => {
+    if (failedStatus === 403 || failedStatus === 404) {
+      useLastProjectStore.getState().forgetProject(projectId);
+    }
+  }, [failedStatus, projectId]);
 
   if (query.isLoading) {
     return <ProjectAccessLoading />;

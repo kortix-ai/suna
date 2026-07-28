@@ -7,14 +7,16 @@ describe('sanitizeAuthReturnUrl', () => {
     expect(sanitizeAuthReturnUrl('/invites/abc-123')).toBe('/invites/abc-123');
   });
 
-  test('falls back to /projects when no value is given', () => {
-    expect(sanitizeAuthReturnUrl(undefined)).toBe('/projects');
-    expect(sanitizeAuthReturnUrl(null)).toBe('/projects');
+  test('falls back to the product root when no value is given', () => {
+    // `/` resolves the user into their last project, or /projects when there
+    // is nothing to open — strictly better than always landing on the grid.
+    expect(sanitizeAuthReturnUrl(undefined)).toBe('/');
+    expect(sanitizeAuthReturnUrl(null)).toBe('/');
   });
 
   test('rejects an absolute/off-origin URL', () => {
-    expect(sanitizeAuthReturnUrl('https://evil.example.com')).toBe('/projects');
-    expect(sanitizeAuthReturnUrl('//evil.example.com')).toBe('/projects');
+    expect(sanitizeAuthReturnUrl('https://evil.example.com')).toBe('/');
+    expect(sanitizeAuthReturnUrl('//evil.example.com')).toBe('/');
   });
 });
 

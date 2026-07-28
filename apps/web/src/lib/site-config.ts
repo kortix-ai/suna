@@ -13,11 +13,11 @@ export const siteConfig = {
   url: CANONICAL_ORIGIN,
   nav: {
     links: [
-      { id: 1, name: 'Product', href: '/' },
+      { id: 1, name: 'Product', href: '/why' },
       { id: 2, name: 'Enterprise', href: '/enterprise' },
       { id: 3, name: 'Use Cases', href: '/use-cases' },
       { id: 4, name: 'Pricing', href: '/pricing' },
-      { id: 5, name: 'CLI', href: '/#cli' },
+      { id: 5, name: 'CLI', href: '/why#cli' },
       { id: 6, name: 'Docs', href: '/docs' },
     ] as NavLink[],
   },

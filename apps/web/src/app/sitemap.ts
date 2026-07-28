@@ -10,7 +10,7 @@ import {
 
 type SitemapEntry = MetadataRoute.Sitemap[number];
 
-const LOCALIZED_ROUTES = ['/', '/legal', '/support'] as const;
+const LOCALIZED_ROUTES = ['/why', '/legal', '/support'] as const;
 
 function htmlEntry(pathname: string, lastModified?: string): SitemapEntry {
   return {
@@ -47,12 +47,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     const languages = Object.fromEntries(
       locales.map((locale) => [
         locale,
-        absoluteUrl(locale === 'en' ? pathname : `/${locale}${pathname === '/' ? '' : pathname}`),
+        absoluteUrl(locale === 'en' ? pathname : `/${locale}${pathname}`),
       ]),
     );
     for (const locale of locales) {
-      const localizedPath =
-        locale === 'en' ? pathname : `/${locale}${pathname === '/' ? '' : pathname}`;
+      const localizedPath = locale === 'en' ? pathname : `/${locale}${pathname}`;
       const entry = htmlEntry(localizedPath);
       entry.alternates = { languages };
       entries.set(entry.url, entry);

@@ -21,6 +21,7 @@ import { desktopShellPlatform } from '@/lib/desktop';
 import { resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useLastProjectStore } from '@/stores/last-project-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { PanelLeft } from 'lucide-react';
@@ -71,6 +72,14 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
+
+  // Record where the user is working so `/` can bring them straight back.
+  // This runs inside ProjectAccessBoundary, so a 403 project is never stored.
+  const landingAccountId = projectDetail?.project?.account_id ?? null;
+  useEffect(() => {
+    if (!user || !projectId) return;
+    useLastProjectStore.getState().setLastProject(landingAccountId, projectId);
+  }, [user, projectId, landingAccountId]);
 
   useEffect(() => {
     // Legacy `?customize=<section>` deep links now resolve to a real route

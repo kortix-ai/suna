@@ -13,7 +13,7 @@
 import { locales } from '@/i18n/config';
 
 /** Marketing pages that support locale routing for SEO (/de, /it, …). */
-export const MARKETING_ROUTES = ['/', '/legal', '/support'];
+export const MARKETING_ROUTES = ['/why', '/legal', '/support'];
 
 /**
  * Pure marketing/promo routes that a self-host with the landing page disabled
@@ -23,6 +23,7 @@ export const MARKETING_ROUTES = ['/', '/legal', '/support'];
  * marketing site itself is deactivated.
  */
 export const SELF_HOST_MARKETING_ONLY = [
+  '/why',
   '/about',
   '/careers',
   '/blog',
@@ -41,7 +42,8 @@ export const SELF_HOST_MARKETING_ONLY = [
 
 /** Routes that don't require authentication. */
 export const PUBLIC_ROUTES = [
-  '/', // Homepage should be public!
+  '/', // The product shell — gated actions, but the page itself is public
+  '/why', // The marketing narrative that used to live at /
   '/auth',
   '/auth/callback',
   '/auth/signup',
@@ -98,6 +100,8 @@ export const PUBLIC_ROUTES = [
 export const STATIC_PUBLIC_ROUTES = ['/game-of-life', '/rauch'];
 
 export const MARKDOWN_NEGOTIATION_ROUTES = new Set([
+  // `/` keeps its Markdown twin: the HTML there is the product shell now, but
+  // an agent asking kortix.com for text/markdown still gets the overview.
   '/',
   '/about',
   '/developers',
@@ -116,6 +120,9 @@ export const MARKDOWN_NEGOTIATION_ROUTES = new Set([
  * stay blocked by default.
  */
 export const DESKTOP_ALLOWED_ROUTES = [
+  // The product root. Safe only because matchesRoutePrefix requires an exact
+  // match or a `/` boundary — a bare startsWith would allow the whole site.
+  '/',
   '/projects',
   '/accounts',
   '/invites',
@@ -138,11 +145,17 @@ export const DESKTOP_ALLOWED_ROUTES = [
 /**
  * Exact match, or a match on the route plus a `/` boundary.
  *
- * The `/` boundary is what stops `/pricing` from matching a bare `/` entry, and
- * `/projects-evil` from matching `/projects`. Every table above is read through
- * this — do not loosen it to a bare `startsWith`.
+ * The `/` boundary is what stops `/projects-evil` from matching `/projects`.
+ * Every table above is read through this — do not loosen it to a bare
+ * `startsWith`.
+ *
+ * The root route is EXACT-ONLY. Prefix-matching `'/'` would append a second
+ * slash and match `//evil.com`, letting a protocol-relative URL through any
+ * table that lists `'/'` — including the desktop allowlist. Every path is
+ * nominally "under" the root, so a prefix match there means nothing anyway.
  */
 export function matchesRoutePrefix(pathname: string, route: string): boolean {
+  if (route === '/') return pathname === '/';
   return pathname === route || pathname.startsWith(`${route}/`);
 }
 
@@ -164,9 +177,15 @@ export function isStaticPublicRoute(pathname: string): boolean {
   return matchesAnyRoutePrefix(pathname, STATIC_PUBLIC_ROUTES);
 }
 
-/** Marketing content a self-host with the landing page disabled must not serve. */
+/**
+ * Marketing content a self-host with the landing page disabled must not serve.
+ *
+ * `/` is deliberately NOT here any more. It used to be the marketing homepage;
+ * it is the product root now, so treating it as marketing would make a
+ * self-host redirect its own app away from `/`.
+ */
 export function isSelfHostMarketingContent(pathname: string): boolean {
-  return pathname === '/' || matchesAnyRoutePrefix(pathname, SELF_HOST_MARKETING_ONLY);
+  return matchesAnyRoutePrefix(pathname, SELF_HOST_MARKETING_ONLY);
 }
 
 export function supportsMarkdownNegotiation(pathname: string): boolean {

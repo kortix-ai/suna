@@ -48,6 +48,7 @@ function loadContentTimestamps(): Record<string, string> {
 
 export const STATIC_PUBLIC_ROUTES = [
   '/',
+  '/why',
   '/about',
   '/blog',
   '/careers',
