@@ -137,6 +137,15 @@ describe('runtime artifact integrity', () => {
     expect(rendered).toContain(
       `"@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}"`,
     );
+    expect(rendered).toContain(
+      `"@earendil-works/pi-ai@${PI_CODING_AGENT_VERSION}"`,
+    );
+    expect(rendered).toContain(
+      `"@earendil-works/pi-tui@${PI_CODING_AGENT_VERSION}"`,
+    );
+    expect(rendered).toContain(
+      `"@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}"`,
+    );
     expect(rendered).toContain('command -v claude-agent-acp');
     expect(rendered).toContain('command -v codex-acp');
     expect(rendered).toContain('command -v pi-acp');
