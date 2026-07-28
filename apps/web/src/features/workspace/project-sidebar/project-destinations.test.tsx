@@ -22,15 +22,17 @@ const NAV_ITEMS = readFileSync(join(HERE, 'project-nav-items.tsx'), 'utf8');
 const ANON_SHELL = readFileSync(join(HERE, '..', '..', 'home', 'anonymous-home-shell.tsx'), 'utf8');
 
 describe('destinations', () => {
-  test('are Files, All sessions and Projects, in that order', () => {
-    expect(PROJECT_DESTINATIONS.map((d) => d.label)).toEqual(['Files', 'All sessions', 'Projects']);
+  test('are All sessions then Files', () => {
+    expect(PROJECT_DESTINATIONS.map((d) => d.label)).toEqual(['All sessions', 'Files']);
+  });
+
+  test('no Projects row until the manager it would open exists', () => {
+    expect(PROJECT_DESTINATIONS.map((d) => d.key)).not.toContain('projects');
   });
 
   test('render as links when the surface has routes', () => {
-    const html = render(
-      <ProjectDestinationsGroup hrefFor={(k) => (k === 'projects' ? '/projects' : `/p/${k}`)} />,
-    );
-    expect(html).toContain('href="/projects"');
+    const html = render(<ProjectDestinationsGroup hrefFor={(k) => `/p/${k}`} />);
+    expect(html).toContain('href="/p/sessions"');
     expect(html).toContain('Files');
     expect(html).toContain('All sessions');
   });
@@ -42,12 +44,9 @@ describe('destinations', () => {
     expect(html).toContain('Files');
   });
 
-  test('Projects points at the account-level list, not inside a project', () => {
-    const html = render(
-      <ProjectDestinationsGroup hrefFor={(k) => (k === 'projects' ? '/projects' : `/p/${k}`)} />,
-    );
-    expect(html).toContain('href="/projects"');
-    expect(html).not.toContain('/p/projects');
+  test('All sessions comes first, directly under New session', () => {
+    const html = render(<ProjectDestinationsGroup hrefFor={(k) => `/p/${k}`} />);
+    expect(html.indexOf('All sessions')).toBeLessThan(html.indexOf('Files'));
   });
 });
 
@@ -58,8 +57,8 @@ describe('sidebar structure', () => {
     );
   });
 
-  test('Customize sits above the session list too, not stranded in the footer', () => {
-    expect(SIDEBAR.indexOf('<ProjectNavItems')).toBeLessThan(
+  test('Customize sits BELOW the session list — configuration after work', () => {
+    expect(SIDEBAR.indexOf('<ProjectNavItems')).toBeGreaterThan(
       SIDEBAR.indexOf('<ProjectSessionList'),
     );
   });
@@ -100,5 +99,24 @@ describe('both shells use the same nav', () => {
   test('the signed-out shell gates them rather than linking into a project', () => {
     expect(ANON_SHELL).toContain("onSelect={() => gate('/')}");
     expect(ANON_SHELL).toContain("onSelectSettings={() => gate('/')}");
+  });
+});
+
+describe('the collapse control', () => {
+  const CHROME = readFileSync(join(HERE, 'sidebar-chrome.tsx'), 'utf8');
+  const PEEK = readFileSync(join(HERE, 'sidebar-peek-toggle.tsx'), 'utf8');
+
+  test('is not inside the sidebar panel', () => {
+    expect(CHROME).not.toContain('SidebarTrigger');
+  });
+
+  test('renders whether the sidebar is open or closed', () => {
+    // Hiding it while open left most pages with no way to collapse at all.
+    expect(PEEK).not.toContain('if (!collapsed) return null');
+  });
+
+  test('still summons the hover flyout while collapsed', () => {
+    expect(PEEK).toContain('peekEnter');
+    expect(PEEK).toContain('peekLeave');
   });
 });

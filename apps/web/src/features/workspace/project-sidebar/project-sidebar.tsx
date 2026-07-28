@@ -177,10 +177,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             Customize group below them. */}
         <ProjectDestinations projectId={projectId} />
 
-        {/* Customize sits with the destinations, not stranded under the
-            session list — it is navigation, not a footer. */}
-        <ProjectNavItems projectId={projectId} />
-
         <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
           {/* Sessions are always expanded — no collapse toggle. The header
                 label opens the full sessions page and carries the active
@@ -242,6 +238,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </div>
           </div>
         </SidebarGroup>
+
+        {/* Configuration, below the work. */}
+        <ProjectNavItems projectId={projectId} />
 
         <SidebarGroup className="mt-auto py-0.5">
           <SidebarMenu>

@@ -12,7 +12,7 @@
  * gate instead of a project. One component, so the two cannot drift.
  */
 
-import { FolderOpen, MessagesSquare, Package } from 'lucide-react';
+import { FolderOpen, MessagesSquare } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 
-export type DestinationKey = 'files' | 'sessions' | 'projects';
+export type DestinationKey = 'sessions' | 'files';
 
 export interface Destination {
   key: DestinationKey;
@@ -34,10 +34,12 @@ export interface Destination {
 }
 
 export const PROJECT_DESTINATIONS: readonly Destination[] = [
-  { key: 'files', label: 'Files', icon: FolderOpen },
   { key: 'sessions', label: 'All sessions', icon: MessagesSquare },
-  { key: 'projects', label: 'Projects', icon: Package },
+  { key: 'files', label: 'Files', icon: FolderOpen },
 ];
+
+// No "Projects" row yet. The multi-project manager it would open does not
+// exist, and a destination that goes nowhere is worse than an absent one.
 
 const ROW_CLASS = 'flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!';
 
@@ -100,17 +102,12 @@ export function ProjectDestinations({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
 
-  const hrefFor = (key: DestinationKey) =>
-    key === 'projects' ? '/projects' : `/projects/${projectId}/${key}`;
+  const hrefFor = (key: DestinationKey) => `/projects/${projectId}/${key}`;
 
   return (
     <ProjectDestinationsGroup
       hrefFor={hrefFor}
-      isActive={(key) =>
-        key === 'projects'
-          ? pathname === '/projects'
-          : !!pathname?.startsWith(`/projects/${projectId}/${key}`)
-      }
+      isActive={(key) => !!pathname?.startsWith(`/projects/${projectId}/${key}`)}
       onNavigate={() => {
         if (isMobile) setOpenMobile(false);
       }}
