@@ -11,7 +11,7 @@
  * screen real estate.
  */
 
-import { ArrowUp, Mic, Search } from 'lucide-react';
+import { ArrowUp, Mic } from 'lucide-react';
 import { useEffect, useReducer, useState } from 'react';
 
 import { Icon } from '@/features/icon/icon';
@@ -69,12 +69,11 @@ export function DelegateShowcase({ title, description, action, className }: Dele
 
   return (
     <div className={cn('flex w-full flex-col items-center gap-6', className)}>
-      {/* The card stack. The bars behind read as earlier sessions, which is
-          what a Kortix project actually accumulates. */}
-      {/* Opaque on purpose. Translucent fills let the dotted SessionWelcome
-          backdrop bleed through the card and the stack behind it, which reads
-          as a stray layer floating over the page rather than as a card. */}
-      <div className="border-border/60 bg-muted/40 relative w-full max-w-lg overflow-hidden rounded-2xl border px-6 pt-10 pb-8 backdrop-blur-sm sm:px-10">
+      {/* No panel around the stack. A filled, bordered container here sat on
+          top of the page's own backdrop and read as a second background — the
+          composer and the cards behind it are the graphic, and they carry
+          their own edges. The padding stays: the stack overhangs upward. */}
+      <div className="relative w-full max-w-lg px-6 pt-10 pb-2 sm:px-10">
         <div className="relative mx-auto w-full max-w-sm">
           <div
             aria-hidden
@@ -105,9 +104,8 @@ export function DelegateShowcase({ title, description, action, className }: Dele
                 composer so the graphic reads as the product, not an
                 illustration of it. */}
             <div className="mt-2 flex items-center gap-1.5" aria-hidden>
-              <span className="text-muted-foreground inline-flex size-7 items-center justify-center rounded-full">
-                <Search className="size-3.5" />
-              </span>
+              {/* The agent selector leads. The search affordance that used to
+                  sit before it is not part of what this graphic is showing. */}
               <span className="text-muted-foreground bg-muted/60 inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium">
                 <Icon.Kortix className="size-3.5" />
                 Kortix

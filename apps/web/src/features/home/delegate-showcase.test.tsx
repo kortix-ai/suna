@@ -85,3 +85,19 @@ describe('lifecycle', () => {
     expect(SOURCE).not.toContain('setTimeout(');
   });
 });
+
+describe('the graphic carries no second background', () => {
+  test('there is no filled panel wrapping the composer stack', () => {
+    // A bordered, filled container here sat on top of the page's own backdrop
+    // and read as a second background behind the card.
+    expect(SOURCE).not.toContain('bg-muted/40');
+    expect(SOURCE).not.toContain('backdrop-blur-sm');
+  });
+
+  test('the agent selector leads the mock toolbar', () => {
+    // Assert on the source, not the markup: the "researches" phrase icon is
+    // lucide's search glyph too, so the rendered HTML legitimately contains it.
+    expect(SOURCE).not.toContain('<Search ');
+    expect(render()).toContain('Kortix');
+  });
+});
