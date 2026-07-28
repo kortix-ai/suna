@@ -37,7 +37,7 @@ export interface SelfHostCommandFlags {
   tunnel?: 'cloudflare';
   /** Operator admin email(s), comma-separated. Sets KORTIX_PLATFORM_ADMIN_EMAILS
    *  so these accounts are platform admins on this self-host (needed to
-   *  configure the managed GitHub App and other server-wide settings in-app).
+   *  configure managed Nango connections and other server-wide settings in-app).
    *  `--admin-email you@org.com`. */
   adminEmail?: string;
   /** Dev mode: run locally-built images (e.g. a branch build) that aren't on

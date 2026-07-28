@@ -235,56 +235,6 @@ export const SECRET_DEFS: SecretDef[] = [
     required: true,
   },
 
-  // Rollback-only values. The API reads these only in nango_preferred mode.
-  { key: 'MANAGED_GIT_GITHUB_OWNER', category: 'managed_git', kind: 'operator', required: false },
-  { key: 'MANAGED_GIT_GITHUB_TOKEN', category: 'managed_git', kind: 'operator', required: false },
-  {
-    key: 'MANAGED_GIT_GITHUB_INSTALL_ID',
-    category: 'managed_git',
-    kind: 'operator',
-    required: false,
-  },
-  { key: 'KORTIX_GITHUB_APP_ID', category: 'managed_git', kind: 'operator', required: false },
-  {
-    key: 'KORTIX_GITHUB_APP_PRIVATE_KEY',
-    category: 'managed_git',
-    kind: 'operator',
-    required: false,
-  },
-  { key: 'KORTIX_GITHUB_APP_SLUG', category: 'managed_git', kind: 'operator', required: false },
-  // Minted alongside the App by `connect-github`'s manifest-conversion
-  // exchange. Not read by the API today (installation-token auth doesn't need
-  // them) — kept so the App can be managed/re-verified later without
-  // regenerating it from scratch.
-  {
-    key: 'KORTIX_GITHUB_APP_CLIENT_ID',
-    category: 'managed_git',
-    kind: 'operator',
-    required: false,
-  },
-  {
-    key: 'KORTIX_GITHUB_APP_CLIENT_SECRET',
-    category: 'managed_git',
-    kind: 'operator',
-    required: false,
-  },
-  {
-    key: 'KORTIX_GITHUB_APP_WEBHOOK_SECRET',
-    category: 'managed_git',
-    kind: 'operator',
-    required: false,
-  },
-  // Signs the GitHub App install-state HMAC (buildGitHubAppInstallState in
-  // apps/api/src/projects/github.ts). `connect-github` generates this once
-  // (if unset) alongside the App credentials.
-  {
-    key: 'KORTIX_GITHUB_APP_STATE_SECRET',
-    category: 'managed_git',
-    kind: 'generated',
-    required: false,
-    rotatable: true,
-  },
-
   // LLM — NOT init-required: BYOK via the frontend's model picker after
   // `start`, not collected by the CLI.
   { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: false },
@@ -472,19 +422,6 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   NANGO_GITHUB_MANAGED_INTEGRATION_ID: ['kortix-api'],
   KORTIX_GIT_PROXY: ['kortix-api'],
   GITHUB_CREDENTIAL_RESOLUTION: ['kortix-api'],
-  MANAGED_GIT_GITHUB_OWNER: ['kortix-api'],
-  MANAGED_GIT_GITHUB_TOKEN: ['kortix-api'],
-  MANAGED_GIT_GITHUB_INSTALL_ID: ['kortix-api'],
-  KORTIX_GITHUB_APP_ID: ['kortix-api'],
-  KORTIX_GITHUB_APP_PRIVATE_KEY: ['kortix-api'],
-  KORTIX_GITHUB_APP_SLUG: ['kortix-api'],
-  KORTIX_GITHUB_APP_CLIENT_ID: ['kortix-api'],
-  KORTIX_GITHUB_APP_CLIENT_SECRET: ['kortix-api'],
-  KORTIX_GITHUB_APP_WEBHOOK_SECRET: ['kortix-api'],
-  KORTIX_GITHUB_APP_STATE_SECRET: ['kortix-api'],
-  KORTIX_GITHUB_TOKEN: ['kortix-api'],
-  KORTIX_GITHUB_OWNER: ['kortix-api'],
-
   // LLM
   OPENROUTER_API_KEY: ['kortix-api'],
   AWS_BEDROCK_API_KEY: ['kortix-api'],

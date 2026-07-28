@@ -144,7 +144,7 @@ export interface ProjectCloneTarget {
   repoUrl: string;
   token: string | null;
   username: string;
-  needsManagedToken: boolean;
+  proxyRequired: boolean;
 }
 
 export function saveClonedProjectLink(
@@ -183,7 +183,7 @@ export function resolveProjectCloneTarget(
     repoUrl: target.repoUrl,
     token: target.credentialMode === "kortix-token" ? kortixToken : null,
     username: "x-access-token",
-    needsManagedToken: target.credentialMode === "managed-git-token",
+    proxyRequired: target.credentialMode === "proxy-required",
   };
 }
 
@@ -209,17 +209,12 @@ async function projectsClone(
 
   const { client, auth, project } = located.located;
   const target = resolveProjectCloneTarget(project, auth.token);
-  if (target.needsManagedToken) {
-    try {
-      const credential = await client.post<{
-        push_token: string;
-        git_username?: string;
-      }>(`/projects/${project.project_id}/git-token`);
-      target.token = credential.push_token;
-      target.username = credential.git_username || target.username;
-    } catch (err) {
-      return surface(err);
-    }
+  if (target.proxyRequired) {
+    process.stderr.write(
+      `${status.err('This managed project requires the Kortix git proxy.')} ` +
+        `Update the host and run \`kortix update\`, then retry.\n`,
+    );
+    return 1;
   }
 
   const args = target.token

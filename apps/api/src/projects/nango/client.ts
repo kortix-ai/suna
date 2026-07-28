@@ -140,6 +140,22 @@ export interface NangoClientOptions {
   baseUrl?: string;
   timeoutMs?: number;
   fetchImpl?: (input: string, init?: RequestInit) => Promise<Response>;
+  observe?: (observation: NangoRequestObservation) => void;
+}
+
+export type NangoOperation =
+  | 'create_connect_session'
+  | 'create_reconnect_session'
+  | 'list_connections'
+  | 'get_connection'
+  | 'delete_connection';
+
+export interface NangoRequestObservation {
+  operation: NangoOperation;
+  outcome: 'success' | 'error';
+  latencyMs: number;
+  upstreamStatus?: number;
+  errorCode?: NangoError['code'];
 }
 
 function toConnection(value: z.output<typeof connectionSchema>): NangoConnectionSummary {
@@ -216,14 +232,26 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
   const baseUrl = normalizedBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetchImpl ?? fetch;
+  const observe = options.observe;
+
+  function record(observation: NangoRequestObservation): void {
+    try {
+      observe?.(observation);
+    } catch {
+      // Telemetry cannot change credential resolution behavior.
+    }
+  }
 
   async function request<Schema extends z.ZodTypeAny>(
+    operation: NangoOperation,
     method: string,
     path: string,
     schema: Schema,
     body?: unknown,
     reconnectOnMissingConnection = false,
   ): Promise<z.output<Schema>> {
+    const startedAt = Date.now();
+    let upstreamStatus: number | undefined;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -239,6 +267,7 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
         signal: controller.signal,
         redirect: 'error',
       });
+      upstreamStatus = response.status;
 
       if (response.status === 429) {
         throw nangoRateLimited(response.headers.get('retry-after') ?? undefined);
@@ -254,10 +283,27 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
       const payload = parseJson(await readBoundedText(response));
       const parsed = schema.safeParse(payload);
       if (!parsed.success) throw invalidNangoResponse();
+      record({
+        operation,
+        outcome: 'success',
+        latencyMs: Date.now() - startedAt,
+        upstreamStatus: response.status,
+      });
       return parsed.data as z.output<Schema>;
     } catch (error) {
-      if (error instanceof NangoError) throw error;
-      throw nangoUnavailable();
+      const normalized = error instanceof NangoError ? error : nangoUnavailable(upstreamStatus);
+      record({
+        operation,
+        outcome: 'error',
+        latencyMs: Date.now() - startedAt,
+        ...(normalized.upstreamStatus !== undefined
+          ? { upstreamStatus: normalized.upstreamStatus }
+          : upstreamStatus !== undefined
+            ? { upstreamStatus }
+            : {}),
+        errorCode: normalized.code,
+      });
+      throw normalized;
     } finally {
       clearTimeout(timer);
     }
@@ -267,7 +313,9 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
     path: '/connect/sessions' | '/connect/sessions/reconnect',
     body: Record<string, unknown>,
   ): Promise<NangoConnectSession> {
-    const response = await request('POST', path, connectSessionResponseSchema, body);
+    const operation =
+      path === '/connect/sessions' ? 'create_connect_session' : 'create_reconnect_session';
+    const response = await request(operation, 'POST', path, connectSessionResponseSchema, body);
     return {
       token: response.data.token,
       expiresAt: response.data.expires_at,
@@ -302,6 +350,7 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
       if (input.page !== undefined) search.set('page', String(input.page));
       const suffix = search.size ? `?${search.toString()}` : '';
       const connections = await request(
+        'list_connections',
         'GET',
         `/connections${suffix}`,
         connectionListResponseSchema,
@@ -319,6 +368,7 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
       }
       const encodedConnectionId = encodeURIComponent(input.connectionId);
       const response = await request(
+        'get_connection',
         'GET',
         `/connections/${encodedConnectionId}?${search.toString()}`,
         connectionSchema,
@@ -338,6 +388,7 @@ export function createNangoClient(options: NangoClientOptions): NangoClient {
       });
       const encodedConnectionId = encodeURIComponent(input.connectionId);
       await request(
+        'delete_connection',
         'DELETE',
         `/connections/${encodedConnectionId}?${search.toString()}`,
         deleteConnectionResponseSchema,

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 522,
+  "count": 511,
   "routes": [
     {
       "method": "GET",
@@ -955,14 +955,6 @@
       "path": "/v1/platform/boot-timeline"
     },
     {
-      "method": "DELETE",
-      "path": "/v1/platform/github-app"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/github-app/app"
-    },
-    {
       "method": "GET",
       "path": "/v1/platform/github-app/candidates"
     },
@@ -973,26 +965,6 @@
     {
       "method": "DELETE",
       "path": "/v1/platform/github-app/connection"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/github-app/install-callback"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/github-app/legacy-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/github-app/manifest-callback"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/github-app/manifest-start"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/github-app/pat"
     },
     {
       "method": "POST",
@@ -1783,15 +1755,7 @@
       "path": "/v1/projects/github/connect-session"
     },
     {
-      "method": "DELETE",
-      "path": "/v1/projects/github/installation"
-    },
-    {
       "method": "GET",
-      "path": "/v1/projects/github/installation"
-    },
-    {
-      "method": "POST",
       "path": "/v1/projects/github/installation"
     },
     {
@@ -1809,14 +1773,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/github/installations/:installationId/refresh"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/github/installations/link"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/github/installations/linkable"
     },
     {
       "method": "GET",

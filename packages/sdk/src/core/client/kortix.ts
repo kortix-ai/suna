@@ -256,7 +256,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     createSession: P.createProjectSession,
   };
 
-  /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
+  /** Nango-backed GitHub connection and repository linking, scoped to an account. */
   const github = {
     linkRepository: P.linkRepository,
     getInstallation: P.getGitHubInstallation,
@@ -347,7 +347,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Validate a `kortix.yaml` (or legacy `kortix.toml`) manifest's raw text server-side — format is auto-resolved from the project's manifest path (same schema `kortix ship`/CR-merge use). */
       validateManifest: (raw: string) => P.validateProjectManifest(projectId, raw),
 
-      /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
+      /**
+       * @deprecated Use the project's `git_origin_url` with the Kortix Git proxy.
+       * Nango-backed GitHub projects return `git_proxy_required`.
+       */
       gitToken: () => P.getProjectGitToken(projectId),
 
       secrets: {
@@ -1047,7 +1050,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     projects,
     project,
     session,
-    /** GitHub App installation + repository linking (account-scoped). */
+    /** Nango-backed GitHub connection + repository linking (account-scoped). */
     github,
     /** Platform-administrator operations. */
     platform,

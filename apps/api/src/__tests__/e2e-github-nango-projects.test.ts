@@ -31,7 +31,6 @@ type ProjectNangoGitResolver = (
       repoName: string | null;
       managed?: boolean;
     };
-    mode: 'nango_preferred' | 'nango_only';
   },
   dependencies: {
     resolveAccountCredential(input: {
@@ -372,7 +371,7 @@ describe('project runtime GitHub Nango credential resolution', () => {
     const calls: Array<{ accountId: string; installationId: string }> = [];
     const resolve = await resolver();
     const result = await resolve(
-      { project, remote, mode: 'nango_preferred' },
+      { project, remote },
       {
         resolveAccountCredential: async (input) => {
           calls.push(input);
@@ -418,7 +417,6 @@ describe('project runtime GitHub Nango credential resolution', () => {
           repoOwner: 'kortix-managed',
           managed: true,
         },
-        mode: 'nango_only',
       },
       {
         resolveAccountCredential: async () => {
@@ -462,7 +460,7 @@ describe('project runtime GitHub Nango credential resolution', () => {
 
     await expect(
       resolve(
-        { project, remote, mode: 'nango_preferred' },
+        { project, remote },
         {
           resolveAccountCredential: async () => ({
             installation: installationRow(),
@@ -482,7 +480,7 @@ describe('project runtime GitHub Nango credential resolution', () => {
     });
   });
 
-  test('allows legacy fallback only in nango_preferred mode', async () => {
+  test('rejects legacy GitHub auth methods after the Nango-only cutover', async () => {
     const resolve = await resolver();
     const legacyRemote = {
       ...remote,
@@ -504,12 +502,7 @@ describe('project runtime GitHub Nango credential resolution', () => {
       },
     };
 
-    expect(
-      await resolve({ project, remote: legacyRemote, mode: 'nango_preferred' }, dependencies),
-    ).toBeNull();
-    await expect(
-      resolve({ project, remote: legacyRemote, mode: 'nango_only' }, dependencies),
-    ).rejects.toMatchObject({
+    await expect(resolve({ project, remote: legacyRemote }, dependencies)).rejects.toMatchObject({
       code: 'github_reconnect_required',
       status: 409,
     });

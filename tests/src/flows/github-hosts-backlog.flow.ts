@@ -5,21 +5,17 @@
  * a hint, not the contract):
  *
  *  - PROJ-4  POST /v1/projects/create-repo — PROJECT_CREATE-gated repo creation.
- *    The black-box-testable path WITHOUT a real GitHub App install: a fresh
- *    account with no installation → resolveGitHubRepoAuth throws
- *    GitHubInstallationRequiredError → 409 { error, install_url }. If GitHub is
- *    not configured on the server at all → 503. ANON → 401 (supabaseAuth),
+ *    A fresh account has no Nango connection. The API returns
+ *    `github_connection_required` before any GitHub operation. ANON → 401,
  *    missing name → 400, invalid chars → 400. (Same route as GH-14; coverage is
  *    a union so the dual declaration is intentional — this flow pins PROJ-4's
- *    distinct spec assertion: no-install ⇒ 409 + install_url.)
+ *    distinct spec assertion: no connection returns typed guidance.)
  *
  *  - GH-5  git transport resolution (`resolveProjectGitAuth`). This is an
  *    INTERNAL function, not a route. Its observable boundary is
- *    POST /v1/projects/:projectId/git-token (the "mint scoped push token"
- *    branch): a generic (non-managed / BYO) project → 409 "Project is not a
- *    managed repo" (the spec's `project_secret` / `none` path); a managed
- *    project whose backend resolves no credential → 503; resolved → 200
- *    { push_token }. ANON → 401, unknown project → 404, NONMEMBER → 404
+ *    POST /v1/projects/:projectId/git-token. GitHub projects return 409
+ *    because clients must use `git_origin_url`; BYO projects also return 409.
+ *    ANON → 401, unknown project → 404, NONMEMBER → 404
  *    (loadProjectForUser returns null ⇒ 404, never 403). Same route as GH-7;
  *    GH-5 pins the resolution OUTCOMES rather than the auth matrix.
  *
@@ -29,11 +25,8 @@
  *    `token_id`; GET lists `items` (no secret); DELETE → 200 {ok:true}, unknown
  *    token → 404. ANON → 401; non-member / no-access → 404 (never 403).
  *
- *  - GH-4  POST /v1/projects/github/installations/linkable and
- *    POST /v1/projects/github/installations/link — the authenticated account
- *    linking flow. Both routes require Kortix authentication. The list route
- *    requires a GitHub user token. The link route validates installation_id
- *    before it calls GitHub.
+ *  - GH-4  Nango reconnect and refresh routes for an account installation.
+ *    Both routes require Kortix authentication and account authorization.
  *
  * NOT AUTHORED (reported as drift — no black-box HTTP surface):
  *  - HOSTS-1..6 (`kortix hosts ls|use|add|rm|info|current`): pure CLI-LOCAL
@@ -45,46 +38,60 @@ import { flow } from "../core/flow";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
-// ── GH-4 — link an existing GitHub App installation ───────────────────────
+// ── GH-4 — reconcile an account Nango connection ──────────────────────────
 
 flow(
   "GH-4",
   {
     domain: "github",
     routes: [
-      "POST /v1/projects/github/installations/linkable",
-      "POST /v1/projects/github/installations/link",
+      "POST /v1/projects/github/installations/:installationId/reconnect-session",
+      "POST /v1/projects/github/installations/:installationId/refresh",
     ],
   },
   async (ctx) => {
-    await ctx.step("ANON cannot list linkable installations → 401", async () => {
+    await ctx.step("ANON cannot create a reconnect session → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/github/installations/linkable", {});
+        .post(
+          "/v1/projects/github/installations/:installationId/reconnect-session",
+          {},
+          { params: { installationId: "999999999" } },
+        );
       r.status(401);
     });
 
-    await ctx.step("missing github_user_token cannot list installations → 400", async () => {
+    await ctx.step("ANON cannot refresh a connection → 401", async () => {
       const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/github/installations/linkable", {});
-      r.status(400).body().has("$.error", "GitHub authorization is required to list installations");
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/projects/github/installations/:installationId/refresh",
+          {},
+          { params: { installationId: "999999999" } },
+        );
+      r.status(401);
     });
 
-    await ctx.step("missing installation_id cannot link an installation → 400", async () => {
+    await ctx.step("unknown installation cannot reconnect", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/github/installations/link", {});
-      r.status(400).body().has("$.error", "installation_id is required");
+        .post(
+          "/v1/projects/github/installations/:installationId/reconnect-session",
+          {},
+          { params: { installationId: "999999999" } },
+        );
+      r.status([400, 403, 404]);
     });
 
-    await ctx.step("nonnumeric installation_id cannot link an installation → 400", async () => {
+    await ctx.step("unknown installation cannot refresh", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/github/installations/link", {
-          installation_id: "not-a-github-installation-id",
-        });
-      r.status(400).body().has("$.error", "installation_id must be a GitHub installation id");
+        .post(
+          "/v1/projects/github/installations/:installationId/refresh",
+          {},
+          { params: { installationId: "999999999" } },
+        );
+      r.status([400, 403, 404]);
     });
   },
 );
@@ -109,18 +116,17 @@ flow(
         .post("/v1/projects/create-repo", { name: "bad name/with spaces" });
       r.status(400);
     });
-    await ctx.step("fresh account with no GitHub App install → 409 + install_url (or 503 if GitHub unconfigured)", async () => {
-      // A brand-new team account is guaranteed to have no GitHub App
-      // installation, so resolveGitHubRepoAuth throws → 409 {error, install_url}.
-      // If the server has no GitHub App configured at all the handler returns 503.
+    await ctx.step("fresh account without Nango returns typed connection guidance", async () => {
       const team = await ctx.fixtures.team();
       const name = ctx.fixtures.name("repo").replace(/[^a-zA-Z0-9._-]/g, "-");
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/create-repo", { name, private: true, account_id: team.id });
-      r.status([409, 503]);
-      // The spec's defining assertion: the no-install path surfaces an install_url.
-      if (r.statusCode === 409) r.body().exists("$.install_url");
+      r.status(409)
+        .body()
+        .has("$.code", "github_connection_required")
+        .has("$.requires_human_oauth", true)
+        .has("$.sdk_action", "createGitHubConnectSession");
     });
   },
 );
@@ -139,14 +145,12 @@ flow(
       r.status(401);
     });
     await ctx.step("generic (non-managed / BYO) project → 409 'not a managed repo'", async () => {
-      // resolveProjectGitAuth's `none`/project_secret branch: a generic local
-      // project has no managed remote, so the mint-push-token path 409s before
-      // ever calling the backend. A managed project would resolve a token (200)
-      // or, if the backend can't mint one, 503.
+      // A generic local project has no managed remote, so the compatibility
+      // endpoint returns 409 before resolving any provider credential.
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
-      r.status([200, 409, 503]);
+      r.status(409);
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client

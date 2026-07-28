@@ -204,18 +204,7 @@ interface SelfHostEnv {
   NANGO_GITHUB_MANAGED_INTEGRATION_ID: string;
   GITHUB_CREDENTIAL_RESOLUTION: string;
   KORTIX_GIT_PROXY: string;
-  KORTIX_GITHUB_APP_ID: string;
-  KORTIX_GITHUB_APP_PRIVATE_KEY: string;
-  KORTIX_GITHUB_APP_SLUG: string;
-  KORTIX_GITHUB_TOKEN: string;
-  KORTIX_GITHUB_OWNER: string;
-  // Managed git: the backend that provisions project repos. The API reads these
-  // MANAGED_GIT_* vars (KORTIX_GITHUB_* alone don't reach it), so the wizard sets
-  // both. Without it, project create/CRUD fails "provider github not configured".
   MANAGED_GIT_PROVIDER: string;
-  MANAGED_GIT_GITHUB_TOKEN: string;
-  MANAGED_GIT_GITHUB_OWNER: string;
-  MANAGED_GIT_GITHUB_INSTALL_ID: string;
   INTEGRATION_AUTH_PROVIDER: string;
   KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: string;
   PIPEDREAM_CLIENT_ID: string;
@@ -2080,26 +2069,15 @@ export function sandboxProviderConfigured(env: Record<string, string>): boolean 
 /** Managed git provider configured? Required to create/CRUD projects. */
 export function gitProviderConfigured(env: Record<string, string>): boolean {
   const resolutionMode = env.GITHUB_CREDENTIAL_RESOLUTION?.trim().toLowerCase();
-  const nango = !!(
+  return !!(
     env.NANGO_API_KEY?.trim() &&
     env.NANGO_WEBHOOK_SIGNING_KEY?.trim() &&
     env.NANGO_BASE_URL?.trim() &&
     env.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID?.trim() &&
     env.NANGO_GITHUB_MANAGED_INTEGRATION_ID?.trim() &&
     env.KORTIX_GIT_PROXY?.trim().toLowerCase() === 'true' &&
-    (resolutionMode === 'nango_only' || resolutionMode === 'nango_preferred')
+    resolutionMode === 'nango_only'
   );
-  if (nango) return true;
-  if (resolutionMode !== 'nango_preferred' || env.MANAGED_GIT_PROVIDER !== 'github') return false;
-
-  const pat = !!(env.MANAGED_GIT_GITHUB_TOKEN && env.MANAGED_GIT_GITHUB_OWNER);
-  const app = !!(
-    env.KORTIX_GITHUB_APP_ID &&
-    env.KORTIX_GITHUB_APP_PRIVATE_KEY &&
-    env.MANAGED_GIT_GITHUB_OWNER &&
-    env.MANAGED_GIT_GITHUB_INSTALL_ID
-  );
-  return pat || app;
 }
 
 // Composite provider checks own these keys. The scalar pass would report
@@ -2113,11 +2091,6 @@ const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
   'NANGO_GITHUB_MANAGED_INTEGRATION_ID',
   'GITHUB_CREDENTIAL_RESOLUTION',
   'KORTIX_GIT_PROXY',
-  'MANAGED_GIT_GITHUB_OWNER',
-  'MANAGED_GIT_GITHUB_TOKEN',
-  'MANAGED_GIT_GITHUB_INSTALL_ID',
-  'KORTIX_GITHUB_APP_ID',
-  'KORTIX_GITHUB_APP_PRIVATE_KEY',
 ]);
 
 /** Friendlier labels for required secrets whose bare key name isn't obvious
@@ -2528,17 +2501,9 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     NANGO_GITHUB_MANAGED_INTEGRATION_ID: '',
     GITHUB_CREDENTIAL_RESOLUTION: 'nango_only',
     KORTIX_GIT_PROXY: 'true',
-    KORTIX_GITHUB_APP_ID: '',
-    KORTIX_GITHUB_APP_PRIVATE_KEY: '',
-    KORTIX_GITHUB_APP_SLUG: '',
-    KORTIX_GITHUB_TOKEN: '',
-    KORTIX_GITHUB_OWNER: '',
     MANAGED_GIT_PROVIDER: 'github',
-    MANAGED_GIT_GITHUB_TOKEN: '',
-    MANAGED_GIT_GITHUB_OWNER: '',
-    MANAGED_GIT_GITHUB_INSTALL_ID: '',
     // Operator admin allowlist — these emails are platform admins on this
-    // self-host (so they can configure the managed GitHub App etc. in-app).
+    // self-host (so they can configure managed Nango connections in-app).
     // Set at init via --admin-email or the guided prompt; the API reads it.
     KORTIX_PLATFORM_ADMIN_EMAILS: flags.adminEmail ?? '',
     INTEGRATION_AUTH_PROVIDER: 'pipedream',

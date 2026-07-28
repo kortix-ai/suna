@@ -110,23 +110,8 @@ function getTestAuth() {
   return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'starter@example.test' };
 }
 
-// This repo's local `.env` (loaded automatically by `bun test`) sets real
-// MANAGED_GIT_GITHUB_*/KORTIX_GITHUB_APP_* values for interactive dev use.
-// The "GitHub App installation" scenarios below assert the pure App-only
-// not-connected state (no managed-git PAT fallback, see
-// serializeGitHubInstallations) — left in place, the real dev values would
-// silently make every account look PAT-connected. Same convention as
-// unit-github-app-isconfigured.test.ts / unit-github-owner-type-routing.test.ts.
-const MANAGED_GIT_ENV_KEYS = [
-  'MANAGED_GIT_GITHUB_OWNER',
-  'MANAGED_GIT_GITHUB_INSTALL_ID',
-  'MANAGED_GIT_GITHUB_TOKEN',
-] as const;
-for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
-
 function resetState() {
   setTestAuth();
-  for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
   fileShaCalls = [];
   commitCalls = [];
@@ -241,19 +226,12 @@ mock.module("../snapshots/builder", () => ({
 const realGithubModule = await import('../projects/github');
 mock.module('../projects/github', () => ({
   ...realGithubModule,
-  listLinkableGitHubAppInstallations: async () => [],
-  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
-  verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
-    ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
-    : null,
   deleteFile: async () => undefined,
   deleteRepo: async (input: any) => {
     deleteRepoCalls.push(input);
   },
   addCollaborator: async () => undefined,
   createBranchRef: async () => undefined,
-  createGitHubAppJwt: () => 'test-jwt',
   getBranchCommitSha: async () => 'a'.repeat(40),
   parseGitHubRepoUrl: (url: string) => {
     const m = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
@@ -268,10 +246,6 @@ mock.module('../projects/github', () => ({
         '/repos/kortix-org/company-os',
       );
     }
-  },
-  createInstallationToken: async (installationId: string) => {
-    expect(['42', '84']).toContain(installationId);
-    return { token: 'installation-token', expires_at: '2026-01-01T00:00:00Z' };
   },
   createRepo: async (input: any) => {
     repoCreateCalls.push(input);
@@ -291,11 +265,6 @@ mock.module('../projects/github', () => ({
     fileShaCalls.push(input);
     return input.path === 'README.md' ? 'existing-readme-sha' : null;
   },
-  getGitHubAppInstallation: async () => ({
-    account: { login: 'kortix-org', type: 'Organization' },
-    repository_selection: 'all',
-    permissions: { contents: 'write' },
-  }),
   verifyGitHubInstallationAdmin: async (token: string) => {
     expect(token).toBe('github-user-token');
     return { login: 'github-admin' };
@@ -831,31 +800,24 @@ describe('create-repo starter scaffold contract', () => {
     ]);
   });
 
-  test('forwards bounded search options to the managed GitHub repository lister', async () => {
-    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
-    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
-    platformAdmin = true;
-
+  test('rejects the removed synthetic PAT installation for repository discovery', async () => {
+    installationRows = [];
     const app = createApp();
     const response = await app.request(
       `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}` +
         '&installation_id=pat&search=customer%20portal&limit=25',
     );
 
-    expect(response.status).toBe(200);
-    expect(ownerRepoListCalls).toEqual([
-      expect.objectContaining({
-        owner: 'managed-kortix',
-        search: 'customer portal',
-        limit: 25,
-      }),
-    ]);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: 'github_connection_required',
+      requires_human_oauth: true,
+    });
+    expect(ownerRepoListCalls).toEqual([]);
   });
 
-  test('does not expose the server managed PAT to a normal account user', async () => {
+  test('does not expose or import through a removed server PAT', async () => {
     installationRows = [];
-    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
-    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
 
     const app = createApp();
     const installations = await app.request(
@@ -870,9 +832,10 @@ describe('create-repo starter scaffold contract', () => {
     const repositories = await app.request(
       `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
     );
-    expect(repositories.status).toBe(403);
-    expect(await repositories.json()).toEqual({
-      error: 'Managed GitHub repository import requires platform admin access',
+    expect(repositories.status).toBe(409);
+    expect(await repositories.json()).toMatchObject({
+      code: 'github_connection_required',
+      requires_human_oauth: true,
     });
     expect(ownerRepoListCalls).toEqual([]);
 
@@ -885,9 +848,10 @@ describe('create-repo starter scaffold contract', () => {
         repo_full_name: 'managed-kortix/private-repo',
       }),
     });
-    expect(linked.status).toBe(403);
-    expect(await linked.json()).toEqual({
-      error: 'Managed GitHub repository import requires platform admin access',
+    expect(linked.status).toBe(409);
+    expect(await linked.json()).toMatchObject({
+      code: 'github_reconnect_required',
+      requires_human_oauth: true,
     });
   });
 

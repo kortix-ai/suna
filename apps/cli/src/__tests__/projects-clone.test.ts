@@ -43,11 +43,11 @@ describe("project clone target", () => {
       repoUrl: "https://api.kortix.com/v1/git/proj_1.git",
       token: "kortix_pat_test",
       username: "x-access-token",
-      needsManagedToken: false,
+      proxyRequired: false,
     });
   });
 
-  test("requests a short-lived provider token for a direct managed origin", () => {
+  test("requires the Kortix proxy for a direct managed origin", () => {
     expect(
       resolveProjectCloneTarget(
         project({ metadata: { git: { managed: true } } }),
@@ -57,7 +57,7 @@ describe("project clone target", () => {
       repoUrl: "https://github.com/acme/demo.git",
       token: null,
       username: "x-access-token",
-      needsManagedToken: true,
+      proxyRequired: true,
     });
   });
 
@@ -66,7 +66,7 @@ describe("project clone target", () => {
       repoUrl: "https://github.com/acme/demo.git",
       token: null,
       username: "x-access-token",
-      needsManagedToken: false,
+      proxyRequired: false,
     });
   });
 });

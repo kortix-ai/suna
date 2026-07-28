@@ -49,7 +49,6 @@ describe('Git credential protocol', () => {
   });
 
   test('returns the Kortix login token for the linked proxy URL', async () => {
-    let mintCalls = 0;
     const credential = await resolveGitCredentialForProject({
       requestUrl: 'https://dev-api.kortix.com/v1/git/proj_1.git',
       project: project({
@@ -57,52 +56,32 @@ describe('Git credential protocol', () => {
         metadata: { git: { auth_method: 'nango' } },
       }),
       kortixToken: 'kortix_pat_test',
-      mintManagedToken: async () => {
-        mintCalls += 1;
-        return { push_token: 'unused' };
-      },
     });
 
     expect(credential).toEqual({
       username: 'x-access-token',
       password: 'kortix_pat_test',
     });
-    expect(mintCalls).toBe(0);
   });
 
-  test('mints a provider token for a matching direct managed origin', async () => {
-    let mintCalls = 0;
+  test('returns no credential for a managed origin without a proxy', async () => {
     const credential = await resolveGitCredentialForProject({
       requestUrl: 'https://github.com/acme/demo.git/',
       project: project({ metadata: { git: { managed: true } } }),
       kortixToken: 'kortix_pat_test',
-      mintManagedToken: async () => {
-        mintCalls += 1;
-        return { push_token: 'github_installation_token', git_username: 'x-github-app' };
-      },
     });
 
-    expect(credential).toEqual({
-      username: 'x-github-app',
-      password: 'github_installation_token',
-    });
-    expect(mintCalls).toBe(1);
+    expect(credential).toBeNull();
   });
 
   test('returns no credential for a different URL', async () => {
-    let mintCalls = 0;
     const credential = await resolveGitCredentialForProject({
       requestUrl: 'https://github.com/acme/other.git',
       project: project({ metadata: { git: { managed: true } } }),
       kortixToken: 'kortix_pat_test',
-      mintManagedToken: async () => {
-        mintCalls += 1;
-        return { push_token: 'must_not_be_used' };
-      },
     });
 
     expect(credential).toBeNull();
-    expect(mintCalls).toBe(0);
   });
 
   test('machine command emits no host or update notice', async () => {

@@ -19,6 +19,25 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
+const TEST_GITHUB_INSTALLATION_ID = '42';
+const TEST_NANGO_CONNECTION_ID = 'account-nango-connection-42';
+
+function projectMetadata(extra: Record<string, unknown> = {}) {
+  return {
+    git: {
+      provider: 'github',
+      owner: 'kortix-ai',
+      name: 'trigger-project',
+      managed: false,
+      auth: {
+        method: 'nango',
+        ref: TEST_NANGO_CONNECTION_ID,
+        installation_id: TEST_GITHUB_INSTALLATION_ID,
+      },
+    },
+    ...extra,
+  };
+}
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
 // Every git read/write goes through this map so a test's "commitFile" is
@@ -63,7 +82,7 @@ const projectRow: typeof projects.$inferSelect = {
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
   status: 'active',
-  metadata: {},
+  metadata: projectMetadata(),
   lastOpenedAt: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -88,7 +107,7 @@ function resetState() {
   manifestReadCalls = 0;
   mirrorInvalidationCalls = 0;
   modelDefaults = { account: null, agents: {}, projects: {} };
-  projectRow.metadata = {};
+  projectRow.metadata = projectMetadata();
   secretValues.clear();
 }
 
@@ -187,25 +206,17 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+const realGithubModule = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...realGithubModule,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: 'kortix-org',
     repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'trigger-project',
   }),
-  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  verifyGitHubAppInstallState: (state: string) => state,
-  verifyGitHubAppInstallStatePayload: (state: string) => ({
-    accountId: state,
-    nonce: 'test-nonce',
-    issuedAt: Math.floor(Date.now() / 1000),
-  }),
-  createGitHubAppJwt: () => 'jwt-test',
-  getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   commitFile: async (opts: { path: string; content: string; message: string }) => {
     repoFiles.set(opts.path, opts.content);
     commitCalls.push({ path: opts.path, message: opts.message });
   },
-  createInstallationToken: async () => ({ token: 'installation-token' }),
   createRepo: async () => {
     throw new Error('not used');
   },
@@ -216,7 +227,14 @@ mock.module('../projects/github', () => ({
   getFileSha: async (opts: { path: string }) => {
     return repoFiles.has(opts.path) ? `sha-${opts.path}` : null;
   },
-  getGitHubAppInstallation: async () => ({
+  getGitHubAppInstallationWithJwt: async () => ({
+    id: 42,
+    account: { login: 'kortix-org', type: 'Organization' },
+    repository_selection: 'all',
+    permissions: {},
+  }),
+  getGitHubAppInstallationForUserToken: async () => ({
+    id: 42,
     account: { login: 'kortix-org', type: 'Organization' },
     repository_selection: 'all',
     permissions: {},
@@ -234,17 +252,56 @@ mock.module('../projects/github', () => ({
   }),
   getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
   verifyGitHubInstallationAdmin: async () => undefined,
-  listLinkableGitHubAppInstallations: async () => [],
-  listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
-  isGithubAppConfigured: () => false,
-  isGithubPatConfigured: () => true,
   isOrgAccount: async () => true,
   deleteRepo: async () => undefined,
   addCollaborator: async () => undefined,
   getBranchCommitSha: async () => 'a'.repeat(40),
   createBranchRef: async () => undefined,
+}));
+
+const accountGithubResolution = () => ({
+  installation: {
+    installationRowId: '00000000-0000-4000-a000-000000000701',
+    accountId: ACCOUNT_ID,
+    installationId: TEST_GITHUB_INSTALLATION_ID,
+    nangoConnectionId: TEST_NANGO_CONNECTION_ID,
+    nangoIntegrationId: 'github-app-oauth',
+    connectionStatus: 'connected',
+    lastValidatedAt: new Date('2026-01-01T00:00:00Z'),
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    disconnectedAt: null,
+    ownerLogin: 'kortix-ai',
+    ownerType: 'Organization',
+    repositorySelection: 'all',
+    permissions: { contents: 'write' },
+    metadata: {},
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+  },
+  credential: {
+    mode: 'account' as const,
+    connectionId: TEST_NANGO_CONNECTION_ID,
+    integrationId: 'github-app-oauth',
+    installationId: TEST_GITHUB_INSTALLATION_ID,
+    installationToken: 'nango-installation-token',
+    userToken: 'nango-user-token',
+    permissions: { contents: 'write' },
+    repositorySelection: 'all',
+    tags: {},
+  },
+});
+
+const realAccountCredentialModule = await import('../projects/nango/account-credential');
+mock.module('../projects/nango/account-credential', () => ({
+  ...realAccountCredentialModule,
+  resolveAccountGithubCredential: async () => accountGithubResolution(),
+  withFreshAccountGithubRead: async (
+    _input: unknown,
+    operation: (resolution: ReturnType<typeof accountGithubResolution>) => Promise<unknown>,
+  ) => operation(accountGithubResolution()),
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -665,6 +722,7 @@ const {
   projectWebhooksApp,
   runProjectTriggerSweep,
 } = await import('../projects/index');
+const { config } = await import('../config');
 const { resetRateLimiters } = await import('../shared/rate-limit');
 
 function createApp() {
@@ -1118,7 +1176,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       slug: 'daily',
       name: 'Daily',
       cron: '* * * * * *',
-      model: 'glm-5.2',
+      model: 'kortix/glm-5.2',
       prompt: 'Run at {{ fired_at }}',
     }));
 
@@ -1137,32 +1195,41 @@ describe('git-backed triggers — runtime fire paths', () => {
   });
 
   test('manual fire without overrides resolves the project model and selected agent before provisioning', async () => {
-    modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
-    projectRow.metadata = { default_agent: 'asana-refresher' };
-    seedManifest(cronEntry({
-      slug: 'daily',
-      name: 'Daily',
-      cron: '* * * * * *',
-      prompt: 'Run at {{ fired_at }}',
-    }));
+    const originalGatewayEnabled = config.LLM_GATEWAY_ENABLED;
+    config.LLM_GATEWAY_ENABLED = true;
+    try {
+      modelDefaults.projects[PROJECT_ID] = 'kortix/glm-5.2';
+      projectRow.metadata = projectMetadata({
+        default_agent: 'asana-refresher',
+        experimental: { llm_gateway: true },
+      });
+      seedManifest(cronEntry({
+        slug: 'daily',
+        name: 'Daily',
+        cron: '* * * * * *',
+        prompt: 'Run at {{ fired_at }}',
+      }));
 
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    expect(res.status).toBe(202);
+      const app = createApp();
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      expect(res.status).toBe(202);
 
-    await new Promise((r) => setTimeout(r, 0));
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
-    expect(lastProvisionEnv?.KORTIX_AGENT_NAME).toBe('asana-refresher');
-    expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
-    expect(sessionRows.at(-1)?.metadata).toMatchObject({
-      opencode_model: 'kortix/glm-5.2',
-      opencode_model_source: 'project',
-    });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(sandboxProvisionCalls).toBe(1);
+      expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
+      expect(lastProvisionEnv?.KORTIX_AGENT_NAME).toBe('asana-refresher');
+      expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
+      expect(sessionRows.at(-1)?.metadata).toMatchObject({
+        opencode_model: 'kortix/glm-5.2',
+        opencode_model_source: 'project',
+      });
+    } finally {
+      config.LLM_GATEWAY_ENABLED = originalGatewayEnabled;
+    }
   });
 
   test('manual fire queues durably under backpressure', async () => {

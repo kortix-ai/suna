@@ -91,14 +91,9 @@ function makeHarness(
   const reconnectCalls: unknown[] = [];
   const getCalls: unknown[] = [];
   const deleteCalls: unknown[] = [];
-  const listCalls: string[] = [];
   const stateTransitions: Array<{ operation: string; input: unknown }> = [];
 
   const store: GithubNangoConnectionStore = {
-    list: async (accountId) => {
-      listCalls.push(accountId);
-      return row && row.accountId === accountId ? [row] : [];
-    },
     get: async (accountId, installationId) =>
       row && row.accountId === accountId && row.installationId === installationId ? row : null,
     markConnected: async (connection) => {
@@ -194,7 +189,6 @@ function makeHarness(
     reconnectCalls,
     getCalls,
     deleteCalls,
-    listCalls,
     stateTransitions,
     currentRow: () => row,
   };
@@ -423,20 +417,6 @@ describe('GitHub Nango connection routes', () => {
       reconnect_required: true,
     });
     expect(harness.currentRow()?.ownerLogin).toBe('acme');
-  });
-
-  test('preserves camel-case legacy delete input without disconnecting every installation', async () => {
-    const harness = makeHarness();
-
-    const response = await harness.app.request(
-      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}&installationId=${INSTALLATION_ID}`,
-      { method: 'DELETE' },
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
-    expect(harness.listCalls).toEqual([]);
-    expect(harness.deleteCalls).toHaveLength(1);
   });
 
   test('keeps installation-path disconnect idempotent for a missing row', async () => {

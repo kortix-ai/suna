@@ -162,7 +162,7 @@ async function main() {
   }
 
   // ── APPLY: enqueue + drive the real migration inline (extract → repo → push
-  //    → db). Needs the full infra (GitHub App, Daytona, reachable KORTIX_URL).
+  //    → db). Needs the full infra (Nango GitHub, Daytona, reachable KORTIX_URL).
   //    Run against STAGING first, bounded with --limit. ──
   if (mode === 'apply') {
     const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../projects/suna-migration/suna-migration-runner');

@@ -9,26 +9,16 @@ import { deriveRequestContext } from '../../iam/cache';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import {
   getBackend,
   getDefaultManagedProvider,
   hasBackend,
-  managedGithubOwner,
-  managedGithubToken,
   parseBasicAuthHeader,
   type GitScope,
 } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
-import {
-  getGitHubAppInstallation,
-  listLinkableGitHubAppInstallations,
-  type GitHubAppInstallation,
-  verifyGitHubAppInstallStatePayload,
-  verifyGitHubInstallationAdmin,
-} from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { normalizeStarterTemplateId } from '../starter';
 import {
@@ -41,7 +31,7 @@ import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
+import { projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -54,9 +44,6 @@ import {
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import {
   buildConnectionRef,
-  consumeGitHubInstallationState,
-  createGitHubInstallationInstallUrl,
-  getAccountGitHubInstallation,
   getProjectGitConnection,
   getProjectGitRemote,
   listAccountGitHubInstallations,
@@ -76,7 +63,6 @@ import {
   normalizeString,
   readBody,
   requestAuditContext,
-  serializeGitHubInstallation,
   serializeGitHubInstallations,
   serializeProject,
 } from '../lib/serializers';
@@ -545,8 +531,29 @@ projectsApp.openapi(
       return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
     }
 
-    const authMethod =
-      provider === 'github' ? (provisioned.credentialRef ? 'nango' : 'github_app') : 'managed';
+    if (provider === 'github' && !provisioned.credentialRef) {
+      try {
+        await backend.deleteRepo({
+          provider,
+          upstreamUrl: provisioned.upstreamUrl,
+          externalRepoId: provisioned.externalRepoId,
+          repoOwner: provisioned.repoOwner,
+          repoName: provisioned.repoName,
+          installationId: provisioned.installationId,
+          credentialRef: null,
+          defaultBranch: provisioned.defaultBranch,
+          managed: true,
+          metadata: {},
+        });
+      } catch (cleanupError) {
+        console.error(
+          '[projects] failed to delete managed GitHub repository after missing Nango reference:',
+          cleanupError,
+        );
+      }
+      return c.json({ error: 'Managed GitHub did not return a Nango connection reference' }, 502);
+    }
+    const authMethod = provider === 'github' ? 'nango' : 'managed';
     const now = new Date();
     const [row] = await db
       .insert(projects)
@@ -623,17 +630,15 @@ projectsApp.openapi(
       getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
     );
 
-    // Resolve a push credential for seeding / the CLI's first push. The managed
-    // GitHub backend mints an installation token.
+    // Resolve a push credential for server-side seeding. GitHub credentials
+    // never leave the API.
     let internalPushToken = provisioned.initialToken;
-    let exportablePushToken = authMethod === 'nango' ? null : provisioned.initialToken;
+    let exportablePushToken = provider === 'github' ? null : provisioned.initialToken;
     if (!internalPushToken) {
       const resolved = await resolveProjectGitAuth(row);
       internalPushToken = resolved.auth?.token ?? null;
       exportablePushToken =
-        resolved.authSource === 'pat' || resolved.authSource === 'nango'
-          ? null
-          : (resolved.auth?.token ?? null);
+        resolved.authSource === 'nango' ? null : (resolved.auth?.token ?? null);
     }
     const writeUpstream = internalPushToken
       ? backend.buildUpstream(connRef, internalPushToken, 'write')
@@ -805,7 +810,7 @@ projectsApp.openapi(
 
     const connection = await getProjectGitConnection(projectId);
     const remote = getProjectGitRemote(loaded.row, connection);
-    if (remote.provider === 'github' && remote.authMethod === 'nango') {
+    if (remote.provider === 'github') {
       return c.json(
         {
           error:
@@ -822,28 +827,6 @@ projectsApp.openapi(
       return c.json({ error: 'Project is not a managed repo' }, 409);
     }
 
-    // Provider-agnostic: resolve a fresh push credential through the backend seam
-    // (the managed GitHub backend mints an installation token). Never persisted
-    // in the sandbox/CLI git config.
-    const gitAuth = await resolveProjectGitAuth(loaded.row);
-    if (gitAuth.authSource === 'pat') {
-      // This host's managed git runs on an org-wide token. Exporting it to a
-      // client would hand out write access to EVERY managed repo, so we refuse —
-      // clients push through the Kortix git proxy (`git_origin_url`) with their
-      // own Kortix token instead, which needs no provider credential client-side.
-      // Say so explicitly: the old message read as a server misconfiguration and
-      // sent people hunting for GitHub App settings that aren't the problem.
-      return c.json(
-        {
-          error:
-            "This host's managed git uses an org-wide token, which is never exported. " +
-            "Push through the project's Kortix git origin instead (git_origin_url) — " +
-            'run `kortix update` if your CLI still asks for a push token.',
-          git_origin_url: serializeProject(loaded.row).git_origin_url,
-        },
-        503,
-      );
-    }
     const upstream = await resolveProjectUpstream(loaded.row, 'write');
     const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
     if (!credential) {
@@ -927,7 +910,7 @@ projectsApp.openapi(
 projectsApp.route('/github', githubNangoConnectionsApp);
 
 // GET /v1/projects/github/installation?account_id=...
-// Account-scoped GitHub App install state. The client only receives metadata;
+// Account-scoped Nango GitHub connection state. The client receives metadata;
 // installation tokens are minted server-side at repo creation time.
 
 projectsApp.openapi(
@@ -946,23 +929,7 @@ projectsApp.openapi(
     await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
     const rows = await listAccountGitHubInstallations(scope.accountId);
-    const canManageGit = (
-      await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)
-    ).allowed;
-    const installUrl = canManageGit
-      ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-      : null;
-    // No account-level GitHub App installation, but the server has a working
-    // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
-    // account isn't told "GitHub isn't connected" just because it never
-    // installed an App (see serializeGitHubInstallations).
-    const patFallbackOwner =
-      rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
-        ? managedGithubOwner()
-        : null;
-    return c.json(
-      serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner),
-    );
+    return c.json(serializeGitHubInstallations(rows, scope.accountId, null));
   },
 );
 
@@ -986,302 +953,10 @@ projectsApp.openapi(
     await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
     const rows = await listAccountGitHubInstallations(scope.accountId);
-    const canManageGit = (
-      await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)
-    ).allowed;
-    const installUrl = canManageGit
-      ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-      : null;
-    // No account-level GitHub App installation, but the server has a working
-    // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
-    // account isn't told "GitHub isn't connected" just because it never
-    // installed an App (see serializeGitHubInstallations).
-    const patFallbackOwner =
-      rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
-        ? managedGithubOwner()
-        : null;
-    return c.json(
-      serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner),
-    );
-  },
-);
-
-async function upsertAccountGitHubInstallation(
-  accountId: string,
-  installationId: string,
-  installation: GitHubAppInstallation,
-) {
-  const ownerLogin = normalizeString(installation.account?.login);
-  if (!ownerLogin) {
-    throw new Error('GitHub installation did not include an owner account');
-  }
-
-  const ownerType =
-    normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization';
-  const now = new Date();
-  const [row] = await db
-    .insert(accountGithubInstallations)
-    .values({
-      accountId,
-      installationId,
-      ownerLogin,
-      ownerType,
-      repositorySelection: installation.repository_selection ?? null,
-      permissions: installation.permissions ?? {},
-      metadata: {
-        html_url: installation.html_url ?? null,
-      },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
-      set: {
-        ownerLogin,
-        ownerType,
-        repositorySelection: installation.repository_selection ?? null,
-        permissions: installation.permissions ?? {},
-        metadata: {
-          html_url: installation.html_url ?? null,
-        },
-        updatedAt: now,
-      },
-    })
-    .returning();
-
-  if (!row) throw new Error('Failed to save the GitHub installation');
-  return row;
-}
-
-// POST /v1/projects/github/installations/linkable
-// The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
-// that route to GitHub App user tokens. Kortix lists this App's installations
-// with the App JWT, then filters them with the authorized user's identity and
-// active organization-admin memberships.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/installations/linkable',
-    tags: ['github'],
-    summary: 'POST /github/installations/linkable',
-    ...auth,
-    request: {
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Linkable GitHub App installations'),
-      ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-    const body = await readBody(c);
-    const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-
-    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-    if (!githubUserToken) {
-      return c.json({ error: 'GitHub authorization is required to list installations' }, 400);
-    }
-
-    let linkable;
-    try {
-      linkable = await listLinkableGitHubAppInstallations(githubUserToken);
-    } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to list GitHub App installations',
-        },
-        502,
-      );
-    }
-
-    const linkedRows = await listAccountGitHubInstallations(scope.accountId);
-    const linkedIds = new Set(linkedRows.map((row) => row.installationId));
-    const installUrl = await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
-
-    return c.json({
-      account_id: scope.accountId,
-      github_login: linkable.githubLogin,
-      configured: Boolean(installUrl),
-      install_url: installUrl,
-      installations: linkable.installations.map((installation) => ({
-        installation_id: String(installation.id),
-        owner_login: installation.account?.login ?? null,
-        owner_type: installation.account?.type ?? installation.target_type ?? null,
-        repository_selection: installation.repository_selection ?? null,
-        permissions: installation.permissions ?? {},
-        installation_url: installation.html_url ?? null,
-        linked: linkedIds.has(String(installation.id)),
-      })),
-    });
-  },
-);
-
-// POST /v1/projects/github/installations/link
-// This same-origin path links an existing App installation without a GitHub
-// install callback. The API verifies the installation against the App JWT and
-// verifies the authorized GitHub user again before it writes the account row.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/installations/link',
-    tags: ['github'],
-    summary: 'POST /github/installations/link',
-    ...auth,
-    request: {
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Linked GitHub App installation'),
-      ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-    const body = await readBody(c);
-    const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-
-    const installationId = normalizeString(body.installation_id ?? body.installationId);
-    if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
-    if (!/^[0-9]+$/.test(installationId)) {
-      return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
-    }
-    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-    if (!githubUserToken) {
-      return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
-    }
-
-    let installation: GitHubAppInstallation;
-    try {
-      installation = await getGitHubAppInstallation(installationId);
-    } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to verify GitHub App installation',
-        },
-        502,
-      );
-    }
-
-    try {
-      await verifyGitHubInstallationAdmin(githubUserToken, installation);
-    } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'GitHub administrator verification failed',
-        },
-        403,
-      );
-    }
-
-    try {
-      const row = await upsertAccountGitHubInstallation(
-        scope.accountId,
-        installationId,
-        installation,
-      );
-      return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
-    } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to save the GitHub installation',
-        },
-        502,
-      );
-    }
-  },
-);
-
-// POST /v1/projects/github/installation
-// Called after GitHub redirects back with installation_id + signed state.
-// We fetch installation metadata with the app JWT instead of trusting client
-// supplied owner information.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'POST /github/installation',
-    ...auth,
-    request: {
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-    const body = await readBody(c);
-    const state = normalizeString(body.state);
-    if (!state) return c.json({ error: 'state is required' }, 400);
-    const statePayload = verifyGitHubAppInstallStatePayload(state);
-    if (!statePayload?.accountId || !statePayload.nonce) {
-      return c.json({ error: 'invalid GitHub installation state' }, 400);
-    }
-
-    const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-
-    const installationId = normalizeString(body.installation_id ?? body.installationId);
-    if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
-    if (!/^[0-9]+$/.test(installationId)) {
-      return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
-    }
-    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-    if (!githubUserToken) {
-      return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
-    }
-
-    let installation;
-    try {
-      installation = await getGitHubAppInstallation(installationId);
-    } catch (error) {
-      const message = (error as Error).message || 'Failed to verify GitHub App installation';
-      return c.json({ error: message }, 502);
-    }
-
-    try {
-      await verifyGitHubInstallationAdmin(githubUserToken, installation);
-    } catch (error) {
-      const message = (error as Error).message || 'GitHub administrator verification failed';
-      return c.json({ error: message }, 403);
-    }
-
-    const stateStatus = await consumeGitHubInstallationState({
-      accountId: scope.accountId,
-      userId: scope.userId,
-      nonce: statePayload.nonce,
-      installationId,
-    });
-    if (stateStatus === 'invalid') {
-      const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
-      if (existing?.installationId === installationId) {
-        return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
-      }
-      return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
-    }
-
-    try {
-      const row = await upsertAccountGitHubInstallation(
-        scope.accountId,
-        installationId,
-        installation,
-      );
-      return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
-    } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to save the GitHub installation',
-        },
-        502,
-      );
-    }
+    return c.json(serializeGitHubInstallations(rows, scope.accountId, null));
   },
 );
 
 // POST /v1/projects/link-repository
-// Import an existing GitHub repo through the account GitHub App installation.
+// Import an existing GitHub repo through the account Nango connection.
 // This validates repo access up front and stores a typed project_git_connection.

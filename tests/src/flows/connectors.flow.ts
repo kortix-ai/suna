@@ -482,11 +482,15 @@ flow(
     domain: 'connectors',
     routes: [
       'GET /v1/projects/:projectId/connector-profiles',
+      'GET /v1/projects/:projectId/connector-profiles/all',
       'POST /v1/projects/:projectId/connector-profiles',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/activate',
       'POST /v1/projects/:projectId/connector-profiles/:profileId/connect',
       'POST /v1/projects/:projectId/connector-profiles/:profileId/connect/finalize',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/credential',
+      'PUT /v1/projects/:projectId/connector-profiles/:profileId/default',
+      'GET /v1/projects/:projectId/connector-profiles/:profileId/policies',
+      'PUT /v1/projects/:projectId/connector-profiles/:profileId/policies',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/revoke',
       'POST /v1/projects/:projectId/connector-profiles/me',
     ],
@@ -581,6 +585,48 @@ flow(
         .exists('$.owner_id')
         .exists('$.profile_id');
       memberProfileId = r.json<any>().profile_id;
+    });
+
+    await ctx.step('owner lists every member connection profile → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/all', {
+          params: { projectId: p.id },
+        });
+      r.status(200).body().exists('$.profiles');
+    });
+
+    await ctx.step('make the caller-owned profile the member default → 200 ok', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/connector-profiles/:profileId/default',
+          {},
+          { params: { projectId: p.id, profileId: memberProfileId } },
+        );
+      r.status(200).body().has('$.ok', true);
+    });
+
+    await ctx.step('replace and read connection policies → persisted rules', async () => {
+      const replaced = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/connector-profiles/:profileId/policies',
+          { policies: [{ match: '*', action: 'always_run' }] },
+          { params: { projectId: p.id, profileId } },
+        );
+      replaced.status(200).body().has('$.ok', true);
+
+      const read = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/policies', {
+          params: { projectId: p.id, profileId },
+        });
+      read
+        .status(200)
+        .body()
+        .has('$.policies[0].match', '*')
+        .has('$.policies[0].action', 'always_run');
     });
 
     await ctx.step('profile OAuth routes reject a non-Pipedream connector → 404/501', async () => {

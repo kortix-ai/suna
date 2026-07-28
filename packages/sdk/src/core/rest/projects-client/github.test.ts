@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import {
   createGitHubConnectSession,
   createGitHubReconnectSession,
+  deleteGitHubInstallation,
   disconnectGitHubConnection,
   linkRepository,
   linkGitHubInstallation,
@@ -37,10 +38,20 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-test('sends the GitHub user proof when saving an installation', async () => {
-  let requestBody: unknown;
-  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
-    requestBody = JSON.parse(String(init?.body));
+test('retains saveGitHubInstallation without transmitting legacy credentials', async () => {
+  await expect(
+    saveGitHubInstallation({
+      state: 'signed-state',
+      installation_id: '84',
+      github_user_token: 'github-user-token',
+    }),
+  ).rejects.toThrow('Use createGitHubConnectSession');
+  expect(calls).toEqual([]);
+});
+
+test('adapts linkable installation discovery to credential-free Nango metadata', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    calls.push(String(input instanceof Request ? input.url : input));
     return Response.json({
       account_id: 'account 1',
       installation_row_id: 'row-1',
@@ -49,49 +60,30 @@ test('sends the GitHub user proof when saving an installation', async () => {
       requires_installation: false,
       install_url: null,
       installation_id: '84',
-      owner_login: 'acme',
-      owner_type: 'Organization',
-      repository_selection: 'all',
-      permissions: {},
-      installation_url: null,
+      owner_login: 'markokraemer',
+      owner_type: 'User',
+      repository_selection: 'selected',
+      permissions: { contents: 'write' },
+      installation_url: 'https://github.com/settings/installations/84',
       updated_at: null,
-    });
-  }) as unknown as typeof fetch;
-
-  await saveGitHubInstallation({
-    state: 'signed-state',
-    installation_id: '84',
-    github_user_token: 'github-user-token',
-  });
-
-  expect(requestBody).toEqual({
-    state: 'signed-state',
-    installation_id: '84',
-    github_user_token: 'github-user-token',
-  });
-});
-
-test('lists only linkable GitHub App installations through the authenticated API', async () => {
-  let requestBody: unknown;
-  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
-    requestBody = JSON.parse(String(init?.body));
-    return Response.json({
-      account_id: 'account 1',
-      github_login: 'markokraemer',
-      configured: true,
-      install_url: 'https://github.com/apps/kortix/installations/new?state=signed',
       installations: [
         {
+          account_id: 'account 1',
+          installation_row_id: 'row-1',
+          installed: true,
+          configured: true,
+          requires_installation: false,
+          install_url: null,
           installation_id: '84',
           owner_login: 'markokraemer',
           owner_type: 'User',
           repository_selection: 'selected',
           permissions: { contents: 'write' },
           installation_url: 'https://github.com/settings/installations/84',
-          linked: false,
+          updated_at: null,
         },
       ],
-    } satisfies LinkableGitHubInstallationsResponse);
+    });
   }) as unknown as typeof fetch;
 
   const result = await listLinkableGitHubInstallations({
@@ -99,17 +91,19 @@ test('lists only linkable GitHub App installations through the authenticated API
     github_user_token: 'github-user-token',
   });
 
-  expect(requestBody).toEqual({
-    account_id: 'account 1',
-    github_user_token: 'github-user-token',
-  });
+  expect(calls).toEqual([
+    'http://test.local/v1/projects/github/installations?account_id=account%201',
+  ]);
   expect(result.github_login).toBe('markokraemer');
   expect(result.installations[0]?.owner_login).toBe('markokraemer');
+  expect(JSON.stringify(result)).not.toContain('github-user-token');
 });
 
-test('links a selected verified GitHub App installation without callback state', async () => {
+test('adapts linkGitHubInstallation to a Nango connection refresh without sending its token', async () => {
   let requestBody: unknown;
-  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+  let requestUrl = '';
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    requestUrl = String(input instanceof Request ? input.url : input);
     requestBody = JSON.parse(String(init?.body));
     return Response.json({
       account_id: 'account 1',
@@ -134,11 +128,73 @@ test('links a selected verified GitHub App installation without callback state',
     github_user_token: 'github-user-token',
   });
 
-  expect(requestBody).toEqual({
-    account_id: 'account 1',
-    installation_id: '84',
-    github_user_token: 'github-user-token',
+  expect(requestUrl).toBe(
+    'http://test.local/v1/projects/github/installations/84/refresh',
+  );
+  expect(requestBody).toEqual({ account_id: 'account 1' });
+  expect(JSON.stringify(requestBody)).not.toContain('github-user-token');
+});
+
+test('adapts deleteGitHubInstallation with an installation id to Nango disconnect', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    calls.push(String(input instanceof Request ? input.url : input));
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+
+  await expect(deleteGitHubInstallation('account 1', '84')).resolves.toEqual({
+    ok: true,
   });
+  expect(calls).toEqual([
+    'http://test.local/v1/projects/github/installations/84?account_id=account+1',
+  ]);
+});
+
+test('adapts deleteGitHubInstallation without an id to the first active Nango connection', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push(url);
+    if (init?.method === 'DELETE') return Response.json({ ok: true });
+    return Response.json({
+      account_id: 'account 1',
+      installation_row_id: 'row-1',
+      installed: true,
+      configured: true,
+      requires_installation: false,
+      install_url: null,
+      installation_id: '84',
+      owner_login: 'acme',
+      owner_type: 'Organization',
+      repository_selection: 'all',
+      permissions: {},
+      installation_url: null,
+      updated_at: null,
+      connection_status: 'connected',
+      installations: [
+        {
+          account_id: 'account 1',
+          installation_row_id: 'row-1',
+          installed: true,
+          configured: true,
+          requires_installation: false,
+          install_url: null,
+          installation_id: '84',
+          owner_login: 'acme',
+          owner_type: 'Organization',
+          repository_selection: 'all',
+          permissions: {},
+          installation_url: null,
+          updated_at: null,
+          connection_status: 'connected',
+        },
+      ],
+    });
+  }) as unknown as typeof fetch;
+
+  await expect(deleteGitHubInstallation('account 1')).resolves.toEqual({ ok: true });
+  expect(calls).toEqual([
+    'http://test.local/v1/projects/github/installations?account_id=account%201',
+    'http://test.local/v1/projects/github/installations/84?account_id=account+1',
+  ]);
 });
 
 configureKortix({

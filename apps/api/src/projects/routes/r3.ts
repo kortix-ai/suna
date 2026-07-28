@@ -358,7 +358,7 @@ projectsApp.openapi(
   const remote = getProjectGitRemote(loaded.row, existingConnection);
   const provider = normalizeString(body.provider) ?? (remote.provider === 'github' ? 'generic' : remote.provider);
   if (provider === 'github') {
-    return c.json({ error: 'GitHub credentials are managed through the GitHub App connection' }, 409);
+    return c.json({ error: 'GitHub credentials are managed through the Nango connection' }, 409);
   }
 
   const credential = await upsertProjectGitCredential({

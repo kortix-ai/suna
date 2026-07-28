@@ -54,21 +54,17 @@ describe('self-host required-secrets warning (fast, no Docker)', () => {
     expect(second.stdout).not.toContain('Proceeding with required secrets missing');
     const env = sandbox.readEnv();
     expect(env.DAYTONA_API_KEY).toBe('dtn-test-key');
-    // Neither was set, and neither blocks success or triggers a warning.
+    // Neither integration is set, and neither blocks success or triggers a warning.
     expect(env.OPENROUTER_API_KEY).toBe('');
-    expect(env.MANAGED_GIT_GITHUB_OWNER).toBe('');
+    expect(env.NANGO_API_KEY).toBe('');
   });
 
-  test('managed git / OpenRouter left unset never blocks init, with or without a GitHub App configured', async () => {
+  test('Nango and OpenRouter left unset do not block init', async () => {
     await sandbox.run(['init', '--yes']);
     await sandbox.run([
       'env',
       'set',
       'DAYTONA_API_KEY=dtn-test-key',
-      'MANAGED_GIT_GITHUB_OWNER=acme-corp',
-      'KORTIX_GITHUB_APP_ID=12345',
-      'KORTIX_GITHUB_APP_PRIVATE_KEY=-----BEGIN KEY-----test-----END KEY-----',
-      'MANAGED_GIT_GITHUB_INSTALL_ID=67890',
     ]);
 
     const { code, stdout } = await sandbox.run(['init', '--yes']);

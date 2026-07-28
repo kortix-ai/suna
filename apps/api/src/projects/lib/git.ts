@@ -1,24 +1,18 @@
 import { auth } from '../../openapi';
-import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import {
   getBackend,
-  managedGithubInstallId,
-  managedGithubToken,
   parseBasicAuthHeader,
   type GitConnectionRef,
   type GitScope,
   type UpstreamGit,
 } from '../git-backends';
 import {
-  buildGitHubAppInstallUrl,
-  createInstallationToken,
   getRepo,
   getRepositoryBranch,
-  isGithubAppConfigured,
   type GitHubAuthContext,
   type GitHubRepo,
 } from '../github';
@@ -33,7 +27,6 @@ import { managedGithubConnectionService } from '../../platform/services/managed-
 import type { ManagedGithubCredentialResolution } from '../../platform/services/managed-github-connection';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import {
-  accountGithubInstallationStates,
   accountGithubInstallations,
   accountMembers,
   projectGitConnections,
@@ -41,8 +34,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { and, eq, inArray } from 'drizzle-orm';
 import { ttlMemo } from '../../shared/ttl-memo';
 // Imported from the leaf modules, not the `../../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
@@ -104,83 +96,6 @@ export async function getAccountGitHubInstallation(
     return rows.find((row) => row.installationId === installationId) ?? null;
   }
   return rows[0] ?? null;
-}
-
-export async function createGitHubInstallationInstallUrl(
-  accountId: string,
-  userId: string,
-): Promise<string | null> {
-  if (!isGithubAppConfigured()) return null;
-  const nonce = randomUUID();
-  const installUrl = buildGitHubAppInstallUrl(
-    accountId,
-    nonce,
-    'account_link',
-    config.FRONTEND_URL,
-  );
-  if (!installUrl) return null;
-  await db.insert(accountGithubInstallationStates).values({
-    stateNonce: nonce,
-    accountId,
-    userId,
-    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-  });
-  return installUrl;
-}
-
-export async function consumeGitHubInstallationState(input: {
-  accountId: string;
-  userId: string;
-  nonce: string;
-  installationId: string;
-}): Promise<'consumed' | 'already_consumed' | 'invalid'> {
-  const now = new Date();
-  const updated = await db
-    .update(accountGithubInstallationStates)
-    .set({
-      installationId: input.installationId,
-      consumedAt: now,
-    })
-    .where(
-      and(
-        eq(accountGithubInstallationStates.stateNonce, input.nonce),
-        eq(accountGithubInstallationStates.accountId, input.accountId),
-        eq(accountGithubInstallationStates.userId, input.userId),
-        isNull(accountGithubInstallationStates.consumedAt),
-        gt(accountGithubInstallationStates.expiresAt, now),
-      ),
-    )
-    .returning({ stateNonce: accountGithubInstallationStates.stateNonce });
-
-  if (updated.length === 1) return 'consumed';
-
-  const [state] = await db
-    .select({
-      installationId: accountGithubInstallationStates.installationId,
-      consumedAt: accountGithubInstallationStates.consumedAt,
-    })
-    .from(accountGithubInstallationStates)
-    .where(
-      and(
-        eq(accountGithubInstallationStates.stateNonce, input.nonce),
-        eq(accountGithubInstallationStates.accountId, input.accountId),
-        eq(accountGithubInstallationStates.userId, input.userId),
-        gt(accountGithubInstallationStates.expiresAt, now),
-      ),
-    )
-    .limit(1);
-
-  if (state?.consumedAt && state.installationId === input.installationId) {
-    return 'already_consumed';
-  }
-
-  return 'invalid';
-}
-
-export class GitHubInstallationRequiredError extends Error {
-  constructor(public readonly accountId: string) {
-    super('GitHub App installation required for this account');
-  }
 }
 
 async function resolveImportedDefaultBranch(
@@ -478,7 +393,7 @@ export async function hasServerManagedGitAuth(project: ProjectRow): Promise<bool
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
   if (
     remote.provider === 'github' &&
-    (remote.authMethod === 'github_app' || remote.authMethod === 'nango')
+    remote.authMethod === 'nango'
   ) {
     return true;
   }
@@ -500,7 +415,6 @@ export async function resolveNangoProjectGitAuth(
       ProjectGitRemote,
       'provider' | 'authMethod' | 'ref' | 'installationId' | 'repoOwner' | 'repoName' | 'managed'
     >;
-    mode: 'nango_preferred' | 'nango_only';
   },
   dependencies: ProjectNangoGitAuthDependencies = {
     resolveAccountCredential: resolveAccountGithubCredential,
@@ -513,15 +427,12 @@ export async function resolveNangoProjectGitAuth(
   if (input.remote.provider !== 'github') return null;
 
   if (input.remote.authMethod !== 'nango') {
-    if (input.mode === 'nango_only') {
-      throw new GitHubCredentialResolutionError(
-        'github_reconnect_required',
-        409,
-        input.project.accountId,
-        input.remote.installationId ?? '',
-      );
-    }
-    return null;
+    throw new GitHubCredentialResolutionError(
+      'github_reconnect_required',
+      409,
+      input.project.accountId,
+      input.remote.installationId ?? '',
+    );
   }
 
   const installationId = input.remote.installationId?.trim();
@@ -632,91 +543,14 @@ export async function resolveNangoProjectGitAuth(
 
 export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
-  authSource: 'nango' | 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
+  authSource: 'nango' | 'project_credential' | 'none';
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
   const nango = await resolveNangoProjectGitAuth({
     project,
     remote,
-    mode: config.GITHUB_CREDENTIAL_RESOLUTION,
   });
   if (nango) return nango;
-
-  // Managed GitHub repos use the server PAT first. The managed GitHub App can
-  // exist without access to every repository. Repeated failed token minting
-  // adds remote latency to every Git-backed project read. The PAT is internal
-  // and is never exported by the API/CLI push-token boundary.
-  if (remote.provider === 'github' && remote.managed) {
-    const pat = managedGithubToken();
-    if (pat) {
-      return {
-        auth: {
-          token: pat,
-          source: 'pat',
-          owner: remote.repoOwner ?? undefined,
-          ownerType: 'Organization',
-        },
-        authSource: 'pat',
-      };
-    }
-
-    const installId = remote.installationId ?? managedGithubInstallId();
-    if (installId && isGithubAppConfigured()) {
-      const repoName =
-        remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
-      try {
-        const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
-        return {
-          auth: {
-            token: token.token,
-            source: 'app_installation',
-            owner: remote.repoOwner ?? undefined,
-            ownerType: 'Organization',
-            installationId: installId,
-          },
-          authSource: 'app_installation',
-        };
-      } catch (err) {
-        console.warn(
-          `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
-          err,
-        );
-      }
-    }
-    return { authSource: 'none' };
-  }
-
-  if (remote.provider === 'github' && remote.authMethod === 'github_app') {
-    const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
-    if (!repo) return { authSource: 'none' };
-    const installation = remote.installationId
-      ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
-      : ((await listAccountGitHubInstallations(project.accountId)).find(
-          (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
-        ) ?? null);
-    if (!installation) return { authSource: 'none' };
-    if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-      return { authSource: 'none' };
-    }
-    if (remote.repoOwner && remote.repoOwner.toLowerCase() !== repo.owner.toLowerCase()) {
-      return { authSource: 'none' };
-    }
-    if (remote.repoName && remote.repoName.toLowerCase() !== repo.repo.toLowerCase()) {
-      return { authSource: 'none' };
-    }
-    // Scope the BYO token to the single linked repo too.
-    const token = await createInstallationToken(installation.installationId, [repo.repo]);
-    return {
-      auth: {
-        token: token.token,
-        source: 'app_installation',
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType,
-        installationId: installation.installationId,
-      },
-      authSource: 'app_installation',
-    };
-  }
 
   if (remote.authMethod === 'project_credential') {
     const credential = await getProjectGitCredential(project.projectId, remote.provider);
@@ -988,53 +822,6 @@ export async function resolveGitHubImport(input: {
     },
   );
 }
-
-/**
- * Validate an existing GitHub repo using a caller-supplied PAT — the
- * App-free link path. The PAT just needs read+write on the repo; we verify
- * read here (and surface a clear error if the token can't see it or lacks
- * push) so the user finds out at link time, not on the first session push.
- */
-
-export async function resolveGitHubImportWithPat(input: {
-  repoUrl: string;
-  token: string;
-  defaultBranch?: string | null;
-}): Promise<{ repo: GitHubRepo; defaultBranch: string }> {
-  const parsed = parseGitHubRepoUrl(input.repoUrl);
-  if (!parsed) throw new Error('repo_url must be a GitHub repository URL');
-  let repo: GitHubRepo;
-  try {
-    repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth: { token: input.token } });
-  } catch (error) {
-    throw new Error(
-      `Could not access ${parsed.owner}/${parsed.repo} with the provided GitHub token — ` +
-        `check the token grants access to this repo (${(error as Error).message})`,
-    );
-  }
-  // The API returns `permissions` when the token is authenticated against the
-  // repo; a read-only token would make sessions unable to push branches.
-  const perms = (repo as unknown as { permissions?: { push?: boolean } }).permissions;
-  if (perms && perms.push === false) {
-    throw new Error(
-      `The GitHub token can read ${repo.full_name} but lacks write (push) access — ` +
-        `grant Contents: Read and write so sessions can push branches.`,
-    );
-  }
-  return {
-    repo,
-    defaultBranch: await resolveImportedDefaultBranch(repo, input.defaultBranch, {
-      token: input.token,
-    }),
-  };
-}
-
-/**
- * Create (or re-point) a project backed by an existing GitHub repo via a
- * stored PAT — no GitHub App installation required. The PAT is encrypted into
- * `project_git_credentials` and the connection is `project_credential`, which
- * `resolveProjectGitAuth` already knows how to use for session clone/push.
- */
 
 export async function loadGitProject(loaded: { row: ProjectRow }) {
   const resolved = await withProjectGitAuth(loaded.row);

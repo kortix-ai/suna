@@ -3629,3 +3629,30 @@ TDD and local verification:
 **Status:** U7 COMPLETE.
 
 **Shippable to production: YES** for U7 and the published SDK surface.
+
+---
+
+### 2026-07-28 — session `nango-github-migration` (U8 cutover)
+
+Completed the Nango-only SDK compatibility cutover.
+
+- Kept all published GitHub installation and platform GitHub App names.
+- Marked legacy method names and token-shaped inputs as deprecated adapters.
+- Removed active provider-token transport from the compatibility methods.
+- Documented Nango connection IDs as the credential reference.
+- Documented GitHub installation IDs as provider installation identifiers.
+
+Local verification:
+
+- SDK suite: **1318 pass / 0 fail** with **5825** assertions across **112**
+  files.
+- SDK typecheck and examples typecheck: exit 0.
+- SDK packed-install smoke: packed, installed, imported, and constructed
+  `@kortix/sdk`.
+- Public value and type export snapshots pass.
+
+**Status:** U8 SDK CUTOVER COMPLETE.
+
+**Shippable to production: YES** for the published SDK surface. The repository
+rollout still requires the `origin/main` merge, PR, Deploy Dev, and deployed
+Nango verification.

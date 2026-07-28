@@ -24,6 +24,10 @@ import {
   parseAccountNangoTags,
   parseManagedNangoTags,
 } from '../projects/nango/github-connection';
+import {
+  createNangoRequestObserver,
+  recordNangoWebhookResult,
+} from '../projects/nango/telemetry';
 import { db } from '../shared/db';
 
 export const NANGO_WEBHOOK_MAX_BODY_BYTES = 262_144;
@@ -90,6 +94,11 @@ interface NangoWebhookHandlerDependencies {
     installation: GithubInstallationMetadata;
   }): Promise<{ githubLogin: string }>;
   logger: WebhookLogger;
+  observeResult?(observation: {
+    status: number;
+    outcome: 'success' | 'ignored' | 'error';
+    errorCode?: string;
+  }): void;
 }
 
 export interface NangoWebhookRequest {
@@ -194,7 +203,10 @@ export function verifyNangoWebhookSignature(
 export function createNangoWebhookHandler(
   dependencies: NangoWebhookHandlerDependencies,
 ): (request: NangoWebhookRequest) => Promise<NangoWebhookResult> {
-  return async ({ rawBody, signature }) => {
+  const handle = async ({
+    rawBody,
+    signature,
+  }: NangoWebhookRequest): Promise<NangoWebhookResult> => {
     if (!verifyNangoWebhookSignature(rawBody, signature, dependencies.signingKey)) {
       return {
         status: 401,
@@ -546,6 +558,22 @@ export function createNangoWebhookHandler(
       };
     }
   };
+  return async (request) => {
+    const result = await handle(request);
+    const errorCode =
+      typeof result.body.error === 'string' ? result.body.error : undefined;
+    dependencies.observeResult?.({
+      status: result.status,
+      outcome:
+        result.status >= 400
+          ? 'error'
+          : result.body.ignored === true
+            ? 'ignored'
+            : 'success',
+      ...(errorCode ? { errorCode } : {}),
+    });
+    return result;
+  };
 }
 
 export const postgresNangoGithubConnectionStore: NangoGithubConnectionStore = {
@@ -771,6 +799,7 @@ function getProductionHandler() {
     const client = createNangoClient({
       apiKey: config.NANGO_API_KEY,
       baseUrl: config.NANGO_BASE_URL,
+      observe: createNangoRequestObserver('webhook'),
     });
     productionHandler = createNangoWebhookHandler({
       signingKey: config.NANGO_WEBHOOK_SIGNING_KEY,
@@ -800,6 +829,7 @@ function getProductionHandler() {
         return { githubLogin: result.login };
       },
       logger: appLogger,
+      observeResult: (observation) => recordNangoWebhookResult(observation),
     });
   }
   return productionHandler;

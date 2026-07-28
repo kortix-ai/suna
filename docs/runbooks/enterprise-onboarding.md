@@ -17,7 +17,7 @@
 | 1 | **A VPS or cloud VM** (recommended) with Docker Engine + Compose plugin installed | Kortix self-host is one generic Docker Compose system; runs on any Linux VPS, EC2, Droplet, bare metal | Minimum: 4 vCPU / 8 GB RAM / 50 GB disk for evaluation; size up for production. `scripts/kortix-selfhost-up.sh` installs Docker on a fresh Linux box. |
 | 2 | **A public domain** pointed at the box's public IP (A/AAAA records for `<domain>` + `api.<domain>`) | Turns on the bundled Caddy reverse proxy + ACME TLS; required for agent sandboxes to call back to the API | No domain = Cloudflare tunnel fallback (ephemeral URL, evaluation only, not production). |
 | 3 | **A sandbox provider API key** — Daytona (default), Platinum, or E2B | Agent sessions run in cloud sandbox VMs outside the customer's network; they call back to the Kortix API over the public internet | Daytona is the recommended default. `local-docker` is experimental, not for production. |
-| 4 | **Managed-git credentials** — a GitHub PAT or GitHub App | The platform creates project repos under the customer's org | `MANAGED_GIT_PROVIDER=github` + `MANAGED_GIT_GITHUB_TOKEN` + `MANAGED_GIT_GITHUB_OWNER`. |
+| 4 | **Nango project and GitHub integration** | The platform creates project repositories under the customer's organization without storing GitHub credentials | Provide `NANGO_API_KEY`, `NANGO_WEBHOOK_SIGNING_KEY`, both GitHub integration IDs, and the Nango base URL. |
 | 5 | **(Optional) SMTP credentials** — host/port/user/pass, admin sender | Enables magic-link sign-in + email verification; fresh installs auto-confirm signups and lead with password auth, so SMTP can come later | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_ADMIN_EMAIL`, `SMTP_SENDER_NAME`. |
 | 6 | **(Enterprise) IdP metadata** — Entra ID / Okta / Google / custom SAML | SAML SSO + SCIM (group→role mapping, automated user provisioning). SAML capability is on by default; the enterprise IAM surface unlocks with the entitlement | See `docs/ENTRA_SSO_SCIM_SETUP.md` for the full walkthrough. |
 | 7 | **(Enterprise) License entitlement** — issued by Kortix sales | Unlocks SSO/SCIM/RBAC/audit (hidden behind 402 without it) | `ENTERPRISE_LICENSE_AVAILABLE=true` (or `--enterprise-license` at `init`). |
@@ -33,7 +33,7 @@
 ### Phase 2 — Sandbox + managed-git (~30 min)
 
 4. **Configure the sandbox provider.** `kortix self-host env set DAYTONA_API_KEY=... DAYTONA_SERVER_URL=https://app.daytona.io/api DAYTONA_TARGET=us` → `kortix self-host start`.
-5. **Configure managed-git.** `kortix self-host env set MANAGED_GIT_PROVIDER=github MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=<customer-org>` → `kortix self-host start`.
+5. **Configure managed-git.** Set `MANAGED_GIT_PROVIDER=github`, the five `NANGO_*` values, `KORTIX_GIT_PROXY=true`, and `GITHUB_CREDENTIAL_RESOLUTION=nango_only`. Restart the stack. Complete Nango Connect in **Settings → Git**. Explicitly select the customer organization.
 6. **End-to-end smoke test.** Create a project → start a session → run one agent turn. The agent must complete against the configured LLM provider (no OpenRouter dependency for managed Claude models on AWS — Bedrock via instance role).
 
 ### Phase 3 — Enterprise identity + governance (~45 min)

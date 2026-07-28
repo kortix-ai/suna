@@ -51,31 +51,13 @@ function recordingClient(
 }
 
 describe('GitHub-backed project linking', () => {
-  test('uses the projects-mounted route with a GitHub PAT', async () => {
-    const calls: Array<{ path: string; body: unknown }> = [];
-
-    await linkGitHubBackedProject(recordingClient(calls, project()), {
-      repoUrl: 'https://github.com/acme/demo.git',
-      name: 'Demo',
-      accountId: 'acct_1',
-      githubToken: 'github_pat_test',
-      yes: true,
-    });
-
-    expect(calls).toEqual([
-      {
-        path: '/projects/link-repository',
-        body: {
-          repo_url: 'https://github.com/acme/demo.git',
-          name: 'Demo',
-          account_id: 'acct_1',
-          github_token: 'github_pat_test',
-        },
-      },
-    ]);
+  test('contains no direct GitHub token option or request field', async () => {
+    const source = await Bun.file(new URL('../commands/ship.ts', import.meta.url)).text();
+    expect(source).not.toContain('--github-token');
+    expect(source).not.toContain('github_token');
   });
 
-  test('uses the projects-mounted route with the GitHub App', async () => {
+  test('uses the projects-mounted route with Nango authorization', async () => {
     const calls: Array<{ path: string; body: unknown }> = [];
 
     await linkGitHubBackedProject(recordingClient(calls, project()), {
@@ -235,11 +217,7 @@ describe('GitHub-backed project linking', () => {
 });
 
 describe('ship git target resolution', () => {
-  // A host whose managed git runs on an org-wide PAT cannot export a push token
-  // at all (POST /git-token 503s — the token would grant write to every managed
-  // repo). Ship must therefore prefer the proxy origin for MANAGED projects
-  // too, exactly like clone does; insisting on a minted provider token is what
-  // broke `kortix ship` against Kortix Cloud.
+  // Managed projects always use the proxy. Provider credentials stay server-side.
   test('first-time managed ship pushes through the proxy origin, not the raw upstream', () => {
     const target = resolveProvisionShipGitTarget({
       ...project({
@@ -270,17 +248,16 @@ describe('ship git target resolution', () => {
     });
   });
 
-  test('managed ship falls back to a minted token when the host has no proxy', () => {
-    // Proxy off ⇒ the server mirrors repo_url into git_origin_url.
+  test('managed ship requires a proxy when the host has no proxy URL', () => {
     const raw = 'https://github.com/managed-kortix/demo.git';
     const target = resolveExistingShipGitTarget(
       project({ git_origin_url: raw, metadata: { git: { managed: true } } }),
     );
 
-    expect(target).toEqual({ repoUrl: raw, credentialMode: 'managed-git-token' });
+    expect(target).toEqual({ repoUrl: raw, credentialMode: 'proxy-required' });
   });
 
-  test('first-time managed ship on a proxy-less host mints a provider token', () => {
+  test('first-time managed ship on a proxy-less host requires a proxy', () => {
     const target = resolveProvisionShipGitTarget({
       ...project({ metadata: { git: { managed: true } } }),
       push_token: 'ghp_push',
@@ -289,7 +266,7 @@ describe('ship git target resolution', () => {
 
     expect(target).toEqual({
       repoUrl: 'https://github.com/managed-kortix/demo.git',
-      credentialMode: 'managed-git-token',
+      credentialMode: 'proxy-required',
     });
   });
 
@@ -338,7 +315,7 @@ describe('ship git target resolution', () => {
       const ship = resolveExistingShipGitTarget(shape);
       const clone = resolveProjectCloneTarget(shape, 'kortix_pat_abc');
       expect(clone.repoUrl).toBe(ship.repoUrl);
-      expect(clone.needsManagedToken).toBe(ship.credentialMode === 'managed-git-token');
+      expect(clone.proxyRequired).toBe(ship.credentialMode === 'proxy-required');
       expect(clone.token).toBe(ship.credentialMode === 'kortix-token' ? 'kortix_pat_abc' : null);
     }
   });
@@ -368,4 +345,16 @@ test('a failed proxy push is not replayed with a provider token', async () => {
   expect(end).toBeGreaterThan(start);
   expect(functionSource).not.toContain('/git-token');
   expect(functionSource).not.toContain('retrying against the managed upstream');
+});
+
+test('CLI git paths do not call the provider-token endpoint', async () => {
+  for (const path of [
+    new URL('../commands/ship.ts', import.meta.url),
+    new URL('../commands/projects.ts', import.meta.url),
+    new URL('../commands/git-credential.ts', import.meta.url),
+  ]) {
+    const source = await Bun.file(path).text();
+    expect(source).not.toContain('/git-token');
+    expect(source).not.toContain('mintManagedToken');
+  }
 });

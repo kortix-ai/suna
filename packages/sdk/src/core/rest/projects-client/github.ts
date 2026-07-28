@@ -1,4 +1,4 @@
-// GitHub — repository linking and GitHub App installation management.
+// GitHub — Nango connection lifecycle and repository linking.
 
 import { backendApi } from '../../http/api-client';
 import type { KortixProject } from './projects';
@@ -142,17 +142,27 @@ export async function listGitHubInstallations(accountId: string) {
   );
 }
 
+/** @deprecated Use `listGitHubInstallations`. */
 export async function listLinkableGitHubInstallations(input: {
   account_id: string;
   github_user_token: string;
 }) {
-  return unwrap(
-    await backendApi.post<LinkableGitHubInstallationsResponse>(
-      '/projects/github/installations/linkable',
-      input,
-      { showErrors: false },
-    ),
-  );
+  const result = await listGitHubInstallations(input.account_id);
+  return {
+    account_id: result.account_id,
+    github_login: result.owner_login ?? '',
+    configured: result.configured,
+    install_url: result.install_url,
+    installations: result.installations.map((installation) => ({
+      installation_id: installation.installation_id ?? '',
+      owner_login: installation.owner_login,
+      owner_type: installation.owner_type,
+      repository_selection: installation.repository_selection,
+      permissions: installation.permissions,
+      installation_url: installation.installation_url,
+      linked: true,
+    })),
+  } satisfies LinkableGitHubInstallationsResponse;
 }
 
 export async function listGitHubRepositories(
@@ -234,43 +244,49 @@ export async function listGitHubRepositoryBranches(
   );
 }
 
+/** @deprecated Use `createGitHubConnectSession`. */
 export async function saveGitHubInstallation(input: {
   state: string;
   installation_id: string;
   github_user_token?: string;
 }) {
-  return unwrap(
-    await backendApi.post<GitHubInstallationStatus>(
-      '/projects/github/installation',
-      input,
-      { showErrors: false },
-    ),
+  void input;
+  throw new Error(
+    'Legacy GitHub installation callbacks are disabled. Use createGitHubConnectSession.',
   );
 }
 
+/** @deprecated Use `refreshGitHubConnection`. */
 export async function linkGitHubInstallation(input: {
   account_id: string;
   installation_id: string;
   github_user_token: string;
 }) {
-  return unwrap(
-    await backendApi.post<GitHubInstallationStatus>(
-      '/projects/github/installations/link',
-      input,
-      { showErrors: false },
-    ),
-  );
+  return refreshGitHubConnection({
+    accountId: input.account_id,
+    installationId: input.installation_id,
+  });
 }
 
+/** @deprecated Use `disconnectGitHubConnection`. */
 export async function deleteGitHubInstallation(
   accountId: string,
   installationId?: string | null,
 ) {
-  const params = new URLSearchParams({ account_id: accountId });
-  if (installationId) params.set('installation_id', installationId);
-  return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/projects/github/installation?${params.toString()}`,
-    ),
+  if (installationId) {
+    return disconnectGitHubConnection({ accountId, installationId });
+  }
+
+  const status = await listGitHubInstallations(accountId);
+  const active = status.installations.find(
+    (installation) =>
+      installation.installation_id &&
+      installation.connection_status !== 'disconnected',
   );
+  if (!active?.installation_id) return { ok: true } as const;
+
+  return disconnectGitHubConnection({
+    accountId,
+    installationId: active.installation_id,
+  });
 }

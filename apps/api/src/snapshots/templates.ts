@@ -154,7 +154,7 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // agent-browser/Playwright Chromium RUN to sit BEFORE the per-project warm-repo
 // clone (and the opencode instance warm-up that follows it), instead of after.
 // The repo-clone step bakes a FRESH short-lived git credential into its RUN
-// text on every single invocation (~1h GitHub App installation token, or a JWT
+// text on every single invocation (~1h Nango GitHub installation token, or a JWT
 // with a live iat/exp), so it can never build-cache-hit — and neither can
 // anything chained after it. With Chromium previously downstream of that clone
 // step, EVERY per-project warm bake re-downloaded the ~150MB Chrome-for-Testing

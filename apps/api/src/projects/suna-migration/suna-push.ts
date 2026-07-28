@@ -36,7 +36,7 @@ export interface PushedRepo {
 
 export async function pushBundleAsRepo(accountId: string, bundleDir: string): Promise<PushedRepo> {
   const backend = getDefaultManagedBackend();
-  if (!(await backend.isConfigured())) throw new Error(`managed git backend "${backend.id}" not configured (GitHub App creds)`);
+  if (!(await backend.isConfigured())) throw new Error(`managed git backend "${backend.id}" is not configured`);
   if (!backend.authedPushUrl) throw new Error(`backend "${backend.id}" cannot mint a push URL`);
 
   const projectId = crypto.randomUUID();

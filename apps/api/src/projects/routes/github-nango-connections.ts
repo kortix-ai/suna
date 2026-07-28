@@ -16,11 +16,11 @@ import {
   decodeAccountGithubConnection,
   nangoWebhookUrlOverride,
 } from '../nango/github-connection';
+import { createNangoRequestObserver } from '../nango/telemetry';
 
 export type StoredGithubNangoConnection = typeof accountGithubInstallations.$inferSelect;
 
 export interface GithubNangoConnectionStore {
-  list(accountId: string): Promise<StoredGithubNangoConnection[]>;
   get(accountId: string, installationId: string): Promise<StoredGithubNangoConnection | null>;
   markConnected(connection: StoredGithubNangoConnection): Promise<StoredGithubNangoConnection>;
   markNeedsReconnect(connection: StoredGithubNangoConnection): Promise<StoredGithubNangoConnection>;
@@ -140,6 +140,7 @@ function productionNangoClient(): NangoClient {
   return createNangoClient({
     apiKey: config.NANGO_API_KEY,
     baseUrl: config.NANGO_BASE_URL,
+    observe: createNangoRequestObserver('account'),
   });
 }
 
@@ -232,11 +233,6 @@ async function updateStoredConnection(
 
 export function createGithubNangoConnectionStore(database: typeof db): GithubNangoConnectionStore {
   return {
-    list: async (accountId) =>
-      database
-        .select()
-        .from(accountGithubInstallations)
-        .where(eq(accountGithubInstallations.accountId, accountId)),
     get: async (accountId, installationId) => {
       const [row] = await database
         .select()
@@ -585,55 +581,6 @@ export function createGithubNangoConnectionsApp(
         action: ACCOUNT_ACTIONS.ACCOUNT_WRITE,
       });
       return disconnectOne(context, scope, context.req.valid('param').installationId);
-    },
-  );
-
-  app.openapi(
-    createRoute({
-      method: 'delete',
-      path: '/installation',
-      tags: ['github'],
-      summary: 'Disconnect GitHub installations (legacy route)',
-      ...auth,
-      request: {
-        query: z
-          .object({
-            account_id: z.string().optional(),
-            installation_id: z.string().optional(),
-            installationId: z.string().optional(),
-          })
-          .passthrough(),
-      },
-      responses: {
-        200: json(z.object({ ok: z.literal(true) }).passthrough(), 'Disconnected'),
-        403: connectionErrorResponse,
-        404: connectionErrorResponse,
-        409: connectionErrorResponse,
-        429: connectionErrorResponse,
-        500: connectionErrorResponse,
-        502: connectionErrorResponse,
-        503: connectionErrorResponse,
-      },
-    }),
-    // biome-ignore lint/suspicious/noExplicitAny: zod-openapi cannot infer custom multi-status error envelopes.
-    async (context: any) => {
-      const scope = await dependencies.resolveAccount(context);
-      await dependencies.authorize({
-        ...scope,
-        action: ACCOUNT_ACTIONS.ACCOUNT_WRITE,
-      });
-      const requested = context.req.query('installation_id') ?? context.req.query('installationId');
-      if (requested) {
-        const response = await disconnectOne(context, scope, requested);
-        if (!response.ok) return response;
-        return context.json({ ok: true }, 200);
-      }
-      const connections = await dependencies.store.list(scope.accountId);
-      for (const connection of connections) {
-        const response = await disconnectOne(context, scope, connection.installationId);
-        if (!response.ok) return response;
-      }
-      return context.json({ ok: true }, 200);
     },
   );
 

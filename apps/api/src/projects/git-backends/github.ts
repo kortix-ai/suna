@@ -1,15 +1,10 @@
-import { config } from '../../config';
-import { managedGithubAppConfig } from '../../platform/services/managed-github-app';
 import { managedGithubConnectionService } from '../../platform/services/managed-github-runtime';
+import { recordGithubCredentialState } from '../nango/telemetry';
 import {
   type GitHubAuthContext,
   addCollaborator,
-  createInstallationToken,
   createRepo as ghCreateRepo,
   deleteRepo as ghDeleteRepo,
-  isGithubAppConfigured,
-  isOrgAccount,
-  plainGitHubEnv,
 } from '../github';
 import { seedRepoViaGitPush } from './seed';
 import {
@@ -24,127 +19,12 @@ import {
   basicAuthHeader,
 } from './types';
 
-// DB-first, env-fallback — see projects/github.ts for the matching App
-// creds accessors. The in-app self-host setup flow (platform/routes/
-// github-app.ts) stores `owner`/`installationId` here once an admin installs
-// the App; until then this resolves to the existing env vars unchanged.
-export function managedGithubOwner(): string | null {
-  const dbConfig = managedGithubAppConfig();
-  // PAT owner first (a self-host admin who just switched to a PAT should see
-  // its owner take effect immediately, ahead of any stale App-installation
-  // owner still sitting in the same row), then the App-installation owner,
-  // then the env fallback (covers both the App-via-env and PAT-via-env cases).
-  return (
-    dbConfig.patOwner?.trim() ||
-    dbConfig.owner?.trim() ||
-    plainGitHubEnv('MANAGED_GIT_GITHUB_OWNER') ||
-    null
-  );
-}
-
-export function managedGithubInstallId(): string | null {
-  return (
-    managedGithubAppConfig().installationId?.trim() ||
-    plainGitHubEnv('MANAGED_GIT_GITHUB_INSTALL_ID') ||
-    null
-  );
-}
-
-/**
- * The stored account type for the App-installation owner (install-callback
- * records `account.type` straight off the installation payload — see
- * platform/routes/github-app.ts). `undefined` for configs written before this
- * field existed, or when running on env vars only; callers fall back to a
- * live `isOrgAccount` lookup in that case (see `managedAdminAuth` below).
- */
-export function managedGithubOwnerType(): 'User' | 'Organization' | undefined {
-  return managedGithubAppConfig().ownerType;
-}
-
-/**
- * A straight org PAT for the managed org — the "one server-side key" model.
- * When set it takes precedence over the
- * GitHub App: simpler to operate, no install/permission dance. Trade-off: a
- * long-lived, org-wide token (vs the App's short-lived, repo-scoped, auto-
- * rotating installation tokens). Either way the token stays server-side — the
- * sandbox only ever sees KORTIX_TOKEN via the proxy.
- */
-function managedGithubToken(): string | null {
-  return managedGithubAppConfig().pat?.trim() || plainGitHubEnv('MANAGED_GIT_GITHUB_TOKEN');
-}
-
 /** Embed an `x-access-token:<token>` basic credential into an https git URL. */
 function injectGitCredential(upstreamUrl: string, token: string): string {
   const u = new URL(upstreamUrl);
   u.username = 'x-access-token';
   u.password = token;
   return u.toString();
-}
-
-/**
- * Resolve a repo-scoped RUNTIME write token for a managed repo — the same
- * credential model as `resolveProjectGitAuth`'s managed-GitHub branch: the org
- * PAT when set, else a least-privilege installation token scoped to this repo.
- */
-async function mintManagedWriteToken(ref: GitConnectionRef): Promise<string> {
-  const pat = managedGithubToken();
-  if (pat) return pat;
-  const installId = ref.installationId ?? managedGithubInstallId();
-  if (!installId) {
-    throw new Error(
-      'Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)',
-    );
-  }
-  const minted = await createInstallationToken(
-    installId,
-    ref.repoName ? [ref.repoName] : undefined,
-  );
-  return minted.token;
-}
-
-/**
- * Admin-capable credential for managed-org operations that need org/repo-admin
- * scope (create repo, delete repo, add collaborator). PAT first, else an App
- * installation token (org-wide — NOT repo-scoped, since `createRepo` needs org
- * scope before the repo exists). Per-project RUNTIME tokens are minted
- * repo-scoped separately in `resolveProjectGitAuth`.
- */
-async function managedAdminAuth(): Promise<GitHubAuthContext> {
-  const owner = managedGithubOwner();
-  if (!owner) throw new Error('Managed GitHub git not configured (MANAGED_GIT_GITHUB_OWNER)');
-  const pat = managedGithubToken();
-  if (pat) {
-    // owner may be a personal account (e.g. a throwaway bot user, not an org)
-    // → createRepo must hit /user/repos, not /orgs/{owner}/repos. Detected
-    // live every time (self-host operators can point MANAGED_GIT_GITHUB_OWNER
-    // at either kind of account; there is no "prod always means org"
-    // assumption that holds across deployments) — cached by isOrgAccount so
-    // this is a one-time lookup per owner login, not a lookup per request.
-    const ownerType = (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
-    return { token: pat, source: 'pat', owner, ownerType };
-  }
-  const installId = managedGithubInstallId();
-  if (!installId) {
-    throw new Error(
-      'Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)',
-    );
-  }
-  const token = await createInstallationToken(installId);
-  // Prefer the ownerType install-callback already resolved and stored from
-  // GitHub's own `account.type` (no extra API call). Configs written before
-  // that field existed (or set purely via env vars) fall back to a live
-  // lookup — same personal-vs-org detection as the PAT path above, using the
-  // installation token we already have in hand.
-  const ownerType =
-    managedGithubOwnerType() ??
-    ((await isOrgAccount(owner, { token: token.token })) ? 'Organization' : 'User');
-  return {
-    token: token.token,
-    source: 'app_installation',
-    owner,
-    ownerType,
-    installationId: installId,
-  };
 }
 
 export interface ManagedGithubBackendCredential {
@@ -156,11 +36,7 @@ export interface ManagedGithubBackendCredential {
 }
 
 export interface GithubBackendDependencies {
-  credentialMode(): 'nango_preferred' | 'nango_only';
   resolveManagedCredential(): Promise<ManagedGithubBackendCredential>;
-  legacyConfigured(): Promise<boolean>;
-  resolveLegacyAdminAuth(): Promise<GitHubAuthContext>;
-  mintLegacyWriteToken(ref: GitConnectionRef): Promise<string>;
   createRepo: typeof ghCreateRepo;
   deleteRepo(
     input: Omit<Parameters<typeof ghDeleteRepo>[0], 'auth'> & { auth: GitHubAuthContext },
@@ -193,20 +69,6 @@ export function createGithubBackend(dependencies: GithubBackendDependencies): Gi
     };
   };
 
-  const resolveAdmin = async (): Promise<ResolvedBackendAuth> => {
-    try {
-      return await resolveManaged();
-    } catch (error) {
-      if (dependencies.credentialMode() === 'nango_only') throw error;
-      const auth = await dependencies.resolveLegacyAdminAuth();
-      return {
-        auth,
-        connectionId: null,
-        installationId: auth.installationId ?? null,
-      };
-    }
-  };
-
   const assertConnectionMatch = (ref: GitConnectionRef, resolved: ResolvedBackendAuth): void => {
     if (
       resolved.connectionId &&
@@ -218,14 +80,9 @@ export function createGithubBackend(dependencies: GithubBackendDependencies): Gi
   };
 
   const resolveWriteToken = async (ref: GitConnectionRef): Promise<string> => {
-    try {
-      const resolved = await resolveManaged();
-      assertConnectionMatch(ref, resolved);
-      return resolved.auth.token;
-    } catch (error) {
-      if (dependencies.credentialMode() === 'nango_only') throw error;
-      return dependencies.mintLegacyWriteToken(ref);
-    }
+    const resolved = await resolveManaged();
+    assertConnectionMatch(ref, resolved);
+    return resolved.auth.token;
   };
 
   return {
@@ -236,14 +93,12 @@ export function createGithubBackend(dependencies: GithubBackendDependencies): Gi
         await dependencies.resolveManagedCredential();
         return true;
       } catch {
-        return dependencies.credentialMode() === 'nango_preferred'
-          ? dependencies.legacyConfigured()
-          : false;
+        return false;
       }
     },
 
     async createRepo(input: ProvisionInput): Promise<ProvisionedRepo> {
-      const resolved = await resolveAdmin();
+      const resolved = await resolveManaged();
       const repo = await dependencies.createRepo({
         name: input.slug,
         owner: resolved.auth.owner,
@@ -266,7 +121,7 @@ export function createGithubBackend(dependencies: GithubBackendDependencies): Gi
 
     async deleteRepo(ref: GitConnectionRef): Promise<void> {
       if (!ref.repoOwner || !ref.repoName) return;
-      const resolved = await resolveAdmin();
+      const resolved = await resolveManaged();
       assertConnectionMatch(ref, resolved);
       await dependencies.deleteRepo({
         owner: ref.repoOwner,
@@ -313,7 +168,7 @@ export function createGithubBackend(dependencies: GithubBackendDependencies): Gi
     ): Promise<InviteResult> {
       if (!ref.managed) throw new Error('collaborator invites are only for managed repos');
       if (!ref.repoOwner || !ref.repoName) throw new Error('repo coordinates are required');
-      const resolved = await resolveAdmin();
+      const resolved = await resolveManaged();
       assertConnectionMatch(ref, resolved);
       const invitation = await dependencies.addCollaborator({
         owner: ref.repoOwner,
@@ -337,32 +192,41 @@ export function createGithubBackend(dependencies: GithubBackendDependencies): Gi
   };
 }
 
-async function legacyGithubConfigured(): Promise<boolean> {
-  const owner = managedGithubOwner();
-  if (!owner) return false;
-  if (managedGithubToken()) return true;
-  return Boolean(managedGithubInstallId() && isGithubAppConfigured());
-}
-
 export const githubBackend: GitHostBackend = createGithubBackend({
-  credentialMode: () => config.GITHUB_CREDENTIAL_RESOLUTION,
   resolveManagedCredential: async () => {
-    const resolved = await managedGithubConnectionService.resolveSelectedCredential();
-    return {
-      connectionId: resolved.credential.connectionId,
-      installationId: resolved.credential.installationId,
-      owner: resolved.setting.owner.login,
-      ownerType: resolved.setting.owner.type,
-      token: resolved.credential.installationToken,
-    };
+    try {
+      const resolved = await managedGithubConnectionService.resolveSelectedCredential();
+      recordGithubCredentialState({
+        scope: 'managed',
+        state: 'connected',
+        outcome: 'success',
+      });
+      return {
+        connectionId: resolved.credential.connectionId,
+        installationId: resolved.credential.installationId,
+        owner: resolved.setting.owner.login,
+        ownerType: resolved.setting.owner.type,
+        token: resolved.credential.installationToken,
+      };
+    } catch (error) {
+      const code =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        typeof error.code === 'string'
+          ? error.code
+          : 'github_reconnect_required';
+      recordGithubCredentialState({
+        scope: 'managed',
+        state: code === 'github_reconnect_required' ? 'needs_reconnect' : 'error',
+        outcome: 'error',
+        errorCode: code,
+      });
+      throw error;
+    }
   },
-  legacyConfigured: legacyGithubConfigured,
-  resolveLegacyAdminAuth: managedAdminAuth,
-  mintLegacyWriteToken: mintManagedWriteToken,
   createRepo: ghCreateRepo,
   deleteRepo: ghDeleteRepo,
   addCollaborator,
   seedRepo: seedRepoViaGitPush,
 });
-
-export { managedGithubToken };

@@ -132,8 +132,8 @@ $CLI self-host env set --instance "$INSTANCE" \
   "OPENROUTER_API_KEY=degrade-check-dummy" \
   "KORTIX_LOCAL_IMAGES=true" \
   "API_IMAGE=$API_IMAGE" >/dev/null
-# Deliberately leave every MANAGED_GIT_* / KORTIX_GITHUB_APP_* key unset —
-# that's the exact condition case 6 tests against.
+# Deliberately leave every NANGO_* managed-git key unset. That is the exact
+# condition case 6 tests against.
 ok "config initialized: billing off (default), managed-git unset"
 
 section "Bring Up Data Plane (db, auth, rest, kong, migrate, api)"

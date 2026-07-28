@@ -2,10 +2,8 @@
 
 // Shared "GitHub isn't connected yet" panel — shown in place of the
 // create/import UI whenever there's no usable managed git on this server
-// (self-host with no GitHub App or PAT configured yet). Routes the user to
-// the account's Git settings tab instead of the cloud-only "Connect the
-// Kortix GitHub App" install card, which only makes sense on the hosted
-// deployment (there's no hosted Kortix App to install on self-host).
+// (self-host with no Nango connection configured yet). Routes the user to
+// the account's Git settings tab.
 
 import { Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';

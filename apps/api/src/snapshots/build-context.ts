@@ -121,8 +121,8 @@ export interface WarmRepoContext {
  * any of those copies. Therefore, on rollout, ANY git credential that could
  * have been used for a per-project warm bake before this change must be treated
  * as POTENTIALLY EXPOSED and ROTATED:
- *   • GitHub App INSTALLATION tokens are short-lived (~1h) → low residual risk,
- *     but any long-lived fallback PAT must be rotated.
+ *   • Nango GitHub installation tokens are short-lived (~1h), which limits
+ *     residual risk.
  *   • Any project-level BYO git PAT/credential stored + used for a warm bake
  *     must be rotated and the old value revoked at the git host.
  *   • Object-storage build-context objects created by prior builds should be

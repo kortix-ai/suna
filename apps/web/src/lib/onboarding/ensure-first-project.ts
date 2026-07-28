@@ -47,7 +47,7 @@ export function isManagedGitUnavailableError(err: unknown): boolean {
 /**
  * Return the account's first project. Empty accounts deliberately return null:
  * repository ownership is a user choice, so onboarding opens the create flow
- * and asks for a GitHub App installation (preferred) or explicit managed Git.
+ * and asks for a Nango GitHub connection or another configured git provider.
  */
 export async function ensureFirstProject(accountId: string): Promise<KortixProject | null> {
   const existing = await listProjectsForAccount(accountId);

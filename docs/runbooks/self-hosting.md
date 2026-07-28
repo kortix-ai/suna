@@ -49,8 +49,8 @@ box.
   and **443** must be reachable from the internet for ACME HTTP-01 once a
   domain is set.
 - **Required for agent sessions to actually run:** a sandbox provider and
-  managed-git access (a GitHub PAT or GitHub App) so the platform can create
-  project repos. Recommended, standard choices: [Daytona](https://www.daytona.io/)
+  managed-git access through Nango so the platform can create project repos.
+  Recommended, standard choices: [Daytona](https://www.daytona.io/)
   (the default) or [Platinum](https://www.platinum.dev/), Kortix's own microVM
   sandbox provider. [E2B](https://e2b.dev/) is also supported. Any of these
   need just an API key, settable after first boot with `kortix self-host
@@ -195,11 +195,23 @@ kortix self-host start
 After first boot, configure the sandbox provider and managed git:
 
 ```sh
-kortix self-host configure       # interactive wizard: Daytona key, GitHub, Pipedream
+kortix self-host configure       # interactive wizard: Daytona key and integrations
 # or non-interactively:
-kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
+kortix self-host env set DAYTONA_API_KEY=...
+kortix self-host env set \
+  MANAGED_GIT_PROVIDER=github \
+  NANGO_API_KEY=... \
+  NANGO_WEBHOOK_SIGNING_KEY=... \
+  NANGO_BASE_URL=https://api.nango.dev \
+  NANGO_GITHUB_ACCOUNT_INTEGRATION_ID=github-app-oauth \
+  NANGO_GITHUB_MANAGED_INTEGRATION_ID=github-app \
+  KORTIX_GIT_PROXY=true \
+  GITHUB_CREDENTIAL_RESOLUTION=nango_only
 kortix self-host start           # re-applies env + restarts affected services
 ```
+
+Open **Settings → Git** after restart. Complete Nango Connect and explicitly
+select the organization connection for managed repositories.
 
 ### Provisioning a VPS with Terraform (optional)
 
@@ -322,10 +334,9 @@ kortix hosts add selfhost --url http://localhost:13738 --dashboard-url http://lo
 kortix hosts add selfhost --url https://api.kortix.example.com --dashboard-url https://kortix.example.com   # domain
 ```
 
-**`kortix ship`** needs a git backend to push to — either an existing GitHub
-remote (via the GitHub App or `--github-token`, both set up in the dashboard
-under **Settings → Git**, see step 4 of the quickstart) or no origin at all
-(ship then creates a managed Kortix-hosted repo, no GitHub needed). If
+**`kortix ship`** needs a git backend to push to. An existing GitHub remote uses
+the account's Nango connection from **Settings → Git**. With no origin, ship
+creates a managed repository through the selected platform Nango connection. If
 managed git isn't configured yet, `ship -n` (dry-run) still validates
 `kortix.yaml`, resolves the target project, and shows the push plan without
 needing it.
@@ -397,8 +408,16 @@ whether at first boot or months later:
 # Sandbox runtime (required for agent sessions)
 kortix self-host env set DAYTONA_API_KEY=... DAYTONA_SERVER_URL=https://app.daytona.io/api DAYTONA_TARGET=us
 
-# Managed git (required to create projects) — PAT or GitHub App
-kortix self-host env set MANAGED_GIT_PROVIDER=github MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=your-org
+# Managed GitHub through Nango (required to create GitHub-backed projects)
+kortix self-host env set \
+  MANAGED_GIT_PROVIDER=github \
+  NANGO_API_KEY=... \
+  NANGO_WEBHOOK_SIGNING_KEY=... \
+  NANGO_BASE_URL=https://api.nango.dev \
+  NANGO_GITHUB_ACCOUNT_INTEGRATION_ID=github-app-oauth \
+  NANGO_GITHUB_MANAGED_INTEGRATION_ID=github-app \
+  KORTIX_GIT_PROXY=true \
+  GITHUB_CREDENTIAL_RESOLUTION=nango_only
 
 # SMTP (optional — enables magic-link / email verification instead of the
 # password-only, auto-confirmed default)
@@ -597,7 +616,8 @@ just `init` + `start` again, on the same box or a fresh one.
   isn't set. `kortix self-host configure` or
   `kortix self-host env set DAYTONA_API_KEY=...` then `kortix self-host start`.
 - **Creating a project fails ("provider github not configured")** — managed
-  git isn't configured. Same fix, with the `MANAGED_GIT_GITHUB_*` keys above.
+  git is not configured. Set all Nango managed-git values above. Then complete
+  Nango Connect and select the organization connection in **Settings → Git**.
 - **Agent sessions fail with "Cannot connect to the API" / a `KORTIX_URL`
   error, or hang forever** — the cloud sandbox can't call back to this API:
   reachability is unconfigured (the default absent `--domain`/`--tunnel`), or

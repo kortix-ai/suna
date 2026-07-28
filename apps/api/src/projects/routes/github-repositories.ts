@@ -1,8 +1,5 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { config } from '../../config';
 import { auth, errors, json } from '../../openapi';
-import { isPlatformAdmin } from '../../shared/platform-roles';
-import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
 import {
   getRepo,
   listOwnerRepositories,
@@ -12,7 +9,6 @@ import { resolveProjectAccount } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { getAccountGitHubInstallation } from '../lib/git';
 import {
-  PAT_MANAGED_GIT_INSTALLATION_ID,
   normalizeString,
   serializeGitHubRepo,
 } from '../lib/serializers';
@@ -20,7 +16,6 @@ import {
   GitHubCredentialResolutionError,
   withFreshAccountGithubRead,
 } from '../nango/account-credential';
-import { enforcePatImportMode } from '../nango/credential-mode';
 import { GitHubRepositoryValidationError } from '../nango/repository-operations';
 import { mapGitHubOperationError } from './github-errors';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -74,46 +69,6 @@ projectsApp.openapi(
     const limit = Number.isFinite(requestedLimit)
       ? Math.min(100, Math.max(1, requestedLimit))
       : 100;
-
-    // The managed-git PAT ("Use a token" self-host setup) surfaces as a
-    // synthetic installation (see serializeGitHubInstallations) since it has
-    // no real GitHub App installation to list repos from — list via the PAT
-    // itself instead of an installation token.
-    if (installationId === PAT_MANAGED_GIT_INSTALLATION_ID) {
-      try {
-        enforcePatImportMode(config.GITHUB_CREDENTIAL_RESOLUTION);
-      } catch (error) {
-        return githubErrorResponse(c, error);
-      }
-      if (!(await isPlatformAdmin(scope.userId))) {
-        return c.json(
-          { error: 'Managed GitHub repository import requires platform admin access' },
-          403,
-        );
-      }
-      const owner = managedGithubOwner();
-      const token = managedGithubToken();
-      if (!owner || !token) {
-        return c.json({ error: 'The managed GitHub token is no longer configured on this server' }, 409);
-      }
-      try {
-        const repos = await listOwnerRepositories({
-          owner,
-          ownerType: managedGithubOwnerType(),
-          auth: { token },
-          search,
-          limit,
-        });
-        return c.json({
-          account_id: scope.accountId,
-          installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-          owner_login: owner,
-          repositories: repos.map(serializeGitHubRepo),
-        });
-      } catch (error) {
-        return githubErrorResponse(c, error);
-      }
-    }
 
     try {
       const selected = await getAccountGitHubInstallation(

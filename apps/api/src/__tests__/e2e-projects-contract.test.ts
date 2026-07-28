@@ -81,9 +81,9 @@ function resetState() {
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
     installationId: '42',
-    nangoConnectionId: null,
-    nangoIntegrationId: null,
-    connectionStatus: null,
+    nangoConnectionId: 'account-nango-connection',
+    nangoIntegrationId: 'github-app-oauth',
+    connectionStatus: 'connected',
     lastValidatedAt: null,
     lastErrorCode: null,
     lastErrorMessage: null,
@@ -255,18 +255,8 @@ mock.module("../snapshots/builder", () => ({
 const realGithubModule = await import('../projects/github');
 mock.module('../projects/github', () => ({
   ...realGithubModule,
-  listLinkableGitHubAppInstallations: async () => [],
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
-  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  createGitHubAppJwt: () => 'jwt-test',
-  verifyGitHubAppInstallState: (state: string) => state,
-  verifyGitHubAppInstallStatePayload: (state: string) => ({
-    accountId: state,
-    nonce: 'test-nonce',
-    issuedAt: Math.floor(Date.now() / 1000),
-  }),
-  getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   addCollaborator: async () => undefined,
   deleteFile: async () => undefined,
   deleteRepo: async () => undefined,
@@ -275,16 +265,10 @@ mock.module('../projects/github', () => ({
   },
   getBranchCommitSha: async () => 'a'.repeat(40),
   createBranchRef: async () => undefined,
-  createInstallationToken: async () => ({ token: 'installation-token' }),
   createRepo: async () => {
     throw new Error('create-repo route is covered separately');
   },
   getFileSha: async () => null,
-  getGitHubAppInstallation: async () => ({
-    account: { login: 'kortix-org', type: 'Organization' },
-    repository_selection: 'all',
-    permissions: {},
-  }),
   getRepo: async () => ({
     id: 7,
     name: 'new-project',
@@ -295,6 +279,7 @@ mock.module('../projects/github', () => ({
     ssh_url: 'git@github.com:kortix-org/new-project.git',
     default_branch: 'trunk',
     description: null,
+    permissions: { push: true },
   }),
   getRepositoryBranch: async ({ branch }: { branch: string }) => {
     if (branch === rejectedBranch) {
@@ -302,11 +287,43 @@ mock.module('../projects/github', () => ({
     }
     return { name: branch, protected: false };
   },
-  listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
-  isGithubAppConfigured: () => false,
-  isGithubPatConfigured: () => true,
+}));
+
+class TestGitHubCredentialResolutionError extends Error {
+  constructor(
+    readonly code: 'github_connection_required' | 'github_reconnect_required' | 'github_provider_failed',
+    readonly status: 409 | 502,
+    readonly accountId: string,
+    readonly installationId: string,
+  ) {
+    super(code);
+  }
+}
+
+const accountGithubResolution = () => ({
+  installation: dbState.installationRow!,
+  credential: {
+    mode: 'account' as const,
+    connectionId: 'account-nango-connection',
+    integrationId: 'github-app-oauth',
+    installationId: '42',
+    installationToken: 'installation-token',
+    userToken: 'user-token',
+    permissions: { contents: 'write' },
+    repositorySelection: 'all',
+    tags: {},
+  },
+});
+
+mock.module('../projects/nango/account-credential', () => ({
+  GitHubCredentialResolutionError: TestGitHubCredentialResolutionError,
+  resolveAccountGithubCredential: async () => accountGithubResolution(),
+  withFreshAccountGithubRead: async (
+    _input: unknown,
+    operation: (resolution: ReturnType<typeof accountGithubResolution>) => Promise<unknown>,
+  ) => operation(accountGithubResolution()),
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -404,8 +421,9 @@ describe('projects API contract', () => {
       repoOwner: 'kortix-org',
       repoName: 'new-project',
       externalRepoId: '7',
-      authMethod: 'github_app',
+      authMethod: 'nango',
       installationId: '42',
+      credentialRef: 'account-nango-connection',
       visibility: 'private',
       status: 'connected',
     }));
@@ -466,9 +484,10 @@ describe('projects API contract', () => {
       }),
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     expect(await res.json()).toEqual({
-      error: 'Selected branch "missing-branch" does not exist in kortix-org/new-project',
+      error: 'The selected GitHub repository or branch no longer exists.',
+      code: 'github_repository_not_found',
     });
     expect(dbState.projectRows.some((row) => row.defaultBranch === rejectedBranch)).toBe(false);
   });

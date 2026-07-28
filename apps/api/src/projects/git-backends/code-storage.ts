@@ -86,9 +86,8 @@ function org(): string {
 /**
  * Strip surrounding quotes (a secret stored as `"...PEM..."` double-encodes
  * the quotes into the value) and un-escape literal `\n` sequences — same
- * normalization as GitHub App keys (projects/github.ts's
- * `normalizeGitHubPrivateKey`), duplicated here rather than imported so this
- * backend has zero coupling to the GitHub one.
+ * normalization used for other PEM credentials. Keep it local so this backend
+ * has no coupling to another provider.
  */
 function normalizeKeyPem(value: string): string {
   return value

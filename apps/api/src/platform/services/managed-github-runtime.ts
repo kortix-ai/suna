@@ -5,6 +5,7 @@ import { config } from '../../config';
 import { getGitHubAppInstallationWithJwt } from '../../projects/github';
 import { createNangoClient } from '../../projects/nango/client';
 import { nangoWebhookUrlOverride } from '../../projects/nango/github-connection';
+import { createNangoRequestObserver } from '../../projects/nango/telemetry';
 import { db } from '../../shared/db';
 import {
   type ManagedGithubConnectionService,
@@ -76,6 +77,7 @@ function getProductionService(): ManagedGithubConnectionService {
     client: createNangoClient({
       apiKey: config.NANGO_API_KEY,
       baseUrl: config.NANGO_BASE_URL,
+      observe: createNangoRequestObserver('managed'),
     }),
     store: createManagedGithubConnectionStore(db),
     integrationId: config.NANGO_GITHUB_MANAGED_INTEGRATION_ID,

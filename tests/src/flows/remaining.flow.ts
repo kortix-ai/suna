@@ -154,6 +154,7 @@ flow(
     routes: [
       "PATCH /v1/projects/:projectId/sessions/:sessionId",
       "PUT /v1/projects/:projectId/sessions/:sessionId/sharing",
+      "PUT /v1/projects/:projectId/sessions/:sessionId/model",
     ],
   },
   async (ctx) => {
@@ -169,6 +170,16 @@ flow(
         .as(ctx.P.OWNER)
         .put("/v1/projects/:projectId/sessions/:sessionId/sharing", { visibility: "private" }, { params: { projectId: p.id, sessionId: BOGUS_UUID } });
       r.status([400, 404]);
+    });
+    await ctx.step("PUT model on unknown session → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/sessions/:sessionId/model",
+          { opencode_model: "kortix/glm-5.2" },
+          { params: { projectId: p.id, sessionId: BOGUS_UUID } },
+        );
+      r.status(404);
     });
   },
 );

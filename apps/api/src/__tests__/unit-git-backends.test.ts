@@ -118,11 +118,10 @@ describe('buildUpstream', () => {
 });
 
 describe('managed GitHub Nango backend', () => {
-  function fixture(mode: 'nango_preferred' | 'nango_only' = 'nango_only') {
+  function fixture() {
     const calls: string[] = [];
     let nangoError: Error | null = null;
     const backend = createGithubBackend({
-      credentialMode: () => mode,
       resolveManagedCredential: async () => {
         calls.push('resolve:nango');
         if (nangoError) throw nangoError;
@@ -133,21 +132,6 @@ describe('managed GitHub Nango backend', () => {
           ownerType: 'Organization',
           token: 'nango-installation-token',
         };
-      },
-      legacyConfigured: async () => true,
-      resolveLegacyAdminAuth: async () => {
-        calls.push('resolve:legacy');
-        return {
-          token: 'legacy-token',
-          source: 'app_installation',
-          owner: 'legacy-owner',
-          ownerType: 'Organization',
-          installationId: '777',
-        };
-      },
-      mintLegacyWriteToken: async () => {
-        calls.push('mint:legacy');
-        return 'legacy-write-token';
       },
       createRepo: async (input) => {
         calls.push(`create:${input.owner}:${input.auth?.source}`);
@@ -221,7 +205,7 @@ describe('managed GitHub Nango backend', () => {
   });
 
   test('does not use legacy credentials in nango_only mode', async () => {
-    const fixtureState = fixture('nango_only');
+    const fixtureState = fixture();
     fixtureState.setNangoError(new Error('Nango unavailable'));
 
     await expect(
@@ -236,27 +220,19 @@ describe('managed GitHub Nango backend', () => {
     expect(fixtureState.calls).toEqual(['resolve:nango']);
   });
 
-  test('uses legacy credentials only in nango_preferred mode', async () => {
-    const fixtureState = fixture('nango_preferred');
+  test('never uses legacy credentials after the Nango-only cutover', async () => {
+    const fixtureState = fixture();
     fixtureState.setNangoError(new Error('Nango unavailable'));
 
-    const repo = await fixtureState.backend.createRepo({
-      accountId: 'account-1',
-      projectId: 'project-1',
-      slug: 'demo',
-      defaultBranch: 'main',
-      isPrivate: true,
-    });
-
-    expect(repo).toMatchObject({
-      repoOwner: 'legacy-owner',
-      installationId: '777',
-      credentialRef: null,
-    });
-    expect(fixtureState.calls).toEqual([
-      'resolve:nango',
-      'resolve:legacy',
-      'create:legacy-owner:app_installation',
-    ]);
+    await expect(
+      fixtureState.backend.createRepo({
+        accountId: 'account-1',
+        projectId: 'project-1',
+        slug: 'demo',
+        defaultBranch: 'main',
+        isPrivate: true,
+      }),
+    ).rejects.toThrow('Nango unavailable');
+    expect(fixtureState.calls).toEqual(['resolve:nango']);
   });
 });

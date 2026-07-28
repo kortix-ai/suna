@@ -1,25 +1,22 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
-import { config } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
 import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
-import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, deleteRepo, getFileSha, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
-import { getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
-import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
-import { enforcePatImportMode } from '../nango/credential-mode';
+import { getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubRepoAuth } from '../lib/git';
+import { registerGitHubLinkedProject } from '../lib/project-registration';
+import { GitHubCredentialModeError } from '../nango/credential-mode';
 import { mapGitHubOperationError } from './github-errors';
-import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
+import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
@@ -90,72 +87,15 @@ projectsApp.openapi(
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
   const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
-  if (
-    installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID &&
-    !(await isPlatformAdmin(scope.userId))
-  ) {
-    return c.json(
-      { error: 'Managed GitHub repository import requires platform admin access' },
-      403,
-    );
+  const githubToken = normalizeString(body.github_token ?? body.githubToken);
+  if (githubToken || installationIdInput === 'pat') {
+    return githubErrorResponse(c, new GitHubCredentialModeError());
   }
 
   const quota = await enforceProjectQuota(c, scope.accountId);
   if (quota) return quota;
 
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
-
-  // PAT path: link an existing repo with a token, no GitHub App install
-  // needed — either a caller-supplied token (the seamless `kortix ship` flow
-  // for a repo you already own, and the App-free fallback in environments
-  // where the App can't be installed), or the account-level managed-git PAT
-  // ("Use a token" self-host setup) when the Import-repo UI picked its
-  // synthetic installation (see serializeGitHubInstallations /
-  // GET github/installations). Everything downstream (`resolveProjectGitAuth`
-  // → `project_credential`) already consumes the stored PAT either way.
-  const githubToken = normalizeString(body.github_token ?? body.githubToken);
-  const managedPatToken =
-    !githubToken && installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID
-      ? managedGithubToken()
-      : null;
-  if (!githubToken && installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID && !managedPatToken) {
-    return c.json({ error: 'The managed GitHub token is no longer configured on this server' }, 409);
-  }
-  const patToken = githubToken ?? managedPatToken;
-  if (patToken) {
-    try {
-      enforcePatImportMode(config.GITHUB_CREDENTIAL_RESOLUTION);
-    } catch (error) {
-      return githubErrorResponse(c, error);
-    }
-    let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
-    try {
-      patImport = await resolveGitHubImportWithPat({
-        repoUrl,
-        token: patToken,
-        defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
-      });
-    } catch (error) {
-      return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
-    }
-    const row = await registerPatLinkedProject({
-      accountId: scope.accountId,
-      userId: scope.userId,
-      repo: patImport.repo,
-      token: patToken,
-      name: normalizeString(body.name),
-      defaultBranch: patImport.defaultBranch,
-      manifestPath,
-    });
-    kickProjectTemplatePrebuilds(
-      { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: patToken },
-      { accountId: scope.accountId, source: 'project-create' },
-    );
-    return c.json({
-      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
-    }, 201);
-  }
 
   let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
   try {
@@ -199,7 +139,7 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/create-repo
-// Creates a new GitHub repository using the account's GitHub App installation,
+// Creates a new GitHub repository using the account's Nango connection,
 // then registers it as a Kortix project.
 
 projectsApp.openapi(

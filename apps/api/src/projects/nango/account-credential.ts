@@ -8,6 +8,10 @@ import {
   decodeAccountGithubConnection,
   parseAccountNangoTags,
 } from './github-connection';
+import {
+  createNangoRequestObserver,
+  recordGithubCredentialState,
+} from './telemetry';
 
 type AccountGithubInstallation = typeof accountGithubInstallations.$inferSelect;
 
@@ -51,6 +55,11 @@ export interface AccountGithubCredentialDependencies {
     forceRefresh: boolean;
     refreshGithubAppJwtToken: boolean;
   }): Promise<NangoConnection>;
+  observeState?(observation: {
+    state: 'connected' | 'needs_reconnect' | 'error' | 'disconnected' | 'missing';
+    outcome: 'success' | 'error';
+    errorCode?: string;
+  }): void;
 }
 
 let cachedClient: NangoClient | null = null;
@@ -63,6 +72,7 @@ async function productionDependencies(): Promise<AccountGithubCredentialDependen
   cachedClient ??= createNangoClient({
     apiKey: config.NANGO_API_KEY,
     baseUrl: config.NANGO_BASE_URL,
+    observe: createNangoRequestObserver('account'),
   });
   const client = cachedClient;
   return {
@@ -81,6 +91,8 @@ async function productionDependencies(): Promise<AccountGithubCredentialDependen
       return row ?? null;
     },
     getConnection: (input) => client.getConnection(input),
+    observeState: (observation) =>
+      recordGithubCredentialState({ scope: 'account', ...observation }),
   };
 }
 
@@ -107,6 +119,11 @@ export async function resolveAccountGithubCredential(
     input.installationId,
   );
   if (!installation) {
+    resolvedDependencies.observeState?.({
+      state: 'missing',
+      outcome: 'error',
+      errorCode: 'github_connection_required',
+    });
     throw resolutionError('github_connection_required', input.accountId, input.installationId);
   }
 
@@ -115,8 +132,21 @@ export async function resolveAccountGithubCredential(
     !installation.nangoConnectionId ||
     !installation.nangoIntegrationId
   ) {
+    const errorCode = installation.nangoConnectionId
+      ? 'github_reconnect_required'
+      : 'github_connection_required';
+    resolvedDependencies.observeState?.({
+      state:
+        installation.connectionStatus === 'disconnected'
+          ? 'disconnected'
+          : installation.nangoConnectionId
+            ? 'needs_reconnect'
+            : 'missing',
+      outcome: 'error',
+      errorCode,
+    });
     throw resolutionError(
-      installation.nangoConnectionId ? 'github_reconnect_required' : 'github_connection_required',
+      errorCode,
       input.accountId,
       input.installationId,
     );
@@ -126,6 +156,11 @@ export async function resolveAccountGithubCredential(
     !resolvedDependencies.accountIntegrationId ||
     installation.nangoIntegrationId !== resolvedDependencies.accountIntegrationId
   ) {
+    resolvedDependencies.observeState?.({
+      state: 'error',
+      outcome: 'error',
+      errorCode: 'github_provider_failed',
+    });
     throw resolutionError('github_provider_failed', input.accountId, input.installationId);
   }
 
@@ -139,8 +174,18 @@ export async function resolveAccountGithubCredential(
     });
   } catch (error) {
     if (isNangoError(error) && error.code === 'github_reconnect_required') {
+      resolvedDependencies.observeState?.({
+        state: 'needs_reconnect',
+        outcome: 'error',
+        errorCode: 'github_reconnect_required',
+      });
       throw resolutionError('github_reconnect_required', input.accountId, input.installationId);
     }
+    resolvedDependencies.observeState?.({
+      state: 'error',
+      outcome: 'error',
+      errorCode: isNangoError(error) ? error.code : 'nango_unavailable',
+    });
     throw error;
   }
 
@@ -150,6 +195,11 @@ export async function resolveAccountGithubCredential(
       integrationId: installation.nangoIntegrationId,
     });
   } catch {
+    resolvedDependencies.observeState?.({
+      state: 'error',
+      outcome: 'error',
+      errorCode: 'github_provider_failed',
+    });
     throw resolutionError('github_provider_failed', input.accountId, input.installationId);
   }
 
@@ -159,9 +209,15 @@ export async function resolveAccountGithubCredential(
     credential.connectionId !== installation.nangoConnectionId ||
     credential.installationId !== installation.installationId
   ) {
+    resolvedDependencies.observeState?.({
+      state: 'error',
+      outcome: 'error',
+      errorCode: 'github_provider_failed',
+    });
     throw resolutionError('github_provider_failed', input.accountId, input.installationId);
   }
 
+  resolvedDependencies.observeState?.({ state: 'connected', outcome: 'success' });
   return { installation, credential };
 }
 

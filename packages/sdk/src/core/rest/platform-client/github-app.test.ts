@@ -144,3 +144,20 @@ test('keeps the existing platform GitHub names exported as deprecated adapters',
     source: 'nango',
   });
 });
+
+test('deprecated setup adapters never transmit GitHub credentials', async () => {
+  await expect(startGitHubAppManifest({ org: 'acme' })).rejects.toThrow(
+    'Use createManagedGitHubConnectSession',
+  );
+  await expect(
+    setGitHubAppFromExisting({
+      appId: '123',
+      privateKey: 'private-key',
+      installationId: '456',
+    }),
+  ).rejects.toThrow('Use createManagedGitHubConnectSession');
+  await expect(
+    setGitHubAppPat({ owner: 'acme', token: 'github-token' }),
+  ).rejects.toThrow('Use createManagedGitHubConnectSession');
+  expect(requests).toEqual([]);
+});

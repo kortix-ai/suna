@@ -3,7 +3,8 @@
  * `kortix ship` when a repo has no `origin` remote. The managed backend is
  * provider-agnostic (GitHub is the default + only active one), so this test
  * drives the endpoint against a stub `GitHostBackend` and asserts the
- * provider-neutral behaviour: create repo → mint push token → register project.
+ * provider-neutral behavior: create repository, retain server-side credential,
+ * and register the project with a proxy origin.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
@@ -19,7 +20,7 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const REPO_OWNER = 'kortix-managed';
 const EXTERNAL_REPO_ID = 'gh-repo-1';
 const INSTALL_ID = 'install-1';
-const PUSH_TOKEN = 'scoped-push-token-789';
+const NANGO_INSTALLATION_TOKEN = 'nango-installation-token';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
@@ -29,7 +30,6 @@ let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
-let managedPat: string | null;
 let provisionedInitialToken: string | null;
 let provisionedCredentialRef: string | null;
 let existingAuthMethod: string;
@@ -116,7 +116,6 @@ mock.module('../projects/git-backends', () => ({
   managedGithubInstallId: () => INSTALL_ID,
   managedGithubOwner: () => REPO_OWNER,
   managedGithubOwnerType: () => undefined,
-  managedGithubToken: () => managedPat,
   parseBasicAuthHeader: (value?: string | null) => {
     if (!value?.startsWith('Basic ')) return null;
     const decoded = Buffer.from(value.slice(6), 'base64').toString('utf8');
@@ -416,14 +415,13 @@ describe('POST /v1/projects/provision (managed git)', () => {
     canonicalMembership = true;
     backendCalls.length = 0;
     backendConfigured = true;
-    managedPat = null;
-    provisionedInitialToken = PUSH_TOKEN;
-    provisionedCredentialRef = null;
-    existingAuthMethod = 'github_app';
-    existingCredentialRef = null;
+    provisionedInitialToken = NANGO_INSTALLATION_TOKEN;
+    provisionedCredentialRef = 'managed-nango-connection';
+    existingAuthMethod = 'nango';
+    existingCredentialRef = 'managed-nango-connection';
   });
 
-  test('provisions a managed repo + scoped token and registers the project', async () => {
+  test('provisions a Nango-managed repository without exporting its credential', async () => {
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -434,16 +432,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
 
-    // Repo slug = readable name + the (server-generated) project id; the managed
-    // repo lives under the managed org. Response carries the project + scoped
-    // push token for the CLI.
+    // Repo slug = readable name + the server-generated project id.
     expect(createdSlug).toMatch(/^my-agent-[0-9a-f-]{36}$/);
     const expectedRepoUrl = `https://github.com/${REPO_OWNER}/${createdSlug}.git`;
     expect(body.project_id).toBe(PROJECT_ID);
     expect(body.repo_url).toBe(expectedRepoUrl);
     expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
-    expect(body.push_token).toBe(PUSH_TOKEN);
-    expect(body.git_username).toBe('x-access-token');
+    expect(body.push_token).toBeNull();
+    expect(body.git_username).toBeNull();
 
     // Persisted row records the canonical typed git-remote reference.
     expect(insertedProject).toMatchObject({
@@ -458,7 +454,11 @@ describe('POST /v1/projects/provision (managed git)', () => {
           url: expectedRepoUrl,
           provider: 'github',
           managed: true,
-          auth: { method: 'github_app', installation_id: INSTALL_ID },
+          auth: {
+            method: 'nango',
+            ref: 'managed-nango-connection',
+            installation_id: INSTALL_ID,
+          },
           owner: REPO_OWNER,
         },
       },
@@ -474,72 +474,24 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(backendCalls).toEqual(['createRepo']);
   });
 
-  test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
-    provisionedInitialToken = null;
-    managedPat = 'server-global-ghp-token';
-
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'PAT Fallback Project' }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.push_token).toBeNull();
-  });
-
-  test('persists managed Nango auth and never exports its internal seed token', async () => {
-    provisionedCredentialRef = 'managed-nango-connection';
-    provisionedInitialToken = 'nango-installation-token';
+  test('deletes a provisioned GitHub repository when its Nango reference is missing', async () => {
+    provisionedCredentialRef = null;
 
     const res = await createApp().request('/v1/projects/provision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Nango Managed Project' }),
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Missing Nango Reference' }),
     });
 
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.push_token).toBeNull();
-    expect(body.git_username).toBeNull();
-    expect(insertedProject).toMatchObject({
-      metadata: {
-        git: {
-          auth: {
-            method: 'nango',
-            ref: 'managed-nango-connection',
-            installation_id: INSTALL_ID,
-          },
-        },
-      },
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({
+      error: 'Managed GitHub did not return a Nango connection reference',
     });
-  });
-
-  test('git-token fails closed when managed GitHub auth resolves to server-global PAT fallback', async () => {
-    managedPat = 'server-global-ghp-token';
-
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/git-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-
-    expect(res.status).toBe(503);
-    const body = await res.json();
-    // Fails closed AND points at the path that actually works: the org-wide
-    // token is never exported, clients push through the git proxy origin.
-    expect(body.error).toContain('org-wide token');
-    expect(body.error).toContain('git_origin_url');
-    expect(body.git_origin_url).toBeTruthy();
+    expect(insertedProject).toBeNull();
+    expect(backendCalls).toEqual(['createRepo', 'deleteRepo']);
   });
 
   test('git-token returns a deterministic proxy upgrade contract for Nango projects', async () => {
-    existingAuthMethod = 'nango';
-    existingCredentialRef = 'managed-nango-connection';
-
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/git-token`, {
       method: 'POST',

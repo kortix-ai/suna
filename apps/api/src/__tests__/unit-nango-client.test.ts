@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { createNangoClient } from '../projects/nango/client';
+import {
+  createNangoClient,
+  type NangoRequestObservation,
+} from '../projects/nango/client';
 import { NangoError } from '../projects/nango/errors';
 
 const apiKey = 'nango-api-key-do-not-log';
@@ -282,5 +285,53 @@ describe('Nango HTTP client', () => {
     expect(error).toMatchObject({ code: 'github_provider_failed', status: 502 });
     expect(String(error)).not.toContain(apiKey);
     expect(String(error)).not.toContain(secretPayload);
+  });
+
+  test('emits sanitized operation latency and error telemetry', async () => {
+    const observations: NangoRequestObservation[] = [];
+    let requestCount = 0;
+    const client = createNangoClient({
+      apiKey,
+      baseUrl,
+      observe: (observation) => observations.push(observation),
+      fetchImpl: async () => {
+        requestCount += 1;
+        return requestCount === 1
+          ? jsonResponse(connectionResponse)
+          : jsonResponse(
+              { error: { message: 'provider-body-secret' } },
+              { status: 429, headers: { 'retry-after': '17' } },
+            );
+      },
+    });
+
+    await client.getConnection({
+      connectionId: 'connection-1',
+      integrationId: 'github-account',
+    });
+    await expect(
+      client.listConnections({ integrationId: 'github-account' }),
+    ).rejects.toMatchObject({ code: 'github_provider_rate_limited' });
+
+    expect(observations).toEqual([
+      expect.objectContaining({
+        operation: 'get_connection',
+        outcome: 'success',
+        upstreamStatus: 200,
+        latencyMs: expect.any(Number),
+      }),
+      expect.objectContaining({
+        operation: 'list_connections',
+        outcome: 'error',
+        upstreamStatus: 429,
+        errorCode: 'github_provider_rate_limited',
+        latencyMs: expect.any(Number),
+      }),
+    ]);
+    const serialized = JSON.stringify(observations);
+    expect(serialized).not.toContain(apiKey);
+    expect(serialized).not.toContain('installation-token');
+    expect(serialized).not.toContain('provider-body-secret');
+    expect(serialized).not.toContain('connection-1');
   });
 });

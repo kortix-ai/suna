@@ -51,10 +51,8 @@ Branches:
 
 Where it backs the project (origin is inferred, never asked):
   * Existing GitHub \`origin\` (e.g. github.com/you/repo) → links it directly,
-    GitHub-backed. If the Kortix GitHub App isn't installed yet, ship prints a
-    one-click install link (same as the web UI import); or pass
-    --github-token <PAT> to link without the app. Sessions clone/push the real
-    repo, so \`git push\` stays synced.
+    GitHub-backed. Ship opens Nango Connect when GitHub authorization requires
+    human consent. Sessions clone/push the real repo, so \`git push\` stays synced.
   * Other existing \`origin\` remote                       → registered + pushed.
   * No \`origin\` remote                                    → creates a managed
     Kortix git repo and pushes to it. No GitHub needed.
@@ -69,8 +67,6 @@ Options:
   --origin <value>     Override origin choice:
                          managed      force a managed Kortix repo
                          <git-url>    register + push to this remote
-  --github-token <pat> Link a GitHub origin with this token instead of the
-                       GitHub App (App-free import; needs repo Contents R/W).
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
   --no-verify          Skip the kortix.yaml validation (compile) check.
@@ -87,7 +83,6 @@ interface ShipFlags {
   name?: string;
   account?: string;
   origin?: string;
-  githubToken?: string;
   message?: string;
   noCommit: boolean;
   noVerify: boolean;
@@ -104,13 +99,6 @@ interface ProvisionResponse extends ProjectSummary {
   push_token: string | null;
   git_username?: string | null;
   repo_id: string;
-}
-
-interface GitTokenResponse {
-  push_token: string;
-  git_username?: string | null;
-  repo_id: string;
-  repo_url: string;
 }
 
 /** Both ship paths use the shared resolver (see ../project-git.ts) so ship,
@@ -549,13 +537,12 @@ function githubConsentBody(error: unknown): GitHubConsentErrorBody | null {
 
 /**
  * Link an existing GitHub repo to a new cloud project — the same import the
- * web UI does, from your terminal. The default path creates a Nango Connect
- * session and leaves GitHub consent to a human. `--github-token <PAT>` remains
- * a deprecated rollout fallback while the API runs in nango_preferred mode.
+ * web UI does, from your terminal. The flow creates a Nango Connect session
+ * and leaves GitHub consent to a human.
  */
 export async function linkGitHubBackedProject(
   client: ApiClient,
-  opts: { repoUrl: string; name: string; accountId: string; githubToken?: string; yes: boolean },
+  opts: { repoUrl: string; name: string; accountId: string; yes: boolean },
   dependencies: {
     openBrowser(url: string): boolean;
     confirm(message: string, defaultValue: boolean): Promise<boolean>;
@@ -564,23 +551,13 @@ export async function linkGitHubBackedProject(
     confirm,
   },
 ): Promise<ProjectSummary> {
-  const body = (token?: string) => ({
+  const body = () => ({
     repo_url: opts.repoUrl,
     name: opts.name,
     account_id: opts.accountId,
-    ...(token ? { github_token: token } : {}),
   });
 
-  // PAT path: one shot, no app needed.
-  if (opts.githubToken) {
-    const res = await client.post<LinkRepoResponse>(
-      '/projects/link-repository',
-      body(opts.githubToken),
-    );
-    return res.project;
-  }
-
-  // App path: retry around the one-click install.
+  // Retry after a human completes Nango Connect.
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
       const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
@@ -617,26 +594,10 @@ export async function linkGitHubBackedProject(
         continue;
       }
 
-      const installUrl =
-        err instanceof ApiError && err.status === 409
-          ? ((err.body as { install_url?: string } | null)?.install_url ?? null)
-          : null;
-      if (!installUrl) throw err;
-
-      process.stdout.write(
-        `\n  ${status.warn('Kortix GitHub App not installed for this repo yet.')}\n` +
-          `  ${C.dim}One-click install (authorize access to your repo):${C.reset}\n` +
-          `  ${C.cyan}${installUrl}${C.reset}\n\n` +
-          `  ${C.dim}Or skip the app with a token: ${C.reset}${C.cyan}kortix ship --github-token <PAT>${C.reset}\n\n`,
-      );
-      if (opts.yes) {
-        throw new Error('GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.');
-      }
-      const again = await confirm('Installed it? Retry the link', true);
-      if (!again) throw new Error('Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.');
+      throw err;
     }
   }
-  throw new Error('GitHub App still not detected after several tries — install it, or use --github-token <PAT>.');
+  throw new Error('GitHub connection was not detected after 10 retries.');
 }
 
 // ── First ship: create the cloud project, wire the remote, push ─────────────
@@ -674,15 +635,15 @@ async function shipFirstTime(
     );
     if (flags.dryRun) {
       const how = github
-        ? `link ${byoUrl} via GitHub App${flags.githubToken ? ' token' : ' (1-click install if needed)'}`
+        ? `link ${byoUrl} through Nango GitHub authorization`
         : `POST /projects {repo_url:"${byoUrl}"}`;
       process.stdout.write(`  ${C.dim}[dry-run] would: ${how} + push${C.reset}\n\n`);
       return 0;
     }
-    // GitHub origin → the seamless import (one-click App install, or --github-token).
+    // GitHub origin uses Nango Connect when human authorization is required.
     // Non-GitHub remote → the generic project link.
     project = github
-      ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
+      ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, yes: flags.yes })
       : await client.post<ProjectSummary>('/projects', { repo_url: byoUrl, name, account_id: accountId });
     bindShippedFolder(project, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
@@ -713,28 +674,18 @@ async function shipFirstTime(
     // project quota until creation started 403ing on the limit.
     bindShippedFolder(project, hostName, auth);
     gitTarget = resolveProvisionShipGitTarget(prov);
-    if (gitTarget.credentialMode === 'kortix-token') {
-      // Proxy origin — we push with our own Kortix token; the API resolves the
-      // upstream + host credential server-side. No provider token is exported.
-      pushToken = auth.token;
-    } else {
-      pushToken = prov.push_token;
-      pushUsername = prov.git_username ?? pushUsername;
-      // Proxy-less host: fall back to a repo-scoped provider token. Older
-      // provision responses may omit it even though /git-token can mint one.
-      // Never fall back to a server-global PAT (the server refuses to export it).
-      if (!pushToken) {
-        const tok = await client.post<GitTokenResponse>(
-          `/projects/${project.project_id}/git-token`,
-        );
-        pushToken = tok.push_token;
-        pushUsername = tok.git_username ?? pushUsername;
-      }
+    if (gitTarget.credentialMode === 'proxy-required') {
+      process.stderr.write(
+        `${status.err('The managed project response has no Kortix git proxy URL.')} ` +
+          `Update the host and run \`kortix update\`, then retry.\n`,
+      );
+      return 1;
     }
+    // Proxy origin: authenticate with the Kortix token. The API resolves the
+    // upstream credential server-side.
+    pushToken = auth.token;
     setOrigin(gitTarget.repoUrl);
-    if (gitTarget.credentialMode === 'kortix-token') {
-      configureProjectGitAuth(process.cwd(), gitTarget.repoUrl);
-    }
+    configureProjectGitAuth(process.cwd(), gitTarget.repoUrl);
   }
 
   const committed = commitIfNeeded(flags);
@@ -769,8 +720,14 @@ async function shipExisting(
     throw err;
   }
   const target = resolveExistingShipGitTarget(project);
-  const mintsProviderToken = target.credentialMode === 'managed-git-token';
-  const kortixOwnsOrigin = target.credentialMode !== 'none';
+  if (target.credentialMode === 'proxy-required') {
+    process.stderr.write(
+      `${status.err('This managed project has no Kortix git proxy URL.')} ` +
+        `Update the host and run \`kortix update\`, then retry.\n`,
+    );
+    return 1;
+  }
+  const kortixOwnsOrigin = target.credentialMode === 'kortix-token';
   const repoUrl = target.repoUrl;
 
   process.stdout.write(
@@ -781,23 +738,13 @@ async function shipExisting(
 
   if (flags.dryRun) {
     process.stdout.write(
-      `  ${C.dim}[dry-run] would: ${mintsProviderToken ? 'mint push token, ' : ''}commit + push to ${repoUrl}${C.reset}\n\n`,
+      `  ${C.dim}[dry-run] would: commit + push to ${repoUrl}${C.reset}\n\n`,
     );
     return 0;
   }
 
-  // Push credential: through the proxy we authenticate with our own Kortix
-  // token; a proxy-less host mints a fresh repo-scoped provider token per ship
-  // (never persisted in .git/config).
-  let pushToken: string | null = null;
-  let pushUsername = 'x-access-token';
-  if (target.credentialMode === 'kortix-token') {
-    pushToken = auth.token;
-  } else if (mintsProviderToken) {
-    const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
-    pushToken = tok.push_token;
-    pushUsername = tok.git_username ?? pushUsername;
-  }
+  const pushToken = target.credentialMode === 'kortix-token' ? auth.token : null;
+  const pushUsername = 'x-access-token';
   // Kortix owns the remote URL for proxy + managed projects, so keep origin
   // aligned with the target the credential above matches. BYO repos may have
   // lost their remote (fresh clone of a linked repo); heal only when missing so
@@ -1073,7 +1020,6 @@ function parseFlags(argv: string[]): ShipFlags {
   flags.name = takeFlagValue(rest, ['--name']);
   flags.account = takeFlagValue(rest, ['--account']);
   flags.origin = takeFlagValue(rest, ['--origin']);
-  flags.githubToken = takeFlagValue(rest, ['--github-token']);
   flags.message = takeFlagValue(rest, ['--message', '-m']);
   flags.project = takeFlagValue(rest, ['--project']);
   flags.host = takeFlagValue(rest, ['--host']);
@@ -1146,9 +1092,8 @@ function surface(err: unknown): number {
       process.stderr.write(`${status.err('Token rejected. Run `kortix login`.')}\n`);
     } else if (err.status === 503) {
       // Don't diagnose — the server owns the reason. The one thing we DO know
-      // is that a stale CLI is a common cause (older builds pushed to the raw
-      // upstream with a minted provider token instead of the Kortix git proxy,
-      // which a token-configured host can't hand out), so say that and stop.
+      // is that a stale CLI is a common cause. Older builds pushed to the raw
+      // upstream instead of the Kortix Git proxy, so say that and stop.
       process.stderr.write(
         `${status.err(err.message)}\n` +
           `  ${C.dim}Update first — ${C.reset}${C.cyan}kortix update${C.reset}${C.dim} — then retry. Still failing? ` +

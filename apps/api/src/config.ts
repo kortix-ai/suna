@@ -182,20 +182,7 @@ const envSchema = z.object({
   CONTEXT7_API_KEY: optStr,
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
-  // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
-  // ('github' default). The GitHub backend creates repos under
-  // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
-  // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
-  // for the App JWT. Each backend's isConfigured() checks its own vars, so
-  // leaving these blank keeps the managed-git path inert.
   MANAGED_GIT_PROVIDER: optStr,
-  MANAGED_GIT_GITHUB_OWNER: optStr,
-  MANAGED_GIT_GITHUB_INSTALL_ID: optStr,
-  // Optional straight org PAT for the managed org (the "one server-side key"
-  // model). When set it takes precedence
-  // over the GitHub App for managed-org admin ops (create/delete repo, invite
-  // collaborator). Leave blank to use the App installation instead.
-  MANAGED_GIT_GITHUB_TOKEN: optStr,
   // Second managed backend: code.storage (Pierre), a headless git-hosting API
   // (https://code.storage/docs). Select it with MANAGED_GIT_PROVIDER=code-storage
   // — inert (isConfigured() false) until org + private key are both set.
@@ -229,9 +216,7 @@ const envSchema = z.object({
   NANGO_WEBHOOK_SIGNING_KEY: optStr,
   NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: optStr,
   NANGO_GITHUB_MANAGED_INTEGRATION_ID: optStr,
-  GITHUB_CREDENTIAL_RESOLUTION: z
-    .enum(['nango_preferred', 'nango_only'])
-    .default('nango_preferred'),
+  GITHUB_CREDENTIAL_RESOLUTION: z.literal('nango_only').default('nango_only'),
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
@@ -996,9 +981,6 @@ export const config = {
 
   // ─── Managed git ──────────────────────────────────────────────────────────
   MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
-  MANAGED_GIT_GITHUB_OWNER: env.MANAGED_GIT_GITHUB_OWNER,
-  MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
-  MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   CODE_STORAGE_ORG: env.CODE_STORAGE_ORG,
   CODE_STORAGE_PRIVATE_KEY: env.CODE_STORAGE_PRIVATE_KEY,
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,

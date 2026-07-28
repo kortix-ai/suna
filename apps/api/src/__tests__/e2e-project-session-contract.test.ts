@@ -19,6 +19,8 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
+const TEST_GITHUB_INSTALLATION_ID = '42';
+const TEST_NANGO_CONNECTION_ID = 'account-nango-connection-42';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
@@ -77,9 +79,16 @@ const projectRow: typeof projects.$inferSelect = {
   manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {
-    github: {
-      auth_source: 'pat',
-      full_name: `${TEST_GITHUB_OWNER}/contract-project`,
+    git: {
+      provider: 'github',
+      owner: TEST_GITHUB_OWNER,
+      name: 'contract-project',
+      managed: false,
+      auth: {
+        method: 'nango',
+        ref: TEST_NANGO_CONNECTION_ID,
+        installation_id: TEST_GITHUB_INSTALLATION_ID,
+      },
     },
   },
   lastOpenedAt: null,
@@ -108,9 +117,16 @@ function resetState() {
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
   projectRow.metadata = {
-    github: {
-      auth_source: 'pat',
-      full_name: `${TEST_GITHUB_OWNER}/contract-project`,
+    git: {
+      provider: 'github',
+      owner: TEST_GITHUB_OWNER,
+      name: 'contract-project',
+      managed: false,
+      auth: {
+        method: 'nango',
+        ref: TEST_NANGO_CONNECTION_ID,
+        installation_id: TEST_GITHUB_INSTALLATION_ID,
+      },
     },
   };
   sessionRow = {
@@ -282,7 +298,9 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
+const realGithubModule = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...realGithubModule,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: TEST_GITHUB_OWNER,
     repo:
@@ -291,29 +309,21 @@ mock.module('../projects/github', () => ({
         .pop()
         ?.replace(/\.git$/, '') ?? 'contract-project',
   }),
-  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  verifyGitHubAppInstallState: (state: string) => state,
-  verifyGitHubAppInstallStatePayload: (state: string) => ({
-    accountId: state,
-    nonce: 'test-nonce',
-    issuedAt: Math.floor(Date.now() / 1000),
-  }),
-  createGitHubAppJwt: () => 'jwt-test',
-  getGitHubPatAuthContext: () => ({
-    token: 'pat-token',
-    source: 'pat',
-    owner: 'kortix-org',
-  }),
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
-  createInstallationToken: async () => ({ token: 'installation-token' }),
   verifyGitHubInstallationAdmin: async () => undefined,
-  listLinkableGitHubAppInstallations: async () => [],
   createRepo: async () => {
     throw new Error('not used');
   },
   getFileSha: async () => null,
-  getGitHubAppInstallation: async () => ({
+  getGitHubAppInstallationWithJwt: async () => ({
+    id: 42,
+    account: { login: 'kortix-org', type: 'Organization' },
+    repository_selection: 'all',
+    permissions: {},
+  }),
+  getGitHubAppInstallationForUserToken: async () => ({
+    id: 42,
     account: { login: 'kortix-org', type: 'Organization' },
     repository_selection: 'all',
     permissions: {},
@@ -340,6 +350,49 @@ mock.module('../projects/github', () => ({
   addCollaborator: async () => undefined,
   getBranchCommitSha: async () => 'a'.repeat(40),
   createBranchRef: async () => undefined,
+}));
+
+const accountGithubResolution = () => ({
+  installation: {
+    installationRowId: '00000000-0000-4000-a000-000000000701',
+    accountId: ACCOUNT_ID,
+    installationId: TEST_GITHUB_INSTALLATION_ID,
+    nangoConnectionId: TEST_NANGO_CONNECTION_ID,
+    nangoIntegrationId: 'github-app-oauth',
+    connectionStatus: 'connected',
+    lastValidatedAt: new Date('2026-01-01T00:00:00Z'),
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    disconnectedAt: null,
+    ownerLogin: TEST_GITHUB_OWNER,
+    ownerType: 'Organization',
+    repositorySelection: 'all',
+    permissions: { contents: 'write' },
+    metadata: {},
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+  },
+  credential: {
+    mode: 'account' as const,
+    connectionId: TEST_NANGO_CONNECTION_ID,
+    integrationId: 'github-app-oauth',
+    installationId: TEST_GITHUB_INSTALLATION_ID,
+    installationToken: 'nango-installation-token',
+    userToken: 'nango-user-token',
+    permissions: { contents: 'write' },
+    repositorySelection: 'all',
+    tags: {},
+  },
+});
+
+const realAccountCredentialModule = await import('../projects/nango/account-credential');
+mock.module('../projects/nango/account-credential', () => ({
+  ...realAccountCredentialModule,
+  resolveAccountGithubCredential: async () => accountGithubResolution(),
+  withFreshAccountGithubRead: async (
+    _input: unknown,
+    operation: (resolution: ReturnType<typeof accountGithubResolution>) => Promise<unknown>,
+  ) => operation(accountGithubResolution()),
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({

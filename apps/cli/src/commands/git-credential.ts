@@ -48,20 +48,11 @@ export async function resolveGitCredentialForProject(input: {
   requestUrl: string;
   project: ProjectSummary;
   kortixToken: string;
-  mintManagedToken: () => Promise<{ push_token: string; git_username?: string }>;
 }): Promise<ResolvedGitCredential | null> {
   const target = resolveProjectCloneTarget(input.project, input.kortixToken);
   if (canonicalGitUrl(target.repoUrl) !== canonicalGitUrl(input.requestUrl)) return null;
-
-  let token = target.token;
-  let username = target.username;
-  if (target.needsManagedToken) {
-    const credential = await input.mintManagedToken();
-    token = credential.push_token;
-    username = credential.git_username || username;
-  }
-
-  return token ? { username, password: token } : null;
+  if (target.proxyRequired) return null;
+  return target.token ? { username: target.username, password: target.token } : null;
 }
 
 async function stdinText(): Promise<string> {
@@ -104,13 +95,9 @@ export async function runGitCredential(argv: string[]): Promise<number> {
       requestUrl,
       project,
       kortixToken: auth.token,
-      mintManagedToken: () =>
-        client.post<{ push_token: string; git_username?: string }>(
-          `/projects/${project.project_id}/git-token`,
-        ),
     });
   } catch (error) {
-    process.stderr.write(`Kortix Git could not mint a repository credential: ${(error as Error).message}\n`);
+    process.stderr.write(`Kortix Git could not resolve a repository credential: ${(error as Error).message}\n`);
     process.stdout.write('quit=true\n\n');
     return 0;
   }

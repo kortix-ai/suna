@@ -27,8 +27,7 @@ platformApp.openapi(
   (c) => c.json({ ok: true, message: 'platform' }),
 );
 platformApp.route('/sandbox/version', versionRouter);
-// /v1/platform/github-app/{manifest-start,manifest-callback,install-callback,status}
-// — the in-app self-host GitHub App setup flow (DB-backed managed App config).
+// /v1/platform/github-app/* — the managed GitHub Nango connection flow.
 platformApp.route('/github-app', githubAppSetupRouter);
 // /v1/platform/boot-timeline — the in-sandbox daemon relays its own boot marks
 // here at runtime-ready. Makes in-guest boot latency queryable next to the host

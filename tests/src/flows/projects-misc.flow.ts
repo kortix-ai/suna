@@ -11,7 +11,7 @@ import { flow } from "../core/flow";
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the
 // normalizeRepoUrl boundary (400) before any GitHub round-trip; MEMBER /
 // NONMEMBER are denied by PROJECT_CREATE (403). We assert the boundary only —
-// a real 201 needs a GitHub App install + reachable repo, which the harness
+// a real 201 needs a connected Nango installation and reachable repo, which the harness
 // can't guarantee.
 flow(
   "PROJ-2",

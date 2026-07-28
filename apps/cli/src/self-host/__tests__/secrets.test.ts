@@ -112,11 +112,6 @@ function baseEnv(overrides: Record<string, string> = {}): Record<string, string>
     GITHUB_CREDENTIAL_RESOLUTION: 'nango_only',
     KORTIX_GIT_PROXY: 'false',
     MANAGED_GIT_PROVIDER: 'github',
-    MANAGED_GIT_GITHUB_OWNER: '',
-    MANAGED_GIT_GITHUB_TOKEN: '',
-    MANAGED_GIT_GITHUB_INSTALL_ID: '',
-    KORTIX_GITHUB_APP_ID: '',
-    KORTIX_GITHUB_APP_PRIVATE_KEY: '',
     OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: 'p'.repeat(32),
     SUPABASE_JWT_SECRET: 'j'.repeat(64),
@@ -211,23 +206,16 @@ describe('missingRequiredSecrets', () => {
     expect(gitProviderConfigured(baseEnv(complete))).toBe(false);
   });
 
-  test('legacy PAT credentials work only in nango_preferred mode', () => {
+  test('legacy PAT credentials never satisfy managed git validation', () => {
     const legacy = {
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
       MANAGED_GIT_GITHUB_TOKEN: 'ghp_faketoken',
     };
 
-    expect(
-      gitProviderConfigured(
-        baseEnv({ ...legacy, GITHUB_CREDENTIAL_RESOLUTION: 'nango_preferred' }),
-      ),
-    ).toBe(true);
-    expect(
-      gitProviderConfigured(baseEnv({ ...legacy, GITHUB_CREDENTIAL_RESOLUTION: 'nango_only' })),
-    ).toBe(false);
+    expect(gitProviderConfigured(baseEnv({ ...legacy }))).toBe(false);
   });
 
-  test('legacy GitHub App credentials work only in nango_preferred mode', () => {
+  test('legacy GitHub App credentials never satisfy managed git validation', () => {
     const legacy = {
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
       KORTIX_GITHUB_APP_ID: '123456',
@@ -236,13 +224,20 @@ describe('missingRequiredSecrets', () => {
       MANAGED_GIT_GITHUB_INSTALL_ID: '987654',
     };
 
+    expect(gitProviderConfigured(baseEnv({ ...legacy }))).toBe(false);
+  });
+
+  test('nango_preferred no longer satisfies managed git validation', () => {
     expect(
-      gitProviderConfigured(
-        baseEnv({ ...legacy, GITHUB_CREDENTIAL_RESOLUTION: 'nango_preferred' }),
-      ),
-    ).toBe(true);
-    expect(
-      gitProviderConfigured(baseEnv({ ...legacy, GITHUB_CREDENTIAL_RESOLUTION: 'nango_only' })),
+      gitProviderConfigured(baseEnv({
+        NANGO_API_KEY: 'nango_secret',
+        NANGO_WEBHOOK_SIGNING_KEY: 'nango_webhook_secret',
+        NANGO_BASE_URL: 'https://api.nango.dev',
+        NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: 'github-app-oauth',
+        NANGO_GITHUB_MANAGED_INTEGRATION_ID: 'github-app',
+        KORTIX_GIT_PROXY: 'true',
+        GITHUB_CREDENTIAL_RESOLUTION: 'nango_preferred',
+      })),
     ).toBe(false);
   });
 
@@ -270,8 +265,12 @@ describe('missingRequiredSecrets', () => {
   test('a corrupted/blanked-out internal generated secret is reported even though the sandbox provider is configured', () => {
     const env = baseEnv({
       DAYTONA_API_KEY: 'dtn_live_key',
-      MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
-      MANAGED_GIT_GITHUB_TOKEN: 'ghp_faketoken',
+      NANGO_API_KEY: 'nango_secret',
+      NANGO_WEBHOOK_SIGNING_KEY: 'nango_webhook_secret',
+      NANGO_BASE_URL: 'https://api.nango.dev',
+      NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: 'github-app-oauth',
+      NANGO_GITHUB_MANAGED_INTEGRATION_ID: 'github-app',
+      KORTIX_GIT_PROXY: 'true',
       OPENROUTER_API_KEY: 'sk-or-fake',
       TUNNEL_SIGNING_SECRET: '', // e.g. hand-edited .env with a blanked line
     });

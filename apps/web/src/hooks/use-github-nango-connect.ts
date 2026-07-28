@@ -25,8 +25,6 @@ export function useGitHubNangoConnect({
   const abortRef = useRef<AbortController | null>(null);
   const lastInstallationIdRef = useRef<string | undefined>(undefined);
   const runIdRef = useRef(0);
-  const onConnectedRef = useRef(onConnected);
-  onConnectedRef.current = onConnected;
 
   const [phase, setPhase] = useState<GitHubNangoConnectPhase | 'idle'>('idle');
   const [error, setError] = useState<GitHubNangoConnectError | null>(null);
@@ -72,7 +70,7 @@ export function useGitHubNangoConnect({
 
       if (outcome.status === 'connected') {
         setPhase('idle');
-        await onConnectedRef.current?.(outcome.installation);
+        await onConnected?.(outcome.installation);
       } else if (outcome.status === 'error') {
         setPhase('idle');
         setError(outcome);
@@ -82,7 +80,7 @@ export function useGitHubNangoConnect({
 
       return outcome;
     },
-    [accountId, queryClient],
+    [accountId, onConnected, queryClient],
   );
 
   const retry = useCallback(

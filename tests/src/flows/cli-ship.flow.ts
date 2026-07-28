@@ -24,8 +24,8 @@
  *             (This sub-assertion IS partly runnable: --account with a bogus slug
  *             errors after GET /accounts/me — but it needs ≥1 account, so it runs
  *             logged in. The interactive-pick path can't be driven headless.)
- *   - SHIP-6  subsequent ship (linked) → GET /projects/:id; managed →
- *             POST /projects/:id/git-token then commit + push.
+ *   - SHIP-6  subsequent ship (linked) → GET /projects/:id, then commit and
+ *             push through `git_origin_url` with the Kortix token.
  *   - SHIP-9  --no-commit with a dirty tree → error (reached after provision, so
  *             gated); clean tree + HEAD → skip commit, push only.
  *   - CR-9    CLI mirror: kortix cr ls|show|open|merge|close|reopen.
@@ -173,11 +173,7 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
-    routes: [
-      'GET /v1/accounts/me',
-      'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
-    ],
+    routes: ['GET /v1/accounts/me', 'POST /v1/projects/provision'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -341,11 +337,7 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
-    routes: [
-      'GET /v1/accounts/me',
-      'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
-    ],
+    routes: ['GET /v1/accounts/me', 'POST /v1/projects/provision'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -454,7 +446,6 @@ flow(
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
       'GET /v1/projects/:projectId',
-      'POST /v1/projects/:projectId/git-token',
     ],
   },
   async (ctx) => {
@@ -483,7 +474,7 @@ flow(
       }
 
       await ctx.step(
-        'second ship (linked, managed) → GET /projects/:id + fresh git-token + push',
+        'second ship (linked, managed) → GET /projects/:id + proxy push',
         async () => {
           // Make a change so there's something to commit + push.
           sb.writeFile('CHANGELOG.md', `ke2e ship-6 ${Date.now()}\n`);
@@ -516,7 +507,6 @@ flow(
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
       'GET /v1/projects/:projectId',
-      'POST /v1/projects/:projectId/git-token',
     ],
   },
   async (ctx) => {

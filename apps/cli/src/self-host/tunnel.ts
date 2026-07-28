@@ -13,9 +13,8 @@
 //              itself becomes KORTIX_URL, no log-scraping needed.
 //   - local:   loopback only. Agent sandboxes and any other external caller
 //              (webhooks, Slack/Teams OAuth, git-proxy clone URLs) cannot
-//              reach this instance. Browser-local flows (e.g. creating a
-//              GitHub App) still work since the browser runs on the same
-//              machine.
+//              reach this instance. Browser-local settings still work because
+//              the browser runs on the same machine.
 //
 // Pure data/string helpers only — no filesystem/docker access — so this is
 // trivially unit-testable. `commands/self-host.ts` supplies the actual

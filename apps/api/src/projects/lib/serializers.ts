@@ -12,7 +12,7 @@ import {
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { type ProjectRole } from '../access';
 import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
-import { isGithubAppConfigured, type GitHubRepo } from '../github';
+import type { GitHubRepo } from '../github';
 import { accountGithubInstallations, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { Context } from 'hono';
@@ -367,7 +367,7 @@ export function serializeGitHubInstallation(
   );
   const installed = Boolean(row) && row?.connectionStatus !== 'disconnected';
   const metadata = normalizeJsonObject(row?.metadata);
-  const configured = nangoConfigured || isGithubAppConfigured();
+  const configured = nangoConfigured;
   const requiresInstallation = configured && !installed;
   const connectionProvider = row?.nangoConnectionId
     ? 'nango'
@@ -398,62 +398,11 @@ export function serializeGitHubInstallation(
   };
 }
 
-
-/**
- * Sentinel `installation_id` for the managed-git PAT backend ("Use a token"
- * self-host setup, platform/routes/github-app.ts POST /pat) when an account
- * has no real GitHub App installation. Real installation ids are GitHub's own
- * numeric ids, so this string can never collide with one. Lets the
- * Import-repo UI — which only understands the "installations" shape — pick
- * the PAT the same way it picks a real App install, instead of needing a
- * parallel UI/API surface just for the token backend. GET /github/repositories
- * and POST /link-repository both recognize this id and route to the PAT.
- */
-export const PAT_MANAGED_GIT_INSTALLATION_ID = 'pat';
-
 export function serializeGitHubInstallations(
   rows: Array<typeof accountGithubInstallations.$inferSelect>,
   accountId: string,
   installUrl: string | null,
-  /** Owner of the account-level managed-git PAT, when this account has no
-   *  real App installation but the server has a working token configured —
-   *  see the route handlers in routes/r1.ts. */
-  patFallbackOwner?: string | null,
 ) {
-  if (rows.length === 0 && patFallbackOwner) {
-    const patInstallation = {
-      account_id: accountId,
-      installation_row_id: null,
-      installed: true,
-      configured: true,
-      requires_installation: false,
-      install_url: null,
-      installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-      owner_login: patFallbackOwner,
-      owner_type: null,
-      repository_selection: 'all',
-      permissions: {},
-      installation_url: null,
-      updated_at: null,
-      connection_id: null,
-      connection_provider: null,
-      connection_status: null,
-      reconnect_required: Boolean(
-        config.NANGO_API_KEY && config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID,
-      ),
-    };
-    return {
-      ...patInstallation,
-      // The PAT is a valid existing-repository import option, but it is not a
-      // GitHub App installation and cannot back POST /projects/create-repo.
-      // Keep the App install URL visible so the default create flow can offer
-      // a real user/org installation alongside the legacy PAT fallback.
-      requires_installation: Boolean(installUrl),
-      install_url: installUrl,
-      installations: [patInstallation],
-    };
-  }
-
   const activeRows = rows.filter((row) => row.connectionStatus !== 'disconnected');
   const primary = activeRows[0] ?? rows[0] ?? null;
   const base = serializeGitHubInstallation(primary, accountId, installUrl);
@@ -461,8 +410,7 @@ export function serializeGitHubInstallations(
     ...base,
     installed: activeRows.length > 0,
     requires_installation:
-      (isGithubAppConfigured() ||
-        Boolean(config.NANGO_API_KEY && config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID)) &&
+      Boolean(config.NANGO_API_KEY && config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID) &&
       rows.length === 0,
     install_url: installUrl,
     installations: rows.map((row) => serializeGitHubInstallation(row, accountId, null)),

@@ -7,20 +7,16 @@ import { spawnSync } from 'node:child_process';
 //
 // It used to be per-command, and they drifted: clone preferred the Kortix git
 // proxy while ship insisted on minting a raw provider push token for managed
-// repos. On a host whose managed git runs on an org-wide PAT the server refuses
-// to export that token (correctly — it's a server-global credential), so every
-// `kortix ship` to a managed project failed with "Managed git push token export
-// requires a repo-scoped installation token" even though the proxy sitting next
-// to it could push fine. Keeping the decision in one place is what stops that
-// class of bug coming back.
+// repos. The proxy keeps upstream credentials server-side. Keeping the decision
+// in one place prevents commands from bypassing that boundary.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Which credential a git operation against this project should present. */
 export type ProjectGitCredentialMode =
   /** Push/clone through the Kortix git proxy with our own Kortix token. */
   | 'kortix-token'
-  /** No proxy on this host — mint a provider push token via /git-token. */
-  | 'managed-git-token'
+  /** The managed project came from an old host response without a proxy URL. */
+  | 'proxy-required'
   /** BYO repo — the user's own git credentials (helper/keychain/ssh). */
   | 'none';
 
@@ -58,11 +54,10 @@ export function projectIsManaged(project: ProjectGitRef): boolean {
  * with our own Kortix token and the API resolves the real upstream and mints
  * the host credential server-side, which means:
  *   * no real provider credential ever reaches the client, and
- *   * it works regardless of how the host's managed git is configured (org PAT
- *     or GitHub App) — the PAT setup can't export a repo-scoped token at all.
+ *   * it works with Nango-backed account and managed connections.
  *
- * Only a host with the proxy disabled falls back to minting a provider token
- * for managed repos; a BYO repo without a proxy uses the user's own git auth.
+ * A managed project without a proxy URL requires a host or CLI upgrade. A BYO
+ * repository without a proxy uses the user's own git authentication.
  */
 export function resolveProjectGitTarget(project: ProjectGitRef): ProjectGitTarget {
   const proxyUrl = project.git_origin_url;
@@ -70,7 +65,7 @@ export function resolveProjectGitTarget(project: ProjectGitRef): ProjectGitTarge
     return { repoUrl: proxyUrl as string, credentialMode: 'kortix-token' };
   }
   if (projectIsManaged(project)) {
-    return { repoUrl: project.repo_url, credentialMode: 'managed-git-token' };
+    return { repoUrl: project.repo_url, credentialMode: 'proxy-required' };
   }
   return { repoUrl: project.repo_url, credentialMode: 'none' };
 }

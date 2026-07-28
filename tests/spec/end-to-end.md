@@ -189,7 +189,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PROJ-1` `GET /projects` → OWNER/ADMIN: all account projects; `MEMBER`: only `project_members` grants; `NONMEMBER`: empty/own only.
 `PROJ-2` `POST /projects {repo_url,name}` (BYO) → `PROJECT_CREATE` (OWNER/ADMIN) → 201, creator granted `manager`, snapshot build kicked. `MEMBER` → 403. Non-GitHub `repo_url` → 400.
 `PROJ-3` `POST /projects/provision {name,provider?:github}` (managed) → `PROJECT_CREATE` → 201 `{push_token,repo_id,repo_url}`. Unconfigured managed GitHub backend → 503.
-`PROJ-4` `POST /projects/create-repo {name,private?}` (new GitHub repo) → `PROJECT_CREATE` → 201; no account GitHub App install → 409 + `install_url`; auto-dedupes name collision.
+`PROJ-4` `POST /projects/create-repo {name,private?,installation_id?}` (new GitHub repo) → `PROJECT_CREATE` → 201 through the account Nango connection; no connection → 409 `github_connection_required`; auto-dedupes name collision.
 `PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403.
 `PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list.
 `PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403.
@@ -393,21 +393,21 @@ The agent starts a live voice call bound to its session and hands out a join lin
 
 GitHub is **outbound only** (repo create, Contents API commits, installation-token git transport). No inbound event receiver.
 
-### GitHub App install (account-level, dashboard)
+### GitHub connection (account-level, dashboard)
 
-`GH-1` `GET /projects/github/installation?account_id=` → `ACCOUNT_WRITE` → 200; if none → returns `install_url` (`github.com/apps/<slug>/installations/new?state=<hmac>`), state row TTL 30min.
-`GH-2` user installs on GitHub → redirect → `$WEB/github/setup?installation_id=&state=&setup_action=install` → `POST /projects/github/installation {state,installation_id}` → verify HMAC + iat window + one-time nonce consume → fetch real owner via `GET api.github.com/app/installations/{id}` → upsert `account_github_installations`.
-`GH-3` `DELETE /projects/github/installation?account_id=` → `ACCOUNT_WRITE` → disconnect. `setup_action=uninstall` → frontend "removed".
-`GH-4` Supabase GitHub OAuth popup (user token, distinct from App) — `signInWithOAuth(github, scopes 'read:user read:org')`, `provider_token` posted back to opener; `POST /projects/github/installations/linkable {account_id,github_user_token}` lists this App's installations with the App JWT and returns only the authorized personal owner or active organization-admin installations; `POST /projects/github/installations/link {account_id,installation_id,github_user_token}` re-verifies App ownership plus GitHub authority before upsert.
-`GH-5` git transport resolution (`resolveProjectGitAuth`): managed GitHub (fresh repo-scoped installation token) / GitHub App / `project_secret` token / server PAT / none.
+`GH-1` `GET /projects/github/installation?account_id=` and `GET /projects/github/installations?account_id=` → account authorization → Nango-backed connection metadata. Legacy response fields remain, `install_url` is null, and connection state fields identify connected, reconnect-required, or disconnected rows.
+`GH-2` `POST /projects/github/connect-session {account_id?}` → `PROJECT_CREATE` → a server-created Nango Connect session with server-owned account/user tags. The browser receives only the short-lived Connect session token and link.
+`GH-3` `DELETE /projects/github/installations/:installationId?account_id=` → `ACCOUNT_WRITE` → deletes the Nango connection and marks matching account/project rows disconnected. A missing or already disconnected row is idempotent.
+`GH-4` `POST /projects/github/installations/:installationId/reconnect-session {account_id?}` and `POST .../refresh` → account authorization → repair and reconcile the Nango connection. Missing or stale references return typed `github_connection_required` or `github_reconnect_required` guidance.
+`GH-5` git transport resolution (`resolveProjectGitAuth`): account or managed Nango credential / explicit project credential / none. GitHub App signing and server PAT fallback do not exist.
 `GH-6` `PUT /projects/:id/git-credential` (BYO) → `manage` → set git auth secret; already server-managed → 409.
-`GH-7` `POST /projects/:id/git-token` → mint a fresh managed-GitHub installation token; **409 for BYO**; 503 if managed Git is unavailable.
+`GH-7` `POST /projects/:id/git-token` → **409 `git_proxy_required` for every GitHub project**. GitHub clone and push use `git_origin_url`; provider tokens never leave the API.
 `GH-8` `GET/POST/DELETE /projects/:id/cli-token[/:tokenId]` → project-scoped CLI tokens.
 
 ### `kortix ship` (alias `deploy`)
 
 `SHIP-1` first ship, no `origin` → managed: `POST /projects/provision` → set `origin` to the managed GitHub URL, commit, header-injected token push, write `link.json`. Requires `PROJECT_CREATE`.
-`SHIP-2` first ship, existing `origin` → **BYO** (single-writable-origin rule): `POST /projects {repo_url,name}`, **origin never modified**, push with user's own creds. **NB: the API's BYO `POST /projects` only accepts a GitHub repo_url** (`normalizeRepoUrl`→`resolveGitHubImport`); a non-GitHub origin is rejected 400 before `saveLink`, so ship exits non-zero, writes no link.json, and (proven) never clobbers the origin. The real happy path needs a live GitHub repo + App install.
+`SHIP-2` first ship, existing `origin` → GitHub origins import through the account Nango connection; other origins remain BYO. `POST /projects {repo_url,name}` never transmits a provider token and never modifies the origin.
 `SHIP-3` first ship `--origin <git-url>` → BYO explicit; only this case rewrites `origin` (`git remote set-url`) — but `setOrigin` runs _after_ the POST, so a non-GitHub `--origin` 400s first → non-zero exit, no link.json, origin not rewritten (GitHub-only, as SHIP-2).
 `SHIP-4` first ship `--origin managed` → force managed even if origin exists.
 `SHIP-5` multiple accounts + no `--account`/`-y` → interactive pick; `--account <id|slug>` mismatch → error listing slugs.

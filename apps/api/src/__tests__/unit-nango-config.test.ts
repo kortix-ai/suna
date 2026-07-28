@@ -77,7 +77,7 @@ describe('Nango configuration', () => {
       NANGO_WEBHOOK_SIGNING_KEY: 'webhook-signing-key',
       NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: 'github-app-oauth',
       NANGO_GITHUB_MANAGED_INTEGRATION_ID: 'github-app',
-      GITHUB_CREDENTIAL_RESOLUTION: 'nango_preferred',
+      GITHUB_CREDENTIAL_RESOLUTION: 'nango_only',
     });
   });
 
@@ -114,7 +114,7 @@ describe('Nango configuration', () => {
       NANGO_WEBHOOK_SIGNING_KEY: '',
       NANGO_GITHUB_ACCOUNT_INTEGRATION_ID: '',
       NANGO_GITHUB_MANAGED_INTEGRATION_ID: '',
-      GITHUB_CREDENTIAL_RESOLUTION: 'nango_preferred',
+      GITHUB_CREDENTIAL_RESOLUTION: 'nango_only',
     });
   });
 

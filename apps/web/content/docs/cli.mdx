@@ -210,14 +210,13 @@ Each run:
 - Pushes the current branch to the same-named remote branch.
 - Connects any declared connector that still needs auth (skip with `--no-connect`).
 
-An existing GitHub `origin` links through the Kortix GitHub App. Any other existing `origin` is registered as-is. No `origin` creates a managed Kortix git repo.
+An existing GitHub `origin` uses the account's Nango connection. Any other existing `origin` is registered as-is. No `origin` creates a managed repository through the selected platform Nango connection.
 
 | Option | Effect |
 | --- | --- |
 | `--name <project>` | Display name for a new project. |
 | `--account <id\|slug>` | Account to create the project under (first ship only). |
 | `--origin <managed\|git-url>` | Override the inferred origin choice. |
-| `--github-token <pat>` | Link a GitHub origin with this token instead of the GitHub App. |
 | `-m, --message <text>` | Commit message. |
 | `--no-commit` / `--no-verify` / `--no-env` / `--no-connect` | Skip that step. |
 | `-y, --yes` | Don't prompt. |
@@ -492,7 +491,7 @@ See [Manifest reference](/docs/project/manifest).
 | `kortix self-host restart` / `stop` | Restart or stop the stack. Alias for stop: `down`. |
 | `kortix self-host status` / `ps` | Show service status. |
 | `kortix self-host open` | Open the dashboard in your browser. |
-| `kortix self-host connect-github` | Connect a GitHub App for managed repos. |
+| `kortix self-host connect-github` | Deprecated. Prints the Nango setup values and dashboard path. |
 | `kortix self-host env ls [--show]` | Show persistent config values, masking secrets by default. |
 | `kortix self-host env set KEY=VALUE ...` | Set a value and restart only the services it affects. |
 | `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. |

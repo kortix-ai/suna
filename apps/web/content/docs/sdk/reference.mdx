@@ -22,7 +22,7 @@ kortix.accountInvites; // invite accept/decline by token alone
 kortix.projects; // top-level project operations
 kortix.project(id); // id-bound project handle
 kortix.session(pid, sid); // id-bound session handle → see Sessions
-kortix.github; // GitHub App install + repo linking
+kortix.github; // Nango-backed GitHub connection + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.transcribe; // speech-to-text
@@ -90,14 +90,19 @@ runtime-state metadata.
 
 ### GitHub — `kortix.github`
 
-Account-scoped GitHub App install and repo linking, not project-scoped.
+Account-scoped GitHub connection lifecycle and repository linking through Nango.
 
 | method | what |
 | --- | --- |
-| `getInstallation(accountId)` · `listInstallations(accountId)` | this account's install · installs the user can reach |
-| `saveInstallation(input)` · `deleteInstallation(accountId, installationId?)` | record · unlink an install |
-| `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
+| `createConnectSession({ accountId })` · `createReconnectSession(...)` | start Nango Connect · repair an existing connection |
+| `refreshConnection(...)` · `disconnectConnection(...)` | reconcile provider state · disconnect |
+| `getInstallation(accountId)` · `listInstallations(accountId)` | this account's connection · all account connections |
+| `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repositories the connection can see · branches and the GitHub default |
 | `linkRepository(input)` | import a repo as a project |
+
+`saveInstallation`, `linkInstallation`, `deleteInstallation`, and
+`listLinkableInstallations` remain as deprecated compatibility methods. They do
+not transmit caller-supplied GitHub credentials.
 
 ### Billing — `kortix.billing`
 
@@ -154,7 +159,10 @@ await p.llmCatalog();
 | `llmCatalog` · `modelPicker` · `sandboxHealth` | model and sandbox-build reads |
 | `onboardingComplete` | mark project onboarding done |
 | `validateManifest(raw)` | validate a `kortix.yaml` (or legacy `kortix.toml`) manifest server-side |
-| `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
+| `gitToken()` | deprecated compatibility call; Nango-backed GitHub projects return `git_proxy_required` |
+
+Use the project's `git_origin_url` for GitHub clone and push operations. The
+Kortix Git proxy resolves the Nango credential on the server.
 | `setAgentScope(agentName, scope)` | bind an agent's allowed secrets and connectors |
 
 #### `p.tokens` — project-scoped API keys

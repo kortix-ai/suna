@@ -31,7 +31,9 @@
 # (or omit --tunnel to stay fully local-only — no agent sessions either way).
 #
 # Required for agent sessions to actually run (set later, any time):
-#   kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
+#   kortix self-host env set DAYTONA_API_KEY=...
+# Managed GitHub also requires the Nango values documented in
+# docs/runbooks/self-hosting.md.
 # or interactively: kortix self-host configure
 #
 # Flags (all optional):

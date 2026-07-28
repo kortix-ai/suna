@@ -8,7 +8,7 @@ export type PlatformRole = 'user' | 'admin' | 'super_admin';
  * Self-host operator allowlist. KORTIX_PLATFORM_ADMIN_EMAILS (comma-separated)
  * grants platform admin to those emails without any DB seeding — the way a
  * self-host operator becomes admin so they can configure server-wide settings
- * (e.g. the managed GitHub App) in-app. Unset on cloud, so it is inert there;
+ * (for example, the managed Nango connection) in-app. Unset on cloud, so it is inert there;
  * cloud continues to grant admin through platform_user_roles rows.
  */
 function adminEmailAllowlist(): string[] {

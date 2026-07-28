@@ -1,6 +1,6 @@
 /**
  * Git / GitHub — the universal git smart-HTTP proxy + project git credential/
- * token routes + GitHub App installation & import surface. Maps to spec §GH-*.
+ * token routes + Nango GitHub connection and import surface. Maps to spec §GH-*.
  *
  * Contract notes (verified against apps/api/src):
  *  - /v1/git/:project/* is the smart-HTTP proxy. It does its OWN token auth (git
@@ -10,10 +10,9 @@
  *    owning token reaches `resolveProjectUpstream`, which in local dev (no real
  *    managed upstream) typically 502s. We assert permissive sets accordingly.
  *  - /v1/projects/* is behind `supabaseAuth` (ANON → 401).
- *  - The GitHub-App routes need an installation local dev lacks → 409 (with
- *    install_url) / 400 / 502 / 200. create-repo & link-repository need a real
- *    install or PAT → 400/409/502/503.
- *  - git-token: 409 for BYO / 503 if managed git unconfigured / 200 push token.
+ *  - GitHub routes require a connected Nango installation. Missing or stale
+ *    connections return typed 409 guidance.
+ *  - git-token: GitHub projects return 409 because provider tokens are not exported.
  *  - clone-credential: only runtime tokens (sandbox / project PAT) → a user JWT
  *    is rejected 403.
  */
@@ -131,11 +130,11 @@ flow(
         .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
       r.status(401);
     });
-    await ctx.step("OWNER mints push token → 200 / 409 BYO / 503 unconfigured", async () => {
+    await ctx.step("OWNER receives proxy-required or BYO guidance", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
-      r.status([200, 409, 503]);
+      r.status(409);
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client
@@ -214,7 +213,7 @@ flow(
   },
 );
 
-// ── GitHub App installation surface (account-scoped) ───────────────────────
+// ── Nango GitHub connection surface (account-scoped) ───────────────────────
 
 flow(
   "GH-1",
@@ -243,23 +242,20 @@ flow(
 
 flow(
   "GH-2",
-  { domain: "git", routes: ["POST /v1/projects/github/installation"] },
+  { domain: "git", routes: ["POST /v1/projects/github/connect-session"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/github/installation", { state: "x", installation_id: "1" });
+        .post("/v1/projects/github/connect-session", {});
       r.status(401);
     });
-    await ctx.step("missing state → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/github/installation", {});
-      r.status(400);
-    });
-    await ctx.step("invalid HMAC state → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/github/installation", { state: "not-a-valid-signed-state", installation_id: "12345" });
-      r.status(400);
+    await ctx.step("OWNER starts Nango Connect or receives a configuration error", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/github/connect-session", {});
+      r.status([200, 400, 403, 409, 502, 503]);
+      if (r.statusCode === 200) {
+        r.body().exists("$.token").exists("$.expires_at").exists("$.connect_link");
+      }
     });
   },
 );
@@ -268,19 +264,14 @@ flow(
   "GH-3",
   {
     domain: "git",
-    routes: [
-      "DELETE /v1/projects/github/installation",
-      "DELETE /v1/projects/github/installations/:installationId",
-    ],
+    routes: ["DELETE /v1/projects/github/installations/:installationId"],
   },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).del("/v1/projects/github/installation");
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .del("/v1/projects/github/installations/:installationId", { params: { installationId: "999999999" } });
       r.status(401);
-    });
-    await ctx.step("OWNER disconnect (idempotent, none present) → ok", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/github/installation");
-      r.status([200, 400, 409, 503]);
     });
     await ctx.step("OWNER delete a specific (absent) installation → ok / not-found", async () => {
       const r = await ctx.client
@@ -332,7 +323,7 @@ flow(
   },
 );
 
-// ── Repo creation / import (need a real GitHub App install or PAT) ─────────
+// ── Repository creation and import through Nango ───────────────────────────
 
 flow(
   "GH-14",
@@ -352,7 +343,7 @@ flow(
         .post("/v1/projects/create-repo", { name: "bad name/with spaces" });
       r.status(400);
     });
-    await ctx.step("valid name but no GitHub App install → 409 install_url / 503", async () => {
+    await ctx.step("valid name requires a connected Nango installation", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/create-repo", { name: ctx.fixtures.name("repo").replace(/[^a-zA-Z0-9._-]/g, "-") });
@@ -375,17 +366,17 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/link-repository", {});
       r.status(400);
     });
-    await ctx.step("repo via App with no install → 400/409/502 (no validated access)", async () => {
+    await ctx.step("repository import requires a connected Nango installation", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/link-repository", { repo_full_name: "octocat/hello-world" });
       r.status([200, 201, 400, 409, 502, 503]);
     });
-    await ctx.step("repo via bogus PAT → validation fails 400", async () => {
+    await ctx.step("legacy provider token input is rejected", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/link-repository", { repo_full_name: "octocat/hello-world", github_token: "ghp_invalid_token_xyz" });
-      r.status([400, 401, 409, 502]);
+      r.status(409);
     });
   },
 );

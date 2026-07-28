@@ -1,33 +1,6 @@
-/**
- * Regression coverage for the self-host "Use a token" import bug: an account
- * whose ONLY managed-git connection is a PAT (platform/routes/github-app.ts
- * POST /pat) has no `account_github_installations` row and
- * `isGithubAppConfigured()` (App-only, appId+privateKey) is false — so
- * `GET /projects/github/installations` used to report `configured: false` /
- * zero installations, and the web Import-repo + New-project UI showed
- * "GitHub isn't connected on this server yet" even though managed-git
- * provisioning (POST /projects/provision) worked fine off the same PAT.
- *
- * `serializeGitHubInstallations` (projects/lib/serializers.ts) now takes an
- * optional PAT-fallback owner and synthesizes a connected "installation" for
- * it — see the matching route wiring in routes/r1.ts (GET
- * github/installation(s)) and routes/github-repositories.ts /
- * routes/r2.ts (POST /link-repository), which both recognize the sentinel
- * `PAT_MANAGED_GIT_INSTALLATION_ID` this produces.
- *
- * Pure-function test, no DB/module mocking needed — same convention as
- * unit-api-contract-serializers.test.ts.
- */
 import { describe, expect, test } from 'bun:test';
 import type { accountGithubInstallations } from '@kortix/db';
-import {
-  PAT_MANAGED_GIT_INSTALLATION_ID,
-  serializeGitHubInstallations,
-} from '../projects/lib/serializers';
-import {
-  GitHubCredentialModeError,
-  enforcePatImportMode,
-} from '../projects/nango/credential-mode';
+import { serializeGitHubInstallations } from '../projects/lib/serializers';
 
 const ACCOUNT_ID = '99999999-8888-4777-8666-555555555555';
 
@@ -56,57 +29,24 @@ function installationRow(
   };
 }
 
-describe('serializeGitHubInstallations — PAT fallback for the "Use a token" self-host setup', () => {
-  test('no App installation, no PAT fallback owner -> stays not-connected (pre-existing behavior)', () => {
-    const result = serializeGitHubInstallations([], ACCOUNT_ID, null, null);
+describe('serializeGitHubInstallations after the Nango-only cutover', () => {
+  test('does not synthesize a PAT installation for an empty account', () => {
+    const result = serializeGitHubInstallations([], ACCOUNT_ID, null);
     expect(result.installed).toBe(false);
     expect(result.installations).toEqual([]);
   });
 
-  test('PAT fallback stays importable while preserving the App install path', () => {
-    const installUrl = 'https://github.com/apps/kortix/installations/new?state=signed';
-    const result = serializeGitHubInstallations([], ACCOUNT_ID, installUrl, 'globex-corp');
-
-    expect(result.installed).toBe(true);
-    expect(result.configured).toBe(true);
-    expect(result.requires_installation).toBe(true);
-    expect(result.installation_id).toBe(PAT_MANAGED_GIT_INSTALLATION_ID);
-    expect(result.owner_login).toBe('globex-corp');
-    expect(result.install_url).toBe(installUrl);
-    expect(result.installations).toEqual([
-      expect.objectContaining({
-        installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-        owner_login: 'globex-corp',
-        installed: true,
-        configured: true,
-      }),
-    ]);
-  });
-
-  test('a real App installation row wins — the PAT fallback is ignored, no duplicate/synthetic entry', () => {
-    const row = installationRow();
-    const result = serializeGitHubInstallations([row], ACCOUNT_ID, null, 'globex-corp');
+  test('preserves a legacy installation only as reconnect metadata', () => {
+    const row = installationRow({
+      connectionStatus: 'needs_reconnect',
+      lastErrorCode: 'github_reconnect_required',
+    });
+    const result = serializeGitHubInstallations([row], ACCOUNT_ID, null);
 
     expect(result.installed).toBe(true);
     expect(result.installations).toHaveLength(1);
     expect(result.installations[0]!.installation_id).toBe('501');
     expect(result.installations[0]!.owner_login).toBe('acme-corp');
-  });
-});
-
-describe('PAT import during Nango cutover', () => {
-  test('allows fallback mode with one deprecation event', () => {
-    const messages: string[] = [];
-    expect(
-      enforcePatImportMode('nango_preferred', (message) => messages.push(message)),
-    ).toBe('deprecated');
-    expect(messages).toEqual(['github_pat_import_deprecated']);
-  });
-
-  test('rejects PAT input in Nango-only mode', () => {
-    expect(() => enforcePatImportMode('nango_only')).toThrow(GitHubCredentialModeError);
-    expect(() => enforcePatImportMode('nango_only')).toThrow(
-      'Reconnect GitHub through Nango before importing this repository.',
-    );
+    expect(result.installations[0]!.reconnect_required).toBe(true);
   });
 });
