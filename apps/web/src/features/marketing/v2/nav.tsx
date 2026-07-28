@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { NavigationMenu as Nav } from 'radix-ui';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -109,9 +109,11 @@ export function MarketingNav() {
     router.push(user ? '/projects' : '/auth');
   }, [router, user]);
 
-  // Over the hero field the bar is transparent and everything is white; past it
-  // the bar turns into a normal solid one.
-  const onField = !scrolled;
+  // Only the landing page opens on the blue field; every other page starts on
+  // white, so the bar must be solid from the first pixel there.
+  const pathname = usePathname();
+  const hasField = pathname === '/v2';
+  const onField = hasField && !scrolled;
 
   const linkClass = cn(
     'flex h-9 items-center rounded-full px-3.5 text-[0.9375rem] font-medium transition-colors',

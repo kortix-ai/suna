@@ -36,17 +36,17 @@ export const NAV: NavEntry[] = [
           {
             name: 'Sessions & sandboxes',
             description: 'Every run on its own machine and branch',
-            href: '/v2#sandboxes',
+            href: '/v2/sandboxes',
           },
           {
             name: 'Change requests',
             description: 'How work lands, reviewed, on main',
-            href: '/v2#how-work-lands',
+            href: '/v2/security',
           },
           {
             name: 'Security & governance',
             description: 'Isolation, roles, secrets, audit trail',
-            href: '/v2#security',
+            href: '/v2/security',
           },
         ],
       },
@@ -56,22 +56,22 @@ export const NAV: NavEntry[] = [
           {
             name: 'Agents',
             description: 'Markdown personas with scoped reach',
-            href: '/v2#library',
+            href: '/v2/agents',
           },
           {
             name: 'Skills',
             description: 'How your company does a job, reusable',
-            href: '/v2#library',
+            href: '/v2/agent-templates',
           },
           {
             name: 'Connectors',
             description: 'One scoped token into 3,000+ apps',
-            href: '/v2#library',
+            href: '/v2/connectors',
           },
           {
             name: 'Channels & triggers',
             description: 'Start sessions from Slack, cron, or a webhook',
-            href: '/v2#channels',
+            href: '/v2/automations',
           },
         ],
       },
@@ -92,17 +92,17 @@ export const NAV: NavEntry[] = [
           {
             name: 'Engineering',
             description: 'Background agents that open change requests',
-            href: '/use-cases',
+            href: '/v2/use-cases',
           },
           {
             name: 'Go-to-market',
             description: 'Briefs, renewals, and pipeline from your own data',
-            href: '/use-cases',
+            href: '/v2/use-cases',
           },
           {
             name: 'Operations',
             description: 'The recurring work, on a trigger',
-            href: '/use-cases',
+            href: '/v2/use-cases',
           },
         ],
       },
@@ -112,17 +112,17 @@ export const NAV: NavEntry[] = [
           {
             name: 'Your company as code',
             description: 'Agents, skills, and memory in one repo you own',
-            href: '/v2#company-as-code',
+            href: '/v2/agents',
           },
           {
             name: 'A workforce, not an assistant',
             description: 'Thousands of sessions, one main branch',
-            href: '/v2#workforce',
+            href: '/v2/sandboxes',
           },
           {
             name: 'Customer stories',
             description: 'How teams run Kortix in production',
-            href: '/use-cases',
+            href: '/v2/use-cases',
           },
         ],
       },
@@ -134,16 +134,16 @@ export const NAV: NavEntry[] = [
       {
         title: 'Kortix',
         items: [
-          { name: 'About', description: 'Who we are and why', href: '/about' },
-          { name: 'Careers', description: 'Build the company OS with us', href: '/careers' },
-          { name: 'Contact', description: 'Talk to the team', href: '/contact' },
+          { name: 'About', description: 'Who we are and why', href: '/v2/about' },
+          { name: 'Careers', description: 'Build the company OS with us', href: '/v2/careers' },
+          { name: 'Contact', description: 'Talk to the team', href: '/v2/contact' },
         ],
       },
       {
         title: 'Keep up',
         items: [
-          { name: 'Blog', description: 'Notes from the build', href: '/blog' },
-          { name: 'Changelog', description: 'What shipped, every week', href: '/changelog' },
+          { name: 'Customers', description: 'Teams running Kortix in production', href: '/v2/customers' },
+          { name: 'Changelog', description: 'What shipped, every week', href: '/v2/changelog' },
           {
             name: 'Open source',
             description: 'The repo behind the product',
@@ -153,7 +153,7 @@ export const NAV: NavEntry[] = [
       },
     ],
   },
-  { name: 'Pricing', href: '/pricing' },
+  { name: 'Pricing', href: '/v2/pricing' },
   { name: 'Docs', href: '/docs' },
 ];
 
@@ -526,47 +526,49 @@ export const FOOTER = [
   {
     title: 'Product',
     links: [
-      { name: 'Projects', href: '/v2#company-as-code' },
-      { name: 'Sessions & sandboxes', href: '/v2#sandboxes' },
-      { name: 'Change requests', href: '/v2#how-work-lands' },
-      { name: 'Channels & triggers', href: '/v2#channels' },
-      { name: 'Marketplace', href: '/marketplace' },
+      { name: 'Agents', href: '/v2/agents' },
+      { name: 'Sandboxes', href: '/v2/sandboxes' },
+      { name: 'Connectors', href: '/v2/connectors' },
+      { name: 'Automations', href: '/v2/automations' },
+      { name: 'Agent templates', href: '/v2/agent-templates' },
     ],
   },
   {
     title: 'Use Cases',
     links: [
-      { name: 'Engineering', href: '/use-cases' },
-      { name: 'Go-to-market', href: '/use-cases' },
-      { name: 'Operations', href: '/use-cases' },
-      { name: 'All use cases', href: '/use-cases' },
+      { name: 'Engineering', href: '/v2/use-cases' },
+      { name: 'Go-to-market', href: '/v2/use-cases' },
+      { name: 'Operations', href: '/v2/use-cases' },
+      { name: 'All use cases', href: '/v2/use-cases' },
     ],
   },
   {
     title: 'Developers',
     links: [
       { name: 'Docs', href: '/docs' },
-      { name: 'CLI', href: '/docs' },
-      { name: 'Changelog', href: '/changelog' },
+      { name: 'SDK', href: '/v2/sdk' },
+      { name: 'MCP', href: '/v2/mcp' },
+      { name: 'Download', href: '/v2/download' },
+      { name: 'Changelog', href: '/v2/changelog' },
       { name: 'GitHub', href: 'https://github.com/kortix-ai/suna' },
     ],
   },
   {
     title: 'Company',
     links: [
-      { name: 'About', href: '/about' },
-      { name: 'Blog', href: '/blog' },
-      { name: 'Careers', href: '/careers' },
-      { name: 'Contact', href: '/contact' },
+      { name: 'About', href: '/v2/about' },
+      { name: 'Customers', href: '/v2/customers' },
+      { name: 'Careers', href: '/v2/careers' },
+      { name: 'Contact', href: '/v2/contact' },
       { name: 'Support', href: '/support' },
     ],
   },
   {
     title: 'Trust',
     links: [
-      { name: 'Security', href: '/v2#security' },
-      { name: 'Enterprise', href: '/enterprise' },
-      { name: 'Self-hosted', href: '/v2#open' },
+      { name: 'Security', href: '/v2/security' },
+      { name: 'Enterprise', href: '/v2/enterprise' },
+      { name: 'Self-hosted', href: '/v2/self-hosted' },
       { name: 'Privacy', href: '/legal?tab=privacy' },
     ],
   },
