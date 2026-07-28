@@ -36,12 +36,25 @@ import Link from 'next/link';
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 export const MOD_SYMBOL = isMac ? '⌘' : 'Ctrl';
 
-/** The panel itself. */
+/**
+ * The panel itself.
+ *
+ * `variant="sidebar"`, NOT `"inset"`. The inset variant asks SidebarInset for a
+ * floating, rounded, margined content panel — and it was never actually
+ * rendered: AppProviders wraps the sidebar in a positioning div, and the
+ * inset's styling hangs off `peer-data-[variant=inset]`, a sibling combinator
+ * that the wrapper defeats. So the app has always shipped flat, while claiming
+ * a variant it does not render.
+ *
+ * That gap is what made the two shells look different the moment one of them
+ * lost the wrapper. Declaring the variant we actually want removes the
+ * dependency on DOM nesting altogether, in both shells.
+ */
 export function SidebarShell({ children }: { children: ReactNode }) {
   return (
     <Sidebar
       collapsible="offcanvas"
-      variant="inset"
+      variant="sidebar"
       className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
       {children}

@@ -19,25 +19,25 @@ const APP_PROVIDERS = readFileSync(join(SRC, 'features/layout/app-providers.tsx'
 const ANON_SHELL = readFileSync(join(SRC, 'features/home/anonymous-home-shell.tsx'), 'utf8');
 const SIDEBAR_UI = readFileSync(join(SRC, 'components/ui/sidebar.tsx'), 'utf8');
 
-describe('the inset keeps its peer relationship', () => {
-  test("SidebarInset still depends on being the sidebar's sibling", () => {
-    // If this ever stops being true the guard below is pointless — rewrite it
-    // rather than deleting it.
+describe('the shell does not claim a variant it never renders', () => {
+  const CHROME = readFileSync(
+    join(SRC, 'features/workspace/project-sidebar/sidebar-chrome.tsx'),
+    'utf8',
+  );
+
+  test('the sidebar is not the inset variant', () => {
+    // `variant="inset"` asks SidebarInset for a floating rounded panel via
+    // `peer-data-[variant=inset]` — a sibling combinator that AppProviders'
+    // wrapper defeats. The app has always shipped flat; saying so removes the
+    // dependency on DOM nesting, which is what let the two shells diverge.
+    expect(CHROME).toContain('variant="sidebar"');
+    expect(CHROME).not.toContain('variant="inset"');
+  });
+
+  test('both shells therefore render the same panel regardless of nesting', () => {
+    // Neither shell can now be changed by an intermediate wrapper element.
     expect(SIDEBAR_UI).toContain('peer-data-[variant=inset]');
-  });
-
-  test('the signed-in shell does not wrap the sidebar in the normal case', () => {
-    expect(APP_PROVIDERS).toContain('if (!obActive) return <>{sidebarContent}</>;');
-  });
-
-  test('the signed-out shell renders the sidebar unwrapped', () => {
-    // Directly inside SidebarProvider, immediately before SidebarInset.
-    const provider = ANON_SHELL.indexOf('<SidebarProvider>');
-    const sidebar = ANON_SHELL.indexOf('<AnonymousSidebar', provider);
-    const inset = ANON_SHELL.indexOf('<SidebarInset>', provider);
-    expect(sidebar).toBeGreaterThan(provider);
-    expect(inset).toBeGreaterThan(sidebar);
-    expect(ANON_SHELL.slice(sidebar, inset)).not.toContain('<div');
+    expect(ANON_SHELL).not.toContain('variant="inset"');
   });
 });
 
