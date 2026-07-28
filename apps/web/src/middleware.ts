@@ -1,103 +1,22 @@
 import { locales, type Locale } from '@/i18n/config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+// Route tables + their matchers live in lib/routing/route-tables so they can be
+// unit-tested — the desktop allowlist especially, which is the only thing
+// keeping the marketing site out of the desktop window.
+import {
+  MARKETING_ROUTES,
+  isDesktopAllowedRoute,
+  isPublicRoute,
+  isSelfHostMarketingContent,
+  isStaticPublicRoute,
+  supportsMarkdownNegotiation,
+} from '@/lib/routing/route-tables';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-
-// Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = ['/', '/legal', '/support'];
-
-// Pure marketing/promo routes that a self-host with the landing page disabled
-// (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
-// app. Functional public routes (/auth, /docs, /help, /legal, /support,
-// /marketplace, /share, /download, /maintenance, …) stay reachable; only the
-// marketing site itself is deactivated.
-const SELF_HOST_MARKETING_ONLY = [
-  '/about',
-  '/careers',
-  '/blog',
-  '/changelog',
-  '/credits-explained',
-  '/contact',
-  '/developers',
-  '/enterprise',
-  '/pricing',
-  '/use-cases',
-  '/solutions',
-  '/compare',
-  '/integrations',
-  '/security',
-];
-
-// Routes that don't require authentication
-const PUBLIC_ROUTES = [
-  '/', // Homepage should be public!
-  '/auth',
-  '/auth/callback',
-  '/auth/signup',
-  '/auth/forgot-password',
-  '/auth/reset-password',
-  '/legal',
-  '/api/auth',
-  '/share', // Shared content should be public
-  '/marketplace', // Public read-only marketplace directory; installs still require auth
-  '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
-  '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
-  '/master-login', // Master password admin login
-  '/checkout', // Public checkout wrapper for Apple compliance
-  '/support', // Support page should be public
-  '/help', // Help center and documentation should be public
-  '/docs', // Product documentation (Fumadocs) should be public
-  '/credits-explained', // Credits explained page should be public
-  '/about', // About page should be public
-  '/careers', // Careers page should be public
-  '/changelog', // Public release notes (sourced from GitHub Releases)
-  '/blog', // Public blog (MDX posts under content/blog) should be public
-  '/install',
-  '/install.sh',
-  '/mcp', // Public read-only MCP server and server card
-  '/download', // Desktop installer redirector (per-platform latest)
-  '/design-system', // Living design system / brand guidelines should be public
-  '/review', // Review Center clickable prototype — mock data only, public so it is shareable/clickable without login
-  '/presentation', // Standalone product deck (/presentation) should be public
-  '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
-  '/contact', // Request-a-demo / contact page should be public
-  '/developers', // Developer walkthrough landing page should be public
-  '/countryerror', // Country restriction error page should be public
-  '/enterprise', // Enterprise page should be public
-  '/pricing', // Pricing page should be public
-  '/use-cases', // Use cases page should be public
-  '/solutions', // Solutions / persona landing pages should be public
-  '/compare', // Competitor comparison pages should be public
-  '/integrations', // Integrations directory + per-tool pages should be public
-  '/security', // Security & trust page should be public
-  '/maintenance', // Maintenance page must be accessible without auth
-  '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
-  '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
-  '/chat-variants', // Session-chat variant explorations — fixture data only, public so it is shareable without login
-  '/voice', // Direct join page for a live voice call — token-gated, MUST load with no login
-  ...locales.flatMap((locale) =>
-    MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),
-  ),
-];
-
-// Visual, static public canvases do not need Supabase session reads. Keep them
-// reachable even when local encrypted env vars are not available.
-const STATIC_PUBLIC_ROUTES = [
-  '/game-of-life',
-  '/rauch',
-];
-
-const MARKDOWN_NEGOTIATION_ROUTES = new Set([
-  '/',
-  '/about',
-  '/developers',
-  '/enterprise',
-  '/pricing',
-]);
 
 const AGENT_DISCOVERY_LINK_HEADER =
   '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json", ' +
@@ -105,47 +24,11 @@ const AGENT_DISCOVERY_LINK_HEADER =
   '</docs>; rel="service-doc"; type="text/html", ' +
   '</llms.txt>; rel="describedby"; type="text/plain"';
 
-function supportsMarkdownNegotiation(pathname: string): boolean {
-  if (MARKDOWN_NEGOTIATION_ROUTES.has(pathname)) return true;
-  return (
-    pathname === '/docs' ||
-    pathname.startsWith('/docs/') ||
-    /^\/blog\/[^/]+$/.test(pathname) ||
-    /^\/use-cases\/[^/]+$/.test(pathname)
-  );
-}
-
 // Routes that require authentication but are related to billing/setup
 const BILLING_ROUTES: string[] = [];
 
 // Routes that require authentication and active subscription
 const PROTECTED_ROUTES = ['/projects', '/accounts', '/invites', '/admin'];
-
-// Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
-// these route prefixes — plus /auth/* for sign-in — are allowed to render
-// inside the desktop window. Every other route (the marketing homepage, blog,
-// pricing, careers, contact, legal, help, docs, share, design-system, … which
-// all live at root-level slugs) is bounced to /projects. Docs and external
-// links are opened in the user's real browser by the Tauri shell, never shown
-// in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
-// stay blocked by default.
-const DESKTOP_ALLOWED_ROUTES = [
-  '/projects',
-  '/accounts',
-  '/invites',
-  '/admin',
-  '/setup',
-  '/connectors',
-  '/oauth',
-  '/checkout',
-  '/tunnel',
-  '/github',
-  '/cli',
-  '/marketplace',
-  '/maintenance',
-  '/countryerror',
-  '/debug',
-];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -195,9 +78,7 @@ export async function middleware(request: NextRequest) {
   // (so admins can disable the lockdown). Everything else — /projects,
   // /accounts, /invites and the other authed product routes — still gets the
   // maintenance takeover.
-  const isPublicMaintenanceRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicMaintenanceRoute = isPublicRoute(pathname);
   const isAdminMaintenanceRoute = pathname === '/admin' || pathname.startsWith('/admin/');
   const bypassesMaintenance = isPublicMaintenanceRoute || isAdminMaintenanceRoute;
 
@@ -258,13 +139,7 @@ export async function middleware(request: NextRequest) {
   // Next.js client/RSC navigations alike. The Tauri shell separately opens
   // docs/external links in the user's real browser.
   if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
-    const isAllowed =
-      isAuthPath ||
-      DESKTOP_ALLOWED_ROUTES.some(
-        (route) => pathname === route || pathname.startsWith(route + '/'),
-      );
-    if (!isAllowed) {
+    if (!isDesktopAllowedRoute(pathname)) {
       return NextResponse.redirect(new URL('/projects', request.url));
     }
   }
@@ -297,7 +172,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+  if (isStaticPublicRoute(pathname)) {
     return NextResponse.next();
   }
 
@@ -426,9 +301,7 @@ export async function middleware(request: NextRequest) {
   const disableLandingPage =
     (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE || process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   if (disableLandingPage) {
-    const isMarketingContent =
-      pathname === '/' ||
-      SELF_HOST_MARKETING_ONLY.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+    const isMarketingContent = isSelfHostMarketingContent(pathname);
     if (isMarketingContent) {
       return redirectPreservingSession(new URL(user ? '/projects' : '/auth', request.url));
     }
@@ -438,7 +311,7 @@ export async function middleware(request: NextRequest) {
   // so that any cookie updates from getUser() token refresh are preserved.
   // Returning a fresh NextResponse.next() would discard refreshed auth cookies,
   // causing the session to break on the next navigation.
-  if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+  if (isPublicRoute(pathname)) {
     if (pathname === '/') {
       supabaseResponse.headers.set('Link', AGENT_DISCOVERY_LINK_HEADER);
     }
