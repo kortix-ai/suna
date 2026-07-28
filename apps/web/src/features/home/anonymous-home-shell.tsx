@@ -1,17 +1,21 @@
 'use client';
 
 /**
- * The logged-out homepage: the real product shell, with every action gated.
+ * The logged-out homepage.
  *
- * Deliberately NOT ProjectShell, and deliberately NOT the real composer.
- * ProjectShell is a project data root — it runs getProjectDetail,
- * useGatewayCatalogSync and BillingAccountProvider — and ComposerChatInput
- * calls useRuntimeSessions/useOpenCodeProviders, which fall back to the sandbox
- * runtime client when there is no project. Mounting either of those for an
- * anonymous visitor is a guaranteed 401 storm on every marketing visit.
+ * This is the SAME shell as the signed-in one, not a look-alike. The sidebar
+ * chrome, the Customize group, the welcome body and the starter chips are all
+ * the same components the project shell renders — so a class change moves both
+ * and the two surfaces cannot drift apart. If they drifted, the logged-out page
+ * would stop being a preview of the product and start being a different app.
  *
- * So this is a visual twin, not a reuse. anonymous-home-shell.test.tsx asserts
- * that separation stays intact.
+ * What is NOT shared is the data. ProjectShell is a project data root
+ * (getProjectDetail, useGatewayCatalogSync, BillingAccountProvider), and the
+ * real composer reaches for useRuntimeSessions/useOpenCodeProviders, which fall
+ * back to the sandbox runtime client when there is no project. Mounting either
+ * for an anonymous visitor is a 401 on every marketing visit. So the chrome is
+ * reused and the contents are stubbed — an honest empty session list, a
+ * textarea instead of the full composer, and a sign-in gate on every action.
  */
 
 import { ArrowUp } from 'lucide-react';
@@ -19,91 +23,81 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  SidebarGroup,
+  SidebarInset,
+  SidebarMenu,
+  SidebarProvider,
+} from '@/components/ui/sidebar';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
-import { Icon } from '@/features/icon/icon';
+import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
+import { ProjectNavGroup } from '@/features/workspace/project-sidebar/project-nav-items';
+import {
+  SidebarBody,
+  SidebarBrandHeader,
+  SidebarFooterSlot,
+  SidebarNewButton,
+  SidebarPlainLink,
+  SidebarSectionLabel,
+  SidebarShell,
+} from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { PROJECT_NAV_ITEMS } from '@/lib/project-nav';
-import { STARTER_PROMPTS } from '@/lib/starter-prompts';
-import { cn } from '@/lib/utils';
-import { chalkColors } from '@kortix/shared';
 
 const MARKETING_LINKS = [
+  { label: 'Why Kortix', href: '/why' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Enterprise', href: '/enterprise' },
   { label: 'Developers', href: '/developers' },
   { label: 'Docs', href: '/docs' },
-  { label: 'Why Kortix', href: '/why' },
 ];
 
 function AnonymousSidebar() {
   const { gate } = useSignInGate();
 
   return (
-    <aside className="bg-sidebar border-border hidden w-64 shrink-0 flex-col border-r md:flex">
-      <div className="flex items-center gap-2 px-4 py-3">
-        <Icon.Kortix className="text-foreground size-4.5" />
-        <span className="text-foreground text-sm font-medium">Kortix</span>
-      </div>
+    <SidebarShell>
+      <SidebarBrandHeader homeHref="/" />
 
-      <nav className="flex flex-col gap-0.5 px-2">
-        <button
-          type="button"
-          onClick={() => gate('/')}
-          className="text-sidebar-foreground hover:bg-sidebar-accent border-border bg-background flex items-center justify-center gap-2 rounded-md border-[1.2px] px-2 py-1.5 text-sm font-medium"
-        >
-          New
-        </button>
-      </nav>
+      <SidebarBody>
+        <SidebarNewButton label="New" onClick={() => gate('/')} />
 
-      <div className="mt-4 px-2">
-        <p className="text-muted-foreground/60 px-2 pb-1 text-[11px] font-medium tracking-wider uppercase">
-          Sessions
-        </p>
-        {/* An honest empty state. Ghost rows in the one surface meant to be the
-            user's own read worse than nothing. */}
-        <p className="text-muted-foreground/70 px-2 py-1 text-sm">No sessions yet</p>
-      </div>
+        <SidebarGroup className="min-h-0 flex-1 flex-col py-0">
+          <div className="flex min-h-0 flex-1 flex-col space-y-2">
+            <SidebarSectionLabel className="mt-1 px-0">
+              <span className="px-2">Sessions</span>
+            </SidebarSectionLabel>
+            {/* Honest, not ghost rows. Fake history in the one surface meant to
+                be the user's own reads worse than an empty list. */}
+            <p className="text-muted-foreground/70 px-2 text-sm">No sessions yet</p>
+          </div>
+        </SidebarGroup>
 
-      <div className="mt-4 px-2">
-        <p className="text-muted-foreground/60 px-2 pb-1 text-[11px] font-medium tracking-wider uppercase">
-          Customize
-        </p>
-        <div className="flex flex-col">
-          {PROJECT_NAV_ITEMS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => gate('/')}
-              className="text-muted-foreground hover:text-sidebar-foreground rounded-md px-2 py-1 text-left text-sm"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
+        <ProjectNavGroup items={PROJECT_NAV_ITEMS} onSelect={() => gate('/')} />
 
-      <div className="mt-auto flex flex-col gap-1 p-2">
-        <div className="flex flex-col">
-          {MARKETING_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-muted-foreground hover:text-sidebar-foreground rounded-md px-2 py-1 text-sm"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </div>
+        <SidebarGroup className="mt-auto py-0.5">
+          <SidebarSectionLabel>Product</SidebarSectionLabel>
+          <SidebarMenu>
+            {MARKETING_LINKS.map((link) => (
+              <SidebarPlainLink key={link.href} href={link.href}>
+                {link.label}
+              </SidebarPlainLink>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarBody>
+
+      <SidebarFooterSlot>
         <Button type="button" size="sm" className="w-full" onClick={() => gate('/')}>
           Sign in
         </Button>
-      </div>
-    </aside>
+      </SidebarFooterSlot>
+    </SidebarShell>
   );
 }
 
 /**
- * Textarea and send button only. No model picker, no agent picker, no
- * attachments, no mentions — every one of those needs a project.
+ * Textarea and send only. No model picker, no agent picker, no attachments, no
+ * mentions — each of those needs a project behind it.
  */
 function AnonymousComposer() {
   const { gateWithPrompt, gate } = useSignInGate();
@@ -147,60 +141,36 @@ export function AnonymousHomeShell() {
   const { gate } = useSignInGate();
 
   return (
-    <div className="bg-background flex h-dvh min-h-0 w-full">
+    <SidebarProvider>
       <AnonymousSidebar />
-
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="flex items-center justify-end gap-2 p-3 md:hidden">
-          <Button type="button" size="sm" variant="ghost" onClick={() => gate('/')}>
-            Sign in
-          </Button>
-        </div>
-
-        <div className="m-auto flex w-full max-w-2xl flex-col items-center gap-6 px-4 py-12">
-          <h1 className="text-foreground text-center text-3xl leading-tight tracking-tight text-balance sm:text-4xl">
-            What do you want to get done?
-          </h1>
-
-          <AnonymousComposer />
-
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {STARTER_PROMPTS.slice(0, 6).map((prompt, index) => {
-              const ChipIcon = prompt.icon;
-              const chalk = chalkColors(prompt.label);
-              return (
-                <Button
-                  key={prompt.id}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => gate('/')}
-                  className={cn(
-                    'bg-background/60 shrink-0 gap-1.5 rounded-md',
-                    index >= 4 && 'max-sm:hidden',
-                  )}
-                >
-                  <ChipIcon
-                    className="size-3.5 shrink-0"
-                    style={{ color: chalk.foreground }}
-                    aria-hidden
-                  />
-                  {prompt.label}
-                </Button>
-              );
-            })}
+      <SidebarInset>
+        <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden px-4.5">
+          <div className="absolute top-2 right-2 z-20 md:hidden">
+            <Button type="button" size="sm" variant="ghost" onClick={() => gate('/')}>
+              Sign in
+            </Button>
           </div>
-        </div>
 
-        <nav className="text-muted-foreground flex flex-wrap items-center justify-center gap-4 p-4 text-xs md:hidden">
-          {MARKETING_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className="hover:text-foreground">
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-      </main>
-    </div>
+          {/* The same body the project home renders — heading, composer slot,
+              starter chips — with no project behind it. */}
+          <ProjectHomeWelcomeBody
+            projectId=""
+            heading="What do you want to get done?"
+            setupTiles={false}
+            composer={<AnonymousComposer />}
+            onPickSuggestion={() => gate('/')}
+          />
+
+          <nav className="text-muted-foreground flex flex-wrap items-center justify-center gap-4 pb-4 text-xs md:hidden">
+            {MARKETING_LINKS.map((link) => (
+              <Link key={link.href} href={link.href} className="hover:text-foreground">
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

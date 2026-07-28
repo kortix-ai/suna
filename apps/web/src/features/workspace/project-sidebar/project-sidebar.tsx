@@ -43,6 +43,13 @@ import {
 } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
+import {
+  SidebarBody,
+  SidebarBrandHeader,
+  SidebarFooterSlot,
+  SidebarNewButton,
+  SidebarShell,
+} from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
@@ -155,146 +162,116 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   }, [handleNewSession]);
 
   return (
-    <Sidebar
-      collapsible="offcanvas"
-      variant="inset"
-      className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
-    >
-      <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
-        {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
-            single layout. The collapse toggle exists only while docked — in
-            the flyout the shell's top-left toggle (right above the panel) is
-            the pin control, and the project switcher takes the full width. */}
-        <div className="flex w-full items-center justify-between gap-1">
-          <Button type="button" variant="ghost" size="icon" asChild>
-            <Link href={`/projects/${projectId}`}>
-              <Icon.Kortix className="text-foreground size-4.5" />
-            </Link>
-          </Button>
-          <div className="w-full min-w-0">
-            <ProjectSwitcher variant="sidebar" />
-          </div>
-        </div>
-      </SidebarHeader>
-      <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
-        <div className="flex h-full min-h-0 flex-col space-y-4">
-          <SidebarGroup className="py-0">
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={handleNewSession}
-                  size="md"
-                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] text-center !text-sm font-medium [&_svg]:!size-4"
-                >
-                  <span>
-                    {tI18nHardcoded.raw(
-                      'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
-                    )}
-                  </span>
-                  <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
-                    <Kbd>{modSymbol}</Kbd>
-                    <Kbd>J</Kbd>
-                  </KbdGroup>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
+    <SidebarShell>
+      {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
+          single layout. The collapse toggle exists only while docked — in
+          the flyout the shell's top-left toggle (right above the panel) is
+          the pin control, and the project switcher takes the full width. */}
+      <SidebarBrandHeader homeHref={`/projects/${projectId}`}>
+        <ProjectSwitcher variant="sidebar" />
+      </SidebarBrandHeader>
+      <SidebarBody>
+        <SidebarNewButton
+          label={tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
+          )}
+          onClick={handleNewSession}
+        />
 
-          <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {/* Sessions are always expanded — no collapse toggle. The header
+        <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
+          {/* Sessions are always expanded — no collapse toggle. The header
                 label opens the full sessions page and carries the active
                 filter; the ⋯ button opens the filter menu. */}
-            <div className="flex min-h-0 flex-1 flex-col space-y-2">
-              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
-                <div className="flex w-full flex-row items-center gap-0.5">
-                  <Link
-                    href={`/projects/${projectId}/sessions`}
-                    className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
-                  >
-                    <span>Sessions</span>
-                    {sessionFilter !== 'all' && (
-                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
-                        {tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
-                        )}{' '}
-                        {activeFilterOption.label}
-                      </span>
-                    )}
-                  </Link>
-                  <DropdownMenu onOpenChange={holdPeek}>
-                    <DropdownMenuContent align="start" className="w-44 p-1">
-                      {SESSION_FILTER_OPTIONS.map((option) => {
-                        const OptionIcon = SESSION_FILTER_ICONS[option.value];
-                        return (
-                          <DropdownMenuItem
-                            key={option.value}
-                            className="cursor-pointer"
-                            onClick={() => setSessionFilter(projectId, option.value)}
-                          >
-                            <OptionIcon className="h-4 w-4" />
-                            {option.label}
-                            <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
-                              {sessionFilterCounts.get(option.value) ?? 0}
-                            </span>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton
-                        type="button"
-                        aria-label={tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
-                        )}
-                        className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
-                      >
-                        <HiDotsHorizontal className="size-3" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                  </DropdownMenu>
-                </div>
-              </SidebarGroupLabel>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex h-full min-h-0 flex-col">
-                  <ProjectSessionList projectId={projectId} filter={sessionFilter} />
-                </div>
+          <div className="flex min-h-0 flex-1 flex-col space-y-2">
+            <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
+              <div className="flex w-full flex-row items-center gap-0.5">
+                <Link
+                  href={`/projects/${projectId}/sessions`}
+                  className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
+                >
+                  <span>Sessions</span>
+                  {sessionFilter !== 'all' && (
+                    <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
+                      )}{' '}
+                      {activeFilterOption.label}
+                    </span>
+                  )}
+                </Link>
+                <DropdownMenu onOpenChange={holdPeek}>
+                  <DropdownMenuContent align="start" className="w-44 p-1">
+                    {SESSION_FILTER_OPTIONS.map((option) => {
+                      const OptionIcon = SESSION_FILTER_ICONS[option.value];
+                      return (
+                        <DropdownMenuItem
+                          key={option.value}
+                          className="cursor-pointer"
+                          onClick={() => setSessionFilter(projectId, option.value)}
+                        >
+                          <OptionIcon className="h-4 w-4" />
+                          {option.label}
+                          <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                            {sessionFilterCounts.get(option.value) ?? 0}
+                          </span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton
+                      type="button"
+                      aria-label={tI18nHardcoded.raw(
+                        'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
+                      )}
+                      className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+                    >
+                      <HiDotsHorizontal className="size-3" />
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                </DropdownMenu>
+              </div>
+            </SidebarGroupLabel>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex h-full min-h-0 flex-col">
+                <ProjectSessionList projectId={projectId} filter={sessionFilter} />
               </div>
             </div>
-          </SidebarGroup>
+          </div>
+        </SidebarGroup>
 
-          {/* The four promoted sections, as a quiet label with plain-text
+        {/* The four promoted sections, as a quiet label with plain-text
               children. That lightness is the whole point — see
               ux-references/perplexity/01-home-search.png. */}
-          <ProjectNavItems projectId={projectId} />
+        <ProjectNavItems projectId={projectId} />
 
-          <SidebarGroup className="mt-auto py-0.5">
-            <SidebarMenu>
-              <ProjectSandboxAlert projectId={projectId} />
-              {/* Change requests are work in flight, not setup — they sit with
+        <SidebarGroup className="mt-auto py-0.5">
+          <SidebarMenu>
+            <ProjectSandboxAlert projectId={projectId} />
+            {/* Change requests are work in flight, not setup — they sit with
                   the alerts rather than in the Customize group. */}
-              <ProjectChangeRequestsNavItem projectId={projectId} />
-              {/* Sits directly above Files/Settings so a still-on-v1 manifest
+            <ProjectChangeRequestsNavItem projectId={projectId} />
+            {/* Sits directly above Files/Settings so a still-on-v1 manifest
                   is impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}
-              <ProjectManifestUpgradeAlert projectId={projectId} />
-              <ProjectFilesNavItem />
-              <ProjectSettingsNavItem projectId={projectId} />
-              <ProjectChatGptConnectNavItem projectId={projectId} />
-              {/* Persistent rails, not toasts: a dismissible banner is what
+            <ProjectManifestUpgradeAlert projectId={projectId} />
+            <ProjectFilesNavItem />
+            <ProjectSettingsNavItem projectId={projectId} />
+            <ProjectChatGptConnectNavItem projectId={projectId} />
+            {/* Persistent rails, not toasts: a dismissible banner is what
                   users miss, and this is the surface that converts. */}
-              <SidebarBalanceWarning accountId={accountId} />
-              <SidebarUpgradeButton accountId={accountId} />
-            </SidebarMenu>
-          </SidebarGroup>
-        </div>
-      </SidebarContent>
+            <SidebarBalanceWarning accountId={accountId} />
+            <SidebarUpgradeButton accountId={accountId} />
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarBody>
 
-      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
+      <SidebarFooterSlot>
         <UserMenu user={user} variant="sidebar" />
-      </SidebarFooter>
+      </SidebarFooterSlot>
 
       {/* No resize rail while collapsed — the edge is the hover-peek zone. */}
       {isExpanded && <SidebarRail />}
-    </Sidebar>
+    </SidebarShell>
   );
 }

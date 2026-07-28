@@ -25,9 +25,13 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
+import {
+  SidebarPlainLink,
+  SidebarSectionLabel,
+} from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { useIsMobile } from '@/hooks/utils';
 import { CUSTOMIZE_SECTION_ACCESS } from '@/lib/project-actions';
-import { PROJECT_NAV_ITEMS, projectSettingsHref } from '@/lib/project-nav';
+import { PROJECT_NAV_ITEMS, type ProjectNavItem, projectSettingsHref } from '@/lib/project-nav';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
@@ -60,31 +64,55 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   };
 
   return (
+    <ProjectNavGroup
+      items={visible}
+      hrefFor={(item) => `/projects/${projectId}/${item.segment}`}
+      isActive={(item) => !!pathname?.startsWith(`/projects/${projectId}/${item.segment}`)}
+      onNavigate={close}
+    />
+  );
+}
+
+/**
+ * The Customize group, presentational.
+ *
+ * Shared with the signed-out homepage, which has no project to gate against
+ * and sends every item to the sign-in gate instead of a route. Both surfaces
+ * render the same markup so they cannot drift apart.
+ */
+export function ProjectNavGroup({
+  items,
+  hrefFor,
+  isActive,
+  onNavigate,
+  onSelect,
+}: {
+  items: readonly ProjectNavItem[];
+  hrefFor?: (item: ProjectNavItem) => string;
+  isActive?: (item: ProjectNavItem) => boolean;
+  onNavigate?: () => void;
+  /** Used instead of a link when the surface has nowhere to navigate yet. */
+  onSelect?: (item: ProjectNavItem) => void;
+}) {
+  if (items.length === 0) return null;
+
+  return (
     <SidebarGroup className="py-0">
-      <SidebarGroupLabel className="text-muted-foreground/60 flex h-6 items-center px-2 text-[11px] font-medium tracking-wider uppercase">
-        Customize
-      </SidebarGroupLabel>
+      <SidebarSectionLabel>Customize</SidebarSectionLabel>
       <SidebarMenu>
-        {visible.map((item) => {
-          const href = `/projects/${projectId}/${item.segment}`;
-          const isActive = !!pathname?.startsWith(href);
-          return (
-            <SidebarMenuItem key={item.key}>
-              <SidebarMenuButton
-                asChild
-                size="sm"
-                className={cn(
-                  'text-muted-foreground hover:text-sidebar-foreground h-7 px-2 text-sm font-normal',
-                  isActive && 'text-sidebar-foreground font-medium',
-                )}
-              >
-                <Link href={href} onClick={close}>
-                  {item.label}
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          );
-        })}
+        {items.map((item) => (
+          <SidebarPlainLink
+            key={item.key}
+            href={hrefFor?.(item)}
+            isActive={isActive?.(item)}
+            onClick={() => {
+              onSelect?.(item);
+              onNavigate?.();
+            }}
+          >
+            {item.label}
+          </SidebarPlainLink>
+        ))}
       </SidebarMenu>
     </SidebarGroup>
   );

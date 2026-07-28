@@ -3,61 +3,98 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The anonymous homepage must not pull in the authenticated tree.
+ * Two things must stay true about the logged-out homepage.
  *
- * ProjectShell is a project data root (getProjectDetail, useGatewayCatalogSync,
- * BillingAccountProvider) and ComposerChatInput reaches for
- * useRuntimeSessions / useOpenCodeProviders, which fall back to the sandbox
- * runtime client when no project is present. Either one, mounted for an
- * anonymous visitor, is a 401 on every marketing visit.
+ * 1. It renders the SAME shell as the signed-in one. It is a preview of the
+ *    product, so a hand-rolled look-alike would drift and stop being one.
+ * 2. It does not pull in the authenticated data tree. ProjectShell is a project
+ *    data root and the real composer reaches for the sandbox runtime client
+ *    when no project is present — either one is a 401 on every anonymous visit.
  *
- * This is a source-level guard because the failure is an import, not a render.
+ * Source-level, because both failures are imports rather than renders.
  */
 
 const HERE = import.meta.dir;
 const SHELL = readFileSync(join(HERE, 'anonymous-home-shell.tsx'), 'utf8');
+const PROJECT_HOME = readFileSync(
+  join(HERE, '..', 'workspace', 'project-layout', 'project-home.tsx'),
+  'utf8',
+);
 
 /**
  * Only the code. The doc comment names the very symbols being banned — in
- * order to explain why they are banned — so a whole-file grep would flag its
- * own rationale.
+ * order to explain why — so a whole-file grep would flag its own rationale.
  */
 const SHELL_CODE = SHELL.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-const BANNED_IMPORTS = [
-  'ComposerChatInput',
-  'SessionChatInput',
-  'ProjectShell',
-  'AppProviders',
-  'BillingAccountProvider',
-  'useRuntimeSessions',
-  'useRuntimeProviders',
-  'useOpenCodeProviders',
-  'useOpenCodeAgents',
-  'useGatewayCatalogSync',
-  'getProjectDetail',
-  'useCustomizeStore',
-];
+describe('the logged-out shell reuses the real one', () => {
+  const SHARED = [
+    'SidebarProvider',
+    'SidebarInset',
+    'SidebarShell',
+    'SidebarBrandHeader',
+    'SidebarBody',
+    'SidebarNewButton',
+    'SidebarFooterSlot',
+    'SidebarSectionLabel',
+    'SidebarPlainLink',
+    'ProjectNavGroup',
+    'ProjectHomeWelcomeBody',
+  ];
 
-describe('anonymous home shell stays out of the authenticated tree', () => {
-  for (const symbol of BANNED_IMPORTS) {
+  for (const symbol of SHARED) {
+    test(`renders through the shared ${symbol}`, () => {
+      expect(SHELL_CODE).toContain(symbol);
+    });
+  }
+
+  test('takes the nav items from the same source as the sidebar', () => {
+    expect(SHELL_CODE).toContain('PROJECT_NAV_ITEMS');
+  });
+});
+
+describe('the logged-out shell stays out of the authenticated tree', () => {
+  const BANNED = [
+    'ComposerChatInput',
+    'SessionChatInput',
+    'ProjectShell',
+    'AppProviders',
+    'BillingAccountProvider',
+    'useRuntimeSessions',
+    'useRuntimeProviders',
+    'useOpenCodeProviders',
+    'useOpenCodeAgents',
+    'useGatewayCatalogSync',
+    'useCustomizeStore',
+    'ProjectSessionList',
+  ];
+
+  for (const symbol of BANNED) {
     test(`does not reference ${symbol}`, () => {
       expect(SHELL_CODE).not.toContain(symbol);
     });
   }
 
-  test('does not call the SDK at all', () => {
+  test('does not call the SDK or fetch directly', () => {
     expect(SHELL_CODE).not.toContain("from '@kortix/sdk'");
     expect(SHELL_CODE).not.toContain("from '@kortix/sdk/react'");
-  });
-
-  test('does not fetch', () => {
     expect(SHELL_CODE).not.toContain('useQuery');
-    expect(SHELL_CODE).not.toContain('fetch(');
   });
 });
 
-describe('anonymous home shell gates every action', () => {
+describe('the shared welcome body is safe to render with no project', () => {
+  test('its project-detail query is disabled without a project id', () => {
+    // ProjectHomeWelcomeBody is shared with the anonymous homepage, which has
+    // no project. An unguarded query there 401s on every visit.
+    expect(PROJECT_HOME).toContain('enabled: !!projectId');
+  });
+
+  test('the setup pills are suppressed when there is no project to set up', () => {
+    expect(PROJECT_HOME).toContain('setupTiles && projectId');
+  });
+});
+
+describe('the logged-out shell gates every action', () => {
   test('routes actions through the sign-in gate', () => {
     expect(SHELL_CODE).toContain('useSignInGate');
     expect(SHELL_CODE).toContain('gateWithPrompt');
@@ -78,7 +115,6 @@ describe('the / route never traps the user on a login wall', () => {
   const PAGE = readFileSync(join(HERE, '..', '..', 'app', '(app)', 'page.tsx'), 'utf8');
 
   test('does not redirect to /auth', () => {
-    // A backend blip must render the shell, not bounce to sign-in.
     expect(PAGE).not.toContain("redirect('/auth')");
     expect(PAGE).not.toContain('redirect("/auth")');
   });

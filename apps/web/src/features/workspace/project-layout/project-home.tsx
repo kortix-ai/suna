@@ -1,6 +1,6 @@
 'use client';
 
-import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
+import { type Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
@@ -8,14 +8,14 @@ import {
   CalendarClock,
   Container,
   FileCode,
+  type LucideIcon,
   Package,
   PanelLeft,
-  type LucideIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import type { IconType } from 'react-icons/lib';
 
 import { Badge } from '@/components/ui/badge';
@@ -34,18 +34,18 @@ import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import type { Command } from '@kortix/sdk/react';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { projectSettingsHref, resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
+  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
-  type SandboxTemplate,
 } from '@kortix/sdk';
+import type { Command } from '@kortix/sdk/react';
 import { chalkColors } from '@kortix/shared';
 import { HiOutlineViewGrid } from 'react-icons/hi';
 
@@ -223,17 +223,27 @@ export function ProjectHomeWelcomeBody({
   projectId,
   composer,
   onPickSuggestion,
+  setupTiles = true,
+  heading,
 }: {
+  /** Empty on the signed-out homepage, which has no project to name yet. */
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
   composer?: ReactNode;
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
+  /** The quiet setup pills. Off when there is no project to set up. */
+  setupTiles?: boolean;
+  /** Replaces the "Give <project> something to do" line. */
+  heading?: ReactNode;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
+    // The signed-out homepage renders this same body with no project. Firing
+    // the detail query there would 401 on every anonymous visit.
+    enabled: !!projectId,
     ...Q,
   });
   const name = detail.data?.project?.name ?? '';
@@ -244,9 +254,13 @@ export function ProjectHomeWelcomeBody({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
           <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
-            Give <span className="text-foreground">{displayName}</span>{' '}
-            {tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+            {heading ?? (
+              <>
+                Give <span className="text-foreground">{displayName}</span>{' '}
+                {tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+                )}
+              </>
             )}
           </h1>
 
@@ -259,9 +273,11 @@ export function ProjectHomeWelcomeBody({
         </div>
       </div>
 
-      <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections projectId={projectId} />
-      </div>
+      {setupTiles && projectId ? (
+        <div className="flex shrink-0 justify-center px-4 pb-6">
+          <ProjectHomeSections projectId={projectId} />
+        </div>
+      ) : null}
     </div>
   );
 }
