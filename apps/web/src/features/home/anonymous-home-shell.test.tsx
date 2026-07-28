@@ -93,8 +93,19 @@ describe('shared components are safe to render with no project', () => {
     expect(PROJECT_HOME).toContain('enabled: !!projectId');
   });
 
-  test('the setup pills are suppressed when there is no project to set up', () => {
-    expect(PROJECT_HOME).toContain('setupTiles && projectId');
+  test('the setup pills render with no project, pointing at sign-in', () => {
+    // They used to be suppressed without a project, which left the logged-out
+    // home visibly missing a whole row the signed-in home has — one of the
+    // tells that the two were different apps. They render now; the caller
+    // supplies where each pill points.
+    expect(SHELL_CODE).toContain('tileHrefFor');
+    expect(PROJECT_HOME).not.toContain('setupTiles && projectId');
+  });
+
+  test('a pill cannot link into a project that does not exist', () => {
+    // With no projectId and no override, resolveLegacyCustomizeHref would
+    // build "/projects//…". The null guard is what stops that.
+    expect(PROJECT_HOME).toContain(': projectId');
   });
 
   test('the session list does not fetch sessions without a project id', () => {

@@ -21,8 +21,17 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
+import { FolderOpen, Settings } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
-import { SidebarGroup, SidebarInset, SidebarMenu, SidebarProvider } from '@/components/ui/sidebar';
+import {
+  SidebarGroup,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from '@/components/ui/sidebar';
 import { AnonymousSectionPreview } from '@/features/home/anonymous-section-preview';
 import { AnonymousSectionTabs } from '@/features/home/anonymous-section-tabs';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
@@ -41,6 +50,9 @@ import {
 } from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { PROJECT_NAV_ITEMS, type ProjectNavKey } from '@/lib/project-nav';
 
+/** Where every gated pill/link points. Mirrors useSignInGate's target. */
+const SIGN_IN_HREF = `/auth?returnUrl=${encodeURIComponent('/')}`;
+
 const MARKETING_LINKS = [
   { label: 'Why Kortix', href: '/why' },
   { label: 'Pricing', href: '/pricing' },
@@ -57,7 +69,9 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
       <SidebarBrandHeader homeHref="/" />
 
       <SidebarBody>
-        <SidebarNewButton label="New" onClick={() => gate('/')} />
+        {/* Same label as the signed-in shell. "New" vs "New session" was one
+            of the tells that these were two different apps. */}
+        <SidebarNewButton label="New session" onClick={() => gate('/')} />
 
         <SidebarGroup className="min-h-0 flex-1 flex-col py-0">
           <div className="flex min-h-0 flex-1 flex-col space-y-2">
@@ -80,7 +94,35 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
           isActive={(item) => item.key === activeSection}
         />
 
+        {/* Files and Settings sit exactly where the signed-in shell puts them,
+            gated like everything else. Omitting them left a visibly shorter
+            sidebar than the real one. */}
         <SidebarGroup className="mt-auto py-0.5">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => gate('/')}
+                tooltip="Files"
+                className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+              >
+                <FolderOpen />
+                Files
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => gate('/')}
+                tooltip="Settings"
+                className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+              >
+                <Settings />
+                Settings
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+
+        <SidebarGroup className="py-0.5">
           <SidebarSectionLabel>Product</SidebarSectionLabel>
           <SidebarMenu>
             {MARKETING_LINKS.map((link) => (
@@ -131,8 +173,16 @@ export function AnonymousHomeShell() {
               starter chips — with no project behind it. */}
               <ProjectHomeWelcomeBody
                 projectId=""
-                heading="What do you want to get done?"
-                setupTiles={false}
+                heading={
+                  <>
+                    Give <span className="text-foreground">Kortix</span> something real to work on.
+                  </>
+                }
+                // The same pill row the signed-in home shows. Every pill gates
+                // to sign-in rather than pointing into a project that does not
+                // exist yet — the row is part of what the product looks like,
+                // so hiding it made the two shells differ.
+                tileHrefFor={() => SIGN_IN_HREF}
                 composer={
                   <ComposerChatInput
                     projectId={undefined}

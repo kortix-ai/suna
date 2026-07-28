@@ -10,7 +10,6 @@ import {
   FileCode,
   type LucideIcon,
   Package,
-  PanelLeft,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -29,11 +28,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { useSidebar } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { SidebarPeekToggle } from '@/features/workspace/project-sidebar/sidebar-peek-toggle';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { projectSettingsHref, resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
@@ -69,10 +68,6 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
-  const sidebarToggleLabel =
-    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
-
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
@@ -129,21 +124,10 @@ export function ProjectHome({
     <div
       className={cn('bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden px-4.5')}
     >
-      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
-        <SessionWelcome />
-      </div>
-      <Button
-        type="button"
-        aria-label={sidebarToggleLabel}
-        variant="ghost"
-        size="icon"
-        onClick={toggleSidebar}
-        onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
-        onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
+      {/* The shared control, which hides itself while the sidebar is open —
+          the panel carries its own collapse button in its header, and two of
+          them a few pixels apart is what this replaces. */}
+      <SidebarPeekToggle className="absolute top-2 left-2 z-20" />
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint
@@ -224,6 +208,7 @@ export function ProjectHomeWelcomeBody({
   composer,
   onPickSuggestion,
   setupTiles = true,
+  tileHrefFor,
   heading,
 }: {
   /** Empty on the signed-out homepage, which has no project to name yet. */
@@ -234,6 +219,11 @@ export function ProjectHomeWelcomeBody({
   onPickSuggestion?: (text: string) => void;
   /** The quiet setup pills. Off when there is no project to set up. */
   setupTiles?: boolean;
+  /**
+   * Where a setup pill points. The signed-out homepage overrides this to send
+   * every pill to sign-in, so the row still renders and both shells match.
+   */
+  tileHrefFor?: (section: CustomizeSection) => string | null;
   /** Replaces the "Give <project> something to do" line. */
   heading?: ReactNode;
 }) {
@@ -250,8 +240,14 @@ export function ProjectHomeWelcomeBody({
   const displayName = name.trim() || 'this project';
 
   return (
-    <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* The backdrop lives HERE, not in ProjectHome, so the signed-out
+          homepage renders the same surface. When it sat one level up, the two
+          shells differed by a whole background and read as different apps. */}
+      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+        <SessionWelcome />
+      </div>
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
           <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
             {heading ?? (
@@ -291,9 +287,9 @@ export function ProjectHomeWelcomeBody({
         </div>
       </div>
 
-      {setupTiles && projectId ? (
-        <div className="flex shrink-0 justify-center px-4 pb-6">
-          <ProjectHomeSections projectId={projectId} />
+      {setupTiles ? (
+        <div className="relative z-10 flex shrink-0 justify-center px-4 pb-6">
+          <ProjectHomeSections projectId={projectId} hrefFor={tileHrefFor} />
         </div>
       ) : null}
     </div>
@@ -494,14 +490,24 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
   },
 ];
 
-function ProjectHomeSections({ projectId }: { projectId: string }) {
+function ProjectHomeSections({
+  projectId,
+  hrefFor,
+}: {
+  projectId: string;
+  hrefFor?: (section: CustomizeSection) => string | null;
+}) {
   const tiles = PROJECT_SETUP_TILES;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
         const { icon: TileIcon, title, desc, section } = tile;
-        const href = resolveLegacyCustomizeHref(projectId, section);
+        const href = hrefFor
+          ? hrefFor(section)
+          : projectId
+            ? resolveLegacyCustomizeHref(projectId, section)
+            : null;
         if (!href) return null;
 
         return (
