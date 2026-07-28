@@ -164,6 +164,7 @@ jobs:
         # never writes DNS.
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ vars.CLOUDFLARE_ZONE_ID }}
         run: |
           set -uo pipefail
           terraform -chdir="${{ matrix.root }}" init -input=false -no-color
