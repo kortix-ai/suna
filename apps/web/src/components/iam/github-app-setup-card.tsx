@@ -25,6 +25,22 @@ import {
 const GITHUB_APP_STATUS_KEY = ['managed-github-status'];
 const GITHUB_CANDIDATES_KEY = ['managed-github-candidates'];
 
+const REQUIRED_MANAGED_GITHUB_PERMISSIONS = [
+  { key: 'administration', label: 'Administration: read and write', level: 'write' },
+  { key: 'contents', label: 'Contents: read and write', level: 'write' },
+  { key: 'metadata', label: 'Metadata: read', level: 'read' },
+  { key: 'pull_requests', label: 'Pull requests: read and write', level: 'write' },
+] as const;
+
+function missingManagedGitHubPermissions(candidate: ManagedGitHubCandidate): string[] {
+  if (Object.keys(candidate.permissions).length === 0) return [];
+  return REQUIRED_MANAGED_GITHUB_PERMISSIONS.flatMap(({ key, label, level }) => {
+    const actual = candidate.permissions[key];
+    const allowed = actual === 'write' || (level === 'read' && actual === 'read');
+    return allowed ? [] : [label];
+  });
+}
+
 function useGitHubAppStatus(enabled = true) {
   return useQuery({
     queryKey: GITHUB_APP_STATUS_KEY,
@@ -246,6 +262,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
               reconnectMutation.variables === candidate.connection_id;
             const selecting =
               selectMutation.isPending && selectMutation.variables === candidate.connection_id;
+            const missingPermissions = missingManagedGitHubPermissions(candidate);
             return (
               <div
                 key={candidate.connection_id}
@@ -264,6 +281,11 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                       <span>Installation {candidate.installation_id}</span>
                     ) : null}
                   </div>
+                  {missingPermissions.length > 0 ? (
+                    <p className="text-destructive text-xs">
+                      Required GitHub App permissions: {missingPermissions.join(', ')}.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-2">

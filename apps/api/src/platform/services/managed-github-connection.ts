@@ -7,7 +7,11 @@ import type {
   NangoConnection,
   NangoConnectionSummary,
 } from '../../projects/nango/client';
-import { githubReconnectRequired, invalidNangoResponse } from '../../projects/nango/errors';
+import {
+  githubInsufficientPermissions,
+  githubReconnectRequired,
+  invalidNangoResponse,
+} from '../../projects/nango/errors';
 import {
   type ManagedGithubCredential,
   buildManagedNangoTags,
@@ -75,6 +79,24 @@ export interface ManagedGithubConnectionServiceDependencies {
     installationId: string;
     appJwt: string;
   }): Promise<GitHubAppInstallation>;
+}
+
+const requiredManagedGithubPermissions = [
+  ['administration', 'write'],
+  ['contents', 'write'],
+  ['metadata', 'read'],
+  ['pull_requests', 'write'],
+] as const;
+
+export function missingManagedGithubPermissions(
+  permissions: Record<string, unknown>,
+): string[] {
+  return requiredManagedGithubPermissions.flatMap(([name, required]) => {
+    const actual = permissions[name];
+    const allowed =
+      actual === 'write' || (required === 'read' && actual === 'read');
+    return allowed ? [] : [name];
+  });
 }
 
 function normalizeEnvironmentUrl(value: string): string {
@@ -198,6 +220,7 @@ export function createManagedGithubConnectionService(
       ) {
         throw invalidNangoResponse();
       }
+      const missingPermissions = missingManagedGithubPermissions(credential.permissions);
 
       return {
         connectionId: connection.connectionId,
@@ -205,7 +228,7 @@ export function createManagedGithubConnectionService(
         displayName: tags.displayName,
         installationId: credential.installationId,
         owner: { login: ownerLogin, type: 'Organization' },
-        status: 'connected',
+        status: missingPermissions.length === 0 ? 'connected' : 'error',
         selected: selected?.connectionId === connection.connectionId,
         ...(credential.repositorySelection
           ? { repositorySelection: credential.repositorySelection }
@@ -247,6 +270,12 @@ export function createManagedGithubConnectionService(
   ): Promise<ManagedGithubCandidate> => {
     const summary = await findCandidate(connectionId);
     const candidate = await inspectConnection(summary, null);
+    if (
+      Object.keys(candidate.permissions).length > 0 &&
+      missingManagedGithubPermissions(candidate.permissions).length > 0
+    ) {
+      throw githubInsufficientPermissions();
+    }
     if (candidate.status !== 'connected' || !candidate.installationId || !candidate.owner) {
       throw githubReconnectRequired(401);
     }
@@ -359,6 +388,9 @@ export function createManagedGithubConnectionService(
       integrationId: selected.integrationId,
     });
     if (credential.installationId !== selected.installationId) throw invalidNangoResponse();
+    if (missingManagedGithubPermissions(credential.permissions).length > 0) {
+      throw githubInsufficientPermissions();
+    }
     return { credential, setting: selected };
   };
 

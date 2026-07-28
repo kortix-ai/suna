@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { createManagedGithubRouter } from '../platform/routes/managed-github';
+import { githubInsufficientPermissions } from '../projects/nango/errors';
 import type {
   ManagedGithubCandidate,
   ManagedGithubConnectionService,
@@ -213,5 +214,26 @@ describe('managed GitHub platform routes', () => {
       `reconnect:managed-connection:${adminUserId}`,
       'disconnect',
     ]);
+  });
+
+  test('maps an unusable GitHub App permission set to the stable error contract', async () => {
+    const router = app({
+      ...fixture.service,
+      selectCandidate: async () => {
+        throw githubInsufficientPermissions();
+      },
+    });
+
+    const response = await router.request('/v1/platform/github-app/select', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ connection_id: 'managed-connection' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'The GitHub connection does not grant the required permissions.',
+      code: 'github_insufficient_permissions',
+    });
   });
 });

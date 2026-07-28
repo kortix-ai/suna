@@ -1,10 +1,13 @@
 export type NangoErrorCode =
+  | 'github_insufficient_permissions'
   | 'github_provider_failed'
   | 'github_provider_rate_limited'
   | 'github_reconnect_required'
   | 'nango_unavailable';
 
 const messages: Record<NangoErrorCode, string> = {
+  github_insufficient_permissions:
+    'The GitHub connection does not grant the required permissions.',
   github_provider_failed: 'The GitHub credential broker returned an invalid response.',
   github_provider_rate_limited: 'The GitHub credential broker rate-limited the request.',
   github_reconnect_required: 'The GitHub connection must be reconnected.',
@@ -52,6 +55,10 @@ export function nangoRateLimited(retryAfter?: string): NangoError {
 
 export function githubReconnectRequired(upstreamStatus: number): NangoError {
   return new NangoError('github_reconnect_required', 409, { upstreamStatus });
+}
+
+export function githubInsufficientPermissions(): NangoError {
+  return new NangoError('github_insufficient_permissions', 403);
 }
 
 export function isNangoError(error: unknown): error is NangoError {

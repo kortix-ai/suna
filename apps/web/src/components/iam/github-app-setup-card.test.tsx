@@ -32,6 +32,12 @@ describe('managed GitHub setup card', () => {
     );
   });
 
+  test('identifies managed connections with missing write permissions', () => {
+    expect(source).toContain('missingManagedGitHubPermissions');
+    expect(source).toContain('Contents: read and write');
+    expect(source).toContain('Pull requests: read and write');
+  });
+
   test('does not expose legacy App, private-key, or PAT setup inputs', () => {
     expect(source).not.toContain('startGitHubAppManifest');
     expect(source).not.toContain('setGitHubAppFromExisting');

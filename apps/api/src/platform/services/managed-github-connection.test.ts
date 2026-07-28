@@ -52,7 +52,12 @@ function connection(
       access_token: `installation-token-${connectionId}`,
       expires_at: '2026-07-27T22:00:00.000Z',
       raw: {
-        permissions: { administration: 'write', contents: 'write' },
+        permissions: {
+          administration: 'write',
+          contents: 'write',
+          metadata: 'read',
+          pull_requests: 'write',
+        },
         repository_selection: 'all',
       },
     },
@@ -127,7 +132,12 @@ function makeFixture() {
         type: 'Organization',
       },
       repository_selection: 'all',
-      permissions: { administration: 'write', contents: 'write' },
+      permissions: {
+        administration: 'write',
+        contents: 'write',
+        metadata: 'read',
+        pull_requests: 'write',
+      },
     }),
   });
 
@@ -229,6 +239,58 @@ describe('managed GitHub Nango connection lifecycle', () => {
 
     expect(status.configured).toBe(false);
     expect(status.selected?.status).toBe('error');
+  });
+
+  test('rejects a candidate that cannot write repository contents or pull requests', async () => {
+    fixture.setConnections([
+      connection('managed-read-only', '101', 'Read only', {
+        credentials: {
+          type: 'APP',
+          access_token: 'installation-token-read-only',
+          raw: {
+            permissions: {
+              administration: 'write',
+              contents: 'read',
+              metadata: 'read',
+            },
+            repository_selection: 'all',
+          },
+        },
+      }),
+    ]);
+
+    const [candidate] = await fixture.service.listCandidates();
+
+    expect(candidate).toMatchObject({
+      connectionId: 'managed-read-only',
+      status: 'error',
+      permissions: {
+        administration: 'write',
+        contents: 'read',
+        metadata: 'read',
+      },
+    });
+    await expect(
+      fixture.service.selectCandidate('managed-read-only', adminUserId),
+    ).rejects.toMatchObject({
+      code: 'github_insufficient_permissions',
+      status: 403,
+    });
+
+    fixture.setSelected({
+      schemaVersion: 1,
+      connectionId: 'managed-read-only',
+      integrationId,
+      installationId: '101',
+      owner: { login: 'kortix-engineering', type: 'Organization' },
+      status: 'connected',
+      selectedByUserId: adminUserId,
+      selectedAt: '2026-07-27T21:00:00.000Z',
+    });
+    await expect(fixture.service.resolveSelectedCredential()).rejects.toMatchObject({
+      code: 'github_insufficient_permissions',
+      status: 403,
+    });
   });
 
   test('reconnects the requested candidate with the same connection ID', async () => {
