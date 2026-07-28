@@ -34,6 +34,7 @@ import { ProjectSessionList } from '@/features/workspace/project-sidebar/project
 import {
   SidebarBody,
   SidebarBrandHeader,
+  SidebarFooterSlot,
   SidebarNewButton,
   SidebarSectionLabel,
   SidebarShell,
@@ -80,9 +81,15 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
         />
       </SidebarBody>
 
-      {/* No Product group and no footer button. The marketing nav and sign-in
-          live in the top bar, so the sidebar itself is the same panel signed in
-          or out. */}
+      {/* The footer slot the signed-in sidebar puts the profile in. Signed out
+          it holds Sign in — same slot, same shape, so the panel does not lose a
+          row when there is no account. The marketing nav lives in the top bar;
+          this does not. */}
+      <SidebarFooterSlot>
+        <Button type="button" size="sm" className="w-full" onClick={() => gate('/')}>
+          Sign in
+        </Button>
+      </SidebarFooterSlot>
     </SidebarShell>
   );
 }

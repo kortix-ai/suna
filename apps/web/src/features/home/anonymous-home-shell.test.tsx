@@ -39,6 +39,7 @@ describe('the logged-out shell reuses the real one', () => {
     'SidebarShell',
     'SidebarBrandHeader',
     'SidebarBody',
+    'SidebarFooterSlot',
     'SidebarNewButton',
     'SidebarSectionLabel',
     'ProjectNavGroup',
@@ -159,7 +160,13 @@ describe('the logged-out shell gates every action', () => {
 
   test('the sidebar carries no marketing links of its own', () => {
     expect(SHELL_CODE).not.toContain('/pricing');
-    expect(SHELL_CODE).not.toContain('SidebarFooterSlot');
+  });
+
+  test('the footer slot still holds Sign in, where the profile sits signed in', () => {
+    // Moving the marketing nav to the top bar took this with it; the slot is
+    // part of the panel's shape, not part of the marketing nav.
+    expect(SHELL_CODE).toContain('SidebarFooterSlot');
+    expect(SHELL_CODE).toContain('Sign in');
   });
 });
 
