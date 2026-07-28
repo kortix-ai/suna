@@ -174,6 +174,8 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
+  isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],

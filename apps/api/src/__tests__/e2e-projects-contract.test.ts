@@ -185,6 +185,8 @@ mock.module('../projects/git', () => ({
     }
     return `content:${path}@${ref}`;
   },
+  RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
+  isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
     archiveCalls.push({ projectId: project.projectId, ref, path: path ?? null });
@@ -596,6 +598,8 @@ describe('projects API contract', () => {
       listRepoFiles: async () => repoFiles,
       loadProjectConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),
       readRepoFile: async () => '',
+      RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
+      isRepoFileNotFoundError: () => false,
       readManifestFromRepo: async () => null,
       archiveRepoSubtree: async (_p: any, _r: string, path?: string | null) => {
         if (path && path.startsWith('/')) throw new Error('Invalid path');

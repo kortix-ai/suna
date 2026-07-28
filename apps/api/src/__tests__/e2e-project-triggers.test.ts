@@ -149,6 +149,8 @@ mock.module('../projects/git', () => ({
     if (content === undefined) throw new Error(`Not found: ${path}`);
     return content;
   },
+  RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
+  isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
     manifestReadCalls += 1;
     for (const path of candidatePaths) {
