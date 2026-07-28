@@ -489,11 +489,16 @@ flow(
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/credential',
       'PUT /v1/projects/:projectId/connector-profiles/:profileId/revoke',
       'POST /v1/projects/:projectId/connector-profiles/me',
+      'GET /v1/projects/:projectId/connector-profiles/all',
+      'PUT /v1/projects/:projectId/connector-profiles/:profileId/default',
+      'GET /v1/projects/:projectId/connector-profiles/:profileId/policies',
+      'PUT /v1/projects/:projectId/connector-profiles/:profileId/policies',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-mcp-${Date.now().toString(36)}`;
+    const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
 
     await ctx.step('seed a real connector to hang a profile off (mcp provider)', async () => {
       // auth explicitly set (not omitted) so the create route skips its
@@ -532,18 +537,16 @@ flow(
 
     let profileId = '';
     await ctx.step('create (reconcile) a connection profile → 201 with a real shape', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/connector-profiles',
-          {
-            connector_alias: slug,
-            owner_type: 'external',
-            owner_id: 'ke2e-external-owner-1',
-            label: 'KE2E connection',
-          },
-          { params: { projectId: p.id } },
-        );
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/connector-profiles',
+        {
+          connector_alias: slug,
+          owner_type: 'external',
+          owner_id: 'ke2e-external-owner-1',
+          label: 'KE2E connection',
+        },
+        { params: { projectId: p.id } },
+      );
       r.status(201)
         .body()
         .has('$.connector_alias', slug)
@@ -581,6 +584,91 @@ flow(
         .exists('$.owner_id')
         .exists('$.profile_id');
       memberProfileId = r.json<any>().profile_id;
+    });
+
+    // ── /all roster (manage-gated) + /default + /policies ──────────────────
+    await ctx.step(
+      'GET /connector-profiles/all → 200 roster (manage-gated, narrow shape)',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/connector-profiles/all', { params: { projectId: p.id } });
+        r.status(200).body().exists('$.profiles');
+        // The roster deliberately excludes label/metadata (personal identifiers) —
+        // only identity + status. Pin that the narrow shape holds.
+        for (const row of r.json<{ profiles: Array<Record<string, unknown>> }>().profiles ?? []) {
+          if ('label' in row) throw new Error('roster leaked a `label` (personal annotation)');
+          if ('metadata' in row) throw new Error('roster leaked `metadata`');
+        }
+      },
+    );
+    await ctx.step(
+      'PUT /connector-profiles/:profileId/default → 200 ok (make member profile the default)',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(
+            '/v1/projects/:projectId/connector-profiles/:profileId/default',
+            {},
+            { params: { projectId: p.id, profileId: memberProfileId } },
+          );
+        r.status(200).body().has('$.ok', true);
+      },
+    );
+    await ctx.step(
+      'GET /connector-profiles/:profileId/policies → 200 with policies array',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/connector-profiles/:profileId/policies', {
+            params: { projectId: p.id, profileId: memberProfileId },
+          });
+        r.status(200).body().exists('$.policies');
+      },
+    );
+    await ctx.step(
+      'PUT /connector-profiles/:profileId/policies (replace with one allow rule) → 200 ok',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(
+            '/v1/projects/:projectId/connector-profiles/:profileId/policies',
+            { policies: [{ match: 'github.*', action: 'allow' }] },
+            { params: { projectId: p.id, profileId: memberProfileId } },
+          );
+        r.status(200).body().has('$.ok', true);
+      },
+    );
+    await ctx.step(
+      'PUT policies with an invalid match pattern → 400 (INVALID_MATCHER)',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(
+            '/v1/projects/:projectId/connector-profiles/:profileId/policies',
+            { policies: [{ match: '[unclosed', action: 'allow' }] },
+            { params: { projectId: p.id, profileId: memberProfileId } },
+          );
+        r.status(400);
+      },
+    );
+    await ctx.step('policies on an unknown profileId → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/policies', {
+          params: { projectId: p.id, profileId: ZERO_UUID },
+        });
+      r.status(404);
+    });
+    await ctx.step('default on an unknown profileId → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/connector-profiles/:profileId/default',
+          {},
+          { params: { projectId: p.id, profileId: ZERO_UUID } },
+        );
+      r.status(404);
     });
 
     await ctx.step('profile OAuth routes reject a non-Pipedream connector → 404/501', async () => {
@@ -695,11 +783,13 @@ flow(
       { params: { projectId: p.id } },
     );
     connector.status(200);
-    const defaultProfile = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
-      {},
-      { params: { projectId: p.id, slug } },
-    );
+    const defaultProfile = await ctx.client
+      .as(ctx.P.OWNER)
+      .post(
+        '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+        {},
+        { params: { projectId: p.id, slug } },
+      );
     defaultProfile.status(200).body().exists('$.profile_id');
     const created = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/projects/:projectId/connector-profiles',
@@ -727,10 +817,11 @@ flow(
         { params: { projectId: p.id, profileId } },
       );
       saved.status(200).body().has('$.ok', true);
-      const read = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application',
-        { params: { projectId: p.id, profileId } },
-      );
+      const read = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application', {
+          params: { projectId: p.id, profileId },
+        });
       read
         .status(200)
         .body()
@@ -739,35 +830,38 @@ flow(
     });
 
     await ctx.step('start Authorization Code with PKCE and read ready status', async () => {
-      const started = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize',
-        {},
-        { params: { projectId: p.id, profileId } },
-      );
-      started
-        .status(200)
-        .body()
-        .exists('$.authorization_url')
-        .exists('$.expires_at');
-      const status = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status',
-        { params: { projectId: p.id, profileId } },
-      );
+      const started = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize',
+          {},
+          { params: { projectId: p.id, profileId } },
+        );
+      started.status(200).body().exists('$.authorization_url').exists('$.expires_at');
+      const status = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status', {
+          params: { projectId: p.id, profileId },
+        });
       status.status(200).body().has('$.status', 'ready');
     });
 
     await ctx.step('reject SSRF discovery and unavailable device endpoints', async () => {
-      const discovery = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
-        { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
-        { params: { projectId: p.id, profileId } },
-      );
+      const discovery = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
+          { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
+          { params: { projectId: p.id, profileId } },
+        );
       discovery.status(400);
-      const device = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device',
-        {},
-        { params: { projectId: p.id, profileId } },
-      );
+      const device = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device',
+          {},
+          { params: { projectId: p.id, profileId } },
+        );
       device.status(400);
       const poll = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device/:sessionId',
@@ -805,11 +899,9 @@ flow(
   },
   async (ctx) => {
     await ctx.step('GET with a bogus token → 404 (invalid/unknown link)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/setup-links/connector/:token', {
-          params: { token: 'bogus-connector-setup-link' },
-        });
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/setup-links/connector/:token', {
+        params: { token: 'bogus-connector-setup-link' },
+      });
       r.status(404).body().exists('$.error');
     });
     await ctx.step('POST .../start with a bogus token → 404 (invalid/unknown link)', async () => {

@@ -757,3 +757,73 @@ flow(
     });
   },
 );
+
+// SESS-MODEL — PUT /v1/projects/:projectId/sessions/:sessionId/model
+// (apps/api/src/projects/routes/r7.ts:1968-2098). Change a RUNNING session's
+// model. The full positive path needs a funded, live session (it restarts
+// opencode + re-points the agent); the BOUNDARIES are assertable without one:
+// an unknown session 404s, a malformed session id 400s, ANON 401s, and an
+// unknown project 404s — proving the route is mounted + its auth/shape gates
+// fire before any live-sandbox work. Covers the route for the coverage gate.
+flow(
+  'SESS-MODEL',
+  {
+    domain: 'sessions',
+    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/model'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'anthropic/claude-sonnet-4-6' },
+          { params: { projectId: p.id, sessionId: ZERO_UUID } },
+        );
+      r.status(401);
+    });
+    await ctx.step('invalid (non-uuid) session id → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'anthropic/claude-sonnet-4-6' },
+          { params: { projectId: p.id, sessionId: 'not-a-uuid' } },
+        );
+      r.status(400);
+    });
+    await ctx.step('unknown projectId → 404 (project not loadable)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'anthropic/claude-sonnet-4-6' },
+          { params: { projectId: ZERO_UUID, sessionId: ZERO_UUID } },
+        );
+      r.status(404);
+    });
+    await ctx.step('unknown session (valid uuid) → 404 (session not found)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'anthropic/claude-sonnet-4-6' },
+          { params: { projectId: p.id, sessionId: ZERO_UUID } },
+        );
+      r.status(404);
+    });
+    await ctx.step('NONMEMBER → 403/404 (no project access)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/model',
+          { opencode_model: 'anthropic/claude-sonnet-4-6' },
+          { params: { projectId: p.id, sessionId: ZERO_UUID } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
