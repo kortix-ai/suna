@@ -35,7 +35,7 @@ export function MarketingFooter() {
             className="flex size-44 items-center justify-center rounded-[1.5rem]"
             style={{
               background:
-                'linear-gradient(180deg, color-mix(in oklab, var(--kortix-blue) 82%, #123a63) 0%, color-mix(in oklab, var(--kortix-blue) 22%, white) 100%)',
+                'linear-gradient(180deg, color-mix(in oklab, var(--kortix-blue) 88%, black) 0%, var(--kortix-blue) 45%, color-mix(in oklab, var(--kortix-blue) 30%, white) 100%)',
             }}
           >
             <KortixLogo size={56} variant="symbol" className="text-white" />

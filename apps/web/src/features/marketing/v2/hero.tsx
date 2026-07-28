@@ -26,11 +26,13 @@ export function Hero() {
         className="pointer-events-none absolute inset-0 -z-10"
         style={
           {
-            '--field-1': 'color-mix(in oklab, var(--kortix-blue) 72%, #123a63)',
-            '--field-2': 'color-mix(in oklab, var(--kortix-blue) 60%, #1b4675)',
-            '--field-3': 'color-mix(in oklab, var(--kortix-blue) 18%, var(--background))',
+            // every stop is the Kortix accent itself, only shaded — never mixed
+            // with a foreign navy, which is what dulls the hue.
+            '--field-1': 'color-mix(in oklab, var(--kortix-blue) 88%, black)',
+            '--field-2': 'var(--kortix-blue)',
+            '--field-3': 'color-mix(in oklab, var(--kortix-blue) 32%, var(--background))',
             background:
-              'linear-gradient(177deg, var(--field-1) 0%, var(--field-2) 42%, var(--field-3) 74%, var(--background) 100%)',
+              'linear-gradient(172deg, var(--field-1) 0%, var(--field-2) 44%, var(--field-3) 78%, var(--background) 100%)',
           } as React.CSSProperties
         }
       >
