@@ -4,6 +4,7 @@ import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
   extractFirstPromptText,
+  extractPromptModel,
   generateSessionTitleFromFirstPrompt,
   sanitizeGeneratedTitle,
 } from '../projects/session-title-generate';
@@ -85,18 +86,52 @@ describe('extractFirstPromptText', () => {
   });
 });
 
+describe('extractPromptModel', () => {
+  it('reads the kortix-namespace pick as the bare wire id (REST body.model)', () => {
+    const body = bodyOf({
+      parts: [{ type: 'text', text: 'go' }],
+      model: { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' },
+    });
+    expect(extractPromptModel(body, headers())).toBe('codex/gpt-5.6-sol');
+  });
+
+  it('reads an ACP params.model and a BYOK provider pair', () => {
+    const acp = bodyOf({
+      method: 'session/prompt',
+      params: { model: { providerID: 'kortix', modelID: 'glm-5.2' } },
+    });
+    expect(extractPromptModel(acp, headers())).toBe('glm-5.2');
+    const byok = bodyOf({
+      parts: [],
+      model: { providerID: 'anthropic', modelID: 'claude-sonnet-4.6' },
+    });
+    expect(extractPromptModel(byok, headers())).toBe('anthropic/claude-sonnet-4.6');
+  });
+
+  it('accepts a string model and returns null when absent', () => {
+    expect(extractPromptModel(bodyOf({ model: 'kortix/glm-5.2' }), headers())).toBe('glm-5.2');
+    expect(
+      extractPromptModel(bodyOf({ parts: [{ type: 'text', text: 'x' }] }), headers()),
+    ).toBeNull();
+    expect(extractPromptModel(undefined, headers())).toBeNull();
+  });
+});
+
 describe('generateSessionTitleFromFirstPrompt', () => {
   function harness(over: Partial<GenerateSessionTitleOptions> & { row?: ProjectSessionRow } = {}) {
     const persisted: string[] = [];
     const minted: string[] = [];
     const revoked: string[] = [];
+    const models: string[] = [];
     let generateCalls = 0;
     const options: GenerateSessionTitleOptions = {
-      loadRow: async () => over.row ?? row({ opencode_model: 'codex/gpt-5.6-sol' }),
+      loadRow: async () =>
+        over.row ?? row({ opencode_model: 'amazon-bedrock/jp.anthropic.claude-opus-5' }),
       generate:
         over.generate ??
-        (async () => {
+        (async (model) => {
           generateCalls += 1;
+          models.push(model);
           return '"Set Up MS Graph"';
         }),
       mintKey:
@@ -116,7 +151,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
           persisted.push(title);
         }),
     };
-    return { options, persisted, minted, revoked, generateCalls: () => generateCalls };
+    return { options, persisted, minted, revoked, models, generateCalls: () => generateCalls };
   }
 
   const input = {
@@ -127,9 +162,28 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     firstPromptText: 'Please set up the MS Graph OAuth2 connector',
   };
 
+  it('titles with the LIVE picked model (modelHint), not the stale opencode_model', async () => {
+    const h = harness(); // row.opencode_model is the stale/broken bedrock default
+    await generateSessionTitleFromFirstPrompt(
+      { ...input, modelHint: 'codex/gpt-5.6-sol' },
+      h.options,
+    );
+    expect(h.models).toEqual(['codex/gpt-5.6-sol']);
+    expect(h.persisted).toEqual(['Set Up MS Graph']);
+  });
+
+  it('falls back to opencode_model when the prompt carries no model', async () => {
+    const h = harness({ row: row({ opencode_model: 'kortix/glm-5.2' }) });
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+    expect(h.models).toEqual(['glm-5.2']);
+  });
+
   it('generates, sanitizes, and persists a title; always revokes the key', async () => {
     const h = harness();
-    await generateSessionTitleFromFirstPrompt(input, h.options);
+    await generateSessionTitleFromFirstPrompt(
+      { ...input, modelHint: 'codex/gpt-5.6-sol' },
+      h.options,
+    );
     expect(h.persisted).toEqual(['Set Up MS Graph']);
     expect(h.revoked).toEqual(['key-1']);
   });

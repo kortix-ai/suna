@@ -20,6 +20,7 @@ import {
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import {
   extractFirstPromptText,
+  extractPromptModel,
   generateSessionTitleFromFirstPrompt,
 } from '../../projects/session-title-generate';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -773,6 +774,7 @@ export async function forwardToSandbox(
               accountId: record.accountId,
               userId,
               firstPromptText,
+              modelHint: extractPromptModel(body, incomingHeaders) ?? undefined,
             });
           }
         }
@@ -1065,6 +1067,7 @@ export async function forwardToSandbox(
               accountId: record.accountId,
               userId,
               firstPromptText,
+              modelHint: extractPromptModel(body, incomingHeaders) ?? undefined,
             });
           }
         }

@@ -93,6 +93,42 @@ export function extractFirstPromptText(
   }
 }
 
+/** The model the user picked for THIS turn, in gateway wire form, read from the
+ *  prompt body — REST `body.model` or ACP `body.params.model`, shaped
+ *  `{ providerID, modelID }` (opencode's per-send override) or a bare string.
+ *  This is the LIVE model actually used, unlike the session's stale boot-default
+ *  `opencode_model`. Returns null when the body carries no model. */
+export function extractPromptModel(
+  body: ArrayBuffer | undefined,
+  incomingHeaders: Headers,
+): string | null {
+  if (!body) return null;
+  if (!(incomingHeaders.get('content-type') ?? '').toLowerCase().includes('application/json'))
+    return null;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+      model?: unknown;
+      params?: { model?: unknown };
+    };
+    const raw = parsed.model ?? parsed.params?.model;
+    if (!raw) return null;
+    if (typeof raw === 'string') return toWireModel(raw.trim()) || null;
+    if (typeof raw === 'object') {
+      const m = raw as { providerID?: unknown; modelID?: unknown };
+      const modelId = typeof m.modelID === 'string' ? m.modelID.trim() : '';
+      const providerId = typeof m.providerID === 'string' ? m.providerID.trim() : '';
+      if (!modelId) return null;
+      // opencode's synthetic `kortix` provider already carries the full gateway
+      // wire id in modelID (e.g. `codex/gpt-5.6-sol`, `glm-5.2`); any other
+      // provider is a BYOK `provider/model` pair.
+      return providerId && providerId !== 'kortix' ? `${providerId}/${modelId}` : modelId;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function contentToString(content: unknown): string | null {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -177,6 +213,10 @@ export interface GenerateSessionTitleInput {
   accountId: string;
   userId: string;
   firstPromptText: string;
+  /** The model the user actually picked for this turn (gateway wire form, from
+   *  the prompt body). Preferred over the session's stale boot-default
+   *  `opencode_model`, which goes out of date the moment the model is switched. */
+  modelHint?: string;
 }
 
 /** Injectable seams so unit tests run without process-global module mocks. */
@@ -228,9 +268,12 @@ export async function generateSessionTitleFromFirstPrompt(
     const row = await load(input.sessionId, input.projectId);
     if (!row || !needsTitle(row)) return;
 
-    const model = sessionModel(row);
+    // Prefer the model the user actually picked for this turn (from the prompt
+    // body); the session's stored `opencode_model` is only the boot default and
+    // goes stale the moment the model is switched.
+    const model = input.modelHint?.trim() || sessionModel(row);
     if (!model) {
-      appLogger.warn('[title-generate] no session model to title with', {
+      appLogger.warn('[title-generate] no model to title with', {
         sessionId: input.sessionId,
       });
       return;
