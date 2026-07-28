@@ -41,7 +41,7 @@ describe('the logged-out shell reuses the real one', () => {
     'SidebarBody',
     'SidebarNewButton',
     'SidebarFooterSlot',
-    'SidebarSectionLabel',
+    'SidebarNavRow',
     'SidebarPlainLink',
     'ProjectNavGroup',
     'ProjectHomeWelcomeBody',

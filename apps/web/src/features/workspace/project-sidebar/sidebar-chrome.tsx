@@ -14,7 +14,7 @@
  * each caller.
  */
 
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
@@ -99,7 +99,67 @@ export function SidebarNewButton({ label, onClick }: { label: string; onClick: (
   );
 }
 
-/** The quiet uppercase group label (SESSIONS, CUSTOMIZE). */
+/**
+ * A top-level sidebar row: icon, sentence-case label, one line.
+ *
+ * Every primary entry is one of these — Sessions, Files, Customize, Settings —
+ * so they read as one family. The reference has no uppercase micro-labels
+ * anywhere; mixing a tiny SESSIONS caption with an icon-bearing Files row is
+ * exactly what made this look unfinished.
+ * See ux-references/perplexity/01-home-search.png.
+ */
+export function SidebarNavRow({
+  icon: RowIcon,
+  label,
+  href,
+  onClick,
+  isActive,
+  trailing,
+  className,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: ReactNode;
+  href?: string;
+  onClick?: () => void;
+  isActive?: boolean;
+  /** Right-aligned affordance (a filter menu, a count). */
+  trailing?: ReactNode;
+  className?: string;
+}) {
+  const body = (
+    <>
+      <RowIcon className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+    </>
+  );
+
+  const buttonClass = cn(
+    'flex h-8 items-center gap-2 px-2 text-sm font-medium [&_svg]:size-4',
+    className,
+  );
+
+  return (
+    <SidebarMenuItem className="flex items-center gap-0.5">
+      {href ? (
+        <SidebarMenuButton asChild isActive={isActive} className={buttonClass}>
+          <Link href={href} onClick={onClick}>
+            {body}
+          </Link>
+        </SidebarMenuButton>
+      ) : (
+        <SidebarMenuButton isActive={isActive} onClick={onClick} className={buttonClass}>
+          {body}
+        </SidebarMenuButton>
+      )}
+      {trailing}
+    </SidebarMenuItem>
+  );
+}
+
+/**
+ * Retained for surfaces that still want a caption. New rows should use
+ * {@link SidebarNavRow} — the reference has no uppercase labels.
+ */
 export function SidebarSectionLabel({
   children,
   className,
@@ -120,8 +180,9 @@ export function SidebarSectionLabel({
 }
 
 /**
- * A Customize child: plain text, no icon, no box. That restraint is what makes
- * the sidebar feel light — see ux-references/perplexity/01-home-search.png.
+ * A child of a nav row: plain text, indented past the parent's icon, no icon of
+ * its own. That restraint is what keeps the sidebar light, and the indent is
+ * what makes it read as belonging to the row above it.
  */
 export function SidebarPlainLink({
   href,
@@ -134,8 +195,9 @@ export function SidebarPlainLink({
   isActive?: boolean;
   children: ReactNode;
 }) {
+  // pl-8 lines the label up with the parent row's label, past its icon.
   const className = cn(
-    'text-muted-foreground hover:text-sidebar-foreground h-7 px-2 text-sm font-normal',
+    'text-muted-foreground hover:text-sidebar-foreground h-7 pr-2 pl-8 text-sm font-normal',
     isActive && 'text-sidebar-foreground font-medium',
   );
 
