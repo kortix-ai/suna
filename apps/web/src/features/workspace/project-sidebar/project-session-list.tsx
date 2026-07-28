@@ -3,11 +3,11 @@
 import { useTranslations } from 'next-intl';
 
 import {
+  type SessionFilterValue,
+  type SessionSourceKind,
   directSubsessions,
   matchesSessionFilter,
   sessionSource,
-  type SessionFilterValue,
-  type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,28 +37,28 @@ import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabl
 import { cn } from '@/lib/utils';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
+  type ProjectSession,
+  type ProjectSessionStatus,
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
-  type ProjectSession,
-  type ProjectSessionStatus,
 } from '@kortix/sdk';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import { type Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   CalendarClock,
+  type LucideIcon,
   Mail,
   MoreHorizontal,
   RotateCcw,
   Square,
   Webhook,
-  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 interface ProjectSessionListProps {
   projectId: string;

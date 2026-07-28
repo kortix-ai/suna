@@ -6,23 +6,31 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
 import Hint from '@/components/ui/hint';
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { useIsMobile } from '@/hooks/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useDevice } from '@/hooks/use-device';
+import { useIsMobile } from '@/hooks/utils';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { DEFAULT_PROJECT_SETTINGS_TAB, projectSettingsHref } from '@/lib/project-nav';
+import { useProjectCan } from '@/lib/use-project-can';
 
+/**
+ * Customize is a set of real routes now, not an overlay. This navigates to
+ * Settings — the surface that absorbed everything outside the four promoted
+ * sections — so ⌘, and any remaining callers land somewhere real.
+ */
 export function useCustomizeActivate() {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
 
   return useCallback(() => {
-    openCustomize();
+    if (!projectId) return;
+    router.push(projectSettingsHref(projectId, DEFAULT_PROJECT_SETTINGS_TAB));
     if (isMobile) setOpenMobile(false);
-  }, [openCustomize, isMobile, setOpenMobile]);
+  }, [router, projectId, isMobile, setOpenMobile]);
 }
 
 /** Navigate to the standalone Files page. Files live OUTSIDE customization
@@ -65,14 +73,12 @@ export function useCustomizeKeyboardShortcut() {
 
 export function ProjectCustomizeNavItem() {
   const onClick = useCustomizeActivate();
-  const customizeOpen = useCustomizeStore((s) => s.open);
   const isMac = useDevice();
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         onClick={onClick}
-        isActive={customizeOpen}
         tooltip="Customize"
         className="text-sm! font-medium [&_svg]:size-4! flex items-center justify-between group/customize-button"
       >
@@ -80,7 +86,7 @@ export function ProjectCustomizeNavItem() {
           <Config />
           Customize
         </span>
-        <KbdGroup className='opacity-0 group-hover/customize-button:opacity-100 transition-opacity duration-50'>
+        <KbdGroup className="opacity-0 group-hover/customize-button:opacity-100 transition-opacity duration-50">
           <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd>
           <Kbd>,</Kbd>
         </KbdGroup>

@@ -1,19 +1,18 @@
 'use client';
 
 /**
- * /projects/[id]/customize — deep-link entry into the Customize overlay.
+ * /projects/[id]/customize — compatibility entry for old links.
  *
- * Customize is now a full-screen overlay (see customize-store), not a route.
- * This page only exists so old links / bookmarks keep working: it opens the
- * overlay on the requested section (legacy `?section=` still honored) and drops
- * you on the project home behind it.
+ * Customize's 24 sections are real routes now. This page resolves the legacy
+ * section to its new home and replaces, so bookmarks, Cmd+K entries and Slack
+ * links keep working. The resolution lives in lib/project-nav, which is
+ * exhaustive over every section and tested there.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
-import { legacyCustomizeFilesRedirect, parseCustomizeSection } from '@/lib/customize-sections';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { resolveLegacyCustomizeHref } from '@/lib/project-nav';
 
 export default function ProjectCustomizeRedirect() {
   const params = useParams<{ id: string }>();
@@ -23,16 +22,8 @@ export default function ProjectCustomizeRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
-    // Files and Changes graduated out of Customize into the standalone Files
-    // surface. Preserve old bookmarks and open Proposed changes when requested.
-    const filesRedirect = legacyCustomizeFilesRedirect(projectId, searchParams.get('section'));
-    if (filesRedirect) {
-      router.replace(filesRedirect);
-      return;
-    }
-    const section = parseCustomizeSection(searchParams.get('section')) ?? undefined;
-    useCustomizeStore.getState().openCustomize(section);
-    router.replace(`/projects/${projectId}`);
+    const href = resolveLegacyCustomizeHref(projectId, searchParams.get('section'));
+    router.replace(href ?? `/projects/${projectId}`);
   }, [projectId, searchParams, router]);
 
   return null;

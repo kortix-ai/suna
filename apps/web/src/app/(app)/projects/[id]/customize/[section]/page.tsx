@@ -1,20 +1,18 @@
 'use client';
 
 /**
- * /projects/[id]/customize/[section] — deep-link entry into the Customize
- * overlay for a specific section (e.g. `/customize/skills`).
+ * /projects/[id]/customize/[section] — compatibility entry for old links
+ * (e.g. `/customize/skills`, `/customize/llm-logs`).
  *
- * Customize is now a full-screen overlay (see customize-store), not a route.
- * This page exists only so bookmarks / Cmd+K deep links keep working: it opens
- * the overlay on the requested section and drops you on the project home behind
- * it.
+ * Resolves the legacy section to its new route via lib/project-nav, which is
+ * exhaustive over all 24 and tested there. The path segment wins; the legacy
+ * `?section=` query is the fallback.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
-import { legacyCustomizeFilesRedirect, parseCustomizeSection } from '@/lib/customize-sections';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { resolveLegacyCustomizeHref } from '@/lib/project-nav';
 
 export default function ProjectCustomizeSectionRedirect() {
   const params = useParams<{ id: string; section: string }>();
@@ -25,21 +23,10 @@ export default function ProjectCustomizeSectionRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
-    // Files and Changes graduated out of Customize into the standalone Files
-    // surface. Prefer the path section, then fall back to the legacy query.
-    const filesRedirect =
-      legacyCustomizeFilesRedirect(projectId, rawSection) ??
-      legacyCustomizeFilesRedirect(projectId, searchParams.get('section'));
-    if (filesRedirect) {
-      router.replace(filesRedirect);
-      return;
-    }
-    const section =
-      parseCustomizeSection(rawSection) ??
-      parseCustomizeSection(searchParams.get('section')) ??
-      undefined;
-    useCustomizeStore.getState().openCustomize(section);
-    router.replace(`/projects/${projectId}`);
+    const href =
+      resolveLegacyCustomizeHref(projectId, rawSection) ??
+      resolveLegacyCustomizeHref(projectId, searchParams.get('section'));
+    router.replace(href ?? `/projects/${projectId}`);
   }, [projectId, rawSection, searchParams, router]);
 
   return null;

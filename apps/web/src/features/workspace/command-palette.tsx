@@ -28,9 +28,9 @@ import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import { projectSettingsHref, resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
@@ -1099,9 +1099,9 @@ export function CommandPalette() {
   }, [currentSessionId, close]);
 
   const handleInviteMembers = useCallback(() => {
-    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
+    if (projectId) router.push(projectSettingsHref(projectId, 'members') + '?tab=invite');
     close();
-  }, [close]);
+  }, [close, projectId, router]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {
@@ -1190,11 +1190,12 @@ export function CommandPalette() {
         case 'navigate': {
           const href = item.href || '';
 
-          const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
+          // Every legacy /customize href in lib/menu-registry resolves here,
+          // so the registry itself needs no changes.
+          const custMatch = href.match(/\/projects\/([^/]+)\/customize(?:\/([^/?#]+))?/);
           if (custMatch) {
-            useCustomizeStore
-              .getState()
-              .openCustomize(parseCustomizeSection(custMatch[1]) ?? undefined);
+            const resolved = resolveLegacyCustomizeHref(custMatch[1], custMatch[2]);
+            router.push(resolved ?? `/projects/${custMatch[1]}`);
             close();
             break;
           }

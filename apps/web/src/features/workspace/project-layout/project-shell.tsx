@@ -17,11 +17,10 @@ import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sid
 import { useGatewayCatalogSync } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { parseCustomizeSection } from '@/lib/customize-sections';
 import { desktopShellPlatform } from '@/lib/desktop';
+import { resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { PanelLeft } from 'lucide-react';
@@ -74,16 +73,17 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   }, [authLoading, user, router]);
 
   useEffect(() => {
-    // Files graduated out of Customize into its own page — send legacy
-    // ?customize=files links there instead of opening the overlay.
-    if (searchParams.get('customize') === 'files') {
-      router.replace(`/projects/${projectId}/files`);
+    // Legacy `?customize=<section>` deep links now resolve to a real route
+    // (lib/project-nav is exhaustive over all 24 sections, and over the
+    // files/changes redirects) instead of opening the overlay in place.
+    const raw = searchParams.get('customize');
+    if (!raw) return;
+    const href = resolveLegacyCustomizeHref(projectId, raw);
+    if (href) {
+      router.replace(href);
       return;
     }
-    const section = parseCustomizeSection(searchParams.get('customize'));
-    if (!section) return;
-    useCustomizeStore.getState().openCustomize(section);
-
+    // Unknown value: strip it rather than leaving a dead param in the URL.
     const next = new URLSearchParams(searchParams.toString());
     next.delete('customize');
     const query = next.toString();

@@ -19,8 +19,8 @@ import {
   resolveSandboxAlertSeverity,
   selectCurrentSandboxFailure,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { projectSettingsHref } from '@/lib/project-nav';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSandboxHealth,
   fixSandboxWithAgent,
@@ -116,7 +116,7 @@ function SandboxAlertContent({
   severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   const failure = selectCurrentSandboxFailure(health);
   // Only offer the agent for failures it can actually act on. Infra categories
@@ -143,7 +143,7 @@ function SandboxAlertContent({
             variant="transparent"
             size="sm"
             className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
-            onClick={() => openCustomize('sandbox')}
+            onClick={() => router.push(projectSettingsHref(projectId, 'sandbox'))}
           >
             Details
           </Button>
@@ -160,7 +160,7 @@ function SandboxAlertContent({
               variant="link"
               size="sm"
               className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
-              onClick={() => openCustomize('sandbox')}
+              onClick={() => router.push(projectSettingsHref(projectId, 'sandbox'))}
             >
               Details
             </Button>

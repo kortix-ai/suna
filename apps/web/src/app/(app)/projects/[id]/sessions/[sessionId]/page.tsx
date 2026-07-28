@@ -33,8 +33,6 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import { formatRuntimeError } from '@kortix/sdk';
 import {
   getProjectDetail,
@@ -42,12 +40,14 @@ import {
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk';
+import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
+  type UseSessionResult,
   clearRuntimeEnsureGuard,
   migrateStash,
   readStartStash,
   useSession,
-  type UseSessionResult,
 } from '@kortix/sdk/react';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 
@@ -239,13 +239,7 @@ export default function ProjectSessionPage() {
   );
   useEffect(() => {
     if (switchingToSessionId !== sessionId) return;
-    if (
-      sessionContentAvailable ||
-      session.startError ||
-      unmaterializedFailure ||
-      fatal ||
-      gated
-    ) {
+    if (sessionContentAvailable || session.startError || unmaterializedFailure || fatal || gated) {
       completeSessionSwitch(sessionId);
     }
   }, [
@@ -657,9 +651,7 @@ function ActiveSessionChat({
 
   if (runtimeError) {
     const formatted = formatRuntimeError(runtimeError);
-    const restartError = restartMutation.error
-      ? formatRuntimeError(restartMutation.error)
-      : null;
+    const restartError = restartMutation.error ? formatRuntimeError(restartMutation.error) : null;
     return (
       <InlineSessionError
         title={formatted.title}
@@ -700,9 +692,7 @@ function ActiveSessionChat({
           key={chatSessionId}
           sessionId={chatSessionId}
           projectId={projectId}
-          sessionState={
-            chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined
-          }
+          sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
         />
       </ClientErrorBoundary>
     </SessionLayout>

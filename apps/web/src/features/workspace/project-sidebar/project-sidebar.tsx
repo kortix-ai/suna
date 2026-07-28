@@ -1,9 +1,9 @@
 'use client';
 
 import {
-  matchesSessionFilter,
   SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
+  matchesSessionFilter,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,12 +32,15 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
-  ProjectCustomizeNavItem,
   ProjectFilesNavItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import {
+  ProjectNavItems,
+  ProjectSettingsNavItem,
+} from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
@@ -47,14 +50,14 @@ import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk';
-import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import { type Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarClock, List, Mail, MessagesSquare, Webhook, type LucideIcon } from 'lucide-react';
+import { CalendarClock, List, type LucideIcon, Mail, MessagesSquare, Webhook } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 
@@ -259,20 +262,26 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </div>
           </SidebarGroup>
 
+          {/* The four promoted sections, as a quiet label with plain-text
+              children. That lightness is the whole point — see
+              ux-references/perplexity/01-home-search.png. */}
+          <ProjectNavItems projectId={projectId} />
+
           <SidebarGroup className="mt-auto py-0.5">
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
+              {/* Change requests are work in flight, not setup — they sit with
+                  the alerts rather than in the Customize group. */}
               <ProjectChangeRequestsNavItem projectId={projectId} />
-              {/* Sits directly above Files/Customize so a still-on-v1 manifest
+              {/* Sits directly above Files/Settings so a still-on-v1 manifest
                   is impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}
               <ProjectManifestUpgradeAlert projectId={projectId} />
-              {/* Files used to live on the collapsed icon rail; with the rail
-                  gone (offcanvas + hover flyout) it needs a docked entry. Above
-                  Customize — files aren't gated behind customize access. */}
               <ProjectFilesNavItem />
-              <ProjectCustomizeNavItem />
+              <ProjectSettingsNavItem projectId={projectId} />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              {/* Persistent rails, not toasts: a dismissible banner is what
+                  users miss, and this is the surface that converts. */}
               <SidebarBalanceWarning accountId={accountId} />
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>

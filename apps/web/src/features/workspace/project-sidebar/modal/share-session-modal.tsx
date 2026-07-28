@@ -16,12 +16,12 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   SharingPicker,
+  type SharingSelection,
   intentToSelection,
   isSharingComplete,
   selectionToIntent,
-  type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
-import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
+import { type ProjectSession, setProjectSessionSharing } from '@kortix/sdk';
 import { LockSolid, UsersSolid } from '@mynaui/icons-react';
 import { useMutation } from '@tanstack/react-query';
 import { Globe } from 'lucide-react';
@@ -77,7 +77,11 @@ export function ShareSessionModal({
   onSaved?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'private', memberIds: [], groupIds: [] });
+  const [sharing, setSharing] = useState<SharingSelection>({
+    mode: 'private',
+    memberIds: [],
+    groupIds: [],
+  });
 
   useEffect(() => {
     if (!open || !session) return;

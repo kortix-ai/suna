@@ -13,6 +13,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
 
@@ -34,10 +36,10 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@kortix/sdk/react';
 import type { CustomizeSection } from '@/lib/customize-sections';
+import { projectSettingsHref, resolveLegacyCustomizeHref } from '@/lib/project-nav';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   getProjectDetail,
   listProjectAccessRequests,
@@ -84,7 +86,7 @@ export function ProjectHome({
   const activeSlug = selectedSlug ?? defaultSlug;
 
   const showSandboxPicker = sandboxItems.length >= 1;
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
   const accessRequests = useQuery({
     queryKey: ['project-access-requests', projectId],
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
@@ -152,7 +154,7 @@ export function ProjectHome({
               variant="ghost"
               size="icon"
               className="bg-background/80 relative backdrop-blur-sm"
-              onClick={() => openCustomize('members')}
+              onClick={() => router.push(projectSettingsHref(projectId, 'members'))}
               aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
             >
               <Bell className="size-4" />
@@ -258,7 +260,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections />
+        <ProjectHomeSections projectId={projectId} />
       </div>
     </div>
   );
@@ -458,25 +460,28 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
   },
 ];
 
-function ProjectHomeSections() {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+function ProjectHomeSections({ projectId }: { projectId: string }) {
   const tiles = PROJECT_SETUP_TILES;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
         const { icon: TileIcon, title, desc, section } = tile;
+        const href = resolveLegacyCustomizeHref(projectId, section);
+        if (!href) return null;
 
         return (
           <Hint key={section} label={desc} side="top">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => openCustomize(section)}
+              asChild
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
-              <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
-              {title}
+              <Link href={href}>
+                <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
+                {title}
+              </Link>
             </Button>
           </Hint>
         );

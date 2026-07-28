@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
   resolveSessionListViewState,
@@ -7,7 +8,6 @@ import {
   shouldPollProjectSessions,
   sortSessionsByCreatedAt,
 } from './project-session-list-helpers';
-import type { ProjectSession } from '@kortix/sdk';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
