@@ -24,6 +24,7 @@ import {
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
+import { serverErrorBody } from '@/lib/api-error-body';
 import { classifySessionStartFailure } from '@/lib/session-start-error';
 import type { BindableConnection } from '@/server/bindable-connections';
 import { getSessionToken } from '@/lib/session';
@@ -135,11 +136,10 @@ function ProjectHome() {
     onError: (err: unknown) => {
       // Two KaaB refusals need opposite responses, and a single generic toast
       // told the user to fix something they often could not fix.
-      const body =
-        err && typeof err === 'object' && 'body' in err
-          ? ((err as { body?: unknown }).body as Record<string, unknown> | null)
-          : null;
-      const failure = classifySessionStartFailure(body);
+      // The SDK's ApiError puts the parsed body on `data`/`details` and lifts
+      // `code` — it has no `body` field, so reading one made every KaaB refusal
+      // below unreachable.
+      const failure = classifySessionStartFailure(serverErrorBody(err));
       if (failure.kind === 'connector_connection_required') {
         setConnectPrompt({ connector: failure.connector, message: failure.message });
         return;

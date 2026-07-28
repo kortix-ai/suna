@@ -9,28 +9,47 @@ could not verify is marked as such rather than asserted.
 
 **Corrected 2026-07-27 after I got this wrong twice. Read the correction.**
 
-### What is actually true
+### What is actually true — settled by a dispatch run, 2026-07-28
 
-`package-tests.yml` triggers on **`pull_request` only** (plus manual dispatch) —
-20 of the last 20 runs were `pull_request`. The `kortix-api` job materializes
-`DOTENV_PRIVATE_KEY` only when `github.event_name != 'pull_request'`, a
-deliberate control added by a pentest the same day:
+**`DOTENV_PRIVATE_KEY` is not configured as a repo secret at all.**
 
-> exposing DOTENV_PRIVATE_KEY would let a same-repo branch PR read all 80+ prod
-> secrets decryptable with that one key
+Proven, not inferred: dispatching `package-tests.yml` on `main`
+(run `30335178547`) is a `workflow_dispatch` event, which satisfies the job's
+`github.event_name != 'pull_request'` condition. The env-gated suite **still
+skipped**, logging "DOTENV_PRIVATE_KEY not configured for this context".
+`gh secret list` then confirmed the name is absent from the repository.
 
-Both halves are individually correct. Together they mean the condition can never
-be satisfied, so **the env-gated suite never runs anywhere**. This is not
-negligence — it is a security control colliding with a trigger list.
+So the ternary
 
-**The fix is small and preserves the security property:** add
-`push: branches: [main]`. PR-head code still never sees the key; the suite gains
-a post-merge venue.
+```yaml
+DOTENV_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.DOTENV_PRIVATE_KEY || '' }}
+```
 
-**Risk to weigh first:** locally the suite shows failures under the real CI
-command, but my environment is provably not CI's (see below), so I cannot
-predict whether enabling this turns `main` red. Someone should dry-run it via
-`workflow_dispatch` before wiring the trigger.
+resolves to `''` on **every** event, and the ~1757-test suite runs nowhere.
+
+**Do NOT "fix" this by adding `push: branches: [main]`.** That was my earlier
+recommendation and it is wrong — it changes nothing while looking like a fix,
+which is worse than the current visible gap.
+
+**The actual fix is a human action:** provision `DOTENV_PRIVATE_KEY` as a
+repository secret. The workflow's shape is already correct — the pentest's
+condition rightly withholds the key from PR-head code — so once the secret
+exists, `workflow_dispatch` works immediately and adding a `push: [main]`
+trigger gives the suite a permanent venue where the key is safe to materialize.
+
+### How many times I got this wrong
+
+Recorded because the pattern is more useful than the answer:
+
+| Claim | Verdict |
+| --- | --- |
+| "the suite doesn't run in CI" | Right conclusion, no evidence behind it |
+| "it runs on push, just not PRs" | **Wrong** — I misread `gh run list --branch=main`, which lists PR-event runs |
+| "the trigger list is `pull_request`-only, so the condition can never hold" | True, but not the binding constraint |
+| "the secret is not configured" | **Confirmed** by a dispatch run + `gh secret list` |
+
+Each step was a confident answer built on the previous one's framing rather than
+on a measurement. The dispatch run cost two minutes and settled it.
 
 ### What I got wrong, and why it matters
 

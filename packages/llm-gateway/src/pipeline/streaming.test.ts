@@ -6,11 +6,16 @@ const dec = new TextDecoder();
 
 function controllableUpstream() {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c; } });
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) { controller = c; },
+    cancel() { cancelled = true; },
+  });
   return {
     stream,
     push: (s: string) => controller.enqueue(enc.encode(s)),
     close: () => controller.close(),
+    get cancelled() { return cancelled; },
   };
 }
 
@@ -154,6 +159,18 @@ describe('probeStream', () => {
     });
     const result = await probeStream(stream);
     expect(result.hasContent).toBe(false);
+  });
+
+  test('times out and cancels a stream that opens but produces no bytes', async () => {
+    const up = controllableUpstream();
+    const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
+
+    expect(result.hasContent).toBe(false);
+    expect(result.readError).toEqual({
+      message: 'upstream stream probe timeout exceeded (20ms with no bytes)',
+      code: 'stream_probe_timeout',
+    });
+    expect(up.cancelled).toBe(true);
   });
 });
 

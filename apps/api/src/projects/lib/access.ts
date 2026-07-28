@@ -140,6 +140,14 @@ export async function loadVisibleSession(
 export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
   sessionId: string,
+  /**
+   * The CALLER's own session when the credential is bound to one. REQUIRED —
+   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * a public share is UNAUTHENTICATED and its router is mounted before auth,
+   * so minting one against another end-user's session exposes their live app
+   * port and workspace files to anyone holding the URL.
+   */
+  callerSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -148,6 +156,17 @@ export async function loadSessionForSharing(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
+  // Same narrowing as the read path. In Kortix-as-a-Backend every session
+  // shares one `created_by`, so the ownership test below is meaningless across
+  // end-users and would hand A full sharing rights over B's session.
+  if (
+    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, [], {
+      userId: loaded.userId,
+      groupIds: [],
+    }, { origin: row.origin ?? null, sessionId, callerSessionId })
+  ) {
+    return null;
+  }
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };

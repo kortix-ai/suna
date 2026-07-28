@@ -361,12 +361,16 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     if (loaded.defaultAgent) {
       const declared = loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled);
       if (declared) {
-        return {
+        // Canonicalize here for the SAME reason the concrete-agent branch does
+        // (see above): catalog / call / create all compare canonical slugs, so
+        // a manifest that writes `email` rather than `kortix_email` would be
+        // silently denied at the call gate.
+        return canonicalizeGrantConnectors({
           agent: loaded.defaultAgent,
           kortixCli: declared.kortixCli,
           connectors: declared.connectors,
           env: declared.env,
-        };
+        });
       }
     }
     // A project locks down its default by setting `default_agent` to a
@@ -376,6 +380,17 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // manifest-level default_agent to honor) or a v2 manifest whose declared
     // default_agent doesn't resolve to an enabled spec (a validation-time
     // error the CR-merge gate should already have caught).
+    //
+    // EXCEPT when the manifest could not be read or parsed. `null` here means
+    // NO RESTRICTION (agent-scope.ts), and the mint resolves this grant with
+    // `.catch(() => null)` — so an unreadable manifest on a GOVERNED project
+    // would hand the session a fully unrestricted token for the life of the
+    // sandbox. Never widen on an error: a session that cannot prove what it is
+    // allowed to use gets nothing, which is the same rule the secrets path
+    // already follows (secret-grant.ts passes rethrowReadErrors for this).
+    if (loaded.errors.length > 0) {
+      return { agent: agentName, kortixCli: [], connectors: [], env: [] };
+    }
     return null;
   }
 

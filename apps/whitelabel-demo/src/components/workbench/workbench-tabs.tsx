@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
 import { SessionScope } from '@/components/workbench/session-scope';
+import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
@@ -241,6 +242,16 @@ function Thread({ session: c }: { session: UseSessionResult }) {
               <Button size="sm" variant="secondary" className="h-7 gap-1.5" onClick={c.cancel}>
                 Stop
               </Button>
+            </div>
+          ) : null}
+          {/* A rejected send used to be SILENT: the optimistic bubble vanished,
+              the typed text was gone, and nothing said why. useSession surfaces
+              a typed sendError — read it, and name the KaaB refusals the
+              generic message would otherwise swallow. */}
+          {c.sendError ? (
+            <div className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+              <div className="font-medium">{sendFailureTitle(c.sendError)}</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">{c.sendError.message}</p>
             </div>
           ) : null}
           <Composer

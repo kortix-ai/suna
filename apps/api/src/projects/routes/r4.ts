@@ -87,6 +87,7 @@ import {
 } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { isValidMatcher } from '../../executor/policy';
+import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { db } from '../../shared/db';
 import {
   acquireExecutionLease,
@@ -3006,6 +3007,10 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
 
+    // The session this credential is BOUND to, when it is a sandbox token.
+    // Null for a human caller.
+    let callerSandboxSessionId: string | null = null;
+
     const authType = (c as any).get('authType') as string | undefined;
     if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
       const accountId = (c as any).get('accountId') as string | undefined;
@@ -3014,7 +3019,10 @@ projectsApp.openapi(
         return c.json({ error: 'turn-question requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          sessionId: sessionSandboxes.sessionId,
+        })
         .from(sessionSandboxes)
         .where(
           and(
@@ -3028,8 +3036,12 @@ projectsApp.openapi(
       if (!sandbox) {
         return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
+      callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
     } else {
-      const loaded = await loadProjectForUser(c, projectId, 'read');
+      // A question card finalizes and re-posts a LIVE turn, so it is a
+      // mutation of that session — 'read' is too weak. The sibling turn-stream
+      // route already requires more than read for the same reason.
+      const loaded = await loadProjectForUser(c, projectId, 'session');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
     }
 
@@ -3048,9 +3060,17 @@ projectsApp.openapi(
       return c.json({ error: 'session_id is required' }, 400);
     }
 
-    // session_id is caller-supplied — scope it back to :projectId so a caller
-    // authed for their own project can't relay a question into another
-    // tenant's live session (IDOR).
+    // session_id is caller-supplied. Scoping it to :projectId closes the
+    // cross-TENANT hole, but a sandbox token acts for exactly ONE session, so
+    // project scope still let sandbox A finalize and repost session B's live
+    // turn. sandbox_id == session_id by construction — bind to it.
+    if (
+      callerSandboxSessionId !== null &&
+      !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
+    ) {
+      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+    }
+
     const [turnQuestionSession] = await db
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)

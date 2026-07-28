@@ -19,6 +19,7 @@ import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { config } from '../../config';
@@ -1213,6 +1214,7 @@ projectsApp.openapi(
         sessionId: projectSessions.sessionId,
         opencodeSessionId: projectSessions.opencodeSessionId,
         createdBy: projectSessions.createdBy,
+        origin: projectSessions.origin,
       })
       .from(projectSessions)
       .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, kortixIds)));
@@ -1220,7 +1222,21 @@ projectsApp.openapi(
     const sessions: Record<string, number> = {};
     let total = 0;
     for (const s of sess) {
-      if (!isManager && s.createdBy !== loaded.userId) continue;
+      // created_by is shared across every KaaB session, so it cannot filter
+      // one end-user's pending gates from another's — and an execution_id is
+      // all the resolve route needs.
+      if (
+        !maySeeSessionApprovals({
+          isManager,
+          targetSessionId: s.sessionId,
+          targetSessionOrigin: s.origin ?? null,
+          targetSessionCreatedBy: s.createdBy,
+          callerUserId: loaded.userId,
+          callerSessionId: c.get('sessionId') ?? null,
+        })
+      ) {
+        continue;
+      }
       const n = byKortix[s.sessionId] ?? 0;
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
@@ -1313,19 +1329,37 @@ projectsApp.openapi(
     } catch {
       isManager = false;
     }
-    let isLauncher = false;
-    if (!isManager && row.sessionId) {
+    let targetCreatedBy: string | null = null;
+    let targetOrigin: string | null = null;
+    if (row.sessionId) {
       const [session] = await db
-        .select({ createdBy: projectSessions.createdBy })
+        .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
         .from(projectSessions)
         // Scope to THIS project too — sessionId is a PK so it's globally unique,
         // but making the project bound explicit keeps the gate self-documenting.
         .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
         .limit(1);
-      isLauncher = Boolean(session && session.createdBy === loaded.userId);
+      targetCreatedBy = session?.createdBy ?? null;
+      targetOrigin = session?.origin ?? null;
     }
-    if (!isManager && !isLauncher) {
-      return c.json({ error: 'Only a project manager or the session launcher can resolve this' }, 403);
+    const verdict = mayResolveApproval({
+      isManager,
+      targetSessionOrigin: targetOrigin,
+      targetSessionCreatedBy: targetCreatedBy,
+      callerUserId: loaded.userId,
+      callerSessionId: c.get('sessionId') ?? null,
+    });
+    if (!verdict.allowed) {
+      return c.json(
+        verdict.reason === 'session_bound_caller'
+          ? {
+              error:
+                'An agent cannot resolve its own approval — a human must approve or deny this',
+              code: 'APPROVAL_REQUIRES_HUMAN',
+            }
+          : { error: 'Only a project manager or the session launcher can resolve this' },
+        403,
+      );
     }
 
     const detail = {
