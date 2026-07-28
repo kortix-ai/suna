@@ -168,6 +168,6 @@ describe('managed Git fixture selection', () => {
     expect(workflow).toContain('KE2E_GC_WORKERS: 8');
     expect(gc).toContain('mapWithConcurrency(stale, workers');
     expect(gc).toContain('if (env.databaseUrl) return listTestUsersViaDb(env)');
-    expect(gc).toContain("ssl: local ? false : { rejectUnauthorized: false }");
+    expect(gc).toContain('ssl: local ? false : true');
   });
 });

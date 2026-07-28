@@ -54,7 +54,7 @@ async function listTestUsersViaDb(env: Env): Promise<SupaUser[]> {
   const { Client } = await import("pg");
   const client = new Client({
     connectionString: conn,
-    ssl: local ? false : { rejectUnauthorized: false },
+    ssl: local ? false : true,
   });
   await client.connect();
   try {
