@@ -74,7 +74,7 @@ describe('/v1/setup', () => {
     it('uses the Supabase Admin API instead of reading auth.users through the app role', async () => {
       const supabase = getSupabase();
       const originalListUsers = supabase.auth.admin.listUsers;
-      supabase.auth.admin.listUsers = listUsers as typeof originalListUsers;
+      supabase.auth.admin.listUsers = listUsers as unknown as typeof originalListUsers;
 
       try {
         const app = createSetupTestApp();
