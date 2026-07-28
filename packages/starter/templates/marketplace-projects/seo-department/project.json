@@ -9,5 +9,6 @@
     "xlsx",
     "website-building",
     "web-publishing-and-deployments"
-  ]
+  ],
+  "hidden": true
 }

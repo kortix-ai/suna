@@ -454,22 +454,35 @@ describe('marketplace projects — full project templates', () => {
     ).toBe(true);
   });
 
-  test('SEO Department metadata is visible and dependency-backed', () => {
+  /**
+   * The department templates stay in the tree (they are real, working projects
+   * and still clonable by id) but are `hidden` so the marketplace leads with the
+   * single Kortix Starter project instead of a wall of half-relevant verticals.
+   * `web-studio` was already hidden; this is the rest of the set catching up.
+   */
+  test('every bundled department template is hidden from the marketplace', () => {
+    const slugs = ['seo-department', 'marketing-department', 'web-studio'];
+    for (const slug of slugs) {
+      const metaFile = files.find((f) => f.path === `${slug}/project.json`);
+      const meta = JSON.parse(metaFile?.content ?? '{}') as { hidden?: boolean };
+      expect(meta.hidden).toBe(true);
+    }
+  });
+
+  test('SEO Department metadata is dependency-backed', () => {
     const metaFile = files.find((f) => f.path === 'seo-department/project.json');
     const meta = JSON.parse(metaFile?.content ?? '{}') as {
       title?: string;
-      hidden?: boolean;
       dependencies?: string[];
     };
 
     expect(meta.title).toBe('SEO Department');
-    expect(meta.hidden).toBeUndefined();
     expect(meta.dependencies).toEqual(
       expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
     );
   });
 
-  test('Marketing Department metadata is visible and dependency-backed', () => {
+  test('Marketing Department metadata is dependency-backed', () => {
     const metaFile = files.find((f) => f.path === 'marketing-department/project.json');
     const meta = JSON.parse(metaFile?.content ?? '{}') as {
       title?: string;
@@ -478,7 +491,6 @@ describe('marketplace projects — full project templates', () => {
     };
 
     expect(meta.title).toBe('Marketing Department');
-    expect(meta.hidden).toBeUndefined();
     expect(meta.dependencies).toEqual(
       expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
     );

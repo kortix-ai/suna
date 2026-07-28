@@ -16,5 +16,6 @@
     "lead-followup",
     "social-post-drafting",
     "weekly-metrics-report"
-  ]
+  ],
+  "hidden": true
 }
