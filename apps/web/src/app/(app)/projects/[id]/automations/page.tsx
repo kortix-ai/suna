@@ -2,20 +2,20 @@
 
 import { useParams, useSearchParams } from 'next/navigation';
 
-import { ScheduleView } from '@/components/projects/schedule-view';
+import { AutomationsView } from '@/features/workspace/automations/automations-view';
 import { ProjectSectionTabs } from '@/features/workspace/project-section/project-section-tabs';
 
 /**
  * Automations — schedules and webhooks on one page.
  *
  * They were two rail entries over one API resource with one set of IAM leaves.
- * `?type=webhook` selects the webhook side; anything else is the schedule side.
+ * `?type=webhook` preselects the webhook filter for old deep links.
  */
 export default function AutomationsSectionPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const projectId = params?.id ?? '';
-  const type = searchParams.get('type') === 'webhook' ? 'webhook' : 'cron';
+  const initialFilter = searchParams.get('type') === 'webhook' ? 'webhook' : 'all';
 
   if (!projectId) return null;
 
@@ -23,7 +23,7 @@ export default function AutomationsSectionPage() {
     <div className="flex h-full min-h-0 flex-col">
       <ProjectSectionTabs projectId={projectId} active="automations" />
       <div className="min-h-0 flex-1">
-        <ScheduleView projectId={projectId} type={type} />
+        <AutomationsView projectId={projectId} initialFilter={initialFilter} />
       </div>
     </div>
   );

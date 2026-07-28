@@ -75,17 +75,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'why',
-    title: siteMetadata.title,
-    description: siteMetadata.description,
-    // The long-form product narrative that used to be the homepage. `/` still
-    // has its own record: the HTML there is the product shell now, but an
-    // agent asking for text/markdown still gets the overview.
-    htmlPath: '/why',
-    markdownPath: '/markdown/index.md',
-  },
-  {
-    kind: 'marketing',
     slug: 'contact',
     title: 'Contact Kortix',
     description: 'Request a tailored Kortix walkthrough for cloud, VPC, or on-prem deployment.',

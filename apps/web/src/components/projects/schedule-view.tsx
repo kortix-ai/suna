@@ -633,7 +633,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
   );
 }
 
-function TriggerDetailSheet({
+export function TriggerDetailSheet({
   projectId,
   trigger,
   canWrite,
