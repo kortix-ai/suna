@@ -36,6 +36,16 @@ mock.module('../../shared/preview-ownership', () => ({
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
+// Same reason as the env sync above: the pre-prompt grant re-mint reads the
+// session's token row, and this file is about DELIVERY dedupe, not grants. It
+// is deliberately NOT a no-op stub of convenience — the real function fails the
+// prompt CLOSED when it cannot read the token (a prompt must never run under an
+// unverified grant), so an unmocked db here turns every delivery test red for a
+// reason that has nothing to do with delivery.
+mock.module('../../projects/lib/session-token-grant', () => ({
+  remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
+  SessionGrantRemintError: class SessionGrantRemintError extends Error {},
+}));
 mock.module('../../projects/opencode-title-capture', () => ({
   scheduleTitleCaptureAfterPrompt: () => {},
   captureTitleAfterRuntimeEvent: async () => {},

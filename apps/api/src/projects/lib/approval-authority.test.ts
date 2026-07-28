@@ -168,3 +168,49 @@ describe('a service-account bearer may still resolve — deliberately', () => {
     ).toBe(false);
   });
 });
+
+describe('the browser human (regression: the Supabase sessionId collision)', () => {
+  test('a manager whose caller session is null CAN resolve — this is the dashboard', () => {
+    // `supabaseAuth` sets c.get('sessionId') to the SUPABASE AUTH session, and
+    // threading that raw value in as callerSessionId made this branch
+    // unreachable: every logged-in human tripped the session-bound refusal
+    // above and got 403 "An agent cannot resolve its own approval" on every
+    // approval, forever. callerKortixSessionId() is what keeps it null here.
+    const result = mayResolveApproval({
+      isManager: true,
+      targetSessionOrigin: 'backend',
+      targetSessionCreatedBy: WRAPPER,
+      callerUserId: HUMAN,
+      callerSessionId: null,
+    });
+    expect(result).toEqual({ allowed: true });
+  });
+
+  test('a browser human still sees a session’s approvals when unbound', () => {
+    // Same collision: comparing a Supabase auth-session UUID to a Kortix session
+    // id made needs-input return 0 for every browser caller.
+    expect(
+      maySeeSessionApprovals({
+        isManager: true,
+        callerSessionId: null,
+        callerUserId: HUMAN,
+        targetSessionId: 'sess-xyz',
+        targetSessionOrigin: 'backend',
+        targetSessionCreatedBy: WRAPPER,
+      }),
+    ).toBe(true);
+  });
+
+  test('but a genuinely session-bound caller is STILL refused', () => {
+    // The fix must not weaken the guard it was protecting.
+    expect(
+      mayResolveApproval({
+        isManager: true,
+        targetSessionOrigin: 'backend',
+        targetSessionCreatedBy: WRAPPER,
+        callerUserId: WRAPPER,
+        callerSessionId: 'sess-real-kortix-session',
+      }).allowed,
+    ).toBe(false);
+  });
+});

@@ -20,6 +20,7 @@
  */
 
 import { getRequestSession } from '@/server/auth';
+import { buildUpstreamPath } from '@/server/upstream-path';
 import {
   injectEndUserRef,
   isSessionCreate,
@@ -61,7 +62,12 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   }
 
   const { path = [] } = await ctx.params;
-  const upstreamPath = path.join('/');
+  // Next hands back DECODED segments, so `%2F..%2F` arrives as a real `..` and a
+  // naive join lets the POLICY and the UPSTREAM disagree about which project is
+  // being addressed. Refuse before anything reads the path.
+  const built = buildUpstreamPath(path);
+  if (!built.ok) return jsonError(400, `Invalid request path: ${built.reason}`);
+  const upstreamPath = built.path;
 
   const policy = evaluatePolicy(req.method, upstreamPath, (projectId) =>
     isOwner(session.userId, projectId),

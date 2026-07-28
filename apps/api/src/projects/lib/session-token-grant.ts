@@ -132,6 +132,14 @@ export function remintDecisionFor(
  * Throws `SessionGrantRemintError` if the grant cannot be resolved or written;
  * the caller must fail the prompt rather than run the new agent under the old
  * agent's grant.
+ *
+ * KNOWN LIMIT — concurrent prompts. Two prompts naming different agents on the
+ * SAME session race: both resolve, both write, last writer wins, and the loser's
+ * agent then runs under the winner's grant for the rest of that turn. The token
+ * is one row shared by one box, so this cannot be fixed by locking here — it
+ * needs either a per-turn credential or a serialised prompt path. Documented
+ * rather than papered over; the single-prompt path (every ordinary session) is
+ * correct.
  */
 export async function remintGrantForAgentSwitch(input: {
   projectId: string;
@@ -142,12 +150,45 @@ export async function remintGrantForAgentSwitch(input: {
   requestedAgent: string | null;
 }): Promise<RemintDecision> {
   const requested = input.requestedAgent?.trim();
-  if (!requested || requested === DEFAULT_AGENT_SENTINEL || requested === input.sessionAgent) {
-    return { action: 'skip' };
+  // The agent that will ACTUALLY run. `project_sessions.agent_name` is the
+  // create-time agent and nothing ever updates it, so it is the fallback, not
+  // the reference point.
+  const runningAgent =
+    requested && requested !== DEFAULT_AGENT_SENTINEL ? requested : input.sessionAgent;
+
+  let stored: AgentGrant | null;
+  try {
+    const [token] = await db
+      .select({ agentGrant: accountTokens.agentGrant })
+      .from(accountTokens)
+      .where(
+        and(
+          eq(accountTokens.sessionId, input.sessionId),
+          eq(accountTokens.status, 'active'),
+          isNull(accountTokens.revokedAt),
+        ),
+      )
+      .limit(1);
+    stored = token?.agentGrant ?? null;
+  } catch (err) {
+    throw new SessionGrantRemintError(input.sessionId, err);
   }
 
+  // Skip — and pay NO manifest read — only when the token already represents the
+  // agent about to run.
+  //
+  // The earlier version skipped whenever `requested === sessionAgent`, which was
+  // wrong the moment a re-mint had happened: switch to a broader agent once, then
+  // switch back (or simply omit `agent`), and the token kept the BROADER grant
+  // while the narrower agent ran. `agent_name` never changes, so it could not
+  // detect that the token had moved. The grant's own `agent` field can.
+  if (stored?.agent === runningAgent) return { action: 'skip' };
+  // A null stored grant means the project declares no per-agent governance, so
+  // boot minted null too. Nothing to revert unless a concrete DIFFERENT agent is
+  // named — which is the only case worth a manifest read.
+  if (stored === null && runningAgent === input.sessionAgent) return { action: 'skip' };
+
   let running: AgentGrant | null;
-  let stored: AgentGrant | null;
   try {
     const [project] = await db
       .select({
@@ -165,22 +206,9 @@ export async function remintGrantForAgentSwitch(input: {
       defaultBranch: project?.defaultBranch,
       manifestPath: project?.manifestPath,
       sessionAgent: input.sessionAgent,
-      requestedAgent: requested,
+      requestedAgent: runningAgent,
       enforceGrantLock: config.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
     });
-
-    const [token] = await db
-      .select({ agentGrant: accountTokens.agentGrant })
-      .from(accountTokens)
-      .where(
-        and(
-          eq(accountTokens.sessionId, input.sessionId),
-          eq(accountTokens.status, 'active'),
-          isNull(accountTokens.revokedAt),
-        ),
-      )
-      .limit(1);
-    stored = token?.agentGrant ?? null;
   } catch (err) {
     // A secret-boundary refusal is the env sync's error to report, not ours —
     // rethrow it unchanged so the proxy still answers 409, not 503.

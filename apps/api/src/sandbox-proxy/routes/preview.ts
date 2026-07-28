@@ -36,6 +36,7 @@ import {
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
 import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
+import { carriesSessionData } from '../session-data-ports';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{
@@ -591,9 +592,10 @@ export async function forwardToSandbox(
     });
   }
   // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
-  // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
-  // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
-  // request (sandbox ownership is already enforced unconditionally above). NOTE:
+  // The AUTH/CONTROL guards below (session-visibility gate + /kortix/env block)
+  // key on THIS via carriesSessionData(), which covers BOTH 8000 and opencode's
+  // 4096 — Platinum reroutes 4096→8000, Daytona does not, and gating on 8000
+  // alone left the direct-:4096 Daytona path ungated. NOTE:
   // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
@@ -616,7 +618,7 @@ export async function forwardToSandbox(
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    upstreamPort === 8000 &&
+    carriesSessionData(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -631,7 +633,7 @@ export async function forwardToSandbox(
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
   // never through this user-facing proxy — block it so an account member can't
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
-  if (upstreamPort === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
+  if (carriesSessionData(upstreamPort) && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
@@ -1156,10 +1158,13 @@ export async function resolvePreviewWsUpstream(opts: {
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
-  // Daemon port (8000) carries session conversation data — gate on session
-  // visibility, not just account membership (see forwardToSandbox).
+  // Both session-data ports carry the conversation — gate on session visibility,
+  // not just account membership (see forwardToSandbox). This resolver forces
+  // opencode WebSockets to :4096 on Daytona, so keying on 8000 alone left the
+  // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
+  // side, one function further down the file.
   if (
-    upstreamPort === 8000 &&
+    carriesSessionData(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
