@@ -19,8 +19,8 @@
 
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -76,6 +76,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   delete process.env.KORTIX_GIT_CACHE_DIR;
+  mock.restore();
 });
 
 describe('refreshMirror auth self-sufficiency', () => {

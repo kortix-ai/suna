@@ -97,9 +97,12 @@ let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let githubInstallationStateConsumed: boolean;
 let ownerRepoListCalls: any[];
+let getRepoCalls: any[];
+let branchListCalls: any[];
 let nangoCredentialCalls: Array<{ accountId: string; installationId: string }>;
 let deleteRepoCalls: any[];
 let commitFailurePath: string | null;
+let getRepoFailureStatus: number | null;
 let platformAdmin: boolean;
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
@@ -120,9 +123,12 @@ function resetState() {
   gitConnectionRows = [];
   githubInstallationStateConsumed = false;
   ownerRepoListCalls = [];
+  getRepoCalls = [];
+  branchListCalls = [];
   nangoCredentialCalls = [];
   deleteRepoCalls = [];
   commitFailurePath = null;
+  getRepoFailureStatus = null;
   platformAdmin = false;
   installationRows = [{
     installationRowId: '00000000-0000-4000-a000-000000000041',
@@ -271,18 +277,28 @@ mock.module('../projects/github', () => ({
     expect(token).toBe('github-user-token');
     return { login: 'github-admin' };
   },
-  getRepo: async (input: any) => ({
-    id: input.owner === 'acme' ? 84 : 7,
-    name: input.repo,
-    full_name: `${input.owner}/${input.repo}`,
-    private: true,
-    html_url: `https://github.com/${input.owner}/${input.repo}`,
-    clone_url: `https://github.com/${input.owner}/${input.repo}.git`,
-    ssh_url: `git@github.com:${input.owner}/${input.repo}.git`,
-    default_branch: input.owner === 'acme' ? 'trunk' : 'main',
-    description: null,
-    permissions: { push: true },
-  }),
+  getRepo: async (input: any) => {
+    getRepoCalls.push(input);
+    if (getRepoFailureStatus) {
+      throw new realGithubModule.GitHubApiError(
+        'GitHub repository access failed',
+        getRepoFailureStatus,
+        `/repos/${input.owner}/${input.repo}`,
+      );
+    }
+    return {
+      id: input.owner === 'acme' ? 84 : 7,
+      name: input.repo,
+      full_name: `${input.owner}/${input.repo}`,
+      private: true,
+      html_url: `https://github.com/${input.owner}/${input.repo}`,
+      clone_url: `https://github.com/${input.owner}/${input.repo}.git`,
+      ssh_url: `git@github.com:${input.owner}/${input.repo}.git`,
+      default_branch: input.owner === 'acme' ? 'trunk' : 'main',
+      description: null,
+      permissions: { push: true },
+    };
+  },
   getRepositoryBranch: async ({ branch }: { branch: string }) => ({
     name: branch,
     protected: false,
@@ -305,10 +321,16 @@ mock.module('../projects/github', () => ({
         }]
       : [];
   },
-  listRepositoryBranches: async ({ owner, repo }: { owner: string; repo: string }) => [
-    { name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main', protected: true },
-    { name: 'dev', protected: false },
-  ],
+  listRepositoryBranches: async (input: any) => {
+    branchListCalls.push(input);
+    return [
+      {
+        name: input.owner === 'acme' && input.repo === 'portal' ? 'trunk' : 'main',
+        protected: true,
+      },
+      { name: 'dev', protected: false },
+    ];
+  },
   isOrgAccount: async () => true,
   isGithubAppConfigured: () => true,
 }));
@@ -738,7 +760,10 @@ describe('create-repo starter scaffold contract', () => {
       ownerType: 'Organization',
       search: 'portal',
       limit: 25,
-      auth: { token: 'nango-user-token-84' },
+      auth: {
+        token: 'nango-installation-token-84',
+        source: 'app_installation',
+      },
     });
 
     const branches = await app.request(
@@ -756,6 +781,16 @@ describe('create-repo starter scaffold contract', () => {
         { name: 'trunk', protected: true },
         { name: 'dev', protected: false },
       ],
+    });
+    expect(getRepoCalls).toContainEqual({
+      owner: 'acme',
+      repo: 'portal',
+      auth: { token: 'nango-installation-token-84' },
+    });
+    expect(branchListCalls).toContainEqual({
+      owner: 'acme',
+      repo: 'portal',
+      auth: { token: 'nango-installation-token-84' },
     });
 
     const linked = await app.request('/v1/projects/link-repository', {
@@ -794,6 +829,9 @@ describe('create-repo starter scaffold contract', () => {
         credentialRef: 'nango-connection-84',
         managed: false,
       }),
+    );
+    expect(getRepoCalls.every((call) => call.auth?.token === 'nango-installation-token-84')).toBe(
+      true,
     );
     expect(nangoCredentialCalls).toEqual([
       { accountId: ACCOUNT_ID, installationId: '84' },
@@ -857,7 +895,7 @@ describe('create-repo starter scaffold contract', () => {
     });
   });
 
-  test('commits the default starter scaffold with the account Nango user token before registering the project', async () => {
+  test('commits the default starter scaffold with the account Nango installation token before registering the project', async () => {
     const app = createApp();
     const res = await app.request('/v1/projects/create-repo', {
       method: 'POST',
@@ -890,20 +928,33 @@ describe('create-repo starter scaffold contract', () => {
       },
     });
     expect(repoCreateCalls[0].owner).toBeUndefined();
+    expect(getRepoCalls).toContainEqual({
+      owner: 'kortix-org',
+      repo: 'company-os',
+      auth: {
+        token: 'nango-installation-token-42',
+        source: 'nango',
+        owner: 'kortix-org',
+        ownerType: 'Organization',
+        installationId: '42',
+      },
+    });
 
     expect(fileShaCalls.map((call) => call.path)).toEqual(['README.md']);
     expect(fileShaCalls[0]).toMatchObject({
       owner: 'kortix-org',
       repo: 'company-os',
       branch: 'main',
-      auth: { token: 'nango-user-token-42', source: 'nango' },
+      auth: { token: 'nango-installation-token-42', source: 'nango' },
     });
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
     expect(committedPaths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
     expect(committedPaths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(commitCalls.every((call) => call.auth?.token === 'nango-user-token-42')).toBe(true);
+    expect(commitCalls.every((call) => call.auth?.token === 'nango-installation-token-42')).toBe(
+      true,
+    );
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
     expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
     // README.md is upserted via sha because `auto_init: true` creates one
@@ -938,7 +989,7 @@ describe('create-repo starter scaffold contract', () => {
       authMethod: 'nango',
       credentialRef: 'nango-connection-42',
       installationId: '42',
-      managed: true,
+      managed: false,
       visibility: 'private',
       status: 'connected',
     }));
@@ -991,6 +1042,50 @@ describe('create-repo starter scaffold contract', () => {
     expect(insertedProject).toBeNull();
   });
 
+  test('rolls back when the selected installation cannot access the new repository', async () => {
+    getRepoFailureStatus = 404;
+
+    const app = createApp();
+    const response = await app.request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        installation_id: '42',
+        name: 'company-os',
+        project_name: 'Company OS',
+        private: true,
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error:
+        'The selected GitHub App installation cannot access the new repository. ' +
+        'Grant repository access and reconnect GitHub.',
+      code: 'github_insufficient_permissions',
+      account_id: ACCOUNT_ID,
+      installation_id: '42',
+      requires_human_oauth: true,
+      sdk_action: 'createGitHubReconnectSession',
+    });
+    expect(deleteRepoCalls).toEqual([
+      {
+        owner: 'kortix-org',
+        repo: 'company-os',
+        auth: {
+          token: 'nango-user-token-42',
+          source: 'nango',
+          owner: 'kortix-org',
+          ownerType: 'Organization',
+          installationId: '42',
+        },
+      },
+    ]);
+    expect(commitCalls).toEqual([]);
+    expect(insertedProject).toBeNull();
+  });
+
   test("commits a selected marketplace project template into the new GitHub repository", async () => {
     const app = createApp();
     const res = await app.request("/v1/projects/create-repo", {
@@ -1016,7 +1111,7 @@ describe('create-repo starter scaffold contract', () => {
       expect.objectContaining({
         projectId: PROJECT_ID,
         provider: "github",
-        managed: true,
+        managed: false,
       }),
     );
   });
@@ -1065,7 +1160,7 @@ describe('create-repo starter scaffold contract', () => {
       expect.objectContaining({
         projectId: PROJECT_ID,
         provider: "github",
-        managed: true,
+        managed: false,
       }),
     );
   });

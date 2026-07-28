@@ -1,6 +1,7 @@
 /** Platform-managed GitHub connection lifecycle through Nango. */
 
 import { backendApi } from '../../http/api-client';
+import { ApiError } from '../../http/api/errors';
 
 export interface ManagedGitHubCandidate {
   connection_id: string;
@@ -141,9 +142,7 @@ export async function startGitHubAppManifest(
   input: GitHubAppManifestStartInput = {},
 ): Promise<GitHubAppManifestStart> {
   void input;
-  throw new Error(
-    'Legacy GitHub App setup is disabled. Use createManagedGitHubConnectSession.',
-  );
+  throw managedGitHubConnectionRequired();
 }
 
 export interface GitHubAppExistingInput {
@@ -165,9 +164,7 @@ export async function setGitHubAppFromExisting(
   input: GitHubAppExistingInput,
 ): Promise<{ ok: true; owner: string }> {
   void input;
-  throw new Error(
-    'Legacy GitHub App setup is disabled. Use createManagedGitHubConnectSession.',
-  );
+  throw managedGitHubConnectionRequired();
 }
 
 export interface GitHubAppPatInput {
@@ -184,12 +181,25 @@ export interface GitHubAppPatInput {
  */
 export async function setGitHubAppPat(input: GitHubAppPatInput): Promise<{ ok: true }> {
   void input;
-  throw new Error(
-    'Legacy GitHub token setup is disabled. Use createManagedGitHubConnectSession.',
-  );
+  throw managedGitHubConnectionRequired();
 }
 
 /** @deprecated Use `disconnectManagedGitHubConnection`. */
 export async function disconnectGitHubApp(): Promise<{ ok: true }> {
   return disconnectManagedGitHubConnection();
+}
+
+function managedGitHubConnectionRequired(): ApiError {
+  const details = {
+    error: 'Legacy GitHub App setup is disabled.',
+    code: 'github_connection_required',
+    requires_human_oauth: true,
+    sdk_action: 'createManagedGitHubConnectSession',
+  } as const;
+  return new ApiError(details.error, {
+    status: 409,
+    code: details.code,
+    details,
+    data: details,
+  });
 }

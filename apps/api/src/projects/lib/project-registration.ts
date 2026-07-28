@@ -26,7 +26,7 @@ type RegistrationInput = {
   name?: string | null;
   defaultBranch: string;
   manifestPath: string;
-  /** True only when Kortix created the upstream repository for this project. */
+  /** True only when the platform-managed Nango connection owns this repository. */
   managed?: boolean;
   auth: RegistrationAuth;
 };

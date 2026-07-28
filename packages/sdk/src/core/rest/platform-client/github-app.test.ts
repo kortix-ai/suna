@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { createKortix } from '../../client/kortix';
+import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
   createManagedGitHubConnectSession,
@@ -146,18 +147,26 @@ test('keeps the existing platform GitHub names exported as deprecated adapters',
 });
 
 test('deprecated setup adapters never transmit GitHub credentials', async () => {
-  await expect(startGitHubAppManifest({ org: 'acme' })).rejects.toThrow(
-    'Use createManagedGitHubConnectSession',
-  );
-  await expect(
+  const errors = await Promise.all([
+    startGitHubAppManifest({ org: 'acme' }).catch((error) => error),
     setGitHubAppFromExisting({
       appId: '123',
       privateKey: 'private-key',
       installationId: '456',
-    }),
-  ).rejects.toThrow('Use createManagedGitHubConnectSession');
-  await expect(
-    setGitHubAppPat({ owner: 'acme', token: 'github-token' }),
-  ).rejects.toThrow('Use createManagedGitHubConnectSession');
+    }).catch((error) => error),
+    setGitHubAppPat({ owner: 'acme', token: 'github-token' }).catch((error) => error),
+  ]);
+
+  for (const error of errors) {
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: 'github_connection_required',
+      details: {
+        requires_human_oauth: true,
+        sdk_action: 'createManagedGitHubConnectSession',
+      },
+    });
+  }
   expect(requests).toEqual([]);
 });

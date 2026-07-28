@@ -24,9 +24,7 @@ describe('GitHub repository branches', () => {
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input instanceof Request ? input.url : input);
       requests.push(url);
-      const body = url.includes('page=2')
-        ? [{ name: 'release/next', protected: true }]
-        : firstPage;
+      const body = url.includes('page=2') ? [{ name: 'release/next', protected: true }] : firstPage;
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -63,14 +61,15 @@ describe('GitHub repository branches', () => {
     });
 
     expect(branch).toEqual({ name: 'release/next', protected: false });
-    expect(requested).toBe(
-      'https://api.github.com/repos/kortix/suna/branches/release%2Fnext',
-    );
+    expect(requested).toBe('https://api.github.com/repos/kortix/suna/branches/release%2Fnext');
   });
 
   test('preserves the GitHub status at the API boundary', async () => {
     globalThis.fetch = (async () =>
-      Response.json({ message: 'Service unavailable' }, { status: 503 })) as unknown as typeof fetch;
+      Response.json(
+        { message: 'Service unavailable' },
+        { status: 503 },
+      )) as unknown as typeof fetch;
 
     const request = getRepositoryBranch({
       owner: 'kortix',
@@ -99,9 +98,7 @@ describe('GitHub repository rollback', () => {
         auth: { token: 'nango-user-token' },
       }),
     ).resolves.toBeUndefined();
-    expect(requested).toBe(
-      'https://api.github.com/repos/acme/partial-project',
-    );
+    expect(requested).toBe('https://api.github.com/repos/acme/partial-project');
   });
 });
 
@@ -119,7 +116,7 @@ function repo(owner: string, name: string) {
   };
 }
 
-describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister', () => {
+describe("listOwnerRepositories — the managed-git PAT backend's repo lister", () => {
   test('an org owner returns one bounded page ordered by recent activity', async () => {
     const requests: string[] = [];
     const firstPage = Array.from({ length: 100 }, (_, i) => repo('acme-corp', `repo-${i}`));
@@ -191,6 +188,45 @@ describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister',
       'https://api.github.com/user/repos?' +
         'affiliation=owner%2Ccollaborator&sort=updated&direction=desc&per_page=100&page=1',
     );
+  });
+
+  test('an installation token lists personal repositories through the installation endpoint', async () => {
+    let requested = '';
+    const ownRepo = repo('agent-kortix', 'demo');
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requested = String(input instanceof Request ? input.url : input);
+      return Response.json({
+        total_count: 2,
+        repositories: [ownRepo, repo('some-other-org', 'other-repo')],
+      });
+    }) as typeof fetch;
+
+    const repos = await listOwnerRepositories({
+      owner: 'agent-kortix',
+      ownerType: 'User',
+      auth: { token: 'installation-token', source: 'app_installation' },
+    });
+
+    expect(repos).toEqual([ownRepo]);
+    expect(requested).toBe('https://api.github.com/installation/repositories?per_page=100&page=1');
+  });
+
+  test('installation search matches an exact hyphenated repository slug', async () => {
+    const match = repo('agent-kortix', 'customer-portal');
+    globalThis.fetch = (async (_input: string | URL | Request) =>
+      Response.json({
+        total_count: 1,
+        repositories: [match],
+      })) as typeof fetch;
+
+    const repos = await listOwnerRepositories({
+      owner: 'agent-kortix',
+      ownerType: 'User',
+      auth: { token: 'installation-token', source: 'app_installation' },
+      search: 'customer-portal',
+    });
+
+    expect(repos).toEqual([match]);
   });
 
   test('no ownerType provided -> falls back to a live account-type lookup', async () => {

@@ -837,6 +837,36 @@ REFACTOR and finish on the full typecheck, test, and packed-install smoke gates.
 
 ---
 
+### 2026-07-28 — session `nango-github-migration` (U8 compatibility follow-up)
+
+Retained credential-free compatibility behavior for published GitHub setup APIs.
+
+- Deprecated account and platform setup functions now throw typed `ApiError`
+  instances with status `409` and code `github_connection_required`.
+- The errors direct consumers to the Nango Connect session methods.
+- No deprecated adapter sends GitHub tokens or private keys.
+- No public SDK export changed.
+
+TDD and local verification:
+
+- RED SDK compatibility tests: **11 pass / 2 fail**.
+- GREEN SDK compatibility tests: **13 pass / 0 fail** with **50**
+  assertions.
+- SDK suite: **1341 pass / 0 fail** with **5896** assertions across **112**
+  files.
+- SDK typecheck and examples typecheck: exit 0.
+- SDK packed-install smoke: packed, installed, imported, and constructed
+  `@kortix/sdk`.
+- Public value and type export snapshots pass.
+
+**Status:** U8 SDK COMPATIBILITY COMPLETE.
+
+**Shippable to production: YES** for the published SDK surface. The repository
+rollout still requires PR merge, Deploy Dev, deployed SHA proof, and deployed
+Nango verification.
+
+---
+
 ### 2026-07-27 — session `nango-github-migration` (U3 complete)
 
 Completed the account-scoped GitHub connection lifecycle contracts.

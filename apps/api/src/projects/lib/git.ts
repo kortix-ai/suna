@@ -123,6 +123,7 @@ export async function resolveGitHubRepoAuth(
   installationId?: string | null,
 ): Promise<{
   auth: GitHubAuthContext;
+  installationAuth: GitHubAuthContext;
   authSource: 'nango';
   installation: typeof accountGithubInstallations.$inferSelect;
 }> {
@@ -138,6 +139,13 @@ export async function resolveGitHubRepoAuth(
   return {
     auth: {
       token: resolved.credential.userToken,
+      source: 'nango',
+      owner: resolved.installation.ownerLogin,
+      ownerType: resolved.installation.ownerType,
+      installationId: resolved.installation.installationId,
+    },
+    installationAuth: {
+      token: resolved.credential.installationToken,
       source: 'nango',
       owner: resolved.installation.ownerLogin,
       ownerType: resolved.installation.ownerType,
@@ -795,7 +803,7 @@ export async function resolveGitHubImport(input: {
       }
 
       const auth: GitHubAuthContext = {
-        token: resolved.credential.userToken,
+        token: resolved.credential.installationToken,
         source: 'nango',
         owner: installation.ownerLogin,
         ownerType: installation.ownerType,

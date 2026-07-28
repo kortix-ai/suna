@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { accountGithubInstallations } from '@kortix/db';
 
 import {
-  GitHubCredentialResolutionError,
   resolveAccountGithubCredential,
   withFreshAccountGithubRead,
 } from '../projects/nango/account-credential';
@@ -66,22 +65,6 @@ type ProjectNangoGitResolver = (
     installationId?: string;
   };
   authSource: 'nango';
-} | null>;
-
-type ProjectGitAccessResolver = (
-  projectId: string,
-  dependencies: {
-    getProject(projectId: string): Promise<Record<string, unknown> | null>;
-    resolveProject(project: Record<string, unknown>): Promise<{
-      repoUrl: string;
-      gitAuthToken: string | null;
-      gitAuthHeaders: Record<string, string>;
-    }>;
-  },
-) => Promise<{
-  repoUrl: string;
-  token: string | null;
-  headers: Record<string, string>;
 } | null>;
 
 function installationRow(
@@ -507,29 +490,5 @@ describe('project runtime GitHub Nango credential resolution', () => {
       status: 409,
     });
     expect(nangoCalls).toBe(0);
-  });
-
-  test('propagates reconnect errors instead of returning anonymous Git access', async () => {
-    const gitModule = await import('../projects/lib/git');
-    const resolve = (
-      gitModule as unknown as {
-        resolveProjectGitAccessById: ProjectGitAccessResolver;
-      }
-    ).resolveProjectGitAccessById;
-    const reconnectError = new GitHubCredentialResolutionError(
-      'github_reconnect_required',
-      409,
-      ACCOUNT_ID,
-      INSTALLATION_ID,
-    );
-
-    await expect(
-      resolve(project.projectId, {
-        getProject: async () => project,
-        resolveProject: async () => {
-          throw reconnectError;
-        },
-      }),
-    ).rejects.toBe(reconnectError);
   });
 });

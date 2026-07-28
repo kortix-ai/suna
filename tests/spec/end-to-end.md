@@ -396,13 +396,19 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 ### GitHub connection (account-level, dashboard)
 
 `GH-1` `GET /projects/github/installation?account_id=` and `GET /projects/github/installations?account_id=` → account authorization → Nango-backed connection metadata. Legacy response fields remain, `install_url` is null, and connection state fields identify connected, reconnect-required, or disconnected rows.
-`GH-2` `POST /projects/github/connect-session {account_id?}` → `PROJECT_CREATE` → a server-created Nango Connect session with server-owned account/user tags. The browser receives only the short-lived Connect session token and link.
-`GH-3` `DELETE /projects/github/installations/:installationId?account_id=` → `ACCOUNT_WRITE` → deletes the Nango connection and marks matching account/project rows disconnected. A missing or already disconnected row is idempotent.
+`GH-2` `POST /projects/github/connect-session {account_id?}` → `PROJECT_CREATE` → a server-created Nango Connect session with server-owned account/user tags. The browser receives only the short-lived Connect session token and link. Deprecated `POST /projects/github/installation`, `/installations/link`, and `/installations/linkable` accept no provider credentials and return `409 github_connection_required`.
+`GH-3` `DELETE /projects/github/installations/:installationId?account_id=` → `ACCOUNT_WRITE` → deletes the Nango connection and marks matching account/project rows disconnected. A missing or already disconnected row is idempotent. Deprecated `DELETE /projects/github/installation` uses the same Nango disconnect lifecycle.
 `GH-4` `POST /projects/github/installations/:installationId/reconnect-session {account_id?}` and `POST .../refresh` → account authorization → repair and reconcile the Nango connection. Missing or stale references return typed `github_connection_required` or `github_reconnect_required` guidance.
 `GH-5` git transport resolution (`resolveProjectGitAuth`): account or managed Nango credential / explicit project credential / none. GitHub App signing and server PAT fallback do not exist.
 `GH-6` `PUT /projects/:id/git-credential` (BYO) → `manage` → set git auth secret; already server-managed → 409.
 `GH-7` `POST /projects/:id/git-token` → **409 `git_proxy_required` for every GitHub project**. GitHub clone and push use `git_origin_url`; provider tokens never leave the API.
 `GH-8` `GET/POST/DELETE /projects/:id/cli-token[/:tokenId]` → project-scoped CLI tokens.
+
+### Managed GitHub connection (platform-level)
+
+`GHA-1` `GET /platform/github-app/status`, `GET /platform/github-app/candidates`, and `POST /platform/github-app/connect-session` → platform admin only → Nango-backed managed connection metadata and Connect session. Deprecated setup writes return `409 github_connection_required`; deprecated public callbacks return the same guidance.
+`GHA-2` `POST /platform/github-app/select`, `POST /platform/github-app/reconnect-session`, and `DELETE /platform/github-app/connection` → platform admin only → explicit managed connection lifecycle. Deprecated `DELETE /platform/github-app` uses the same disconnect lifecycle.
+`GHA-3` `POST /webhooks/nango` → exact raw-body HMAC verification → account or managed connection reconciliation without storing provider credentials.
 
 ### `kortix ship` (alias `deploy`)
 

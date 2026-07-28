@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { createManagedGithubRouter } from '../platform/routes/managed-github';
-import { githubInsufficientPermissions } from '../projects/nango/errors';
 import type {
   ManagedGithubCandidate,
   ManagedGithubConnectionService,
 } from '../platform/services/managed-github-connection';
+import { githubInsufficientPermissions } from '../projects/nango/errors';
 import type { AppEnv } from '../types';
 
 const adminUserId = 'f5f875ba-e054-41ca-a441-6e032f969d88';
@@ -113,6 +113,10 @@ describe('managed GitHub platform routes', () => {
         { method: 'POST', body: JSON.stringify({ connection_id: 'managed-connection' }) },
       ],
       ['/v1/platform/github-app/connection', { method: 'DELETE' }],
+      ['/v1/platform/github-app/manifest-start', { method: 'POST', body: '{}' }],
+      ['/v1/platform/github-app/app', { method: 'POST', body: '{}' }],
+      ['/v1/platform/github-app/pat', { method: 'POST', body: '{}' }],
+      ['/v1/platform/github-app', { method: 'DELETE' }],
     ];
 
     for (const [path, init] of requests) {
@@ -123,6 +127,60 @@ describe('managed GitHub platform routes', () => {
       expect(response.status).toBe(403);
     }
     expect(fixture.calls).toEqual([]);
+  });
+
+  test('retains legacy managed setup routes as credential-free migration adapters', async () => {
+    const router = app(fixture.service);
+    const requests: Array<[string, RequestInit]> = [
+      ['/v1/platform/github-app/manifest-start', { method: 'POST', body: '{}' }],
+      [
+        '/v1/platform/github-app/app',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            app_id: '123',
+            private_key: 'legacy-private-key',
+            installation_id: '456',
+          }),
+        },
+      ],
+      [
+        '/v1/platform/github-app/pat',
+        {
+          method: 'POST',
+          body: JSON.stringify({ owner: 'acme', token: 'legacy-token' }),
+        },
+      ],
+      ['/v1/platform/github-app/manifest-callback?code=legacy-code', { method: 'GET' }],
+      ['/v1/platform/github-app/install-callback?installation_id=456', { method: 'GET' }],
+    ];
+
+    for (const [path, init] of requests) {
+      const response = await router.request(path, {
+        ...init,
+        headers: init.body ? { 'content-type': 'application/json' } : undefined,
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: 'github_connection_required',
+        requires_human_oauth: true,
+        sdk_action: 'createManagedGitHubConnectSession',
+      });
+    }
+
+    expect(fixture.calls).toEqual([]);
+  });
+
+  test('adapts the legacy managed disconnect route to Nango', async () => {
+    const router = app(fixture.service);
+
+    const response = await router.request('/v1/platform/github-app', {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(fixture.calls).toEqual(['disconnect']);
   });
 
   test('returns only credential-free status and candidate metadata', async () => {

@@ -242,7 +242,15 @@ flow(
 
 flow(
   "GH-2",
-  { domain: "git", routes: ["POST /v1/projects/github/connect-session"] },
+  {
+    domain: "git",
+    routes: [
+      "POST /v1/projects/github/connect-session",
+      "POST /v1/projects/github/installation",
+      "POST /v1/projects/github/installations/link",
+      "POST /v1/projects/github/installations/linkable",
+    ],
+  },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
@@ -257,6 +265,29 @@ flow(
         r.body().exists("$.token").exists("$.expires_at").exists("$.connect_link");
       }
     });
+    for (const path of [
+      "/v1/projects/github/installation",
+      "/v1/projects/github/installations/link",
+      "/v1/projects/github/installations/linkable",
+    ]) {
+      await ctx.step(`ANON cannot use deprecated setup route ${path}`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post(path, {});
+        r.status(401);
+      });
+      await ctx.step(`OWNER receives Nango guidance from ${path}`, async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, {});
+        r
+          .status([403, 409])
+          .body()
+          .exists("$.error");
+        if (r.statusCode === 409) {
+          r.body()
+            .has("$.code", "github_connection_required")
+            .has("$.requires_human_oauth", true)
+            .has("$.sdk_action", "createGitHubConnectSession");
+        }
+      });
+    }
   },
 );
 
@@ -264,9 +295,16 @@ flow(
   "GH-3",
   {
     domain: "git",
-    routes: ["DELETE /v1/projects/github/installations/:installationId"],
+    routes: [
+      "DELETE /v1/projects/github/installation",
+      "DELETE /v1/projects/github/installations/:installationId",
+    ],
   },
   async (ctx) => {
+    await ctx.step("ANON cannot use the deprecated account disconnect route", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).del("/v1/projects/github/installation");
+      r.status(401);
+    });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)

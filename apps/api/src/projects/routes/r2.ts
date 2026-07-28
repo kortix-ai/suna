@@ -6,7 +6,7 @@ import { classifySnapshotError, describeSnapshotError } from '../../snapshots/er
 import { withTimeout } from '../../shared/with-timeout';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
-import { commitFile, createRepo, deleteRepo, getFileSha, type GitHubAuthContext, type GitHubRepo } from '../github';
+import { commitFile, createRepo, deleteRepo, getFileSha, getRepo, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -225,6 +225,61 @@ projectsApp.openapi(
     );
   }
 
+  const [createdOwner, createdRepoName] = repo.full_name.split('/');
+  if (!createdOwner || !createdRepoName) {
+    await rollbackCreatedGitHubRepository(repo, githubAuth.auth);
+    return c.json(
+      {
+        error: 'GitHub returned an invalid repository identity.',
+        code: 'github_provider_failed',
+      },
+      502,
+    );
+  }
+  try {
+    const installationRepo = await getRepo({
+      owner: createdOwner,
+      repo: createdRepoName,
+      auth: githubAuth.installationAuth,
+    });
+    if (
+      String(installationRepo.id) !== String(repo.id) ||
+      installationRepo.full_name.toLowerCase() !== repo.full_name.toLowerCase()
+    ) {
+      await rollbackCreatedGitHubRepository(repo, githubAuth.auth);
+      return c.json(
+        {
+          error: 'GitHub returned a different repository for the selected installation.',
+          code: 'github_provider_failed',
+        },
+        502,
+      );
+    }
+  } catch (error) {
+    await rollbackCreatedGitHubRepository(repo, githubAuth.auth);
+    const mapped = mapGitHubOperationError(error);
+    if (
+      mapped.body.code === 'github_repository_not_found' ||
+      mapped.body.code === 'github_insufficient_permissions'
+    ) {
+      return c.json(
+        {
+          error:
+            'The selected GitHub App installation cannot access the new repository. ' +
+            'Grant repository access and reconnect GitHub.',
+          code: 'github_insufficient_permissions',
+          account_id: scope.accountId,
+          installation_id: githubAuth.installation.installationId,
+          requires_human_oauth: true,
+          sdk_action: 'createGitHubReconnectSession',
+        },
+        403,
+      );
+    }
+    if (mapped.retryAfter) c.header('Retry-After', mapped.retryAfter);
+    return c.json(mapped.body, mapped.status);
+  }
+
   const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
   const defaultBranch = repo.default_branch || 'main';
 
@@ -251,7 +306,7 @@ projectsApp.openapi(
     try {
       // README.md exists already from `auto_init: true` — upsert via sha.
       const existingSha = file.path === 'README.md'
-        ? await getFileSha({ owner: ownerLogin, repo: repoSlug, path: file.path, branch: defaultBranch, auth: githubAuth.auth })
+        ? await getFileSha({ owner: ownerLogin, repo: repoSlug, path: file.path, branch: defaultBranch, auth: githubAuth.installationAuth })
         : null;
       await commitFile({
         owner: ownerLogin,
@@ -261,7 +316,7 @@ projectsApp.openapi(
         message: `chore: scaffold ${file.path}`,
         branch: defaultBranch,
         existingSha: existingSha ?? undefined,
-        auth: githubAuth.auth,
+        auth: githubAuth.installationAuth,
       });
     } catch (err) {
       const mapped = mapGitHubOperationError(err);
@@ -290,7 +345,7 @@ projectsApp.openapi(
       installation: githubAuth.installation,
       name: projectName,
       defaultBranch,
-      managed: true,
+      managed: false,
       // The starter just committed above (buildStarterFiles) ships kortix.yaml
       // (kortix_version 2) — record that path so it is current from creation.
       manifestPath: 'kortix.yaml',

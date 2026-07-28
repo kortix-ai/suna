@@ -44,6 +44,20 @@ const routeErrorSchema = z.object({
   code: z.string().optional(),
 });
 
+const migrationErrorSchema = routeErrorSchema.extend({
+  requires_human_oauth: z.literal(true),
+  sdk_action: z.literal('createManagedGitHubConnectSession'),
+});
+
+function managedMigrationGuidance(message: string) {
+  return {
+    error: message,
+    code: 'github_connection_required',
+    requires_human_oauth: true as const,
+    sdk_action: 'createManagedGitHubConnectSession' as const,
+  };
+}
+
 function serializeCandidate(candidate: ManagedGithubCandidate) {
   return {
     connection_id: candidate.connectionId,
@@ -97,6 +111,133 @@ export function createManagedGithubRouter(dependencies: ManagedGithubRouterDepen
     dependencies.authMiddleware ?? supabaseAuth,
     dependencies.adminMiddleware ?? requireAdmin,
   ];
+  const legacyBodyRequest = {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({}).passthrough(),
+        },
+      },
+    },
+  } as const;
+
+  router.openapi(
+    createRoute({
+      method: 'post',
+      path: '/manifest-start',
+      tags: ['platform'],
+      summary: 'Deprecated managed GitHub App manifest adapter',
+      middleware,
+      request: legacyBodyRequest,
+      responses: {
+        409: json(migrationErrorSchema, 'Nango Connect required'),
+        ...errors(401, 403),
+      },
+    }),
+    async (context) =>
+      context.json(managedMigrationGuidance('Legacy GitHub App manifest setup is disabled.'), 409),
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'post',
+      path: '/app',
+      tags: ['platform'],
+      summary: 'Deprecated managed GitHub App credential adapter',
+      middleware,
+      request: legacyBodyRequest,
+      responses: {
+        409: json(migrationErrorSchema, 'Nango Connect required'),
+        ...errors(401, 403),
+      },
+    }),
+    async (context) =>
+      context.json(
+        managedMigrationGuidance('Legacy GitHub App credential writes are disabled.'),
+        409,
+      ),
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'post',
+      path: '/pat',
+      tags: ['platform'],
+      summary: 'Deprecated managed GitHub PAT credential adapter',
+      middleware,
+      request: legacyBodyRequest,
+      responses: {
+        409: json(migrationErrorSchema, 'Nango Connect required'),
+        ...errors(401, 403),
+      },
+    }),
+    async (context) =>
+      context.json(managedMigrationGuidance('Legacy managed GitHub PAT writes are disabled.'), 409),
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'get',
+      path: '/manifest-callback',
+      tags: ['platform'],
+      summary: 'Deprecated managed GitHub App manifest callback adapter',
+      request: { query: z.object({}).passthrough() },
+      responses: {
+        409: json(migrationErrorSchema, 'Nango Connect required'),
+      },
+    }),
+    async (context) =>
+      context.json(
+        managedMigrationGuidance('Legacy GitHub App manifest callbacks are disabled.'),
+        409,
+      ),
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'get',
+      path: '/install-callback',
+      tags: ['platform'],
+      summary: 'Deprecated managed GitHub App install callback adapter',
+      request: { query: z.object({}).passthrough() },
+      responses: {
+        409: json(migrationErrorSchema, 'Nango Connect required'),
+      },
+    }),
+    async (context) =>
+      context.json(
+        managedMigrationGuidance('Legacy GitHub App install callbacks are disabled.'),
+        409,
+      ),
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/',
+      tags: ['platform'],
+      summary: 'Deprecated managed GitHub disconnect adapter',
+      middleware,
+      responses: {
+        200: json(z.object({ ok: z.literal(true) }), 'Managed GitHub connection disconnected'),
+        ...errors(401, 403, 404, 500),
+      },
+    }),
+    async (context) => {
+      try {
+        await dependencies.service.disconnectSelected();
+        return context.json({ ok: true as const }, 200);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === 'No managed GitHub connection is selected.'
+        ) {
+          return context.json({ ok: true as const }, 200);
+        }
+        return routeError(context, error);
+      }
+    },
+  );
 
   router.openapi(
     createRoute({

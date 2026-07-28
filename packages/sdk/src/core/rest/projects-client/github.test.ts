@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
+import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
   createGitHubConnectSession,
@@ -39,13 +40,21 @@ beforeEach(() => {
 });
 
 test('retains saveGitHubInstallation without transmitting legacy credentials', async () => {
-  await expect(
-    saveGitHubInstallation({
-      state: 'signed-state',
-      installation_id: '84',
-      github_user_token: 'github-user-token',
-    }),
-  ).rejects.toThrow('Use createGitHubConnectSession');
+  const error = await saveGitHubInstallation({
+    state: 'signed-state',
+    installation_id: '84',
+    github_user_token: 'github-user-token',
+  }).catch((caught) => caught);
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    status: 409,
+    code: 'github_connection_required',
+    details: {
+      requires_human_oauth: true,
+      sdk_action: 'createGitHubConnectSession',
+    },
+  });
   expect(calls).toEqual([]);
 });
 

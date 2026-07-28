@@ -26,12 +26,7 @@ export class GitHubInstallationAuthorizationError extends Error {
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
-type GitHubAuthSource =
-  | 'app_installation'
-  | 'nango'
-  | 'pat'
-  | 'managed'
-  | 'project_credential';
+type GitHubAuthSource = 'app_installation' | 'nango' | 'pat' | 'managed' | 'project_credential';
 
 export interface GitHubAuthContext {
   token: string;
@@ -71,12 +66,19 @@ interface GitHubRepositorySearchResponse {
   items: GitHubRepo[];
 }
 
+interface GitHubInstallationRepositoriesResponse {
+  total_count: number;
+  repositories: GitHubRepo[];
+}
+
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
   const m =
     repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i) ??
     repoUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
-  if (!m) return null;
-  return { owner: m[1]!, repo: m[2]! };
+  const owner = m?.[1];
+  const repo = m?.[2];
+  if (!owner || !repo) return null;
+  return { owner, repo };
 }
 
 export interface GitHubAppInstallation {
@@ -107,9 +109,9 @@ function requestToken(auth?: Pick<GitHubAuthContext, 'token'>) {
 
 function headers(auth?: Pick<GitHubAuthContext, 'token'>): Record<string, string> {
   return {
-    'Accept': 'application/vnd.github+json',
+    Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'Authorization': `Bearer ${requestToken(auth)}`,
+    Authorization: `Bearer ${requestToken(auth)}`,
     'User-Agent': 'kortix-api',
     'Content-Type': 'application/json',
     ...getTraceHeaders(),
@@ -129,7 +131,7 @@ async function ghFetch<T>(
   if (!res.ok) {
     let detail = '';
     try {
-      const body = await res.json() as { message?: string; errors?: Array<{ message?: string }> };
+      const body = (await res.json()) as { message?: string; errors?: Array<{ message?: string }> };
       detail = body.message ?? body.errors?.[0]?.message ?? '';
     } catch {
       detail = await res.text().catch(() => '');
@@ -184,11 +186,7 @@ export async function getGitHubAppInstallationForUserToken(
       response = await ghFetch<{
         total_count: number;
         installations: GitHubAppInstallation[];
-      }>(
-        `/user/installations?per_page=100&page=${page}`,
-        { method: 'GET' },
-        { token },
-      );
+      }>(`/user/installations?per_page=100&page=${page}`, { method: 'GET' }, { token });
     } catch (error) {
       if (
         error instanceof GitHubApiError &&
@@ -198,9 +196,7 @@ export async function getGitHubAppInstallationForUserToken(
       }
       throw error;
     }
-    const match = response.installations.find(
-      (installation) => String(installation.id) === id,
-    );
+    const match = response.installations.find((installation) => String(installation.id) === id);
     if (match) return match;
     if (response.installations.length < 100) break;
   }
@@ -272,19 +268,28 @@ export async function verifyGitHubInstallationAdmin(
   return { login };
 }
 
-/** List repositories visible to a Nango-resolved GitHub credential. */
+/** List repositories visible to the supplied GitHub credential. */
 export async function listOwnerRepositories(input: {
   owner: string;
   ownerType?: 'User' | 'Organization';
-  auth: Pick<GitHubAuthContext, 'token'>;
+  auth: Pick<GitHubAuthContext, 'token'> & Partial<Pick<GitHubAuthContext, 'source'>>;
   search?: string;
   limit?: number;
 }): Promise<GitHubRepo[]> {
+  const limit = normalizeRepositoryLimit(input.limit);
+  const search = input.search?.trim();
+  if (input.auth.source === 'app_installation') {
+    return listInstallationOwnerRepositories({
+      owner: input.owner,
+      auth: input.auth,
+      search,
+      limit,
+    });
+  }
+
   const isOrg = input.ownerType
     ? input.ownerType !== 'User'
     : await isOrgAccount(input.owner, input.auth);
-  const limit = normalizeRepositoryLimit(input.limit);
-  const search = input.search?.trim();
   if (search) {
     return searchRepositories({
       owner: input.owner,
@@ -296,9 +301,7 @@ export async function listOwnerRepositories(input: {
   }
 
   const params = new URLSearchParams(
-    isOrg
-      ? { type: 'all' }
-      : { affiliation: 'owner,collaborator' },
+    isOrg ? { type: 'all' } : { affiliation: 'owner,collaborator' },
   );
   params.set('sort', 'updated');
   params.set('direction', 'desc');
@@ -313,6 +316,46 @@ export async function listOwnerRepositories(input: {
     : repositories.filter(
         (repo) => repo.full_name.split('/')[0]?.toLowerCase() === input.owner.toLowerCase(),
       );
+}
+
+async function listInstallationOwnerRepositories(input: {
+  owner: string;
+  auth: Pick<GitHubAuthContext, 'token'>;
+  search?: string;
+  limit: number;
+}): Promise<GitHubRepo[]> {
+  const owner = input.owner.toLowerCase();
+  const searchTerms = input.search
+    ?.toLowerCase()
+    .replace(/[-_]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const repositories: GitHubRepo[] = [];
+  const perPage = 100;
+
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await ghFetch<GitHubInstallationRepositoriesResponse>(
+      `/installation/repositories?per_page=${perPage}&page=${page}`,
+      { method: 'GET' },
+      input.auth,
+    );
+
+    for (const repo of response.repositories) {
+      if (repo.full_name.split('/')[0]?.toLowerCase() !== owner) continue;
+      const searchText = `${repo.name} ${repo.description ?? ''}`
+        .toLowerCase()
+        .replace(/[-_]/g, ' ');
+      if (searchTerms?.some((term) => !searchText.includes(term))) continue;
+      repositories.push(repo);
+      if (repositories.length === input.limit) return repositories;
+    }
+
+    if (response.repositories.length < perPage || page * perPage >= response.total_count) {
+      break;
+    }
+  }
+
+  return repositories;
 }
 
 function normalizeRepositoryLimit(value: number | undefined): number {
@@ -399,7 +442,11 @@ export async function isOrgAccount(
   const cached = accountTypeCache.get(key);
   if (cached !== undefined) return cached;
   try {
-    const acc = await ghFetch<{ type?: string }>(`/users/${encodeURIComponent(login)}`, undefined, auth);
+    const acc = await ghFetch<{ type?: string }>(
+      `/users/${encodeURIComponent(login)}`,
+      undefined,
+      auth,
+    );
     const isOrg = (acc.type ?? 'Organization') === 'Organization';
     accountTypeCache.set(key, isOrg);
     return isOrg;
@@ -408,14 +455,16 @@ export async function isOrgAccount(
   }
 }
 
-async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: string; isOrg: boolean }> {
+async function resolveDefaultOwner(
+  auth?: GitHubAuthContext,
+): Promise<{ owner: string; isOrg: boolean }> {
   if (auth?.owner) {
     return { owner: auth.owner, isOrg: auth.ownerType !== 'User' };
   }
 
   // App-only: the installation auth context carries the owner. Fall back to
   // the token's authenticated account only if it somehow wasn't provided.
-  const me = await ghFetch<{ login: string }>(`/user`, undefined, auth);
+  const me = await ghFetch<{ login: string }>('/user', undefined, auth);
   return { owner: me.login, isOrg: false };
 }
 
@@ -430,7 +479,11 @@ export function githubRepositoryCreatePath(input: {
 
 export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   const ownerInput = input.owner?.trim();
-  if (input.auth?.owner && ownerInput && ownerInput.toLowerCase() !== input.auth.owner.toLowerCase()) {
+  if (
+    input.auth?.owner &&
+    ownerInput &&
+    ownerInput.toLowerCase() !== input.auth.owner.toLowerCase()
+  ) {
     throw new Error('GitHub owner must match the selected Nango connection');
   }
 
@@ -447,10 +500,14 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     owner: target.owner,
     ownerType: target.isOrg ? 'Organization' : 'User',
   });
-  return ghFetch<GitHubRepo>(path, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }, input.auth);
+  return ghFetch<GitHubRepo>(
+    path,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    input.auth,
+  );
 }
 
 /** Delete a repo. Best-effort teardown for managed-repo rollback / removal. */
@@ -531,13 +588,17 @@ export async function createBranchRef(opts: {
   sha: string;
   auth?: Pick<GitHubAuthContext, 'token'>;
 }): Promise<void> {
-  await ghFetch(`/repos/${opts.owner}/${opts.repo}/git/refs`, {
-    method: 'POST',
-    body: JSON.stringify({
-      ref: `refs/heads/${opts.branch}`,
-      sha: opts.sha,
-    }),
-  }, opts.auth);
+  await ghFetch(
+    `/repos/${opts.owner}/${opts.repo}/git/refs`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        ref: `refs/heads/${opts.branch}`,
+        sha: opts.sha,
+      }),
+    },
+    opts.auth,
+  );
 }
 
 /**
@@ -576,10 +637,14 @@ export async function commitFile(opts: {
   if (opts.branch) body.branch = opts.branch;
   if (opts.existingSha) body.sha = opts.existingSha;
 
-  await ghFetch(`/repos/${opts.owner}/${opts.repo}/contents/${encodeURI(opts.path)}`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  }, opts.auth);
+  await ghFetch(
+    `/repos/${opts.owner}/${opts.repo}/contents/${encodeURI(opts.path)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    },
+    opts.auth,
+  );
 }
 
 /** GET an existing file's blob sha so `commitFile` can upsert. Returns null

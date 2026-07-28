@@ -32,6 +32,19 @@ import {
 
 interface SessionSpec { slug: string; title: string; opencodeSessionId: string; messageCount: number; }
 
+export function sunaMigrationGitAuthMethod(
+  provider: string,
+  credentialRef: string | null,
+): 'nango' | 'managed' {
+  if (provider !== 'github') return 'managed';
+  if (!credentialRef?.trim()) {
+    throw new Error(
+      'Managed GitHub migration repository is missing its Nango connection reference.',
+    );
+  }
+  return 'nango';
+}
+
 function checkpointTempDirectory(ctx: SunaMigrationContext, key: string, prefix: string): string | null {
   return validatedMigrationTempDirectory(ctx.progress[key], prefix);
 }
@@ -169,6 +182,11 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
   const repoUrl = ctx.progress.repo_url as string;
   const defaultBranch = (ctx.progress.default_branch as string) ?? 'main';
   const provider = (ctx.progress.provider as string) ?? 'github';
+  const credentialRef =
+    typeof ctx.progress.credential_ref === 'string'
+      ? ctx.progress.credential_ref
+      : null;
+  const authMethod = sunaMigrationGitAuthMethod(provider, credentialRef);
   const specs = (ctx.progress.sessions as SessionSpec[]) ?? [];
   const now = new Date();
 
@@ -194,9 +212,9 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
       repoOwner: ctx.progress.repo_owner as string, repoName: ctx.progress.repo_name as string,
       externalRepoId: (ctx.progress.external_repo_id as string) ?? null,
       defaultBranch,
-      authMethod: provider === 'github' ? 'github_app' : 'managed',
+      authMethod,
       installationId: (ctx.progress.installation_id as string) ?? null,
-      credentialRef: (ctx.progress.credential_ref as string) ?? null,
+      credentialRef,
       visibility: 'private',
       status: 'connected',
     } as any).onConflictDoNothing({ target: projectGitConnections.projectId });

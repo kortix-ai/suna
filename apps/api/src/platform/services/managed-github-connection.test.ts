@@ -84,6 +84,7 @@ function makeFixture() {
       selected = value;
       saved.push(structuredClone(value));
     },
+    markNeedsReconnect: async () => ({ changedProjectCount: 0 }),
     markManagedProjectsUnavailable: async (input) => {
       unavailable.push(input);
     },

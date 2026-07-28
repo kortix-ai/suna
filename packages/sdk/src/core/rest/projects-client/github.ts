@@ -1,6 +1,7 @@
 // GitHub — Nango connection lifecycle and repository linking.
 
 import { backendApi } from '../../http/api-client';
+import { ApiError } from '../../http/api/errors';
 import type { KortixProject } from './projects';
 import { type ProjectGitConnection, unwrap } from './shared';
 
@@ -250,10 +251,19 @@ export async function saveGitHubInstallation(input: {
   installation_id: string;
   github_user_token?: string;
 }) {
-  void input;
-  throw new Error(
-    'Legacy GitHub installation callbacks are disabled. Use createGitHubConnectSession.',
-  );
+  const details = {
+    error: 'Legacy GitHub installation callbacks are disabled.',
+    code: 'github_connection_required',
+    installation_id: input.installation_id,
+    requires_human_oauth: true,
+    sdk_action: 'createGitHubConnectSession',
+  } as const;
+  throw new ApiError(details.error, {
+    status: 409,
+    code: details.code,
+    details,
+    data: details,
+  });
 }
 
 /** @deprecated Use `refreshGitHubConnection`. */

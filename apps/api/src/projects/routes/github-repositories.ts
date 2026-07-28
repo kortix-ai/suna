@@ -1,36 +1,33 @@
+import { createRoute, z } from '@hono/zod-openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import {
-  getRepo,
-  listOwnerRepositories,
-  listRepositoryBranches,
-} from '../github';
+import { getRepo, listOwnerRepositories, listRepositoryBranches } from '../github';
 import { resolveProjectAccount } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { getAccountGitHubInstallation } from '../lib/git';
-import {
-  normalizeString,
-  serializeGitHubRepo,
-} from '../lib/serializers';
+import { normalizeString, serializeGitHubRepo } from '../lib/serializers';
 import {
   GitHubCredentialResolutionError,
   withFreshAccountGithubRead,
 } from '../nango/account-credential';
 import { GitHubRepositoryValidationError } from '../nango/repository-operations';
 import { mapGitHubOperationError } from './github-errors';
-import { createRoute, z } from '@hono/zod-openapi';
 
-const RepositoryBranchesResponseSchema = z.object({
-  account_id: z.string(),
-  installation_id: z.string(),
-  owner_login: z.string(),
-  repo_full_name: z.string(),
-  default_branch: z.string(),
-  branches: z.array(z.object({
-    name: z.string(),
-    protected: z.boolean(),
-  })),
-}).openapi('RepositoryBranchesResponse');
+const RepositoryBranchesResponseSchema = z
+  .object({
+    account_id: z.string(),
+    installation_id: z.string(),
+    owner_login: z.string(),
+    repo_full_name: z.string(),
+    default_branch: z.string(),
+    branches: z.array(
+      z.object({
+        name: z.string(),
+        protected: z.boolean(),
+      }),
+    ),
+  })
+  .openapi('RepositoryBranchesResponse');
 
 // biome-ignore lint/suspicious/noExplicitAny: Hono cannot type a mapped runtime status code.
 function githubErrorResponse(context: any, error: unknown) {
@@ -71,12 +68,8 @@ projectsApp.openapi(
       : 100;
 
     try {
-      const selected = await getAccountGitHubInstallation(
-        scope.accountId,
-        installationId,
-      );
-      const resolvedInstallationId =
-        selected?.installationId ?? installationId ?? '';
+      const selected = await getAccountGitHubInstallation(scope.accountId, installationId);
+      const resolvedInstallationId = selected?.installationId ?? installationId ?? '';
       if (!resolvedInstallationId) {
         throw new GitHubCredentialResolutionError(
           'github_connection_required',
@@ -95,7 +88,10 @@ projectsApp.openapi(
           repos: await listOwnerRepositories({
             owner: installation.ownerLogin,
             ownerType: installation.ownerType === 'User' ? 'User' : 'Organization',
-            auth: { token: credential.userToken },
+            auth: {
+              token: credential.installationToken,
+              source: 'app_installation',
+            },
             search,
             limit,
           }),
@@ -155,7 +151,7 @@ projectsApp.openapi(
           if (owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
             throw new GitHubRepositoryValidationError('github_repository_not_found', 404);
           }
-          const authContext = { token: credential.userToken };
+          const authContext = { token: credential.installationToken };
           const [repo, branches] = await Promise.all([
             getRepo({ owner, repo: repoName, auth: authContext }),
             listRepositoryBranches({ owner, repo: repoName, auth: authContext }),
@@ -172,14 +168,17 @@ projectsApp.openapi(
           404,
         );
       }
-      return c.json({
-        account_id: scope.accountId,
-        installation_id: installation.installationId,
-        owner_login: installation.ownerLogin,
-        repo_full_name: repo.full_name,
-        default_branch: repo.default_branch,
-        branches,
-      }, 200);
+      return c.json(
+        {
+          account_id: scope.accountId,
+          installation_id: installation.installationId,
+          owner_login: installation.ownerLogin,
+          repo_full_name: repo.full_name,
+          default_branch: repo.default_branch,
+          branches,
+        },
+        200,
+      );
     } catch (error) {
       return githubErrorResponse(c, error);
     }

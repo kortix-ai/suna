@@ -7,6 +7,11 @@ import { ACCOUNT_ACTIONS, authorize } from '../iam';
 import { logger as appLogger } from '../lib/logger';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import {
+  type ManagedGithubConnectionStore,
+  managedGithubEnvironmentId,
+} from '../platform/services/managed-github-connection';
+import { createManagedGithubConnectionStore } from '../platform/services/managed-github-runtime';
+import {
   type GitHubAppInstallation,
   GitHubInstallationAuthorizationError,
   getGitHubAppInstallationForUserToken,
@@ -24,10 +29,7 @@ import {
   parseAccountNangoTags,
   parseManagedNangoTags,
 } from '../projects/nango/github-connection';
-import {
-  createNangoRequestObserver,
-  recordNangoWebhookResult,
-} from '../projects/nango/telemetry';
+import { createNangoRequestObserver, recordNangoWebhookResult } from '../projects/nango/telemetry';
 import { db } from '../shared/db';
 
 export const NANGO_WEBHOOK_MAX_BODY_BYTES = 262_144;
@@ -79,8 +81,10 @@ interface NangoWebhookHandlerDependencies {
   signingKey: string;
   accountIntegrationId: string;
   managedIntegrationId: string;
+  managedEnvironmentId: string;
   client: NangoClient;
   store: NangoGithubConnectionStore;
+  managedStore: ManagedGithubConnectionStore;
   authorizeAccountConnection(input: {
     accountId: string;
     userId: string;
@@ -168,6 +172,28 @@ function summaryMatchesAccountEvent(
     return false;
   }
   return sameAccountTags(parseAccountNangoTags(event.tags), parseAccountNangoTags(connection.tags));
+}
+
+function summaryMatchesManagedEvent(
+  connection: NangoConnectionSummary,
+  event: z.infer<typeof nangoWebhookSchema>,
+  managedIntegrationId: string,
+  managedEnvironmentId: string,
+): boolean {
+  const eventTags = parseManagedNangoTags(event.tags);
+  const connectionTags = parseManagedNangoTags(connection.tags);
+  return Boolean(
+    eventTags &&
+      connectionTags &&
+      connection.connectionId === event.connectionId &&
+      connection.integrationId === managedIntegrationId &&
+      connection.provider === 'github-app' &&
+      eventTags.userId === connectionTags.userId &&
+      eventTags.displayName === connectionTags.displayName &&
+      eventTags.connectAttemptId === connectionTags.connectAttemptId &&
+      event.tags?.kortix_environment_id === managedEnvironmentId &&
+      connection.tags.kortix_environment_id === managedEnvironmentId,
+  );
 }
 
 function existingConnectionMatches(
@@ -263,8 +289,84 @@ export function createNangoWebhookHandler(
       event.providerConfigKey === dependencies.managedIntegrationId &&
       event.provider === 'github-app' &&
       event.authMode === 'APP' &&
-      managedTags !== null;
+      managedTags !== null &&
+      event.tags?.kortix_environment_id === dependencies.managedEnvironmentId;
     if (managedEvent) {
+      if (event.operation === 'refresh' && event.success === false && event.connectionId) {
+        try {
+          const selected = await dependencies.managedStore.getSelected();
+          if (
+            !selected ||
+            selected.connectionId !== event.connectionId ||
+            selected.integrationId !== dependencies.managedIntegrationId
+          ) {
+            return {
+              status: 200,
+              body: { ok: true, ignored: true, reason: 'unrecognized_connection' },
+            };
+          }
+
+          const connections = await dependencies.client.listConnections({
+            connectionId: event.connectionId,
+            tags: event.tags,
+            limit: 100,
+          });
+          const current = connections.find((connection) =>
+            summaryMatchesManagedEvent(
+              connection,
+              event,
+              dependencies.managedIntegrationId,
+              dependencies.managedEnvironmentId,
+            ),
+          );
+          if (!current) {
+            return {
+              status: 200,
+              body: { ok: true, ignored: true, reason: 'unrecognized_connection' },
+            };
+          }
+
+          const result = await dependencies.managedStore.markNeedsReconnect({
+            connectionId: selected.connectionId,
+            integrationId: selected.integrationId,
+            installationId: selected.installationId,
+          });
+          dependencies.logger.warn('Managed Nango GitHub connection requires reconnect', {
+            connection_id: selected.connectionId,
+            installation_id: selected.installationId,
+            changed_project_count: result.changedProjectCount,
+          });
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              operation: 'refresh',
+              connection_id: selected.connectionId,
+              changed_project_count: result.changedProjectCount,
+            },
+          };
+        } catch (error) {
+          if (isNangoError(error)) {
+            dependencies.logger.warn('Managed Nango webhook provider failure', {
+              connection_id: event.connectionId,
+              code: error.code,
+            });
+            return {
+              status: error.status,
+              ...(error.retryAfter ? { headers: { 'retry-after': error.retryAfter } } : {}),
+              body: { ok: false, error: error.code },
+            };
+          }
+          dependencies.logger.error('Managed Nango webhook reconciliation failed', {
+            connection_id: event.connectionId,
+            operation: event.operation,
+          });
+          return {
+            status: 500,
+            body: { ok: false, error: 'webhook_reconciliation_failed' },
+          };
+        }
+      }
       return {
         status: 200,
         body: {
@@ -560,16 +662,11 @@ export function createNangoWebhookHandler(
   };
   return async (request) => {
     const result = await handle(request);
-    const errorCode =
-      typeof result.body.error === 'string' ? result.body.error : undefined;
+    const errorCode = typeof result.body.error === 'string' ? result.body.error : undefined;
     dependencies.observeResult?.({
       status: result.status,
       outcome:
-        result.status >= 400
-          ? 'error'
-          : result.body.ignored === true
-            ? 'ignored'
-            : 'success',
+        result.status >= 400 ? 'error' : result.body.ignored === true ? 'ignored' : 'success',
       ...(errorCode ? { errorCode } : {}),
     });
     return result;
@@ -805,8 +902,13 @@ function getProductionHandler() {
       signingKey: config.NANGO_WEBHOOK_SIGNING_KEY,
       accountIntegrationId: config.NANGO_GITHUB_ACCOUNT_INTEGRATION_ID,
       managedIntegrationId: config.NANGO_GITHUB_MANAGED_INTEGRATION_ID,
+      managedEnvironmentId: managedGithubEnvironmentId(
+        config.INTERNAL_KORTIX_ENV,
+        config.SUPABASE_URL,
+      ),
       client,
       store: postgresNangoGithubConnectionStore,
+      managedStore: createManagedGithubConnectionStore(db),
       authorizeAccountConnection: async ({ accountId, userId }) =>
         (await authorize(userId, accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed,
       inspectInstallation: async ({ userToken, installationId }) =>

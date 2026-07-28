@@ -45,6 +45,63 @@ export function createManagedGithubConnectionStore(
           set: { value, updatedAt: new Date() },
         });
     },
+    markNeedsReconnect: async ({ connectionId, integrationId, installationId }) =>
+      database.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ value: platformSettings.value })
+          .from(platformSettings)
+          .where(eq(platformSettings.key, MANAGED_NANGO_GITHUB_SETTING_KEY))
+          .limit(1);
+        const selected = managedNangoGithubSettingSchema.safeParse(row?.value);
+        if (
+          !selected.success ||
+          selected.data.connectionId !== connectionId ||
+          selected.data.integrationId !== integrationId ||
+          selected.data.installationId !== installationId
+        ) {
+          throw new Error('Managed GitHub connection does not match the selected setting.');
+        }
+
+        const now = new Date();
+        const value = managedNangoGithubSettingSchema.parse({
+          ...selected.data,
+          status: 'needs_reconnect',
+        });
+        await tx
+          .insert(platformSettings)
+          .values({
+            key: MANAGED_NANGO_GITHUB_SETTING_KEY,
+            value,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: platformSettings.key,
+            set: { value, updatedAt: now },
+          });
+
+        const changedProjects = await tx
+          .update(projectGitConnections)
+          .set({
+            status: 'needs_reconnect',
+            lastValidatedAt: now,
+            lastErrorCode: 'nango_refresh_failed',
+            lastErrorMessage: 'The managed GitHub connection must be reconnected.',
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(projectGitConnections.provider, 'github'),
+              eq(projectGitConnections.managed, true),
+              or(
+                eq(projectGitConnections.credentialRef, connectionId),
+                eq(projectGitConnections.installationId, installationId),
+              ),
+            ),
+          )
+          .returning({ connectionId: projectGitConnections.connectionId });
+
+        return { changedProjectCount: changedProjects.length };
+      }),
     markManagedProjectsUnavailable: async ({ connectionId, installationId }) => {
       const now = new Date();
       await database

@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { accountGithubInstallations, projectGitConnections } from '@kortix/db';
+import type { ManagedGithubConnectionStore } from '../platform/services/managed-github-connection';
 import type { NangoConnection, NangoConnectionSummary } from '../projects/nango/client';
 import { NangoError } from '../projects/nango/errors';
 import {
@@ -86,6 +87,7 @@ const { GitHubInstallationAuthorizationError } = await import('../projects/githu
 const signingKey = 'nango-webhook-signing-key';
 const accountIntegrationId = 'github-account';
 const managedIntegrationId = 'github-managed';
+const managedEnvironmentId = 'kortix_test_environment';
 const tags = buildAccountNangoTags({
   accountId: '6b70ddb0-a373-4291-85ca-31e306ac4f95',
   userId: '3bfc6305-421b-4bd8-b290-9d0e410e6eca',
@@ -211,6 +213,8 @@ function makeHandler(
     inspectedInstallation?: GithubInstallationMetadata;
     accountIntegrationId?: string;
     managedIntegrationId?: string;
+    managedEnvironmentId?: string;
+    managedStore?: ManagedGithubConnectionStore;
     accountAuthorized?: boolean;
   } = {},
 ) {
@@ -221,6 +225,7 @@ function makeHandler(
     signingKey,
     accountIntegrationId: input.accountIntegrationId ?? accountIntegrationId,
     managedIntegrationId: input.managedIntegrationId ?? managedIntegrationId,
+    managedEnvironmentId: input.managedEnvironmentId ?? managedEnvironmentId,
     client: {
       createConnectSession: async () => {
         throw new Error('not used');
@@ -240,6 +245,12 @@ function makeHandler(
       deleteConnection: async () => undefined,
     },
     store: input.store ?? makeStore().store,
+    managedStore: input.managedStore ?? {
+      getSelected: async () => null,
+      saveSelected: async () => undefined,
+      markNeedsReconnect: async () => ({ changedProjectCount: 0 }),
+      markManagedProjectsUnavailable: async () => undefined,
+    },
     authorizeAccountConnection: async (scope) => {
       authorizationChecks.push(scope);
       return input.accountAuthorized !== false;
@@ -702,11 +713,14 @@ describe('Nango auth webhook reconciliation', () => {
       providerConfigKey: managedIntegrationId,
       provider: 'github-app',
       success: true,
-      tags: buildManagedNangoTags({
-        selectedByUserId: tags.kortix_user_id,
-        displayName: 'Kortix Managed GitHub',
-        connectAttemptId: '436b7337-728f-487f-a7e8-306a8fa5ea30',
-      }),
+      tags: {
+        ...buildManagedNangoTags({
+          selectedByUserId: tags.kortix_user_id,
+          displayName: 'Kortix Managed GitHub',
+          connectAttemptId: '436b7337-728f-487f-a7e8-306a8fa5ea30',
+        }),
+        kortix_environment_id: managedEnvironmentId,
+      },
     });
 
     const result = await handler(request);
@@ -722,6 +736,81 @@ describe('Nango auth webhook reconciliation', () => {
     expect(fetched).toEqual([]);
     expect(listed).toEqual([]);
     expect(state.reconciliations).toEqual([]);
+  });
+
+  test('marks a selected managed connection and its projects needs_reconnect on refresh failure', async () => {
+    const managedTags = {
+      ...buildManagedNangoTags({
+        selectedByUserId: tags.kortix_user_id,
+        displayName: 'Kortix Managed GitHub',
+        connectAttemptId: '436b7337-728f-487f-a7e8-306a8fa5ea30',
+      }),
+      kortix_environment_id: managedEnvironmentId,
+    };
+    const reconnects: Parameters<ManagedGithubConnectionStore['markNeedsReconnect']>[0][] = [];
+    const managedStore: ManagedGithubConnectionStore = {
+      getSelected: async () => ({
+        schemaVersion: 1,
+        connectionId: 'managed-connection',
+        integrationId: managedIntegrationId,
+        installationId: installation.installationId,
+        owner: { login: 'acme', type: 'Organization' },
+        status: 'connected',
+        selectedByUserId: tags.kortix_user_id,
+        selectedAt: '2026-07-27T17:00:00.000Z',
+      }),
+      saveSelected: async () => undefined,
+      markNeedsReconnect: async (input) => {
+        reconnects.push(input);
+        return { changedProjectCount: 3 };
+      },
+      markManagedProjectsUnavailable: async () => undefined,
+    };
+    const { handler, listed } = makeHandler({
+      managedStore,
+      summaries: [
+        {
+          connectionId: 'managed-connection',
+          integrationId: managedIntegrationId,
+          provider: 'github-app',
+          errors: [],
+          metadata: {},
+          connectionConfig: { installation_id: installation.installationId },
+          tags: managedTags,
+        },
+      ],
+    });
+
+    const result = await handler(
+      signedRequest({
+        type: 'auth',
+        operation: 'refresh',
+        connectionId: 'managed-connection',
+        authMode: 'APP',
+        providerConfigKey: managedIntegrationId,
+        provider: 'github-app',
+        success: false,
+        tags: managedTags,
+      }),
+    );
+
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        ok: true,
+        operation: 'refresh',
+        connection_id: 'managed-connection',
+        changed_project_count: 3,
+      },
+    });
+    expect(listed).toEqual(['managed-connection']);
+    expect(reconnects).toEqual([
+      {
+        connectionId: 'managed-connection',
+        integrationId: managedIntegrationId,
+        installationId: installation.installationId,
+      },
+    ]);
   });
 
   test('does not write API keys, GitHub tokens, or raw credential payloads to logs', async () => {

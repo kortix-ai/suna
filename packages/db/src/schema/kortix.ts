@@ -380,7 +380,7 @@ export const projectGitConnections = kortixSchema.table(
      * never see it. Null on legacy rows (defaults to repoUrl).
      */
     upstreamUrl: text('upstream_url'),
-    /** True when Kortix provisioned this repo (vs a BYO/linked repo). */
+    /** True when the platform-managed credential owns this repository. */
     managed: boolean('managed').default(false).notNull(),
     repoOwner: varchar('repo_owner', { length: 255 }),
     repoName: varchar('repo_name', { length: 255 }),

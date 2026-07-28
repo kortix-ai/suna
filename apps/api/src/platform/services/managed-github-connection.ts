@@ -61,6 +61,11 @@ export interface ManagedGithubCredentialResolution {
 export interface ManagedGithubConnectionStore {
   getSelected(): Promise<ManagedNangoGithubSetting | null>;
   saveSelected(setting: ManagedNangoGithubSetting): Promise<void>;
+  markNeedsReconnect(input: {
+    connectionId: string;
+    integrationId: string;
+    installationId: string;
+  }): Promise<{ changedProjectCount: number }>;
   markManagedProjectsUnavailable(input: {
     connectionId: string;
     installationId: string;
@@ -88,13 +93,10 @@ const requiredManagedGithubPermissions = [
   ['pull_requests', 'write'],
 ] as const;
 
-export function missingManagedGithubPermissions(
-  permissions: Record<string, unknown>,
-): string[] {
+export function missingManagedGithubPermissions(permissions: Record<string, unknown>): string[] {
   return requiredManagedGithubPermissions.flatMap(([name, required]) => {
     const actual = permissions[name];
-    const allowed =
-      actual === 'write' || (required === 'read' && actual === 'read');
+    const allowed = actual === 'write' || (required === 'read' && actual === 'read');
     return allowed ? [] : [name];
   });
 }

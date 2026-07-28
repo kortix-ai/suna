@@ -21,6 +21,7 @@ import { createNangoRequestObserver } from '../nango/telemetry';
 export type StoredGithubNangoConnection = typeof accountGithubInstallations.$inferSelect;
 
 export interface GithubNangoConnectionStore {
+  list(accountId: string): Promise<StoredGithubNangoConnection[]>;
   get(accountId: string, installationId: string): Promise<StoredGithubNangoConnection | null>;
   markConnected(connection: StoredGithubNangoConnection): Promise<StoredGithubNangoConnection>;
   markNeedsReconnect(connection: StoredGithubNangoConnection): Promise<StoredGithubNangoConnection>;
@@ -79,7 +80,7 @@ const connectionErrorResponse = json(errorResponseSchema, 'GitHub connection err
 function connectionGuidance(
   code: 'github_connection_required' | 'github_reconnect_required',
   accountId: string,
-  installationId: string,
+  installationId?: string,
 ) {
   return {
     error:
@@ -88,7 +89,7 @@ function connectionGuidance(
         : 'The GitHub connection must be reconnected.',
     code,
     account_id: accountId,
-    installation_id: installationId,
+    ...(installationId ? { installation_id: installationId } : {}),
     requires_human_oauth: true,
     sdk_action:
       code === 'github_connection_required'
@@ -233,6 +234,11 @@ async function updateStoredConnection(
 
 export function createGithubNangoConnectionStore(database: typeof db): GithubNangoConnectionStore {
   return {
+    list: async (accountId) =>
+      database
+        .select()
+        .from(accountGithubInstallations)
+        .where(eq(accountGithubInstallations.accountId, accountId)),
     get: async (accountId, installationId) => {
       const [row] = await database
         .select()
@@ -314,6 +320,36 @@ export function createGithubNangoConnectionsApp(
 ) {
   const dependencies = { ...productionDependencies(), ...overrides };
   const app = makeOpenApiApp();
+  const legacySetupRequest = {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({}).passthrough(),
+        },
+      },
+    },
+  } as const;
+
+  async function rejectLegacySetup(context: Context, message: string) {
+    const body = await readBody(context);
+    const scope = await dependencies.resolveAccount(context, body);
+    await dependencies.authorize({
+      ...scope,
+      action: ACCOUNT_ACTIONS.ACCOUNT_WRITE,
+    });
+    const rawInstallationId = body.installation_id ?? body.installationId;
+    const installationId =
+      typeof rawInstallationId === 'string' && rawInstallationId.trim()
+        ? rawInstallationId.trim()
+        : undefined;
+    return context.json(
+      {
+        ...connectionGuidance('github_connection_required', scope.accountId, installationId),
+        error: message,
+      },
+      409,
+    );
+  }
 
   app.openapi(
     createRoute({
@@ -366,6 +402,63 @@ export function createGithubNangoConnectionsApp(
         return responseForNangoError(context, error);
       }
     },
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/installation',
+      tags: ['github'],
+      summary: 'Deprecated GitHub installation callback adapter',
+      ...auth,
+      request: legacySetupRequest,
+      responses: {
+        409: connectionErrorResponse,
+        401: connectionErrorResponse,
+        403: connectionErrorResponse,
+      },
+    }),
+    // biome-ignore lint/suspicious/noExplicitAny: zod-openapi cannot infer the compatibility error response.
+    async (context: any): Promise<any> =>
+      rejectLegacySetup(context, 'Legacy GitHub installation callbacks are disabled.'),
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/installations/link',
+      tags: ['github'],
+      summary: 'Deprecated GitHub installation link adapter',
+      ...auth,
+      request: legacySetupRequest,
+      responses: {
+        409: connectionErrorResponse,
+        401: connectionErrorResponse,
+        403: connectionErrorResponse,
+      },
+    }),
+    // biome-ignore lint/suspicious/noExplicitAny: zod-openapi cannot infer the compatibility error response.
+    async (context: any): Promise<any> =>
+      rejectLegacySetup(context, 'Legacy GitHub installation linking is disabled.'),
+  );
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/installations/linkable',
+      tags: ['github'],
+      summary: 'Deprecated GitHub proof-token discovery adapter',
+      ...auth,
+      request: legacySetupRequest,
+      responses: {
+        409: connectionErrorResponse,
+        401: connectionErrorResponse,
+        403: connectionErrorResponse,
+      },
+    }),
+    // biome-ignore lint/suspicious/noExplicitAny: zod-openapi cannot infer the compatibility error response.
+    async (context: any): Promise<any> =>
+      rejectLegacySetup(context, 'Legacy GitHub proof-token discovery is disabled.'),
   );
 
   app.openapi(
@@ -550,6 +643,59 @@ export function createGithubNangoConnectionsApp(
       return responseForNangoError(context, error);
     }
   }
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/installation',
+      tags: ['github'],
+      summary: 'Deprecated account GitHub disconnect adapter',
+      ...auth,
+      request: {
+        query: z
+          .object({
+            account_id: z.string().optional(),
+            installation_id: z.string().optional(),
+            installationId: z.string().optional(),
+          })
+          .passthrough(),
+      },
+      responses: {
+        200: json(z.object({ ok: z.literal(true) }), 'Disconnected GitHub installations'),
+        401: connectionErrorResponse,
+        403: connectionErrorResponse,
+        409: connectionErrorResponse,
+        429: connectionErrorResponse,
+        500: connectionErrorResponse,
+        502: connectionErrorResponse,
+        503: connectionErrorResponse,
+      },
+    }),
+    // biome-ignore lint/suspicious/noExplicitAny: zod-openapi cannot infer custom multi-status error envelopes.
+    async (context: any): Promise<any> => {
+      const scope = await dependencies.resolveAccount(context);
+      await dependencies.authorize({
+        ...scope,
+        action: ACCOUNT_ACTIONS.ACCOUNT_WRITE,
+      });
+      const query = context.req.valid('query');
+      const installationId = query.installation_id ?? query.installationId;
+      if (installationId) return disconnectOne(context, scope, installationId);
+
+      const connections = await dependencies.store.list(scope.accountId);
+      try {
+        for (const connection of connections) {
+          if (connection.connectionStatus === 'disconnected') continue;
+          const ref = connectionRef(connection);
+          if (ref) await dependencies.client.deleteConnection(ref);
+          await dependencies.store.disconnect(connection);
+        }
+        return context.json({ ok: true as const }, 200);
+      } catch (error) {
+        return responseForNangoError(context, error);
+      }
+    },
+  );
 
   app.openapi(
     createRoute({

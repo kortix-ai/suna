@@ -94,6 +94,7 @@ function makeHarness(
   const stateTransitions: Array<{ operation: string; input: unknown }> = [];
 
   const store: GithubNangoConnectionStore = {
+    list: async (accountId) => (row?.accountId === accountId ? [row] : []),
     get: async (accountId, installationId) =>
       row && row.accountId === accountId && row.installationId === installationId ? row : null,
     markConnected: async (connection) => {
@@ -242,6 +243,43 @@ describe('GitHub Nango connection routes', () => {
 
     expect(response.status).toBe(403);
     expect(harness.connectCalls).toEqual([]);
+  });
+
+  test('retains legacy setup route shapes without accepting provider credentials', async () => {
+    const harness = makeHarness();
+    const requests = [
+      ['/v1/projects/github/installation', { state: 'legacy-state' }],
+      [
+        '/v1/projects/github/installations/link',
+        { account_id: ACCOUNT_ID, installation_id: INSTALLATION_ID },
+      ],
+      ['/v1/projects/github/installations/linkable', { account_id: ACCOUNT_ID }],
+    ] as const;
+
+    for (const [path, body] of requests) {
+      const response = await harness.app.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...body,
+          github_user_token: 'legacy-github-token',
+        }),
+      });
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: 'github_connection_required',
+        account_id: ACCOUNT_ID,
+        requires_human_oauth: true,
+        sdk_action: 'createGitHubConnectSession',
+      });
+    }
+
+    expect(harness.connectCalls).toEqual([]);
+    expect(harness.reconnectCalls).toEqual([]);
+    expect(harness.getCalls).toEqual([]);
+    expect(harness.deleteCalls).toEqual([]);
+    expect(harness.stateTransitions).toEqual([]);
   });
 
   test('reconnects the stored Nango connection and hides another account installation', async () => {
@@ -417,6 +455,33 @@ describe('GitHub Nango connection routes', () => {
       reconnect_required: true,
     });
     expect(harness.currentRow()?.ownerLogin).toBe('acme');
+  });
+
+  test('adapts the legacy account disconnect route to Nango', async () => {
+    const harness = makeHarness();
+
+    const response = await harness.app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+      { method: 'DELETE' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(harness.deleteCalls).toEqual([
+      {
+        connectionId: CONNECTION_ID,
+        integrationId: INTEGRATION_ID,
+      },
+    ]);
+    expect(harness.stateTransitions).toEqual([
+      {
+        operation: 'disconnected',
+        input: expect.objectContaining({
+          accountId: ACCOUNT_ID,
+          installationId: INSTALLATION_ID,
+        }),
+      },
+    ]);
   });
 
   test('keeps installation-path disconnect idempotent for a missing row', async () => {

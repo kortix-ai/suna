@@ -9,7 +9,7 @@
  * http.extraHeader so the token never lands in a config file.
  */
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -39,10 +39,22 @@ export async function seedRepoViaGitPush(input: {
   const name = input.authorName || 'Kortix';
   const email = input.authorEmail || 'noreply@kortix.ai';
   const dir = await mkdtemp(join(tmpdir(), 'kortix-seed-'));
+  const encoded = Buffer.from(`x-access-token:${input.token}`).toString('base64');
 
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-  const run = (args: string[], extra: string[] = []) =>
-    execFileAsync('git', [...extra, ...args], { cwd: dir, env, timeout: 60_000 });
+  const env = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_TRACE: '0',
+    GIT_TRACE_CURL: '0',
+    GIT_TRACE2: '0',
+    GIT_CURL_VERBOSE: '0',
+  };
+  const run = (args: string[], extraEnv: Record<string, string> = {}) =>
+    execFileAsync('git', args, {
+      cwd: dir,
+      env: { ...env, ...extraEnv },
+      timeout: 60_000,
+    });
 
   const writeFiles = async (files: SeedFile[]) => {
     for (const file of files) {
@@ -53,9 +65,12 @@ export async function seedRepoViaGitPush(input: {
   };
   // Pinned identity + dates → deterministic commit SHA across projects.
   const PINNED = {
-    GIT_AUTHOR_NAME: 'Kortix', GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
-    GIT_COMMITTER_NAME: 'Kortix', GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
-    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+    GIT_AUTHOR_NAME: 'Kortix',
+    GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
+    GIT_COMMITTER_NAME: 'Kortix',
+    GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
+    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+    GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
   };
 
   try {
@@ -65,8 +80,11 @@ export async function seedRepoViaGitPush(input: {
     if (input.baseFiles?.length) {
       await writeFiles(input.baseFiles);
       await run(['add', '-A']);
-      await execFileAsync('git', ['commit', '-m', 'chore: scaffold Kortix project'],
-        { cwd: dir, timeout: 60_000, env: { ...env, ...PINNED } });
+      await execFileAsync('git', ['commit', '-m', 'chore: scaffold Kortix project'], {
+        cwd: dir,
+        timeout: 60_000,
+        env: { ...env, ...PINNED },
+      });
     }
     await writeFiles(input.files);
     await run(['add', '-A']);
@@ -74,20 +92,29 @@ export async function seedRepoViaGitPush(input: {
     // empty second commit when baseFiles === files).
     const status = await run(['status', '--porcelain']);
     if (status.stdout.toString().trim().length > 0) {
-      await run(['commit', '-m', input.baseFiles?.length ? 'chore: project setup' : (input.commitMessage || 'chore: scaffold Kortix project')]);
+      await run([
+        'commit',
+        '-m',
+        input.baseFiles?.length
+          ? 'chore: project setup'
+          : input.commitMessage || 'chore: scaffold Kortix project',
+      ]);
     } else if (!input.baseFiles?.length) {
       await run(['commit', '-m', input.commitMessage || 'chore: scaffold Kortix project']);
     }
 
     const host = new URL(input.upstreamUrl).host;
-    const encoded = Buffer.from(`x-access-token:${input.token}`).toString('base64');
-    await run(
-      ['push', input.upstreamUrl, `${branch}:refs/heads/${branch}`],
-      ['-c', `http.https://${host}/.extraheader=AUTHORIZATION: basic ${encoded}`],
-    );
+    await run(['push', input.upstreamUrl, `${branch}:refs/heads/${branch}`], {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: `http.https://${host}/.extraheader`,
+      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${encoded}`,
+    });
   } catch (error) {
-    const err = error as { stderr?: Buffer | string; message?: string };
-    const detail = (err.stderr?.toString() || err.message || 'git failed').trim();
+    const err = error as { stderr?: Buffer | string };
+    const stderr = err.stderr?.toString().trim() ?? '';
+    const detail = stderr
+      ? stderr.replaceAll(input.token, '[REDACTED]').replaceAll(encoded, '[REDACTED]')
+      : 'git failed';
     throw new Error(`git seed failed — ${detail}`);
   } finally {
     await rm(dir, { recursive: true, force: true });
