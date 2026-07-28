@@ -98,8 +98,9 @@ function nextGeneratedId(state: AcpProjection, prefix: string): string {
 function createUserMessage(
   state: AcpProjection,
   text: string,
+  messageId?: string | null,
 ): AcpMessageWithParts {
-  const id = nextGeneratedId(state, 'user');
+  const id = messageId ?? nextGeneratedId(state, 'user');
   const info = {
     id,
     sessionID: state.sessionId,
@@ -122,8 +123,11 @@ function createUserMessage(
   };
 }
 
-function createAssistantMessage(state: AcpProjection): AcpMessageWithParts {
-  const id = nextGeneratedId(state, 'assistant');
+function createAssistantMessage(
+  state: AcpProjection,
+  messageId?: string | null,
+): AcpMessageWithParts {
+  const id = messageId ?? nextGeneratedId(state, 'assistant');
   const parent = [...state.messages]
     .reverse()
     .find((message) => message.info.role === 'user')?.info.id;
@@ -149,21 +153,82 @@ function createAssistantMessage(state: AcpProjection): AcpMessageWithParts {
   return { info, parts: [] };
 }
 
+function completeAssistantMessage(
+  message: AcpMessageWithParts,
+  completed: number,
+): AcpMessageWithParts {
+  if (message.info.role !== 'assistant' || message.info.time.completed) return message;
+  const parts = message.parts.map((part) => {
+    if (
+      part.type !== 'tool' ||
+      (part.state.status !== 'pending' && part.state.status !== 'running')
+    ) {
+      return part;
+    }
+    const state = part.state;
+    const start = state.status === 'running' ? state.time.start : completed;
+    return {
+      ...part,
+      state: {
+        status: 'completed',
+        input: state.input,
+        output: '',
+        title:
+          state.status === 'running' && state.title
+            ? state.title
+            : toolInfo(part.tool).label,
+        metadata: state.status === 'running' ? (state.metadata ?? {}) : {},
+        time: { start, end: completed },
+      },
+    } satisfies ToolPart;
+  });
+  return {
+    ...message,
+    info: {
+      ...message.info,
+      time: { ...message.info.time, completed },
+    },
+    parts,
+  };
+}
+
 function withAssistant(
   state: AcpProjection,
+  messageId: string | null,
   mutate: (message: AcpMessageWithParts) => AcpMessageWithParts,
 ): AcpProjection {
+  if (messageId) {
+    const existingIndex = state.messages.findIndex(
+      (message) =>
+        message.info.role === 'assistant' && message.info.id === messageId,
+    );
+    if (existingIndex >= 0) {
+      const messages = [...state.messages];
+      messages[existingIndex] = mutate(messages[existingIndex]);
+      return { ...state, messages, status: { type: 'busy' } };
+    }
+  }
+
   const last = state.messages.at(-1);
-  if (last?.info.role === 'assistant' && !last.info.time.completed) {
+  if (
+    !messageId &&
+    last?.info.role === 'assistant' &&
+    !last.info.time.completed
+  ) {
     const messages = [...state.messages];
     messages[messages.length - 1] = mutate(last);
     return { ...state, messages, status: { type: 'busy' } };
   }
-  const created = createAssistantMessage(state);
+
+  const completed = Date.now();
+  const messages = state.messages.map((message) =>
+    completeAssistantMessage(message, completed),
+  );
+  const created = createAssistantMessage({ ...state, messages }, messageId);
   return {
     ...state,
     nextId: state.nextId + 1,
-    messages: [...state.messages, mutate(created)],
+    messages: [...messages, mutate(created)],
     status: { type: 'busy' },
   };
 }
@@ -172,9 +237,10 @@ function appendText(
   state: AcpProjection,
   type: 'text' | 'reasoning',
   text: string,
+  messageId: string | null,
 ): AcpProjection {
   if (!text) return state;
-  return withAssistant(state, (message) => {
+  return withAssistant(state, messageId, (message) => {
     const parts = [...message.parts];
     const existingIndex = parts.findIndex((part) => part.type === type);
     if (existingIndex >= 0) {
@@ -197,10 +263,31 @@ function appendText(
   });
 }
 
-function applyUserText(state: AcpProjection, text: string): AcpProjection {
+function applyUserText(
+  state: AcpProjection,
+  text: string,
+  messageId: string | null,
+): AcpProjection {
   if (!text) return state;
+  if (messageId) {
+    const existingIndex = state.messages.findIndex(
+      (message) => message.info.role === 'user' && message.info.id === messageId,
+    );
+    if (existingIndex >= 0) {
+      const existing = state.messages[existingIndex];
+      const parts = [...existing.parts];
+      const index = parts.findIndex((part) => part.type === 'text');
+      if (index >= 0) {
+        const previous = parts[index] as Extract<Part, { type: 'text' }>;
+        parts[index] = { ...previous, text: previous.text + text };
+      }
+      const messages = [...state.messages];
+      messages[existingIndex] = { ...existing, parts };
+      return { ...state, messages };
+    }
+  }
   const last = state.messages.at(-1);
-  if (last?.info.role === 'user') {
+  if (!messageId && last?.info.role === 'user') {
     const parts = [...last.parts];
     const index = parts.findIndex((part) => part.type === 'text');
     if (index >= 0) {
@@ -214,7 +301,7 @@ function applyUserText(state: AcpProjection, text: string): AcpProjection {
   return {
     ...state,
     nextId: state.nextId + 1,
-    messages: [...state.messages, createUserMessage(state, text)],
+    messages: [...state.messages, createUserMessage(state, text, messageId)],
   };
 }
 
@@ -224,7 +311,14 @@ function projectTool(
 ): AcpProjection {
   const callId = asString(update.toolCallId);
   if (!callId) return state;
-  return withAssistant(state, (message) => {
+  const owner = state.messages.find((message) =>
+    message.parts.some(
+      (part) => part.type === 'tool' && part.callID === callId,
+    ),
+  );
+  const ownerId =
+    owner?.info.role === 'assistant' ? owner.info.id : null;
+  return withAssistant(state, ownerId, (message) => {
     const parts = [...message.parts];
     const index = parts.findIndex(
       (part) => part.type === 'tool' && part.callID === callId,
@@ -553,12 +647,17 @@ export function applyAcpEnvelope(
     const kind = asString(update.sessionUpdate) ?? asString(update.type);
     const content = isObject(update.content) ? update.content : {};
     const text = asString(content.text) ?? '';
+    const messageId = asString(update.messageId);
 
-    if (kind === 'user_message_chunk') return applyUserText(state, text);
-    if (kind === 'agent_thought_chunk') {
-      return appendText(state, 'reasoning', text);
+    if (kind === 'user_message_chunk') {
+      return applyUserText(state, text, messageId);
     }
-    if (kind === 'agent_message_chunk') return appendText(state, 'text', text);
+    if (kind === 'agent_thought_chunk') {
+      return appendText(state, 'reasoning', text, messageId);
+    }
+    if (kind === 'agent_message_chunk') {
+      return appendText(state, 'text', text, messageId);
+    }
     if (kind === 'tool_call' || kind === 'tool_call_update') {
       return projectTool(state, update);
     }

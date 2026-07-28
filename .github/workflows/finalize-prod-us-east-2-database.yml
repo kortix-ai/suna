@@ -1,0 +1,332 @@
+name: Finalize Prod US East 2 Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Database migration action.
+        required: true
+        type: choice
+        options:
+          - preflight-live
+          - finalize-frozen
+          - reenable-subscriptions
+      confirm:
+        description: Enter "<action>:prod-us-east-2".
+        required: true
+        type: string
+
+concurrency:
+  group: finalize-prod-us-east-2-database
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  database:
+    name: ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: prod-use2-shadow
+    env:
+      ACTION: ${{ inputs.action }}
+      CONFIRM: ${{ inputs.confirm }}
+      AWS_REGION: us-east-2
+      SOURCE_AWS_REGION: eu-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-prod-use2-terraform
+      SOURCE_SECRET_ID: kortix-prod-env
+      TARGET_RUNTIME_CONFIG_ID: kortix-prod-us-east-2-env
+      TARGET_MIGRATION_SECRET_ID: kortix/prod-us-east-2-migration
+      FREEZE_MARKER_PARAMETER: /kortix/prod-use2/source-freeze
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: prod
+
+      - name: Enforce trusted production ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "::error::This workflow runs only from refs/heads/prod."
+            exit 64
+          fi
+
+      - name: Validate confirmation
+        run: |
+          set -euo pipefail
+          expected="${ACTION}:prod-us-east-2"
+          if [ "$CONFIRM" != "$expected" ]; then
+            echo "::error::confirm must equal '$expected'."
+            exit 64
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      - name: Verify live preflight boundaries
+        if: inputs.action == 'preflight-live'
+        run: |
+          set -euo pipefail
+          backend="$(
+            curl -fsS --max-time 15 -D - -o /dev/null https://api.kortix.com/v1/health \
+              | awk 'BEGIN { IGNORECASE=1 } /^x-backend:/ {
+                  gsub("\r", "");
+                  print $2
+                }' \
+              | tail -1
+          )"
+          if [ "$backend" != "ecs-fargate" ]; then
+            echo "::error::Production backend is '$backend', expected 'ecs-fargate'."
+            exit 1
+          fi
+          echo "Production routing remains on the EU ECS source."
+
+      - name: Verify the source freeze
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          marker="$(
+            aws ssm get-parameter \
+              --region "$AWS_REGION" \
+              --name "$FREEZE_MARKER_PARAMETER" \
+              --query Parameter.Value \
+              --output text
+          )"
+          jq -e '.state == "frozen" and (.capturedAt | length > 0)' <<<"$marker" >/dev/null
+
+          source_secret="$(
+            aws secretsmanager get-secret-value \
+              --region "$SOURCE_AWS_REGION" \
+              --secret-id "$SOURCE_SECRET_ID" \
+              --query SecretString \
+              --output text
+          )"
+          jq -e '
+            .KORTIX_WORKERS_ENABLED == "false"
+            and .SCHEDULER_ENABLED == "false"
+            and .CHANNELS_ENABLED == "false"
+            and .KORTIX_PRERESUME_ENABLED == "false"
+            and .KORTIX_TRIGGER_SCHEDULER_ENABLED == "false"
+            and .KORTIX_PROJECT_MAINTENANCE_ENABLED == "false"
+            and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
+            and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
+          ' <<<"$source_secret" >/dev/null
+
+          target_secret="$(
+            aws secretsmanager get-secret-value \
+              --region "$AWS_REGION" \
+              --secret-id "$TARGET_RUNTIME_CONFIG_ID" \
+              --query SecretString \
+              --output text
+          )"
+          jq -e '
+            .KORTIX_WORKERS_ENABLED == "false"
+            and .KORTIX_TRIGGER_SCHEDULER_ENABLED == "false"
+            and .KORTIX_PROJECT_MAINTENANCE_ENABLED == "false"
+            and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
+            and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
+          ' <<<"$target_secret" >/dev/null
+
+          for coordinate in \
+            "kortix-prod|kortix-prod" \
+            "kortix-prod-gateway|kortix-prod-gateway"; do
+            IFS='|' read -r cluster service <<<"$coordinate"
+            state="$(
+              aws ecs describe-services \
+                --region "$SOURCE_AWS_REGION" \
+                --cluster "$cluster" \
+                --services "$service" \
+                --query 'services[0].[desiredCount,runningCount]' \
+                --output text
+            )"
+            if [ "$state" != $'0\t0' ]; then
+              echo "::error::$service state is '$state', expected '0 0'."
+              exit 1
+            fi
+          done
+
+          write_status="$(
+            curl -sS --max-time 15 \
+              -o /tmp/maintenance-write-response \
+              -w '%{http_code}' \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              --data '{}' \
+              https://api.kortix.com/v1/projects
+          )"
+          if [ "$write_status" != "503" ]; then
+            echo "::error::Production edge writes return HTTP $write_status, expected 503."
+            exit 1
+          fi
+          echo "Source freeze marker, runtime flags, ECS state, and edge block are valid."
+
+      - name: Inspect live subscriptions
+        if: inputs.action != 'reenable-subscriptions'
+        run: |
+          set -euo pipefail
+          bash scripts/prod-us-east-2/db-sync.sh status
+          bash scripts/prod-us-east-2/auth-sync.sh status
+
+      - name: Reconcile live shadow state
+        if: inputs.action == 'preflight-live'
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' \
+          ALLOW_TARGET_SHADOW_REPAIR=1 \
+            bash scripts/prod-us-east-2/db-sync.sh repair-shadow-mutations
+          PGOPTIONS='-c statement_timeout=0' \
+          ALLOW_TARGET_AUTH_SHADOW_REPAIR=1 \
+            bash scripts/prod-us-east-2/auth-sync.sh repair-shadow-mutations
+          bash scripts/prod-us-east-2/db-sync.sh start
+          bash scripts/prod-us-east-2/auth-sync.sh start
+          bash scripts/prod-us-east-2/db-sync.sh wait-caught-up
+          bash scripts/prod-us-east-2/auth-sync.sh wait-caught-up
+
+      - name: Capture replication error counters
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          target_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$TARGET_MIGRATION_SECRET_ID" \
+              --region "$AWS_REGION" \
+              --query SecretString \
+              --output text
+          )"
+          target_database_url="$(jq -er '.target_database_url' <<<"$target_json")"
+          echo "::add-mask::$target_database_url"
+          counters="$(
+            psql "$target_database_url" -X -qAt -F $'\t' -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT
+            COALESCE(sum(apply_error_count), 0),
+            COALESCE(sum(sync_error_count), 0)
+          FROM pg_stat_subscription_stats
+          WHERE subname IN (
+            'kortix_us_east_2_20260725',
+            'kortix_use2_auth_20260725'
+          );
+          SQL
+          )"
+          printf 'BASELINE_REPLICATION_COUNTERS=%s\n' "$counters" >> "$GITHUB_ENV"
+          printf 'TARGET_DATABASE_URL=%s\n' "$target_database_url" >> "$GITHUB_ENV"
+
+      - name: Reach the final source WAL positions
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          bash scripts/prod-us-east-2/db-sync.sh wait-caught-up
+          bash scripts/prod-us-east-2/auth-sync.sh wait-caught-up
+
+      - name: Remove target-only verification state
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' \
+          ALLOW_TARGET_SHADOW_REPAIR=1 \
+            bash scripts/prod-us-east-2/db-sync.sh repair-shadow-mutations
+          PGOPTIONS='-c statement_timeout=0' \
+          ALLOW_TARGET_AUTH_SHADOW_REPAIR=1 \
+            bash scripts/prod-us-east-2/auth-sync.sh repair-shadow-mutations
+          bash scripts/prod-us-east-2/db-sync.sh wait-caught-up
+          bash scripts/prod-us-east-2/auth-sync.sh wait-caught-up
+
+      - name: Verify exact row counts
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/db-sync.sh reconcile-counts
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/auth-sync.sh reconcile-counts
+
+      - name: Verify primary-key hashes
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/db-sync.sh reconcile-key-hashes
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/auth-sync.sh reconcile-key-hashes
+
+      - name: Verify critical row hashes
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/db-sync.sh reconcile-critical-hashes
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/auth-sync.sh reconcile-critical-hashes
+
+      - name: Reconcile sequences
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/db-sync.sh reconcile-sequences
+          PGOPTIONS='-c statement_timeout=0' bash scripts/prod-us-east-2/auth-sync.sh reconcile-sequences
+
+      - name: Synchronize and verify all avatar objects
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          STORAGE_VERIFY_ALL=1 bash scripts/prod-us-east-2/storage-sync.sh
+
+      - name: Verify replication counters did not increase
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          current="$(
+            psql "$TARGET_DATABASE_URL" -X -qAt -F $'\t' -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT
+            COALESCE(sum(apply_error_count), 0),
+            COALESCE(sum(sync_error_count), 0)
+          FROM pg_stat_subscription_stats
+          WHERE subname IN (
+            'kortix_us_east_2_20260725',
+            'kortix_use2_auth_20260725'
+          );
+          SQL
+          )"
+          if [ "$current" != "$BASELINE_REPLICATION_COUNTERS" ]; then
+            echo "::error::Replication counters changed from '$BASELINE_REPLICATION_COUNTERS' to '$current'."
+            exit 1
+          fi
+          echo "Replication counters remained at $current."
+
+      - name: Disable finalized subscriptions
+        if: inputs.action == 'finalize-frozen'
+        run: |
+          set -euo pipefail
+          ALLOW_DISABLE_APPLICATION_SUBSCRIPTION=1 \
+            bash scripts/prod-us-east-2/db-sync.sh disable-subscription
+          ALLOW_DISABLE_AUTH_SUBSCRIPTION=1 \
+            bash scripts/prod-us-east-2/auth-sync.sh disable-subscription
+
+      - name: Re-enable subscriptions for rollback
+        if: inputs.action == 'reenable-subscriptions'
+        run: |
+          set -euo pipefail
+          ALLOW_ENABLE_APPLICATION_SUBSCRIPTION=1 \
+            bash scripts/prod-us-east-2/db-sync.sh enable-subscription
+          ALLOW_ENABLE_AUTH_SUBSCRIPTION=1 \
+            bash scripts/prod-us-east-2/auth-sync.sh enable-subscription
+          bash scripts/prod-us-east-2/db-sync.sh status
+          bash scripts/prod-us-east-2/auth-sync.sh status
+
+      - name: Summary
+        run: |
+          {
+            echo "### Prod US East 2 database action"
+            echo "- Action: \`$ACTION\`"
+            echo "- Confirmation: accepted"
+            if [ "$ACTION" = "finalize-frozen" ]; then
+              echo "- Exact application and Auth reconciliation: passed"
+              echo "- Complete avatars verification: passed"
+              echo "- Replication subscriptions: disabled"
+              echo "- Cloudflare routing: unchanged"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

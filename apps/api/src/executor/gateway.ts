@@ -127,6 +127,8 @@ export interface GatewayDeps {
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
+  /** Rules for the specific CONNECTION selected for this session, if any. */
+  loadConnectionPolicies?(profileId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
   loadProjectPolicies?(projectId: string): Promise<Policy[]>;
   /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
@@ -437,17 +439,23 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const executionArgs = emailExecution.args;
   const executionSecret = usable.secret;
 
-  // Layered policy enforcement: project policies first → connector → risk default.
+  // Layered enforcement: project → connection → connector → risk default. The
+  // connection is already resolved above (connector.profileId), so the extra
+  // scope costs one indexed lookup and no extra round trip.
   if (deps.enforcePolicies !== false) {
-    const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
+    const [connectorPolicies, projectPolicies, defaultMode, connectionPolicies] = await Promise.all([
       deps.loadPolicies(connector.connectorId),
       deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
       deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
+      connector.profileId && deps.loadConnectionPolicies
+        ? deps.loadConnectionPolicies(connector.profileId)
+        : Promise.resolve([] as Policy[]),
     ]);
     const decision = resolveEffectiveAction({
       fullPath,
       relPath: input.actionPath,
       projectPolicies,
+      connectionPolicies,
       connectorPolicies,
       risk: action.risk,
       defaultMode,

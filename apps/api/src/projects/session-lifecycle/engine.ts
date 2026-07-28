@@ -2,11 +2,16 @@ import { executorExecutions, projectSessions, projects, serviceAccounts } from '
 import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
+import { mayRequeueFailedCreate } from './requeue-policy';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import { originRefConflicts, runtimeContextConflicts } from './idempotency-conflicts';
+import {
+  endUserRefConflicts,
+  requireConnectorsConflicts,
+  runtimeContextConflicts,
+} from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
 import { resolveProjectAutomationActor } from './actor';
@@ -141,7 +146,7 @@ export async function createSession(
     // session — that would land end-user B's prompts in A's conversation and
     // misattribute usage. Refuse it, mirroring the guards above. (Cross-ACCOUNT
     // key collision is a separate concern — see the account-scope fix.)
-    if (originRefConflicts(existingBody.origin_ref, command.body.origin_ref)) {
+    if (endUserRefConflicts(existingBody, command.body)) {
       return {
         status: 'failed',
         commandId: claimed.row.commandId,
@@ -165,6 +170,23 @@ export async function createSession(
           body: {
             error: 'Idempotency key was already used with a different runtime_context',
             code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
+          },
+        },
+      };
+    }
+    // require_connectors resolves to member bindings at create; a replay with a
+    // different required set would otherwise return the first session, which was
+    // resolved against a different set of the user's own connections.
+    if (requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with a different require_connectors',
+            code: 'IDEMPOTENCY_REQUIRE_CONNECTORS_CONFLICT',
           },
         },
       };
@@ -252,8 +274,16 @@ export async function createSession(
   }
 
   const message = String(result.error?.body?.error ?? result.reason ?? 'Failed to create session');
+  // This is the INLINE path — the queued branch returned above — so `result` is
+  // about to be handed to a waiting caller. Marking it retryable would leave the
+  // command row queued for the drainer as well, and the caller (told by the
+  // guide that a 429/503 is worth retrying) retries with a fresh key: two billed
+  // sandboxes for one intent, same end_user_ref, both running initial_prompt.
   await markCommandFailed(claimed.row.commandId, message, {
-    retryable: result.retryable ?? false,
+    retryable: mayRequeueFailedCreate({
+      answeredSynchronously: true,
+      errorIsRetryable: result.retryable ?? false,
+    }),
     attempts: claimed.row.attempts + 1,
   });
   return { ...result, commandId: claimed.row.commandId };
@@ -409,7 +439,7 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: (externalId, opencodeSessionId) =>
-      postPrompt(externalId, opencodeSessionId, text, userId),
+      postPrompt(externalId, opencodeSessionId, text, userId, sessionId),
   });
 }
 
@@ -725,13 +755,16 @@ async function postPrompt(
   opencodeSessionId: string,
   text: string,
   userId: string,
+  /** The session this prompt is FOR. Passed as the caller binding so the
+   *  isolation guard proves the target matches, rather than being waived. */
+  callerSessionId: string,
 ): Promise<boolean> {
   const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
   try {
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId },
+      { kind: 'principal', userId, callerSessionId },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       `?directory=${encodeURIComponent(WORKSPACE)}`,

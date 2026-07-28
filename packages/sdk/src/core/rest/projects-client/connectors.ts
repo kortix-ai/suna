@@ -115,8 +115,12 @@ export interface ConnectionProfile {
 
 export interface ReconcileConnectionProfileInput {
   connector_alias: string;
-  owner_type: 'agent' | 'member' | 'subject' | 'external';
-  owner_id: string;
+  /** `project` = a TEAM-shared connection (several per connector, distinguished
+   *  by `label`), which takes no `owner_id`. Every other owner type needs one. */
+  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  owner_id?: string;
+  /** Distinguishes several connections on one connector for the same owner
+   *  ("Support", "Sales", "Work"). Reconciling the same label updates in place. */
   label: string;
   metadata?: Record<string, unknown>;
 }
@@ -214,6 +218,34 @@ export async function listConnectionProfiles(projectId: string) {
   return unwrap(
     await backendApi.get<{ profiles: ConnectionProfile[] }>(
       `/projects/${projectId}/connector-profiles`,
+    ),
+  );
+}
+
+/**
+ * One row of the owner/admin roster. Deliberately NARROWER than
+ * `ConnectionProfile`: it carries identity + status only. `label` and `metadata`
+ * are excluded because they are a member's own annotations on a PRIVATE
+ * connection and can hold personal identifiers a peer manager needn't see.
+ */
+export interface ConnectionRosterEntry {
+  profile_id: string;
+  connector_alias: string;
+  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  owner_id: string | null;
+  status: 'active' | 'revoked' | 'error';
+}
+
+/**
+ * Owner/admin read-only roster: WHO has connected each connector in the project
+ * and whether it still works — not just the caller's own connections. Requires
+ * the connector-profiles manage capability. Never returns credentials, and never
+ * a peer's private label/metadata (see ConnectionRosterEntry).
+ */
+export async function listAllConnectionProfiles(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ profiles: ConnectionRosterEntry[] }>(
+      `/projects/${projectId}/connector-profiles/all`,
     ),
   );
 }
@@ -359,6 +391,21 @@ export async function activateConnectionProfile(projectId: string, profileId: st
   );
 }
 
+/**
+ * Make this the DEFAULT connection for its owner scope — the one a session uses
+ * when it doesn't name a connection explicitly. Defaults are per-owner: one for
+ * the project (team-shared) and one per member, so this only displaces the
+ * previous default within the same scope.
+ */
+export async function setDefaultConnectionProfile(projectId: string, profileId: string) {
+  return unwrap(
+    await backendApi.put<{ ok: true }>(
+      `/projects/${projectId}/connector-profiles/${profileId}/default`,
+      {},
+    ),
+  );
+}
+
 export async function pipedreamConnectConnectionProfile(
   projectId: string,
   profileId: string,
@@ -429,11 +476,31 @@ export interface ConnectorPolicyRule {
   action: ConnectorPolicyAction;
 }
 
+/** Which policy scope decided an action. Project rules win and cannot be overridden here. */
+export type ConnectorPolicySource = 'project' | 'connector' | 'risk_default' | 'allow_all';
+
+export interface ConnectorEffectivePolicy {
+  /** Connector-relative tool path, e.g. `send_email`. */
+  path: string;
+  action: ConnectorPolicyAction;
+  source: ConnectorPolicySource;
+}
+
 export async function getConnectorPolicies(projectId: string, slug: string) {
   return unwrap(
-    await backendApi.get<{ policies: ConnectorPolicyRule[] }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
-    ),
+    await backendApi.get<{
+      policies: ConnectorPolicyRule[];
+      /**
+       * Resolved per tool through the same function the call gate uses. Present
+       * so an editor can show WHICH scope decided — without it a connector rule
+       * that a project-scope rule silently overrules still renders as if it applied.
+       * Older servers omit this; treat as empty.
+       */
+      effective?: ConnectorEffectivePolicy[];
+      /** Project-scope rules, which are evaluated first and win. */
+      project_policies?: ConnectorPolicyRule[];
+      default_mode?: 'risk' | 'allow_all';
+    }>(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`),
   );
 }
 
@@ -692,6 +759,38 @@ export async function pipedreamFinalize(projectId: string, slug: string) {
     await backendApi.post<{ connected: boolean; accountId?: string }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
       {},
+    ),
+  );
+}
+
+/* ─── Per-connection permissions ──────────────────────────────────────────── */
+
+/**
+ * Rules for ONE connection, keyed by its profile_id.
+ *
+ * A connector can hold several connections (support@, sales@, a member's own
+ * mailbox). These sit between the project and connector scopes: a project rule
+ * still wins, but a connection rule beats the connector default — which is what
+ * lets two mailboxes under one connector carry different permissions.
+ */
+export async function getConnectionPolicies(projectId: string, profileId: string) {
+  return unwrap(
+    await backendApi.get<{ policies: ConnectorPolicyRule[] }>(
+      `/projects/${projectId}/connector-profiles/${encodeURIComponent(profileId)}/policies`,
+    ),
+  );
+}
+
+/** Replaces the whole list — a rule omitted here is deleted, never merged. */
+export async function setConnectionPolicies(
+  projectId: string,
+  profileId: string,
+  policies: ConnectorPolicyRule[],
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/projects/${projectId}/connector-profiles/${encodeURIComponent(profileId)}/policies`,
+      { policies },
     ),
   );
 }

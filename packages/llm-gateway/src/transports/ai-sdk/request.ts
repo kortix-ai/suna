@@ -71,7 +71,26 @@ function textOf(content: unknown): string {
   return '';
 }
 
+// Bedrock's Converse API (and the Anthropic Messages API) reject any message
+// whose content is empty or whitespace-only: "The content field in the Message
+// object at messages.N is empty." Such messages reach us mid-history — most
+// often an assistant turn from an earlier empty upstream completion (see
+// guardEmptyChoicesFetch) that the client persisted and replayed. Backfill a
+// minimal non-whitespace placeholder so the message survives the round-trip
+// without dropping it (dropping would collapse the user/assistant alternation
+// the provider also depends on).
+const EMPTY_CONTENT_PLACEHOLDER = '(no content)';
+
 type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | string };
+
+// A user message is "empty" for Bedrock unless it carries an image or at least
+// one non-whitespace text part.
+function nonEmptyUserContent(content: string | UserContentPart[]): string | UserContentPart[] {
+  if (typeof content === 'string') return content.trim() ? content : EMPTY_CONTENT_PLACEHOLDER;
+  const hasImage = content.some((p) => p.type === 'image');
+  const hasText = content.some((p) => p.type === 'text' && p.text.trim().length > 0);
+  return hasImage || hasText ? content : EMPTY_CONTENT_PLACEHOLDER;
+}
 
 function translateUserContent(content: unknown): string | UserContentPart[] {
   if (typeof content === 'string') return content;
@@ -93,10 +112,56 @@ interface OpenAiToolCall {
   function?: { name?: string; arguments?: string };
 }
 
+// Bedrock's Converse API and the Anthropic Messages API reject a tool_use block
+// that has no matching tool_result (and a tool_result with no matching
+// tool_use): "tool_use ids were found without tool_result blocks". This happens
+// when a turn is cancelled mid-tool-call and the client replays the
+// half-finished pair in history — which wedges the whole conversation exactly
+// like an empty message does. Drop the unmatched side so the request stays
+// well-formed. OpenAI is stricter still (a tool message must follow tool_calls),
+// so repairing unconditionally only ever makes a request MORE valid. Role
+// alternation / consecutive-role merging is intentionally NOT done here: the
+// @ai-sdk/anthropic and @ai-sdk/amazon-bedrock provider packages already coalesce
+// that when they serialize ModelMessage[] to the provider wire format.
+function repairToolPairing(messages: ModelMessage[]): ModelMessage[] {
+  const resultIds = new Set<string>();
+  const callIds = new Set<string>();
+  for (const m of messages) {
+    if (m.role === 'tool' && Array.isArray(m.content)) {
+      for (const p of m.content) if (p.type === 'tool-result') resultIds.add(p.toolCallId);
+    } else if (m.role === 'assistant' && Array.isArray(m.content)) {
+      for (const p of m.content) if (p.type === 'tool-call') callIds.add(p.toolCallId);
+    }
+  }
+  const out: ModelMessage[] = [];
+  for (const m of messages) {
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+      const kept = m.content.filter((p) => p.type !== 'tool-call' || resultIds.has(p.toolCallId));
+      if (kept.length !== m.content.length) {
+        out.push({ ...m, content: kept.length ? kept : EMPTY_CONTENT_PLACEHOLDER });
+        continue;
+      }
+    } else if (m.role === 'tool' && Array.isArray(m.content)) {
+      const kept = m.content.filter((p) => p.type !== 'tool-result' || callIds.has(p.toolCallId));
+      if (kept.length === 0) continue; // whole tool message was orphaned — drop it
+      if (kept.length !== m.content.length) {
+        out.push({ ...m, content: kept });
+        continue;
+      }
+    }
+    out.push(m);
+  }
+  return out;
+}
+
 // OpenAI chat.completions messages → AI SDK ModelMessage[]. System messages are
 // hoisted into `system` (kept separate so provider prompt-caching works). The
 // role/tool-call/tool-result shape mirrors what the native transports build, but
 // in the neutral AI-SDK core format the provider package then re-serializes.
+// Two provider-safety normalizations run inline so a malformed history can never
+// wedge a strict provider (Bedrock/Anthropic): empty/whitespace content is
+// backfilled with a placeholder (per role), and orphaned tool calls/results are
+// repaired via repairToolPairing before the messages are returned.
 export function toModelMessages(rawMessages: unknown): {
   system?: string;
   messages: ModelMessage[];
@@ -127,7 +192,9 @@ export function toModelMessages(rawMessages: unknown): {
             toolName: m.name ?? '',
             output: {
               type: 'text',
-              value: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+              value:
+                (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')) ||
+                EMPTY_CONTENT_PLACEHOLDER,
             },
           },
         ],
@@ -151,16 +218,16 @@ export function toModelMessages(rawMessages: unknown): {
       }
       out.push({
         role: 'assistant',
-        content: parts.length ? parts : text,
+        content: parts.length ? parts : EMPTY_CONTENT_PLACEHOLDER,
       });
       continue;
     }
-    out.push({ role: 'user', content: translateUserContent(m.content) });
+    out.push({ role: 'user', content: nonEmptyUserContent(translateUserContent(m.content)) });
   }
 
   return {
     system: systemParts.filter(Boolean).join('\n\n') || undefined,
-    messages: out,
+    messages: repairToolPairing(out),
   };
 }
 

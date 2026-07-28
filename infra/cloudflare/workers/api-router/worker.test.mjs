@@ -69,6 +69,52 @@ describe('api-router worker', () => {
     expect(productionVars).not.toContain('usw2');
   });
 
+  test('removes stale ECS commit overrides and verifies both shadow commits', () => {
+    const ecsDeploy = readFileSync(
+      new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
+      'utf8',
+    );
+    const shadowWorkflow = readFileSync(
+      new URL(
+        '../../../../.github/workflows/deploy-prod-us-east-2-shadow.yml',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+
+    expect(ecsDeploy).toContain(
+      'select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")',
+    );
+    expect(shadowWorkflow).toContain(
+      'api_commit="$(jq -r \'.commit // empty\'',
+    );
+    expect(shadowWorkflow).toContain(
+      '[ "$api_commit" != "$SOURCE_SHA" ] || [ "$gateway_commit" != "$SOURCE_SHA" ]',
+    );
+  });
+
+  test('runs privileged US workflows only from the protected prod branch', () => {
+    const workflows = [
+      'activate-prod-us-east-2-writers.yml',
+      'cutover-prod-us-east-2.yml',
+      'deploy-prod-us-east-2-shadow.yml',
+      'finalize-prod-us-east-2-database.yml',
+      'reconcile-prod-us-east-2-shadow.yml',
+    ];
+
+    for (const workflow of workflows) {
+      const source = readFileSync(
+        new URL(`../../../../.github/workflows/${workflow}`, import.meta.url),
+        'utf8',
+      );
+      expect(source).toContain('ref: prod');
+      expect(source).toContain(
+        'if [ "$GITHUB_REF" != "refs/heads/prod" ]; then',
+      );
+      expect(source).toContain('environment: prod-use2-shadow');
+    }
+  });
+
   test('redirects plaintext API requests to HTTPS before proxying', async () => {
     let fetched = false;
     globalThis.fetch = async () => {

@@ -6,7 +6,8 @@ stack has its own state so it cannot accidentally adopt or mutate the legacy
 
 It manages:
 
-- WAF association for every current ALB in us-west-2 and eu-west-2.
+- WAF association for every current ALB in us-west-2, eu-west-2, and
+  us-east-2.
 - Target response time, ELB 5xx, and unhealthy-host CloudWatch alarms for every
   current ALB, with regional SNS actions (Drata DCF-86 / DCF-88).
 - CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
@@ -18,6 +19,11 @@ It manages:
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
+- A restricted us-east-2 network ACL, a locked default security group, and VPC
+  flow logs (Drata DCF-25 / DCF-97).
+- A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
+  backups. Velero retains backups for 30 days. S3 expires current and
+  noncurrent object versions after 35 days.
 
 Kubernetes-managed ALB names contain generated hashes, so the stack discovers
 all current ALB ARNs. Re-run plan/apply after adding or replacing a load
@@ -57,3 +63,25 @@ aws lambda invoke --region eu-west-2 \
 
 Both payloads must report `covered_instances == running_instances` and an empty
 `updated_instances` list on the second invocation.
+
+## Verify us-east-2 controls
+
+The us-east-2 network ACL excludes inbound TCP ports `22` and `3389`. The
+default network ACL and default security group contain no allow rules.
+
+```bash
+aws wafv2 list-resources-for-web-acl --region us-east-2 \
+  --web-acl-arn "$(aws wafv2 list-web-acls --region us-east-2 \
+    --scope REGIONAL --query 'WebACLs[?Name==`kortix-alb-waf`].ARN|[0]' \
+    --output text)" --resource-type APPLICATION_LOAD_BALANCER
+
+aws cloudwatch describe-alarms --region us-east-2 \
+  --alarm-name-prefix kortix-alb-
+
+aws ec2 describe-flow-logs --region us-east-2 \
+  --filter Name=resource-id,Values=vpc-03371e6a60dafbd25
+```
+
+Run the Velero backup and restore procedure in
+`docs/runbooks/disaster-recovery.md` after any bucket, role, chart, or schedule
+change.

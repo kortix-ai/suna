@@ -361,6 +361,24 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
 }
 
 /**
+ * Whether these options can actually address a sandbox.
+ *
+ * Both proxy schemes put the sandbox id in a structural slot — the `/p/{id}/`
+ * path segment, or the `p{port}-{id}` hostname label. An empty id doesn't
+ * degrade those URLs, it *invalidates* them: `/v1/p//3000/` and
+ * `p3000-.localhost` are unroutable, and the first one 404s with a JSON error
+ * body that a reader has no way to distinguish from a broken app.
+ *
+ * The id is absent whenever no session runtime is bound yet — before
+ * `ensureReady()` resolves, or after the runtime is cleared. That is a
+ * *transient* state, not an error, which is exactly why callers must be able to
+ * ask rather than be handed a plausible-looking dead link.
+ */
+export function hasPreviewTarget(subdomainOpts: SubdomainUrlOptions): boolean {
+  return subdomainOpts.sandboxId.trim().length > 0;
+}
+
+/**
  * Build a preview proxy URL for a sandbox service port.
  *
  * Both modes are proxy URLs — neither connects to the user's raw localhost.
@@ -375,9 +393,18 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
  *   - **Path-based** (backend remote): `{apiBaseUrl}/p/{sandboxId}/{port}/{path}`
  *     Goes through Caddy → API → sandbox. Used for all deployed setups.
  *
+ * With no sandbox id (`hasPreviewTarget` false) there is no third option that
+ * works, so this returns the **internal** localhost URL unchanged rather than a
+ * proxy URL with an empty slot. That keeps the value honest: it still reads as
+ * proxiable (`isProxiableLocalhostUrl`), so a click handler re-resolving once
+ * the runtime binds gets a real preview URL. Callers that put the result
+ * somewhere a raw localhost URL must never reach — an `<iframe src>`, say —
+ * must gate on `hasPreviewTarget` first.
+ *
  * @example
  *   // Local dev:      → 'http://p3210-sb-abc123.localhost:8008/viewer.html'
  *   // Deployed back:  → 'https://e2e-test.kortix.cloud/v1/p/sb-abc123/3210/viewer.html'
+ *   // No runtime yet: → 'http://localhost:3210/viewer.html'
  */
 export function rewriteLocalhostUrl(
   port: number,
@@ -385,6 +412,8 @@ export function rewriteLocalhostUrl(
   subdomainOpts: SubdomainUrlOptions,
 ): string {
   const safePath = normalizePath(path);
+
+  if (!hasPreviewTarget(subdomainOpts)) return toInternalUrl(port, safePath);
 
   // Path-based proxy whenever the backend is NOT on the user's machine.
   // The subdomain scheme below relies on *.localhost DNS pointing at 127.0.0.1
@@ -591,6 +620,28 @@ export function proxyUrlToInternal(proxyUrl: string): string | null {
  */
 export function isPreviewUrl(url: string): boolean {
   return isSubdomainUrl(url) || PATH_PROXY_URL_REGEX.test(url);
+}
+
+/**
+ * A bare `http://localhost:PORT` URL — i.e. one that was never proxied.
+ *
+ * Note the asymmetry with `isPreviewUrl`: the subdomain preview form
+ * (`p3000-sb.localhost:8008`) is NOT internal, because that hostname resolves
+ * to the local kortix-api, which forwards to the sandbox. Only the bare host is.
+ *
+ * This is the guard for anywhere a URL becomes a *fetch or a frame* rather than
+ * a link: rendering a bare localhost URL into an `<iframe src>` loads whatever
+ * the **viewer** happens to be running on that port, which is both wrong and
+ * confusing in the exact way that is hardest to diagnose ("it works on my
+ * machine" — literally).
+ */
+export function isInternalLocalhostUrl(url: string): boolean {
+  try {
+    const { hostname, port } = new URL(url);
+    return (hostname === 'localhost' || hostname === '127.0.0.1') && port !== '';
+  } catch {
+    return false;
+  }
 }
 
 // ── Web Forward Proxy Utilities ─────────────────────────────────────────────

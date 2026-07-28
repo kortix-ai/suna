@@ -98,12 +98,15 @@ function dispatchClient(): AgentDispatchClient {
  * returns a dispatch id or throws, so `startCall` fails at spawn time rather
  * than handing out a dead link.
  *
- * `metadata` carries everything a freshly dispatched worker needs to bootstrap
- * — see runtime.ts's `VoiceRoomMetadata`. It is passed BOTH as room metadata
- * and as dispatch metadata: the worker reads it from the room today, and the
- * dispatch copy is what survives a room the worker joins late or rejoins.
+ * `roomMetadata` is visible to room participants and must stay non-sensitive.
+ * `dispatchMetadata` is private worker bootstrap state and may carry the
+ * per-call API bearer.
  */
-export async function createRoom(room: string, metadata: string): Promise<void> {
+export async function createRoom(
+  room: string,
+  roomMetadata: string,
+  dispatchMetadata: string,
+): Promise<void> {
   const svc = roomService();
 
   // Delete any existing room of this name first so the call starts from a clean
@@ -117,14 +120,14 @@ export async function createRoom(room: string, metadata: string): Promise<void> 
 
   await svc.createRoom({
     name: room,
-    metadata,
+    metadata: roomMetadata,
     // emptyTimeout covers "created but nobody ever joined". departureTimeout is
     // the one that actually bites: it governs how long the room survives after
     // the LAST participant leaves, and its default (~20s) is short enough that a
     // brief gap — a page reload, a bot reconnect — destroys the room. A
     // participant rejoining then IMPLICITLY recreates it with NO metadata, and
     // the agent worker dies with "room metadata is missing project_id" because
-    // the call context and its API token travel in that metadata.
+    // the non-secret call context still travels in that metadata.
     emptyTimeout: 30 * 60,
     departureTimeout: 15 * 60,
     maxParticipants: 8,
@@ -138,7 +141,7 @@ export async function createRoom(room: string, metadata: string): Promise<void> 
   // Deliberately NOT caught. A call whose agent could not be dispatched is a
   // dead call, and the caller needs to learn that here — while it can still
   // report a failure — rather than by handing someone a link to an empty room.
-  await dispatchClient().createDispatch(room, VOICE_AGENT_NAME, { metadata });
+  await dispatchClient().createDispatch(room, VOICE_AGENT_NAME, { metadata: dispatchMetadata });
 }
 
 /**

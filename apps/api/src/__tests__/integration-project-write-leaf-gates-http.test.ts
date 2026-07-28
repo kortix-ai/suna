@@ -120,6 +120,16 @@ const CASES: WCase[] = [
     // stop assert) but not stop.
     denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
   },
+  {
+    name: 'session model change (leaf session.stop)',
+    leaf: A.PROJECT_SESSION_STOP, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/model`,
+    body: { opencode_model: 'openai/gpt-5' },
+    tier: 'member',
+    // A live model change restarts opencode, so the scoped token must hold the
+    // same destructive capability as the stop route.
+    denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+  },
   // ── Review ───────────────────────────────────────────────────────────────
   {
     name: 'CR request-changes (review.act, not gitops.push)',

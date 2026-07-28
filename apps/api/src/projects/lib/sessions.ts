@@ -35,6 +35,7 @@ import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
+  personalConnectorsForAgent,
   projectRequiresDeclaredAgents,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
@@ -65,11 +66,14 @@ import {
   normalizeString,
 } from './serializers';
 import {
+  canonicalConnectorAlias,
   parseSessionConnectorBindings,
+  resolveRequiredMemberConnectorProfiles,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
 import { canOverride, resolveSessionOrigin } from './session-origin';
+import { resolveEndUserRef } from './end-user-ref';
 import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
 import {
   buildSessionRuntimeContextEnv,
@@ -104,6 +108,65 @@ export async function countActiveProjectSessions(accountId: string): Promise<num
     .limit(1);
 
   return Number(row?.activeCount ?? 0);
+}
+
+/**
+ * Live sessions for ONE of a wrapper's end-users. Backs the per-origin cap: an
+ * account-wide limit is not enough for Kortix-as-a-Backend, where one account
+ * fronts many end-users and any single one could otherwise consume every slot
+ * the whole wrapper has. Served by idx_project_sessions_account_origin_active,
+ * whose predicate mirrors ACTIVE_SESSION_STATUSES.
+ */
+export async function countActiveProjectSessionsForOrigin(
+  accountId: string,
+  originRef: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.accountId, accountId),
+        eq(projectSessions.originRef, originRef),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+      ),
+    )
+    .limit(1);
+  return Number(row?.activeCount ?? 0);
+}
+
+/**
+ * Per-end-user concurrency cap. Opt-in: with the limit unset (or <= 0) this is a
+ * no-op, so nothing changes for deployments that don't want it. Only applies to
+ * sessions that actually carry an origin_ref (i.e. backend-origin ones).
+ *
+ * Same check-then-act race as the account cap — N parallel creates for one
+ * end-user can overshoot — so treat it as a guardrail against runaway loops,
+ * not a hard quota.
+ */
+export async function enforcePerOriginSessionCap(
+  accountId: string,
+  originRef: string | null,
+): Promise<SessionCreateError | null> {
+  const limit = config.KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT ?? 0;
+  if (!originRef || limit <= 0) return null;
+  const active = await countActiveProjectSessionsForOrigin(accountId, originRef);
+  if (active < limit) return null;
+  const message = `This end-user already has ${active} active session${active === 1 ? '' : 's'} (limit ${limit}). Finish or stop one before starting another.`;
+  return {
+    status: 429,
+    headers: {
+      'X-RateLimit-Limit': String(limit),
+      'X-RateLimit-Remaining': '0',
+    },
+    body: {
+      error: message,
+      message,
+      code: 'per_origin_session_limit',
+      limit,
+      active_sessions: active,
+    },
+  };
 }
 
 export async function countProvisioningProjectSessions(projectId: string): Promise<number> {
@@ -576,7 +639,14 @@ export async function createProjectSession(input: {
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
   // owner's profile), so unlike origin_ref/secrets it is NOT origin-gated.
-  const inheritUnbound = body.inherit_unbound === true;
+  let inheritUnbound = body.inherit_unbound === true;
+  // Interactive-only: connectors the ACTING USER must have connected themselves
+  // for this session (by alias). Resolved to their own member profile below; a
+  // missing one fails create with CONNECTOR_CONNECTION_REQUIRED so the UI can
+  // prompt them to connect it.
+  const requireConnectors: string[] = Array.isArray(body.require_connectors)
+    ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
+    : [];
 
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
@@ -589,19 +659,42 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
   });
-  const requestedOriginRef = normalizeString(body.origin_ref);
-  // Gate on whether origin_ref was SUPPLIED (any non-empty string, incl. a
-  // whitespace-only one), not on its trimmed value — otherwise a non-backend
-  // caller could send origin_ref: "   " to slip past the 403, since
-  // normalizeString would null it out.
-  const originRefProvided = typeof body.origin_ref === 'string' && body.origin_ref.length > 0;
+  // require_connectors is interactive-only: it means "resolve THIS user's own
+  // connection", which a backend/service-account session (no single current
+  // user) cannot satisfy — it uses connector_bindings with explicit profile ids.
+  if (requireConnectors.length > 0 && origin !== 'user') {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error:
+            'require_connectors is interactive-only — a backend/service-account session has no single current user; use connector_bindings instead',
+          code: 'REQUIRE_CONNECTORS_INTERACTIVE_ONLY',
+        },
+      },
+    };
+  }
+  // Accept `end_user_ref` and its deprecated alias `origin_ref`. Disagreeing
+  // values are rejected rather than silently resolved — picking either would
+  // misattribute every usage row for this session.
+  const endUserRef = resolveEndUserRef(body);
+  if (!endUserRef.ok) {
+    return {
+      error: { status: 400, body: { error: endUserRef.message, code: endUserRef.code } },
+    };
+  }
+  const requestedOriginRef = endUserRef.value;
+  // Gate on whether it was SUPPLIED (any non-empty string, incl. a
+  // whitespace-only one), not on the trimmed value — otherwise a non-backend
+  // caller could send "   " to slip past the 403.
+  const originRefProvided = endUserRef.suppliedUnder !== null;
   if (originRefProvided && !canOverride(origin, 'origin_ref')) {
     return {
       error: {
         status: 403,
         body: {
           error:
-            'origin_ref may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
+            'end_user_ref may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
           code: 'origin_override_forbidden',
         },
       },
@@ -771,11 +864,30 @@ export async function createProjectSession(input: {
     }
   }
 
+  // Agent-declared personal connectors (connectors_personal): a session with this
+  // agent auto-requires the launching user's OWN connection for each — but only
+  // for an interactive ('user') session. A backend/service-account session has no
+  // single current user and manages connectors explicitly via connector_bindings,
+  // so its agent's personal declaration is not enforced here. (`loadedAgents` is
+  // already resolved above — reuse it rather than re-reading the manifest.)
+  const agentPersonalConnectors =
+    origin === 'user' ? personalConnectorsForAgent(agentName, loadedAgents) : [];
+  const effectiveRequireConnectors = Array.from(
+    new Set<string>([...requireConnectors, ...agentPersonalConnectors]),
+  );
+
+  // Every connector this session touches — whether the caller bound it explicitly
+  // (connector_bindings) or it's required as the user's own (require_connectors or
+  // the agent's connectors_personal) — must be granted to the session's agent.
+  const grantCheckAliases = new Set<string>([
+    ...(parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : []),
+    ...effectiveRequireConnectors,
+  ]);
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
-  if (parsedConnectorBindings.bindings) {
+  if (grantCheckAliases.size > 0) {
     loadedAgentGrant = grantFromLoadedAgents(agentName, loadedAgents);
-    for (const alias of Object.keys(parsedConnectorBindings.bindings)) {
-      if (!agentMayUseConnector(loadedAgentGrant, alias)) {
+    for (const alias of grantCheckAliases) {
+      if (!agentMayUseConnector(loadedAgentGrant, canonicalConnectorAlias(alias))) {
         return {
           error: {
             status: 403,
@@ -806,6 +918,35 @@ export async function createProjectSession(input: {
         },
       },
     };
+  }
+  // Resolve require_connectors to THE ACTING USER's own member profiles and merge
+  // them into the binding set. A missing/revoked one fails create with a
+  // structured CONNECTOR_CONNECTION_REQUIRED so the UI can prompt a connect.
+  if (effectiveRequireConnectors.length > 0) {
+    const required = await resolveRequiredMemberConnectorProfiles({
+      accountId,
+      projectId,
+      actingUserId: userId,
+      actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
+      aliases: effectiveRequireConnectors,
+    });
+    if (!required.ok) {
+      return {
+        error: {
+          status: 409,
+          body: { error: required.error, code: required.code, connector: required.connector },
+        },
+      };
+    }
+    // Dedupe by alias — an explicit connector_bindings entry for the same alias
+    // wins (it's already validated). Merging member bindings forces the session
+    // private (via the gate below); force inherit_unbound so binding these does
+    // not null the agent's OTHER connectors.
+    const boundAliases = new Set(validatedConnectorBindings.bindings.map((b) => b.alias));
+    for (const binding of required.bindings) {
+      if (!boundAliases.has(binding.alias)) validatedConnectorBindings.bindings.push(binding);
+    }
+    inheritUnbound = true;
   }
   if (
     visibility !== 'private' &&
@@ -912,12 +1053,21 @@ export async function createProjectSession(input: {
   // run them concurrently so a warmed create pays a single DB round-trip instead
   // of two serial ones. Error precedence is preserved exactly: the cap (429) is
   // still evaluated/returned before billing (402).
-  const [capResult, billingCheck] = await Promise.all([
+  const [capResult, billingCheck, perOriginCapError] = await Promise.all([
     input.enforceAccountCap !== false
       ? checkConcurrentSessionCap(accountId, userId, input.request)
       : Promise.resolve(null),
     checkBillingActive(accountId),
+    // Per-END-USER cap, alongside the account one: a wrapper account fronts many
+    // end-users, so an account-wide limit alone lets a single end-user (or a
+    // runaway loop acting for one) consume every slot. No-op unless configured
+    // AND the session carries an origin_ref. Joins the existing Promise.all so
+    // it costs no extra round-trip depth.
+    input.enforceAccountCap !== false
+      ? enforcePerOriginSessionCap(accountId, originRef)
+      : Promise.resolve(null),
   ]);
+  if (perOriginCapError) return { error: perOriginCapError };
   if (capResult) {
     responseHeaders = capResult.headers;
     if (capResult.error) return { error: capResult.error };

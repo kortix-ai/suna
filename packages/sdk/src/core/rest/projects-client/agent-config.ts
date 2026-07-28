@@ -54,6 +54,12 @@ export interface AgentConfigBlock {
   enabled?: boolean;
   sandbox?: string;
   connectors?: AgentGrantSetV2;
+  /** The subset of `connectors` that must resolve to the LAUNCHING USER's OWN
+   *  connection rather than the project's shared one. Any interactive session
+   *  with this agent then auto-requires them, refusing to start (and prompting
+   *  the user to connect) when one is missing. Must be a subset of `connectors`
+   *  — a concrete list, never the 'all'/'none' sentinels. */
+  connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
   kortix_cli?: AgentGrantSetV2;

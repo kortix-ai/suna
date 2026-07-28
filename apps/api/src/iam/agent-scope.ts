@@ -1,3 +1,4 @@
+import { canonicalConnectorAlias } from '../shared/connector-alias';
 /**
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
  * authorization.
@@ -45,7 +46,31 @@ export function agentMayPerform(grant: AgentGrant | null, action: string): boole
   return alias ? grant.kortixCli.includes(alias) : false;
 }
 
-/** True if the agent-session grant permits calling connector `slug` (or no grant). */
+/**
+ * Normalize a grant's connector list to CANONICAL slugs.
+ *
+ * Three gates compare this grant, and they historically saw three different
+ * spellings of the same connector: the catalog compared the public alias
+ * (`email`), the call gate the raw slug (`kortix_email`), and session create the
+ * caller's binding key. With an exact `includes()` match, whichever spelling a
+ * manifest author picked satisfied one gate and failed another —
+ * `connectors: ["email"]` made the connector VISIBLE in the catalog and then
+ * 403'd on call, which looks like a platform bug rather than a grant typo.
+ *
+ * Canonicalizing ONCE here means every gate can compare canonical-to-canonical.
+ */
+export function canonicalizeGrantConnectors(grant: AgentGrant | null): AgentGrant | null {
+  if (!grant || grant.connectors === 'all') return grant;
+  const canonical = grant.connectors.map((slug) => canonicalConnectorAlias(slug));
+  return { ...grant, connectors: [...new Set(canonical)] };
+}
+
+/**
+ * True if the agent-session grant permits calling connector `slug` (or no grant).
+ *
+ * `slug` MUST already be canonical — call `canonicalConnectorAlias` on anything
+ * that came from a manifest, a request body, or a stored row first.
+ */
 export function agentMayUseConnector(grant: AgentGrant | null, slug: string): boolean {
   if (!grant) return true; // no grant = no restriction
   if (grant.connectors === 'all') return true;

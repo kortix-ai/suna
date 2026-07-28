@@ -16,6 +16,36 @@ function sseResponse(chunks: string[]): Response {
 }
 
 describe('ACP HTTP/SSE client', () => {
+  test('sends the Kortix session revert and unrevert ACP extensions', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = createAcpClient({
+      endpoint: 'https://runtime.test/kortix/acp/session',
+      fetch: (async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: { ok: true },
+        });
+      }) as typeof fetch,
+    });
+
+    await client.revertSession('ses_1', 'msg_2');
+    await client.unrevertSession('ses_1');
+
+    expect(bodies.map(({ method, params }) => ({ method, params }))).toEqual([
+      {
+        method: 'session/revert',
+        params: { sessionId: 'ses_1', messageId: 'msg_2' },
+      },
+      {
+        method: 'session/unrevert',
+        params: { sessionId: 'ses_1' },
+      },
+    ]);
+  });
+
   test('correlates JSON-RPC responses and preserves RPC errors', async () => {
     const methods: string[] = [];
     const encoder = new TextEncoder();
@@ -29,9 +59,7 @@ describe('ACP HTTP/SSE client', () => {
               start(controller) {
                 streamController = controller;
                 controller.enqueue(
-                  encoder.encode(
-                    'id: 0\ndata: {"jsonrpc":"2.0","method":"kortix/cursor"}\n\n',
-                  ),
+                  encoder.encode('id: 0\ndata: {"jsonrpc":"2.0","method":"kortix/cursor"}\n\n'),
                 );
               },
             }),
@@ -110,9 +138,7 @@ describe('ACP HTTP/SSE client', () => {
               start(controller) {
                 streamController = controller;
                 controller.enqueue(
-                  encoder.encode(
-                    'id: 0\ndata: {"jsonrpc":"2.0","method":"kortix/cursor"}\n\n',
-                  ),
+                  encoder.encode('id: 0\ndata: {"jsonrpc":"2.0","method":"kortix/cursor"}\n\n'),
                 );
               },
             }),
@@ -141,8 +167,7 @@ describe('ACP HTTP/SSE client', () => {
 
     expect(earlyOutcome).toBe('pending');
     expect(promptRequestId).not.toBeNull();
-    const controller =
-      streamController as ReadableStreamDefaultController<Uint8Array> | null;
+    const controller = streamController as ReadableStreamDefaultController<Uint8Array> | null;
     controller?.enqueue(
       encoder.encode(
         `id: 1\ndata: ${JSON.stringify({
@@ -209,8 +234,7 @@ describe('ACP HTTP/SSE client', () => {
   test('waits for the bridge cursor before reporting ready', async () => {
     const encoder = new TextEncoder();
     let resolveController:
-      | ((controller: ReadableStreamDefaultController<Uint8Array>) => void)
-      | null = null;
+      ((controller: ReadableStreamDefaultController<Uint8Array>) => void) | null = null;
     const controllerReady = new Promise<ReadableStreamDefaultController<Uint8Array>>((resolve) => {
       resolveController = resolve;
     });

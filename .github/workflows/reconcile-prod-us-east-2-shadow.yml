@@ -21,6 +21,16 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-prod-use2-terraform
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: prod
+
+      - name: Enforce trusted production ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "::error::This workflow runs only from refs/heads/prod."
+            exit 64
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3

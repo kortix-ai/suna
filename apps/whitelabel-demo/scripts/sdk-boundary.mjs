@@ -11,7 +11,18 @@ const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.ts', '.tsx']);
 const UI_ROOT = join(CLIENT_ROOT, 'components', 'ui');
 const API_ROOT = join(CLIENT_ROOT, 'app', 'api');
 const SERVER_ROOT = join(CLIENT_ROOT, 'server');
-const ALLOWED_CLIENT_BFF_ROUTES = ['/api/auth', '/api/mode', '/api/preview-url', '/api/usage'];
+const ALLOWED_CLIENT_BFF_ROUTES = [
+  '/api/auth',
+  // Connections this wrapper may bind — pre-filtered server-side to team-owned
+  // ones, so the client never sees an unbindable option.
+  '/api/connections',
+  '/api/mode',
+  '/api/preview-url',
+  // Provider-neutral session model control: the upstream field is named after
+  // the runtime, so the translation stays server-side and the client says `model`.
+  '/api/session-model',
+  '/api/usage',
+];
 
 const RULES = [
   {
@@ -103,8 +114,22 @@ function rawFetchViolations(source, client) {
   for (const match of source.matchAll(fetchPattern)) {
     const expression = source.slice((match.index ?? 0) + match[0].length).trimStart();
     const quote = expression[0];
-    const end = quote === "'" || quote === '"' ? expression.indexOf(quote, 1) : -1;
-    const target = end > 0 ? expression.slice(1, end) : null;
+    let target = null;
+    if (quote === "'" || quote === '"') {
+      const end = expression.indexOf(quote, 1);
+      if (end > 0) target = expression.slice(1, end);
+    } else if (quote === '`') {
+      // Template literal: judge it by its STATIC PREFIX — the text before the
+      // first interpolation. `/api/x?id=${v}` is as verifiable as the string
+      // form; a template whose BASE is dynamic (`${base}/api/x`) still has an
+      // empty prefix and is correctly rejected. Without this, an app route with
+      // query params could not be called at all.
+      const end = expression.indexOf('`', 1);
+      const raw = end > 0 ? expression.slice(1, end) : expression.slice(1);
+      const interp = raw.indexOf('${');
+      const prefix = interp >= 0 ? raw.slice(0, interp) : raw;
+      target = prefix.length > 0 ? prefix : null;
+    }
     const isAllowed =
       client &&
       target !== null &&

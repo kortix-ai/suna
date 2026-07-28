@@ -11,11 +11,53 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, ShieldCheck } from 'lucide-react';
+import { Bot, Lock, ShieldCheck } from 'lucide-react';
+import Hint from '@/components/ui/hint';
+import { cn } from '@/lib/utils';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { GrantSetField, KortixCliField } from './grant-mode-field';
+import { prunePersonalConnectors } from './connectors-personal';
 import { WORKSPACE_MODES, WORKSPACE_MODE_HELP } from './agent-editor-catalog';
 import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk';
+
+/**
+ * Marks one granted connector as PERSONAL — the session must run on the
+ * launching user's own connected account, not the project's shared one. Renders
+ * beside the connector row (see GrantSetField's `rowAccessory`), because the row
+ * itself is a button and cannot nest one.
+ */
+function PersonalConnectorToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Hint
+      label={
+        active
+          ? 'Runs on each user\u2019s OWN connected account. Anyone who hasn\u2019t connected it can\u2019t start a session with this agent.'
+          : 'Use the project\u2019s shared connection. Click to require each user\u2019s own account instead.'
+      }
+    >
+      <button
+        type="button"
+        aria-pressed={active}
+        aria-label={active ? 'Personal connection required' : 'Use the shared connection'}
+        onClick={onToggle}
+        className={cn(
+          'flex size-7 shrink-0 items-center justify-center rounded transition-[color,background-color,transform] active:scale-[0.96]',
+          active
+            ? 'bg-kortix-purple/15 text-kortix-purple'
+            : 'text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50',
+        )}
+      >
+        <Lock className="size-3.5" />
+      </button>
+    </Hint>
+  );
+}
 
 export function KortixLayerFields({
   draft,
@@ -93,11 +135,44 @@ export function KortixLayerFields({
         <FieldRow label="Connectors">
           <GrantSetField
             value={draft.connectors}
-            onChange={(v: AgentGrantSetV2) => set('connectors', v)}
+            onChange={(v: AgentGrantSetV2) => {
+              set('connectors', v);
+              // Narrowing the grant must drop any personal entry that just lost
+              // it — see prunePersonalConnectors for why an invalid pair is not
+              // merely untidy but unloadable.
+              const pruned = prunePersonalConnectors(draft.connectors_personal, v);
+              if (pruned?.length !== draft.connectors_personal?.length) {
+                set('connectors_personal', pruned);
+              }
+            }}
             options={connectorOptions}
             allLabel="Every project connector."
             emptyLabel="No connectors in this project yet."
+            rowAccessory={(id, isSelected) =>
+              isSelected ? (
+                <PersonalConnectorToggle
+                  active={draft.connectors_personal?.includes(id) === true}
+                  onToggle={() => {
+                    const current = draft.connectors_personal ?? [];
+                    const next = current.includes(id)
+                      ? current.filter((a) => a !== id)
+                      : [...current, id];
+                    set('connectors_personal', next.length ? next : undefined);
+                  }}
+                />
+              ) : null
+            }
           />
+          {draft.connectors === 'all' && draft.connectors_personal?.length ? (
+            // With an 'all' grant there are no rows to hang toggles on, but a
+            // personal set is still legal (the subset rule is trivially met).
+            // Show it rather than hiding a live setting the user can't see.
+            <p className="text-muted-foreground/60 mt-1.5 text-[11px]">
+              Personal (your own account):{' '}
+              <span className="font-mono">{draft.connectors_personal.join(', ')}</span> — switch to
+              Pick to change.
+            </p>
+          ) : null}
         </FieldRow>
         <FieldRow label="Secrets">
           <GrantSetField

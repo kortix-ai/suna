@@ -93,9 +93,8 @@ export async function isCallLive(callId: string): Promise<boolean> {
 }
 
 /**
- * Everything apps/voice-agent needs to bootstrap a freshly dispatched job,
- * carried in the LiveKit room's metadata so the worker never has to call back
- * into the API just to learn who it's talking to. Field names and shape are
+ * Non-sensitive context for a voice call. LiveKit exposes room metadata to
+ * room participants. Field names and shape are
  * fixed by that app's `call-context.ts` (`RoomMetadataShape`) — snake_case,
  * NOT this codebase's usual camelCase, because the contract is owned jointly
  * with a consumer this file cannot rename.
@@ -105,8 +104,11 @@ export interface VoiceRoomMetadata {
   session_id: string;
   call_id: string;
   kortix_api_url: string;
-  kortix_api_token: string;
   bot_name: string;
+}
+
+export interface VoiceWorkerMetadata extends VoiceRoomMetadata {
+  kortix_api_token: string;
 }
 
 export interface StartCallInput {
@@ -150,19 +152,22 @@ export async function startCall(input: StartCallInput): Promise<VoiceCall> {
     return call;
   }
 
-  const metadata: VoiceRoomMetadata = {
+  const roomMetadata: VoiceRoomMetadata = {
     project_id: input.projectId,
     session_id: input.sessionId,
     call_id: input.callId,
     kortix_api_url: config.KORTIX_URL,
-    kortix_api_token: mintCallApiToken(input.callId),
     bot_name: input.botName,
+  };
+  const workerMetadata: VoiceWorkerMetadata = {
+    ...roomMetadata,
+    kortix_api_token: mintCallApiToken(input.callId),
   };
 
   // Create the room, dispatched to the worker, BEFORE anything tries to join
   // it — same ordering the old code used for the provider connect: if the bot
   // arrives first it must find somewhere real to join.
-  await createRoom(room, JSON.stringify(metadata));
+  await createRoom(room, JSON.stringify(roomMetadata), JSON.stringify(workerMetadata));
 
   return call;
 }

@@ -22,7 +22,9 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
+  Pencil,
   Reply,
+  RotateCcw,
   Scissors,
   Search,
   Terminal,
@@ -33,6 +35,21 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import {
+  type ActivityEntry,
+  type ActivityKind,
+  buildActivityItems,
+  formatActivityDuration,
+  partitionForNarrative,
+  summarizeEntries,
+} from '@/features/session/activity/activity-model';
+import { densityForDetail, useChatDetail } from '@/features/session/activity/chat-detail';
+import {
+  type ActivityCounts,
+  activityGroupLabel,
+  humanizeShellStep,
+} from '@/features/session/activity/humanize';
+import { WorkStepRow } from '@/features/session/activity/work-step-row';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
@@ -45,25 +62,6 @@ import {
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
 import { isShellActivityTool } from '@/features/session/session-activity-groups';
-import {
-  type ActivityEntry,
-  type ActivityKind,
-  buildActivityItems,
-  formatActivityDuration,
-  partitionForNarrative,
-  summarizeEntries,
-} from '@/features/session/activity/activity-model';
-import { WorkStepRow } from '@/features/session/activity/work-step-row';
-import {
-  ChatDetailProvider,
-  densityForDetail,
-  useChatDetail,
-} from '@/features/session/activity/chat-detail';
-import {
-  type ActivityCounts,
-  activityGroupLabel,
-  humanizeShellStep,
-} from '@/features/session/activity/humanize';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -78,9 +76,12 @@ import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { STATUS_TEXT } from '@/components/ui/status';
+import { errorToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
@@ -94,35 +95,7 @@ import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useRuntimeConfig } from '@kortix/sdk/react';
-import {
-  type ModelKey,
-  formatModelString,
-  formatPromptModel,
-  parseModelKey,
-  useSessionModelSelection,
-} from '@kortix/sdk/react';
-import type { ProviderListResponse } from '@kortix/sdk/react';
-import {
-  ascendingId,
-  rejectQuestion,
-  replyToPermission,
-  replyToQuestion,
-  useAbortRuntimeSession,
-  useRuntimeAgents,
-  useRuntimeCommands,
-  useExecuteRuntimeCommand,
-  useRuntimeProviders,
-  useRuntimeReady,
-  useRuntimeSession,
-  useRuntimeSessions,
-} from '@kortix/sdk/react';
-import { useSessionSync, type UseSessionResult } from '@kortix/sdk/react';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import {
-  captureTurnScrollAnchor,
-  restoreTurnScrollAnchor,
-} from './session-history-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
@@ -145,31 +118,55 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
-import { useSessionStateStore } from '@kortix/sdk/react';
-import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
-import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import {
+  usePendingFilesStore,
+  usePendingQueueStore,
+} from '@/stores/session-composer-handoff-store';
 import {
   useSessionComposerPrefillStore,
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
   type KortixSendError,
+  type ModelKey,
+  type UseSessionResult,
   abandonOptimisticSend,
   applyOptimisticAbort,
+  ascendingId,
   beginOptimisticSend,
   classifySendError,
   clearStartStash,
+  formatModelString,
+  formatPromptModel,
+  parseModelKey,
   readStartStash,
   recoverFromSendFailure,
+  rejectQuestion,
   replayStartStash,
+  replyToPermission,
+  replyToQuestion,
   sendAndRecover,
+  useAbortRuntimeSession,
+  useExecuteRuntimeCommand,
   usePermissionSelfHeal,
   useProjectConfig,
   useQuestionSelfHeal,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useRuntimeProviders,
+  useRuntimeReady,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionModelSelection,
+  useSessionStateStore,
+  useSessionSync,
 } from '@kortix/sdk/react';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -204,9 +201,7 @@ import {
   isCompactionPart,
   isFilePart,
   isLastUserMessage,
-  isPatchPart,
   isReasoningPart,
-  isSnapshotPart,
   isTextPart,
   isToolPart,
   isToolPartHidden,
@@ -2118,7 +2113,14 @@ function ReasoningNote({ parts }: { parts: ReasoningPart[] }) {
         .trim(),
     [parts],
   );
-  const preview = useMemo(() => text.split('\n').find((l) => l.trim())?.trim() ?? '', [text]);
+  const preview = useMemo(
+    () =>
+      text
+        .split('\n')
+        .find((l) => l.trim())
+        ?.trim() ?? '',
+    [text],
+  );
   if (!text) return null;
 
   return (
@@ -2387,8 +2389,10 @@ function SameToolGroup({
 /** Shared empty set for the full-history branch — allocating a new one per
  *  render would defeat the memo on every child that reads it. */
 const EMPTY_FOLD_KEYS: ReadonlySet<string> = new Set<string>();
-const EMPTY_RUNS: ReadonlyMap<string, import('@/features/session/activity/activity-model').NarrativeRun> =
-  new Map();
+const EMPTY_RUNS: ReadonlyMap<
+  string,
+  import('@/features/session/activity/activity-model').NarrativeRun
+> = new Map();
 const EMPTY_RUN_LIST: ReadonlyArray<
   import('@/features/session/activity/activity-model').NarrativeRun
 > = [];
@@ -2421,6 +2425,10 @@ interface SessionTurnProps {
   disableToolNavigation?: boolean;
   /** Permission reply handler */
   onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  /** Stage an in-place session rewind and restore this prompt in the composer. */
+  onRewind: (messageId: string, text: string) => void;
+  /** Disable history changes while the session is busy or read-only. */
+  rewindDisabled: boolean;
 }
 
 /**
@@ -2501,6 +2509,8 @@ function SessionTurn({
   commands,
   disableToolNavigation,
   onPermissionReply,
+  onRewind,
+  rewindDisabled,
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
@@ -2848,9 +2858,10 @@ function SessionTurn({
   // runtime's step-start/step-finish bookkeeping parts (and agent/retry/
   // snapshot/patch) are transparent to grouping, so a run of N tool calls
   // folds into one group instead of N raw rows.
-  // Narrative is the default reading: machinery folds into one work line per
-  // turn. "Show full history" flips this to the per-kind step list — same
-  // parts, same model, re-rendered in place.
+  // Full history is the default reading: the per-kind step list, every step
+  // visible and in order. "Hide full history" flips this to Narrative, where
+  // machinery folds into one work line per turn — same parts, same model,
+  // re-rendered in place.
   const { detail } = useChatDetail();
   const activityItems = useMemo(
     () =>
@@ -2867,8 +2878,7 @@ function SessionTurn({
   // be a second, competing one.
   const narrativeStatusOwned = useMemo(
     () =>
-      detail === 'narrative' &&
-      partitionForNarrative(activityItems, lockedCallIds).runs.length > 0,
+      detail === 'narrative' && partitionForNarrative(activityItems, lockedCallIds).runs.length > 0,
     [detail, activityItems, lockedCallIds],
   );
 
@@ -2939,6 +2949,19 @@ function SessionTurn({
     if (!userMessageText) return undefined;
     return detectCommandFromText(userMessageText, commands);
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
+
+  const rewindPromptText = useMemo(() => {
+    if (commandForTurn) {
+      return `/${commandForTurn.name}${commandForTurn.args ? ` ${commandForTurn.args}` : ''}`;
+    }
+    const withoutReply = parseReplyContext(userMessageText).cleanText;
+    const withoutUploads = parseFileReferences(withoutReply).cleanText;
+    const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
+    const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
+    const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
+    const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
+    return stripKortixSystemTags(withoutSessions).trim();
+  }, [commandForTurn, userMessageText]);
 
   const handleCopyUser = async () => {
     if (!userMessageText) return;
@@ -3133,7 +3156,19 @@ function SessionTurn({
             commands={commands}
           />
           {userMessageText && (
-            <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+            <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+              <Hint label="Edit from here" side="top" align="center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Edit message and rewind session"
+                  disabled={rewindDisabled}
+                  onClick={() => onRewind(turn.userMessage.info.id, rewindPromptText)}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+              </Hint>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
@@ -3168,7 +3203,7 @@ function SessionTurn({
           {(() => {
             const reasoningActive = working && permissions.length === 0 && questions.length === 0;
 
-            // ── Narrative mode (the default) ──
+            // ── Narrative mode (opt-in; the default is full history) ──
             // Fold the turn's machinery into ONE work line, placed where the
             // first piece of machinery occurred so the surrounding prose still
             // reads in order. Errors and permission-locked calls are pulled
@@ -3178,7 +3213,11 @@ function SessionTurn({
             // The fold decision is pure and lives in the model, where it is
             // tested — see `partitionForNarrative`. Duplicating it here is how
             // the two readings would drift apart.
-            const { foldedKeys, runByKey, runs: narrativeRuns } = narrative
+            const {
+              foldedKeys,
+              runByKey,
+              runs: narrativeRuns,
+            } = narrative
               ? partitionForNarrative(activityItems, lockedCallIds)
               : { foldedKeys: EMPTY_FOLD_KEYS, runByKey: EMPTY_RUNS, runs: EMPTY_RUN_LIST };
             const latestRunKey = narrativeRuns.length
@@ -3810,6 +3849,15 @@ export function SessionChat({
     files: AttachedFile[];
     id: number;
   } | null>(null);
+  const [rewindTarget, setRewindTarget] = useState<{
+    messageId: string;
+    text: string;
+  } | null>(null);
+  const [rewindDraft, setRewindDraft] = useState<{
+    text: string;
+    id: number;
+  } | null>(null);
+  const rewindPrefillId = useRef(0);
   // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
@@ -3821,7 +3869,7 @@ export function SessionChat({
   // parent), so the text has already landed by the time we clear it here.
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
-  }, [sessionPrefill?.id, sessionId]);
+  }, [sessionPrefill, sessionId]);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -4639,6 +4687,8 @@ export function SessionChat({
     setPendingCommand(null);
     setPendingSendInFlight(false);
     setPendingSendMessageId(null);
+    setRewindTarget(null);
+    setRewindDraft(null);
     lastSendTimeRef.current = 0;
   }, [sessionId]);
 
@@ -4649,19 +4699,31 @@ export function SessionChat({
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
-  // ============================================================================
-  // TODO(session-rewind): Bring back an in-place "edit past message + rewind"
-  // flow instead of the removed edit-fork-prompt feature. The old behaviour
-  // created a native fork of the session at a message and reopened the new
-  // session with the edited prompt restored in the composer — that UX was the
-  // wrong model. What we actually want is a proper rewind/rollback on the SAME
-  // session (edit a prior user message, roll the session back to that point,
-  // and re-run from there), which opencode supports natively. Removed here so
-  // it can be rebuilt correctly. The old surface spanned: useForkSession()
-  // (SDK), the fork-draft stash (writeForkDraft/readForkDraft/clearForkDraft),
-  // the Fork / Edit-fork buttons + Confirm/Edit dialogs on user messages, and
-  // the composer draft-restore in session-chat-input.tsx.
-  // ============================================================================
+  const handleConfirmRewind = useCallback(async () => {
+    if (!sessionState || !rewindTarget) return;
+    try {
+      const { messageId, text } = rewindTarget;
+      await sessionState.rewind(messageId);
+      setRewindDraft({ text, id: ++rewindPrefillId.current });
+      setRewindTarget(null);
+    } catch (error) {
+      errorToast('Session rewind failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [rewindTarget, sessionState]);
+
+  const handleRestoreRewind = useCallback(async () => {
+    if (!sessionState?.rewindMessageId) return;
+    try {
+      await sessionState.restoreRewind();
+      setRewindDraft({ text: '', id: ++rewindPrefillId.current });
+    } catch (error) {
+      errorToast('Session restore failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [sessionState]);
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -5331,6 +5393,27 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
+        {sessionState?.rewindMessageId ? (
+          <div className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-2">
+            <RotateCcw className="text-muted-foreground size-3.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-foreground text-xs font-medium">Session rewound</p>
+              <p className="text-muted-foreground text-xs">
+                Sending a new prompt commits this path. Restore keeps the removed messages and file
+                changes.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={sessionState.rewindPending}
+              onClick={() => void handleRestoreRewind()}
+            >
+              {sessionState.rewindPending ? <Loading /> : 'Restore'}
+            </Button>
+          </div>
+        ) : null}
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -5365,6 +5448,9 @@ export function SessionChat({
     ),
     [
       sessionId,
+      sessionState?.rewindMessageId,
+      sessionState?.rewindPending,
+      handleRestoreRewind,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -5443,9 +5529,6 @@ export function SessionChat({
   }
 
   return (
-    // Narrative vs full history is a per-reader choice that has to be visible
-    // to every turn in the transcript, so the provider wraps the whole chat.
-    <ChatDetailProvider>
     <div
       className={cn(
         'relative flex h-full flex-col',
@@ -5535,7 +5618,8 @@ export function SessionChat({
                         {(() => {
                           const { cleanText: afterReply, replyContext: optReply } =
                             parseReplyContext(optimisticPrompt || '');
-                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
+                            const { cleanText: afterFiles, files } =
+                              parseFileReferences(afterReply);
                           const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
                           const { cleanText: afterFileMentions } =
                             parseFileMentionReferences(afterProjects);
@@ -5681,6 +5765,10 @@ export function SessionChat({
                           commands={commands}
                           disableToolNavigation={disableToolNavigation}
                           onPermissionReply={handlePermissionReply}
+                            onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                            rewindDisabled={
+                              !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                            }
                         />
                       </div>
                     );
@@ -5770,6 +5858,7 @@ export function SessionChat({
 
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
+          <>
         <SessionChatInput
           onSend={async (text, files, mentions) => {
             await handleSend(text, files, mentions);
@@ -5780,7 +5869,13 @@ export function SessionChat({
             }
           }}
           prefill={
-            failedStartDraft
+                rewindDraft
+                  ? {
+                      text: rewindDraft.text,
+                      id: rewindDraft.id,
+                      mode: 'replace',
+                    }
+                  : failedStartDraft
               ? {
                   text: failedStartDraft.text,
                   files: failedStartDraft.files,
@@ -5838,8 +5933,26 @@ export function SessionChat({
           onQuestionAction={handleQuestionAction}
           inputSlot={chatInputSlot}
         />
+            <ConfirmDialog
+              open={!!rewindTarget}
+              onOpenChange={(open) => !open && setRewindTarget(null)}
+              title="Edit from this message?"
+              description={
+                <>
+                  <p>This rewinds the same session and restores its files to this message.</p>
+                  <p className="mt-2">
+                    You can restore the removed path until you send a replacement prompt.
+                  </p>
+                </>
+              }
+              confirmLabel="Rewind session"
+              confirmVariant="destructive"
+              confirmIcon={<RotateCcw className="size-3.5" />}
+              isPending={sessionState?.rewindPending}
+              onConfirm={() => void handleConfirmRewind()}
+            />
+          </>
       )}
     </div>
-    </ChatDetailProvider>
   );
 }

@@ -152,3 +152,4 @@ grafana-creds.txt
 botkube-communication.secret.yaml
 botkube-comm-real.yaml
 .env*
+.cutover-state/

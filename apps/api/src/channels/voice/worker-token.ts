@@ -1,6 +1,6 @@
 /**
  * `kortix_api_token` — the credential the voice-agent worker (apps/voice-agent)
- * carries for one call, room metadata carrying it into `ctx.job.room.metadata`
+ * carries for one call, private dispatch metadata carrying it into `ctx.job.metadata`
  * at dispatch time (see that app's `call-context.ts`). It authenticates the
  * worker's `Authorization: Bearer` header on its single way in, the MCP at
  * `POST /v1/projects/:projectId/sessions/:sessionId/mcp/voice` (routes.ts).

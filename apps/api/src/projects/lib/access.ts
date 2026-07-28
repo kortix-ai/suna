@@ -73,6 +73,14 @@ async function loadProjectSessionRow(
 export async function loadVisibleSession(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
   sessionId: string,
+  /**
+   * The CALLER's own session, when the credential is bound to one (a sandbox
+   * token: `c.get('sessionId')`). Null/undefined for a human or for a wrapper's
+   * own backend credential. Required to stop a sandbox reaching a SIBLING
+   * backend session — every KaaB session shares one `created_by`, so ownership
+   * alone cannot separate them. See isSessionVisibleTo.
+   */
+  callerSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   subject: ShareSubject;
@@ -85,7 +93,13 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
-  if (!isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)) {
+  if (
+    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject, {
+      origin: row.origin ?? null,
+      sessionId,
+      callerSessionId,
+    })
+  ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
     // invisible (private / not-my-grant). Audit every use — this is a real

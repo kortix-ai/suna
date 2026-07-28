@@ -6,7 +6,7 @@
  * /v1/projects/:projectId/sessions/:sessionId/mcp/voice (routes.ts). The
  * caller is not a Kortix agent — it is a third-party-hosted worker process
  * holding the per-call `kortix_api_token` HMAC minted in `startCall`
- * (worker-token.ts) and handed to it via LiveKit room metadata. That token
+ * (worker-token.ts) and handed to it via private LiveKit dispatch metadata. That token
  * authorizes exactly one call; nothing here accepts session/PAT auth.
  *
  * This used to be the OTHER direction: the Kortix agent's own tool surface

@@ -299,3 +299,64 @@ describe('sensitive connector — reads gate too', () => {
     ).toEqual({ action: 'always_run', source: 'connector' });
   });
 });
+
+describe('per-CONNECTION policies', () => {
+  // One connector, several connections (support@, sales@, a member's own).
+  // Connector rules are keyed by the connector, so they cannot say "sales@ may
+  // send, support@ may not". Connection rules sit between project and connector.
+  const resolve = (
+    connectionPolicies: Policy[],
+    connectorPolicies: Policy[] = [],
+    projectPolicies: Policy[] = [],
+  ) =>
+    resolveEffectiveAction({
+      fullPath: 'gmail.send_email',
+      relPath: 'send_email',
+      projectPolicies,
+      connectionPolicies,
+      connectorPolicies,
+      risk: 'write',
+      defaultMode: 'risk',
+    });
+
+  test('a connection rule beats the connector default', () => {
+    const r = resolve([{ match: 'send_email', action: 'always_run' }], [
+      { match: '*', action: 'block' },
+    ]);
+    expect(r.action).toBe('always_run');
+    expect(r.source).toBe('connection');
+  });
+
+  test('two connections under one connector can differ', () => {
+    expect(resolve([{ match: 'send_email', action: 'always_run' }]).action).toBe('always_run');
+    expect(resolve([{ match: 'send_email', action: 'block' }]).action).toBe('block');
+  });
+
+  test('a project rule still cannot be overridden by a connection', () => {
+    // The admin guardrail must survive the new, more specific scope.
+    const r = resolve([{ match: 'send_email', action: 'always_run' }], [], [
+      { match: 'gmail.send_email', action: 'block' },
+    ]);
+    expect(r.action).toBe('block');
+    expect(r.source).toBe('project');
+  });
+
+  test('no connection rule falls through to the connector, unchanged', () => {
+    const r = resolve([], [{ match: 'send_email', action: 'require_approval' }]);
+    expect(r.action).toBe('require_approval');
+    expect(r.source).toBe('connector');
+  });
+
+  test('omitting connection policies entirely behaves exactly as before', () => {
+    const r = resolveEffectiveAction({
+      fullPath: 'gmail.send_email',
+      relPath: 'send_email',
+      projectPolicies: [],
+      connectorPolicies: [{ match: 'send_email', action: 'block' }],
+      risk: 'write',
+      defaultMode: 'risk',
+    });
+    expect(r.action).toBe('block');
+    expect(r.source).toBe('connector');
+  });
+});

@@ -102,4 +102,48 @@ describe("buildProjectSeedFilesFromItem", () => {
     expect(manifest).toContain('monthly-seo-growth-report');
     expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBe('seo-director');
   });
+
+  test('seeds the Marketing Department project with bundled agents, skills, schedules, and memory', async () => {
+    const { files, baseFiles } = await buildProjectSeedFilesFromItem({
+      id: 'kortix-projects:marketing-department',
+      projectName: 'Acme Marketing',
+      repoFullName: 'acme/marketing',
+      extraMarketplaceItems: [],
+      now: '2026-07-27T00:00:00.000Z',
+    });
+    const paths = new Set(files.map((f) => f.path));
+    const basePaths = new Set(baseFiles.map((f) => f.path));
+    const manifest = files.find((f) => f.path === 'kortix.yaml')?.content ?? '';
+
+    expect(basePaths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/marketing-director.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/campaign-strategist.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/content-marketer.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/lifecycle-marketer.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/growth-analyst.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/brand-guardian.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/agents/marketing-repo-watchdog.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/marketing-operating-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/brand-positioning/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/campaign-strategy/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/content-engine/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/lifecycle-growth/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/marketing-analytics/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/marketing-repo-awareness/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/memory/MARKETING.md')).toBe(true);
+    expect(paths.has('install.md')).toBe(true);
+    expect(manifest).toContain('name: "Acme Marketing"');
+    expect(manifest).toContain('default_agent: marketing-director');
+    expect(manifest).toContain('marketing-request-intake');
+    expect(manifest).toContain('repo-marketing-watch');
+    expect(manifest).toContain('daily-marketing-performance-pulse');
+    expect(manifest).toContain('daily-marketing-repo-sweep');
+    expect(manifest).toContain('weekly-campaign-planning');
+    expect(manifest).toContain('weekly-content-calendar');
+    expect(manifest).toContain('weekly-lifecycle-review');
+    expect(manifest).toContain('weekly-brand-competitor-watch');
+    expect(manifest).toContain('monthly-marketing-report');
+    expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBe('marketing-director');
+  });
 });

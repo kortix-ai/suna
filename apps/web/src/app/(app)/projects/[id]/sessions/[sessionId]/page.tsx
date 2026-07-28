@@ -71,6 +71,8 @@ export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const forceAcp = searchParams.has('acp');
 
   // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
@@ -112,6 +114,7 @@ export default function ProjectSessionPage() {
     enabled: !!user && !billingGatePending && !noPlan,
     replayStartStash: false,
     initialOpenCodeSessionId,
+    runtimeTransport: forceAcp ? 'acp' : undefined,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';

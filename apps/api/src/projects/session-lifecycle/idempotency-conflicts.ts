@@ -24,6 +24,23 @@ export function originRefConflicts(existing: unknown, requested: unknown): boole
   return normalizeOriginRef(existing) !== normalizeOriginRef(requested);
 }
 
+/**
+ * Compare the end-user two idempotent creates name, reading EITHER spelling.
+ *
+ * `end_user_ref` is the name and `origin_ref` its deprecated alias, so a guard
+ * that reads one raw key sees `undefined` when the replay used the other,
+ * concludes "no conflict", and returns the FIRST end-user's session to the
+ * SECOND. Resolve both sides to a canonical value before comparing.
+ */
+export function endUserRefConflicts(
+  existingBody: { end_user_ref?: unknown; origin_ref?: unknown },
+  requestedBody: { end_user_ref?: unknown; origin_ref?: unknown },
+): boolean {
+  const canonical = (body: { end_user_ref?: unknown; origin_ref?: unknown }): string | null =>
+    normalizeOriginRef(body.end_user_ref) ?? normalizeOriginRef(body.origin_ref);
+  return canonical(existingBody) !== canonical(requestedBody);
+}
+
 /** Order-independent canonical form of a runtime_context scalar map. */
 function canonicalRuntimeContext(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -38,4 +55,21 @@ function canonicalRuntimeContext(value: unknown): string {
 
 export function runtimeContextConflicts(existing: unknown, requested: unknown): boolean {
   return canonicalRuntimeContext(existing) !== canonicalRuntimeContext(requested);
+}
+
+/**
+ * Order-independent, deduped canonical form of a `require_connectors` alias list.
+ * An absent field and an empty list both normalize to "" (no requirements), so a
+ * benign retry never conflicts; a genuinely different required set does.
+ */
+function canonicalRequireConnectors(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  const aliases = Array.from(
+    new Set(value.filter((a): a is string => typeof a === 'string' && a.length > 0)),
+  ).sort();
+  return aliases.length === 0 ? '' : JSON.stringify(aliases);
+}
+
+export function requireConnectorsConflicts(existing: unknown, requested: unknown): boolean {
+  return canonicalRequireConnectors(existing) !== canonicalRequireConnectors(requested);
 }

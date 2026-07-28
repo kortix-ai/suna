@@ -6,6 +6,7 @@ import {
   UpdateConnectionProfileCredentialInputSchema,
 } from '@kortix/api-contract';
 import {
+  executorConnectionPolicies,
   executorConnectionProfiles,
   executorConnectors,
   projectSessions,
@@ -13,7 +14,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import {
@@ -28,6 +29,7 @@ import {
   deleteAgentMailInstall,
   deleteSlackInstall,
   deleteTeamsInstall,
+  listProjectsForWorkspace,
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsAppIdForProject,
@@ -84,6 +86,7 @@ import {
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
+import { isValidMatcher } from '../../executor/policy';
 import { db } from '../../shared/db';
 import {
   acquireExecutionLease,
@@ -160,6 +163,24 @@ interface SlackAuthTest {
 
 const ConnectionProfileViewSchema = ConnectionProfileSchema.openapi('ConnectionProfile');
 
+/**
+ * The owner/admin ROSTER shape — deliberately narrower than ConnectionProfile.
+ * It answers "who has connected this connector, and does it still work?" and
+ * nothing else. `label` and `metadata` are omitted on purpose: they are a
+ * member's own annotations on a PRIVATE connection and can carry personal
+ * identifiers (an email, an inbox id, a workspace id), which a peer manager has
+ * no need to see. Credentials are never in any profile shape.
+ */
+const ConnectionRosterEntrySchema = z
+  .object({
+    profile_id: z.string().uuid(),
+    connector_alias: z.string(),
+    owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+    owner_id: z.string().nullable(),
+    status: z.enum(['active', 'revoked', 'error']),
+  })
+  .openapi('ConnectionRosterEntry');
+
 function serializeConnectionProfile(row: {
   profileId: string;
   connectorAlias: string;
@@ -191,7 +212,11 @@ function mayReadConnectionProfile(
   if (profile.ownerType === 'member') {
     return !actingPrincipalIsServiceAccount && profile.ownerId === userId;
   }
-  if (profile.ownerType === 'project' && profile.isDefault) return true;
+  // EVERY project-owned connection is readable by the project, not just the
+  // default one — a connector can now hold several TEAM connections (support@,
+  // sales@) and members must be able to see and pick between them. This is
+  // metadata only (label/status/owner); credentials are never in this shape.
+  if (profile.ownerType === 'project') return true;
   return mayManageSystemProfiles;
 }
 
@@ -211,16 +236,25 @@ async function reconcileConnectionProfileRow(input: {
   accountId: string;
   projectId: string;
   connectorId: string;
-  ownerType: 'agent' | 'member' | 'subject' | 'external';
-  ownerId: string;
+  ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  /** null for a `project` (team-shared) connection — the CHECK constraint
+   *  requires owner_id IS NULL there; every other owner type carries an id. */
+  ownerId: string | null;
   label: string;
   metadata: Record<string, unknown>;
   createdBy: string;
 }) {
+  // Identity includes the LABEL: an owner may hold several connections on one
+  // connector ("Work", "Personal"), so reconciling a NEW label adds a connection
+  // while the same label stays idempotent (updates metadata in place). Matches
+  // idx_executor_connection_profiles_owner.
   const identity = and(
     eq(executorConnectionProfiles.connectorId, input.connectorId),
     eq(executorConnectionProfiles.ownerType, input.ownerType),
-    eq(executorConnectionProfiles.ownerId, input.ownerId),
+    input.ownerId === null
+      ? isNull(executorConnectionProfiles.ownerId)
+      : eq(executorConnectionProfiles.ownerId, input.ownerId),
+    eq(executorConnectionProfiles.label, input.label),
   );
   const [existing] = await db.select().from(executorConnectionProfiles).where(identity).limit(1);
   if (existing) {
@@ -303,6 +337,71 @@ projectsApp.openapi(
           ),
         )
         .map(serializeConnectionProfile),
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/connector-profiles/all',
+    tags: ['connectors'],
+    summary: "List EVERY member's connection profile (owner/admin, read-only roster)",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ profiles: z.array(ConnectionRosterEntrySchema) }), 'Profiles'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A read-only roster of EVERY member's connection for this project: WHO has
+    // connected which connector, and whether it still works. Manage-gated
+    // (owner/manager), and deliberately NARROWER than the caller-scoped list —
+    // it returns identity + status ONLY. `label` and `metadata` are excluded on
+    // purpose: they are a member's own annotations on a PRIVATE connection and
+    // can carry personal identifiers (an email, an inbox_id, a workspace id).
+    // The plain list hides other members' profiles entirely, so this route is
+    // the one place peer rows are visible — it must disclose the minimum that
+    // answers "has this person connected?", nothing more.
+    const mayManage = await projectCapabilityAllowed(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    );
+    if (!mayManage) {
+      return c.json(
+        { error: 'You do not have permission to view all connection profiles', code: 'FORBIDDEN' },
+        403,
+      );
+    }
+    const rows = await db
+      .select({
+        profileId: executorConnectionProfiles.profileId,
+        connectorAlias: executorConnectors.slug,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
+        status: executorConnectionProfiles.status,
+      })
+      .from(executorConnectionProfiles)
+      .innerJoin(
+        executorConnectors,
+        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+      )
+      .where(eq(executorConnectionProfiles.projectId, projectId));
+    return c.json({
+      profiles: rows.map((row) => ({
+        profile_id: row.profileId,
+        connector_alias: row.connectorAlias,
+        owner_type: row.ownerType,
+        owner_id: row.ownerId,
+        status: row.status,
+      })),
     });
   },
 );
@@ -443,10 +542,18 @@ projectsApp.openapi(
       body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
         ? (body.metadata as Record<string, unknown>)
         : {};
-    if (!connectorAlias || !['agent', 'member', 'subject', 'external'].includes(ownerType)) {
-      return c.json({ error: 'connector_alias and a non-project owner_type are required' }, 400);
+    if (!connectorAlias || !['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)) {
+      return c.json({ error: 'connector_alias and a valid owner_type are required' }, 400);
     }
-    if (!ownerId || !label) return c.json({ error: 'owner_id and label are required' }, 400);
+    // A `project` (team-shared) connection belongs to the whole project and takes
+    // NO owner_id — several may exist per connector, distinguished by label.
+    // Creating one is already gated: this route asserts the profiles-manage
+    // capability above, so reaching here means the caller may administer them.
+    if (ownerType === 'project') {
+      if (!label) return c.json({ error: 'label is required' }, 400);
+    } else if (!ownerId || !label) {
+      return c.json({ error: 'owner_id and label are required' }, 400);
+    }
     const [connector] = await db
       .select({
         connectorId: executorConnectors.connectorId,
@@ -472,8 +579,8 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       connectorId: connector.connectorId,
-      ownerType: ownerType as 'agent' | 'member' | 'subject' | 'external',
-      ownerId,
+      ownerType: ownerType as 'project' | 'agent' | 'member' | 'subject' | 'external',
+      ownerId: ownerType === 'project' ? null : ownerId,
       label,
       metadata,
       createdBy: loaded.userId,
@@ -484,7 +591,7 @@ projectsApp.openapi(
   },
 );
 
-for (const operation of ['credential', 'revoke', 'activate'] as const) {
+for (const operation of ['credential', 'revoke', 'activate', 'default'] as const) {
   projectsApp.openapi(
     createRoute({
       method: 'put',
@@ -585,6 +692,28 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
         } catch (error) {
           return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
         }
+      } else if (operation === 'default') {
+        // Make THIS the default connection for its owner scope. Defaults are
+        // per-owner (one team default; one per member), and the partial unique
+        // indexes enforce that — so clear the current default in the SAME scope
+        // first, in one transaction, or the update would collide.
+        await db.transaction(async (tx) => {
+          const sameScope = and(
+            eq(executorConnectionProfiles.connectorId, profile.connectorId),
+            eq(executorConnectionProfiles.ownerType, profile.ownerType),
+            profile.ownerId === null
+              ? isNull(executorConnectionProfiles.ownerId)
+              : eq(executorConnectionProfiles.ownerId, profile.ownerId),
+          );
+          await tx
+            .update(executorConnectionProfiles)
+            .set({ isDefault: false, updatedAt: new Date() })
+            .where(and(sameScope, eq(executorConnectionProfiles.isDefault, true)));
+          await tx
+            .update(executorConnectionProfiles)
+            .set({ isDefault: true, updatedAt: new Date() })
+            .where(eq(executorConnectionProfiles.profileId, profileId));
+        });
       } else {
         if (operation === 'revoke') await revokeProfileOAuth2(profileId);
         await db
@@ -1667,6 +1796,19 @@ projectsApp.openapi(
 
     let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
     if (existingInboxId && existingEmail) {
+      // Ownership gate (pentest 2026-07-27): before claiming an existing
+      // AgentMail inbox, confirm no OTHER project already owns it. Without this,
+      // a caller with connector.write on their own project could supply a
+      // victim's inbox_id and hijack inbound mail resolution. The scoped delete
+      // in saveAgentMailInstall is defense-in-depth; this 409 is the front gate.
+      const owners = await listProjectsForWorkspace('email', existingInboxId);
+      const foreignOwner = owners.find((id) => id !== projectId);
+      if (foreignOwner) {
+        return c.json(
+          { error: 'AgentMail inbox is already connected to another project' },
+          409,
+        );
+      }
       inbox = {
         inbox_id: existingInboxId,
         email: existingEmail,
@@ -3055,5 +3197,151 @@ projectsApp.openapi(
       },
       202,
     );
+  },
+);
+
+/* ─── Per-CONNECTION permissions ────────────────────────────────────────────
+ *
+ * One connector can hold several connections (support@, sales@, a member's own
+ * mailbox) that warrant DIFFERENT permissions. These rules are keyed by
+ * profile_id and are evaluated between the project and connector scopes: a
+ * project rule still wins (the admin guardrail), but the connection beats the
+ * connector default.
+ *
+ * Authority is the SAME rule as every other profile mutation
+ * (mayMutateConnectionProfile): a member may set rules on their OWN connection;
+ * a team/external connection needs project.connector_profiles.manage. That
+ * stops a member widening a shared connection past the team baseline, and a
+ * miss returns 404 rather than 403 so profile existence is not disclosed.
+ */
+const ConnectionPolicyRuleSchema = z.object({
+  match: z.string().min(1).max(512),
+  action: z.enum(['always_run', 'require_approval', 'block']),
+});
+
+async function loadMutableConnectionProfile(c: any, projectId: string, profileId: string) {
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return null;
+  const mayManageSystemProfiles = await projectCapabilityAllowed(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+  );
+  const [profile] = await db
+    .select({
+      profileId: executorConnectionProfiles.profileId,
+      ownerType: executorConnectionProfiles.ownerType,
+      ownerId: executorConnectionProfiles.ownerId,
+    })
+    .from(executorConnectionProfiles)
+    .where(
+      and(
+        eq(executorConnectionProfiles.profileId, profileId),
+        eq(executorConnectionProfiles.projectId, projectId),
+        eq(executorConnectionProfiles.accountId, loaded.row.accountId),
+      ),
+    )
+    .limit(1);
+  if (!profile) return null;
+  if (
+    !mayMutateConnectionProfile(
+      profile,
+      loaded.userId,
+      c.get('authType') === 'service_account',
+      mayManageSystemProfiles,
+    )
+  ) {
+    return null;
+  }
+  return profile;
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/connector-profiles/{profileId}/policies',
+    tags: ['connectors'],
+    summary: "Read one connection's tool-call policies",
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), profileId: z.string().uuid() }) },
+    responses: {
+      200: json(z.object({ policies: z.array(ConnectionPolicyRuleSchema) }), 'Connection policies'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const profileId = c.req.param('profileId');
+    const profile = await loadMutableConnectionProfile(c, projectId, profileId);
+    if (!profile) return c.json({ error: 'Not found' }, 404);
+    const rows = await db
+      .select()
+      .from(executorConnectionPolicies)
+      .where(eq(executorConnectionPolicies.profileId, profileId))
+      .orderBy(executorConnectionPolicies.position);
+    return c.json({ policies: rows.map((r) => ({ match: r.match, action: r.action })) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/connector-profiles/{profileId}/policies',
+    tags: ['connectors'],
+    summary: "Replace one connection's tool-call policies",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ policies: z.array(ConnectionPolicyRuleSchema) }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }), 'Replaced'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const profileId = c.req.param('profileId');
+    const profile = await loadMutableConnectionProfile(c, projectId, profileId);
+    if (!profile) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readBody(c);
+    const parsed = z.object({ policies: z.array(ConnectionPolicyRuleSchema) }).safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.issues[0]?.message ?? 'invalid policies' }, 400);
+    }
+    // Same matcher validation as the connector scope — an invalid glob/regex
+    // must be rejected at WRITE time, never left to blow up in the call gate.
+    const bad = parsed.data.policies.find((p) => !isValidMatcher(p.match));
+    if (bad) {
+      return c.json({ error: `invalid match pattern: ${bad.match}`, code: 'INVALID_MATCHER' }, 400);
+    }
+
+    // Replace, never merge: the editor sends the full list, so a rule the user
+    // deleted must disappear rather than linger.
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(executorConnectionPolicies)
+        .where(eq(executorConnectionPolicies.profileId, profileId));
+      if (parsed.data.policies.length > 0) {
+        await tx.insert(executorConnectionPolicies).values(
+          parsed.data.policies.map((p, index) => ({
+            profileId,
+            match: p.match,
+            action: p.action,
+            position: index,
+          })),
+        );
+      }
+    });
+    return c.json({ ok: true });
   },
 );

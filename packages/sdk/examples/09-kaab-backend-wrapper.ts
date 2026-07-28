@@ -11,7 +11,7 @@
  *   2. mint a per-end-user connection PROFILE (owner_type 'external' = your user)
  *      + store that user's own credential + activate it            (by reference)
  *   3. start a BACKEND-origin session, binding the profile, pinning the model
- *      and agent, vouching via origin_ref, and narrowing secrets      (overrides)
+ *      and agent, vouching via end_user_ref, and narrowing secrets      (overrides)
  *   4. STREAM the agent's answer live to your terminal / your own SSE endpoint
  *
  * Two run modes in this one file:
@@ -27,7 +27,7 @@
  *       -d '{"endUserId":"alice","prompt":"Summarize my new signups"}'
  *
  * Notes:
- *   - `origin_ref` + `secrets` are backend-only fields that require the
+ *   - `end_user_ref` + `secrets` are backend-only fields that require the
  *     Kortix-as-a-Backend release. Set KAAB_OVERRIDES=off to drop them so the
  *     connector + binding + session + streaming path still runs against a
  *     deployment that doesn't have them yet (origin still auto-derives to
@@ -65,7 +65,7 @@ if (!upstreamApiKey || !projectId) {
  * wrapper mints/stores one PAT per tenant (or scopes a shared one) in its own
  * auth store, keyed off the incoming request — never a hardcoded env var. Here
  * every user shares the wrapper's own key; origin still derives to 'backend',
- * and per-user isolation comes from origin_ref + the end-user's connection
+ * and per-user isolation comes from end_user_ref + the end-user's connection
  * profile, not from distinct Kortix logins.
  */
 function upstreamTokenFor(_endUserId: string): string {
@@ -158,7 +158,7 @@ async function startSession(
     // Backend-only fields (require the KaaB release; KAAB_OVERRIDES=off drops them):
     ...(includeOverrides
       ? {
-          origin_ref: endUserId, // attribution → KORTIX_ORIGIN_REF in the sandbox
+          end_user_ref: endUserId, // attribution → KORTIX_END_USER_REF in the sandbox
           ...(SECRET_ID ? { secrets: [SECRET_ID] } : {}), // narrow injected secrets
         }
       : {}),
@@ -166,7 +166,7 @@ async function startSession(
   const session = await kortix.project(projectId!).sessions.create(body);
   console.error(
     `[session ${session.session_id}] origin=${session.origin ?? '(n/a)'}` +
-      ` origin_ref=${session.origin_ref ?? '(n/a)'} secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
+      ` end_user_ref=${session.end_user_ref ?? '(n/a)'} secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
   );
   return session.session_id;
 }

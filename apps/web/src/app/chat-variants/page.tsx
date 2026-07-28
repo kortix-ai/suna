@@ -13,7 +13,6 @@
 
 import { Button } from '@/components/ui/button';
 import { buildDemoMessages } from '@/features/session/activity/demo-transcript';
-import { ChatDetailProvider } from '@/features/session/activity/chat-detail';
 import { CHAT_VARIANTS } from '@/features/session/activity/variants';
 import { VariantCurrent } from '@/features/session/activity/variants/variant-current';
 import type { ChatVariantDefinition } from '@/features/session/activity/variants/types';
@@ -45,7 +44,6 @@ export default function ChatVariantsPage() {
   const shown = layout === 'compare' ? ALL : ALL.filter((v) => v.id === activeId);
 
   return (
-    <ChatDetailProvider>
     <div className="bg-background text-foreground min-h-dvh">
       <header className="bg-background/80 sticky top-0 z-20 border-b backdrop-blur">
         <div className="mx-auto flex max-w-[1800px] flex-wrap items-center gap-3 px-6 py-3">
@@ -137,6 +135,5 @@ export default function ChatVariantsPage() {
         ))}
       </main>
     </div>
-    </ChatDetailProvider>
   );
 }
