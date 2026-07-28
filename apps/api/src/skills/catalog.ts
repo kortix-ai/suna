@@ -26,7 +26,12 @@
  */
 
 import { parseFrontmatter } from '@kortix/registry';
-import { getMarketplaceFiles, getStarterFiles, isKortixManagedSkillName } from '@kortix/starter';
+import {
+  getManagedSkillFiles,
+  getMarketplaceFiles,
+  getStarterFiles,
+  isKortixManagedSkillName,
+} from '@kortix/starter';
 
 /** Where skills live inside a Kortix project (and inside the starter templates). */
 const SKILLS_PREFIX = '.kortix/opencode/skills/';
@@ -65,6 +70,7 @@ export interface ManagedSkillSummary {
  */
 export function buildManagedSkills(): Map<string, ManagedSkill> {
   const files = [
+    ...getManagedSkillFiles(),
     ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
     ...getMarketplaceFiles(),
   ];

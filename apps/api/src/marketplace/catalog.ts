@@ -16,6 +16,7 @@
  */
 
 import {
+  getManagedSkillFiles,
   getMarketplaceFiles,
   getProjectTemplateFiles,
   getStarterCatalogSourceMap,
@@ -345,6 +346,7 @@ function memSource(map: Map<string, string>): BuildSource {
 
 function buildStarterRegistry(): RegistryJson {
   const files = [
+    ...getManagedSkillFiles(),
     ...getStarterFiles({
       projectName: "Kortix Starter",
       template: "general-knowledge-worker",

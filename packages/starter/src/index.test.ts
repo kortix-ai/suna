@@ -1,15 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  getStarterFiles,
-  normalizeStarterTemplateId,
-  listGeneralKnowledgeWorkerSkills,
-  STARTER_TEMPLATE_IDS,
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
+  STARTER_TEMPLATE_IDS,
+  type StarterFile,
+  getManagedSkillFiles,
   getMarketplaceFiles,
   getProjectTemplateFiles,
+  getStarterFiles,
   isKortixManagedSkillName,
-  type StarterFile,
+  listGeneralKnowledgeWorkerSkills,
+  normalizeStarterTemplateId,
 } from './index';
 
 function byPath(files: StarterFile[]): Map<string, string> {
@@ -82,7 +83,10 @@ describe('getStarterFiles', () => {
   });
 
   test('interpolates the projectName placeholder', () => {
-    const files = getStarterFiles({ projectName: 'My Cool Project', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'My Cool Project',
+      template: 'general-knowledge-worker',
+    });
     const memory = byPath(files).get('.kortix/memory/MEMORY.md');
     expect(memory).toBeDefined();
     expect(memory!).toContain('My Cool Project');
@@ -91,7 +95,11 @@ describe('getStarterFiles', () => {
 
   test('defaults repoFullName when omitted', () => {
     const withoutRepo = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    const withRepo = getStarterFiles({ projectName: 'X', template: 'minimal', repoFullName: 'me/mine' });
+    const withRepo = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+      repoFullName: 'me/mine',
+    });
     const joinedDefault = withoutRepo.map((f) => f.content).join('\n');
     const joinedCustom = withRepo.map((f) => f.content).join('\n');
     if (joinedDefault.includes('your-org/your-repo') || joinedCustom.includes('me/mine')) {
@@ -114,8 +122,14 @@ describe('getStarterFiles', () => {
   });
 
   test('minimal template files are a subset of general-knowledge-worker paths', () => {
-    const minimalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path));
-    const generalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map((f) => f.path));
+    const minimalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path),
+    );
+    const generalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map(
+        (f) => f.path,
+      ),
+    );
     for (const p of minimalPaths) {
       expect(generalPaths.has(p)).toBe(true);
     }
@@ -128,7 +142,10 @@ describe('getStarterFiles', () => {
   });
 
   test('produces no content containing a leftover {{projectName}} token', () => {
-    const files = getStarterFiles({ projectName: 'Determinism', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'Determinism',
+      template: 'general-knowledge-worker',
+    });
     for (const file of files) {
       expect(file.content.includes('{{projectName}}')).toBe(false);
     }
@@ -148,12 +165,16 @@ describe('getStarterFiles', () => {
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
     // The one user-facing starter (the default) carries the full skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(
+      true,
+    );
     expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(
+      minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md'),
+    ).toBe(false);
     expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
   });
 
@@ -162,7 +183,10 @@ describe('getStarterFiles', () => {
     const paths = new Set(files.map((f) => f.path));
 
     expect(paths.has('.kortix/opencode/tools/show.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
+    // `kortix-*` family lives in `templates/managed/` and is injected at boot.
+    expect(paths.has('.kortix/opencode/skills/kortix-cli/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('.kortix/opencode/skills/agent-browser/SKILL.md')).toBe(false);
     expect(paths.has('.kortix/opencode/plugins/pty.ts')).toBe(true);
     expect(paths.has('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
@@ -210,30 +234,48 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   });
 
   /**
-   * Being LISTED as managed does not inject anything. `scripts/write-managed-skills.ts`
-   * builds the baked `/opt/kortix/managed-skills` set from
-   * `getStarterFiles({ template: 'general-knowledge-worker' })` — base +
-   * general-knowledge-worker, NOT marketplace — so a managed skill whose SKILL.md
-   * lives under `templates/marketplace/` is declared managed and reaches no sandbox
-   * at all. That is exactly what happened to `kortix-voice`, silently, for its whole
-   * life: it was in this list and had never once been injected.
+   * Being LISTED as managed does not inject anything — the baked
+   * `/opt/kortix/managed-skills` set is built by walking template roots, so a
+   * managed skill living in a root the bake does not walk is declared managed and
+   * reaches no sandbox at all. That silently stranded `kortix-computer` under
+   * `templates/marketplace/` for its entire life.
+   *
+   * `templates/managed/` now owns the family and `scripts/write-managed-skills.ts`
+   * walks it alongside the starter roots (which still carry `kortix-cli`), so the
+   * gap is closed by construction. This test is the guard: adding a managed name
+   * without putting its SKILL.md in a walked root fails here.
    */
-  test('every managed skill is actually in the injected set (bar the known gap)', () => {
+  test('every managed skill is actually in the injected set', () => {
     const prefix = '.kortix/opencode/skills/';
     const injected = new Set<string>();
-    for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
+    for (const f of [
+      ...getManagedSkillFiles(),
+      ...getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' }),
+    ]) {
       if (!f.path.startsWith(prefix)) continue;
       const name = f.path.slice(prefix.length).split('/')[0];
       if (name && isKortixManagedSkillName(name)) injected.add(name);
     }
 
-    expect(injected.has('kortix-voice')).toBe(true);
-
-    // `kortix-computer` is the one still stranded under templates/marketplace/.
-    // When it moves to base, delete it from here rather than widening this test —
-    // the point is that the gap is named, not that it is tolerated.
     const missing = KORTIX_MANAGED_SKILL_NAMES.filter((n) => !injected.has(n));
-    expect(missing).toEqual(['kortix-computer']);
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * The managed family is injected at boot (force-overwriting whatever the repo
+   * holds), so committing a second copy into every new project bought nothing and
+   * padded the Skills UI with ~10 entries the user cannot meaningfully edit.
+   * `kortix-cli` is the deliberate exception — the visible front door to the rest.
+   */
+  test('only kortix-cli is scaffolded into a new project', () => {
+    const prefix = '.kortix/opencode/skills/';
+    const scaffolded = new Set<string>();
+    for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
+      if (!f.path.startsWith(prefix)) continue;
+      const name = f.path.slice(prefix.length).split('/')[0];
+      if (name && isKortixManagedSkillName(name)) scaffolded.add(name);
+    }
+    expect([...scaffolded]).toEqual(['kortix-cli']);
   });
 });
 
@@ -349,11 +391,21 @@ describe('marketplace projects — full project templates', () => {
     expect(paths.has('seo-department/.kortix/opencode/agents/content-strategist.md')).toBe(true);
     expect(paths.has('seo-department/.kortix/opencode/agents/serp-analyst.md')).toBe(true);
     expect(paths.has('seo-department/.kortix/opencode/agents/seo-repo-watchdog.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/skills/seo-operating-system/SKILL.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/skills/technical-seo-audit/SKILL.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/skills/content-seo-workflow/SKILL.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(true);
+    expect(paths.has('seo-department/.kortix/opencode/skills/seo-operating-system/SKILL.md')).toBe(
+      true,
+    );
+    expect(paths.has('seo-department/.kortix/opencode/skills/technical-seo-audit/SKILL.md')).toBe(
+      true,
+    );
+    expect(paths.has('seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md')).toBe(
+      true,
+    );
+    expect(paths.has('seo-department/.kortix/opencode/skills/content-seo-workflow/SKILL.md')).toBe(
+      true,
+    );
+    expect(paths.has('seo-department/.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(
+      true,
+    );
   });
 
   test('ships the Marketing Department as a full cloneable project template', () => {
@@ -362,20 +414,44 @@ describe('marketplace projects — full project templates', () => {
     expect(paths.has('marketing-department/README.md')).toBe(true);
     expect(paths.has('marketing-department/install.md')).toBe(true);
     expect(paths.has('marketing-department/.kortix/memory/MARKETING.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/marketing-director.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/campaign-strategist.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/content-marketer.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/lifecycle-marketer.md')).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/agents/marketing-director.md')).toBe(
+      true,
+    );
+    expect(paths.has('marketing-department/.kortix/opencode/agents/campaign-strategist.md')).toBe(
+      true,
+    );
+    expect(paths.has('marketing-department/.kortix/opencode/agents/content-marketer.md')).toBe(
+      true,
+    );
+    expect(paths.has('marketing-department/.kortix/opencode/agents/lifecycle-marketer.md')).toBe(
+      true,
+    );
     expect(paths.has('marketing-department/.kortix/opencode/agents/growth-analyst.md')).toBe(true);
     expect(paths.has('marketing-department/.kortix/opencode/agents/brand-guardian.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/marketing-repo-watchdog.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/marketing-operating-system/SKILL.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/brand-positioning/SKILL.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/campaign-strategy/SKILL.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/content-engine/SKILL.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/lifecycle-growth/SKILL.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/marketing-analytics/SKILL.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md')).toBe(true);
+    expect(
+      paths.has('marketing-department/.kortix/opencode/agents/marketing-repo-watchdog.md'),
+    ).toBe(true);
+    expect(
+      paths.has('marketing-department/.kortix/opencode/skills/marketing-operating-system/SKILL.md'),
+    ).toBe(true);
+    expect(
+      paths.has('marketing-department/.kortix/opencode/skills/brand-positioning/SKILL.md'),
+    ).toBe(true);
+    expect(
+      paths.has('marketing-department/.kortix/opencode/skills/campaign-strategy/SKILL.md'),
+    ).toBe(true);
+    expect(paths.has('marketing-department/.kortix/opencode/skills/content-engine/SKILL.md')).toBe(
+      true,
+    );
+    expect(
+      paths.has('marketing-department/.kortix/opencode/skills/lifecycle-growth/SKILL.md'),
+    ).toBe(true);
+    expect(
+      paths.has('marketing-department/.kortix/opencode/skills/marketing-analytics/SKILL.md'),
+    ).toBe(true);
+    expect(
+      paths.has('marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md'),
+    ).toBe(true);
   });
 
   test('SEO Department metadata is visible and dependency-backed', () => {
@@ -407,19 +483,24 @@ describe('marketplace projects — full project templates', () => {
       expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
     );
     expect(meta.dependencies).toEqual(
-      expect.arrayContaining(['ad-performance-review', 'brand-mention-monitor', 'social-post-drafting']),
+      expect.arrayContaining([
+        'ad-performance-review',
+        'brand-mention-monitor',
+        'social-post-drafting',
+      ]),
     );
   });
 
   test('SEO Department guides company setup around real website repo access', () => {
     const readme = files.find((f) => f.path === 'seo-department/README.md')?.content ?? '';
     const install = files.find((f) => f.path === 'seo-department/install.md')?.content ?? '';
-    const director = files.find((f) =>
-      f.path === 'seo-department/.kortix/opencode/agents/seo-director.md'
-    )?.content ?? '';
-    const repoSkill = files.find((f) =>
-      f.path === 'seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md'
-    )?.content ?? '';
+    const director =
+      files.find((f) => f.path === 'seo-department/.kortix/opencode/agents/seo-director.md')
+        ?.content ?? '';
+    const repoSkill =
+      files.find(
+        (f) => f.path === 'seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md',
+      )?.content ?? '';
 
     expect(readme).toContain('your company still needs to bring its real website context');
     expect(install).toContain('Use this form');
@@ -438,14 +519,18 @@ describe('marketplace projects — full project templates', () => {
   test('Marketing Department guides company setup around real marketing context and repo access', () => {
     const readme = files.find((f) => f.path === 'marketing-department/README.md')?.content ?? '';
     const install = files.find((f) => f.path === 'marketing-department/install.md')?.content ?? '';
-    const director = files.find((f) =>
-      f.path === 'marketing-department/.kortix/opencode/agents/marketing-director.md'
-    )?.content ?? '';
-    const repoSkill = files.find((f) =>
-      f.path === 'marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md'
-    )?.content ?? '';
+    const director =
+      files.find(
+        (f) => f.path === 'marketing-department/.kortix/opencode/agents/marketing-director.md',
+      )?.content ?? '';
+    const repoSkill =
+      files.find(
+        (f) =>
+          f.path ===
+          'marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md',
+      )?.content ?? '';
 
-    expect(readme).toContain("your company still needs to bring its real context");
+    expect(readme).toContain('your company still needs to bring its real context');
     expect(install).toContain('Use this form');
     expect(install).toContain('Guided Setup Rule');
     expect(install).toContain('MARKETING_REPO_WEBHOOK_SECRET');

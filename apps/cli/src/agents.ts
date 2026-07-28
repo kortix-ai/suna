@@ -7,8 +7,16 @@ export const SUPPORTED_AGENTS: readonly CodingAgent[] = ['opencode', 'claude', '
 
 export const DEFAULT_PRIMARY: CodingAgent = 'codex';
 
-/** Path of the canonical Kortix skill, relative to repo root. */
-export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
+/**
+ * Path of the canonical Kortix skill, relative to repo root.
+ *
+ * `kortix-cli`, not `kortix-system`: the rest of the `kortix-*` family is
+ * injected into sandboxes at boot rather than committed, so it is absent from a
+ * local checkout — and this path is handed to LOCAL coding agents via the
+ * generated AGENTS.md, where a dangling reference just wastes a file read.
+ * `kortix-cli` ships in the scaffold and is the front door to the others.
+ */
+export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-cli/SKILL.md';
 
 /** The OpenCode runtime config dir every coding agent is pointed at. */
 const OPENCODE_DIR = '.kortix/opencode';

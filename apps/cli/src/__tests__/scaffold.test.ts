@@ -11,7 +11,9 @@ const REQUIRED_BASE_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
   '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/skills/kortix-system/SKILL.md',
+  // `kortix-cli` is the only managed skill scaffolded into a repo; the rest of
+  // the `kortix-*` family lives in templates/managed/ and is injected at boot.
+  '.kortix/opencode/skills/kortix-cli/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'README.md',
   'kortix.yaml',

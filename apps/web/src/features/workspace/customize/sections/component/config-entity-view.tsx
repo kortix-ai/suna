@@ -26,14 +26,10 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
-import {
-  type ProjectConfigSummary,
-  getProjectDetail,
-  readProjectFile,
-} from '@kortix/sdk';
+import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, type LucideIcon, Plus } from 'lucide-react';
+import { ChevronRight, Copy, type LucideIcon, Plus } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 export type ConfigEntity = { name: string; path: string; description: string | null };
@@ -91,6 +87,25 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
   /**
+   * Bucket rows under collapsible group headers in the `split` sidebar. Return
+   * the group label for an entity. Omit for a flat list (agents, commands).
+   *
+   * Group ORDER follows `groupOrder`; anything unlisted sorts last alphabetically.
+   */
+  groupBy?: (entity: T) => string;
+  /** Group labels in display order. Groups in `collapsedGroups` start folded. */
+  groupOrder?: string[];
+  collapsedGroups?: string[];
+
+  /**
+   * Single-line sidebar rows: drop the description subtitle (it moves to the
+   * row's `title` tooltip) and tighten the vertical rhythm. Roughly doubles how
+   * many entities fit on screen — the difference between scanning a list and
+   * scrolling one, once a project carries a couple dozen skills.
+   */
+  compactRows?: boolean;
+
+  /**
    * 'accordion' — a vertical list where each row expands its detail inline.
    * 'split' (the standard for agents, skills & commands) — a master-detail
    * layout: a separate, self-scrolling sidebar that lists every entity on the
@@ -128,6 +143,10 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     layout = 'accordion',
     canWrite = true,
     className,
+    groupBy,
+    groupOrder,
+    collapsedGroups,
+    compactRows = false,
   } = props;
 
   const detailQuery = useQuery({
@@ -162,6 +181,80 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   // Master-detail selection (split layout). The right pane follows this; falls
   // back to the first visible entity so there's always something previewed.
   const selected = filtered.find((e) => e.path === selectedPath) ?? filtered[0] ?? null;
+
+  // Sidebar rows bucketed by `groupBy`, in `groupOrder` (unlisted groups last,
+  // alphabetically). A single group carries no header — grouping should only
+  // cost a row of chrome when it actually separates something.
+  const groups = useMemo(() => {
+    if (!groupBy) return null;
+    const buckets = new Map<string, T[]>();
+    for (const entity of filtered) {
+      const label = groupBy(entity);
+      const bucket = buckets.get(label);
+      if (bucket) bucket.push(entity);
+      else buckets.set(label, [entity]);
+    }
+    if (buckets.size <= 1) return null;
+    const order = groupOrder ?? [];
+    return [...buckets.entries()].sort(([a], [b]) => {
+      const ai = order.indexOf(a);
+      const bi = order.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [filtered, groupBy, groupOrder]);
+
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedGroups ?? []));
+  const toggleGroup = (label: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const renderRow = (entity: T, rowConfig: ProjectConfigSummary) => {
+    const trailing = renderRowTrailing?.(entity, rowConfig);
+    const isActive = selected?.path === entity.path;
+    return (
+      <li key={entity.path}>
+        <button
+          type="button"
+          onClick={() => setSelectedPath(entity.path)}
+          aria-current={isActive}
+          title={compactRows ? (entity.description ?? undefined) : undefined}
+          className={cn(
+            'group flex w-full flex-col rounded-md text-left transition-colors',
+            'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+            compactRows ? 'gap-0 py-1 pr-2 pl-2.5' : 'gap-0.5 py-2 pr-2.5 pl-3',
+            isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+          )}
+        >
+          <span className="flex w-full items-center gap-2">
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate font-medium',
+                compactRows ? 'text-[13px]' : 'text-sm',
+                isActive ? 'text-foreground' : 'text-foreground/70 group-hover:text-foreground',
+              )}
+            >
+              {renderTriggerLabel(entity)}
+            </span>
+            {trailing ? (
+              <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
+            ) : null}
+          </span>
+          {!compactRows && entity.description ? (
+            <span className="text-muted-foreground/60 w-full truncate text-xs">
+              {entity.description}
+            </span>
+          ) : null}
+        </button>
+      </li>
+    );
+  };
 
   const searchInput = (
     <InputGroupSearch>
@@ -300,47 +393,47 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
               aria-label={`${title} list`}
               className="scrollbar-minimal px-2 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
             >
-              <ul className="space-y-0.5">
-                {filtered.map((entity) => {
-                  const trailing = renderRowTrailing?.(entity, config);
-                  const isActive = selected?.path === entity.path;
-                  return (
-                    <li key={entity.path}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPath(entity.path)}
-                        aria-current={isActive}
-                        className={cn(
-                          'group flex w-full flex-col gap-0.5 rounded-md py-2 pr-2.5 pl-3 text-left transition-colors',
-                          'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
-                          isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
-                        )}
-                      >
-                        <span className="flex w-full items-center gap-2">
-                          <span
+              {groups ? (
+                <div className="space-y-1">
+                  {groups.map(([label, items]) => {
+                    const isCollapsed = collapsed.has(label);
+                    return (
+                      <div key={label}>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(label)}
+                          aria-expanded={!isCollapsed}
+                          className={cn(
+                            'text-muted-foreground/70 hover:text-foreground flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5',
+                            'text-[11px] font-medium tracking-wide uppercase transition-colors',
+                            'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                          )}
+                        >
+                          <ChevronRight
                             className={cn(
-                              'min-w-0 flex-1 truncate text-sm font-medium',
-                              isActive
-                                ? 'text-foreground'
-                                : 'text-foreground/70 group-hover:text-foreground',
+                              'size-3 shrink-0 transition-transform',
+                              isCollapsed ? '' : 'rotate-90',
                             )}
-                          >
-                            {renderTriggerLabel(entity)}
+                          />
+                          <span className="truncate">{label}</span>
+                          <span className="text-muted-foreground/40 ml-auto tabular-nums">
+                            {items.length}
                           </span>
-                          {trailing ? (
-                            <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
-                          ) : null}
-                        </span>
-                        {entity.description ? (
-                          <span className="text-muted-foreground/60 w-full truncate text-xs">
-                            {entity.description}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                        </button>
+                        {isCollapsed ? null : (
+                          <ul className="space-y-0.5">
+                            {items.map((entity) => renderRow(entity, config))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <ul className="space-y-0.5">
+                  {filtered.map((entity) => renderRow(entity, config))}
+                </ul>
+              )}
             </nav>
           )}
         </aside>
