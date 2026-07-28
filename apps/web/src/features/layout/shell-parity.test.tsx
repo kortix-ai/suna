@@ -19,25 +19,25 @@ const APP_PROVIDERS = readFileSync(join(SRC, 'features/layout/app-providers.tsx'
 const ANON_SHELL = readFileSync(join(SRC, 'features/home/anonymous-home-shell.tsx'), 'utf8');
 const SIDEBAR_UI = readFileSync(join(SRC, 'components/ui/sidebar.tsx'), 'utf8');
 
-describe('the shell does not claim a variant it never renders', () => {
+describe('both shells wrap the sidebar the same way', () => {
   const CHROME = readFileSync(
     join(SRC, 'features/workspace/project-sidebar/sidebar-chrome.tsx'),
     'utf8',
   );
 
-  test('the sidebar is not the inset variant', () => {
-    // `variant="inset"` asks SidebarInset for a floating rounded panel via
-    // `peer-data-[variant=inset]` — a sibling combinator that AppProviders'
-    // wrapper defeats. The app has always shipped flat; saying so removes the
-    // dependency on DOM nesting, which is what let the two shells diverge.
-    expect(CHROME).toContain('variant="sidebar"');
-    expect(CHROME).not.toContain('variant="inset"');
+  test('the wrapper is load-bearing and both shells have one', () => {
+    // SidebarInset's rounded panel hangs off `peer-data-[variant=inset]`, a
+    // sibling combinator. The wrapper defeats it, which is why prod renders
+    // flat. A shell missing the wrapper renders a rounded panel the other
+    // never has.
+    expect(SIDEBAR_UI).toContain('peer-data-[variant=inset]');
+    expect(CHROME).toContain('variant="inset"');
+    expect(APP_PROVIDERS).toContain('data-slot="sidebar-left-slot"');
+    expect(ANON_SHELL).toContain('<SidebarSlot>');
   });
 
-  test('both shells therefore render the same panel regardless of nesting', () => {
-    // Neither shell can now be changed by an intermediate wrapper element.
-    expect(SIDEBAR_UI).toContain('peer-data-[variant=inset]');
-    expect(ANON_SHELL).not.toContain('variant="inset"');
+  test('the wrapper is shared, not copied', () => {
+    expect(CHROME).toContain('export function SidebarSlot');
   });
 });
 

@@ -37,24 +37,23 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(na
 export const MOD_SYMBOL = isMac ? '⌘' : 'Ctrl';
 
 /**
- * The panel itself.
+ * The panel itself — the SAME props main ships, so the signed-in shell renders
+ * exactly as it does on prod.
  *
- * `variant="sidebar"`, NOT `"inset"`. The inset variant asks SidebarInset for a
- * floating, rounded, margined content panel — and it was never actually
- * rendered: AppProviders wraps the sidebar in a positioning div, and the
- * inset's styling hangs off `peer-data-[variant=inset]`, a sibling combinator
- * that the wrapper defeats. So the app has always shipped flat, while claiming
- * a variant it does not render.
+ * `variant="inset"` asks SidebarInset for a rounded, margined content panel via
+ * `peer-data-[variant=inset]`, a sibling combinator. AppProviders wraps this in
+ * a positioning div, which defeats it, so prod renders FLAT and always has.
+ * Both facts have to stay true together: change either one and the content area
+ * silently gains a half-formed rounded panel.
  *
- * That gap is what made the two shells look different the moment one of them
- * lost the wrapper. Declaring the variant we actually want removes the
- * dependency on DOM nesting altogether, in both shells.
+ * The signed-out shell therefore wraps this the same way — see
+ * SidebarSlot below.
  */
 export function SidebarShell({ children }: { children: ReactNode }) {
   return (
     <Sidebar
       collapsible="offcanvas"
-      variant="sidebar"
+      variant="inset"
       className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
       {children}
@@ -85,6 +84,19 @@ export function SidebarBrandHeader({
         {children ? <div className="min-w-0 flex-1">{children}</div> : null}
       </div>
     </SidebarHeader>
+  );
+}
+
+/**
+ * The positioning wrapper AppProviders puts around the sidebar. Exported so the
+ * signed-out shell renders the identical tree: the wrapper is load-bearing (it
+ * is what keeps the inset flat), so a shell without it looks different.
+ */
+export function SidebarSlot({ children }: { children: ReactNode }) {
+  return (
+    <div data-slot="sidebar-left-slot" className="overflow-hidden" style={{ maxWidth: 320 }}>
+      {children}
+    </div>
   );
 }
 

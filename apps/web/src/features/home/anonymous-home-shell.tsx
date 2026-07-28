@@ -37,6 +37,7 @@ import {
   SidebarNewButton,
   SidebarSectionLabel,
   SidebarShell,
+  SidebarSlot,
 } from '@/features/workspace/project-sidebar/sidebar-chrome';
 import { PROJECT_NAV_ITEMS, type ProjectNavKey } from '@/lib/project-nav';
 
@@ -94,7 +95,14 @@ export function AnonymousHomeShell() {
 
   return (
     <SidebarProvider>
-      <AnonymousSidebar activeSection={activeSection} />
+      {/* The same positioning wrapper AppProviders puts around the signed-in
+          sidebar. It is load-bearing: it defeats SidebarInset's
+          peer-data-[variant=inset] rule, which is what keeps the content area
+          flat. Without it this shell renders a rounded panel the signed-in one
+          never has. */}
+      <SidebarSlot>
+        <AnonymousSidebar activeSection={activeSection} />
+      </SidebarSlot>
       <SidebarInset>
         {/* The SAME inset the signed-in shell uses — background, the seam
             border against the sidebar, and the edge-peek strip. A hand-rolled
