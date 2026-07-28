@@ -1,0 +1,2 @@
+ALTER TABLE "kortix"."project_llm_routing_policies" ADD COLUMN "disabled_models" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "kortix"."project_llm_routing_policies" ADD CONSTRAINT "project_llm_routing_policies_disabled_models_array_check" CHECK (jsonb_typeof("kortix"."project_llm_routing_policies"."disabled_models") = 'array');

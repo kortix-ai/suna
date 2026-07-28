@@ -821,41 +821,38 @@ export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_h
  * index creation stays on the CONCURRENTLY path; declaring them would make
  * `db:generate` emit conflicting plain CREATE INDEX statements. See MIGRATIONS.md.
  */
-export const projectSessionSecretHandles = kortixSchema.table(
-  'project_session_secret_handles',
-  {
-    handleId: uuid('handle_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
-    secretId: uuid('secret_id')
-      .notNull()
-      .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
-    /** Denormalized from the secret so a handle presented after the row is
-     *  deleted still audits as something a human can read. */
-    identifier: varchar('identifier', { length: 128 }).notNull(),
-    /** The env var KEY this handle was emitted under. Same non-uniqueness as
-     *  project_secrets.name — two identifiers may share one key. */
-    envName: varchar('env_name', { length: 64 }).notNull(),
-    /** The public 96-bit component of the handle; what the broker looks up. */
-    lookupId: varchar('lookup_id', { length: 32 }).notNull(),
-    /** SHA-256 hex of the whole handle string — 64 chars, always. varchar and
-     *  not char(64) despite the fixed width: char blank-pads and compares
-     *  ignoring trailing spaces, and squawk's ban-char-field is on. */
-    handleHash: varchar('handle_hash', { length: 64 }).notNull(),
-    /** Bumped by per-prompt rotation; the previous revision goes `superseded`
-     *  with an overlap window rather than dying mid-turn. */
-    revision: integer('revision').default(1).notNull(),
-    policySnapshot: jsonb('policy_snapshot').$type<SecretEgressPolicy>().notNull(),
-    status: projectSecretHandleStatusEnum('status').default('active').notNull(),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  },
-);
+export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
+  handleId: uuid('handle_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  sessionId: text('session_id')
+    .notNull()
+    .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  secretId: uuid('secret_id')
+    .notNull()
+    .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
+  /** Denormalized from the secret so a handle presented after the row is
+   *  deleted still audits as something a human can read. */
+  identifier: varchar('identifier', { length: 128 }).notNull(),
+  /** The env var KEY this handle was emitted under. Same non-uniqueness as
+   *  project_secrets.name — two identifiers may share one key. */
+  envName: varchar('env_name', { length: 64 }).notNull(),
+  /** The public 96-bit component of the handle; what the broker looks up. */
+  lookupId: varchar('lookup_id', { length: 32 }).notNull(),
+  /** SHA-256 hex of the whole handle string — 64 chars, always. varchar and
+   *  not char(64) despite the fixed width: char blank-pads and compares
+   *  ignoring trailing spaces, and squawk's ban-char-field is on. */
+  handleHash: varchar('handle_hash', { length: 64 }).notNull(),
+  /** Bumped by per-prompt rotation; the previous revision goes `superseded`
+   *  with an overlap window rather than dying mid-turn. */
+  revision: integer('revision').default(1).notNull(),
+  policySnapshot: jsonb('policy_snapshot').$type<SecretEgressPolicy>().notNull(),
+  status: projectSecretHandleStatusEnum('status').default('active').notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
 
 // Account-scoped default model preferences. Drives server-side resolution of the
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
@@ -950,6 +947,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
       .default({})
       .$type<ProjectModelGenerationConfig>()
       .notNull(),
+    // Wire-model ids the project has explicitly DISABLED. Opt-out: absent from
+    // this list = usable. The gateway rejects a disabled model everywhere (chat,
+    // Slack, triggers, API) and the picker hides it. Default [] = all enabled.
+    disabledModels: jsonb('disabled_models').default([]).$type<string[]>().notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -966,6 +967,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     check(
       'project_llm_routing_policies_gen_config_object_check',
       sql`jsonb_typeof(${table.modelGenerationConfig}) = 'object'`,
+    ),
+    check(
+      'project_llm_routing_policies_disabled_models_array_check',
+      sql`jsonb_typeof(${table.disabledModels}) = 'array'`,
     ),
   ],
 );

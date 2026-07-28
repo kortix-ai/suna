@@ -8,6 +8,7 @@ import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
+import { isModelDisabledForProject } from '../model-enablement';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
@@ -78,6 +79,16 @@ export async function resolveCandidates(
 ): Promise<UpstreamDescriptor[]> {
   const effectiveModel = model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
+
+  // Per-project enablement: a model the project turned OFF is refused before any
+  // provider-specific resolution, so it's uniformly unusable everywhere.
+  if (await isModelDisabledForProject(principal.projectId, effectiveModel)) {
+    throw new GatewayResolutionError(
+      'model_disabled',
+      'This model is turned off for this project.',
+      'Re-enable it in the project model settings, or pick an enabled model.',
+    );
+  }
 
   if (provider === 'codex') {
     if (!principal.projectId) {

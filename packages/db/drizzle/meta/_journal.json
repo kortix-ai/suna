@@ -169,6 +169,13 @@
       "when": 1785245173903,
       "tag": "20260728132613_secret_delivery_strategy",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785269446728,
+      "tag": "20260728201046_add_project_disabled_models",
+      "breakpoints": true
     }
   ]
 }

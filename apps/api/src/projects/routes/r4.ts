@@ -40,7 +40,6 @@ import {
   saveTeamsInstall,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
-import { setProjectBotName } from '../../channels/voice-identity';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
@@ -58,6 +57,7 @@ import {
   relayTurnQuestion,
   relayTurnStep,
 } from '../../channels/turn-relay';
+import { setProjectBotName } from '../../channels/voice-identity';
 import { config } from '../../config';
 import { upsertProfileCredential, upsertProfileOAuth2Credential } from '../../executor/credentials';
 import { revokeProfileOAuth2 } from '../../executor/oauth2-store';
@@ -66,6 +66,7 @@ import {
   pipedreamConfigured,
   pipedreamConnectUrl,
 } from '../../executor/pipedream';
+import { isValidMatcher } from '../../executor/policy';
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -79,15 +80,17 @@ import {
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
-import { isValidMatcher } from '../../executor/policy';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import {
+  getProjectRoutingPolicy,
+  setProjectDisabledModels,
+} from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import {
   acquireExecutionLease,
@@ -103,6 +106,7 @@ import {
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
+import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
   canonicalConnectorAlias,
@@ -543,7 +547,10 @@ projectsApp.openapi(
       body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
         ? (body.metadata as Record<string, unknown>)
         : {};
-    if (!connectorAlias || !['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)) {
+    if (
+      !connectorAlias ||
+      !['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)
+    ) {
       return c.json({ error: 'connector_alias and a valid owner_type are required' }, 400);
     }
     // A `project` (team-shared) connection belongs to the whole project and takes
@@ -1805,10 +1812,7 @@ projectsApp.openapi(
       const owners = await listProjectsForWorkspace('email', existingInboxId);
       const foreignOwner = owners.find((id) => id !== projectId);
       if (foreignOwner) {
-        return c.json(
-          { error: 'AgentMail inbox is already connected to another project' },
-          409,
-        );
+        return c.json({ error: 'AgentMail inbox is already connected to another project' }, 409);
       }
       inbox = {
         inbox_id: existingInboxId,
@@ -2102,12 +2106,7 @@ projectsApp.openapi(
     const apiKeyType = c.get('apiKeyType') as string | undefined;
     const accountId = c.get('accountId') as string | undefined;
     const sandboxId = c.get('sandboxId') as string | undefined;
-    if (
-      authType !== 'apiKey' ||
-      apiKeyType !== 'sandbox' ||
-      !accountId ||
-      !sandboxId
-    ) {
+    if (authType !== 'apiKey' || apiKeyType !== 'sandbox' || !accountId || !sandboxId) {
       return c.json({ error: 'execution lease requires a sandbox token' }, 403);
     }
     const projectId = c.req.param('projectId');
@@ -2726,7 +2725,78 @@ projectsApp.openapi(
       new Set(secrets.names.map((name) => name.toUpperCase())),
       requiredModels,
     );
-    return c.json({ models });
+    // Server-owned per-project enablement: the client renders these as OFF and
+    // hides them from the session picker; the gateway also refuses them.
+    return c.json({ models, disabledModels: routing?.disabledModels ?? [] });
+  },
+);
+
+// PUT /v1/projects/:projectId/model-enablement  { disabledModels: string[] }
+// Replace the project's disabled-model set (opt-out). Authoritative: the gateway
+// refuses any model in this set for every surface. Refuses to disable the
+// project's own default model (that would break every `auto` request).
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/model-enablement',
+    tags: ['projects'],
+    summary: 'PUT /:projectId/model-enablement',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ disabledModels: z.array(z.string().min(1).max(128)).max(500) }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
+    const accountId = loaded.row.accountId as string;
+    const userId = c.get('userId') as string;
+
+    const parsed = z
+      .object({ disabledModels: z.array(z.string().min(1).max(128)).max(500) })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+    }
+    const disabledModels = Array.from(
+      new Set(parsed.data.disabledModels.map((m) => toWireModel(m.trim())).filter(Boolean)),
+    );
+
+    // A project must never disable the model its own `auto` resolves to.
+    const defaults = await getAccountModelDefaults(accountId, projectId);
+    const effectiveDefault =
+      defaults.projects[projectId] ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+    if (effectiveDefault && disabledModels.includes(toWireModel(effectiveDefault))) {
+      return c.json(
+        {
+          error: 'Cannot disable the project default model — change the default first.',
+          code: 'cannot_disable_default',
+        },
+        409,
+      );
+    }
+
+    await setProjectDisabledModels({ projectId, updatedBy: userId, disabledModels });
+    return c.json({ ok: true, disabledModels });
   },
 );
 
