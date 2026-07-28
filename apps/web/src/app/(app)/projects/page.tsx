@@ -23,7 +23,6 @@ import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import { syncSubscription } from '@kortix/sdk';
 import { fireConfetti } from '@/lib/confetti';
 import { isBillingEnabled } from '@/lib/config';
 import {
@@ -33,6 +32,7 @@ import {
 } from '@/lib/onboarding/ensure-first-project';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
+import { syncSubscription } from '@kortix/sdk';
 import {
   type KortixProject,
   archiveProject,
@@ -258,6 +258,30 @@ export default function ProjectsPage() {
   // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
   // first project. A normal empty projects list can come from deleting the last
   // project, and must stay empty instead of recreating it.
+  // Nobody should ever see an empty project list. `/` resolves a signed-in
+  // user into a project and provisions one when there is none, so bounce there
+  // instead of showing the empty state.
+  //
+  // `?empty=1` is how `/` says it already tried and could not — without that
+  // marker the two routes would bounce each other forever. Explicit intent
+  // (`?new=1`, `?clone=`) also stays put, since the user asked to be here.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (searchParams.get('empty') === '1') return;
+    if (searchParams.get('new') === '1' || searchParams.get('clone')) return;
+    if (projectsQuery.isLoading || projectsQuery.isError || !projectsQuery.data) return;
+    if (projectsQuery.data.length > 0) return;
+    router.replace('/');
+  }, [
+    authLoading,
+    user,
+    searchParams,
+    projectsQuery.isLoading,
+    projectsQuery.isError,
+    projectsQuery.data,
+    router,
+  ]);
+
   const { data: accountState, isLoading: accountStateLoading } = useAccountState({
     accountId: activeAccountId ?? undefined,
     enabled: !!user && !!activeAccountId,

@@ -7,7 +7,11 @@ import { AnonymousHomeShell } from '@/features/home/anonymous-home-shell';
 import { LAST_PROJECT_COOKIE, isValidProjectId } from '@/lib/home/last-project-cookie';
 import { MAX_ACCOUNTS_TO_SEARCH, resolveLandingPath } from '@/lib/home/resolve-landing-project';
 import { createClient } from '@/lib/supabase/server';
-import { fetchAccountsWithToken, fetchProjectsForAccountWithToken } from '@kortix/sdk';
+import {
+  fetchAccountsWithToken,
+  fetchProjectsForAccountWithToken,
+  provisionProjectWithToken,
+} from '@kortix/sdk';
 
 export const metadata: Metadata = {
   title: 'Kortix',
@@ -15,6 +19,8 @@ export const metadata: Metadata = {
 };
 
 const BACKEND_TIMEOUT_MS = 6_000;
+/** Seeding a starter repo is slow; this only runs when there is nothing to open. */
+const PROVISION_TIMEOUT_MS = 60_000;
 
 /**
  * `/` is the product.
@@ -63,8 +69,9 @@ export default async function HomePage() {
   const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || '';
   if (!backendUrl || !accessToken) {
     // Nothing to resolve against. The cookie alone is not enough — it could
-    // name a project that was deleted or whose access was revoked.
-    redirect('/projects');
+    // name a project that was deleted or whose access was revoked. The marker
+    // stops the list from bouncing straight back here.
+    redirect('/projects?empty=1');
   }
 
   let path = '/projects';
@@ -87,9 +94,33 @@ export default async function HomePage() {
     );
 
     path = resolveLandingPath({ cookieProjectId, projectsByAccount });
+
+    // There must never be a signed-in user with nothing to open. Signup
+    // provisioning normally handles this in the auth callback; this covers
+    // everyone it missed — accounts created while it was gated behind billing,
+    // and any signup whose provisioning timed out or failed.
+    if (path === '/projects' && accountIds[0]) {
+      const provisioned = await provisionProjectWithToken(
+        { backendUrl, accessToken, timeoutMs: PROVISION_TIMEOUT_MS },
+        {
+          account_id: accountIds[0],
+          name: 'My First Project',
+          seed_starter: true,
+          starter_template: 'general-knowledge-worker',
+        },
+      );
+      if (provisioned.ok && provisioned.project.project_id) {
+        path = `/projects/${provisioned.project.project_id}`;
+      } else {
+        // Could not provision (plan limit, backend down). Tell /projects so it
+        // shows its empty state instead of bouncing back here forever.
+        path = '/projects?empty=1';
+      }
+    }
   } catch {
-    // Falls through to /projects, which has the right empty state and the
+    // Falls through to the list, which has the right empty state and the
     // create-project modal. Never /auth.
+    path = '/projects?empty=1';
   }
 
   redirect(path);

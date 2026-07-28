@@ -1,11 +1,15 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
-import { fetchAccountStateWithToken } from '@kortix/sdk';
+import {
+  isInviteReturnUrl,
+  resolveAuthRedirectBaseUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
+import { fetchAccountStateWithToken } from '@kortix/sdk';
+import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -206,28 +210,42 @@ export async function GET(request: NextRequest) {
         // dialog, instead of being bounced to the billing page or a freshly
         // provisioned first project (either of which skips the dialog and leaves
         // the invite unaccepted).
-        if (billingEnabled && backendUrl && accessToken && !isInviteReturnUrl(next)) {
+        const canBootstrap = !!backendUrl && !!accessToken && !isInviteReturnUrl(next);
+
+        // Billing decides whether the account may enter the app at all.
+        let blockedOnBilling = false;
+        if (billingEnabled && canBootstrap) {
           try {
             const accountState = await fetchAccountStateWithToken({
               backendUrl,
               accessToken,
               timeoutMs: 5000,
             });
-
-            if (accountState) {
-              if (!accountHasAppAccess(accountState)) {
-                finalDestination = '/accounts';
-              } else if (isNewUser) {
-                const projectPath = await resolveFirstProjectPathForNewUser({
-                  backendUrl,
-                  accessToken,
-                  isNewUser: true,
-                });
-                if (projectPath) finalDestination = projectPath;
-              }
+            if (accountState && !accountHasAppAccess(accountState)) {
+              finalDestination = '/accounts';
+              blockedOnBilling = true;
             }
           } catch (err) {
             console.warn('Could not check account state from backend:', err);
+          }
+        }
+
+        // Provisioning is NOT a billing concern, and used to be nested inside
+        // the billing branch — so on any stack with BILLING_ENABLED off, a new
+        // signup got no project at all and landed on an empty list. There must
+        // never be a signed-in user with nothing to open.
+        if (isNewUser && canBootstrap && !blockedOnBilling) {
+          try {
+            const projectPath = await resolveFirstProjectPathForNewUser({
+              backendUrl,
+              accessToken,
+              isNewUser: true,
+            });
+            if (projectPath) finalDestination = projectPath;
+          } catch (err) {
+            // `/` provisions as a fallback, so a slow or failed bootstrap here
+            // costs a redirect, not the account.
+            console.warn('Could not provision the first project:', err);
           }
         }
       }
