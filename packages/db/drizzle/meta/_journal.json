@@ -127,6 +127,34 @@
       "when": 1785114368302,
       "tag": "20260727010608_exact_trigger_scheduler",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785144061558,
+      "tag": "20260727092101_multi_connections_per_connector",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785151590373,
+      "tag": "20260727112630_usage_events_origin_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785152081893,
+      "tag": "20260727113441_project_sessions_origin_active_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785160455055,
+      "tag": "20260727135415_connection_policies",
+      "breakpoints": true
     }
   ]
 }

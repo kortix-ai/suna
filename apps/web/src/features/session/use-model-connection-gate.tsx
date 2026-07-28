@@ -15,7 +15,11 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { connectedGatewayProviderIdsFromSecretNames, hasUsableModel } from '@kortix/sdk/react';
+import {
+  connectedGatewayProviderIdsFromSecretNames,
+  hasUsableModel,
+  type ModelKey,
+} from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
 export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
@@ -95,6 +99,24 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
       hasUsableModel(baseModels, { connectedProviderIds, freeTier: llmGatewayEnabled && freeTier }),
     [baseModels, connectedProviderIds, llmGatewayEnabled, freeTier],
   );
+  const modelsByKey = useMemo(
+    () =>
+      new Map(
+        baseModels.map((model) => [`${model.providerID}:${model.modelID}`, model] as const),
+      ),
+    [baseModels],
+  );
+  const isSelectableModel = useCallback(
+    (selectedModel: ModelKey) => {
+      const model = modelsByKey.get(`${selectedModel.providerID}:${selectedModel.modelID}`);
+      if (!model) return false;
+      return hasUsableModel([model], {
+        connectedProviderIds,
+        freeTier: llmGatewayEnabled && freeTier,
+      });
+    },
+    [modelsByKey, connectedProviderIds, llmGatewayEnabled, freeTier],
+  );
   // `hasSelectableModels` is only trustworthy once every entitlement input has
   // loaded — before that, a subscribed account with zero BYOK keys computes as
   // "nothing usable" (accountState undefined → freeTier, secrets undefined →
@@ -147,6 +169,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     openUpgrade,
     modal,
     hasSelectableModels,
+    isSelectableModel,
     entitlementsPending,
     showUpgradeOption,
   };

@@ -30,7 +30,7 @@ import {
   extractConnectors,
   manifestHashForConnector,
 } from '../projects/connectors';
-import { type GitBackedProject, readRepoFile } from '../projects/git';
+import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
 import { extractTriggers, readManifest } from '../projects/triggers';
@@ -100,15 +100,37 @@ async function discoverConnectorAuthFromSource(
   }
   const spec = typeof draft.spec === 'string' ? draft.spec.trim() : '';
   if (provider === 'openapi') {
-    return spec ? discoverOpenApiAuth(await loadSpecDoc(project, spec), spec) : EMPTY_AUTH_DISCOVERY;
+    // The spec may not exist in the repo (e.g. the user supplied a path that
+    // isn't there). `loadSpecDoc`/`loadSourceText` throws a clean `Error` for
+    // that case (see `readRepoFile`/`RepoFileNotFoundError`/#3537) — there's no
+    // auth to discover from a missing spec, so degrade to the empty discovery
+    // instead of letting the throw propagate as an unhandled 500 (Better Stack
+    // `a8d20288…`).
+    if (!spec) return EMPTY_AUTH_DISCOVERY;
+    try {
+      return discoverOpenApiAuth(await loadSpecDoc(project, spec), spec);
+    } catch (e) {
+      if (isRepoFileNotFoundError(e) || String((e as Error).message).startsWith('connector spec not found in repository:')) {
+        return EMPTY_AUTH_DISCOVERY;
+      }
+      throw e;
+    }
   }
   if (provider === 'postman') {
     if (!spec) return EMPTY_AUTH_DISCOVERY;
-    const documents = await resolvePostmanSource(spec, (source) => loadSourceText(project, source), {
-      githubDefaultBranch: resolveGithubDefaultBranch,
-      postmanApiKey: config.POSTMAN_API_KEY,
-      resolveWorkspace: resolvePostmanWorkspace,
-    });
+    let documents: PostmanSourceDocument[];
+    try {
+      documents = await resolvePostmanSource(spec, (source) => loadSourceText(project, source), {
+        githubDefaultBranch: resolveGithubDefaultBranch,
+        postmanApiKey: config.POSTMAN_API_KEY,
+        resolveWorkspace: resolvePostmanWorkspace,
+      });
+    } catch (e) {
+      if (isRepoFileNotFoundError(e) || String((e as Error).message).startsWith('connector spec not found in repository:')) {
+        return EMPTY_AUTH_DISCOVERY;
+      }
+      throw e;
+    }
     return mergeAuthDiscoveries(documents.map((document) =>
       document.kind === 'openapi'
         ? discoverOpenApiAuth(document.doc, document.source)
@@ -712,7 +734,21 @@ async function loadSourceText(project: GitBackedProject, spec: string): Promise<
     }
     raw = await res.text();
   } else {
-    raw = await readRepoFile(project, spec, project.defaultBranch);
+    // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
+    // in the repo at the ref (see #3537 / `isGitPathNotFoundError`) instead of
+    // letting the `GitOperationError` propagate as an unhandled 500. A
+    // connector spec pointing at a missing repo path is a user config error;
+    // rethrow it with the spec name so the best-effort
+    // `resolveCatalog`/`discoverConnectorAuthFromSource` wrappers can surface a
+    // clean message (Better Stack `a8d20288…`).
+    try {
+      raw = await readRepoFile(project, spec, project.defaultBranch);
+    } catch (err) {
+      if (isRepoFileNotFoundError(err)) {
+        throw new Error(`connector spec not found in repository: ${spec}`);
+      }
+      throw err;
+    }
   }
   return raw;
 }
@@ -800,9 +836,23 @@ async function loadHttpRoutes(
 ): Promise<HttpRouteSpec[]> {
   if (!spec) return [];
   if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
-  const raw = /^https?:\/\//i.test(spec)
-    ? await (await safeEgressFetch(spec)).text()
-    : await readRepoFile(project, spec, project.defaultBranch);
+  let raw: string;
+  if (/^https?:\/\//i.test(spec)) {
+    raw = await (await safeEgressFetch(spec)).text();
+  } else {
+    // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
+    // in the repo (see #3537). A missing http-routes spec is a user config
+    // error surfaced as a clean message via the `resolveCatalog` best-effort
+    // wrapper, not an unhandled 500 (Better Stack `a8d20288…`).
+    try {
+      raw = await readRepoFile(project, spec, project.defaultBranch);
+    } catch (err) {
+      if (isRepoFileNotFoundError(err)) {
+        throw new Error(`http routes spec not found in repository: ${spec}`);
+      }
+      throw err;
+    }
+  }
   const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
   return routes as HttpRouteSpec[];

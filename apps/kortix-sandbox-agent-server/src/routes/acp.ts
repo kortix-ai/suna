@@ -19,7 +19,66 @@ const ALLOWED_SESSION_METHODS = new Set([
   'session/prompt',
   'session/cancel',
   'session/set_config_option',
+  'session/revert',
+  'session/unrevert',
 ])
+
+export interface AcpSessionHistory {
+  revert(sessionId: string, messageId: string): Promise<unknown>
+  unrevert(sessionId: string): Promise<unknown>
+}
+
+type HistoryFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
+class OpenCodeSessionHistoryError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly data: unknown,
+  ) {
+    super(message)
+    this.name = 'OpenCodeSessionHistoryError'
+  }
+}
+
+export function createOpenCodeSessionHistory(
+  cfg: Pick<Config, 'workspace'>,
+  getInternalUrl: () => string,
+  fetcher: HistoryFetch = fetch,
+): AcpSessionHistory {
+  const invoke = async (
+    sessionId: string,
+    action: 'revert' | 'unrevert',
+    body?: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const response = await fetcher(
+      `${getInternalUrl()}/session/${encodeURIComponent(sessionId)}/${action}?directory=${encodeURIComponent(cfg.workspace)}`,
+      {
+        method: 'POST',
+        ...(body
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            }
+          : {}),
+      },
+    )
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new OpenCodeSessionHistoryError(
+        `OpenCode session ${action} failed with HTTP ${response.status}`,
+        response.status,
+        data,
+      )
+    }
+    return data
+  }
+
+  return {
+    revert: (sessionId, messageId) => invoke(sessionId, 'revert', { messageID: messageId }),
+    unrevert: (sessionId) => invoke(sessionId, 'unrevert'),
+  }
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -29,6 +88,7 @@ export function createAcpRouter(
   cfg: Config,
   getConnection: () => AcpConnection | null,
   getCanonicalSessionId: () => string | null,
+  history?: AcpSessionHistory,
 ): Hono {
   const router = new Hono()
 
@@ -92,6 +152,43 @@ export function createAcpRouter(
             : {}
         if (params.sessionId !== c.req.param('serverId')) {
           return c.json({ error: 'ACP payload session does not match route session' }, 409)
+        }
+        if (
+          (envelope.method === 'session/revert' || envelope.method === 'session/unrevert') &&
+          Object.prototype.hasOwnProperty.call(envelope, 'id')
+        ) {
+          if (!history) {
+            return c.json({ error: 'ACP session history is not available' }, 503)
+          }
+          if (
+            envelope.method === 'session/revert' &&
+            (typeof params.messageId !== 'string' || !params.messageId)
+          ) {
+            return c.json({
+              jsonrpc: '2.0',
+              id: envelope.id,
+              error: { code: -32602, message: 'messageId is required' },
+            })
+          }
+          try {
+            const result =
+              envelope.method === 'session/revert'
+                ? await history.revert(c.req.param('serverId'), params.messageId as string)
+                : await history.unrevert(c.req.param('serverId'))
+            return c.json({ jsonrpc: '2.0', id: envelope.id, result })
+          } catch (error) {
+            return c.json({
+              jsonrpc: '2.0',
+              id: envelope.id,
+              error: {
+                code: -32000,
+                message: errorMessage(error),
+                ...(error instanceof OpenCodeSessionHistoryError
+                  ? { data: { status: error.status, upstream: error.data } }
+                  : {}),
+              },
+            })
+          }
         }
       }
       await connection.post(envelope)

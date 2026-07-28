@@ -58,20 +58,25 @@ export interface TeamFixture {
   addMember(role: 'admin' | 'member'): Promise<Principal>;
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
-  /** Provision a project owned by this team account. */
-  project(opts?: { name?: string; seed?: boolean }): Promise<CreatedProject>;
+  /** Create a project owned by this team account. */
+  project(opts?: { name?: string; seed?: boolean; managedGit?: boolean }): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
 export interface Fixtures {
   /**
    * Create a fresh run-scoped project (default: OWNER's personal account).
-   * `seed: true` seeds the starter (initial commit on the default branch) so a
-   * sandbox can materialize the repo — REQUIRED for any flow that boots a
-   * session/sandbox. Unseeded projects (the default) are an empty repo, fine for
-   * metadata/boundary flows and much cheaper.
+   * The default fixture creates only database state. It does not create an
+   * upstream Git repository. Use `managedGit: true` when a flow exercises Git.
+   * `seed: true` implies managed Git and seeds the starter so a sandbox can
+   * materialize the repository.
    */
-  project(opts?: { name?: string; accountId?: string; seed?: boolean }): Promise<CreatedProject>;
+  project(opts?: {
+    name?: string;
+    accountId?: string;
+    seed?: boolean;
+    managedGit?: boolean;
+  }): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use
    * this in flows that only READ a project (never mutate its manifest/name/state),
@@ -79,6 +84,11 @@ export interface Fixtures {
    * secondary rate limit). Mutating flows must use project() for isolation.
    */
   sharedProject(): Promise<CreatedProject>;
+  /**
+   * A single seeded project for flows that create isolated sessions but do not
+   * mutate the project's base branch or project-wide Git configuration.
+   */
+  sharedSeededProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
   session(project: CreatedProject, opts?: { prompt?: string }): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */

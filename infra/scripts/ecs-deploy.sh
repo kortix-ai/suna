@@ -150,17 +150,21 @@ NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
           .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-      # override image + full secrets on the target container, and stamp
-      # KORTIX_VERSION as explicit container env (env beats the image-baked
-      # value) so ECS reports the same clean version EKS does. On non-release
-      # tags ($ver == "") any stale stamp from a previous release roll is
-      # REMOVED so the image-baked dev/staging version reports again.
+      # Override image + full secrets on the target container. Stamp
+      # KORTIX_VERSION as explicit container env so ECS reports the same clean
+      # version EKS reports. Always remove KORTIX_COMMIT from the task
+      # definition. The immutable image contains the source commit. Preserving
+      # a task-definition override can make a new image report an old commit.
+      # On non-release tags ($ver == ""), remove any stale version stamp so the
+      # image-baked dev/staging version reports again.
       | .containerDefinitions |= map(
           if .name == $c then
             .image = $img
             | .secrets = $secrets
             | .environment = (
-                ((.environment // []) | map(select(.name != "KORTIX_VERSION")))
+                ((.environment // []) | map(
+                  select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")
+                ))
                 + (if $ver == "" then [] else [{name: "KORTIX_VERSION", value: $ver}] end))
           else . end)')"
 

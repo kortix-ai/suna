@@ -37,7 +37,7 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     return c.json({

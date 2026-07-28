@@ -1,0 +1,102 @@
+name: Activate Prod US East 2 Writers
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Exact US writer action.
+        required: true
+        type: choice
+        options:
+          - status
+          - enable
+          - disable
+      confirm:
+        description: Enter "<action>:prod-us-east-2".
+        required: true
+        type: string
+
+concurrency:
+  group: activate-prod-us-east-2-writers
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  writers:
+    name: Apply guarded US writer state
+    runs-on: ubuntu-latest
+    environment: prod-use2-shadow
+    env:
+      AWS_REGION: us-east-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-prod-use2-terraform
+      ACTION: ${{ inputs.action }}
+      CONFIRM: ${{ inputs.confirm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: prod
+
+      - name: Enforce trusted production ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "::error::This workflow runs only from refs/heads/prod."
+            exit 64
+          fi
+
+      - name: Validate confirmation
+        run: |
+          set -euo pipefail
+          expected="${ACTION}:prod-us-east-2"
+          if [ "$CONFIRM" != "$expected" ]; then
+            echo "::error::confirm must equal '$expected'."
+            exit 64
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install PostgreSQL client
+        if: inputs.action == 'enable'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply writer action
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            status)
+              bash scripts/prod-us-east-2/target-writers.sh status
+              ;;
+            enable)
+              ENABLE_TARGET_WRITERS_CONFIRM="$CONFIRM" \
+                bash scripts/prod-us-east-2/target-writers.sh enable
+              ;;
+            disable)
+              DISABLE_TARGET_WRITERS_CONFIRM="$CONFIRM" \
+                bash scripts/prod-us-east-2/target-writers.sh disable
+              ;;
+            *)
+              echo "::error::Unsupported writer action: $ACTION"
+              exit 64
+              ;;
+          esac
+
+      - name: Summary
+        run: |
+          {
+            echo "### Prod US East 2 writer control"
+            echo "- Action: \`$ACTION\`"
+            echo "- Confirmation: accepted"
+            if [ "$ACTION" = "enable" ]; then
+              echo "- Legacy migration workers: disabled"
+              echo "- Warm pool and warm snapshot workers: disabled"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

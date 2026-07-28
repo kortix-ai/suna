@@ -20,6 +20,7 @@
  */
 
 import { getRequestSession } from '@/server/auth';
+import { injectEndUserRef, isSessionCreate } from '@/server/end-user';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
@@ -66,8 +67,32 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   const url = new URL(req.url);
   const upstreamUrl = `${upstreamBase()}/${upstreamPath}${url.search}`;
 
+  // Kortix-as-a-Backend: every upstream call carries ONE credential (the
+  // wrapper's API key), so upstream cannot tell Lumen's users apart by itself.
+  // Stamp the authenticated user onto session creates so per-end-user usage,
+  // idempotency-replay protection and the per-end-user cap all key on a value
+  // the browser cannot forge.
+  let forwardRequest: NextRequest | Request = req;
+  if (isSessionCreate(req.method, upstreamPath)) {
+    let parsed: unknown = null;
+    try {
+      parsed = await req.clone().json();
+    } catch {
+      parsed = null;
+    }
+    const decision = injectEndUserRef(parsed, session.userId);
+    if (decision.action === 'reject') return jsonError(403, decision.reason);
+    if (decision.action === 'inject') {
+      forwardRequest = new Request(req.url, {
+        method: req.method,
+        headers: req.headers,
+        body: JSON.stringify(decision.body),
+      });
+    }
+  }
+
   const upstreamRes = await forwardKortixRequest({
-    request: req,
+    request: forwardRequest as NextRequest,
     upstreamUrl,
     token: apiKey,
   });

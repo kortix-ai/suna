@@ -147,11 +147,21 @@ Docker running when Supabase needs to be reached or started.
 
 ```sh
 pnpm worktree stop <n>
+pnpm worktree stop --all      # every worktree at once
 ```
 
-Kills the web/api/gateway processes. Shared-DB mode leaves the primary Supabase
-running. Isolated-DB mode also stops the worktree's Supabase. Data (DB volume
-for isolated mode, branch, files) is preserved; `start` resumes it.
+Kills the web/api/gateway **process trees** — the dev servers plus the ~15 workers
+each one forks, the Cloudflare tunnel, and `stripe listen` — then verifies they are
+gone before recording the stop. Shared-DB mode leaves the primary Supabase running.
+Isolated-DB mode also stops the worktree's Supabase. Data (DB volume for isolated
+mode, branch, files) is preserved; `start` resumes it.
+
+**Stop what you are not using.** A stack holds ~19 processes and a few GB that
+Turbopack never gives back, so a handful of forgotten stacks will exhaust swap and
+get something OOM-killed. `stop --all` is the end-of-day sweep and the way back
+from stacks orphaned by an OOM kill (their supervisor is gone, so there is no
+`Ctrl+C` left to press). `pnpm worktree doctor` shows what is actually running,
+including worktrees whose recorded status has drifted from reality.
 
 ### `nuke` (alias `rm`) — tear down and free the slot
 

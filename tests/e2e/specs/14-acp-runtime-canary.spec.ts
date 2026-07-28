@@ -199,7 +199,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
       auth.access_token,
       "PATCH",
       `/projects/${projectId}/experimental`,
-      { feature: "acp_runtime", enabled: true },
+      { feature: "acp_runtime", enabled: false },
     );
     const session = await api<{ session_id: string }>(
       auth.access_token,
@@ -216,7 +216,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
       auth.access_token,
       projectId,
       sessionId,
-      "acp",
+      "rest",
     );
   });
 
@@ -309,7 +309,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
     await installBrowserSession(
       page,
       auth,
-      `/projects/${projectId}/sessions/${sessionId}`,
+      `/projects/${projectId}/sessions/${sessionId}?acp`,
       password,
     );
     const input = page.getByRole("textbox", { name: "Message input" });
@@ -402,7 +402,9 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
     await expect(
       page.getByText("Choose one", { exact: true }).last(),
     ).toBeVisible({ timeout: 120_000 });
-    await page.getByRole("button", { name: /Beta/ }).click();
+    await page
+      .getByRole("button", { name: "BetaOption Beta", exact: true })
+      .click();
     await expect(
       page.getByText("QUESTION_BETA", { exact: true }).last(),
     ).toBeVisible({ timeout: 120_000 });
@@ -457,14 +459,25 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
     const cancelCountBefore = acpRpcRequests.filter(
       (request) => request.body.method === "session/cancel",
     ).length;
+    const promptCountBeforeCancel = acpRpcRequests.filter(
+      (request) => request.body.method === "session/prompt",
+    ).length;
     await input.fill(
       "Use bash to run `sleep 60`. After it completes, reply with exactly CANCEL_FAILED.",
     );
     await input.press("Enter");
-    const runningExecute = page.getByText(/^Running execute/).last();
-    await expect(runningExecute).toBeVisible({
-      timeout: 120_000,
-    });
+    await expect
+      .poll(
+        () =>
+          acpRpcRequests.filter(
+            (request) => request.body.method === "session/prompt",
+          ).length,
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(promptCountBeforeCancel);
+    await expect(
+      page.getByRole("button", { name: "Send message" }),
+    ).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
@@ -477,7 +490,6 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
         { timeout: 30_000 },
       )
       .toBeGreaterThan(cancelCountBefore);
-    await expect(runningExecute).toBeHidden({ timeout: 30_000 });
     await expect(
       page.getByRole("button", { name: "Send message" }),
     ).toBeVisible({ timeout: 30_000 });
@@ -511,8 +523,9 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
         { timeout: 30_000 },
       )
       .toBe(true);
-    const runningCommand = page.getByText(/^Running think/).last();
-    await expect(runningCommand).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByRole("button", { name: "Send message" }),
+    ).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
@@ -525,7 +538,6 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
         { timeout: 30_000 },
       )
       .toBeGreaterThan(cancelCountBeforeCommand);
-    await expect(runningCommand).toBeHidden({ timeout: 30_000 });
     await expect(
       page.getByRole("button", { name: "Send message" }),
     ).toBeVisible({ timeout: 30_000 });
@@ -547,14 +559,78 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
       page.getByText("POST_RESTART_PONG", { exact: true }).last(),
     ).toBeVisible({ timeout: 120_000 });
 
-    await api(
-      auth.access_token,
-      "PATCH",
-      `/projects/${projectId}/experimental`,
-      { feature: "acp_runtime", enabled: false },
+    const rewindPrompt = "Reply with exactly: ACP_PONG";
+    const rewindTurn = page
+      .getByText(rewindPrompt, { exact: true })
+      .locator('xpath=ancestor::*[@data-turn-id][1]');
+    const revertCountBefore = acpRpcRequests.filter(
+      (request) => request.body.method === "session/revert",
+    ).length;
+    await rewindTurn.hover();
+    await rewindTurn
+      .getByRole("button", { name: "Edit message and rewind session" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Edit from this message?" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Rewind session" }).click();
+    await expect(input).toHaveValue(rewindPrompt);
+    await expect(page.getByText("Session rewound", { exact: true })).toBeVisible();
+    await expect
+      .poll(
+        () =>
+          acpRpcRequests.filter(
+            (request) => request.body.method === "session/revert",
+          ).length,
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(revertCountBefore);
+    await expect(
+      page.getByText("POST_RESTART_PONG", { exact: true }),
+    ).toHaveCount(0);
+
+    const unrevertCountBefore = acpRpcRequests.filter(
+      (request) => request.body.method === "session/unrevert",
+    ).length;
+    await page.getByRole("button", { name: "Restore", exact: true }).click();
+    await expect
+      .poll(
+        () =>
+          acpRpcRequests.filter(
+            (request) => request.body.method === "session/unrevert",
+          ).length,
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(unrevertCountBefore);
+    await expect(
+      page.getByText("POST_RESTART_PONG", { exact: true }).last(),
+    ).toBeVisible();
+    await expect(input).toHaveValue("");
+
+    const restoredRewindTurn = page
+      .getByText(rewindPrompt, { exact: true })
+      .locator('xpath=ancestor::*[@data-turn-id][1]');
+    await restoredRewindTurn.hover();
+    await restoredRewindTurn
+      .getByRole("button", { name: "Edit message and rewind session" })
+      .click();
+    await page.getByRole("button", { name: "Rewind session" }).click();
+    await expect(input).toHaveValue(rewindPrompt);
+    await input.fill("Reply with exactly: ACP_REWIND_REPLACEMENT_UI");
+    await page.getByRole("button", { name: "Send message" }).click();
+    await expect(
+      page.getByText("ACP_REWIND_REPLACEMENT_UI", { exact: true }).last(),
+    ).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText("Session rewound", { exact: true })).toHaveCount(
+      0,
     );
-    await waitForReadySession(auth.access_token, projectId, sessionId, "rest");
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(
+      page.getByText("POST_RESTART_PONG", { exact: true }),
+    ).toHaveCount(0);
+
+    await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(input).toBeVisible({ timeout: 120_000 });
     const modelPicker = page.getByRole("button", { name: "Model picker" });
     await expect(modelPicker).toBeVisible({ timeout: 120_000 });

@@ -41,6 +41,7 @@ import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
+import { resolveAvailableSelectedModel } from './model-availability';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -178,8 +179,9 @@ export function ModelSelector({
     openUpgrade,
     modal: connectionModal,
     entitlementsPending,
+    isSelectableModel,
     showUpgradeOption,
-  } = useModelConnectionGate();
+  } = useModelConnectionGate(models);
 
   // When mounted under /projects/[id]/..., route model filtering to the
   // per-project gateway catalog. On every other route (instance dashboard,
@@ -238,8 +240,13 @@ export function ModelSelector({
     freeTier: llmGatewayEnabled && freeTier,
   });
 
+  const availableSelectedModel = entitlementsPending
+    ? selectedModel
+    : resolveAvailableSelectedModel(selectedModel, isSelectableModel);
   const current = baseModels.find(
-    (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
+    (m) =>
+      m.providerID === availableSelectedModel?.providerID &&
+      m.modelID === availableSelectedModel?.modelID,
   );
   const displayName = current?.modelName || unsetLabel;
 
@@ -256,8 +263,11 @@ export function ModelSelector({
     const q = search.toLowerCase();
     return baseModels
       .filter((m) => {
-        // A search query reveals everything; otherwise respect visibility from
-        // the provider modal's Models tab.
+        if (!isSelectableModel({ providerID: m.providerID, modelID: m.modelID })) {
+          return false;
+        }
+        // Search reveals usable models that the user hid from the default list.
+        // It never reveals models that the account cannot call.
         if (
           !q &&
           !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
@@ -271,7 +281,7 @@ export function ModelSelector({
         );
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search, modelStore]);
+  }, [baseModels, search, modelStore, isSelectableModel]);
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -447,8 +457,8 @@ export function ModelSelector({
                       >
                         {group.models.map((model) => {
                           const isSelected =
-                            selectedModel?.providerID === model.providerID &&
-                            selectedModel?.modelID === model.modelID;
+                            availableSelectedModel?.providerID === model.providerID &&
+                            availableSelectedModel?.modelID === model.modelID;
 
                           const isFree = shouldShowFreeTag(model);
                           // `.provider` (the real upstream, when the gateway
@@ -534,12 +544,12 @@ export function ModelSelector({
                   </div>
                 )}
               </CommandList>
-              {defaultControls && selectedModel ? (
+              {defaultControls && availableSelectedModel ? (
                 <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
                   <button
                     type="button"
                     onClick={() => {
-                      defaultControls.onSetAccountDefault(selectedModel);
+                      defaultControls.onSetAccountDefault(availableSelectedModel);
                       setOpen(false);
                     }}
                     className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
@@ -551,7 +561,7 @@ export function ModelSelector({
                     <button
                       type="button"
                       onClick={() => {
-                        defaultControls.onSetProjectDefault?.(selectedModel);
+                        defaultControls.onSetProjectDefault?.(availableSelectedModel);
                         setOpen(false);
                       }}
                       className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
@@ -564,7 +574,7 @@ export function ModelSelector({
                     <button
                       type="button"
                       onClick={() => {
-                        defaultControls.onSetAgentDefault?.(selectedModel);
+                        defaultControls.onSetAgentDefault?.(availableSelectedModel);
                         setOpen(false);
                       }}
                       className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"

@@ -29,7 +29,9 @@
  */
 
 import { startCall, endCall, readTurns, promptVoiceAgent } from '../apps/api/src/channels/voice/runtime';
-import { bridgePageUrl, mintAccessToken } from '../apps/api/src/channels/voice/livekit';
+import { joinPageUrl } from '../apps/api/src/channels/voice/livekit';
+import { mintJoinLink } from '../apps/api/src/channels/voice/join-links';
+import { kortixSay } from '../apps/api/src/channels/voice/utterance';
 
 interface Args {
   web?: string;
@@ -83,8 +85,8 @@ async function main() {
   });
   console.log(`     up. room=${call.room} voice=${call.voice}`);
 
-  const token = await mintAccessToken({ room: call.room, identity: `human-${callId}`, name: 'Human caller' });
-  const joinUrl = bridgePageUrl(args.web, token);
+  const { token } = await mintJoinLink({ callId, projectId });
+  const joinUrl = joinPageUrl(args.web, token);
   console.log('');
   console.log('2/3  open this in your browser (headphones on):');
   console.log('');
@@ -111,12 +113,18 @@ async function main() {
   // in-process bridge), so this just waits a fixed grace period for the
   // dispatched worker to connect and greet on its own, then nudges once more
   // via the same path a real Kortix turn would use.
-  setTimeout(() => {
-    const said = promptVoiceAgent(
+  setTimeout(async () => {
+    const said = await promptVoiceAgent(
       callId,
-      'Say exactly this out loud now, then stop: "Hey, Kortix here. I can hear you — just talk normally."',
+      kortixSay(
+        'Say exactly this out loud now, then stop: "Hey, Kortix here. I can hear you — just talk normally."',
+      ),
     );
-    console.log(said ? '  [kortix -> call] intro nudge sent' : '  [kortix -> call] call not live');
+    console.log(
+      said.delivered
+        ? '  [kortix -> call] intro nudge sent'
+        : `  [kortix -> call] ${said.reason ?? 'call not live'}`,
+    );
   }, 5000);
 
   const shutdown = async () => {

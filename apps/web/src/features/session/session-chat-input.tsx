@@ -37,6 +37,7 @@ import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
+  resolveAvailableSelectedModel,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls } from './model-selector';
@@ -321,7 +322,12 @@ function SessionChatInputImpl({
   const prefillFiles = prefill?.files;
   const prefillMode = prefill?.mode;
   useEffect(() => {
-    if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
+    if (
+      prefillId === undefined ||
+      (!prefillText && !prefillFiles?.length && prefillMode !== 'replace')
+    ) {
+      return;
+    }
     setText((current) =>
       prefillMode === 'merge' ? mergeFailedSubmissionText(current, prefillText) : prefillText,
     );
@@ -676,11 +682,6 @@ function SessionChatInputImpl({
     }
   }, [mentionItems.length]);
 
-  const modelUnavailable = isModelRequiredButUnavailable({
-    modelRequired,
-    selectedModel,
-    lockForQuestion,
-  });
   // Drives the "connect a model" bar under the input. Two distinct dead-end
   // states both surface it — either way the composer cannot send and needs to
   // say why:
@@ -694,13 +695,22 @@ function SessionChatInputImpl({
   // provider catalog, `entitlementsPending` for account/secrets/project), so
   // the bar renders exactly once with the final answer instead of flashing in
   // on half-loaded data and vanishing when the account state arrives.
-  const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const { hasSelectableModels, isSelectableModel, entitlementsPending } =
+    useModelConnectionGate(models);
+  const availableSelectedModel = entitlementsPending
+    ? selectedModel
+    : resolveAvailableSelectedModel(selectedModel, isSelectableModel);
+  const modelUnavailable = isModelRequiredButUnavailable({
+    modelRequired,
+    selectedModel: availableSelectedModel,
+    lockForQuestion,
+  });
   const noModelsConnected =
     modelRequired &&
     !lockForQuestion &&
     !modelsLoading &&
     !entitlementsPending &&
-    (!selectedModel || !hasSelectableModels);
+    (!availableSelectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
@@ -1305,7 +1315,7 @@ function SessionChatInputImpl({
             onAgentChange={onAgentChange}
             agentSelectorLocked={agentSelectorLocked}
             models={models}
-            selectedModel={selectedModel}
+            selectedModel={availableSelectedModel}
             onModelChange={onModelChange}
             modelDefaultControls={modelDefaultControls}
             providers={providers}

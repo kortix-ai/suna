@@ -42,6 +42,7 @@ Three more read methods round out the handle:
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
 - `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
+- `s.voiceTranscript(options?)` — this session's live voice-call transcript (spoken turns plus `ask_kortix`/`run_command` worker tool calls). Returns an empty list when the session has no live call, not a 404.
 
 ## Readiness is a handshake
 

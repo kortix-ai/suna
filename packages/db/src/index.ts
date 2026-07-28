@@ -184,6 +184,7 @@ export {
   executorOAuthApplications,
   executorOAuthSessions,
   executorConnectorActions,
+  executorConnectionPolicies,
   executorConnectorPolicies,
   executorProjectPolicies,
   executorProjectSettings,

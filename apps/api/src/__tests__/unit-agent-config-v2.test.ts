@@ -22,6 +22,7 @@ import {
   readAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
 import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
+import { extractAgents } from '../projects/agents';
 
 const V2 = `
 kortix_version: 2
@@ -272,5 +273,51 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     });
     const applied = applyDefaultAgentV2(manifest, manifest.raw.default_agent as string);
     expect(applied.ok).toBe(true);
+  });
+});
+
+/**
+ * The PUT /agents/:name/config route accepts `connectors_personal` and then
+ * re-parses the RESULT through `extractAgents` before committing. That guard
+ * matters because `validateManifest` (which applyAgentBlockV2 gates on) does not
+ * inspect `connectors_personal` at all — only the agent parser enforces the
+ * subset rule, and a block that violates it fails to parse, which would break
+ * session-create for that agent.
+ */
+describe('connectors_personal — the guard the config route commits behind', () => {
+  const manifestWith = (connectors: string[]) =>
+    parseManifestString(
+      ['kortix_version: 2', 'default_agent: support', 'agents:', '  support:', `    connectors: [${connectors.join(', ')}]`, ''].join('\n'),
+      'yaml',
+      'kortix.yaml',
+    );
+
+  test('a valid subset survives apply + re-parse with no errors', () => {
+    const manifest = manifestWith(['gmail', 'slack']);
+    const applied = applyAgentBlockV2(manifest, 'support', {
+      connectors: ['gmail', 'slack'],
+      connectors_personal: ['gmail'],
+    } as never);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const parsed = extractAgents({ ...manifest, raw: applied.raw });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.specs.find((s) => s.name === 'support')?.connectorsPersonal).toEqual(['gmail']);
+  });
+
+  test('a NON-subset is caught by the re-parse (applyAgentBlockV2 alone would let it through)', () => {
+    const manifest = manifestWith(['gmail']);
+    const applied = applyAgentBlockV2(manifest, 'support', {
+      connectors: ['gmail'],
+      connectors_personal: ['slack'],
+    } as never);
+    // The schema validator does NOT know about connectors_personal, so the apply
+    // itself succeeds — this is exactly why the route needs the extra guard.
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const parsed = extractAgents({ ...manifest, raw: applied.raw });
+    const problem = parsed.errors.find((e) => e.name === 'support');
+    expect(problem).toBeDefined();
+    expect(problem?.error).toContain('subset of connectors');
   });
 });

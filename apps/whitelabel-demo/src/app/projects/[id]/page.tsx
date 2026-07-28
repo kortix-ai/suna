@@ -24,6 +24,9 @@ import {
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
+import { classifySessionStartFailure } from '@/lib/session-start-error';
+import type { BindableConnection } from '@/server/bindable-connections';
+import { getSessionToken } from '@/lib/session';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -56,6 +59,33 @@ function ProjectHome() {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const [prompt, setPrompt] = useState('');
+  // A connector this end-user must connect THEMSELVES before the session can
+  // start (409 CONNECTOR_CONNECTION_REQUIRED). Shown as a call to action rather
+  // than an error, because it is one.
+  const [connectPrompt, setConnectPrompt] = useState<{
+    connector: string;
+    message: string;
+  } | null>(null);
+  // Which shared connection this session should run as. Unset = the connector's
+  // default, which is what an unbound alias resolves to server-side anyway.
+  const [boundConnection, setBoundConnection] = useState<string | null>(null);
+
+  // Only TEAM connections are offered: a wrapper has no personal identity
+  // upstream, so a member's private connection cannot be bound at all.
+  const connections = useQuery({
+    queryKey: ['bindable-connections', projectId],
+    queryFn: async () => {
+      const token = getSessionToken();
+      const res = await fetch(
+        `/api/connections?projectId=${encodeURIComponent(projectId)}&connector=gmail`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      );
+      if (!res.ok) return { connections: [] as BindableConnection[] };
+      return (await res.json()) as { connections: BindableConnection[] };
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
   const [template, setTemplate] = useState('default');
   const [agent, setAgent] = useState<string | null>(null);
   const [model, setModel] = useState<ModelKey | null>(null);
@@ -84,6 +114,12 @@ function ProjectHome() {
         name: text.slice(0, 60),
         ...(template && template !== 'default' ? { sandbox_slug: template } : {}),
         ...(agent ? { agent_name: agent } : {}),
+        // connector_bindings names the exact connection this session runs as.
+        // Omitted entirely when unset, so the server's default resolution applies
+        // rather than us guessing at it.
+        ...(boundConnection
+          ? { connector_bindings: { gmail: { profile_id: boundConnection } } }
+          : {}),
       });
       writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
@@ -96,7 +132,25 @@ function ProjectHome() {
       invalidateSessions(qc, projectId);
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
     },
-    onError: () => toast.error('Could not start a session'),
+    onError: (err: unknown) => {
+      // Two KaaB refusals need opposite responses, and a single generic toast
+      // told the user to fix something they often could not fix.
+      const body =
+        err && typeof err === 'object' && 'body' in err
+          ? ((err as { body?: unknown }).body as Record<string, unknown> | null)
+          : null;
+      const failure = classifySessionStartFailure(body);
+      if (failure.kind === 'connector_connection_required') {
+        setConnectPrompt({ connector: failure.connector, message: failure.message });
+        return;
+      }
+      if (failure.kind === 'require_connectors_backend_origin') {
+        // Developer-facing: the end-user can do nothing about this.
+        toast.error(failure.message, { duration: 10_000 });
+        return;
+      }
+      toast.error(failure.message);
+    },
   });
 
   const launching = start.isPending;
@@ -114,6 +168,58 @@ function ProjectHome() {
             Pick your template, agent, and model, then describe the task.
           </p>
         </div>
+
+        {/* Which shared connection this session runs as. Only shown when there
+            is a genuine choice — one connection means the default is the only
+            answer, and a picker with a single option is noise. */}
+        {(connections.data?.connections.length ?? 0) > 1 && (
+          <div className="mb-3 flex items-center gap-2 text-left">
+            <span className="text-xs text-muted-foreground">Run as</span>
+            <Select
+              value={boundConnection ?? 'default'}
+              onValueChange={(v) => setBoundConnection(v === 'default' ? null : v)}
+            >
+              <SelectTrigger className="h-7 w-auto gap-1.5 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Default connection</SelectItem>
+                {connections.data?.connections.map((connection) => (
+                  <SelectItem key={connection.profileId} value={connection.profileId}>
+                    {connection.label}
+                    {connection.isDefault ? ' (default)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Kortix-as-a-Backend: the session needs THIS end-user's own connection.
+            A call to action, not a failure — they can resolve it themselves,
+            and the previous generic toast gave them nothing to act on. */}
+        {connectPrompt && (
+          <div className="mb-4 rounded-2xl border border-brand/40 bg-brand/5 p-4 text-left">
+            <div className="text-sm font-medium">
+              Connect {connectPrompt.connector} to continue
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{connectPrompt.message}</p>
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setConnectPrompt(null);
+                  if (prompt.trim()) start.mutate(prompt);
+                }}
+              >
+                I&apos;ve connected it — retry
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConnectPrompt(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring/60">
           <Textarea

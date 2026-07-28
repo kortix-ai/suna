@@ -66,6 +66,9 @@ Please include affected version/commit, reproduction steps, impact, and any PoC.
 - **GuardDuty** — AWS threat detection on account `935064898258`.
 - **CloudTrail** — API-level audit logging.
 - **AWS Backup** — managed backups of stateful AWS resources.
+- **Velero** — daily EKS object and EBS snapshot backups. Backups use a
+  versioned, KMS-encrypted S3 bucket with a 35-day lifecycle. A scoped restore
+  drill passed on 2026-07-27.
 - **GitOps least privilege** — Argo CD AppProjects (`kortix`, `platform`,
   `preview`) whitelist source repos and destination namespaces, bounding blast
   radius; `selfHeal` auto-reverts drift.
@@ -90,7 +93,6 @@ audit-before-enforce:
 - **Falco** — runtime threat detection streamed to SIEM/Slack.
 - **NetworkPolicy default-deny** — explicit allow-lists for kube-dns, Supabase,
   and Secrets Manager.
-- **Velero** — cluster backup + cross-region DR for prod with restore drills.
 
 ## Supply-Chain Target: SLSA Level 3
 

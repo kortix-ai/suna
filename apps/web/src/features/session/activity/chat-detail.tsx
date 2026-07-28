@@ -14,6 +14,12 @@
  * `'narrative'` is the default for everyone, including existing users. Someone
  * who wants the log has to ask once, and then never again — the choice
  * persists.
+ *
+ * Deliberately a module-level store rather than React context. The toggle lives
+ * in the session header, which mounts from two different shells
+ * (`session-chat` and `instant-session-shell`); a context provider inside one
+ * of them left the other rendering a menu item that silently did nothing and
+ * mislabelled the current state. A store has no placement to get wrong.
  */
 
 import { Button } from '@/components/ui/button';
@@ -21,13 +27,122 @@ import Hint from '@/components/ui/hint';
 import { Kbd } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
 import { ListTree, Text } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
 export type ChatDetail = 'narrative' | 'full';
+
+/** What a reader who has never touched the toggle sees. */
+export const DEFAULT_CHAT_DETAIL: ChatDetail = 'narrative';
 
 /** Maps the reader-facing knob onto the grouping model's density. */
 export function densityForDetail(detail: ChatDetail): 'simple' | 'detailed' {
   return detail === 'full' ? 'detailed' : 'simple';
+}
+
+/** The other end of the toggle. Pure, so the label logic can be tested. */
+export function oppositeDetail(detail: ChatDetail): ChatDetail {
+  return detail === 'full' ? 'narrative' : 'full';
+}
+
+const STORAGE_KEY = 'kortix.chat-detail';
+
+/** Anything that isn't one of the two known values is "no stored choice". */
+export function parseChatDetail(raw: string | null | undefined): ChatDetail | null {
+  return raw === 'narrative' || raw === 'full' ? raw : null;
+}
+
+// ── The store ────────────────────────────────────────────────────────────────
+// Starts at the default on both server and client so the first client render
+// matches the SSR markup exactly. The persisted choice is applied in an effect
+// (see `ensureClientInit`), one tick later — a localStorage read during render
+// hydrates as a mismatch and flashes the wrong transcript.
+
+let currentDetail: ChatDetail = DEFAULT_CHAT_DETAIL;
+const listeners = new Set<() => void>();
+let clientInitialized = false;
+
+function emit() {
+  for (const listener of [...listeners]) listener();
+}
+
+function subscribe(onStoreChange: () => void) {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
+
+const getSnapshot = () => currentDetail;
+const getServerSnapshot = () => DEFAULT_CHAT_DETAIL;
+
+function readStoredDetail(): ChatDetail | null {
+  try {
+    return parseChatDetail(window.localStorage.getItem(STORAGE_KEY));
+  } catch {
+    // Private mode / storage disabled / no DOM — the default is a fine answer.
+    return null;
+  }
+}
+
+/** Read the knob outside React. */
+export function getChatDetail(): ChatDetail {
+  return currentDetail;
+}
+
+/** Set the knob and remember it. Exported so non-React callers can drive it. */
+export function setChatDetail(next: ChatDetail) {
+  try {
+    // Written even when the value is unchanged, so choosing the current default
+    // explicitly still survives a future change to `DEFAULT_CHAT_DETAIL`.
+    window.localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // Non-fatal: the tab keeps the choice, it just won't outlive the tab.
+  }
+  if (next === currentDetail) return;
+  currentDetail = next;
+  emit();
+}
+
+function applyStoredDetail() {
+  const stored = readStoredDetail();
+  if (!stored || stored === currentDetail) return;
+  currentDetail = stored;
+  emit();
+}
+
+/**
+ * Runs once per page load, from the first mounted consumer: hydrate the
+ * persisted choice, keep other tabs in sync, and install the ⌘/ shortcut.
+ *
+ * The shortcut is global rather than per-consumer because the transcript, the
+ * header menu, and the variant demo all read the same knob — one listener for
+ * the app is the whole requirement, and N mounted turns must not install N.
+ */
+function ensureClientInit() {
+  if (clientInitialized || typeof window === 'undefined') return;
+  clientInitialized = true;
+
+  applyStoredDetail();
+
+  // Another tab changed the preference — follow it rather than drift.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== null && e.key !== STORAGE_KEY) return;
+    applyStoredDetail();
+  });
+
+  // ⌘/ — cheap to reach mid-read, and it is the shortcut a power user will try
+  // for "show me more". Ignored while typing so it never eats a composer key.
+  window.addEventListener('keydown', (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.key !== '/') return;
+    const el = document.activeElement;
+    const typing =
+      el instanceof HTMLTextAreaElement ||
+      el instanceof HTMLInputElement ||
+      (el instanceof HTMLElement && el.isContentEditable);
+    if (typing) return;
+    e.preventDefault();
+    setChatDetail(oppositeDetail(currentDetail));
+  });
 }
 
 interface ChatDetailValue {
@@ -36,90 +151,30 @@ interface ChatDetailValue {
   toggle: () => void;
 }
 
-const ChatDetailContext = createContext<ChatDetailValue | null>(null);
-
-const STORAGE_KEY = 'kortix.chat-detail';
-
 /**
- * Provider. Reads the persisted choice on mount rather than during render so
- * server and client agree on the first paint — a localStorage read in the
- * initializer hydrates as a mismatch and flashes the wrong transcript.
- */
-export function ChatDetailProvider({
-  children,
-  initial = 'narrative',
-}: {
-  children: React.ReactNode;
-  initial?: ChatDetail;
-}) {
-  const [detail, setDetailState] = useState<ChatDetail>(initial);
-
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored === 'narrative' || stored === 'full') setDetailState(stored);
-    } catch {
-      // Private mode / storage disabled — the default is a fine answer.
-    }
-  }, []);
-
-  const setDetail = useCallback((next: ChatDetail) => {
-    setDetailState(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Non-fatal: the session keeps the choice, it just won't outlive the tab.
-    }
-  }, []);
-
-  const toggle = useCallback(
-    () => setDetail(detail === 'full' ? 'narrative' : 'full'),
-    [detail, setDetail],
-  );
-
-  // ⌘/ — cheap to reach mid-read, and it is the shortcut a power user will try
-  // for "show me more". Ignored while typing so it never eats a composer key.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== '/') return;
-      const el = document.activeElement;
-      const typing =
-        el instanceof HTMLTextAreaElement ||
-        el instanceof HTMLInputElement ||
-        (el instanceof HTMLElement && el.isContentEditable);
-      if (typing) return;
-      e.preventDefault();
-      toggle();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggle]);
-
-  const value = useMemo(() => ({ detail, setDetail, toggle }), [detail, setDetail, toggle]);
-  return <ChatDetailContext.Provider value={value}>{children}</ChatDetailContext.Provider>;
-}
-
-/**
- * Reading the knob. Safe outside a provider — an un-wrapped transcript is
- * simply always narrative, which is the correct default rather than a crash.
+ * Reading the knob. Works anywhere in the tree — there is no provider to be
+ * outside of, which is what makes the header menu correct from both shells.
  */
 export function useChatDetail(): ChatDetailValue {
-  const ctx = useContext(ChatDetailContext);
-  const fallbackSet = useCallback(() => {}, []);
-  const fallback = useMemo(
-    () => ({ detail: 'narrative' as ChatDetail, setDetail: fallbackSet, toggle: fallbackSet }),
-    [fallbackSet],
-  );
-  return ctx ?? fallback;
+  const detail = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  useEffect(() => {
+    ensureClientInit();
+  }, []);
+
+  const toggle = useCallback(() => setChatDetail(oppositeDetail(currentDetail)), []);
+
+  return useMemo(() => ({ detail, setDetail: setChatDetail, toggle }), [detail, toggle]);
 }
 
 /**
  * The control itself.
  *
- * Deliberately a text button and not a segmented switch: at rest it should read
- * as an offer ("Show full history"), not as a setting the reader has to have an
- * opinion about before they can start reading. It states what it will DO, not
- * which mode you are in — the transcript already tells you that.
+ * Deliberately a text button and not a segmented switch: it states what it will
+ * DO, not which mode you are in — the transcript already tells you that. At
+ * rest (the folded reading) that is "Show full history", the offer to go
+ * deeper; the reader never has to have an opinion before they can start
+ * reading.
  */
 export function ChatDetailToggle({ className }: { className?: string }) {
   const { detail, toggle } = useChatDetail();

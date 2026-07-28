@@ -8,7 +8,11 @@ import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
 } from '../../projects/lib/secret-grant';
-import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
+import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
+import {
+  captureTitleAfterRuntimeEvent,
+  scheduleTitleCaptureAfterPrompt,
+} from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
@@ -30,7 +34,9 @@ import {
 import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
-const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
+const preview = new Hono<{
+  Variables: { userId: string; userEmail: string; sessionId?: string };
+}>();
 
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
@@ -303,13 +309,53 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
-// A prompt-delivery POST is the ONE mutating, non-idempotent call on this proxy
-// (POST /session/:id/prompt_async|message on the daemon port). opencode has no
-// idempotency of its own, so re-POSTing the same body enqueues the user's
-// message a second time (the 3x-queued bug). This is exactly the set the
-// env-sync-before-prompt gate already recognises, so delegate to it.
-function isPromptDelivery(method: string, port: number, path: string): boolean {
-  return shouldSyncProjectEnvBeforeProxy(port, method, path);
+// ACP prompt delivery shares the runtime URL with its GET event stream.
+// Inspect the JSON-RPC envelope before applying prompt deduplication.
+function acpPromptSessionId(
+  method: string,
+  upstreamPort: number,
+  path: string,
+  incomingHeaders: Headers,
+  body: ArrayBuffer | undefined,
+): string | null {
+  if (method.toUpperCase() !== 'POST' || upstreamPort !== SANDBOX_AGENT_PORT || !body) {
+    return null;
+  }
+  if (!incomingHeaders.get('content-type')?.toLowerCase().includes('application/json')) {
+    return null;
+  }
+  const match = path.match(/^\/kortix\/acp\/([^/?#]+)(?:$|[/?#])/);
+  if (!match) return null;
+  try {
+    const routeSessionId = decodeURIComponent(match[1]);
+    const envelope = JSON.parse(new TextDecoder().decode(body)) as {
+      method?: unknown;
+      params?: { sessionId?: unknown };
+    };
+    return envelope.method === 'session/prompt' && envelope.params?.sessionId === routeSessionId
+      ? routeSessionId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function runtimeTitleStream(
+  method: string,
+  upstreamPort: number,
+  path: string,
+  contentType: string | null,
+): { protocol: 'acp' | 'rest'; expectedSessionId?: string } | null {
+  if (method.toUpperCase() !== 'GET' || upstreamPort !== SANDBOX_AGENT_PORT) return null;
+  if (!contentType?.toLowerCase().includes('text/event-stream')) return null;
+  if (/^\/global\/event(?:$|[/?#])/.test(path)) return { protocol: 'rest' };
+  const match = path.match(/^\/kortix\/acp\/([^/?#]+)(?:$|[/?#])/);
+  if (!match) return null;
+  try {
+    return { protocol: 'acp', expectedSessionId: decodeURIComponent(match[1]) };
+  } catch {
+    return null;
+  }
 }
 
 // True only when a fetch failure PROVES nothing reached the box: the upstream
@@ -446,7 +492,17 @@ function bodyWithoutPromptAgent(
 // proxy edges use it: the path-based Hono route below and the subdomain handler
 // (src/sandbox-proxy/subdomain.ts).
 
-export type PreviewProxyAccess = { kind: 'principal'; userId: string } | { kind: 'public_share' };
+export type PreviewProxyAccess =
+  | {
+      kind: 'principal';
+      userId: string;
+      /** The caller's own session when the credential is bound to one (a sandbox
+       *  token). Kortix-as-a-Backend shares ONE userId across every end-user, so
+       *  this is what separates them. Null means a non-session-bound principal.
+       *  REQUIRED so a new entry point cannot silently omit it and fail open. */
+      callerSessionId: string | null;
+    }
+  | { kind: 'public_share' };
 
 function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
@@ -510,6 +566,7 @@ export async function forwardToSandbox(
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
   const userId = principalUserId(access);
+  const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
   if (
     access.kind === 'principal' &&
     !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
@@ -528,6 +585,15 @@ export async function forwardToSandbox(
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
   const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
   const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
+  const acpPromptSession = acpPromptSessionId(
+    method,
+    upstreamPort,
+    remainingPath,
+    incomingHeaders,
+    body,
+  );
+  const promptDelivery =
+    shouldSyncProjectEnvBeforeProxy(port, method, remainingPath) || acpPromptSession !== null;
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -541,6 +607,7 @@ export async function forwardToSandbox(
       projectId: record.projectId,
       accountId: record.accountId,
       userId,
+      callerSessionId: callerSessionId ?? null,
     }))
   ) {
     throw new HTTPException(403, { message: 'Not authorized to access this session' });
@@ -585,14 +652,10 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
-  // Dedupe prompt delivery up-front. Prompt POSTs are the only mutating,
-  // non-idempotent calls here, and the CLI mints one Idempotency-Key per logical
-  // prompt. Claim a stable key (the inbound Idempotency-Key, else a content hash
-  // of sandbox+session+body) BEFORE the retry loop so a duplicate inbound prompt
-  // — a client resend, or the other proxy edge (subdomain.ts also calls this) —
-  // short-circuits to a 200 no-op instead of re-POSTing and enqueueing the user's
-  // message twice. First claim within the TTL proceeds; a repeat is deduped.
-  if (isPromptDelivery(method, port, remainingPath)) {
+  // Dedupe prompt delivery up-front. REST and ACP prompt POSTs are the only
+  // mutating, non-idempotent calls here. Claim a stable key before the retry
+  // loop so a duplicate inbound prompt cannot enqueue the user message twice.
+  if (promptDelivery) {
     const dedupeKey = promptDeliveryKey({
       idempotencyKey: incomingHeaders.get('idempotency-key'),
       sandboxId,
@@ -621,6 +684,9 @@ export async function forwardToSandbox(
   // providers there is no such signal, so the preview proxy never errors the row;
   // liveness is owned by the health-check loop + reconciler, not a port request.
   let sawDeadSignal = false;
+  // False until this request reaches the non-idempotent upstream prompt fetch.
+  // Pre-prompt failures, such as env synchronization, are safe to retry.
+  let promptDeliveryMayHaveReachedUpstream = false;
   // A blocking session-turn (`POST /session/:id/message`) whose single attempt
   // (it gets ~the whole remaining budget, see proxyAttemptTimeoutMs) still hit
   // the connect-timer. That's a legitimately long-running, healthy turn, not a
@@ -796,6 +862,7 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        if (promptDelivery) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,
           headers,
@@ -859,7 +926,6 @@ export async function forwardToSandbox(
         // the response), so re-POSTing would enqueue it twice. Pass the upstream
         // response straight through to the passthrough below. GET/idempotent
         // requests retry as before.
-        const promptDelivery = isPromptDelivery(method, port, remainingPath);
         if (!promptDelivery && attempt < MAX_RETRIES) {
           // Port not ready yet — sandbox is booting (container running, port down).
           console.warn(
@@ -917,8 +983,41 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
+      if (acpPromptSession && upstream.ok) {
+        scheduleTitleCaptureAfterPrompt({
+          sessionId: record.sessionId,
+          projectId: record.projectId,
+          externalId: record.externalId,
+          userId: userId || undefined,
+        });
+      }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
-      return new Response(upstream.body, {
+      const titleStream = runtimeTitleStream(
+        method,
+        upstreamPort,
+        remainingPath,
+        upstream.headers.get('content-type'),
+      );
+      const responseBody =
+        upstream.body && titleStream
+          ? observeRuntimeSessionTitleStream(upstream.body, {
+              ...titleStream,
+              onTitle: async (event) => {
+                await captureTitleAfterRuntimeEvent({
+                  sessionId: record.sessionId,
+                  projectId: record.projectId,
+                  opencodeSessionId: event.sessionId,
+                  title: event.title,
+                });
+              },
+              onError: (error) => {
+                console.warn(
+                  `[title-capture] failed to inspect ACP stream for ${record.sessionId}: ${errorMessage(error, 'unknown error')}`,
+                );
+              },
+            })
+          : upstream.body;
+      return new Response(responseBody, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers: respHeaders,
@@ -954,7 +1053,11 @@ export async function forwardToSandbox(
       // the friendly unreachable response below. (The Daytona "no IP / no runner"
       // 400 branch — a rejection before opencode — retries in the response path
       // above, which is safe.)
-      if (isPromptDelivery(method, port, remainingPath) && !isConnectionRefusedError(err)) {
+      if (
+        promptDeliveryMayHaveReachedUpstream &&
+        promptDelivery &&
+        !isConnectionRefusedError(err)
+      ) {
         break;
       }
 
@@ -1003,11 +1106,15 @@ export async function resolvePreviewWsUpstream(opts: {
   userId: string;
   remainingPath: string;
   queryString: string;
+  /** The caller's own session when the credential is bound to one, or null for a
+   *  principal that is not session-bound. REQUIRED — fail closed, never default. */
+  callerSessionId: string | null;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
+  const callerSessionId = opts.callerSessionId;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
@@ -1031,6 +1138,7 @@ export async function resolvePreviewWsUpstream(opts: {
       projectId: record.projectId,
       accountId: record.accountId,
       userId,
+      callerSessionId: callerSessionId ?? null,
     }))
   ) {
     return { ok: false, status: 403, message: 'not authorized for this session' };
@@ -1108,7 +1216,7 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   return forwardToSandbox(
     sandboxId,
     port,
-    { kind: 'principal', userId },
+    { kind: 'principal', userId, callerSessionId: c.get('sessionId') ?? null },
     method,
     remainingPath,
     queryString,

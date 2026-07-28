@@ -492,7 +492,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-mcp-${Date.now().toString(36)}`;
 
     await ctx.step('seed a real connector to hang a profile off (mcp provider)', async () => {
@@ -682,7 +682,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-oauth2-${Date.now().toString(36)}`;
     const connector = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/executor/projects/:projectId/connectors',
@@ -694,7 +694,7 @@ flow(
       },
       { params: { projectId: p.id } },
     );
-    connector.status(201);
+    connector.status(200);
     const defaultProfile = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
       {},

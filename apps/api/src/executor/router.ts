@@ -24,6 +24,7 @@ import {
 import type { AgentGrant } from '@kortix/db';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
+import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import { type GatewayDeps, handleCall } from './gateway';
@@ -377,7 +378,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }
     // Per-agent connector assignment: a scoped agent may call only the connector
     // profiles its kortix.yaml overlay lists. Default-deny otherwise.
-    if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
+    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(connectorSlug))) {
       return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
     }
     const args =

@@ -6,19 +6,24 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
+  captureTitleAfterRuntimeEvent,
   pendingTitleCaptures,
   scheduleTitleCaptureAfterPrompt,
 } from '../projects/opencode-title-capture';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function row(metadata: Record<string, unknown> = {}) {
+function row(
+  metadata: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {},
+) {
   return {
     sessionId: 'session-1',
     projectId: 'project-1',
     accountId: 'account-1',
     opencodeSessionId: null,
     metadata,
+    ...overrides,
   } as any;
 }
 
@@ -111,5 +116,120 @@ describe('scheduleTitleCaptureAfterPrompt', () => {
     const h = harness({ loaded: null });
     scheduleTitleCaptureAfterPrompt({ sessionId: '', projectId: 'p', externalId: 'x' }, h.options);
     expect(pendingTitleCaptures()).toBe(0);
+  });
+});
+
+describe('captureTitleAfterRuntimeEvent', () => {
+  test('persists the exact runtime title without another sandbox read', async () => {
+    const persistCalls: unknown[] = [];
+    const options = {
+      loadRow: async () => row({}),
+      persistTitle: async (args: unknown) => {
+        persistCalls.push(args);
+      },
+    };
+
+    await captureTitleAfterRuntimeEvent(
+      {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        opencodeSessionId: 'opencode-root-1',
+        title: 'Research Marko Kraemer',
+      },
+      options,
+    );
+
+    expect(persistCalls).toEqual([
+      {
+        row: expect.objectContaining({ sessionId: 'session-1', projectId: 'project-1' }),
+        title: 'Research Marko Kraemer',
+      },
+    ]);
+  });
+
+  test('rejects a child-session title when the Kortix row pins another root', async () => {
+    const persistCalls: unknown[] = [];
+    await captureTitleAfterRuntimeEvent(
+      {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        opencodeSessionId: 'opencode-child-1',
+        title: 'Child task',
+      },
+      {
+        loadRow: async () => row({}, { opencodeSessionId: 'opencode-root-1' }),
+        persistTitle: async (args: unknown) => {
+          persistCalls.push(args);
+        },
+      },
+    );
+    expect(persistCalls).toEqual([]);
+  });
+
+  test('deduplicates concurrent runtime title events for one Kortix session', async () => {
+    let release = () => {};
+    const persistStarted = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const persistCalls: unknown[] = [];
+    const options = {
+      loadRow: async () => row({}),
+      persistTitle: async (args: unknown) => {
+        persistCalls.push(args);
+        await persistStarted;
+      },
+    };
+    const event = {
+      sessionId: 'session-1',
+      projectId: 'project-1',
+      opencodeSessionId: 'opencode-root-1',
+      title: 'Research Marko Kraemer',
+    };
+
+    const first = captureTitleAfterRuntimeEvent(event, options);
+    const second = captureTitleAfterRuntimeEvent(event, options);
+    await sleep(1);
+    expect(persistCalls).toHaveLength(1);
+    release();
+    await Promise.all([first, second]);
+  });
+
+  test('does not discard a distinct root title while another title persists', async () => {
+    let release = () => {};
+    const persistBlocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const persistCalls: Array<{ title: string }> = [];
+    const options = {
+      loadRow: async () => row({}, { opencodeSessionId: 'opencode-root-1' }),
+      persistTitle: async (args: { title: string }) => {
+        persistCalls.push(args);
+        if (args.title === 'First title') await persistBlocked;
+      },
+    };
+
+    const first = captureTitleAfterRuntimeEvent(
+      {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        opencodeSessionId: 'opencode-root-1',
+        title: 'First title',
+      },
+      options as Parameters<typeof captureTitleAfterRuntimeEvent>[1],
+    );
+    const second = captureTitleAfterRuntimeEvent(
+      {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        opencodeSessionId: 'opencode-root-1',
+        title: 'Second title',
+      },
+      options as Parameters<typeof captureTitleAfterRuntimeEvent>[1],
+    );
+
+    await sleep(1);
+    expect(persistCalls.map((call) => call.title)).toEqual(['First title', 'Second title']);
+    release();
+    await Promise.all([first, second]);
   });
 });

@@ -19,11 +19,20 @@
  * and the `/start` poll for `(projectId, sessionId)`.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { RuntimeNotReadyError } from '../core/runtime/client';
-import { createSessionRuntimePolicy } from '../core/session/runtime-transport';
+import { getClient, RuntimeNotReadyError } from '../core/runtime/client';
+import {
+  commitSessionRewind,
+  messagesBeforeRewind,
+  reconcileCommittedSessionRewind,
+  type SessionRewindState,
+} from '../core/session/rewind';
+import {
+  createSessionRuntimePolicy,
+  type SessionRuntimeTransport,
+} from '../core/session/runtime-transport';
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
@@ -58,6 +67,11 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { useSessionPicks } from './use-session-picks';
 import { useSessionSync } from './use-session-sync';
+import {
+  readAcpSessionTitle,
+  refreshSessionTitleQueryUntilResolved,
+  syncAcpSessionTitleQuery,
+} from './session-title-sync';
 import { useVisibleAgents } from './use-visible-agents';
 import {
   rejectQuestion as rejectQuestionApi,
@@ -68,6 +82,7 @@ import {
   useSendOpenCodeMessage,
   type PromptPart,
 } from './use-opencode-sessions';
+import { unwrap } from './use-opencode-sessions/shared';
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
@@ -250,6 +265,22 @@ export function endRestPromptObservation(sessionId: string): void {
   useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
 }
 
+/** Stage a reversible OpenCode rollback on one canonical session. */
+export async function rewindOpenCodeSession(sessionId: string, messageId: string): Promise<void> {
+  if (!messageId) throw new Error('Session rewind requires a message id');
+  unwrap(
+    await getClient().session.revert({
+      sessionID: sessionId,
+      messageID: messageId,
+    }),
+  );
+}
+
+/** Restore a staged OpenCode rollback before a replacement prompt commits it. */
+export async function restoreOpenCodeSessionRewind(sessionId: string): Promise<void> {
+  unwrap(await getClient().session.unrevert({ sessionID: sessionId }));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Permission/question replies. Standalone (not closures over hook state) since
 // they only need the global runtime client + the global pending store — both
@@ -299,6 +330,12 @@ export async function answerPermission(
 export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
+  /**
+   * Override the server-selected AI transport for this hook instance.
+   * Hosts can use this for page-scoped diagnostics without changing project
+   * configuration. Omit it to use `/start.runtime_transport`.
+   */
+  runtimeTransport?: SessionRuntimeTransport;
   /**
    * Replay a stashed first message (prompt + model + agent from the "new session"
    * screen) once the runtime is ready and the thread is empty. Default true. Hosts
@@ -361,12 +398,15 @@ const DISABLED_CHAT_ENGINE_SYNC = {
 };
 
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
+  const queryClient = useQueryClient();
+  const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
     waitMs = 15_000,
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
     initialOpenCodeSessionId = null,
+    runtimeTransport: runtimeTransportOverride,
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
@@ -391,7 +431,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
-  const runtimePolicy = createSessionRuntimePolicy(startData?.runtime_transport);
+  const runtimePolicy = createSessionRuntimePolicy(
+    startData?.runtime_transport,
+    runtimeTransportOverride,
+  );
   const runtimeTransport = runtimePolicy.transport;
   const usesAcp = runtimePolicy.useAcp;
 
@@ -452,6 +495,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     sessionId: rootSessionId,
     enabled: enabled && switched && usesAcp,
   });
+  const acpSessionTitle = readAcpSessionTitle(acpRuntime.projection.sessionInfo);
+  useEffect(() => {
+    if (!usesAcp || !acpSessionTitle) return;
+    syncAcpSessionTitleQuery(queryClient, projectId, sessionId, { title: acpSessionTitle });
+  }, [queryClient, projectId, sessionId, usesAcp, acpSessionTitle]);
+  useEffect(
+    () => () => {
+      titleRefreshAbortRef.current?.abort();
+      titleRefreshAbortRef.current = null;
+    },
+    [projectId, sessionId],
+  );
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
   // is off — `useSessionSync('')` fetches/polls nothing (its effects no-op on
@@ -476,6 +531,29 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   );
   const sync = !chatEngine ? DISABLED_CHAT_ENGINE_SYNC : usesAcp ? acpSync : rawSync;
   const runtimePhase = useRuntimePhase();
+  const [restRewind, setRestRewind] = useState<SessionRewindState | null>(null);
+  const [rewindPending, setRewindPending] = useState(false);
+  const [rewindError, setRewindError] = useState<KortixSendError | null>(null);
+  const rewindMessageId = usesAcp
+    ? (acpRuntime.rewindState?.messageId ?? null)
+    : restRewind?.staged
+      ? restRewind.messageId
+      : null;
+  const messages = useMemo(
+    () =>
+      usesAcp ? sync.messages : messagesBeforeRewind(sync.messages, restRewind?.messageId ?? null),
+    [usesAcp, sync.messages, restRewind?.messageId],
+  );
+
+  useEffect(() => {
+    setRestRewind(null);
+    setRewindPending(false);
+    setRewindError(null);
+  }, [sessionId, ocSessionId]);
+
+  useEffect(() => {
+    setRestRewind((current) => reconcileCommittedSessionRewind(sync.messages, current));
+  }, [restRewind, sync.messages]);
 
   // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store) — see
@@ -529,8 +607,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // lands (count grows) — robust to server-normalized text where a text-equality
   // match would clear too early or never (wedging the composer). 30s backstop.
   const userMsgCount = useMemo(
-    () => sync.messages.filter((m) => m.info.role === 'user').length,
-    [sync.messages],
+    () => messages.filter((m) => m.info.role === 'user').length,
+    [messages],
   );
   const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
   const pending = sendState.pending;
@@ -559,6 +637,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     },
   ): Promise<void> => {
     if (!ocSessionId) throw new RuntimeNotReadyError();
+    titleRefreshAbortRef.current?.abort();
+    const titleRefreshAbort = new AbortController();
+    titleRefreshAbortRef.current = titleRefreshAbort;
+    void refreshSessionTitleQueryUntilResolved(queryClient, projectId, sessionId, {
+      signal: titleRefreshAbort.signal,
+    }).finally(() => {
+      if (titleRefreshAbortRef.current === titleRefreshAbort) {
+        titleRefreshAbortRef.current = null;
+      }
+    });
     const model = override?.model ?? picks.model;
     const agent = override?.agent ?? picks.agent;
     const variant = override?.variant;
@@ -594,6 +682,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       parts,
       ...(Object.keys(opts).length ? { options: opts } : {}),
     });
+    setRestRewind(commitSessionRewind);
   };
 
   const send = (
@@ -630,6 +719,51 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     return commandMutation.mutateAsync(
       buildSessionCommandInput(ocSessionId, command, args, options),
     );
+  };
+
+  const rewind = async (messageId: string): Promise<void> => {
+    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!messageId) throw new Error('Session rewind requires a message id');
+    if (sync.isBusy || pending || rewindPending) {
+      throw new Error('Cannot rewind a busy session');
+    }
+    setRewindPending(true);
+    setRewindError(null);
+    try {
+      if (usesAcp) {
+        await acpRuntime.rewind(messageId);
+      } else {
+        await rewindOpenCodeSession(ocSessionId, messageId);
+        setRestRewind({ messageId, staged: true });
+      }
+    } catch (error) {
+      const classified = classifySendError(error);
+      setRewindError(classified);
+      throw classified;
+    } finally {
+      setRewindPending(false);
+    }
+  };
+
+  const restoreRewind = async (): Promise<void> => {
+    if (!ocSessionId) throw new RuntimeNotReadyError();
+    if (!rewindMessageId || rewindPending) return;
+    setRewindPending(true);
+    setRewindError(null);
+    try {
+      if (usesAcp) {
+        await acpRuntime.restoreRewind();
+      } else {
+        await restoreOpenCodeSessionRewind(ocSessionId);
+        setRestRewind(null);
+      }
+    } catch (error) {
+      const classified = classifySendError(error);
+      setRewindError(classified);
+      throw classified;
+    } finally {
+      setRewindPending(false);
+    }
   };
 
   // The one true cancel: abort the run AND drop any pending prompt + open prompts.
@@ -720,7 +854,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     runtimeError: runtimeSessionError,
 
     // live data
-    messages: sync.messages,
+    messages,
     status: sync.status,
     questions,
     permissions,
@@ -764,6 +898,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     /** Last `send` failure, typed (billing / runtime-not-ready / runtime-error),
      * or null. Reset on every new `send` call. */
     sendError: sendState.sendError,
+    /** Selected user message while a reversible history rewind is staged. */
+    rewindMessageId,
+    /** True while the runtime stages or restores a history rewind. */
+    rewindPending,
+    /** Last history rewind failure, or null. */
+    rewindError,
 
     // server-side capabilities (pre-runtime)
     models,
@@ -776,6 +916,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     send,
     /** Send text and file prompt parts through the selected SDK transport. */
     sendParts,
+    /** Rewind this canonical session to one user message. */
+    rewind,
+    /** Restore the removed path before a replacement prompt commits it. */
+    restoreRewind,
     cancel,
     runCommand,
     /** Answer an agent question through the server and drop it from pending

@@ -66,7 +66,7 @@ projectsApp.openapi(
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // Same gate as wake/create: resuming or provisioning spends compute.
@@ -133,7 +133,7 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or an account owner/admin.
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
@@ -191,7 +191,7 @@ projectsApp.openapi(
 
     // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(

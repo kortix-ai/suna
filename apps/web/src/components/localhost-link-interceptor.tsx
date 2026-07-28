@@ -28,7 +28,7 @@
  */
 
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { createSandboxProxyContext, rewriteSandboxPath } from '@/lib/utils/sandbox-proxy';
 import {
   buildWebProxyUrl,
   isPreviewUrl,
@@ -53,10 +53,18 @@ function getCurrentSessionId(): string | null {
 }
 
 export function LocalhostLinkInterceptor() {
-  const { subdomainOpts, rewritePortPath } = useSandboxProxy();
-
   useEffect(() => {
     function handleClick(e: MouseEvent) {
+      // Resolved per click, never captured in the effect's closure.
+      //
+      // This component mounts at the app root — before any session exists, so
+      // any context captured here would carry `sandboxId: ''` forever and
+      // rewrite every preview link to `/v1/p//{port}/`, which 404s. The click
+      // is also the only moment the answer is knowable: by then the user has a
+      // session open and its runtime is bound. Reads are synchronous module
+      // state, so this costs nothing.
+      const { subdomainOpts, rewritePortPath } = resolveSandboxProxy();
+
       if (e.defaultPrevented || e.button !== 0) return;
       // Modifier-clicks fall through to native new-tab behavior.
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -168,9 +176,22 @@ export function LocalhostLinkInterceptor() {
 
     document.addEventListener('click', handleClick, { capture: true });
     return () => document.removeEventListener('click', handleClick, { capture: true });
-  }, [rewritePortPath, subdomainOpts]);
+  }, []);
 
   return null;
+}
+
+/**
+ * Snapshot the active runtime's proxy helpers. Deliberately a plain function,
+ * not the `useSandboxProxy` hook: a delegated document-level handler must read
+ * the runtime at the moment of the click, and a hook would bind it at mount.
+ */
+function resolveSandboxProxy() {
+  const context = createSandboxProxyContext();
+  return {
+    subdomainOpts: context.subdomainOpts,
+    rewritePortPath: (port: number, path: string) => rewriteSandboxPath(port, path, context),
+  };
 }
 
 function safeHostname(url: string): string {

@@ -24,6 +24,16 @@ let sessionPromptImpl: (args: unknown) => Promise<{
   error?: unknown;
   response?: Response;
 }> = async () => ({ data: {} });
+let sessionRevertImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
+let sessionUnrevertImpl: (args: unknown) => Promise<{
+  data?: unknown;
+  error?: unknown;
+  response?: Response;
+}> = async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
   constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
@@ -40,7 +50,11 @@ mock.module('../core/runtime/client', () => ({
       reply: (args: unknown) => questionReplyImpl(args),
       reject: (args: unknown) => questionRejectImpl(args),
     },
-    session: { promptAsync: (args: unknown) => sessionPromptImpl(args) },
+    session: {
+      promptAsync: (args: unknown) => sessionPromptImpl(args),
+      revert: (args: unknown) => sessionRevertImpl(args),
+      unrevert: (args: unknown) => sessionUnrevertImpl(args),
+    },
   }),
 }));
 
@@ -55,10 +69,16 @@ import {
   buildSessionCommandInput,
   beginRestPromptObservation,
   endRestPromptObservation,
+  rewindOpenCodeSession,
+  restoreOpenCodeSessionRewind,
   sendStateOnStart,
   sendStateOnError,
   shouldRetrySessionStart,
 } from './use-session';
+import {
+  refreshSessionTitleQueryUntilResolved,
+  syncAcpSessionTitleQuery,
+} from './session-title-sync';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError } from '../core/rest/projects-client';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -93,6 +113,154 @@ beforeEach(() => {
   questionReplyImpl = async () => ({ data: {} });
   questionRejectImpl = async () => ({ data: {} });
   sessionPromptImpl = async () => ({ data: {} });
+  sessionRevertImpl = async () => ({ data: {} });
+  sessionUnrevertImpl = async () => ({ data: {} });
+});
+
+describe('OpenCode session rewind', () => {
+  test('stages and restores history on the same canonical session', async () => {
+    const calls: unknown[] = [];
+    sessionRevertImpl = async (args) => {
+      calls.push(args);
+      return { data: { id: 'oc-session' } };
+    };
+    sessionUnrevertImpl = async (args) => {
+      calls.push(args);
+      return { data: { id: 'oc-session' } };
+    };
+
+    await rewindOpenCodeSession('oc-session', 'msg_user_2');
+    await restoreOpenCodeSessionRewind('oc-session');
+
+    expect(calls).toEqual([
+      { sessionID: 'oc-session', messageID: 'msg_user_2' },
+      { sessionID: 'oc-session' },
+    ]);
+  });
+
+  test('does not stage local rewind state when OpenCode rejects the request', async () => {
+    sessionRevertImpl = async () => ({
+      error: { data: { message: 'message not found' } },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(rewindOpenCodeSession('oc-session', 'missing')).rejects.toThrow(
+      'message not found',
+    );
+  });
+});
+
+describe('ACP session title synchronization', () => {
+  test('refetches the matching Kortix list and detail queries for a real title', async () => {
+    const calls: unknown[] = [];
+    const queryClient = {
+      refetchQueries: (input: unknown) => {
+        calls.push(input);
+        return Promise.resolve();
+      },
+    };
+
+    syncAcpSessionTitleQuery(
+      queryClient as Parameters<typeof syncAcpSessionTitleQuery>[0],
+      'project-1',
+      'session-1',
+      { title: 'Research Marko Kraemer' },
+    );
+    await Promise.resolve();
+
+    expect(calls).toEqual([
+      { queryKey: ['project-sessions', 'project-1'], type: 'active' },
+      { queryKey: ['project-session', 'project-1', 'session-1'], type: 'active' },
+    ]);
+  });
+
+  test('does not refetch for missing or placeholder ACP titles', async () => {
+    const calls: unknown[] = [];
+    const queryClient = {
+      refetchQueries: (input: unknown) => {
+        calls.push(input);
+        return Promise.resolve();
+      },
+    };
+
+    const titleQueryClient = queryClient as Parameters<typeof syncAcpSessionTitleQuery>[0];
+    syncAcpSessionTitleQuery(titleQueryClient, 'project-1', 'session-1', null);
+    syncAcpSessionTitleQuery(titleQueryClient, 'project-1', 'session-1', {
+      title: 'New session - 2026-07-28',
+    });
+    await Promise.resolve();
+
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('bounded session title refresh', () => {
+  test('refetches authoritative session queries until a generated title appears', async () => {
+    const calls: Array<{ queryKey: string[]; type: string }> = [];
+    let title: string | null = null;
+    const queryClient = {
+      getQueryData: (queryKey: string[]) => {
+        if (queryKey[0] === 'project-sessions') {
+          return [{ session_id: 'session-1', name: title, custom_name: null }];
+        }
+        return { session_id: 'session-1', name: title, custom_name: null };
+      },
+      refetchQueries: (input: { queryKey: string[]; type: string }) => {
+        calls.push(input);
+        if (
+          input.queryKey[0] === 'project-sessions' &&
+          calls.filter((call) => call.queryKey[0] === 'project-sessions').length === 2
+        ) {
+          title = 'Research Marko Kraemer';
+        }
+        return Promise.resolve();
+      },
+    };
+
+    const resolved = await refreshSessionTitleQueryUntilResolved(
+      queryClient as Parameters<typeof refreshSessionTitleQueryUntilResolved>[0],
+      'project-1',
+      'session-1',
+      {
+        delaysMs: [0, 0],
+        sleep: async () => {},
+      },
+    );
+
+    expect(resolved).toBe(true);
+    expect(calls).toEqual([
+      { queryKey: ['project-sessions', 'project-1'], type: 'active' },
+      { queryKey: ['project-session', 'project-1', 'session-1'], type: 'active' },
+      { queryKey: ['project-sessions', 'project-1'], type: 'active' },
+      { queryKey: ['project-session', 'project-1', 'session-1'], type: 'active' },
+    ]);
+  });
+
+  test('does not refetch when the cache already contains a generated title', async () => {
+    const calls: unknown[] = [];
+    const queryClient = {
+      getQueryData: () => [
+        { session_id: 'session-1', name: 'Research Marko Kraemer', custom_name: null },
+      ],
+      refetchQueries: (input: unknown) => {
+        calls.push(input);
+        return Promise.resolve();
+      },
+    };
+
+    const resolved = await refreshSessionTitleQueryUntilResolved(
+      queryClient as Parameters<typeof refreshSessionTitleQueryUntilResolved>[0],
+      'project-1',
+      'session-1',
+      {
+        delaysMs: [0],
+        sleep: async () => {},
+      },
+    );
+
+    expect(resolved).toBe(true);
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('answerQuestion', () => {

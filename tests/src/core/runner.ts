@@ -10,6 +10,10 @@ import { withRecorder, type StepRecorder } from "./context";
 import { AssertionError } from "./expect";
 import { allFlows, clearRegistry, type RegisteredFlow } from "./flow";
 import { loadEnv, type Env } from "./env";
+import { log } from "./log";
+import { partitionParallelFlows } from "./lanes";
+import { mapWithConcurrency } from "./concurrency";
+import { ke2eRetryDelayMs } from "./client";
 import {
   summarize,
   type Assertion,
@@ -28,6 +32,10 @@ export interface RunOptions {
   tags?: string[];
   grep?: string;
   workers?: number;
+  /** API-only lane concurrency. Used only when workers is not set. */
+  apiWorkers?: number;
+  /** Live sandbox lane concurrency. Used only when workers is not set. */
+  sandboxWorkers?: number;
   /** Read-mostly subset for prod smoke. */
   smoke?: boolean;
   runId: string;
@@ -83,7 +91,9 @@ async function runOneFlow(
 ): Promise<FlowResult> {
   const steps: StepResult[] = [];
   const flowStart = performance.now();
-  const maxAttempts = f.meta.retry?.attempts ?? 1;
+  // Every flow gets one clean retry for errors explicitly marked as
+  // infrastructure failures. Assertion failures never retry.
+  const maxAttempts = f.meta.retry?.attempts ?? 2;
 
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
@@ -136,6 +146,7 @@ async function runOneFlow(
       // Never retry assertion failures — only infra signals.
       const retryable = !(err instanceof AssertionError) && (err as any)?.ke2eRetryable === true;
       if (!retryable || attempt >= maxAttempts) break;
+      await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
     }
   }
   const reason = (lastError as Error)?.message ?? String(lastError);
@@ -199,17 +210,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, id: string): Promise<T> {
   });
 }
 
-async function pool<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let i = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length || 1) }, async () => {
-    while (i < items.length) {
-      const idx = i++;
-      results[idx] = await fn(items[idx]);
-    }
-  });
-  await Promise.all(workers);
-  return results;
+function positiveWorkerCount(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.trunc(value));
 }
 
 export async function runSuite(opts: RunOptions): Promise<RunResult> {
@@ -228,7 +231,36 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
     const globalLane = flows.filter((f) => f.meta.global);
 
     const out: FlowResult[] = [];
-    out.push(...(await pool(parallelLane, opts.workers ?? 4, (f) => runOneFlow(f, env, world, routesHit))));
+    if (opts.workers !== undefined) {
+      const workers = positiveWorkerCount(opts.workers, 4);
+      log.info(`lanes: ${parallelLane.length} parallel flows · ${workers} explicit workers`);
+      out.push(
+        ...(await mapWithConcurrency(parallelLane, workers, (f) =>
+          runOneFlow(f, env, world, routesHit),
+        )),
+      );
+    } else {
+      const { apiLane, sandboxLane } = partitionParallelFlows(parallelLane);
+      const apiWorkers = positiveWorkerCount(
+        opts.apiWorkers ?? Number(process.env.KE2E_API_WORKERS),
+        8,
+      );
+      const sandboxWorkers = positiveWorkerCount(
+        opts.sandboxWorkers ?? Number(process.env.KE2E_SANDBOX_WORKERS),
+        4,
+      );
+      log.info(
+        `lanes: ${apiLane.length} API flows × ${apiWorkers} workers · ` +
+          `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers`,
+      );
+      const [apiResults, sandboxResults] = await Promise.all([
+        mapWithConcurrency(apiLane, apiWorkers, (f) => runOneFlow(f, env, world, routesHit)),
+        mapWithConcurrency(sandboxLane, sandboxWorkers, (f) =>
+          runOneFlow(f, env, world, routesHit),
+        ),
+      ]);
+      out.push(...apiResults, ...sandboxResults);
+    }
     for (const f of serialLane) out.push(await runOneFlow(f, env, world, routesHit));
     for (const f of globalLane) out.push(await runOneFlow(f, env, world, routesHit));
 

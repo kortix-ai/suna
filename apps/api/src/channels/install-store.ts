@@ -224,9 +224,20 @@ export async function saveAgentMailInstall(
         ),
       );
   }
+  // Scope the inbox takeover delete to THIS project. An unscoped delete
+  // (platform + workspaceId only) would wipe another project's install row for
+  // the same inbox — a cross-tenant data-integrity bug that enabled the
+  // AgentMail inbox hijack (pentest 2026-07-27). The first delete above already
+  // filters by projectId; this one must too.
   await db
     .delete(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, input.inboxId)));
+    .where(
+      and(
+        eq(chatInstalls.platform, 'email'),
+        eq(chatInstalls.projectId, projectId),
+        eq(chatInstalls.workspaceId, input.inboxId),
+      ),
+    );
   await db
     .insert(chatInstalls)
     .values({ platform: 'email', workspaceId: input.inboxId, projectId })

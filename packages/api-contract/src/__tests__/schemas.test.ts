@@ -83,7 +83,8 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     owner_email: null,
     visibility: 'private',
     origin: 'user',
-    origin_ref: null,
+    end_user_ref: null,
+  origin_ref: null,
     secrets_allowlist: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,
@@ -665,6 +666,21 @@ describe('native OAuth2 lifecycle schemas', () => {
     expect(OAuth2DeviceAuthorizationStartInputSchema.parse({ scopes: ['read'] })).toEqual({
       scopes: ['read'],
     });
+  });
+});
+
+describe('end_user_ref accepts its deprecated origin_ref alias', () => {
+  test('either spelling parses; the response carries both', () => {
+    expect(() => SessionCreateInputSchema.parse({ end_user_ref: 'u1' })).not.toThrow();
+    expect(() => SessionCreateInputSchema.parse({ origin_ref: 'u1' })).not.toThrow();
+    expect(() =>
+      SessionCreateInputSchema.parse({ end_user_ref: 'u1', origin_ref: 'u1' }),
+    ).not.toThrow();
+  });
+
+  test('the new name is bounded exactly like the alias', () => {
+    expect(() => SessionCreateInputSchema.parse({ end_user_ref: 'x'.repeat(257) })).toThrow();
+    expect(() => SessionCreateInputSchema.parse({ end_user_ref: '   ' })).toThrow();
   });
 });
 
