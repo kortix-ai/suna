@@ -141,11 +141,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The */platform roots are deliberately absent. They drive the helm and
+        # kubernetes providers, and Helm keeps release state in Kubernetes
+        # Secrets — so planning them from CI would mean granting this role
+        # secret-read inside the production cluster. That is a bigger grant
+        # than drift reporting justifies. Plan them from an operator session.
         root:
           - infra/terraform/environments/prod-eks/cluster
-          - infra/terraform/environments/prod-eks/platform
           - infra/terraform/environments/dev-eks/cluster
-          - infra/terraform/environments/dev-eks/platform
           # Not under environments/ — the stack lives at the terraform root.
           - infra/terraform/security-baseline
     steps:
