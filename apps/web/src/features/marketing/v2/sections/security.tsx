@@ -1,16 +1,19 @@
 'use client';
 
-import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { Button } from '@/components/ui/marketing/button';
+import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { SECURITY } from '@/features/marketing/v2/content';
 import { CheckLine, Heading, Lead } from '@/features/marketing/v2/primitives';
 import Link from 'next/link';
 
 export function SecuritySection() {
   return (
-    <section id="security" className="bg-foreground text-background relative scroll-mt-24 overflow-hidden">
+    <section
+      id="security"
+      className="bg-foreground text-background relative scroll-mt-24 overflow-hidden"
+    >
       <div
-        className="pointer-events-none absolute inset-0 z-0 mask-y-from-10% opacity-30"
+        className="pointer-events-none absolute inset-0 z-0 mask-y-from-10% opacity-25"
         aria-hidden
         data-a11y-decorative
       >
@@ -18,9 +21,12 @@ export function SecuritySection() {
       </div>
 
       <div className="relative z-10 mx-auto max-w-6xl px-6 py-16 sm:py-24">
-        <div className="grid gap-12 lg:grid-cols-[1.2fr_1fr] lg:gap-16">
+        <div className="grid gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
           <div>
-            <Heading lines={SECURITY.heading} tone="inverse" />
+            <span className="border-background/25 text-background/80 inline-block rounded border px-2 py-0.5 text-xs font-medium">
+              {SECURITY.eyebrow}
+            </span>
+            <Heading lines={SECURITY.heading} tone="inverse" className="mt-6" />
             <Lead tone="inverse" className="mt-5">
               {SECURITY.subheading}
             </Lead>

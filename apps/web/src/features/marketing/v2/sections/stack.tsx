@@ -1,15 +1,29 @@
 'use client';
 
 import { STACK } from '@/features/marketing/v2/content';
+import { Iso, Slab, Stage } from '@/features/marketing/v2/illustrations';
+import { Eyebrow, Heading, Lead } from '@/features/marketing/v2/primitives';
 import { cn } from '@/lib/utils';
+import {
+  Boxes,
+  Brain,
+  Cpu,
+  GitBranch,
+  Layers,
+  Radio,
+  ShieldCheck,
+  Workflow,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const LAYERS = STACK.layers;
-const SLAB_RISE = 34; // px between stacked slabs
+const SLAB_RISE = 30;
+
+const GLYPHS = [Cpu, Workflow, Boxes, Brain, GitBranch, Radio, ShieldCheck, Layers];
 
 /**
- * The stack: a scroll-pinned section where each layer of the platform stacks up
- * as an isometric slab while its description takes over the left column.
+ * The stack: a scroll-pinned section where each layer of Kortix stacks up as a
+ * frosted isometric slab while its description takes over the left column.
  */
 export function StackSection() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -45,16 +59,22 @@ export function StackSection() {
   }, []);
 
   return (
-    <section id="stack" className="bg-background scroll-mt-24 px-6">
+    <section id="stack" className="bg-background scroll-mt-24 px-6 pt-16 sm:pt-24">
       <div className="mx-auto max-w-6xl">
-        <div ref={wrapRef} style={{ height: `${(LAYERS.length + 1) * 100}vh` }} className="relative">
+        <div className="max-w-2xl">
+          <Eyebrow>The stack</Eyebrow>
+          <Heading lines={STACK.heading} className="mt-6" />
+          <Lead className="mt-5">{STACK.subheading}</Lead>
+        </div>
+
+        <div ref={wrapRef} style={{ height: `${(LAYERS.length + 1) * 100}vh` }} className="relative mt-10">
           <div className="sticky top-0 flex h-screen items-center py-8">
-            <div
-              className="border-border bg-card relative grid w-full overflow-hidden rounded-sm border md:grid-cols-2"
+            <Stage
+              className="grid w-full md:grid-cols-2"
               style={{ minHeight: 'min(44rem, 80vh)' }}
             >
               {/* left: the layer list */}
-              <div className="relative z-10 flex flex-col justify-center gap-2 p-8 sm:p-10">
+              <div className="relative z-10 flex flex-col justify-center gap-1.5 p-8 pb-20 sm:p-10 sm:pb-20">
                 {LAYERS.map((layer, i) => {
                   const isActive = i === active;
                   return (
@@ -64,7 +84,7 @@ export function StackSection() {
                         'transition-all duration-300 ease-out',
                         isActive
                           ? 'border-border bg-background rounded-sm border px-5 py-4 shadow-sm'
-                          : 'bg-muted text-muted-foreground w-fit rounded-full px-4 py-1.5',
+                          : 'bg-foreground/[0.06] text-muted-foreground w-fit rounded-full px-4 py-1.5',
                       )}
                     >
                       <p
@@ -76,9 +96,23 @@ export function StackSection() {
                         {layer.name}
                       </p>
                       {isActive && (
-                        <p className="text-muted-foreground mt-1.5 max-w-sm text-sm leading-relaxed">
-                          {layer.description}
-                        </p>
+                        <>
+                          <p className="text-muted-foreground mt-1.5 max-w-sm text-sm leading-relaxed">
+                            {layer.description}
+                          </p>
+                          {layer.chips && (
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {layer.chips.map((chip) => (
+                                <span
+                                  key={chip}
+                                  className="border-border bg-card text-muted-foreground rounded-sm border px-2 py-0.5 text-[11px]"
+                                >
+                                  {chip}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );
@@ -86,12 +120,38 @@ export function StackSection() {
               </div>
 
               {/* right: the slabs */}
-              <div className="bg-muted/40 relative hidden items-center justify-center md:flex">
-                <Slabs active={active} />
+              <div className="relative hidden md:block">
+                <Iso className="absolute inset-0" scale={1.15}>
+                  {/* keep the growing stack centred instead of drifting up-frame */}
+                  <div
+                    className="transition-transform duration-500 ease-out"
+                    style={{
+                      transformStyle: 'preserve-3d',
+                      transform: `translateZ(${-(active * SLAB_RISE) / 2}px)`,
+                    }}
+                  >
+                    {LAYERS.map((layer, i) => {
+                      const Glyph = GLYPHS[i % GLYPHS.length];
+                      const isTop = i === active;
+                      return (
+                        <Slab
+                          key={layer.name}
+                          lift={i * SLAB_RISE}
+                          dim={i > active}
+                          tone={isTop ? 'accent' : 'frost'}
+                          thickness={13}
+                          glyph={
+                            isTop ? <Glyph className="size-16" strokeWidth={1.25} /> : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </Iso>
               </div>
 
               {/* footer rail */}
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-4 px-8 pb-6 sm:px-10">
+              <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-4 px-8 pb-6 sm:px-10">
                 <button
                   type="button"
                   onClick={skip}
@@ -99,7 +159,7 @@ export function StackSection() {
                 >
                   Skip section
                 </button>
-                <div className="bg-border h-1 w-40 overflow-hidden rounded-full">
+                <div className="bg-foreground/10 h-1 w-40 overflow-hidden rounded-full">
                   <div
                     className="bg-foreground h-full rounded-full transition-all duration-300"
                     style={{ width: `${((active + 1) / LAYERS.length) * 100}%` }}
@@ -109,48 +169,10 @@ export function StackSection() {
                   {active + 1}/{LAYERS.length}
                 </span>
               </div>
-            </div>
+            </Stage>
           </div>
         </div>
       </div>
     </section>
-  );
-}
-
-function Slabs({ active }: { active: number }) {
-  return (
-    <div
-      className="relative h-72 w-full max-w-md"
-      style={{ perspective: '1400px' }}
-      aria-hidden
-      data-a11y-decorative
-    >
-      <div
-        className="absolute inset-0"
-        style={{ transformStyle: 'preserve-3d', transform: 'rotateX(58deg) rotateZ(-45deg)' }}
-      >
-        {LAYERS.map((layer, i) => {
-          const shown = i <= active;
-          return (
-            <div
-              key={layer.name}
-              className={cn(
-                'absolute top-1/2 left-1/2 h-52 w-52 rounded-sm border transition-all duration-500 ease-out',
-                i === active
-                  ? 'border-kortix-blue/50 bg-kortix-blue/20'
-                  : 'border-border bg-card',
-              )}
-              style={{
-                marginLeft: '-6.5rem',
-                marginTop: '-6.5rem',
-                transform: `translateZ(${shown ? i * SLAB_RISE : i * SLAB_RISE - 90}px)`,
-                opacity: shown ? 1 : 0,
-                boxShadow: '0px 1px 2px rgba(26,31,46,0.04), 0px 8px 10px -1px rgba(26,31,46,0.04)',
-              }}
-            />
-          );
-        })}
-      </div>
-    </div>
   );
 }

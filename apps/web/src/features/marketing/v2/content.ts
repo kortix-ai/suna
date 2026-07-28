@@ -1,8 +1,14 @@
 /**
  * Copy for the revamped marketing surface.
  *
- * Plain English on purpose — it stays out of `apps/web/translations/*.json` until the
- * wording is locked, so it can iterate without paying the 8-locale parity gate.
+ * Positioning follows the internal-comms hierarchy: category = Autonomous Company
+ * Operating System, tagline = the AI command center for your company, explainer =
+ * a cloud computer where AI agents run your company. Canonical product nouns only
+ * (project, session, sandbox, change request, agent, skill, connector, secret,
+ * channel, trigger, memory, kortix.yaml).
+ *
+ * Plain English on purpose — it stays out of `apps/web/translations/*.json` until
+ * the wording is locked, so it can iterate before the 8-locale parity gate.
  */
 
 export type MenuItem = { name: string; description: string; href: string };
@@ -20,56 +26,60 @@ export const NAV: NavEntry[] = [
     name: 'Product',
     columns: [
       {
-        title: 'Platform',
+        title: 'The platform',
         items: [
           {
-            name: 'Cloud agents',
-            description: 'Run any agent in a sandbox you control',
-            href: '/v2#infrastructure',
+            name: 'Projects',
+            description: 'A git repo that is your company',
+            href: '/v2#company-as-code',
           },
           {
-            name: 'Self-hosted',
-            description: 'Run Kortix on your own infrastructure',
-            href: '/v2#self-host',
-          },
-          {
-            name: 'Security',
-            description: 'Encryption, isolation, and SOC 2',
-            href: '/v2#security',
-          },
-          { name: 'Enterprise', description: 'SSO, RBAC, and audit trails', href: '/enterprise' },
-        ],
-      },
-      {
-        title: 'Capabilities',
-        items: [
-          {
-            name: 'Automations',
-            description: 'Kick off agent work from any event',
-            href: '/v2#automations',
-          },
-          {
-            name: 'Sandboxes',
-            description: 'Isolated cloud environments for every run',
+            name: 'Sessions & sandboxes',
+            description: 'Every run on its own machine and branch',
             href: '/v2#sandboxes',
           },
           {
-            name: 'Connectors',
-            description: 'Slack, GitHub, Linear, Drive, and 3,000+ more',
-            href: '/v2#connectors',
+            name: 'Change requests',
+            description: 'How work lands, reviewed, on main',
+            href: '/v2#how-work-lands',
           },
           {
-            name: 'Marketplace',
-            description: 'Agents and skills built by the community',
-            href: '/marketplace',
+            name: 'Security & governance',
+            description: 'Isolation, roles, secrets, audit trail',
+            href: '/v2#security',
+          },
+        ],
+      },
+      {
+        title: 'The building blocks',
+        items: [
+          {
+            name: 'Agents',
+            description: 'Markdown personas with scoped reach',
+            href: '/v2#library',
+          },
+          {
+            name: 'Skills',
+            description: 'How your company does a job, reusable',
+            href: '/v2#library',
+          },
+          {
+            name: 'Connectors',
+            description: 'One scoped token into 3,000+ apps',
+            href: '/v2#library',
+          },
+          {
+            name: 'Channels & triggers',
+            description: 'Start sessions from Slack, cron, or a webhook',
+            href: '/v2#channels',
           },
         ],
       },
     ],
     footer: {
       label: 'Kortix CLI',
-      description: 'Run your agents from the terminal',
-      cta: 'Install',
+      description: 'kortix init, kortix ship — your company from the terminal',
+      cta: 'Read the docs',
       href: '/docs',
     },
   },
@@ -81,17 +91,17 @@ export const NAV: NavEntry[] = [
         items: [
           {
             name: 'Engineering',
-            description: 'Ship fixes, reviews, and migrations',
+            description: 'Background agents that open change requests',
             href: '/use-cases',
           },
           {
-            name: 'Support',
-            description: 'Triage and answer from your own docs',
+            name: 'Go-to-market',
+            description: 'Briefs, renewals, and pipeline from your own data',
             href: '/use-cases',
           },
           {
             name: 'Operations',
-            description: 'Run the recurring work on a schedule',
+            description: 'The recurring work, on a trigger',
             href: '/use-cases',
           },
         ],
@@ -100,14 +110,14 @@ export const NAV: NavEntry[] = [
         title: 'By outcome',
         items: [
           {
-            name: 'Company as code',
-            description: 'Every agent and permission is a file',
-            href: '/v2#stack',
+            name: 'Your company as code',
+            description: 'Agents, skills, and memory in one repo you own',
+            href: '/v2#company-as-code',
           },
           {
-            name: 'Agent workforce',
-            description: 'Many agents, one shared main branch',
-            href: '/v2#many-agents',
+            name: 'A workforce, not an assistant',
+            description: 'Thousands of sessions, one main branch',
+            href: '/v2#workforce',
           },
           {
             name: 'Customer stories',
@@ -151,106 +161,316 @@ export const NAV: NavEntry[] = [
 
 export const HERO = {
   eyebrow: 'The Autonomous Company Operating System',
-  headline: ['Give your company', 'a workforce of agents.'],
-  subline: 'Run agents across your repos, tools, and inboxes, with full visibility.',
+  headline: ['The AI command center', 'for your company.'],
+  subline:
+    'A cloud computer where a workforce of AI agents runs your company — and everything is code you own.',
   primaryCta: 'Get started',
   secondaryCta: 'Request demo',
   logoWallLabel: 'Running in production at',
 };
 
-/* ── 2. logo wall ────────────────────────────────────────────────────────── */
-
 export const LOGOS = ['Veyris', 'Essentia', 'Northstar', 'Collabrios', 'Conduit', 'Integral'];
 
-/* ── 3. the stack ────────────────────────────────────────────────────────── */
+/* ── 2. the stack ────────────────────────────────────────────────────────── */
 
-export const STACK = {
+export type StackLayer = {
+  name: string;
+  description: string;
+  chips?: string[];
+};
+
+export const STACK: { heading: string[]; subheading: string; layers: StackLayer[] } = {
+  heading: ['One computer,', 'eight layers deep.'],
+  subheading:
+    'Most tools hand you a chat box on top of a model. Kortix owns the whole stack underneath it — and hands you the keys.',
   layers: [
     {
-      name: 'Large language models',
+      name: 'Models',
       description:
-        'Run any frontier model and switch between them as they improve. Kortix stays model-agnostic, so every agent uses the best model for the task at hand.',
+        'Run any frontier model and switch as they improve. Kortix stays model-agnostic, so every agent uses the best model for the job — or the subscription you already pay for.',
+      chips: ['Claude', 'GPT', 'Gemini', 'Grok', 'Bedrock'],
     },
     {
       name: 'Agent harness',
       description:
-        'Claude Code, Codex, OpenCode, or Gemini — the harness is a setting, not a rewrite. Swap it per agent without touching a workflow.',
+        'The orchestration that turns a model into an agent: planning, tool use, and multi-step runs. Claude Code, Codex, OpenCode, or Gemini — the harness is a setting, not a rewrite.',
+      chips: ['Claude Code', 'Codex', 'OpenCode', 'Gemini'],
     },
     {
-      name: 'Cloud runtime',
+      name: 'Sandboxes',
       description:
-        'Every run gets a real sandbox with your repo, dependencies, and network. Sessions start in seconds and pause, resume, or hand off at any time.',
+        'Every session gets its own microVM-isolated Linux machine, preloaded with your repo, tools, and dependencies. Disposable by design, and nothing leaks between runs.',
     },
     {
-      name: 'Context & connectors',
+      name: 'Connectors & memory',
       description:
-        'Slack, GitHub, Linear, Drive, Notion, and 3,000+ more. Agents read the same tickets, threads, and docs your team does.',
+        'One scoped token reaches 3,000+ apps, plus MCP, OpenAPI, GraphQL, and plain HTTP. What the company learns lands in memory, so the next session starts where the last one stopped.',
+      chips: ['Slack', 'GitHub', 'Linear', 'Notion', 'Drive'],
     },
     {
       name: 'Your company as code',
       description:
-        'Every agent, skill, permission, and secret is a file in one repo you own — reviewable, reversible, and diffable like any other change.',
+        'Agents, skills, connectors, secrets, channels, triggers, and memory are files in one repo. Versioned, diffable, greppable, and owned outright.',
     },
     {
-      name: 'Surfaces & automation',
+      name: 'Channels & triggers',
       description:
-        'Web, desktop, mobile, Slack, CLI, and API. Kick off work from a schedule, a webhook, or an @mention where the work already happens.',
+        'Sessions start where the work already is — Slack, Teams, WhatsApp, email, the web, the CLI, or the API — and on a cron or a signed webhook when nobody asks.',
+      chips: ['Slack', 'Teams', 'WhatsApp', 'Email', 'CLI'],
     },
     {
       name: 'Security & governance',
       description:
-        'SSO, RBAC, scoped credentials, and an audit trail for every session — human-started or agent-started.',
+        'Members, groups, and roles for humans and agents alike. Per-resource permissions, a secrets manager the model never sees, human approval gates, and an audit trail over all of it.',
     },
     {
       name: 'Kortix',
       description:
-        'Every layer above brought together in one platform your team owns, deploys, and scales end-to-end, from model to production. That is Kortix.',
+        'Every layer above, in one platform your team owns, deploys, and scales end-to-end — from the model to the merge. That is Kortix.',
     },
   ],
 };
 
-/* ── 4. infrastructure layer ─────────────────────────────────────────────── */
+/* ── 3. your company as code ─────────────────────────────────────────────── */
 
-export const INFRA = {
-  heading: ['The infrastructure layer', 'for your favorite agents.'],
+export const AS_CODE = {
+  eyebrow: 'Company as code',
+  heading: ['Your whole company,', 'as files you own.'],
+  description:
+    'Open the repo and the company is right there. Every agent is a markdown persona, every skill is know-how your team wrote down, every connector and secret is a declared, scoped line of config. Change it with a pull request. Roll it back with a revert.',
+  bullets: [
+    'Diff a decision the same way you diff code.',
+    'grep your entire company from one checkout.',
+    'Clone it, fork it, or take it somewhere else — no lock-in.',
+  ],
+  tree: [
+    { name: 'kortix.yaml', kind: 'file', accent: true },
+    { name: 'agents/', kind: 'dir' },
+    { name: 'go-to-market.md', kind: 'file', depth: 1 },
+    { name: 'support-triage.md', kind: 'file', depth: 1 },
+    { name: 'skills/', kind: 'dir' },
+    { name: 'renewal-brief.md', kind: 'file', depth: 1 },
+    { name: 'connectors/', kind: 'dir' },
+    { name: 'secrets/', kind: 'dir' },
+    { name: 'memory/', kind: 'dir' },
+  ] as { name: string; kind: 'file' | 'dir'; depth?: number; accent?: boolean }[],
+  file: {
+    name: 'kortix.yaml',
+    lines: [
+      'sandbox:',
+      '  image: kortix/base:latest',
+      '  cpu: 4',
+      '',
+      'connectors:',
+      '  - slack',
+      '  - github',
+      '  - linear',
+      '',
+      'channels:',
+      '  - slack: "#company-ops"',
+      '',
+      'triggers:',
+      '  - cron: "0 8 * * 1-5"',
+      '    agent: go-to-market',
+      '',
+      'secrets:',
+      '  - STRIPE_API_KEY',
+    ],
+  },
+};
+
+/* ── 4. how work lands ───────────────────────────────────────────────────── */
+
+export const FLOW = {
+  eyebrow: 'How work lands',
+  heading: ['From a sentence', 'to a reviewed merge.'],
   subheading:
-    'You bring the agents, we provide the platform. Parallelize work, collaborate with your teammates, and automate the rest on Kortix.',
+    'No prompt-engineering course, no copy-pasting between a chat window and your real tools. Ask in plain language and the work comes back as something your team can review.',
   steps: [
     {
-      name: 'Context',
+      name: 'Ask',
       description:
-        'Kortix connects to your source code, tickets, alerts, and documentation to give agents the context they need.',
+        'Anyone on the team describes the outcome, in plain language, from Slack, the web, the CLI, or their phone.',
     },
     {
-      name: 'Execution',
+      name: 'Session',
       description:
-        'Every run happens in an isolated cloud sandbox with your repo, tools, and dependencies already in place.',
+        'Kortix boots a sandbox on its own branch, loads the agent, its skills, your connectors, and the company memory.',
     },
     {
-      name: 'Output',
+      name: 'Change request',
       description:
-        'Work lands as a branch, a pull request, a document, or a message — wherever your team already reviews it.',
+        'The run ends in a reviewable diff — a document, a dashboard, a reply, or code. Never a wall of chat.',
     },
     {
-      name: 'Approval',
+      name: 'Merge to main',
       description:
-        'Nothing merges without a human. Review, iterate, and approve every change before it reaches main.',
+        'A human approves, it merges, and the company gets a little better. What was learned stays in memory.',
     },
   ],
 };
 
-/* ── 5. self-host ────────────────────────────────────────────────────────── */
+/* ── 5. channels ─────────────────────────────────────────────────────────── */
 
-export const SELF_HOST = {
-  heading: ['Self-host Kortix in', 'your infrastructure'],
-  cta: 'Explore self-hosted',
+export const CHANNELS = {
+  eyebrow: 'Channels',
+  heading: ['Start work where', 'your team already is.'],
+  subheading:
+    'A channel turns any chat surface into a way to start a session. Tag Kortix in the thread you were already having and the work begins — no new tab, no new habit.',
+  surfaces: [
+    { name: 'Slack', note: 'Tag @Kortix in any channel' },
+    { name: 'Microsoft Teams', note: 'Same agents, same permissions' },
+    { name: 'WhatsApp & SMS', note: 'For the people who never open a dashboard' },
+    { name: 'Email', note: 'Forward a thread, get the work back' },
+    { name: 'Web & desktop', note: 'The full command center' },
+    { name: 'CLI & API', note: 'kortix sessions new, or the SDK' },
+  ],
+  slack: {
+    channel: '#company-ops',
+    ask: '@Kortix what changed in the business since Monday?',
+    answerLead: "Here's what changed since Monday:",
+    answer: [
+      '14 change requests merged · 3 need your review',
+      'Stripe revenue +$3,482',
+      '2 enterprise leads replied',
+      'Renewal drafted for Acme — waiting on sign-off',
+    ],
+    tail: 'Want the full report?',
+  },
+};
+
+/* ── 6. workforce ────────────────────────────────────────────────────────── */
+
+export const WORKFORCE = {
+  eyebrow: 'A workforce, not an assistant',
+  heading: ['Thousands of agents.', 'One main branch.'],
   description:
-    'Deploy Kortix inside your own infrastructure, so your data, repos, connectors, and access policies stay within your environment.',
+    'An assistant does one thing at a time and forgets it happened. A workforce runs in parallel, in isolation, against one shared config — and every finished run pushes the company forward.',
+  bullets: [
+    {
+      lede: 'Every session is isolated.',
+      rest: 'Its own microVM, its own branch. One agent cannot break another, and nothing bleeds between runs.',
+    },
+    {
+      lede: 'They all share one config.',
+      rest: 'Update a skill once and every agent in the company picks it up on the next session.',
+    },
+    {
+      lede: 'Work compounds.',
+      rest: 'Each merged change request improves the repo the next session starts from. The company gets better, not just busier.',
+    },
+  ],
+  sessions: [
+    { title: 'Draft the renewal for Acme', agent: 'go-to-market', state: 'running' },
+    { title: 'Triage 42 new support threads', agent: 'support-triage', state: 'running' },
+    { title: 'Reconcile the Stripe payouts for July', agent: 'finance-ops', state: 'review' },
+    { title: 'Fix the flaky onboarding e2e test', agent: 'platform', state: 'merged' },
+    { title: 'Weekly revenue digest for #company-ops', agent: 'go-to-market', state: 'merged' },
+  ] as { title: string; agent: string; state: 'running' | 'review' | 'merged' }[],
+};
+
+/* ── 7. the library ──────────────────────────────────────────────────────── */
+
+export const LIBRARY = {
+  eyebrow: 'Agents, skills, connectors',
+  heading: ['Hire an agent the same', 'way you install a package.'],
+  subheading:
+    'Start from the marketplace or write your own. Everything installs into your repo as files, so you can read it, edit it, and review what changed.',
+  cards: [
+    {
+      title: 'Agents',
+      body: 'A markdown persona with a scoped reach into tools. Installable, forkable, and able to rewrite itself through a change request.',
+      items: ['go-to-market', 'support-triage', 'finance-ops', 'platform'],
+    },
+    {
+      title: 'Skills',
+      body: 'Reusable know-how for how your company does a job. Written once, it rides into every session that needs it.',
+      items: ['renewal-brief', 'incident-postmortem', 'weekly-digest', 'pricing-review'],
+    },
+    {
+      title: 'Connectors',
+      body: 'One-click reach into 3,000+ apps, plus MCP, OpenAPI, GraphQL, and HTTP — all through one scoped token.',
+      items: ['Slack', 'GitHub', 'Linear', 'Notion', 'Drive', 'Stripe'],
+    },
+  ],
+};
+
+/* ── 8. sandboxes ────────────────────────────────────────────────────────── */
+
+export const SANDBOX = {
+  eyebrow: 'Sandboxes',
+  heading: ['Every session gets', 'a real computer.'],
+  description:
+    'Not a sandboxed prompt runner. A microVM-isolated Linux machine with your repo, your dependencies, network access, and the context the job needs.',
+  bullets: [
+    {
+      lede: 'Fast to start, pausable, resumable.',
+      rest: 'Sessions boot in seconds and can be paused, resumed, shared with a teammate, or inspected at any point.',
+    },
+    {
+      lede: 'Any size you need.',
+      rest: 'Provision the CPU, memory, and disk the work actually needs, and declare it in kortix.yaml so every run is reproducible.',
+    },
+    {
+      lede: 'Disposable by design.',
+      rest: 'The machine is torn down when the session ends. What survives is the change request and what the company learned.',
+    },
+  ],
+  terminal: [
+    '$ kortix sessions new --prompt "draft the renewal for Acme"',
+    '✓ sandbox booted · 4 vCPU · 8 GB · microVM',
+    '✓ connectors mounted · slack, github, stripe',
+    '✓ skills loaded · renewal-brief',
+    '→ branch session/renewal-acme',
+    '',
+    '  reading  crm · last 3 calls with Acme',
+    '  reading  memory/accounts/acme.md',
+    '  writing  sales/renewals/acme.md',
+    '',
+    '✓ change request opened · needs 1 approval',
+  ],
+};
+
+/* ── 9. security ─────────────────────────────────────────────────────────── */
+
+export const SECURITY = {
+  eyebrow: 'Security & governance',
+  heading: ['Built to survive', 'a security review.'],
+  subheading:
+    "The models are ready. Isolation, permissions, and ownership are the part that isn't — so that is the part Kortix built.",
+  cta: 'Read about security',
+  badges: ['SOC 2 TYPE II', 'SOC 2 TYPE I', 'ISO 27001', 'ISO 42001', 'HIPAA', 'GDPR'],
+  points: [
+    {
+      name: 'Humans approve',
+      description:
+        'Every change request needs a person before it merges. Approval gates are part of the model, not a setting someone forgot.',
+    },
+    {
+      name: 'Secrets the model never sees',
+      description:
+        'Encrypted, scoped credentials are injected into the sandbox at runtime. They never enter a prompt and never reach the model.',
+    },
+    {
+      name: 'Members, groups, roles',
+      description:
+        'Humans and agents are both principals, with per-resource permissions and an audit trail across every session.',
+    },
+  ],
+};
+
+/* ── 10. open & yours ────────────────────────────────────────────────────── */
+
+export const OPEN = {
+  eyebrow: 'Open, and yours',
+  heading: ['Run it on our cloud,', 'or on your own metal.'],
+  description:
+    'Kortix is open source. Deploy it inside your own VPC, on-prem, or fully air-gapped, and keep the data, the config, and the model choice on your side of the line.',
   checks: [
-    'Feels local. Runs in the cloud.',
-    'Pause, resume, share, or hand off anytime.',
-    'Use the same agents, models, and workflows.',
-    'Open source, with no vendor lock-in.',
+    'Feels as simple as chat, with code underneath.',
+    'Same agents, skills, and connectors either way.',
+    'Your data, your config, your model choice.',
+    'Clone the repo and walk away whenever you want.',
   ],
   cards: [
     {
@@ -259,201 +479,51 @@ export const SELF_HOST = {
     },
     {
       name: 'Security-first teams',
-      description: 'Companies that cannot send source code to third-party environments.',
+      description: 'Companies that cannot send their data to a third-party environment.',
     },
     {
       name: 'Any cloud provider',
-      description: 'Organizations operating within their own AWS, Azure, or GCP environments.',
+      description: 'Organizations operating inside their own AWS, Azure, or GCP accounts.',
     },
     {
-      name: 'Isolated environments',
-      description: 'Teams in fully isolated networks with no public internet access.',
+      name: 'Air-gapped networks',
+      description: 'Teams in fully isolated environments with no public internet access.',
     },
   ],
+  clouds: ['AWS', 'Google Cloud', 'Azure', 'On premise'],
   footerLabel: ['Deploy Kortix in the environment', 'you already trust'],
 };
 
-/* ── 6. tag @kortix ──────────────────────────────────────────────────────── */
-
-export const TAG = {
-  heading: ['Tag @Kortix where', 'the work is happening'],
-  subheading:
-    'From Slack, Linear, GitHub, the desktop app, mobile, or the web. Kortix runs agents in the background and pings your team when there is output to review.',
-  integrationsLabel: '+3,000 connectors',
-  caption: ['Triggers, context, and output from Slack,', 'Linear, GitHub, Sentry, Drive, and more.'],
-  cta: 'View all connectors',
-};
-
-/* ── 7. agents shouldn't become your platform ────────────────────────────── */
-
-export const NOT_PLATFORM = {
-  heading: ["Agents shouldn't", 'become your platform'],
-  description:
-    "Models, harnesses, and vendors will change. Your workflows shouldn't. Use Claude Code, Codex, OpenCode, or whatever comes next. Kortix gives teams a stable system while the agent layer evolves underneath.",
-  bullets: [
-    {
-      lede: 'Use agents by mention.',
-      rest: 'Call on agents directly from Slack, Linear, GitHub, and more using simple @mentions.',
-    },
-    {
-      lede: 'Swap agents with a dropdown.',
-      rest: 'No contract changes, no migrations. If a new model drops tomorrow, use it today. Anthropic, OpenAI, AWS Bedrock, and more.',
-    },
-    {
-      lede: 'Your configs work the same way.',
-      rest: 'Existing agent configs, repo instructions, and local workflows work the same way in Kortix.',
-    },
-  ],
-  harnesses: ['Claude Code', 'Codex', 'OpenCode', 'Gemini', 'Cursor', 'Amp'],
-  models: ['Opus 5', 'Sonnet 5', 'GPT-5.5', 'Gemini 3 Pro', 'Grok 4'],
-};
-
-/* ── 8. sandboxes ────────────────────────────────────────────────────────── */
-
-export const SANDBOX = {
-  heading: ['Cloud development', 'environments for agents'],
-  description:
-    'Every session gets a real computer with your repo, tools, dependencies, network access, and context. Not a sandboxed prompt runner.',
-  bullets: [
-    {
-      lede: 'Fast to start, pausable, resumable.',
-      rest: 'Sessions spin up in seconds and can be paused, resumed, shared with teammates, or inspected at any time.',
-    },
-    {
-      lede: 'Collaborate across the team.',
-      rest: 'Involve your teammates and let them see what is running, inspect sessions, and pick up where someone else left off.',
-    },
-    {
-      lede: 'Any size you need.',
-      rest: 'Provision any sandbox size and configuration you want: up to 128GB of RAM and 500GB of disk.',
-    },
-  ],
-  sessions: [
-    { title: 'Review pull requests to identify bugs and security issues', who: 'Connor and 3 more people', running: true },
-    { title: 'Retrieve organization group ID for future reference', who: 'Benja' },
-    { title: 'Extract organization name anatomy', who: 'Darren and Benja' },
-    { title: 'Determine charging policy for breach of contract', who: 'Benja' },
-    { title: 'List all accessible MCP tools in the menu', who: 'Darren' },
-  ],
-};
-
-/* ── 9. many agents ──────────────────────────────────────────────────────── */
-
-export const MANY_AGENTS = {
-  heading: ["The future isn't one", "agent. It's many."],
-  description:
-    'Run agents across repos, tickets, teams, and tools in parallel. Kortix keeps the work coordinated, visible, and reviewable.',
-  bullets: [
-    {
-      lede: 'Foreground development.',
-      rest: 'Work hands-on in live cloud sessions using Claude Code, Codex, or OpenCode. Resume, share, or hand off anytime.',
-    },
-    {
-      lede: 'Background agents.',
-      rest: 'Hand off work from Slack, Linear, GitHub, schedules, or webhooks. Kortix runs it and pings your team when output is ready.',
-    },
-  ],
-};
-
-/* ── 10. security ────────────────────────────────────────────────────────── */
-
-export const SECURITY = {
-  heading: ['Work is moving to agents,', 'make it a platform you trust.'],
-  subheading: "The blocker isn't capability. It's security, governance, compliance, and trust.",
-  cta: 'More about security',
-  badges: ['SOC 2 TYPE II', 'SOC 2 TYPE I', 'ISO 27001', 'ISO 42001', 'HIPAA', 'GDPR'],
-  points: [
-    {
-      name: 'Humans approve',
-      description: 'Review, iterate, and approve every change from Kortix before anything merges.',
-    },
-    {
-      name: 'One auditable layer',
-      description:
-        'Every foreground session and background agent run is centrally logged, traceable, and reviewable.',
-    },
-    {
-      name: 'Deploy inside your infrastructure',
-      description:
-        'Use Kortix Cloud or a self-hosted deployment. Keep code access, data, connectors, and policies under your control.',
-    },
-  ],
-};
-
-/* ── 11. plugs into your stack ───────────────────────────────────────────── */
-
-export const PLUGS = {
-  heading: ['Plugs into your stack.', 'Logs everything'],
-  description:
-    'Kortix connects to the tools your team already works in and centrally logs every session, from foreground to automations, so nothing runs without a trail.',
-  cards: [
-    {
-      name: 'Agent templates',
-      description: 'Pre-built agents for your most common workflows, ready to run.',
-    },
-    {
-      name: 'Centralized audit logs',
-      description: 'Every session, whether started by a human or an agent, is centrally logged.',
-    },
-    {
-      name: 'Team visibility',
-      description: "See what teammates are working on, instead of work hiding on a laptop.",
-    },
-    {
-      name: 'Scoped credentials',
-      description: 'Each agent gets exactly the access it needs, and nothing more.',
-    },
-    {
-      name: 'Review before merge',
-      description: 'Every change arrives as a reviewable diff your team signs off on.',
-    },
-  ],
-  templates: [
-    'Implement Linear tickets end-to-end',
-    'Generate test coverage for critical flows',
-    'Optimize slow database queries',
-    'Audit technical debt and create a remediation plan',
-  ],
-  events: [
-    { name: '4 participants joined session', meta: '16 hours ago' },
-    { name: 'Context retrieved', meta: '' },
-    { name: '3 files modified', meta: '' },
-    { name: '18 tests passed', meta: '' },
-    { name: 'Review completed', meta: 'Approved by Sarah' },
-  ],
-  contextItems: ['Slack thread (12 messages)', 'Linear issue ENG-421', 'Previous PR #184'],
-};
-
-/* ── 12. closing cta ─────────────────────────────────────────────────────── */
+/* ── 11. closing cta ─────────────────────────────────────────────────────── */
 
 export const CTA = {
-  heading: ['Move your company', 'onto Kortix.'],
+  heading: ['Give your company', 'a workforce of agents.'],
   description:
-    'Run agents across your repos, tools, and inboxes in secure shared environments. Keep every session visible, reviewable, and ready for your team to steer.',
+    'Start with one project, one agent, and one change request. Keep every byte of the company you build on the way there.',
+  note: 'Free to self-host · Managed cloud from $20 · SSO, RBAC, on-prem · No lock-in',
   primary: 'Get started',
   secondary: 'Request demo',
-  note: 'Free to self-host · Managed cloud from $20 · SSO, RBAC, on-prem · No lock-in',
 };
 
-/* ── 13. footer ──────────────────────────────────────────────────────────── */
+/* ── 12. footer ──────────────────────────────────────────────────────────── */
 
 export const FOOTER = [
   {
     title: 'Product',
     links: [
-      { name: 'Cloud agents', href: '/v2#infrastructure' },
-      { name: 'Automations', href: '/v2#automations' },
-      { name: 'Connectors', href: '/v2#connectors' },
-      { name: 'Sandboxes', href: '/v2#sandboxes' },
+      { name: 'Projects', href: '/v2#company-as-code' },
+      { name: 'Sessions & sandboxes', href: '/v2#sandboxes' },
+      { name: 'Change requests', href: '/v2#how-work-lands' },
+      { name: 'Channels & triggers', href: '/v2#channels' },
       { name: 'Marketplace', href: '/marketplace' },
     ],
   },
   {
     title: 'Use Cases',
     links: [
-      { name: 'Code review', href: '/use-cases' },
-      { name: 'Code migration', href: '/use-cases' },
-      { name: 'Incident triage', href: '/use-cases' },
+      { name: 'Engineering', href: '/use-cases' },
+      { name: 'Go-to-market', href: '/use-cases' },
+      { name: 'Operations', href: '/use-cases' },
       { name: 'All use cases', href: '/use-cases' },
     ],
   },
@@ -461,6 +531,7 @@ export const FOOTER = [
     title: 'Developers',
     links: [
       { name: 'Docs', href: '/docs' },
+      { name: 'CLI', href: '/docs' },
       { name: 'Changelog', href: '/changelog' },
       { name: 'GitHub', href: 'https://github.com/kortix-ai/suna' },
     ],
@@ -480,7 +551,7 @@ export const FOOTER = [
     links: [
       { name: 'Security', href: '/v2#security' },
       { name: 'Enterprise', href: '/enterprise' },
-      { name: 'Self-hosted', href: '/v2#self-host' },
+      { name: 'Self-hosted', href: '/v2#open' },
       { name: 'Privacy', href: '/legal?tab=privacy' },
     ],
   },

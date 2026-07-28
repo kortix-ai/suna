@@ -59,8 +59,14 @@ export function Hero() {
 
         {/* the product still, clipped by the fold */}
         <div className="relative mt-14 sm:mt-16">
-          <div className="border-border bg-card rounded-t-lg border-x border-t p-1.5 pb-0">
-            <div className="bg-background h-[30rem] overflow-hidden rounded-t-md sm:h-[34rem]">
+          <div
+            className="border-border rounded-t-lg border-x border-t p-1.5 pb-0"
+            style={{
+              background:
+                'linear-gradient(180deg, color-mix(in oklab, var(--kortix-blue) 11%, var(--background)) 0%, color-mix(in oklab, var(--kortix-blue) 5%, var(--background)) 100%)',
+            }}
+          >
+            <div className="bg-background border-border h-[30rem] overflow-hidden rounded-t-md border-x border-t sm:h-[34rem]">
               <AppPreview />
             </div>
           </div>
