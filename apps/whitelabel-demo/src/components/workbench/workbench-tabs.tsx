@@ -12,7 +12,9 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
+import { NewSessionDialog } from '@/components/new-session-dialog';
 import { SessionScope } from '@/components/workbench/session-scope';
+import { agentSwitchRefusal } from '@/lib/mid-session-change';
 import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
@@ -23,7 +25,7 @@ import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
+import { AlertTriangle, Plus, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -66,7 +68,7 @@ export function WorkbenchTabs({
           <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
             Overrides are set when a session starts. These are the ones you can still move.
           </p>
-          <SessionScope />
+          <SessionScope projectId={projectId} sessionId={sessionId} />
         </div>
       </TabsContent>
       <TabsContent value="changes" className="min-h-0 flex-1 overflow-hidden p-4">
@@ -105,6 +107,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     },
     onError: () => toast.error('Could not reconnect the runtime'),
   });
+
+  // A send refused because the message named an agent this session cannot run.
+  // It arrives as an ordinary runtime error, so it has to be recognised before
+  // the generic failure panel swallows the one refusal with a real remedy.
+  const agentSwitch = agentSwitchRefusal(c.sendError);
 
   const runtimeReady = c.runtimePhase === 'ready';
   // "Down" = was connected, now confirmed unreachable (a drop, not the initial boot).
@@ -248,7 +255,35 @@ function Thread({ session: c }: { session: UseSessionResult }) {
               the typed text was gone, and nothing said why. useSession surfaces
               a typed sendError — read it, and name the KaaB refusals the
               generic message would otherwise swallow. */}
-          {c.sendError ? (
+          {agentSwitch ? (
+            // The one refusal where retrying is guaranteed to fail: this
+            // sandbox's env is provisioned for the agent it booted with, and
+            // re-scoping now cannot un-read what that agent already loaded.
+            // Offer the only thing that works instead of an error.
+            <div className="mx-4 mb-2 rounded-lg border border-brand/40 bg-brand/5 px-3 py-2.5">
+              <div className="text-sm font-medium">
+                {agentSwitch.requestedAgent
+                  ? `${agentSwitch.requestedAgent} needs its own session`
+                  : 'That agent needs its own session'}
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {agentSwitch.expectedAgent
+                  ? `This session is running as ${agentSwitch.expectedAgent}, and the two have different secret access. Start a new session to use it.`
+                  : 'It has different secret access than the agent this session started with. Start a new session to use it.'}
+              </p>
+              <div className="mt-2">
+                <NewSessionDialog
+                  projectId={c.projectId}
+                  initialAgent={agentSwitch.requestedAgent}
+                  trigger={
+                    <Button size="sm" variant="secondary" className="h-7 gap-1.5">
+                      <Plus className="size-3.5" /> Start a new session
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+          ) : c.sendError ? (
             <div className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
               <div className="font-medium">{sendFailureTitle(c.sendError)}</div>
               <p className="mt-0.5 text-xs text-muted-foreground">{c.sendError.message}</p>

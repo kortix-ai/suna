@@ -76,3 +76,42 @@ describe('sessionCreateFailure', () => {
     expect(sessionCreateFailure(null).title).toBe('Could not start a session');
   });
 });
+
+describe('the overrides dialog makes new refusals reachable (F3)', () => {
+  const apiError = (code: string, message = 'x') =>
+    Object.assign(new Error(message), { code, data: { code, error: message } });
+
+  test('every code the secrets/connector overrides can produce is TERMINAL, not retryable', () => {
+    // Each of these refuses identically on retry: the allowlist and the bindings
+    // are create-only, so offering "try again" sends the user in a loop.
+    for (const code of [
+      'SECRET_IDENTIFIER_NOT_FOUND',
+      'SECRET_IDENTIFIER_KEY_COLLISION',
+      'INVALID_SESSION_SECRETS',
+      'CONNECTOR_PROFILE_NOT_FOUND',
+      'CONNECTOR_PROFILE_INACTIVE',
+      'origin_override_forbidden',
+    ]) {
+      const failure = sessionCreateFailure(apiError(code));
+      expect(failure.retryable).toBe(false);
+      expect(failure.title).not.toBe('Could not start a session');
+    }
+  });
+
+  test('the key-collision refusal names the actual problem', () => {
+    // "Two identifiers inject the same env var" is legal in the project and
+    // illegal in one session — the user cannot guess that from a generic error.
+    const failure = sessionCreateFailure(apiError('SECRET_IDENTIFIER_KEY_COLLISION'));
+    expect(failure.title.toLowerCase()).toContain('same variable name');
+  });
+
+  test('direct mode gets its own copy, not upstream developer text', () => {
+    // `secrets` is backend-origin-only, so in direct mode the server's own
+    // message is about token kinds — meaningless to an end user.
+    const failure = sessionCreateFailure(apiError('origin_override_forbidden', 'origin override forbidden'));
+    expect(failure.title).toContain('wrapper mode');
+    // and it must NOT pass the upstream sentence through, unlike the cases where
+    // the server's message carries numbers the user needs.
+    expect(failure.detail).not.toContain('origin override forbidden');
+  });
+});

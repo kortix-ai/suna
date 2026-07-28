@@ -14,6 +14,10 @@ export interface ServerErrorBody {
   code?: unknown;
   error?: unknown;
   connector?: unknown;
+  /** The parsed body itself. Refusals carry fields specific to their code —
+   *  `requested_agent`, `expected_agent`, … — and a classifier that needs one
+   *  should read it here instead of re-parsing the error. */
+  raw?: Record<string, unknown>;
 }
 
 export function serverErrorBody(err: unknown): ServerErrorBody | null {
@@ -32,5 +36,5 @@ export function serverErrorBody(err: unknown): ServerErrorBody | null {
   const error = candidate?.error ?? (typeof e.message === 'string' ? e.message : undefined);
 
   if (code === undefined && error === undefined && !candidate) return null;
-  return { code, error, connector: candidate?.connector };
+  return { code, error, connector: candidate?.connector, raw: candidate };
 }

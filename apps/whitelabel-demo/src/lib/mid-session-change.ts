@@ -17,6 +17,8 @@
  *   unbootable" if it were narrowed below what the box already needs.
  */
 
+import { serverErrorBody } from './api-error-body';
+
 export type MidSessionCapability = 'changeable' | 'per_prompt' | 'fixed_at_create';
 
 export const MID_SESSION_CAPABILITIES = {
@@ -61,4 +63,72 @@ export function classifyAgentSwitch(body: UpstreamError | null): AgentSwitchOutc
   }
   if (code) return { kind: 'unknown', message };
   return { kind: 'ok' };
+}
+
+/** A refused agent switch, with the agents the server named. */
+export interface AgentSwitchRefusal {
+  message: string;
+  /** The agent the message asked for — the one that needs a new session. */
+  requestedAgent: string | null;
+  /** The agent this session's sandbox is provisioned for. */
+  expectedAgent: string | null;
+}
+
+/** The `{...}` payload embedded in a runtime error's message text.
+ *
+ *  The refusal is raised by the sandbox proxy on the prompt itself, so it
+ *  reaches a host as a generic runtime error whose message carries the JSON
+ *  body rather than as a structured API error. Read both shapes, or the one
+ *  refusal that CANNOT be retried renders as an ordinary "send failed". */
+function embeddedErrorBody(text: unknown): { code?: unknown; error?: unknown } | null {
+  if (typeof text !== 'string') return null;
+  const start = text.indexOf('{');
+  if (start < 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(text.slice(start));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+/**
+ * Recognise a send that was refused because the message named an agent whose
+ * secret grant differs from the one this session booted with.
+ *
+ * Returns null for every other failure: the caller offers "start a new session"
+ * ONLY here, because that is the only resolution — retrying the same send fails
+ * identically, forever.
+ */
+export function agentSwitchRefusal(
+  error: { message?: string; cause?: unknown } | null | undefined,
+): AgentSwitchRefusal | null {
+  if (!error) return null;
+  const cause = error.cause as { message?: unknown } | undefined;
+
+  // Same refusal, two envelopes: a structured API error, or the JSON body
+  // carried inside a runtime error's message text. `fields` is the body
+  // itself, which is where the agent names live.
+  const candidates: Array<{ code?: unknown; error?: unknown; fields: Record<string, unknown> }> =
+    [];
+  const structured = serverErrorBody(cause);
+  if (structured) candidates.push({ ...structured, fields: structured.raw ?? {} });
+  for (const text of [cause?.message, error.message]) {
+    const parsed = embeddedErrorBody(text);
+    if (parsed) candidates.push({ ...parsed, fields: parsed as Record<string, unknown> });
+  }
+
+  for (const candidate of candidates) {
+    if (classifyAgentSwitch(candidate).kind !== 'needs_new_session') continue;
+    return {
+      message: stringOrNull(candidate.error) ?? 'That agent needs a new session.',
+      requestedAgent: stringOrNull(candidate.fields.requested_agent),
+      expectedAgent: stringOrNull(candidate.fields.expected_agent),
+    };
+  }
+  return null;
 }

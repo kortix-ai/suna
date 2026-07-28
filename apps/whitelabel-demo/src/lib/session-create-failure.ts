@@ -66,6 +66,56 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
         detail: serverText ?? 'This session needs an account you have not connected yet.',
         retryable: false,
       };
+    // The three the new overrides dialog makes reachable. Each is terminal:
+    // the allowlist is create-only, so "try again" with the same selection
+    // refuses identically.
+    case 'SECRET_IDENTIFIER_NOT_FOUND':
+      return {
+        title: 'A selected secret is not available to sessions',
+        detail:
+          serverText ??
+          'One of the secrets you picked is owned by an integration rather than the project runtime. Deselect it and start again.',
+        retryable: false,
+      };
+    case 'SECRET_IDENTIFIER_KEY_COLLISION':
+      return {
+        title: 'Two selected secrets use the same variable name',
+        detail:
+          serverText ??
+          'Two of the secrets you picked inject the same environment variable, so the session cannot tell them apart. Pick one of them.',
+        retryable: false,
+      };
+    case 'INVALID_SESSION_SECRETS':
+      return {
+        title: 'That secret selection is not valid',
+        detail: serverText ?? 'Adjust the selected secrets and start again.',
+        retryable: false,
+      };
+    case 'CONNECTOR_PROFILE_NOT_FOUND':
+      return {
+        title: 'That connection no longer exists',
+        detail:
+          serverText ??
+          'The connection you picked has been removed. Pick another, or ask a teammate to reconnect it.',
+        retryable: false,
+      };
+    case 'CONNECTOR_PROFILE_INACTIVE':
+      return {
+        title: 'That connection needs reconnecting',
+        detail:
+          serverText ??
+          'The connection you picked is revoked or disabled. A teammate needs to reconnect it before a session can use it.',
+        retryable: false,
+      };
+    case 'origin_override_forbidden':
+      // Direct mode: `secrets` is a backend-origin field, so a browser PAT is
+      // refused. Developer-facing upstream copy would be meaningless here.
+      return {
+        title: 'Secret narrowing needs wrapper mode',
+        detail:
+          'This deployment is talking to Kortix directly, where the per-session secret allowlist is not available.',
+        retryable: false,
+      };
     case 'INVALID_SESSION_MODEL':
       return {
         title: 'That model is unavailable',

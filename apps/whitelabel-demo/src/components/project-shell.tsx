@@ -6,19 +6,17 @@
  * workbench, and project settings so navigation stays consistent.
  */
 
+import { NewSessionDialog } from '@/components/new-session-dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
-import { invalidateSessions, qk } from '@/lib/query-keys';
-import { sessionCreateFailure } from '@/lib/session-create-failure';
+import { qk } from '@/lib/query-keys';
 import { cn, relativeTime } from '@/lib/utils';
-import { generateSessionId } from '@kortix/sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, FolderX, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { useParams } from 'next/navigation';
 
 const STATUS_DOT: Record<string, string> = {
   running: 'bg-emerald-500',
@@ -41,8 +39,6 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const projectId = String(params.id);
   const activeSessionId = params.sessionId ? String(params.sessionId) : null;
-  const router = useRouter();
-  const qc = useQueryClient();
 
   const project = useQuery({
     queryKey: qk.project(projectId),
@@ -57,24 +53,6 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
     refetchInterval: denied ? false : 5_000,
     enabled: !denied,
     retry: (count, err) => !isAccessError(err) && count < 2,
-  });
-
-  const newSession = useMutation({
-    mutationFn: async () => {
-      const sessionId = generateSessionId();
-      await kortix.project(projectId).sessions.create({ session_id: sessionId });
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
-      router.push(`/projects/${projectId}/sessions/${sessionId}`);
-    },
-    onError: (err) => {
-      // Each KaaB refusal has a distinct code and a different person who can
-      // fix it — collapsing them into one string threw that away.
-      const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
-    },
   });
 
   const items = sessions.data ?? [];
@@ -105,14 +83,17 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="px-3 pb-2">
-          <Button
-            className="w-full justify-start gap-2"
-            variant="secondary"
-            disabled={newSession.isPending}
-            onClick={() => newSession.mutate()}
-          >
-            <Plus className="size-4" /> New session
-          </Button>
+          {/* Every session used to be created with an id and nothing else. The
+              overrides behind this dialog are create-only, so this is the only
+              moment they can be chosen at all. */}
+          <NewSessionDialog
+            projectId={projectId}
+            trigger={
+              <Button className="w-full justify-start gap-2" variant="secondary">
+                <Plus className="size-4" /> New session
+              </Button>
+            }
+          />
         </div>
 
         <ScrollArea className="flex-1 px-2">

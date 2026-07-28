@@ -82,28 +82,16 @@ export function isFullyWithheld(strategy: SecretStrategy): boolean {
 
 // ── Egress policy ───────────────────────────────────────────────────────────
 
-export type EgressInjection =
-  | { kind: 'header'; name: string; prefix?: string }
-  | { kind: 'query'; name: string }
-  | { kind: 'body_field'; path: string };
+/**
+ * The policy shape lives in `@kortix/db` because it is a STORED document
+ * (`project_secrets.egress_policy`, and frozen into `policy_snapshot` on every
+ * handle). Declaring a second copy here is how the two drift: a row can outlive
+ * the code that wrote it, so the parser and the column must agree by
+ * construction rather than by review.
+ */
+import type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from '@kortix/db';
 
-export interface EgressRule {
-  /** Exact host, or ONE leading `*.` wildcard label. Never a regex. */
-  host: string;
-  /** Uppercased HTTP methods; empty/absent means any. */
-  methods?: string[];
-  /** Exact path, or one trailing `/*`. Absent means any path. */
-  path?: string;
-}
-
-export interface SecretEgressPolicy {
-  rules: EgressRule[];
-  inject: EgressInjection;
-  /** For `broker`: which Kortix chokepoint serves this secret. */
-  backend?: 'llm_gateway' | 'executor' | 'git_proxy' | 'kortix_fetch';
-  /** Env var to point an SDK at the broker, e.g. `ANTHROPIC_BASE_URL`. */
-  base_url_env?: string;
-}
+export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot };
 
 export type EgressPolicyParse =
   | { ok: true; policy: SecretEgressPolicy }
@@ -140,7 +128,7 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
   if (!Array.isArray(raw.rules) || raw.rules.length === 0) {
     return { ok: false, error: 'policy.rules must be a non-empty array' };
   }
-  const rules: EgressRule[] = [];
+  const rules: SecretEgressRule[] = [];
   for (const entry of raw.rules) {
     if (!entry || typeof entry !== 'object') {
       return { ok: false, error: 'each rule must be an object' };
@@ -181,7 +169,7 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
     return { ok: false, error: 'policy.inject is required' };
   }
   const inj = injectRaw as Record<string, unknown>;
-  let inject: EgressInjection;
+  let inject: SecretInjectionSlot;
   if (inj.kind === 'header') {
     if (typeof inj.name !== 'string' || !inj.name.trim()) {
       return { ok: false, error: 'inject.name is required for a header injection' };
@@ -189,18 +177,18 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
     inject = {
       kind: 'header',
       name: inj.name.trim(),
-      ...(typeof inj.prefix === 'string' ? { prefix: inj.prefix } : {}),
+      ...(typeof inj.template === 'string' ? { template: inj.template } : {}),
     };
   } else if (inj.kind === 'query') {
     if (typeof inj.name !== 'string' || !inj.name.trim()) {
       return { ok: false, error: 'inject.name is required for a query injection' };
     }
     inject = { kind: 'query', name: inj.name.trim() };
-  } else if (inj.kind === 'body_field') {
+  } else if (inj.kind === 'json_body_field') {
     if (typeof inj.path !== 'string' || !inj.path.trim()) {
-      return { ok: false, error: 'inject.path is required for a body_field injection' };
+      return { ok: false, error: 'inject.path is required for a json_body_field injection' };
     }
-    inject = { kind: 'body_field', path: inj.path.trim() };
+    inject = { kind: 'json_body_field', path: inj.path.trim() };
   } else {
     return { ok: false, error: `unknown inject.kind: ${String(inj.kind)}` };
   }
@@ -255,7 +243,7 @@ function pathMatches(pattern: string | undefined, path: string): boolean {
 export function matchRule(
   policy: SecretEgressPolicy,
   request: OutboundRequestShape,
-): EgressRule | null {
+): SecretEgressRule | null {
   const host = request.host.trim().toLowerCase();
   const method = request.method.trim().toUpperCase();
   const path = request.path || '/';
@@ -354,4 +342,173 @@ export function parseHandle(value: string, rootSecret: string): HandleParse {
  *  whether a value is worth parsing, never as an authorization check. */
 export function looksLikeHandle(value: string): boolean {
   return value.includes(HANDLE_MARKER);
+}
+
+// ── The delivery decision ───────────────────────────────────────────────────
+
+/**
+ * Why nothing at all was emitted for a row.
+ *
+ * These stay distinct because each is a different thing for a human to fix, and
+ * "my secret isn't in the box" is otherwise indistinguishable from a platform
+ * bug. They are diagnostic labels, not a hierarchy — a row can qualify for
+ * several and only the first one checked is reported.
+ */
+export type SecretWithheldReason =
+  | 'denied'
+  | 'agent_grant_excludes'
+  | 'agent_grant_unscoped'
+  | 'session_allowlist_excludes'
+  | 'no_session';
+
+/**
+ * What a single secret row contributes to the sandbox.
+ *
+ * A discriminated union rather than a nullable value because the three outcomes
+ * have genuinely different consequences downstream: `plaintext` puts a live
+ * credential in `env`, `handle` puts a mintable placeholder there (so the caller
+ * must go and mint one), and `nothing` must also suppress the NAME. Collapsing
+ * the last two into "no value" is exactly the mistake that desynchronises
+ * `KORTIX_PROJECT_SECRET_NAMES` from the env map.
+ */
+export type SecretDelivery =
+  | { emit: 'plaintext'; strategy: 'runtime' }
+  | { emit: 'handle'; strategy: 'egress' | 'broker' }
+  | { emit: 'nothing'; strategy: SecretStrategy; reason: SecretWithheldReason };
+
+export interface SecretDeliveryInput {
+  /** The secret's identifier — the unit the agent grant and the session
+   *  allowlist both address. NOT the env KEY: `name` is deliberately
+   *  non-unique per project. */
+  identifier: string;
+  /** `project_secrets.strategy`. Absent means the row expresses no opinion. */
+  strategy?: SecretStrategy | null;
+  /** `projects.secret_default_strategy`. */
+  projectDefaultStrategy?: SecretStrategy | null;
+  /** A strategy declared for this secret in the repo manifest's `[env]`. A bare
+   *  string entry (today's only form) declares NOTHING and must be passed as
+   *  null, not `'runtime'`. */
+  manifestStrategy?: SecretStrategy | null;
+  /**
+   * The running agent's `secrets` grant, and the per-session allowlist, passed
+   * SEPARATELY and UN-INTERSECTED.
+   *
+   * `intersectSecretGrants` (../projects/secrets.ts) folds an absent agent grant
+   * into whatever the session named, which is correct for `runtime` but erases
+   * the one fact this function needs: whether anybody actually declared that
+   * this agent may hold this secret. Pass the raw axes.
+   */
+  agentGrantEnv?: string[] | 'all' | null;
+  sessionAllowlist?: string[] | null;
+  /** The session a handle would be minted against. Absent on any path that
+   *  resolves secrets without a live session. */
+  sessionId?: string | null;
+}
+
+/** Grant/allowlist membership. Case-insensitive, matching `agentMayUseEnv` and
+ *  `intersectSecretGrants` — a hand-written `secrets:` list in kortix.yaml may
+ *  use any case. */
+function listAdmits(list: string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * The delivery decision for ONE secret row. Pure.
+ *
+ * Two rules here are stricter than the paths they sit beside, and both are
+ * deliberate:
+ *
+ * 1. **An unscoped agent grant DENIES a non-`runtime` row.** `agentMayUseEnv`
+ *    (../iam/agent-scope.ts) returns true for a null grant — "no grant = no
+ *    restriction" — and `secret-grant.ts` documents that `undefined` and `'all'`
+ *    are the same authority everywhere it is applied, since `'all'` is what an
+ *    agent that merely OMITS `secrets:` produces. That fail-open is load-bearing
+ *    back-compat for `runtime` and nothing legacy depends on it for the new
+ *    classes, so it is closed exactly where it costs nothing: an ungoverned
+ *    project cannot acquire a brokered credential by accident. Only an explicit
+ *    identifier list carries a non-`runtime` secret.
+ *
+ * 2. **No session id ⇒ every non-`runtime` row emits nothing.** A handle is
+ *    minted per (session, secret); with no session there is nothing to mint and
+ *    nothing to revoke. The only alternatives are to fall back to plaintext —
+ *    which defeats the entire feature on whichever code path forgot to thread a
+ *    session id — or to emit a name with no value, which desynchronises the box.
+ *
+ * `denied` is checked first so its reason survives: it is a policy statement
+ * about the secret, and it stays true no matter who is asking.
+ */
+export function resolveSecretDelivery(input: SecretDeliveryInput): SecretDelivery {
+  const strategy = maxStrategy(
+    input.strategy,
+    input.projectDefaultStrategy,
+    input.manifestStrategy,
+  );
+  const withheld = (reason: SecretWithheldReason): SecretDelivery => ({
+    emit: 'nothing',
+    strategy,
+    reason,
+  });
+
+  if (strategy === 'denied') return withheld('denied');
+
+  const grant = input.agentGrantEnv ?? null;
+  if (Array.isArray(grant)) {
+    if (!listAdmits(grant, input.identifier)) return withheld('agent_grant_excludes');
+  } else if (strategy !== 'runtime') {
+    return withheld('agent_grant_unscoped');
+  }
+
+  // Absent allowlist = the session declined to narrow (byte-identical to the
+  // pre-KaaB path). An EMPTY one is a declaration that this session gets no
+  // project secrets at all, and must not be confused with absence.
+  const allowlist = input.sessionAllowlist ?? null;
+  if (allowlist !== null && !listAdmits(allowlist, input.identifier)) {
+    return withheld('session_allowlist_excludes');
+  }
+
+  if (strategy === 'runtime') return { emit: 'plaintext', strategy };
+  if (!input.sessionId) return withheld('no_session');
+  return { emit: 'handle', strategy };
+}
+
+/** True when this row puts SOMETHING under its env KEY — a real value or a
+ *  handle. The single predicate both the env map and the name list are built
+ *  from, so the two cannot disagree. */
+export function emitsValue(delivery: SecretDelivery): boolean {
+  return delivery.emit !== 'nothing';
+}
+
+export interface DeliveredSecret {
+  /** The env var KEY (`project_secrets.name`). Several identifiers may share
+   *  one — that is a supported project shape, not a conflict. */
+  key: string;
+  delivery: SecretDelivery;
+}
+
+/**
+ * Exactly what belongs in `KORTIX_PROJECT_SECRET_NAMES`.
+ *
+ * The invariant, which is not cosmetic: **a name appears here IFF a value (real
+ * or handle) is emitted for it.** The daemon's env store seeds `knownNames` from
+ * this list (project-env.ts) and scrubs/serves by it, so a name with no value
+ * makes the box advertise a variable it does not have, and a value with no name
+ * leaves a live credential outside the store's management — unscrubbable and
+ * un-updatable by a later hot push.
+ *
+ * A KEY served by several identifiers appears once as soon as ANY of them
+ * emits: the env map holds one value under that key (`resolveGrantedSecretEnv`
+ * picks the winner), so the name is either present or it is not. A key whose
+ * every identifier is withheld disappears entirely.
+ *
+ * Reserved-name filtering is NOT done here — `sanitizeSandboxEnv`
+ * (../projects/lib/sandbox-env-names.ts) owns that, and the list must be
+ * computed AFTER it runs, not beside it.
+ */
+export function secretNamesForSandbox(rows: DeliveredSecret[]): string[] {
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (emitsValue(row.delivery)) names.add(row.key);
+  }
+  return [...names].sort();
 }

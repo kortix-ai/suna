@@ -4,6 +4,11 @@ import Loading from '@/components/ui/loading';
 
 import { AgentPicker } from '@/components/chat/agent-picker';
 import { ModelPicker } from '@/components/chat/model-picker';
+import {
+  ConnectorBindingFields,
+  bindingLabels,
+  useConnectorBindingChoices,
+} from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,8 +31,7 @@ import {
 } from '@kortix/sdk/react';
 import { serverErrorBody } from '@/lib/api-error-body';
 import { classifySessionStartFailure } from '@/lib/session-start-error';
-import type { BindableConnection } from '@/server/bindable-connections';
-import { getSessionToken } from '@/lib/session';
+import { NO_OVERRIDES, buildSessionCreateInput } from '@/lib/session-overrides';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -67,26 +71,16 @@ function ProjectHome() {
     connector: string;
     message: string;
   } | null>(null);
-  // Which shared connection this session should run as. Unset = the connector's
-  // default, which is what an unbound alias resolves to server-side anyway.
-  const [boundConnection, setBoundConnection] = useState<string | null>(null);
+  // Which shared connection each connector should run as. An alias absent from
+  // this map keeps the connector's default, which is what an unbound alias
+  // resolves to server-side anyway.
+  const [bindings, setBindings] = useState<Record<string, string>>({});
 
   // Only TEAM connections are offered: a wrapper has no personal identity
-  // upstream, so a member's private connection cannot be bound at all.
-  const connections = useQuery({
-    queryKey: ['bindable-connections', projectId],
-    queryFn: async () => {
-      const token = getSessionToken();
-      const res = await fetch(
-        `/api/connections?projectId=${encodeURIComponent(projectId)}&connector=gmail`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-      );
-      if (!res.ok) return { connections: [] as BindableConnection[] };
-      return (await res.json()) as { connections: BindableConnection[] };
-    },
-    staleTime: 60_000,
-    retry: false,
-  });
+  // upstream, so a member's private connection cannot be bound at all. The
+  // alias used to be hardcoded here, which meant exactly one connector could
+  // ever be bound from this screen.
+  const connectors = useConnectorBindingChoices(projectId);
   const [template, setTemplate] = useState('default');
   const [agent, setAgent] = useState<string | null>(null);
   const [model, setModel] = useState<ModelKey | null>(null);
@@ -108,20 +102,20 @@ function ProjectHome() {
   const start = useMutation({
     mutationFn: async (text: string) => {
       const sessionId = generateSessionId();
-      // Template + agent are create-time; the prompt + model + agent flow into
-      // the first message (stashed) so the chosen model applies at start.
-      await kortix.project(projectId).sessions.create({
-        session_id: sessionId,
-        name: text.slice(0, 60),
-        ...(template && template !== 'default' ? { sandbox_slug: template } : {}),
-        ...(agent ? { agent_name: agent } : {}),
-        // connector_bindings names the exact connection this session runs as.
-        // Omitted entirely when unset, so the server's default resolution applies
-        // rather than us guessing at it.
-        ...(boundConnection
-          ? { connector_bindings: { gmail: { profile_id: boundConnection } } }
-          : {}),
-      });
+      // Template + agent + bindings are create-time; the prompt + model + agent
+      // flow into the first message (stashed) so the chosen model applies at
+      // start. Unset overrides are omitted by the builder rather than guessed.
+      await kortix.project(projectId).sessions.create(
+        buildSessionCreateInput(
+          { ...NO_OVERRIDES, agent, bindings },
+          {
+            sessionId,
+            name: text.slice(0, 60),
+            sandboxSlug: template,
+            connectionLabels: bindingLabels(connectors.data?.connectors ?? [], bindings),
+          },
+        ),
+      );
       writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
         .project(projectId)
@@ -169,29 +163,16 @@ function ProjectHome() {
           </p>
         </div>
 
-        {/* Which shared connection this session runs as. Only shown when there
-            is a genuine choice — one connection means the default is the only
-            answer, and a picker with a single option is noise. */}
-        {(connections.data?.connections.length ?? 0) > 1 && (
-          <div className="mb-3 flex items-center gap-2 text-left">
-            <span className="text-xs text-muted-foreground">Run as</span>
-            <Select
-              value={boundConnection ?? 'default'}
-              onValueChange={(v) => setBoundConnection(v === 'default' ? null : v)}
-            >
-              <SelectTrigger className="h-7 w-auto gap-1.5 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">Default connection</SelectItem>
-                {connections.data?.connections.map((connection) => (
-                  <SelectItem key={connection.profileId} value={connection.profileId}>
-                    {connection.label}
-                    {connection.isDefault ? ' (default)' : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {/* Which shared account each connector runs as — every alias the
+            project has connections for, including the ones where the honest
+            answer is "a teammate has to share this first". */}
+        {(connectors.data?.connectors.length ?? 0) > 0 && (
+          <div className="mb-3 text-left">
+            <ConnectorBindingFields
+              choices={connectors.data?.connectors ?? []}
+              value={bindings}
+              onChange={setBindings}
+            />
           </div>
         )}
 
