@@ -23,7 +23,13 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const listUsers = mock(async () => ({
+  data: { users: [{ id: '00000000-0000-0000-0000-000000000001' }] },
+  error: null,
+}));
+
 const { setupApp } = await import('../setup');
+const { getSupabase } = await import('../shared/supabase');
 
 const ORIGINAL_CWD = process.cwd();
 const TEST_DIR = mkdtempSync(join(tmpdir(), 'kortix-setup-test-'));
@@ -64,6 +70,24 @@ afterAll(() => {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('/v1/setup', () => {
+  describe('GET /v1/setup/install-status', () => {
+    it('uses the Supabase Admin API instead of reading auth.users through the app role', async () => {
+      const supabase = getSupabase();
+      const originalListUsers = supabase.auth.admin.listUsers;
+      supabase.auth.admin.listUsers = listUsers as typeof originalListUsers;
+
+      try {
+        const app = createSetupTestApp();
+        const res = await app.request('/v1/setup/install-status');
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ installed: true });
+        expect(listUsers).toHaveBeenCalledWith({ page: 1, perPage: 1 });
+      } finally {
+        supabase.auth.admin.listUsers = originalListUsers;
+      }
+    });
+  });
 
   describe('GET /v1/setup/status', () => {
     it('returns 200', async () => {

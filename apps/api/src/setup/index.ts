@@ -16,7 +16,7 @@ import { spawnSync } from 'child_process';
 import { config } from '../config';
 import { getProvider } from '../platform/providers';
 import { supabaseAuth } from '../middleware/auth';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
@@ -160,16 +160,13 @@ setupApp.openapi(
       return c.json({ installed: null, error: 'Database not configured' }, 503);
     }
 
-    // Query auth.users directly via the existing postgres connection.
-    // This is reliable regardless of Supabase version / service role key format.
-    const result = await db.execute(
-      sql`SELECT EXISTS(SELECT 1 FROM auth.users LIMIT 1) AS has_users`
-    );
-    const queryResult = result as { rows?: Array<{ has_users?: boolean | 't' | 'f' }> } | Array<{ has_users?: boolean | 't' | 'f' }>;
-    const row = Array.isArray(queryResult) ? queryResult[0] : queryResult.rows?.[0];
-    const hasUsers = row?.has_users === true || row?.has_users === 't';
+    const { data, error } = await getSupabase().auth.admin.listUsers({ page: 1, perPage: 1 });
+    if (error) {
+      console.error('[setup] install-status Supabase error:', error);
+      return c.json({ installed: null, error: 'Could not inspect existing users' }, 503);
+    }
 
-    return c.json({ installed: hasUsers });
+    return c.json({ installed: data.users.length > 0 });
   } catch (err) {
     console.error('[setup] install-status error:', err);
     return c.json({ installed: null, error: 'Internal error' }, 503);

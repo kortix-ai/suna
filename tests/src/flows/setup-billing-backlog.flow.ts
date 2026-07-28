@@ -2,24 +2,18 @@
  * Setup + billing backlog. Maps to spec §6 (ACC-4, self-hosted setup gating) and
  * §16 (BILL-2 server-type checkout).
  *
- * The target this suite runs against is the CLOUD / managed config
- * (`KORTIX_BILLING_INTERNAL_ENABLED=true`), so two things hold by design:
- *   - `/v1/setup/*` is mounted ONLY when billing is DISABLED (self-hosted) — see
- *     apps/api/src/index.ts:463 `if (!config.KORTIX_BILLING_INTERNAL_ENABLED)`.
- *     On this target those routes are unmounted → 404. ACC-4 proves that gating.
- *   - Billing routes ARE mounted; BILL-2 covers the checkout membership boundary
- *     (`resolveScopedAccountId` → 403 for a non-member, 401 for ANON).
+ * `/v1/setup/*` is mounted only when billing is disabled. ACC-4 proves both the
+ * local/self-hosted surface and the cloud route gate. BILL-2 covers the managed
+ * billing membership boundary.
  */
 import { flow } from "../core/flow";
 
 /**
- * ACC-4 — self-hosted setup surface is HIDDEN on cloud/billing-enabled deploys.
+ * ACC-4 — self-hosted setup surface is available locally and hidden on cloud.
  *
  * Every `/v1/setup/*` route is mounted behind `!KORTIX_BILLING_INTERNAL_ENABLED`.
- * Against this billing-enabled target the whole sub-app is never `app.route`'d, so
- * even the otherwise-public probes (install-status, sandbox-providers) 404. We drive
- * the public ones with ANON (they must not require auth where they DO exist) and the
- * authed ones with OWNER; in this config every one collapses to 404 regardless.
+ * Local runs prove the public probes, auth boundary, and installed-owner guard.
+ * Managed targets prove that every setup route is unmounted.
  *
  * Routes declared EXACTLY as they appear in spec/routes.generated.json.
  */
@@ -40,10 +34,48 @@ flow(
     ],
   },
   async (ctx) => {
+    const anon = ctx.client.as(ctx.P.ANON);
+
+    if (ctx.env.target === "local") {
+      await ctx.step("install-status is public on local/self-hosted", async () => {
+        const r = await anon.get("/v1/setup/install-status");
+        r.status(200).body().has("$.installed", true);
+      });
+      await ctx.step("sandbox-providers is public on local/self-hosted", async () => {
+        const r = await anon.get("/v1/setup/sandbox-providers");
+        r.status(200).body().exists("$.providers");
+      });
+      await ctx.step("protected setup reads require authentication", async () => {
+        const paths = [
+          "/v1/setup/status",
+          "/v1/setup/health",
+          "/v1/setup/setup-status",
+          "/v1/setup/setup-wizard-step",
+        ];
+        for (const path of paths) {
+          const r = await anon.get(path);
+          r.status(401);
+        }
+      });
+      await ctx.step("protected setup writes require authentication", async () => {
+        const wizard = await anon.post("/v1/setup/setup-wizard-step", { step: 1 });
+        wizard.status(401);
+        const complete = await anon.post("/v1/setup/setup-complete", {});
+        complete.status(401);
+      });
+      await ctx.step("bootstrap-owner rejects an already-installed instance", async () => {
+        const r = await anon.post("/v1/setup/bootstrap-owner", {
+          email: ctx.fixtures.name("setup") + "@ke2e.kortix.test",
+          password: "NotARealPassword123!",
+        });
+        r.status(409);
+      });
+      return;
+    }
+
     // Unmounted on this target → every route 404s regardless of auth, so drive
     // them all as ANON (no OWNER provisioning dependency — keeps ACC-4 runnable
     // even in a system-only batch where OWNER isn't otherwise needed).
-    const anon = ctx.client.as(ctx.P.ANON);
     const owner = anon;
 
     await ctx.step("install-status (public probe) → 404 (setup unmounted on cloud)", async () => {
