@@ -17,8 +17,10 @@
 
 resource "aws_iam_role" "gha_nacl_audit" {
   name = "kortix-gha-nacl-audit"
-  # The audit runs on schedule from the default branch and on demand via
-  # workflow_dispatch, so the subject is not pinned to a single ref.
+  # Pinned to the default branch. qa-pr.yml runs on pull_request with
+  # id-token: write and executes PR-controlled code, so a wildcard subject
+  # would let any pull request mint a token and assume this role. The audit
+  # runs on schedule and manual dispatch, both of which carry the main subject.
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -30,9 +32,7 @@ resource "aws_iam_role" "gha_nacl_audit" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        }
-        StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:*"
+          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:ref:refs/heads/main"
         }
       }
     }]
