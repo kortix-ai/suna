@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { MID_SESSION_CAPABILITIES, classifyAgentSwitch } from '../../src/lib/mid-session-change';
+import {
+  MID_SESSION_CAPABILITIES,
+  agentSwitchRefusal,
+  classifyAgentSwitch,
+} from '../../src/lib/mid-session-change';
 
 describe('what can change mid-session', () => {
   test('model changes, agent is per-prompt, secrets are fixed at create', () => {
@@ -52,5 +56,58 @@ describe('classifyAgentSwitch', () => {
     if (result.kind !== 'ok') {
       expect(result.message).toBe('The agent could not be switched.');
     }
+  });
+});
+
+describe('agentSwitchRefusal', () => {
+  // The refusal is raised by the sandbox proxy on the prompt itself, so a host
+  // sees a generic runtime error whose message carries the 409 body.
+  const runtimeError = (body: Record<string, unknown>) => ({
+    kind: 'runtime-error' as const,
+    message: JSON.stringify(body),
+    cause: new Error(`Failed to perform action: ${JSON.stringify(body)}`),
+  });
+
+  const REFUSAL = {
+    error: 'agent switch requires a new session',
+    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+    expected_agent: 'support',
+    requested_agent: 'finance',
+  };
+
+  test('a refused switch names both agents, so the UI can say which is which', () => {
+    const refusal = agentSwitchRefusal(runtimeError(REFUSAL))!;
+    expect(refusal.requestedAgent).toBe('finance');
+    expect(refusal.expectedAgent).toBe('support');
+  });
+
+  test('it is recognised from a STRUCTURED error body too', () => {
+    // Same refusal, different envelope depending on which layer rejected it.
+    const refusal = agentSwitchRefusal({
+      message: 'x',
+      cause: Object.assign(new Error('x'), { data: REFUSAL }),
+    })!;
+    expect(refusal.requestedAgent).toBe('finance');
+  });
+
+  test('an ordinary send failure is NOT offered a new session', () => {
+    // Offering "start a new session" for a transient failure would throw away
+    // the session over something a retry fixes.
+    expect(agentSwitchRefusal({ message: 'the model timed out', cause: new Error('boom') })).toBeNull();
+    expect(agentSwitchRefusal(null)).toBeNull();
+  });
+
+  test('the RETRYABLE grant failure is never mistaken for it', () => {
+    expect(
+      agentSwitchRefusal(runtimeError({ code: 'AGENT_SECRET_GRANT_UNRESOLVED', error: 'x' })),
+    ).toBeNull();
+  });
+
+  test('a refusal without agent names still surfaces, with a usable message', () => {
+    const refusal = agentSwitchRefusal(
+      runtimeError({ code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION', error: 'nope' }),
+    )!;
+    expect(refusal.requestedAgent).toBeNull();
+    expect(refusal.message).toBe('nope');
   });
 });

@@ -3,8 +3,14 @@ import { randomBytes } from 'node:crypto';
 
 import {
   DEFAULT_HANDLE_PREFIX,
+  type DeliveredSecret,
+  type SecretDelivery,
+  type SecretDeliveryInput,
+  type SecretWithheldReason,
   type SecretEgressPolicy,
+  type SecretStrategy,
   deliversPlaintextToSandbox,
+  emitsValue,
   isFullyWithheld,
   looksLikeHandle,
   matchRule,
@@ -13,6 +19,8 @@ import {
   newLookupId,
   parseEgressPolicy,
   parseHandle,
+  resolveSecretDelivery,
+  secretNamesForSandbox,
 } from './strategy';
 
 const ROOT = 'test-root-secret-do-not-use-in-production';
@@ -243,5 +251,335 @@ describe('handles', () => {
     expect(mintHandle({ lookupId: id, rootSecret: ROOT })).toBe(
       mintHandle({ lookupId: id, rootSecret: ROOT }),
     );
+  });
+});
+
+// A session id and an explicit grant naming the row, so each test below varies
+// exactly one axis away from "everything is permitted".
+const PERMISSIVE = {
+  identifier: 'ALPHA',
+  agentGrantEnv: ['ALPHA'],
+  sessionId: 'ses_1',
+} satisfies SecretDeliveryInput;
+
+const resolve = (over: Partial<SecretDeliveryInput> = {}): SecretDelivery =>
+  resolveSecretDelivery({ ...PERMISSIVE, ...over });
+
+/** The withheld reason, or null when something WAS emitted — so an assertion
+ *  about a reason cannot accidentally pass on a row that emitted a value. */
+const reasonOf = (delivery: SecretDelivery): SecretWithheldReason | null =>
+  delivery.emit === 'nothing' ? delivery.reason : null;
+
+describe('resolveSecretDelivery — composition of the declared strategies', () => {
+  test('nothing declared anywhere delivers plaintext — today’s behaviour, unchanged', () => {
+    expect(resolveSecretDelivery({ identifier: 'ALPHA' })).toEqual({
+      emit: 'plaintext',
+      strategy: 'runtime',
+    });
+  });
+
+  test('the project default applies when the row declares nothing', () => {
+    expect(resolve({ projectDefaultStrategy: 'broker' })).toEqual({
+      emit: 'handle',
+      strategy: 'broker',
+    });
+  });
+
+  test('the manifest may STRENGTHEN the row', () => {
+    expect(resolve({ strategy: 'egress', manifestStrategy: 'broker' })).toEqual({
+      emit: 'handle',
+      strategy: 'broker',
+    });
+  });
+
+  test('no layer can WEAKEN another — max wins from whichever direction', () => {
+    expect(resolve({ strategy: 'broker', manifestStrategy: 'runtime' }).strategy).toBe('broker');
+    expect(resolve({ strategy: 'runtime', projectDefaultStrategy: 'denied' })).toEqual({
+      emit: 'nothing',
+      strategy: 'denied',
+      reason: 'denied',
+    });
+  });
+
+  test('ABSENT is not runtime: a manifest that merely MENTIONS the secret cannot downgrade it', () => {
+    // The back-compat spine. A bare string in `[env].required` is today's only
+    // manifest form and expresses no delivery opinion; if it counted as rank 0
+    // every brokered secret would fall back to plaintext the day a repo listed it.
+    expect(resolve({ strategy: 'broker', manifestStrategy: null }).emit).toBe('handle');
+    expect(resolve({ strategy: 'broker', manifestStrategy: undefined }).emit).toBe('handle');
+    expect(resolve({ strategy: 'broker', projectDefaultStrategy: null }).emit).toBe('handle');
+  });
+});
+
+describe('resolveSecretDelivery — what each strategy emits', () => {
+  test('runtime emits the plaintext value', () => {
+    expect(resolve({ strategy: 'runtime' })).toEqual({ emit: 'plaintext', strategy: 'runtime' });
+  });
+
+  test('broker and egress emit a handle, never a value', () => {
+    for (const strategy of ['broker', 'egress'] as const) {
+      expect(resolve({ strategy })).toEqual({ emit: 'handle', strategy });
+    }
+  });
+
+  test('denied emits NOTHING — and that is what keeps its name out of KORTIX_PROJECT_SECRET_NAMES', () => {
+    const delivery = resolve({ strategy: 'denied' });
+    expect(delivery).toEqual({ emit: 'nothing', strategy: 'denied', reason: 'denied' });
+    expect(secretNamesForSandbox([{ key: 'ALPHA_KEY', delivery }])).toEqual([]);
+  });
+
+  test('denied is decided FIRST, so its reason survives every other objection', () => {
+    // A denied row is a statement about the secret, not about the caller; it
+    // stays true with no session and with no grant, and reporting "no_session"
+    // there would send an operator chasing the wrong fix.
+    expect(
+      reasonOf(
+        resolve({ strategy: 'denied', sessionId: null, agentGrantEnv: null, sessionAllowlist: [] }),
+      ),
+    ).toBe('denied');
+  });
+});
+
+describe('resolveSecretDelivery — sessionId is required to mint a handle', () => {
+  test('NO SESSION ⇒ every non-runtime row emits nothing (fail closed)', () => {
+    for (const strategy of ['egress', 'broker'] as const) {
+      expect(resolve({ strategy, sessionId: null })).toEqual({
+        emit: 'nothing',
+        strategy,
+        reason: 'no_session',
+      });
+    }
+  });
+
+  test('an empty-string session id is no session — a falsy id must not mint', () => {
+    expect(resolve({ strategy: 'broker', sessionId: '' }).emit).toBe('nothing');
+  });
+
+  test('a runtime row is unaffected by a missing session id', () => {
+    // Every path that resolves secrets without a session keeps working exactly
+    // as it does today; only the new classes fail closed.
+    expect(resolve({ strategy: 'runtime', sessionId: null }).emit).toBe('plaintext');
+    expect(resolve({ strategy: 'runtime', sessionId: undefined }).emit).toBe('plaintext');
+  });
+
+  test('the failure is closed, not downgraded — no session NEVER yields plaintext', () => {
+    for (const strategy of ['egress', 'broker', 'denied'] as const) {
+      expect(resolve({ strategy, sessionId: null }).emit).not.toBe('plaintext');
+    }
+  });
+});
+
+describe('resolveSecretDelivery — the agent grant', () => {
+  test('an explicit list admits the identifiers it names, case-insensitively', () => {
+    expect(resolve({ strategy: 'broker', agentGrantEnv: ['alpha'] }).emit).toBe('handle');
+    expect(resolve({ identifier: 'alpha', strategy: 'broker', agentGrantEnv: ['ALPHA'] }).emit).toBe(
+      'handle',
+    );
+  });
+
+  test('an explicit list excludes everything it does not name, whatever the strategy', () => {
+    for (const strategy of ['runtime', 'broker'] as const) {
+      expect(resolve({ strategy, agentGrantEnv: ['BETA'] })).toEqual({
+        emit: 'nothing',
+        strategy,
+        reason: 'agent_grant_excludes',
+      });
+    }
+  });
+
+  test('an explicit EMPTY grant admits nothing at all', () => {
+    expect(reasonOf(resolve({ strategy: 'runtime', agentGrantEnv: [] }))).toBe(
+      'agent_grant_excludes',
+    );
+  });
+
+  test('A NULL GRANT still delivers a runtime row — the fail-open legacy paths depend on', () => {
+    // `agentMayUseEnv` returns true for a null grant ("no grant = no
+    // restriction"), and an ungoverned project produces exactly that.
+    expect(resolve({ strategy: 'runtime', agentGrantEnv: null }).emit).toBe('plaintext');
+    expect(resolve({ strategy: 'runtime', agentGrantEnv: undefined }).emit).toBe('plaintext');
+  });
+
+  test('A NULL GRANT DENIES a non-runtime row — the fail-open closes exactly where it is free', () => {
+    for (const grant of [null, undefined]) {
+      for (const strategy of ['egress', 'broker'] as const) {
+        expect(resolve({ strategy, agentGrantEnv: grant })).toEqual({
+          emit: 'nothing',
+          strategy,
+          reason: 'agent_grant_unscoped',
+        });
+      }
+    }
+  });
+
+  test('so does an ALL grant — secret-grant.ts collapses `all` and absent to one authority', () => {
+    // `'all'` is what an agent that simply OMITS `secrets:` produces, so treating
+    // it as a deliberate declaration would reopen the same hole under a
+    // different spelling. Only a named identifier list carries a brokered secret.
+    expect(reasonOf(resolve({ strategy: 'broker', agentGrantEnv: 'all' }))).toBe(
+      'agent_grant_unscoped',
+    );
+    expect(resolve({ strategy: 'runtime', agentGrantEnv: 'all' }).emit).toBe('plaintext');
+  });
+});
+
+describe('resolveSecretDelivery — the per-session allowlist', () => {
+  test('ABSENT (null/undefined) narrows nothing — byte-identical to the pre-KaaB path', () => {
+    expect(resolve({ strategy: 'runtime', sessionAllowlist: null }).emit).toBe('plaintext');
+    expect(resolve({ strategy: 'runtime', sessionAllowlist: undefined }).emit).toBe('plaintext');
+    expect(resolve({ strategy: 'broker', sessionAllowlist: null }).emit).toBe('handle');
+  });
+
+  test('EXPLICIT EMPTY is a declaration, not absence: zero secrets reach the session', () => {
+    // The distinction `canonicalizeSecretsAllowlist` already preserves for
+    // idempotency comparison has to hold here too, or `secrets: []` on a
+    // session-create silently means "everything".
+    expect(resolve({ strategy: 'runtime', sessionAllowlist: [] })).toEqual({
+      emit: 'nothing',
+      strategy: 'runtime',
+      reason: 'session_allowlist_excludes',
+    });
+    expect(resolve({ strategy: 'runtime', sessionAllowlist: null }).emit).toBe('plaintext');
+  });
+
+  test('an explicit list admits only what it names, case-insensitively', () => {
+    expect(resolve({ strategy: 'runtime', sessionAllowlist: ['alpha'] }).emit).toBe('plaintext');
+    expect(reasonOf(resolve({ strategy: 'runtime', sessionAllowlist: ['BETA'] }))).toBe(
+      'session_allowlist_excludes',
+    );
+  });
+
+  test('the allowlist cannot RESCUE a row the agent grant left unscoped', () => {
+    // Treating a null grant as `[]` means the intersection is empty however
+    // generous the session list is — the wrapper backend cannot hand its agent a
+    // brokered credential the agent was never declared to hold.
+    expect(
+      reasonOf(resolve({ strategy: 'broker', agentGrantEnv: null, sessionAllowlist: ['ALPHA'] })),
+    ).toBe('agent_grant_unscoped');
+  });
+
+  test('the two axes compose as an intersection', () => {
+    expect(
+      resolve({ strategy: 'broker', agentGrantEnv: ['ALPHA', 'BETA'], sessionAllowlist: ['ALPHA'] })
+        .emit,
+    ).toBe('handle');
+    expect(
+      resolve({ strategy: 'broker', agentGrantEnv: ['ALPHA'], sessionAllowlist: ['BETA'] }).emit,
+    ).toBe('nothing');
+  });
+});
+
+describe('secretNamesForSandbox — the name/value invariant', () => {
+  const named = (key: string, delivery: SecretDelivery): DeliveredSecret => ({ key, delivery });
+
+  test('a plaintext row and a handle row both contribute their name', () => {
+    expect(
+      secretNamesForSandbox([
+        named('STRIPE_KEY', { emit: 'handle', strategy: 'broker' }),
+        named('OPENAI_KEY', { emit: 'plaintext', strategy: 'runtime' }),
+      ]),
+    ).toEqual(['OPENAI_KEY', 'STRIPE_KEY']);
+  });
+
+  test('a withheld row contributes nothing, for every reason', () => {
+    const reasons = [
+      'denied',
+      'agent_grant_excludes',
+      'agent_grant_unscoped',
+      'session_allowlist_excludes',
+      'no_session',
+    ] as const;
+    for (const reason of reasons) {
+      expect(
+        secretNamesForSandbox([named('K', { emit: 'nothing', strategy: 'denied', reason })]),
+      ).toEqual([]);
+    }
+  });
+
+  test('names are deduped and sorted, matching sanitizeSandboxEnv’s Object.keys().sort()', () => {
+    expect(
+      secretNamesForSandbox([
+        named('B_KEY', { emit: 'plaintext', strategy: 'runtime' }),
+        named('A_KEY', { emit: 'handle', strategy: 'egress' }),
+        named('B_KEY', { emit: 'plaintext', strategy: 'runtime' }),
+      ]),
+    ).toEqual(['A_KEY', 'B_KEY']);
+  });
+
+  test('an empty input yields an empty list, not [""]', () => {
+    expect(secretNamesForSandbox([])).toEqual([]);
+  });
+
+  test('TWO IDENTIFIERS, ONE KEY: the name appears if EITHER of them emits', () => {
+    // `project_secrets.name` is deliberately non-unique — GMAPS_PRIMARY and
+    // GMAPS_BACKUP may both be GOOGLE_MAPS_API_KEY. `resolveGrantedSecretEnv`
+    // picks one winner for the env map, so the key is present as long as any
+    // contributing row emits, in either order.
+    const emitted = { emit: 'plaintext', strategy: 'runtime' } as const;
+    const withheld = { emit: 'nothing', strategy: 'denied', reason: 'denied' } as const;
+    const KEY = 'GOOGLE_MAPS_API_KEY';
+    expect(secretNamesForSandbox([named(KEY, emitted), named(KEY, withheld)])).toEqual([KEY]);
+    expect(secretNamesForSandbox([named(KEY, withheld), named(KEY, emitted)])).toEqual([KEY]);
+  });
+
+  test('TWO IDENTIFIERS, ONE KEY: the name disappears only when EVERY one is withheld', () => {
+    const withheld = { emit: 'nothing', strategy: 'denied', reason: 'denied' } as const;
+    const KEY = 'GOOGLE_MAPS_API_KEY';
+    expect(secretNamesForSandbox([named(KEY, withheld), named(KEY, withheld)])).toEqual([]);
+  });
+
+  test('THE INVARIANT, over the whole decision space: a name appears IFF a value does', () => {
+    // Exhaustive rather than illustrative because the failure is not a wrong
+    // answer, it is a desynchronised box: the daemon's env store builds
+    // `knownNames` from this list, so a name without a value advertises a
+    // variable that is not there and a value without a name escapes the store's
+    // scrubbing and its hot-push updates entirely.
+    const strategies: Array<SecretStrategy | null> = [null, 'runtime', 'egress', 'broker', 'denied'];
+    const grants: Array<string[] | 'all' | null> = [null, 'all', [], ['ALPHA'], ['BETA']];
+    const allowlists: Array<string[] | null> = [null, [], ['ALPHA'], ['BETA']];
+    const sessions: Array<string | null> = [null, 'ses_1'];
+
+    let combos = 0;
+    for (const strategy of strategies) {
+      for (const projectDefaultStrategy of strategies) {
+        for (const agentGrantEnv of grants) {
+          for (const sessionAllowlist of allowlists) {
+            for (const sessionId of sessions) {
+              combos += 1;
+              const delivery = resolveSecretDelivery({
+                identifier: 'ALPHA',
+                strategy,
+                projectDefaultStrategy,
+                agentGrantEnv,
+                sessionAllowlist,
+                sessionId,
+              });
+
+              // A value is emitted iff the delivery is not 'nothing'…
+              expect(emitsValue(delivery)).toBe(delivery.emit !== 'nothing');
+              // …and the name list agrees, row by row.
+              expect(secretNamesForSandbox([{ key: 'ALPHA_KEY', delivery }])).toEqual(
+                delivery.emit === 'nothing' ? [] : ['ALPHA_KEY'],
+              );
+
+              // The two invariants that make the emit tag trustworthy.
+              if (delivery.emit === 'plaintext') expect(delivery.strategy).toBe('runtime');
+              if (delivery.emit === 'handle') {
+                expect(['egress', 'broker']).toContain(delivery.strategy);
+                expect(sessionId).toBeTruthy();
+              }
+              // No route to plaintext exists for a strategy anyone strengthened.
+              if (delivery.emit === 'plaintext') {
+                expect(strategy === null || strategy === 'runtime').toBe(true);
+                expect(
+                  projectDefaultStrategy === null || projectDefaultStrategy === 'runtime',
+                ).toBe(true);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(combos).toBe(strategies.length ** 2 * grants.length * allowlists.length * 2);
   });
 });

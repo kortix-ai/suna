@@ -35,7 +35,7 @@ import {
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
-import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
+import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
 import { carriesSessionData } from '../session-data-ports';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
@@ -672,14 +672,20 @@ export async function forwardToSandbox(
   // Dedupe prompt delivery up-front. REST and ACP prompt POSTs are the only
   // mutating, non-idempotent calls here. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
+  //
+  // The key is held in an OUTER binding so the give-up path below can release it
+  // when delivery provably never happened. Without that release, a client retry
+  // under the same Idempotency-Key hits the bogus 200 "duplicate" and the user's
+  // prompt is silently lost.
+  let promptDedupeKey: string | null = null;
   if (promptDelivery) {
-    const dedupeKey = promptDeliveryKey({
+    promptDedupeKey = promptDeliveryKey({
       idempotencyKey: incomingHeaders.get('idempotency-key'),
       sandboxId,
       sessionId: record.sessionId,
       body,
     });
-    if (!claimPromptDelivery(dedupeKey)) {
+    if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
     }
   }
@@ -710,6 +716,12 @@ export async function forwardToSandbox(
   // stalled connection — see the giveup branch below for why it gets its own
   // response instead of the generic "sandbox unreachable" one.
   let sawLongTurnTimeout = false;
+  // A prompt delivery whose failure is AMBIGUOUS — a timeout/abort/reset where
+  // opencode may already hold the message. When true we must NOT release the
+  // dedupe claim on the unreachable path below (a retry could double-enqueue).
+  // It stays false only when every attempt PROVED nothing was delivered
+  // (connection refused), which is the one case a retry may safely re-deliver.
+  let promptDeliveryMaybeAccepted = false;
 
   // Wall-clock budget so a cold/dead sandbox returns our friendly page BEFORE
   // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
@@ -940,6 +952,11 @@ export async function forwardToSandbox(
           .catch(() => '');
         if (bodyText.includes('opencode not ready')) {
           void markSandboxUsed(sandboxId);
+          // opencode explicitly rejected the request as not-ready, so it did NOT
+          // enqueue the prompt. Release the dedupe claim so the client's retry
+          // (once opencode is up) actually delivers instead of short-circuiting
+          // to a bogus 200 "duplicate" that would drop the message.
+          if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
           return new Response(bodyText, {
             status: upstream.status,
@@ -979,12 +996,22 @@ export async function forwardToSandbox(
         }
       }
 
-      if (upstream.status === 400 && attempt < MAX_RETRIES) {
+      if (upstream.status === 400) {
         const bodyText = await upstream.text();
         const isSandboxDown =
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');
-        if (isSandboxDown) {
+        // Daytona rejected this BEFORE opencode — the box has no runner, so the
+        // prompt certainly was not enqueued. On the last attempt we stop
+        // retrying and pass the 400 through, and the dedupe claim must go with
+        // it: otherwise the client's retry under the same Idempotency-Key hits
+        // the bogus 200 "duplicate" and the message is lost. (Reviewer caught
+        // this: the retry guard used to be part of THIS condition, so the final
+        // attempt fell through holding the claim.)
+        if (isSandboxDown && attempt >= MAX_RETRIES && promptDedupeKey) {
+          releasePromptDelivery(promptDedupeKey);
+        }
+        if (isSandboxDown && attempt < MAX_RETRIES) {
           sawDeadSignal = true; // confirmed-dead → erroring the row is justified
           if (!wakeTriggered) {
             console.warn(
@@ -1087,6 +1114,9 @@ export async function forwardToSandbox(
         promptDelivery &&
         !isConnectionRefusedError(err)
       ) {
+        // Ambiguous: the box may already hold the message. Keep the dedupe
+        // claim so a client retry can't double-enqueue.
+        promptDeliveryMaybeAccepted = true;
         break;
       }
 
@@ -1112,6 +1142,15 @@ export async function forwardToSandbox(
   // health-check loop owns liveness and will retry the box.
   if (sawDeadSignal) {
     await markSandboxErrored(sandboxId);
+  }
+  // The sandbox was never reachable. For a prompt delivery this path is only
+  // taken after every attempt PROVED nothing was delivered (connection refused,
+  // or out of budget before a second try) — an ambiguous 5xx/timeout/reset would
+  // have returned above with the claim intact. So release the dedupe claim to let
+  // the client's retry actually deliver, instead of losing the message to a
+  // bogus 200 "duplicate".
+  if (promptDedupeKey && !promptDeliveryMaybeAccepted) {
+    releasePromptDelivery(promptDedupeKey);
   }
   return portUnreachableResponse({
     port,
