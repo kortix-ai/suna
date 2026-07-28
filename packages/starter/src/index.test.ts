@@ -163,19 +163,51 @@ describe('getStarterFiles', () => {
   });
 
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
-    // The one user-facing starter (the default) carries the full skill kit.
+    // The one user-facing starter (the default) carries the domain skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/presentations/SKILL.md')).toBe(
       true,
     );
     expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(
-      minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md'),
-    ).toBe(false);
+    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/presentations/SKILL.md')).toBe(
+      false,
+    );
     expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+  });
+
+  /**
+   * The scaffold floor. Anything beyond this is a marketplace install — the
+   * point of the cut, and the thing most likely to creep back one "surely this
+   * one is universal" skill at a time.
+   */
+  test('the scaffold ships exactly the agreed skill floor', () => {
+    const prefix = '.kortix/opencode/skills/';
+    const names = new Set<string>();
+    for (const f of getStarterFiles({ projectName: 'X' })) {
+      if (!f.path.startsWith(prefix)) continue;
+      const name = f.path.slice(prefix.length).split('/')[0];
+      if (name) names.add(name);
+    }
+    expect([...names].sort()).toEqual([
+      // Design quality for every artifact below (CSS, PPT, matplotlib, PDF).
+      'design-foundations',
+      // Documents & decks.
+      'docx',
+      'pdf',
+      'presentations',
+      'xlsx',
+      // Platform front door.
+      'kortix-cli',
+      // The universal input.
+      'search',
+      // Web artifacts, and the skill that puts them on a public URL.
+      'web-publishing-and-deployments',
+      'webapp',
+      'website-building',
+    ].sort());
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {

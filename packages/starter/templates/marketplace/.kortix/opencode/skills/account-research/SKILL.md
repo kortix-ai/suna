@@ -1,7 +1,6 @@
 ---
 name: account-research
 description: "Get a complete picture of any company or person before outreach. This skill always works with web search, and gets significantly better with enrichment and CRM data."
-defaultProjectInstall: true
 ---
 
 # Account Research

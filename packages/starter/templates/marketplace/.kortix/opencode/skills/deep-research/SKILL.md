@@ -1,8 +1,6 @@
 ---
 name: deep-research
 description: "Deep research agent skill. Use when the user needs thorough, scientific, truth-seeking research on any topic -- investigating claims, finding primary sources, synthesizing evidence, producing cited reports. Triggers on: 'research this', 'investigate', 'deep dive', 'find sources', 'what does the evidence say', 'literature review', 'fact check', 'analyze the research on', any request requiring multi-source investigation with citations."
-defaultProjectInstall: true
-defaultProjectInstallOrder: 10
 ---
 
 # Deep Research

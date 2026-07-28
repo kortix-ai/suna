@@ -107,14 +107,18 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
 
   /**
    * 'accordion' — a vertical list where each row expands its detail inline.
-   * 'split' (the standard for agents, skills & commands) — a master-detail
-   * layout: a separate, self-scrolling sidebar that lists every entity on the
-   * LEFT, the selected entity's source in the MIDDLE, and (when provided)
+   * 'split' (the standard for agents & commands) — a master-detail layout: a
+   * separate, self-scrolling sidebar that lists every entity on the LEFT, the
+   * selected entity's source in the MIDDLE, and (when provided)
    * `renderDetailExtra` as a right aside — e.g. agents surface their
    * scope/model/assignment cards in that third column. Widens the section to
    * fit the extra panes.
+   * 'grid' — a browse-then-drill view: every entity as a card in a responsive
+   * grid, with the detail replacing the grid once one is picked. A 264px
+   * sidebar turns a couple dozen entities into a scroll; a grid puts the same
+   * set on one screen with room for each description.
    */
-  layout?: 'accordion' | 'split';
+  layout?: 'accordion' | 'split' | 'grid';
 }
 
 export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityViewProps<T>) {
@@ -477,7 +481,124 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     </div>
   ) : null;
 
-  const body = layout === 'split' ? splitBody : accordionBody;
+  // Grid — browse as cards, then drill into one. The detail replaces the grid
+  // rather than sitting beside it, so both views get the full section width.
+  const gridCard = (entity: T, cardConfig: ProjectConfigSummary) => {
+    const trailing = renderRowTrailing?.(entity, cardConfig);
+    return (
+      <button
+        key={entity.path}
+        type="button"
+        onClick={() => setSelectedPath(entity.path)}
+        className={cn(
+          'group border-border/60 bg-card hover:border-border flex flex-col gap-1.5 rounded-lg border p-4 text-left',
+          'hover:bg-muted/30 transition-colors',
+          'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+        )}
+      >
+        <span className="flex w-full items-start gap-2">
+          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+            {renderTriggerLabel(entity)}
+          </span>
+          {trailing ? <span className="flex shrink-0 items-center gap-1.5">{trailing}</span> : null}
+        </span>
+        {entity.description ? (
+          <span className="text-muted-foreground/70 line-clamp-3 text-xs leading-relaxed">
+            {entity.description}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  // Unlike `selected`, this never falls back to the first entity — in grid mode
+  // "nothing picked" is the browse state, and a search that filters the picked
+  // entity out must return to the grid, not silently swap in a different one.
+  const gridSelected = selectedPath
+    ? (filtered.find((e) => e.path === selectedPath) ?? null)
+    : null;
+
+  const gridBody = stateContent ? (
+    <div className="h-full overflow-y-auto px-6 py-10">{stateContent}</div>
+  ) : config ? (
+    <div className="h-full overflow-y-auto">
+      {gridSelected ? (
+        <div className="mx-auto max-w-3xl px-6 py-8 lg:py-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground -ml-2 mb-6 gap-1.5"
+            onClick={() => setSelectedPath(null)}
+          >
+            <ChevronRight className="size-3.5 rotate-180" />
+            All {noun}s
+          </Button>
+          <EntityDetail
+            key={gridSelected.path}
+            projectId={projectId}
+            kind={kind}
+            entity={gridSelected}
+            config={config}
+            renderDetailTitle={renderDetailTitle}
+            renderDetailMeta={renderDetailMeta}
+            emptyBodyLabel={emptyBodyLabel}
+            canWrite={canWrite}
+            split
+          />
+        </div>
+      ) : (
+        <div className="px-6 py-6">
+          {entities.length > 0 && renderContext ? (
+            <div className="mb-4">{renderContext(config)}</div>
+          ) : null}
+          <div className="mb-5 max-w-md">{searchInput}</div>
+          {filtered.length === 0 ? (
+            noMatches
+          ) : groups ? (
+            <div className="space-y-8">
+              {groups.map(([label, items]) => {
+                const isCollapsed = collapsed.has(label);
+                return (
+                  <section key={label}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(label)}
+                      aria-expanded={!isCollapsed}
+                      className={cn(
+                        'text-muted-foreground/70 hover:text-foreground mb-3 flex items-center gap-1.5 rounded-md',
+                        'text-[11px] font-medium tracking-wide uppercase transition-colors',
+                        'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                      )}
+                    >
+                      <ChevronRight
+                        className={cn(
+                          'size-3 shrink-0 transition-transform',
+                          isCollapsed ? '' : 'rotate-90',
+                        )}
+                      />
+                      {label}
+                      <span className="text-muted-foreground/40 tabular-nums">{items.length}</span>
+                    </button>
+                    {isCollapsed ? null : (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                        {items.map((entity) => gridCard(entity, config))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {filtered.map((entity) => gridCard(entity, config))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const body = layout === 'grid' ? gridBody : layout === 'split' ? splitBody : accordionBody;
 
   return (
     <CustomizeSectionWrapper
@@ -485,7 +606,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       title={title}
       description={description}
       docs={docs}
-      fill={layout === 'split'}
+      fill={layout === 'split' || layout === 'grid'}
       action={
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />

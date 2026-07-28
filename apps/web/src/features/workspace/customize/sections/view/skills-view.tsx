@@ -32,7 +32,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
       projectId={projectId}
       kind="skill"
       noun="skill"
-      layout="split"
+      layout="grid"
       canWrite={canWrite}
       title="Skills"
       searchPlaceholder="Search skills"
@@ -42,7 +42,6 @@ export function SkillsView({ projectId }: { projectId: string }) {
       emptyDocsHref="https://opencode.ai/docs/skills/"
       emptyBodyLabel="Skill body is empty. Add content below the frontmatter."
       select={(config) => config.skills}
-      compactRows
       groupBy={groupForSkill}
       groupOrder={[PROJECT_GROUP, KORTIX_GROUP]}
       collapsedGroups={[KORTIX_GROUP]}

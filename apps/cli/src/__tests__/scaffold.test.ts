@@ -19,10 +19,13 @@ const REQUIRED_BASE_PATHS = [
   'kortix.yaml',
 ];
 
+// A sample of the artifact floor the general-knowledge-worker layer adds on top
+// of base — a document, a deck, and a site. Not the full list; `@kortix/starter`
+// owns that assertion.
 const GKW_SKILL_PATHS = [
-  '.kortix/opencode/skills/account-research/SKILL.md',
-  '.kortix/opencode/skills/deep-research/SKILL.md',
   '.kortix/opencode/skills/pdf/SKILL.md',
+  '.kortix/opencode/skills/presentations/SKILL.md',
+  '.kortix/opencode/skills/website-building/SKILL.md',
 ];
 
 function baseStarterPaths(): string[] {

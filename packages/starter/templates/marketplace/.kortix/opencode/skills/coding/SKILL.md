@@ -1,7 +1,6 @@
 ---
 name: coding
 description: "Route code, repository, and data/SQL work to isolated Kortix sessions instead of burning your main context on it. Use when asked to implement a feature, fix a bug, make failing tests pass, work a ticket/issue, refactor, navigate or change a codebase, ship a PR, review a pull request, or run SQL/warehouse analysis against a dataset — and when the user wants two agents or parallel reviewers/investigators on the same work. Covers the explore-vs-session routing call, deciding where the code lives (this project's repo vs cloning an external GitHub repo) or where the data lives, finding the repo with gh, spawning sessions in parallel, dual PR reviews, and reporting results back. Triggers: 'implement', 'fix the bug', 'make the tests pass', 'work this ticket', 'refactor this', 'open a PR', 'review this PR', 'run two agents on it', 'query the warehouse', 'analyze this dataset'."
-defaultProjectInstall: true
 ---
 
 # Coding

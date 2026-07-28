@@ -1,8 +1,6 @@
 ---
 name: document-review
 description: "Use for structured review, fact-checking, annotation, and correction of documents such as PDF, DOCX, PPTX, and XLSX files."
-defaultProjectInstall: true
-defaultProjectInstallOrder: 30
 ---
 
 # Document Review
