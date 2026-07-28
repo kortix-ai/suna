@@ -3,15 +3,20 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Two things must stay true about the logged-out homepage.
+ * The logged-out homepage renders the REAL product surface — the same sidebar
+ * chrome, session list, welcome body and composer as the signed-in shell. It is
+ * a preview of the product, so a hand-rolled look-alike would drift and stop
+ * being one.
  *
- * 1. It renders the SAME shell as the signed-in one. It is a preview of the
- *    product, so a hand-rolled look-alike would drift and stop being one.
- * 2. It does not pull in the authenticated data tree. ProjectShell is a project
- *    data root and the real composer reaches for the sandbox runtime client
- *    when no project is present — either one is a 401 on every anonymous visit.
+ * Mounting the real composer is safe because every hook it reaches for is
+ * already gated: useOpenCodeProviders / useOpenCodeAgents / useOpenCodeCommands
+ * / useOpenCodeConfig / useRuntimeSessions all key off `runtimeReady`, which is
+ * false with no sandbox, and useProjectConfig keys off `!!projectId`. The two
+ * that were NOT gated — ProjectSessionList and ProjectHomeWelcomeBody — now are,
+ * and the tests below hold that line.
  *
- * Source-level, because both failures are imports rather than renders.
+ * What stays out is the project data ROOT: ProjectShell and AppProviders mount
+ * session-assuming providers with no query guard of their own.
  */
 
 const HERE = import.meta.dir;
@@ -40,6 +45,8 @@ describe('the logged-out shell reuses the real one', () => {
     'SidebarPlainLink',
     'ProjectNavGroup',
     'ProjectHomeWelcomeBody',
+    'ProjectSessionList',
+    'ComposerChatInput',
   ];
 
   for (const symbol of SHARED) {
@@ -54,19 +61,14 @@ describe('the logged-out shell reuses the real one', () => {
 });
 
 describe('the logged-out shell stays out of the authenticated tree', () => {
+  // The data ROOTS, which fetch with no guard of their own. The leaf hooks are
+  // all self-gating, which is why the real composer and session list are fine.
   const BANNED = [
-    'ComposerChatInput',
-    'SessionChatInput',
     'ProjectShell',
     'AppProviders',
     'BillingAccountProvider',
-    'useRuntimeSessions',
-    'useRuntimeProviders',
-    'useOpenCodeProviders',
-    'useOpenCodeAgents',
     'useGatewayCatalogSync',
     'useCustomizeStore',
-    'ProjectSessionList',
   ];
 
   for (const symbol of BANNED) {
@@ -75,22 +77,29 @@ describe('the logged-out shell stays out of the authenticated tree', () => {
     });
   }
 
-  test('does not call the SDK or fetch directly', () => {
+  test('does not fetch on its own — every query belongs to a shared component', () => {
     expect(SHELL_CODE).not.toContain("from '@kortix/sdk'");
-    expect(SHELL_CODE).not.toContain("from '@kortix/sdk/react'");
     expect(SHELL_CODE).not.toContain('useQuery');
   });
 });
 
-describe('the shared welcome body is safe to render with no project', () => {
-  test('its project-detail query is disabled without a project id', () => {
-    // ProjectHomeWelcomeBody is shared with the anonymous homepage, which has
-    // no project. An unguarded query there 401s on every visit.
+describe('shared components are safe to render with no project', () => {
+  const SESSION_LIST = readFileSync(
+    join(HERE, '..', 'workspace', 'project-sidebar', 'project-session-list.tsx'),
+    'utf8',
+  );
+
+  test('the welcome body does not fetch project detail without a project id', () => {
     expect(PROJECT_HOME).toContain('enabled: !!projectId');
   });
 
   test('the setup pills are suppressed when there is no project to set up', () => {
     expect(PROJECT_HOME).toContain('setupTiles && projectId');
+  });
+
+  test('the session list does not fetch sessions without a project id', () => {
+    // Unguarded, this called listProjectSessions('') on every anonymous visit.
+    expect(SESSION_LIST).toContain('enabled: !!projectId');
   });
 });
 
@@ -100,8 +109,9 @@ describe('the logged-out shell gates every action', () => {
     expect(SHELL_CODE).toContain('gateWithPrompt');
   });
 
-  test('shows an honest empty session list rather than ghost rows', () => {
-    expect(SHELL).toContain('No sessions yet');
+  test('delegates the session list rather than inventing ghost rows', () => {
+    // The empty state is the real component's own, not a copy living here.
+    expect(SHELL_CODE).toContain('<ProjectSessionList projectId=""');
   });
 
   test('keeps the marketing pages reachable from the product shell', () => {

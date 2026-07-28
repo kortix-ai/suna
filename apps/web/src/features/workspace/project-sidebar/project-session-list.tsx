@@ -119,6 +119,10 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
+    // Shared with the signed-out homepage, which has no project. Without this
+    // guard the list would fetch `listProjectSessions('')` on every anonymous
+    // visit; with it, the list simply renders its own empty state.
+    enabled: !!projectId,
     staleTime: 10_000,
     refetchInterval: (query) =>
       shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { AnonymousHomeShell } from '@/features/home/anonymous-home-shell';
 import { LAST_PROJECT_COOKIE, isValidProjectId } from '@/lib/home/last-project-cookie';
@@ -47,7 +48,12 @@ export default async function HomePage() {
   }
 
   if (!userId) {
-    return <AnonymousHomeShell />;
+    // The shell reads `?view=` to preview a section, so it needs a boundary.
+    return (
+      <Suspense fallback={<div className="bg-background min-h-dvh" />}>
+        <AnonymousHomeShell />
+      </Suspense>
+    );
   }
 
   const cookieStore = await cookies();
