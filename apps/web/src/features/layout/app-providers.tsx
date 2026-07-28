@@ -4,8 +4,8 @@ import { SidebarRight } from '@/components/sidebar/sidebar-right';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { NewInstanceModal } from '@/features/billing/pricing/new-instance-modal';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { NewInstanceModal } from '@/features/billing/pricing/new-instance-modal';
 import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
@@ -50,6 +50,21 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
     return () => cancelAnimationFrame(id);
   }, []);
 
+  // NO WRAPPER unless the onboarding morph is actually running.
+  //
+  // SidebarInset styles itself with `md:peer-data-[variant=inset]:rounded-xl`,
+  // and `peer-*` is a CSS sibling combinator: it only matches when the
+  // <Sidebar> element — which carries `peer` and `data-variant` — is the
+  // inset's immediate previous sibling. Wrapping it in a div broke that, so
+  // the signed-in shell silently lost its rounded inset while the signed-out
+  // one (no wrapper) kept it. Same components, different nesting, different
+  // shell.
+  //
+  // The wrapper exists only to animate max-width during the onboarding
+  // hide-morph, which needs a concrete start value to transition from. That is
+  // a transient state, so it is the only time the extra element is present.
+  if (!obActive) return <>{sidebarContent}</>;
+
   return (
     <div
       data-slot="sidebar-left-slot"
@@ -59,11 +74,8 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
           : 'overflow-hidden'
       }
       style={{
-        // Normal mode: use a max-width larger than any real sidebar width
-        // so it never constrains the inner <Sidebar> (which manages its
-        // own 280px / 3.25rem widths via `collapsible="icon"`).
-        // Onboarding-hide: clamp to 0 so the sidebar slides out with an
-        // animation — CSS needs a concrete start value to transition from.
+        // Normal mode: a max-width larger than any real sidebar width so it
+        // never constrains the inner <Sidebar>. Onboarding-hide: clamp to 0.
         maxWidth: hideSidebar ? 0 : 320,
         opacity: hideSidebar ? 0 : 1,
       }}

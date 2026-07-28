@@ -22,10 +22,10 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { DangerTriangleSolid, Icon as IconMynauiType } from '@mynaui/icons-react';
-import { LucideIcon } from 'lucide-react';
+import { DangerTriangleSolid, type Icon as IconMynauiType } from '@mynaui/icons-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 export interface ErrorStateProps {
   icon?: LucideIcon | IconMynauiType | IconType;
