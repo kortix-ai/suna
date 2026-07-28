@@ -38,6 +38,17 @@ export function StackSection() {
     };
   }, [onScroll]);
 
+  /** Scroll to the slice of the pinned range that owns layer `i`. */
+  const goTo = useCallback((i: number) => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const scrollable = el.offsetHeight - window.innerHeight;
+    if (scrollable <= 0) return;
+    // aim at the middle of the slice so the layer stays put once we land
+    const target = el.offsetTop + ((i + 0.5) / LAYERS.length) * scrollable;
+    window.scrollTo({ top: target, behavior: 'smooth' });
+  }, []);
+
   const skip = useCallback(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -64,13 +75,21 @@ export function StackSection() {
                 {LAYERS.map((layer, i) => {
                   const isActive = i === active;
                   return (
-                    <div
+                    <button
                       key={layer.name}
+                      type="button"
+                      onClick={() => goTo(i)}
+                      aria-current={isActive}
                       className={cn(
-                        'transition-all duration-300 ease-out',
+                        // A fixed radius across both states: a collapsed row is
+                        // ~2.2rem tall, so 1.1rem still reads as a pill and the
+                        // shape never morphs when the row expands. Only colour
+                        // and padding animate — never border-radius.
+                        'cursor-pointer rounded-[1.1rem] text-left transition-[background-color,padding] duration-300 ease-out',
+                        'focus-visible:ring-foreground/40 outline-none focus-visible:ring-2',
                         isActive
-                          ? 'bg-foreground/[0.62] rounded-[1rem] px-5 py-4 backdrop-blur-sm'
-                          : 'bg-foreground/[0.55] w-fit rounded-full px-4 py-[0.4rem]',
+                          ? 'bg-foreground/[0.62] px-5 py-4 backdrop-blur-sm'
+                          : 'bg-foreground/[0.55] hover:bg-foreground/[0.68] w-fit px-4 py-[0.4rem]',
                       )}
                     >
                       <p className="text-background text-[0.9375rem] font-medium">{layer.name}</p>
@@ -93,7 +112,7 @@ export function StackSection() {
                           )}
                         </>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
