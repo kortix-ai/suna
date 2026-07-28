@@ -3677,7 +3677,7 @@ Completed the Nango-only SDK compatibility cutover.
 
 Local verification:
 
-- SDK suite: **1318 pass / 0 fail** with **5825** assertions across **112**
+- SDK suite: **1341 pass / 0 fail** with **5873** assertions across **112**
   files.
 - SDK typecheck and examples typecheck: exit 0.
 - SDK packed-install smoke: packed, installed, imported, and constructed
