@@ -11,6 +11,7 @@ import { ArrowUpRight, Check, Copy, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const terminalLines = [
   { id: 'install', type: 'command', text: KORTIX_CLI_INSTALL_COMMAND },
@@ -30,7 +31,7 @@ export function CliInstallSection() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath() : '/auth';
   }, [user]);
 
   const copyInstallCommand = useCallback(() => {

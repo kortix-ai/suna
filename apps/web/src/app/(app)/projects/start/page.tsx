@@ -1,15 +1,16 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
-import { isBillingEnabled } from '@/lib/config';
 import { ensureFirstProject, isAutoProjectSuppressed } from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * `/projects/start` — the id-free door into the product.
@@ -25,11 +26,17 @@ import { useEffect, useRef } from 'react';
  * starter push inside the auth callback, so a new user watched a blank callback
  * page for the entire provision.
  */
+/** Transient failures get retried here rather than bounced to the list. */
+const MAX_RESOLVE_ATTEMPTS = 3;
+const RETRY_DELAY_MS = [400, 1200];
+
 export default function ProjectStartPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const selectedAccountId = useCurrentAccountStore((state) => state.selectedAccountId);
-  const resolveAttempted = useRef(false);
+  const attempts = useRef(0);
+  const resolving = useRef(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -40,54 +47,105 @@ export default function ProjectStartPage() {
     queryFn: listAccounts,
     enabled: !!user,
     staleTime: 60_000,
+    retry: 3,
   });
 
-  useEffect(() => {
-    if (resolveAttempted.current) return;
+  const resolve = useCallback(async () => {
+    if (resolving.current) return;
     const accounts = accountsQuery.data;
     if (!accounts) return;
 
     const account =
       accounts.find((entry) => entry.account_id === selectedAccountId) ?? accounts[0] ?? null;
-    if (!account) {
-      // No account yet is not a state this route can resolve. The list page owns
-      // the account-less empty/error surface.
-      router.replace('/projects');
-      return;
-    }
+    if (!account) return;
 
-    resolveAttempted.current = true;
+    resolving.current = true;
+    attempts.current += 1;
 
     // Only owners/admins may create a project (ACCOUNT_ACTIONS.PROJECT_CREATE).
-    // A member of a team with no projects must land on the list, not on a 403.
     const canCreate = account.account_role === 'owner' || account.account_role === 'admin';
 
-    ensureFirstProject(account.account_id, {
-      preferredProjectId: readLastProjectId(),
-      allowCreate: canCreate && !isAutoProjectSuppressed(),
-    })
-      .then((project) => {
-        if (!project) {
-          router.replace('/projects');
-          return;
-        }
+    try {
+      const project = await ensureFirstProject(account.account_id, {
+        preferredProjectId: readLastProjectId(),
+        allowCreate: canCreate && !isAutoProjectSuppressed(),
+      });
+
+      if (project) {
         writeLastProjectId(project.project_id);
         router.replace(`/projects/${project.project_id}`);
-      })
-      .catch((err) => {
-        // Never strand the user on this route. The list page can show the real
-        // error, the create flow, or the billing state as appropriate.
-        console.error('[onboarding] could not resolve a landing project', err);
-        router.replace('/projects');
-      });
+        return;
+      }
+
+      // No project exists AND none may be created here: a member without
+      // PROJECT_CREATE, or the account the user just emptied by deleting their
+      // last project. There is no project to open, so the list is the only
+      // surface that can explain the state — this is a terminal case, not a
+      // default landing.
+      router.replace('/projects');
+    } catch (err) {
+      console.error('[onboarding] could not resolve a landing project', err);
+      const delay = RETRY_DELAY_MS[attempts.current - 1];
+      if (attempts.current < MAX_RESOLVE_ATTEMPTS && delay !== undefined) {
+        // A transient backend hiccup must not demote the user to the projects
+        // list — retry in place, behind the same paint.
+        setTimeout(() => {
+          resolving.current = false;
+          void resolve();
+        }, delay);
+        return;
+      }
+      setFailed(true);
+    } finally {
+      if (attempts.current >= MAX_RESOLVE_ATTEMPTS) resolving.current = false;
+    }
   }, [accountsQuery.data, selectedAccountId, router]);
 
   useEffect(() => {
-    if (!accountsQuery.isError) return;
-    router.replace('/projects');
-  }, [accountsQuery.isError, router]);
+    if (attempts.current > 0) return;
+    void resolve();
+  }, [resolve]);
+
+  if (failed || accountsQuery.isError) {
+    return (
+      <ProjectStartError
+        onRetry={() => {
+          attempts.current = 0;
+          resolving.current = false;
+          setFailed(false);
+          if (accountsQuery.isError) void accountsQuery.refetch();
+          else void resolve();
+        }}
+      />
+    );
+  }
 
   return <ProjectStartSkeleton />;
+}
+
+/**
+ * Failure stays on this route. Falling back to `/projects` would quietly make
+ * the list the default destination again, which is exactly what this flow
+ * removes — so the recovery is an explicit retry, and the list is offered only
+ * as a deliberate choice.
+ */
+function ProjectStartError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="space-y-1">
+        <p className="text-base font-medium">We could not open your project</p>
+        <p className="text-muted-foreground text-sm">
+          Something went wrong on our side. Your work is safe.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button onClick={onRetry}>Try again</Button>
+        <Button variant="ghost" asChild>
+          <Link href="/projects">View all projects</Link>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /**

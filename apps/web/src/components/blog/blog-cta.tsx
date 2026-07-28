@@ -6,6 +6,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 /** The standard marketing CTA pair, reused inside blog posts. */
 export function BlogCta() {
@@ -14,7 +15,7 @@ export function BlogCta() {
 
   const handleStart = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? latestProjectPath() : '/auth';
   }, [user]);
 
   return (

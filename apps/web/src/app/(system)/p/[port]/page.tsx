@@ -3,6 +3,7 @@
 import { use, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTabStore } from '@/stores/tab-store';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 /**
  * Preview route handler for /p/[port].
@@ -34,7 +35,7 @@ export default function PreviewPage({
     if (tabs[tabId]) {
       setActiveTab(tabId);
     } else {
-      router.replace('/projects');
+      router.replace(latestProjectPath());
     }
   }, [port, tabs, setActiveTab, router]);
 

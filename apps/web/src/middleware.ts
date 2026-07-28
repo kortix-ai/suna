@@ -269,7 +269,11 @@ export async function middleware(request: NextRequest) {
         (route) => pathname === route || pathname.startsWith(route + '/'),
       );
     if (!isAllowed) {
-      return NextResponse.redirect(new URL('/projects', request.url));
+      // Into the latest project, not the list — the desktop shell has no
+      // marketing surface, so this bounce IS the user's default destination.
+      return NextResponse.redirect(
+        new URL(resolveDefaultLandingPath(request.cookies.get(LAST_PROJECT_COOKIE)?.value), request.url),
+      );
     }
   }
 

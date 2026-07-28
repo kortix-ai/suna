@@ -2,6 +2,7 @@ import {
   LAST_PROJECT_COOKIE,
   LAST_PROJECT_COOKIE_MAX_AGE,
   isValidProjectId,
+  resolveDefaultLandingPath,
 } from '@/lib/onboarding/landing-destination';
 
 /**
@@ -34,4 +35,20 @@ export function writeLastProjectId(projectId: string): void {
 export function clearLastProjectId(): void {
   if (typeof document === 'undefined') return;
   document.cookie = `${LAST_PROJECT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+
+/**
+ * Where "take me into the app" goes from client code: the latest project the
+ * user had open, else the landing door that resolves one.
+ *
+ * Use this for every implicit destination — post-flow returns, the logo, the
+ * marketing "launch app" CTA. Never send those to `/projects`: the list is a
+ * place the user chooses to visit, not a place the app drops them.
+ *
+ * Do NOT use this after an account switch. The cookie names a project in the
+ * account the user just left, so those callers must use `PROJECT_LANDING_PATH`
+ * and let the landing door re-resolve against the new account.
+ */
+export function latestProjectPath(): string {
+  return resolveDefaultLandingPath(readLastProjectId());
 }

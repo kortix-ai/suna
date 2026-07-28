@@ -17,6 +17,7 @@ import {
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
 import { Github } from 'lucide-react';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
 
@@ -66,7 +67,7 @@ function GitHubSetup() {
     if (setupAction === 'uninstall') {
       setState('done');
       setMessage('GitHub App removed from your account.');
-      redirectTimer.current = window.setTimeout(() => router.replace('/projects'), 900);
+      redirectTimer.current = window.setTimeout(() => router.replace(latestProjectPath()), 900);
       return;
     }
 
@@ -267,7 +268,7 @@ function GitHubSetup() {
                 size="lg"
                 variant="outline"
                 className="w-full"
-                onClick={() => router.replace(consumeGitHubSetupReturn() ?? '/projects')}
+                onClick={() => router.replace(consumeGitHubSetupReturn() ?? latestProjectPath())}
               >
                 Back
               </Button>
@@ -275,8 +276,8 @@ function GitHubSetup() {
           </Rise>
         ) : state === 'error' ? (
           <Rise delay={0.06}>
-            <Button size="lg" className="w-full" onClick={() => router.replace('/projects')}>
-              Back to projects
+            <Button size="lg" className="w-full" onClick={() => router.replace(latestProjectPath())}>
+              Back to Kortix
             </Button>
           </Rise>
         ) : null}
