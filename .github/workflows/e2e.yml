@@ -120,9 +120,11 @@ jobs:
       - name: GC leaked resources from prior runs
         if: github.event_name != 'pull_request'
         continue-on-error: true
+        timeout-minutes: 5
         run: bun bin/ke2e.ts gc --older-than 2h
         working-directory: tests
         env:
+          KE2E_GC_WORKERS: 8
           KE2E_API_URL: ${{ steps.target.outputs.base }}
           KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
           KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}

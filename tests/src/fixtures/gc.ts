@@ -7,6 +7,7 @@
  * sandboxes can be layered on later via KE2E_DATABASE_URL.
  */
 import { Client } from "../core/client";
+import { mapWithConcurrency } from "../core/concurrency";
 import { loadEnv, type Env } from "../core/env";
 import { log } from "../core/log";
 import { adminDeleteUser, passwordGrant } from "./supabase";
@@ -97,10 +98,16 @@ export async function runGc(opts: GcOptions): Promise<void> {
   log.info(`gc: ${users.length} test user(s) found, ${stale.length} older than ${opts.olderThan}`);
   let removed = 0;
   let failed = 0;
-  for (const u of stale) {
+  const configuredWorkers = Number(process.env.KE2E_GC_WORKERS ?? 8);
+  const workers =
+    Number.isFinite(configuredWorkers) && configuredWorkers > 0
+      ? Math.min(32, Math.trunc(configuredWorkers))
+      : 8;
+  log.info(`gc: reclaiming with ${workers} workers`);
+  await mapWithConcurrency(stale, workers, async (u) => {
     if (opts.dryRun) {
       log.info(`  would delete ${u.email} (${u.id})`);
-      continue;
+      return;
     }
     try {
       await reclaimUser(env, u);
@@ -109,7 +116,7 @@ export async function runGc(opts: GcOptions): Promise<void> {
       failed++;
       log.warn(`  could not reclaim ${u.email}: ${String((err as Error).message).slice(0, 120)}`);
     }
-  }
+  });
   if (!opts.dryRun) {
     log.pass(`gc: reclaimed ${removed} stale test user(s)`);
     if (failed) log.fail(`gc: ${failed} could not be reclaimed (see warnings)`);

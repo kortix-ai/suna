@@ -352,6 +352,21 @@ is a real query. Two caveats worth knowing:
 - **The value lands in the billing ledger and comes back out of the API**, so use
   an opaque id — not an email.
 
+For **spend**, `KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD` refuses a session
+create for an end-user who has already spent that much inside
+`KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS` (default 30). Unset/0 = off.
+Exceeding it returns `429 per_end_user_spend_limit`, whose body carries
+`spent_usd`, `limit_usd` and `window_days` so you can tell your user *why*.
+Without it, the only backstop is the account balance — which fires once the
+WHOLE wrapper is out of money, i.e. after one runaway end-user has already spent
+everyone else's budget.
+
+Two honest limits, the same ones the concurrency cap has: it is **check-then-act**
+(N parallel creates for one end-user can each see the same under-limit total, so
+it is a runaway guardrail, not a hard quota), and it is measured at session
+**create** — a session already running is not killed mid-turn when it crosses the
+line; the next create is what gets refused.
+
 For concurrency, `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT` caps how many LIVE
 sessions one end-user may hold (0/unset = off; the account-wide cap always
 applies). Exceeding it returns `429 per_origin_session_limit`. It's a check-then-

@@ -156,4 +156,16 @@ describe('managed Git fixture selection', () => {
     expect(workflow).toContain('secrets.STAGING_DATABASE_URL');
     expect(workflow).toContain('secrets.STAGING_STRIPE_SECRET_KEY');
   });
+
+  it('bounds stale-user GC with parallel workers and a workflow timeout', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/e2e.yml'),
+      'utf8',
+    );
+    const gc = readFileSync(resolve(import.meta.dirname, '../src/fixtures/gc.ts'), 'utf8');
+
+    expect(workflow).toContain('timeout-minutes: 5');
+    expect(workflow).toContain('KE2E_GC_WORKERS: 8');
+    expect(gc).toContain('mapWithConcurrency(stale, workers');
+  });
 });

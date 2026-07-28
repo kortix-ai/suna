@@ -121,6 +121,18 @@ Two things to know:
 
 The dashboard shows the same data under **Credits → Spend by end-user**.
 
+### Capping one end-user's spend
+
+Metering tells you what an end-user cost. To *stop* one, the operator sets
+`KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD` (with
+`KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS`, default 30). Session create then
+returns `429 per_end_user_spend_limit` for an end-user over the ceiling, while
+every other end-user keeps working. Off by default.
+
+It is a runaway guardrail, not a hard quota: the check is check-then-act, so
+concurrent creates can overshoot slightly, and it is evaluated at create — a
+running session is not killed mid-turn.
+
 ### List one end-user's sessions
 
 The same handle filters the session list, server-side:
@@ -260,6 +272,7 @@ starting a second one. Replaying a key with a **different** body — different
 | `409` | `END_USER_REF_CONFLICT` | You sent `end_user_ref` and the deprecated `origin_ref` with different values. On session **create** it is a `409`; on the session **list** filter it is a `400`. |
 | `409` | `IDEMPOTENCY_KEY_CONFLICT` | The key collided with a different operation. Unlike the other idempotency errors, the fix is a **higher-entropy key** — the uniqueness index is global. |
 | `429` | `concurrent_session_limit` / `per_origin_session_limit` | Account-wide, or per-end-user when the operator enables it. Retry with backoff. |
+| `429` | `per_end_user_spend_limit` | This end-user has spent their ceiling inside the rolling window. Body carries `spent_usd`, `limit_usd`, `window_days`. Not retryable until the window rolls or the operator raises the limit. |
 | `402` | `subscription_required` / `insufficient_credits` | Billing — not retryable without operator action. |
 
 ## What you can change once a session is running

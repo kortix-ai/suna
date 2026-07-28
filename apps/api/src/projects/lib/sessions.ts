@@ -3,13 +3,15 @@ import {
   projectSessionConnectorBindings,
   projectSessionRuntimeContexts,
   projectSessions,
+  usageEvents,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type SandboxProviderName, config } from '../../config';
+import { decideSpendCap, spendCapError, spendWindowStart } from './end-user-spend-cap';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
@@ -167,6 +169,62 @@ export async function enforcePerOriginSessionCap(
       active_sessions: active,
     },
   };
+}
+
+/**
+ * Spend already attributed to one end-user inside the rolling window.
+ *
+ * Served by idx_usage_events_account_origin_time, which is partial on
+ * `origin_ref is not null` — the vast majority of usage rows are non-backend
+ * spend and never enter this index.
+ *
+ * Sums `cost_usd_precise` (the 20,10 column), not the legacy 12,6 `cost_usd`:
+ * a per-end-user ceiling is exactly where rounding each row to six decimals
+ * would accumulate into a visibly wrong total.
+ */
+export async function sumEndUserSpendUsd(
+  accountId: string,
+  endUserRef: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${usageEvents.costUsd}), 0)::text` })
+    .from(usageEvents)
+    .where(
+      and(
+        eq(usageEvents.accountId, accountId),
+        eq(usageEvents.originRef, endUserRef),
+        gte(usageEvents.createdAt, since),
+      ),
+    )
+    .limit(1);
+  const total = Number.parseFloat(row?.total ?? '0');
+  return Number.isFinite(total) ? total : 0;
+}
+
+/**
+ * Per-end-user SPEND cap. Opt-in and off by default, like the concurrency cap
+ * beside it. Skips the query entirely when the cap is off or the session has no
+ * end-user, so an unconfigured deployment pays nothing for this.
+ */
+export async function enforcePerEndUserSpendCap(
+  accountId: string,
+  endUserRef: string | null,
+  now = new Date(),
+): Promise<SessionCreateError | null> {
+  const limitUsd = config.KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD ?? 0;
+  const windowDays = config.KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS ?? 30;
+  // Decide the cheap cases BEFORE touching the database.
+  const preflight = decideSpendCap({ endUserRef, limitUsd, windowDays, spentUsd: 0 });
+  if (preflight.allowed && preflight.reason !== 'under_limit') return null;
+
+  const spentUsd = await sumEndUserSpendUsd(
+    accountId,
+    endUserRef as string,
+    spendWindowStart(now, windowDays),
+  );
+  const decision = decideSpendCap({ endUserRef, limitUsd, windowDays, spentUsd });
+  return decision.allowed ? null : spendCapError(decision);
 }
 
 export async function countProvisioningProjectSessions(projectId: string): Promise<number> {
@@ -1053,7 +1111,7 @@ export async function createProjectSession(input: {
   // run them concurrently so a warmed create pays a single DB round-trip instead
   // of two serial ones. Error precedence is preserved exactly: the cap (429) is
   // still evaluated/returned before billing (402).
-  const [capResult, billingCheck, perOriginCapError] = await Promise.all([
+  const [capResult, billingCheck, perOriginCapError, perEndUserSpendError] = await Promise.all([
     input.enforceAccountCap !== false
       ? checkConcurrentSessionCap(accountId, userId, input.request)
       : Promise.resolve(null),
@@ -1066,8 +1124,18 @@ export async function createProjectSession(input: {
     input.enforceAccountCap !== false
       ? enforcePerOriginSessionCap(accountId, originRef)
       : Promise.resolve(null),
+    // Per-END-USER SPEND cap. The account balance check above only fires once
+    // the WHOLE wrapper is out of money — by then one runaway end-user has
+    // already spent every other end-user's budget. Also off by default; also
+    // joins this Promise.all so it adds no round-trip depth.
+    input.enforceAccountCap !== false
+      ? enforcePerEndUserSpendCap(accountId, originRef)
+      : Promise.resolve(null),
   ]);
   if (perOriginCapError) return { error: perOriginCapError };
+  // Concurrency before spend: "you already have N running" is the more
+  // actionable message when an end-user trips both at once.
+  if (perEndUserSpendError) return { error: perEndUserSpendError };
   if (capResult) {
     responseHeaders = capResult.headers;
     if (capResult.error) return { error: capResult.error };
