@@ -1,10 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import { db } from '../shared/db';
 import { logger as appLogger } from '../lib/logger';
-import { isPlaceholderOpencodeTitle, syncRowFromSandbox } from './opencode-title-sync';
+import { db } from '../shared/db';
 import type { ProjectSessionRow } from './lib/serializers';
+import { isPlaceholderOpencodeTitle, syncRowFromSandbox } from './opencode-title-sync';
 
 // Deferred title capture, scheduled off the prompt proxy path.
 //
@@ -20,6 +20,7 @@ const FIRST_ATTEMPT_DELAY_MS = 20_000;
 const RETRY_DELAY_MS = 40_000;
 
 const pending = new Set<string>();
+const immediate = new Map<string, Promise<void>>();
 
 function hasRealTitle(row: ProjectSessionRow): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -37,12 +38,34 @@ async function loadRow(sessionId: string, projectId: string): Promise<ProjectSes
   return (row as ProjectSessionRow | undefined) ?? null;
 }
 
+async function persistTitle(input: {
+  row: ProjectSessionRow;
+  title: string;
+}): Promise<void> {
+  const metadata = (input.row.metadata ?? {}) as Record<string, unknown>;
+  if (metadata.name === input.title) return;
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: { ...metadata, name: input.title },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.row.sessionId),
+        eq(projectSessions.projectId, input.row.projectId),
+        eq(projectSessions.accountId, input.row.accountId),
+      ),
+    );
+}
+
 /** Injectable seams so unit tests run without process-global module mocks. */
 export interface TitleCaptureOptions {
   firstMs?: number;
   retryMs?: number;
   loadRow?: (sessionId: string, projectId: string) => Promise<ProjectSessionRow | null>;
   sync?: typeof syncRowFromSandbox;
+  persistTitle?: typeof persistTitle;
 }
 
 /**
@@ -84,7 +107,7 @@ export function scheduleTitleCaptureAfterPrompt(
       await attempt();
     } catch (err) {
       // Best-effort enrichment: a failed capture must never surface — the
-      // The next prompt schedules another capture attempt.
+      // next prompt schedules another capture attempt.
       appLogger.warn('[title-capture] deferred capture failed', {
         sessionId: input.sessionId,
         projectId: input.projectId,
@@ -98,7 +121,60 @@ export function scheduleTitleCaptureAfterPrompt(
   setTimeout(() => void run(), firstMs);
 }
 
+/**
+ * Persist a title supplied by ACP session_info_update or OpenCode
+ * session.updated before the API proxy forwards that event to the browser.
+ */
+export function captureTitleAfterRuntimeEvent(
+  input: {
+    sessionId: string;
+    projectId: string;
+    opencodeSessionId: string;
+    title: string;
+  },
+  options: TitleCaptureOptions = {},
+): Promise<void> {
+  if (
+    !input.sessionId ||
+    !input.projectId ||
+    !input.opencodeSessionId ||
+    !input.title.trim() ||
+    isPlaceholderOpencodeTitle(input.title)
+  ) {
+    return Promise.resolve();
+  }
+  const key = [
+    input.projectId,
+    input.sessionId,
+    input.opencodeSessionId,
+    input.title.trim(),
+  ].join(':');
+  const existing = immediate.get(key);
+  if (existing) return existing;
+
+  const load = options.loadRow ?? loadRow;
+  const persist = options.persistTitle ?? persistTitle;
+  const run = (async () => {
+    try {
+      const row = await load(input.sessionId, input.projectId);
+      if (!row) return;
+      if (row.opencodeSessionId && row.opencodeSessionId !== input.opencodeSessionId) return;
+      await persist({ row, title: input.title.trim() });
+    } catch (err) {
+      appLogger.warn('[title-capture] runtime title synchronization failed', {
+        sessionId: input.sessionId,
+        projectId: input.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })().finally(() => {
+    immediate.delete(key);
+  });
+  immediate.set(key, run);
+  return run;
+}
+
 /** Test hook: number of sessions with a capture in flight. */
 export function pendingTitleCaptures(): number {
-  return pending.size;
+  return pending.size + immediate.size;
 }

@@ -11,9 +11,12 @@ test('the root session composer sends through the SDK useSession result', () => 
   expect(source).toContain('await sessionState.sendParts(mappedParts');
 });
 
-test('the frontend does not select a runtime transport', () => {
+test('the session page delegates its page-scoped ACP override to the SDK', () => {
   expect(source).not.toContain('sessionState.runtimeTransport');
   expect(source).not.toMatch(/runtimeTransport\s*===\s*['"]acp['"]/);
+  expect(sessionPageSource).toContain("searchParams.has('acp')");
+  expect(sessionPageSource).toContain("runtimeTransport: forceAcp ? 'acp' : undefined");
+  expect(sessionPageSource).not.toContain('experimental.acp_runtime');
 });
 
 test('the session page uses one SDK session hook for runtime session state', () => {

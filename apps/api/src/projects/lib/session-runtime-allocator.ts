@@ -1,15 +1,16 @@
 import { eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
+import type { SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
-import type { SandboxProviderName } from '../../config';
-import type { ProjectRow } from './serializers';
-import { RuntimeIdentityConflictError } from '../runtime-identity-error';
-import { mergeSessionSandboxEnv } from './session-runtime-context';
 import type { GitBackedProject } from '../git';
+import { RuntimeIdentityConflictError } from '../runtime-identity-error';
+import type { ProjectRow } from './serializers';
+import { projectSessionMetadataMerge } from './session-metadata-merge';
+import { mergeSessionSandboxEnv } from './session-runtime-context';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -125,19 +126,10 @@ async function mergeSessionMetadata(
   sessionId: string,
   extra: Record<string, unknown>,
 ): Promise<void> {
-  const [current] = await db
-    .select({ metadata: projectSessions.metadata })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
-  const currentMetadata =
-    current?.metadata && typeof current.metadata === 'object'
-      ? (current.metadata as Record<string, unknown>)
-      : {};
   await db
     .update(projectSessions)
     .set({
-      metadata: { ...currentMetadata, ...extra },
+      metadata: projectSessionMetadataMerge(extra),
       updatedAt: new Date(),
     })
     .where(eq(projectSessions.sessionId, sessionId));

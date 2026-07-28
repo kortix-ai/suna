@@ -828,6 +828,57 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
   });
 
+  test("streaming model fallback bypasses a primary that opens but produces no bytes", async () => {
+    const calls: string[] = [];
+    const { hooks, traces } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test-stalled-stream",
+        primaryModel: input.requestedModel,
+        fallbackModels: ["fallback"],
+        fallbackOn: "transient",
+      }),
+      resolveUpstream: async (_principal, model) => [{
+        ...managed,
+        provider: model,
+        baseUrl: `https://${model}.test/v1`,
+        resolvedModel: model,
+      }],
+    });
+    const fetchImpl: FetchImpl = async (url) => {
+      calls.push(String(url));
+      if (String(url).includes("primary.test")) {
+        return new Response(new ReadableStream<Uint8Array>(), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"fallback ok"}}]}\n\n' +
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+        "data: [DONE]\n\n",
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    };
+
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      streamProbeTimeoutMs: 20,
+    }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"primary","stream":true,"messages":[{"role":"user","content":"ping"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("fallback ok");
+    expect(calls).toHaveLength(2);
+    await flush();
+    expect(traces.at(-1)?.metadata.gatewayRouting).toEqual({
+      policy: "test-stalled-stream",
+      models: ["primary", "fallback"],
+      selected: "fallback",
+    });
+  });
+
   test("any-error model policy falls back on a deterministic primary 400", async () => {
     const calls: string[] = [];
     const { hooks } = makeHooks({

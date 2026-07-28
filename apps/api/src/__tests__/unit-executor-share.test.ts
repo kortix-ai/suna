@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   intentToScope,
   isSecretUsableBy,
+  isSessionTargetVisibleToCaller,
   isSessionVisibleTo,
   parseSharingIntent,
   scopeToIntent,
@@ -213,5 +214,61 @@ describe('session sharing — default private; team-wide or select-members', () 
     expect(visibilityToIntent('project', [])).toEqual({ mode: 'project' });
     expect(visibilityToIntent('private', [])).toEqual({ mode: 'private', ownerId: '' });
     expect(visibilityToIntent('restricted', members.grants)).toEqual({ mode: 'members', memberIds: [BOB], groupIds: [SALES] });
+  });
+});
+
+/**
+ * The SHARING path must obey the same KaaB narrowing as the read path.
+ *
+ * `loadSessionForSharing` is a separate helper from `loadVisibleSession`, and
+ * the commit that threaded `callerSessionId` through every visibility check
+ * enumerated the latter's call sites and missed this one. Sharing is the worst
+ * place to miss: a public share is UNAUTHENTICATED and its router is mounted
+ * before auth, so a mint against another end-user's session exposes their live
+ * app port and workspace files to anyone with the URL.
+ */
+describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
+  const WRAPPER = 'wrapper-service-account';
+
+  test("one end-user's sandbox may not manage sharing on another's session", () => {
+    // Same shape as the read path: shared creator, backend origin, different
+    // caller session. If this returns true, A can mint a public URL onto B.
+    expect(
+      isSessionVisibleTo('private', WRAPPER, [], { userId: WRAPPER, groupIds: [] }, {
+        origin: 'backend',
+        sessionId: 'session-of-end-user-b',
+        callerSessionId: 'session-of-end-user-a',
+      }),
+    ).toBe(false);
+  });
+
+  test('a sandbox may still manage sharing on its OWN session', () => {
+    expect(
+      isSessionVisibleTo('private', WRAPPER, [], { userId: WRAPPER, groupIds: [] }, {
+        origin: 'backend',
+        sessionId: 'session-a',
+        callerSessionId: 'session-a',
+      }),
+    ).toBe(true);
+  });
+
+  test('a human project member reaches the sharing permission check', () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        origin: 'user',
+        sessionId: 'private-session',
+        callerSessionId: null,
+      }),
+    ).toBe(true);
+  });
+
+  test("a session-bound backend credential cannot target another end-user's session", () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        origin: 'backend',
+        sessionId: 'session-of-end-user-b',
+        callerSessionId: 'session-of-end-user-a',
+      }),
+    ).toBe(false);
   });
 });

@@ -43,7 +43,10 @@ describe('dependency contract — every external binary the worktree spawns is d
   });
 
   test('every bin spawned in lib.ts is either declared in DEPS or a shell builtin', () => {
-    const allowed = new Set([...depBins, 'bash', 'git', 'node', 'stripe', 'cloudflared', 'dotenvx']);
+    // `ps` joins bash/git as a POSIX base utility the reaper relies on: it is present
+    // on every macOS and Linux box, so declaring it in DEPS would only add a check
+    // that can never fail. `lsof` is reached through `bash -lc` and needs no entry.
+    const allowed = new Set([...depBins, 'bash', 'git', 'node', 'ps', 'stripe', 'cloudflared', 'dotenvx']);
     const spawned = new Set(
       [...libSrc.matchAll(/(?:run|sh|spawn)\(\s*\[\s*'([a-z][a-z0-9-]*)'/g)].map((m) => m[1]),
     );

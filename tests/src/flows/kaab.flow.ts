@@ -18,7 +18,7 @@ flow(
   'KAAB-1',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     await ctx.step('backend PAT create with overrides → 201, echoes origin/origin_ref', async () => {
       const r = await ctx.client
         .as(ctx.P.PAT_ACCT)
@@ -41,7 +41,7 @@ flow(
   'KAAB-2',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     await ctx.step('non-backend (user) setting origin_ref → 403 origin_override_forbidden', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -63,7 +63,7 @@ flow(
   'KAAB-3',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     await ctx.step('backend secrets=[unknown identifier] → 404 SECRET_IDENTIFIER_NOT_FOUND', async () => {
       const r = await ctx.client
         .as(ctx.P.PAT_ACCT)
@@ -91,7 +91,7 @@ flow(
   'KAAB-4',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     await ctx.step('backend opencode_model=unservable → 400 INVALID_SESSION_MODEL (fail-fast, not a dead turn)', async () => {
       const r = await ctx.client
         .as(ctx.P.PAT_ACCT)
@@ -110,7 +110,7 @@ flow(
   'KAAB-5',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     await ctx.step('backend runtime_context with a credential-like key → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.PAT_ACCT)
@@ -136,7 +136,7 @@ flow(
   'KAAB-6',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     const key = ctx.fixtures.name('kaab-idem');
     let first: string | undefined;
     await ctx.step('backend create with Idempotency-Key → 201', async () => {
@@ -179,7 +179,7 @@ flow(
   'KAAB-7',
   { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     const key = ctx.fixtures.name('kaab-idem-ident');
     await ctx.step('backend create with Idempotency-Key + origin_ref:alice → 201', async () => {
       const r = await ctx.client

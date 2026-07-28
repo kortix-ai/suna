@@ -52,6 +52,20 @@ const optInt = (def: number) =>
       return Number.isNaN(n) ? def : n;
     });
 
+/** Optional decimal with a default — money, unlike optInt's counts. A
+ *  non-numeric or negative value falls back to the default rather than
+ *  silently becoming a cap of NaN (which compares false against everything and
+ *  would disable the limit it was set to enforce). */
+const optNum = (def: number) =>
+  z
+    .string()
+    .optional()
+    .default(String(def))
+    .transform((v) => {
+      const n = Number.parseFloat(v);
+      return Number.isFinite(n) && n >= 0 ? n : def;
+    });
+
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
  * (case-insensitive) so a "1" / "yes" / "on" from a k8s env or secret bundle
  * isn't silently dropped. optBoolTrue keeps its original 'anything but false'
@@ -554,6 +568,10 @@ const envSchema = z.object({
    *  0 / unset = disabled, which is the default: the account-wide cap still
    *  applies. Opt-in because the right number is wrapper-specific. */
   KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: optInt(0),
+  /** Per-END-USER spend ceiling in USD over a rolling window. 0/unset = off. */
+  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: optNum(0),
+  /** The rolling window the spend ceiling is measured over. */
+  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: optInt(30),
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
@@ -1164,6 +1182,8 @@ export const config = {
   TUNNEL_RATE_LIMIT_PERM_GRANT: env.TUNNEL_RATE_LIMIT_PERM_GRANT,
   TUNNEL_MAX_WS_MESSAGE_SIZE: env.TUNNEL_MAX_WS_MESSAGE_SIZE,
   KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT: env.KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT,
+  KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD: env.KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD,
+  KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS: env.KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS,
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,

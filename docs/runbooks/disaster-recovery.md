@@ -22,14 +22,14 @@ not a data-restore one.
 |---|---|---|---|
 | Single pod / node loss | seconds–minutes | 0 | Self-heals: probes, PDB, topology spread, HPA, cluster-autoscaler, node auto-repair (`infra/EKS.md`). Not a "disaster". |
 | Bad release | < 15 min | 0 | `git revert` / `argocd app rollback` (`docs/runbooks/rollback-procedure.md`). |
-| **Full cluster loss** (prod) | **1 h** | **0** for app data (Supabase external); **24 h** for any in-cluster K8s state once Velero lands | Rebuild from Terraform + re-sync GitOps; app data never lived in-cluster. |
+| **Full cluster loss** (prod) | **1 h** | **0** for app data (Supabase external); **24 h** for in-cluster K8s state | Rebuild from Terraform + re-sync GitOps; restore the latest daily Velero backup. |
 | Region loss (eu-west-2) | 2–4 h | 0 app data | Rebuild the cluster stack in an alternate region (Terraform is region-parameterized); repoint DNS. Supabase/Secrets Manager region-independent. |
 
 **Why RPO ≈ 0 for app data:** Supabase owns all persistent customer data and is
 backed up by Supabase, independent of EKS. The cluster holds **no source of
 record** — every K8s object is reproducible from Terraform + the git-tracked
 manifests. The 24h RPO line applies only to *in-cluster* state (e.g. Grafana
-dashboards/PVCs, Loki logs) once Velero backups exist.
+dashboards/PVCs, and Loki logs).
 
 ---
 
@@ -114,35 +114,94 @@ curl -fsS https://api-eks.kortix.com/v1/health | jq '{version,status}'
 
 ---
 
-## Velero restore (in-cluster state) — PLANNED
+## Velero backup and restore
 
-For any *in-cluster* state worth backing up (Grafana dashboards/PVCs, Loki, K8s
-objects not in git), the plan is **Velero** with scheduled backups and
-cross-region copy for prod.
+Velero runs in `kortix-prod-eks`. The `daily-all-namespaces` schedule starts at
+`03:00 UTC`. Each backup has a `720h` TTL. The
+`s3://kortix-velero-backups` bucket is in `eu-west-2`. Terraform enables S3
+versioning, KMS encryption, and a 35-day lifecycle expiration.
 
-> **Status: NOT YET DEPLOYED.** Velero is **Wave 3** in
-> `infra/INFRASTRUCTURE_PLAN.md` (Argo app + schedules + cross-region backup for
-> prod). Until it ships, in-cluster-only state is **not** backed up — the
-> mitigation is that nothing customer-facing depends on it (DB is external;
-> manifests are in git). When Velero lands, restore is roughly:
+Customer application data remains outside EKS. Velero protects Kubernetes
+objects and EBS volume snapshots only.
+
+Validation on 2026-07-27 produced these results:
+
+- `BackupStorageLocation/default` reported `Available`.
+- `velero-readiness-full-20260727t2235z` backed up `1,844/1,844` objects.
+- The full backup reported `0` errors and `0` warnings.
+- All `5/5` EBS snapshots reached `completed` and `100%`.
+- A scoped restore recovered the expected ConfigMap value in a mapped
+  throwaway namespace.
 
 ```bash
-# (Planned — once Velero is installed via its Argo app)
-velero backup get
-velero restore create --from-backup <prod-backup-name> \
-  --include-namespaces monitoring          # restore into a throwaway/scoped ns first
-velero restore describe <restore-name>
+CTX=kortix-prod-eks
+
+kubectl --context "$CTX" -n velero get backupstoragelocation default
+kubectl --context "$CTX" -n velero get schedule
+kubectl --context "$CTX" -n velero get backup
 ```
 
-**Drill safety rule (from the plan):** restore only into **throwaway
-namespaces** during drills — never over live PVs.
+The backup storage location must report `Available`. Each scheduled backup must
+reach `Completed`.
+
+### Scoped restore drill
+
+Create one marker object. Back up only its source namespace. Restore it into a
+different namespace.
+
+```bash
+CTX=kortix-prod-eks
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+SOURCE="velero-drill-source-${STAMP}"
+RESTORED="velero-drill-restored-${STAMP}"
+BACKUP="velero-drill-${STAMP}"
+RESTORE="velero-drill-restore-${STAMP}"
+
+kubectl --context "$CTX" create namespace "$SOURCE"
+kubectl --context "$CTX" -n "$SOURCE" create configmap recovery-marker \
+  --from-literal=expected="$STAMP"
+
+kubectl --context "$CTX" -n velero apply -f - <<EOF
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: ${BACKUP}
+spec:
+  includedNamespaces:
+    - ${SOURCE}
+  storageLocation: default
+  ttl: 24h0m0s
+EOF
+
+kubectl --context "$CTX" -n velero wait \
+  --for=jsonpath='{.status.phase}'=Completed "backup/${BACKUP}" --timeout=10m
+
+kubectl --context "$CTX" -n velero apply -f - <<EOF
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: ${RESTORE}
+spec:
+  backupName: ${BACKUP}
+  namespaceMapping:
+    ${SOURCE}: ${RESTORED}
+EOF
+
+kubectl --context "$CTX" -n velero wait \
+  --for=jsonpath='{.status.phase}'=Completed "restore/${RESTORE}" --timeout=10m
+test "$(kubectl --context "$CTX" -n "$RESTORED" get configmap recovery-marker \
+  -o jsonpath='{.data.expected}')" = "$STAMP"
+```
+
+Delete both drill namespaces after the assertion. Do not restore a drill over a
+live namespace or a live persistent volume.
 
 ---
 
 ## DR drill — `scripts/dr-test.sh` — TO BE ADDED
 
-A scripted, scheduled drill that proves the rebuild + (eventually) Velero
-restore actually work end-to-end.
+A scripted, scheduled drill will prove the full cluster rebuild. The scoped
+Velero restore procedure above provides the current backup and restore check.
 
 > **Status: TO BE ADDED.** `scripts/dr-test.sh` does **not exist yet**
 > (`scripts/` currently has `setup-env.sh`, `dev-local.sh`, etc., not
@@ -150,11 +209,9 @@ restore actually work end-to-end.
 > validation ("`velero backup` + test restore in a throwaway namespace
 > (`scripts/dr-test.sh`)"). When added, it should:
 
-1. Take/verify a Velero backup.
-2. Restore it into a throwaway namespace.
-3. Assert the restored objects are healthy.
-4. Tear the throwaway namespace down.
-5. (Stretch) stand up a scratch cluster from Terraform, re-bootstrap Argo, assert
+1. Run the scoped Velero restore procedure above.
+2. Tear both throwaway namespaces down.
+3. Stand up a scratch cluster from Terraform, re-bootstrap Argo, assert
    `kortix-*` syncs Healthy, and record the measured RTO to ratify the proposed
    targets above.
 

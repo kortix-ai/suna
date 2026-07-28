@@ -171,11 +171,21 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
+/**
+ * @param options.scope - `project` asks for the manager-only full inventory.
+ * @param options.end_user_ref - Kortix-as-a-Backend: return only the sessions
+ *   this wrapper created for ONE of its end-users. Filtered server-side, so a
+ *   wrapper never has to fetch the whole project to answer "show me this
+ *   customer's sessions".
+ */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: { scope?: 'visible' | 'project'; end_user_ref?: string },
 ) {
-  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.end_user_ref) params.set('end_user_ref', options.end_user_ref);
+  const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 

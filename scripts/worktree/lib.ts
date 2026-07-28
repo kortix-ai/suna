@@ -19,6 +19,7 @@
  */
 export * from './lib/ports';
 export * from './lib/exec';
+export * from './lib/procs';
 export * from './lib/registry';
 export * from './lib/git';
 export * from './lib/supabase';

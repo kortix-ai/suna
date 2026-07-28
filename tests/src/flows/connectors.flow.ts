@@ -82,13 +82,16 @@ flow(
   'CONN-5',
   {
     domain: 'connectors',
+    // This flow mutates kortix.yaml. Run it after the parallel lanes so it can
+    // reuse the shared managed repository without racing read-only flows.
+    global: true,
     routes: [
       'GET /v1/executor/projects/:projectId/policies',
       'PUT /v1/executor/projects/:projectId/policies',
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.sharedProject();
     await ctx.step('read policies → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -496,7 +499,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-mcp-${Date.now().toString(36)}`;
 
     await ctx.step('seed a real connector to hang a profile off (mcp provider)', async () => {
@@ -728,7 +731,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-oauth2-${Date.now().toString(36)}`;
     const connector = await ctx.client.as(ctx.P.OWNER).post(
       '/v1/executor/projects/:projectId/connectors',

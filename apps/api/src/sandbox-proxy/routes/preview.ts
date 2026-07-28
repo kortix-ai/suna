@@ -8,7 +8,15 @@ import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
 } from '../../projects/lib/secret-grant';
-import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
+import {
+  SessionGrantRemintError,
+  remintGrantForAgentSwitch,
+} from '../../projects/lib/session-token-grant';
+import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
+import {
+  captureTitleAfterRuntimeEvent,
+  scheduleTitleCaptureAfterPrompt,
+} from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
@@ -305,13 +313,53 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
-// A prompt-delivery POST is the ONE mutating, non-idempotent call on this proxy
-// (POST /session/:id/prompt_async|message on the daemon port). opencode has no
-// idempotency of its own, so re-POSTing the same body enqueues the user's
-// message a second time (the 3x-queued bug). This is exactly the set the
-// env-sync-before-prompt gate already recognises, so delegate to it.
-function isPromptDelivery(method: string, port: number, path: string): boolean {
-  return shouldSyncProjectEnvBeforeProxy(port, method, path);
+// ACP prompt delivery shares the runtime URL with its GET event stream.
+// Inspect the JSON-RPC envelope before applying prompt deduplication.
+function acpPromptSessionId(
+  method: string,
+  upstreamPort: number,
+  path: string,
+  incomingHeaders: Headers,
+  body: ArrayBuffer | undefined,
+): string | null {
+  if (method.toUpperCase() !== 'POST' || upstreamPort !== SANDBOX_AGENT_PORT || !body) {
+    return null;
+  }
+  if (!incomingHeaders.get('content-type')?.toLowerCase().includes('application/json')) {
+    return null;
+  }
+  const match = path.match(/^\/kortix\/acp\/([^/?#]+)(?:$|[/?#])/);
+  if (!match) return null;
+  try {
+    const routeSessionId = decodeURIComponent(match[1]);
+    const envelope = JSON.parse(new TextDecoder().decode(body)) as {
+      method?: unknown;
+      params?: { sessionId?: unknown };
+    };
+    return envelope.method === 'session/prompt' && envelope.params?.sessionId === routeSessionId
+      ? routeSessionId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function runtimeTitleStream(
+  method: string,
+  upstreamPort: number,
+  path: string,
+  contentType: string | null,
+): { protocol: 'acp' | 'rest'; expectedSessionId?: string } | null {
+  if (method.toUpperCase() !== 'GET' || upstreamPort !== SANDBOX_AGENT_PORT) return null;
+  if (!contentType?.toLowerCase().includes('text/event-stream')) return null;
+  if (/^\/global\/event(?:$|[/?#])/.test(path)) return { protocol: 'rest' };
+  const match = path.match(/^\/kortix\/acp\/([^/?#]+)(?:$|[/?#])/);
+  if (!match) return null;
+  try {
+    return { protocol: 'acp', expectedSessionId: decodeURIComponent(match[1]) };
+  } catch {
+    return null;
+  }
 }
 
 // True only when a fetch failure PROVES nothing reached the box: the upstream
@@ -380,6 +428,17 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
   // We could not establish what this agent may read. 503 rather than 502: the
   // sandbox is fine, our ability to VERIFY entitlement is what failed, and
   // retrying is the correct client response.
+  // The switch was legal but we could not rewrite the token's grant to match the
+  // agent now running. 503 for the same reason as above — and refusing is the
+  // point: forwarding would run the new agent against the OLD agent's connector
+  // and CLI grants, which is exactly the escalation the re-mint closes.
+  if (err instanceof SessionGrantRemintError) {
+    return jsonProxyError(
+      { error: err.message, code: 'AGENT_SWITCH_GRANT_UNAPPLIED' },
+      503,
+      origin,
+    );
+  }
   if (err instanceof SecretGrantResolutionError) {
     return jsonProxyError(
       { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
@@ -541,6 +600,15 @@ export async function forwardToSandbox(
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
   const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
   const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
+  const acpPromptSession = acpPromptSessionId(
+    method,
+    upstreamPort,
+    remainingPath,
+    incomingHeaders,
+    body,
+  );
+  const promptDelivery =
+    shouldSyncProjectEnvBeforeProxy(port, method, remainingPath) || acpPromptSession !== null;
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -599,14 +667,10 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
-  // Dedupe prompt delivery up-front. Prompt POSTs are the only mutating,
-  // non-idempotent calls here, and the CLI mints one Idempotency-Key per logical
-  // prompt. Claim a stable key (the inbound Idempotency-Key, else a content hash
-  // of sandbox+session+body) BEFORE the retry loop so a duplicate inbound prompt
-  // — a client resend, or the other proxy edge (subdomain.ts also calls this) —
-  // short-circuits to a 200 no-op instead of re-POSTing and enqueueing the user's
-  // message twice. First claim within the TTL proceeds; a repeat is deduped.
-  if (isPromptDelivery(method, port, remainingPath)) {
+  // Dedupe prompt delivery up-front. REST and ACP prompt POSTs are the only
+  // mutating, non-idempotent calls here. Claim a stable key before the retry
+  // loop so a duplicate inbound prompt cannot enqueue the user message twice.
+  if (promptDelivery) {
     const dedupeKey = promptDeliveryKey({
       idempotencyKey: incomingHeaders.get('idempotency-key'),
       sandboxId,
@@ -635,6 +699,9 @@ export async function forwardToSandbox(
   // providers there is no such signal, so the preview proxy never errors the row;
   // liveness is owned by the health-check loop + reconciler, not a port request.
   let sawDeadSignal = false;
+  // False until this request reaches the non-idempotent upstream prompt fetch.
+  // Pre-prompt failures, such as env synchronization, are safe to retry.
+  let promptDeliveryMayHaveReachedUpstream = false;
   // A blocking session-turn (`POST /session/:id/message`) whose single attempt
   // (it gets ~the whole remaining budget, see proxyAttemptTimeoutMs) still hit
   // the connect-timer. That's a legitimately long-running, healthy turn, not a
@@ -695,6 +762,18 @@ export async function forwardToSandbox(
             // The secret grant is resolved from the agent this prompt actually
             // runs, not the session's create-time column — see
             // projects/lib/secret-grant.ts.
+            requestedAgent,
+          });
+          // The env sync above already refused a secret-boundary switch, so
+          // reaching here means the switch is legal. Re-point the token's
+          // connector/CLI grant at the agent that will actually run — it was
+          // frozen at mint from the BOOT agent, and those gates read it at call
+          // time. Only on a real switch: an ordinary turn resolves to the
+          // session's own agent and skips the manifest read entirely.
+          await remintGrantForAgentSwitch({
+            projectId: record.projectId,
+            sessionId: record.sessionId,
+            sessionAgent,
             requestedAgent,
           });
         } catch (err) {
@@ -810,6 +889,7 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        if (promptDelivery) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,
           headers,
@@ -873,7 +953,6 @@ export async function forwardToSandbox(
         // the response), so re-POSTing would enqueue it twice. Pass the upstream
         // response straight through to the passthrough below. GET/idempotent
         // requests retry as before.
-        const promptDelivery = isPromptDelivery(method, port, remainingPath);
         if (!promptDelivery && attempt < MAX_RETRIES) {
           // Port not ready yet — sandbox is booting (container running, port down).
           console.warn(
@@ -931,8 +1010,41 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
+      if (acpPromptSession && upstream.ok) {
+        scheduleTitleCaptureAfterPrompt({
+          sessionId: record.sessionId,
+          projectId: record.projectId,
+          externalId: record.externalId,
+          userId: userId || undefined,
+        });
+      }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
-      return new Response(upstream.body, {
+      const titleStream = runtimeTitleStream(
+        method,
+        upstreamPort,
+        remainingPath,
+        upstream.headers.get('content-type'),
+      );
+      const responseBody =
+        upstream.body && titleStream
+          ? observeRuntimeSessionTitleStream(upstream.body, {
+              ...titleStream,
+              onTitle: async (event) => {
+                await captureTitleAfterRuntimeEvent({
+                  sessionId: record.sessionId,
+                  projectId: record.projectId,
+                  opencodeSessionId: event.sessionId,
+                  title: event.title,
+                });
+              },
+              onError: (error) => {
+                console.warn(
+                  `[title-capture] failed to inspect ACP stream for ${record.sessionId}: ${errorMessage(error, 'unknown error')}`,
+                );
+              },
+            })
+          : upstream.body;
+      return new Response(responseBody, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers: respHeaders,
@@ -968,7 +1080,11 @@ export async function forwardToSandbox(
       // the friendly unreachable response below. (The Daytona "no IP / no runner"
       // 400 branch — a rejection before opencode — retries in the response path
       // above, which is safe.)
-      if (isPromptDelivery(method, port, remainingPath) && !isConnectionRefusedError(err)) {
+      if (
+        promptDeliveryMayHaveReachedUpstream &&
+        promptDelivery &&
+        !isConnectionRefusedError(err)
+      ) {
         break;
       }
 

@@ -15,7 +15,7 @@
 # No secrets are baked in and none are needed at runtime: LiveKit Cloud injects
 # LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET itself, every model runs
 # through LiveKit Inference, and the per-call Kortix API URL and token arrive in
-# the room metadata. `lk agent create` can be run with an empty secret set.
+# LiveKit job metadata. `lk agent create` can be run with an empty secret set.
 
 ARG BUN_VERSION=1.2
 

@@ -243,6 +243,24 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
   return err instanceof GitOperationError;
 }
 
+/**
+ * A "path does not exist" failure from `git show <ref>:<path>` is an EXPECTED
+ * client condition (the user supplied a path that isn't in the repo), NOT a
+ * server bug — it must not page Sentry as an unhandled 500 the way a real git
+ * failure (auth, corrupt repo, timeout) would. Git emits the stable wording
+ * `fatal: path '<path>' does not exist in '<ref>'` on stderr (which becomes the
+ * `GitOperationError` message/`stderr` via `classifyGitError`). Anchor on the
+ * stable `does not exist in` substring; the path + ref are variable. Used by
+ * `readRepoFile` to convert this single class into a null sentinel (mirroring
+ * `getFileAtRef`'s `{ found: false }` from #3537) while letting genuine git
+ * failures still throw (Better Stack pattern `a8d20288…`).
+ */
+export function isGitPathNotFoundError(err: unknown): boolean {
+  if (!isGitOperationError(err)) return false;
+  const text = `${err.message}\n${err.stderr}`;
+  return text.includes('does not exist in');
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,
@@ -322,13 +340,31 @@ const BARE_CLONE_TIMEOUT_MS = bareCloneTimeoutMs();
 const BARE_CLONE_MAX_ATTEMPTS = 2;
 const BARE_CLONE_RETRY_DELAY_MS = 500;
 
+function looksLikeBareMirror(repoPath: string): boolean {
+  return (
+    existsSync(join(repoPath, 'HEAD')) &&
+    existsSync(join(repoPath, 'config')) &&
+    existsSync(join(repoPath, 'objects')) &&
+    existsSync(join(repoPath, 'refs'))
+  );
+}
+
 async function doRefreshMirror(project: GitBackedProject, force = false) {
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
   if (existsSync(join(repoPath, 'shallow'))) {
     await rm(repoPath, { recursive: true, force: true });
   }
-  const needsClone = !existsSync(repoPath);
+  let needsClone = !existsSync(repoPath);
+  if (!needsClone && !looksLikeBareMirror(repoPath)) {
+    // Self-heal a poisoned cache entry. This can happen if a previous clone was
+    // killed before git wrote a bare repo, or if an external cleanup left the
+    // hashed cache path as a plain directory. Without this guard a warm read can
+    // surface "fatal: not a git repository" all the way up to session startup.
+    await rm(repoPath, { recursive: true, force: true });
+    lastRefreshAt.delete(project.projectId);
+    needsClone = true;
+  }
   const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
   const needsFetch = !needsClone && (force || Date.now() - lastRefresh >= refreshIntervalMs());
   // Nothing to do over the network — serve the warm cache without touching git.

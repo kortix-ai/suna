@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
+import { sessionCreateFailure } from '@/lib/session-create-failure';
 import { cn, relativeTime } from '@/lib/utils';
 import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -68,7 +69,12 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       invalidateSessions(qc, projectId);
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
     },
-    onError: () => toast.error('Could not start a session'),
+    onError: (err) => {
+      // Each KaaB refusal has a distinct code and a different person who can
+      // fix it — collapsing them into one string threw that away.
+      const failure = sessionCreateFailure(err);
+      toast.error(failure.title, { description: failure.detail });
+    },
   });
 
   const items = sessions.data ?? [];

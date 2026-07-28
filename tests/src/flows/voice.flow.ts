@@ -204,7 +204,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project({ seed: true });
+    const p = await ctx.fixtures.sharedSeededProject();
     const s = await ctx.fixtures.session(p);
     await ctx.step('session with no call → 200, empty, not live', async () => {
       const r = await ctx.client

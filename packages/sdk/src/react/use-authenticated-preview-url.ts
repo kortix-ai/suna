@@ -8,6 +8,7 @@ import {
   isSubdomainPreviewUrl,
   appendPreviewToken,
 } from '../core/session/preview';
+import { isInternalLocalhostUrl } from '../core/session/url';
 
 // The preview-proxy auth helpers now live in the SDK (single source of truth,
 // verified against the current `/proxy` + `/v1/p/` surface). Re-exported here so
@@ -39,7 +40,11 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
   useEffect(() => {
-    if (!previewUrl) {
+    // A bare localhost URL means the runtime had not bound when the URL was
+    // built, so there is nothing to authenticate — and framing it would load
+    // the *viewer's* machine on that port. Stay in the loading state; the
+    // caller re-renders with a real preview URL once the sandbox binds.
+    if (!previewUrl || isInternalLocalhostUrl(previewUrl)) {
       setAuthenticatedUrl(null);
       return;
     }

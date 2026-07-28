@@ -43,11 +43,7 @@ import {
   partitionForNarrative,
   summarizeEntries,
 } from '@/features/session/activity/activity-model';
-import {
-  ChatDetailProvider,
-  densityForDetail,
-  useChatDetail,
-} from '@/features/session/activity/chat-detail';
+import { densityForDetail, useChatDetail } from '@/features/session/activity/chat-detail';
 import {
   type ActivityCounts,
   activityGroupLabel,
@@ -2862,9 +2858,10 @@ function SessionTurn({
   // runtime's step-start/step-finish bookkeeping parts (and agent/retry/
   // snapshot/patch) are transparent to grouping, so a run of N tool calls
   // folds into one group instead of N raw rows.
-  // Narrative is the default reading: machinery folds into one work line per
-  // turn. "Show full history" flips this to the per-kind step list — same
-  // parts, same model, re-rendered in place.
+  // Full history is the default reading: the per-kind step list, every step
+  // visible and in order. "Hide full history" flips this to Narrative, where
+  // machinery folds into one work line per turn — same parts, same model,
+  // re-rendered in place.
   const { detail } = useChatDetail();
   const activityItems = useMemo(
     () =>
@@ -3206,7 +3203,7 @@ function SessionTurn({
           {(() => {
             const reasoningActive = working && permissions.length === 0 && questions.length === 0;
 
-            // ── Narrative mode (the default) ──
+            // ── Narrative mode (opt-in; the default is full history) ──
             // Fold the turn's machinery into ONE work line, placed where the
             // first piece of machinery occurred so the surrounding prose still
             // reads in order. Errors and permission-locked calls are pulled
@@ -5532,9 +5529,6 @@ export function SessionChat({
   }
 
   return (
-    // Narrative vs full history is a per-reader choice that has to be visible
-    // to every turn in the transcript, so the provider wraps the whole chat.
-    <ChatDetailProvider>
     <div
       className={cn(
         'relative flex h-full flex-col',
@@ -5960,6 +5954,5 @@ export function SessionChat({
           </>
       )}
     </div>
-    </ChatDetailProvider>
   );
 }

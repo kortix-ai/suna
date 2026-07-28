@@ -12,6 +12,8 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
+import { SessionScope } from '@/components/workbench/session-scope';
+import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
@@ -39,7 +41,7 @@ export function WorkbenchTabs({
     <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
       <div className="px-5 pt-3.5">
         <TabsList>
-          {(['chat', 'files', 'changes', 'preview'] as const).map((v) => (
+          {(['chat', 'files', 'changes', 'preview', 'scope'] as const).map((v) => (
             <TabsTrigger key={v} value={v} className="px-3.5 capitalize">
               {v}
             </TabsTrigger>
@@ -54,6 +56,18 @@ export function WorkbenchTabs({
       </TabsContent>
       <TabsContent value="files" className="min-h-0 flex-1 overflow-hidden p-4">
         <FilesPanel projectId={projectId} />
+      </TabsContent>
+      {/* What this session can still change. Shown as a first-class tab rather
+          than a settings footnote: 'can I switch the agent / secrets now?' is a
+          question people ask mid-session, and the answers genuinely differ. */}
+      <TabsContent value="scope" className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mx-auto max-w-xl">
+          <h2 className="text-sm font-medium">What this session can change</h2>
+          <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+            Overrides are set when a session starts. These are the ones you can still move.
+          </p>
+          <SessionScope />
+        </div>
       </TabsContent>
       <TabsContent value="changes" className="min-h-0 flex-1 overflow-hidden p-4">
         <ChangesPanel projectId={projectId} sessionId={sessionId} />
@@ -228,6 +242,16 @@ function Thread({ session: c }: { session: UseSessionResult }) {
               <Button size="sm" variant="secondary" className="h-7 gap-1.5" onClick={c.cancel}>
                 Stop
               </Button>
+            </div>
+          ) : null}
+          {/* A rejected send used to be SILENT: the optimistic bubble vanished,
+              the typed text was gone, and nothing said why. useSession surfaces
+              a typed sendError — read it, and name the KaaB refusals the
+              generic message would otherwise swallow. */}
+          {c.sendError ? (
+            <div className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+              <div className="font-medium">{sendFailureTitle(c.sendError)}</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">{c.sendError.message}</p>
             </div>
           ) : null}
           <Composer

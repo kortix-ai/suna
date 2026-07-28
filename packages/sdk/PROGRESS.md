@@ -259,6 +259,8 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B28 | **Keep an explicit project-composer agent selection through asynchronous project-default hydration.**                                                                                                                                                                                                                                                                                                                                               | The deployed US two-test session suite clicked `memory-reflector`, then `useOpenCodeLocal()` changed its selection scope when `defaultAgentName` hydrated to `kortix`. The picker reset to `kortix` for 30 seconds.                                                                                          | **DONE 2026-07-27** — PR #5533, merge `ee45f55fa`; SDK tests `1283/0`, typecheck, packed-install smoke, and deployed US two-test suite `2/2` pass; both sessions returned exact `PONG`, and the mismatch fallback emitted no global error                                                                                                                                    |
 | B29 | **Preserve ACP upstream message boundaries in the projected transcript.**                                                                                                                                                                                                                                                                                                                                                                              | Dev session `ee41f742-9384-4f34-88e7-63ae3d765cae` emitted distinct `session/update.messageId` values for assistant steps, but `src/core/acp/projection.ts` discarded `messageId` and appended every text or reasoning chunk to one generated assistant message.                                                                                      | **DONE 2026-07-27** — implementation `60b06c6e4`; focused projection/controller tests `27/0`, full SDK tests `1299/0`, typecheck, packed-install smoke, supplied-transcript replay, and local ACP Chromium flow pass                                                                                                                                                                                          |
 | B30 | **Expose message-based session rewind and restore through both REST and ACP transports.** Editing an earlier user message must rewind the same canonical session instead of creating a fork. The removed path must remain recoverable until the replacement prompt commits.                                                                                                                                                                      | `apps/web/src/features/session/session-chat.tsx` contains `TODO(session-rewind)`. OpenCode exposes `/session/{sessionID}/revert` and `/unrevert`; ACP has no standard rewind method and needs a Kortix bridge extension plus transcript reload.                                                               | **DONE 2026-07-27** — implementation `eab4eef0f`; PR #5619 merged as `9e90e8ed7`. Deploy Dev run `30293660760` deployed source `e548c6a8fc9ee1d5a92db66d6feb912d4442ebeb`, which contains the merge. Dev session `7feb4e84-072f-4b71-987f-dc25dd542890` kept canonical OpenCode session `ses_05b075d25ffe7PBkZ632pcVAlW` across ACP and REST rewind, restore, replacement commit, reconnect, and file rollback. ACP produced `DEPLOYED_ACP_REPLACEMENT`; REST produced `DEPLOYED_REST_REPLACEMENT`; cleanup removed `26/26` probe sessions and restored ACP runtime overrides. SDK tests `1309/0`, daemon tests `306/0`, web source contract `5/0`, local ACP Playwright `1/0`, and local real ACP plus REST smoke pass. Shippable to production: **YES** for protocol behavior. Deployed UI interaction remains unverified because Browser discovery returned `[]`. |
+| B31 | **Allow a page-scoped ACP query override and settle completed ACP prompts that contain stale running tools.**                                                                                                                                                                                                                                                                                                                                     | `?acp` has no SDK transport override. Dev session `5322fa59-7a73-4fea-9f1a-9da59c2a0b5a` rendered the final assistant response while an older tool part remained `running`; `hasProjectionBlockers()` then kept the composer busy and blocked the queued prompt.                                                                 | **IMPLEMENTATION COMPLETE 2026-07-27** — implementation `d3544ae14`; focused SDK `40/0`, full SDK `1312/0`, typecheck, packed-install smoke, web routing `5/0`, and touched web ESLint pass. PR #5636, Deploy Dev, deployed SHA proof, and deployed ACP-only proof remain |
+| B32 | **Synchronize generated Kortix session names from both ACP and OpenCode REST runtimes without navigation or refresh.**                                                                                                                                                                                                                                                                                                                           | ACP emits `session_info_update`; OpenCode `/global/event` emits a wrapped `session.updated`. Neither path reliably persisted `metadata.name`, and the sidebar query could stay stale after a completed prompt.                                                                                              | **IMPLEMENTATION COMPLETE 2026-07-28** — ACP and REST title events persist server-side; the SDK refetches list and detail queries through a bounded post-send loop; focused API `78/0`, full SDK `1318/0`, API and SDK typechecks, packed-install smoke, test-harness typecheck, and local ACP plus REST Chromium `1/0` pass. Full API has `3` pre-existing failures reproduced in the primary checkout. PR, Deploy Dev, deployed SHA proof, and deployed UI proof remain. |
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
 > `platform/api/` → `core/http/api/`, `opencode/` → `core/runtime/`,
@@ -882,6 +884,37 @@ both API and SDK typechecks pass.
 **Status:** COMPLETE.
 
 **Shippable to production: YES.**
+
+---
+
+### 2026-07-28 — session `acp-session-name-sync` (B32 implementation)
+
+ACP `session_info_update` and OpenCode REST `session.updated` events now persist
+the generated root-session title in `project_sessions.metadata.name`.
+
+The REST parser handles the real `/global/event` envelope:
+`{ directory, payload: { type, properties } }`.
+
+`useSession` refetches the active Kortix session list and detail queries after
+runtime title events. It also runs a bounded refresh after each send.
+
+Verification:
+
+- Focused API: **78 pass / 0 fail / 178 assertions**.
+- API typecheck: exit `0`.
+- SDK typecheck: exit `0`.
+- Full SDK: **1318 pass / 0 fail / 5797 assertions / 111 files**.
+- SDK packed-install smoke: passed.
+- Test-harness typecheck: exit `0`.
+- Local ACP and REST Chromium: **1 pass / 0 fail**.
+- Full API: **3 pre-existing failures**. The same failures reproduce in the
+  primary checkout in `maintenance.test.ts` and
+  `unit-hosted-deployment-vendor-removal.test.ts`.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
+and deployed ACP plus REST UI verification remain.
 
 ---
 
@@ -3656,3 +3689,91 @@ Local verification:
 **Shippable to production: YES** for the published SDK surface. The repository
 rollout still requires the `origin/main` merge, PR, Deploy Dev, and deployed
 Nango verification.
+
+---
+
+### 2026-07-27 — session `acp-idle-query-override` (B31 claim)
+
+Claimed the ACP page override and stale-tool settlement defect.
+
+`?acp` will override the server-selected runtime transport for one session page.
+It will not mutate `experimental.acp_runtime`.
+The SDK will keep genuine active tools busy.
+The SDK will settle stale running tools after a newer assistant message and the
+final prompt result.
+Queued prompts will dispatch after settlement.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are focused SDK and web tests, full SDK typecheck, full SDK suite,
+packed-install smoke, local Chromium ACP proof, PR merge, Deploy Dev, deployed SHA
+proof, and deployed ACP-only network proof.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-27 — session `acp-idle-query-override` (B31 local completion)
+
+Implemented page-scoped ACP transport selection and stale-tool settlement in
+`d3544ae14`.
+
+`UseSessionOptions.runtimeTransport` is an additive per-hook override.
+The session page passes `acp` only when the URL contains `?acp`.
+The page does not mutate `experimental.acp_runtime`.
+The SDK policy keeps one AI transport mounted.
+The ACP policy disables OpenCode REST events, session listing, message sync, and
+`promptAsync`.
+
+A newer assistant message now closes unresolved tools from the previous assistant
+message.
+The 500-millisecond quiet period still blocks early idle while the current
+assistant message contains a genuine active tool.
+Queued prompts dispatch after stale tools settle.
+Transcript reload starts idle when an older assistant message contains a stale
+running tool.
+
+TDD evidence:
+
+- RED focused SDK: **36 pass / 4 fail**.
+- RED web routing contract: **4 pass / 1 fail**.
+- GREEN focused SDK: **40 pass / 0 fail**.
+- GREEN web routing contract: **5 pass / 0 fail**.
+
+Required gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: **1312 pass / 2 skip / 0 fail** with
+  **5785** assertions across **111** files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed install and Node ESM
+  import passed.
+- Touched web ESLint: exit 0.
+- Web `tsc --noEmit`: no errors reference the touched files. Existing unrelated
+  repository errors keep the full command at exit 1.
+- `git diff --check`: exit 0.
+
+The ACP browser canary now opens a server-selected REST session with `?acp`,
+asserts ACP-only AI traffic, then removes `?acp` and asserts REST rollback.
+The in-app browser runtime returned no available browsers.
+The local Chromium canary remains unexecuted.
+
+**Status:** IMPLEMENTATION COMPLETE.
+
+**Shippable to production: NOT YET.** PR merge, Deploy Dev, deployed SHA proof,
+and deployed UI verification remain.
+
+---
+
+### 2026-07-28 — session `acp-session-name-sync` (B32 claim)
+
+Claimed the Kortix session-name synchronization defect for ACP-backed sessions.
+
+The investigation will trace the authoritative server-side title mirror,
+ACP runtime session metadata, project-session reads, SDK query invalidation,
+and sidebar rendering.
+
+Implementation will follow RED -> GREEN -> REFACTOR.
+Required gates are focused API, SDK, and web tests, API and SDK typechecks,
+the full SDK suite, packed-install smoke, local browser proof, PR merge,
+Deploy Dev, deployed SHA proof, and deployed session-name synchronization.
+
+**Status:** IN PROGRESS.

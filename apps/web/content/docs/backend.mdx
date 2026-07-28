@@ -51,7 +51,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -d '{
     "end_user_ref": "your-app-user-123",
     "agent_name": "support",
-    "opencode_model": "anthropic/claude-opus-4-8",
+    "opencode_model": "kortix/claude-opus-4.8",
     "connector_bindings": { "gmail": { "profile_id": "<profile-id>" } },
     "secrets": ["STRIPE_KEY"]
   }'
@@ -71,7 +71,7 @@ const kortix = createScopedKortix({
 const session = await kortix.project(projectId).sessions.create({
   end_user_ref: 'your-app-user-123',
   agent_name: 'support',
-  opencode_model: 'anthropic/claude-opus-4-8',
+  opencode_model: 'kortix/claude-opus-4.8',
   connector_bindings: { gmail: { profile_id } },
   secrets: ['STRIPE_KEY'],
 });
@@ -120,6 +120,34 @@ Two things to know:
   different end-users, so send a canonical id.
 
 The dashboard shows the same data under **Credits → Spend by end-user**.
+
+### Capping one end-user's spend
+
+Metering tells you what an end-user cost. To *stop* one, the operator sets
+`KORTIX_BACKEND_PER_END_USER_SPEND_LIMIT_USD` (with
+`KORTIX_BACKEND_PER_END_USER_SPEND_WINDOW_DAYS`, default 30). Session create then
+returns `429 per_end_user_spend_limit` for an end-user over the ceiling, while
+every other end-user keeps working. Off by default.
+
+It is a runaway guardrail, not a hard quota: the check is check-then-act, so
+concurrent creates can overshoot slightly, and it is evaluated at create — a
+running session is not killed mid-turn.
+
+### List one end-user's sessions
+
+The same handle filters the session list, server-side:
+
+```bash
+curl -sS "$KORTIX_API_URL/projects/$PROJECT_ID/sessions?end_user_ref=your-app-user-123" \
+  -H "Authorization: Bearer $KORTIX_API_KEY"
+```
+
+```ts
+await kortix.project(projectId).sessions.list({ end_user_ref: 'your-app-user-123' });
+```
+
+Every status is included, so completed sessions come back too. The deprecated
+`origin_ref` spelling also works; sending both with different values is a `400`.
 
 ## 3. Bring each user's own connector
 
@@ -236,3 +264,77 @@ starting a second one. Replaying a key with a **different** body — different
 | `404` | `CONNECTOR_PROFILE_NOT_FOUND` | The bound `profile_id` doesn't exist for this project (or isn't yours). |
 | `409` | `CONNECTOR_PROFILE_INACTIVE` | The bound profile is revoked or the connector is disabled. |
 | `409` | `IDEMPOTENCY_*_CONFLICT` | An `Idempotency-Key` was replayed with a different body. Keep the body identical across retries. |
+| `403` | `CONNECTOR_NOT_ASSIGNED` | The session's agent isn't granted a connector you named. **The first error most wrappers hit** — list the alias under that agent's `connectors:` in your manifest. |
+| `403` | `REQUIRE_CONNECTORS_INTERACTIVE_ONLY` | `require_connectors` is interactive-only. A backend key acts for no single person — bind an explicit `profile_id` with `connector_bindings`. |
+| `403` | `origin_override_forbidden` | A non-backend caller tried to set `end_user_ref` or `secrets`. |
+| `503` | `AGENT_SWITCH_GRANT_UNAPPLIED` | A mid-session agent switch was legal but its token re-mint could not be written. Retryable. |
+| `409` | `CONNECTOR_CONNECTION_REQUIRED` | Interactive only: the user hasn't connected their own account. The body names which connector. |
+| `409` | `END_USER_REF_CONFLICT` | You sent `end_user_ref` and the deprecated `origin_ref` with different values. On session **create** it is a `409`; on the session **list** filter it is a `400`. |
+| `409` | `IDEMPOTENCY_KEY_CONFLICT` | The key collided with a different operation. Unlike the other idempotency errors, the fix is a **higher-entropy key** — the uniqueness index is global. |
+| `429` | `concurrent_session_limit` / `per_origin_session_limit` | Account-wide, or per-end-user when the operator enables it. Retry with backoff. |
+| `429` | `per_end_user_spend_limit` | This end-user has spent their ceiling inside the rolling window. Body carries `spent_usd`, `limit_usd`, `window_days`. Not retryable until the window rolls or the operator raises the limit. |
+| `402` | `subscription_required` / `insufficient_credits` | Billing — not retryable without operator action. |
+
+## What you can change once a session is running
+
+| Override | Mid-session |
+| --- | --- |
+| `opencode_model` | **Yes** — `PUT /projects/{id}/sessions/{sessionId}/model` |
+| `agent_name` | **Per message** — each prompt names the agent that runs it |
+| `secrets`, `connector_bindings`, `runtime_context`, `end_user_ref` | **No** — set once at create |
+
+### Changing the model
+
+```bash
+curl -sS -X PUT "$KORTIX_API_URL/projects/$PROJECT_ID/sessions/$SESSION_ID/model" \
+  -H "Authorization: Bearer $KORTIX_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"opencode_model":"kortix/claude-opus-4.8"}'
+```
+
+The response carries `applied_live`. `true` means a running sandbox took it now;
+`false` means it applies at next start. **Tell your user which** — someone told
+"model changed" whose next answer comes from the old model has been misled.
+Applying it live restarts the runtime and ends the in-flight turn, so a no-op
+PUT deliberately does not restart.
+
+### Why secrets can't change
+
+`secrets_allowlist` is written once. A mutable allowlist could be narrowed below
+what the sandbox already needs and leave the session unbootable. Start a new
+session to change what it may read.
+
+### Switching agents
+
+Each message names the agent that runs it. A switch to an agent with a
+*different secrets grant* is refused `409 AGENT_SWITCH_REQUIRES_NEW_SESSION` —
+and **retrying cannot succeed**, because re-scoping cannot un-read what the
+session already loaded. Offer a new session, not a retry.
+
+A switch that changes only **connectors** or **Kortix CLI actions** is allowed
+and *re-mints* the session token: the new agent runs with exactly the grant its
+own manifest entry declares. Those gates check the token at call time, so
+re-pointing it works — unlike secrets, which are already in the box. If the
+re-mint cannot be written the prompt is refused (`503
+AGENT_SWITCH_GRANT_UNAPPLIED`) rather than run under the previous agent's
+authority.
+
+## Isolation between your end-users
+
+Every session your backend creates shares one `created_by` — your wrapper
+credential — so ownership alone cannot tell your users apart. The platform
+narrows on the *caller's* session instead: a token bound to end-user A's sandbox
+cannot read, share, or approve on end-user B's session.
+
+Your backend credential is unaffected. It is the operator and still sees
+everything it created.
+
+<Callout type="warn">
+  **Inject `end_user_ref` server-side, from your authenticated session — never
+  accept it from a browser.** A client that can set it can bill another user, or
+  replay their session through a shared `Idempotency-Key`.
+</Callout>
+
+Listing with `?scope=project` includes rows the caller cannot open, marked
+`can_access: false`. Those are redacted — no `metadata` (which holds
+`initial_prompt`), no `end_user_ref`, no `secrets_allowlist`.

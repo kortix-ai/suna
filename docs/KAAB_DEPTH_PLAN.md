@@ -9,28 +9,47 @@ could not verify is marked as such rather than asserted.
 
 **Corrected 2026-07-27 after I got this wrong twice. Read the correction.**
 
-### What is actually true
+### What is actually true — settled by a dispatch run, 2026-07-28
 
-`package-tests.yml` triggers on **`pull_request` only** (plus manual dispatch) —
-20 of the last 20 runs were `pull_request`. The `kortix-api` job materializes
-`DOTENV_PRIVATE_KEY` only when `github.event_name != 'pull_request'`, a
-deliberate control added by a pentest the same day:
+**`DOTENV_PRIVATE_KEY` is not configured as a repo secret at all.**
 
-> exposing DOTENV_PRIVATE_KEY would let a same-repo branch PR read all 80+ prod
-> secrets decryptable with that one key
+Proven, not inferred: dispatching `package-tests.yml` on `main`
+(run `30335178547`) is a `workflow_dispatch` event, which satisfies the job's
+`github.event_name != 'pull_request'` condition. The env-gated suite **still
+skipped**, logging "DOTENV_PRIVATE_KEY not configured for this context".
+`gh secret list` then confirmed the name is absent from the repository.
 
-Both halves are individually correct. Together they mean the condition can never
-be satisfied, so **the env-gated suite never runs anywhere**. This is not
-negligence — it is a security control colliding with a trigger list.
+So the ternary
 
-**The fix is small and preserves the security property:** add
-`push: branches: [main]`. PR-head code still never sees the key; the suite gains
-a post-merge venue.
+```yaml
+DOTENV_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.DOTENV_PRIVATE_KEY || '' }}
+```
 
-**Risk to weigh first:** locally the suite shows failures under the real CI
-command, but my environment is provably not CI's (see below), so I cannot
-predict whether enabling this turns `main` red. Someone should dry-run it via
-`workflow_dispatch` before wiring the trigger.
+resolves to `''` on **every** event, and the ~1757-test suite runs nowhere.
+
+**Do NOT "fix" this by adding `push: branches: [main]`.** That was my earlier
+recommendation and it is wrong — it changes nothing while looking like a fix,
+which is worse than the current visible gap.
+
+**The actual fix is a human action:** provision `DOTENV_PRIVATE_KEY` as a
+repository secret. The workflow's shape is already correct — the pentest's
+condition rightly withholds the key from PR-head code — so once the secret
+exists, `workflow_dispatch` works immediately and adding a `push: [main]`
+trigger gives the suite a permanent venue where the key is safe to materialize.
+
+### How many times I got this wrong
+
+Recorded because the pattern is more useful than the answer:
+
+| Claim | Verdict |
+| --- | --- |
+| "the suite doesn't run in CI" | Right conclusion, no evidence behind it |
+| "it runs on push, just not PRs" | **Wrong** — I misread `gh run list --branch=main`, which lists PR-event runs |
+| "the trigger list is `pull_request`-only, so the condition can never hold" | True, but not the binding constraint |
+| "the secret is not configured" | **Confirmed** by a dispatch run + `gh secret list` |
+
+Each step was a confident answer built on the previous one's framing rather than
+on a measurement. The dispatch run cost two minutes and settled it.
 
 ### What I got wrong, and why it matters
 
@@ -53,8 +72,25 @@ priority list.
 - Two files (`unit-preview-auth-principal`, `e2e-preview-proxy`) failed to LOAD
   from incomplete `mock.module` factories — a SyntaxError, environment-independent.
   Fixed in #5583 (0 → 24 and 0 → 52 tests). That fix stands.
-- `e2e-preview-proxy` still shows 4 failures under CI's billing value, so those
-  are not explained by the env flag. Unresolved.
+- `e2e-preview-proxy` still shows 4 failures under CI's billing value. Narrowed
+  but **not resolved** — what I ruled out, so the next person does not repeat it:
+
+  | Hypothesis | Verdict |
+  | --- | --- |
+  | The `KORTIX_BILLING_INTERNAL_ENABLED` flag | **No** — fails under CI's value too |
+  | Incomplete `mock.module` (the sibling-file failure mode) | **No** — stubbing `projects/lib/secret-grant` fully changed nothing |
+  | Wrong sandbox id in the fixture | **No** — every prompt test uses `TEST_SANDBOX_ID`, and one env-sync test on that id PASSES |
+  | The retry classifier mis-ranks a 401 as transient | **No** — `isRetryableEnvSyncFailure` (preview.ts:71) matches only 502/503/504, then returns `false` for any `env sync failed:` prefix |
+
+  So the product's fail-closed path looks **correct**: a 401 env sync is
+  classified non-retryable and should surface as 502. The tests assert exactly
+  that and do not reach it. The remaining unknown is why the 401 never reaches
+  `postEnvToDaemon` — most likely the `mockFetchResponses` queue ordering, since
+  the passing sibling test supplies responses for BOTH the env-sync call and the
+  forward while these four supply one.
+
+  **Do not "fix" these by relaxing the assertions.** They encode the correct
+  intent; the harness is what is not delivering the failure.
 - A lint that fails a `mock.module` factory omitting exports the graph needs is
   still worth adding: that single class of bug zeroed two files silently.
 
@@ -81,7 +117,9 @@ priority list.
 
 ## Phase 2 — finish the demo (it is the spec people copy)
 
-Done: `end_user_ref` stamping, charge-by-end-user.
+Done: `end_user_ref` stamping, charge-by-end-user, and a session list scoped to
+the signed-in end-user (forced server-side — the browser cannot ask for another
+end-user's list, and an unfiltered request no longer returns everybody's).
 
 Remaining, in order of what teaches the most:
 
@@ -100,6 +138,18 @@ Remaining, in order of what teaches the most:
    get wrong.
 6. **Per-end-user concurrency cap** — currently `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT`
    defaults to 0 (off) and is set in no chart, so it is dark everywhere.
+
+## Shipped since this plan was written
+
+- **Session list filters by `end_user_ref`** (indexed, server-side), so a wrapper
+  no longer pulls the whole project to find one customer — and the demo scopes
+  its list to the signed-in end-user rather than showing everyone's.
+- **Mid-session agent switch re-mints the token grant.** Connectors and Kortix
+  CLI actions now follow the agent that actually runs; secrets keep refusing the
+  switch, for the reason that difference exists (secrets are already in the box).
+- **Executor tokens are revoked when their sandbox is gone.** They had no
+  expiry and were exempt from idle-revoke, so every session ever run left a live
+  bearer behind.
 
 ## Phase 3 — prove it, don't assert it
 

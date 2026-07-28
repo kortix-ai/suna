@@ -199,7 +199,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
       auth.access_token,
       "PATCH",
       `/projects/${projectId}/experimental`,
-      { feature: "acp_runtime", enabled: true },
+      { feature: "acp_runtime", enabled: false },
     );
     const session = await api<{ session_id: string }>(
       auth.access_token,
@@ -216,7 +216,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
       auth.access_token,
       projectId,
       sessionId,
-      "acp",
+      "rest",
     );
   });
 
@@ -309,7 +309,7 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
     await installBrowserSession(
       page,
       auth,
-      `/projects/${projectId}/sessions/${sessionId}`,
+      `/projects/${projectId}/sessions/${sessionId}?acp`,
       password,
     );
     const input = page.getByRole("textbox", { name: "Message input" });
@@ -628,14 +628,9 @@ test.describe.serial("14 — OpenCode ACP runtime canary", () => {
       page.getByText("POST_RESTART_PONG", { exact: true }),
     ).toHaveCount(0);
 
-    await api(
-      auth.access_token,
-      "PATCH",
-      `/projects/${projectId}/experimental`,
-      { feature: "acp_runtime", enabled: false },
-    );
-    await waitForReadySession(auth.access_token, projectId, sessionId, "rest");
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(input).toBeVisible({ timeout: 120_000 });
     const modelPicker = page.getByRole("button", { name: "Model picker" });
     await expect(modelPicker).toBeVisible({ timeout: 120_000 });

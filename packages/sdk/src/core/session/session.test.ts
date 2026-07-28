@@ -15,7 +15,10 @@ import {
   rewriteLocalhostUrl,
   proxyLocalhostUrl,
   parseLocalhostUrl,
+  hasPreviewTarget,
+  isInternalLocalhostUrl,
   isPreviewUrl,
+  isProxiableLocalhostUrl,
   buildStaticFilePreviewUrl,
   buildStaticFileHealthPreviewUrl,
   buildStaticFileLocalUrl,
@@ -103,6 +106,86 @@ describe('session/url', () => {
   it('isPreviewUrl recognizes proxied urls only', () => {
     expect(isPreviewUrl('https://api.kortix.cloud/v1/p/sbx1/3000/foo')).toBe(true);
     expect(isPreviewUrl('http://localhost:3000/foo')).toBe(false);
+  });
+
+  // ── No sandbox id → no proxy URL ──
+  //
+  // Regression: with an unresolved runtime the sandbox-id slot went in empty and
+  // produced `https://staging-api.kortix.com/v1/p//3000/` — a structurally
+  // invalid proxy URL that 404s (`{"error":true,"message":"Not found"}`) while
+  // looking to the reader like a real preview link. There is no valid preview
+  // target without a sandbox id, so the only honest answer is to not rewrite.
+  describe('with no resolvable sandbox id', () => {
+    const noSandbox = { sandboxId: '', backendPort: 443, apiBaseUrl: 'https://staging-api.kortix.com/v1' };
+
+    it('hasPreviewTarget is false, so callers can hold off instead of guessing', () => {
+      expect(hasPreviewTarget(opts)).toBe(true);
+      expect(hasPreviewTarget(noSandbox)).toBe(false);
+      expect(hasPreviewTarget({ ...opts, sandboxId: '   ' })).toBe(false);
+    });
+
+    it('never emits the empty-slot path proxy URL', () => {
+      const url = rewriteLocalhostUrl(3000, '/', noSandbox);
+      expect(url).not.toContain('/p//');
+      expect(url).toBe('http://localhost:3000/');
+    });
+
+    it('never emits the empty-slot subdomain proxy URL', () => {
+      // `http://p3000-.localhost:8008/` is the subdomain-branch equivalent —
+      // equally unroutable, equally invisible to the reader.
+      const url = rewriteLocalhostUrl(3000, '/', {
+        ...noSandbox,
+        apiBaseUrl: 'http://localhost:8008/v1',
+      });
+      expect(url).not.toContain('p3000-.');
+      expect(url).toBe('http://localhost:3000/');
+    });
+
+    it('leaves a localhost URL untouched so the click handler can retry once the runtime resolves', () => {
+      expect(proxyLocalhostUrl('http://localhost:3000/', noSandbox)).toBe('http://localhost:3000/');
+    });
+
+    it('the un-rewritten URL is still recognized as proxiable, not as a dead end', () => {
+      expect(isProxiableLocalhostUrl(proxyLocalhostUrl('http://localhost:3000/', noSandbox)!)).toBe(
+        true,
+      );
+      expect(isPreviewUrl(rewriteLocalhostUrl(3000, '/', noSandbox))).toBe(false);
+    });
+
+    it('whitespace-only ids are treated as absent, not trimmed into the path', () => {
+      expect(rewriteLocalhostUrl(3000, '/x', { ...noSandbox, sandboxId: '  ' })).toBe(
+        'http://localhost:3000/x',
+      );
+    });
+
+    it('the un-proxied result is flagged internal, so iframes refuse it', () => {
+      expect(isInternalLocalhostUrl(rewriteLocalhostUrl(3000, '/', noSandbox))).toBe(true);
+    });
+  });
+
+  describe('isInternalLocalhostUrl', () => {
+    it('is true only for a bare localhost host with a port', () => {
+      expect(isInternalLocalhostUrl('http://localhost:3000/')).toBe(true);
+      expect(isInternalLocalhostUrl('http://127.0.0.1:8080/a/b?c=1')).toBe(true);
+    });
+
+    it('is false for the subdomain preview form — that host reaches kortix-api', () => {
+      // The asymmetry that matters: `p3000-sbx1.localhost` is a PROXY hostname,
+      // not the viewer's own machine. Treating it as internal would break every
+      // local self-hosted preview.
+      expect(isInternalLocalhostUrl('http://p3000-sbx1.localhost:8008/x')).toBe(false);
+      expect(isInternalLocalhostUrl(rewriteLocalhostUrl(3000, '/x', {
+        ...opts,
+        apiBaseUrl: 'http://localhost:8008/v1',
+      }))).toBe(false);
+    });
+
+    it('is false for path-based previews, remote hosts, and unparseable input', () => {
+      expect(isInternalLocalhostUrl('https://api.kortix.cloud/v1/p/sbx1/3000/x')).toBe(false);
+      expect(isInternalLocalhostUrl('https://example.com/')).toBe(false);
+      expect(isInternalLocalhostUrl('http://localhost/')).toBe(false); // no port
+      expect(isInternalLocalhostUrl('not a url')).toBe(false);
+    });
   });
 });
 

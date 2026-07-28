@@ -16,7 +16,10 @@ export interface TrackedResource {
 export class ResourceStack {
   private items: TrackedResource[] = [];
 
-  constructor(private admin: Client) {}
+  constructor(
+    private admin: Client,
+    private deleteDatabaseProject?: (projectId: string) => Promise<void>,
+  ) {}
 
   push(kind: string, id: string, meta?: Record<string, any>): void {
     this.items.push({ kind, id, meta });
@@ -43,6 +46,12 @@ export class ResourceStack {
         break;
       case "project":
         await this.admin.del("/v1/projects/:id", { params: { id: r.id }, query: { purge: true } });
+        break;
+      case "database-project":
+        if (!this.deleteDatabaseProject) {
+          throw new Error("database project teardown is not configured");
+        }
+        await this.deleteDatabaseProject(r.id);
         break;
       case "token":
         await this.admin.del("/v1/accounts/tokens/:id", { params: { id: r.id } });

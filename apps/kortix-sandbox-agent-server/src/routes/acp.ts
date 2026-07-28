@@ -5,6 +5,16 @@ import {
   parseJsonRpcEnvelope,
   type AcpConnection,
 } from '../acp/connection'
+import {
+  parseAcpHarnessId,
+  type AcpHarnessId,
+} from '../acp/harness-registry'
+import {
+  AcpHarnessConflictError,
+  AcpUpstreamError,
+  type AcpRuntime,
+  type AcpRuntimeProcess,
+} from '../acp/runtime'
 import type { Config } from '../config'
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -89,6 +99,7 @@ export function createAcpRouter(
   getConnection: () => AcpConnection | null,
   getCanonicalSessionId: () => string | null,
   history?: AcpSessionHistory,
+  runtime?: AcpRuntime,
 ): Hono {
   const router = new Hono()
 
@@ -114,16 +125,62 @@ export function createAcpRouter(
     return next()
   })
 
-  router.use('/:serverId', async (c, next) => {
+  const getOpenCodeConnection = (
+    serverId: string,
+  ):
+    | { connection: AcpConnection; error?: never }
+    | { connection?: never; error: Response } => {
     const canonicalSessionId = getCanonicalSessionId()
     if (!canonicalSessionId) {
-      return c.json({ error: 'Canonical OpenCode session not ready' }, 503)
+      return {
+        error: Response.json(
+          { error: 'Canonical OpenCode session not ready' },
+          { status: 503 },
+        ),
+      }
     }
-    if (c.req.param('serverId') !== canonicalSessionId) {
-      return c.json({ error: 'ACP session not found' }, 404)
+    if (serverId !== canonicalSessionId) {
+      return {
+        error: Response.json(
+          { error: 'ACP session not found' },
+          { status: 404 },
+        ),
+      }
     }
-    return next()
-  })
+    const connection = getConnection()
+    if (!connection?.ready) {
+      return {
+        error: Response.json(
+          { error: 'OpenCode ACP not ready' },
+          { status: 503 },
+        ),
+      }
+    }
+    return { connection }
+  }
+
+  const resolveRuntimeProcess = async (
+    serverId: string,
+    harness: AcpHarnessId | null,
+  ): Promise<AcpRuntimeProcess | null> => {
+    const existing = runtime?.get(serverId)
+    if (existing) {
+      if (harness && existing.harness !== harness) {
+        throw new AcpHarnessConflictError(
+          serverId,
+          existing.harness,
+          harness,
+        )
+      }
+      return existing
+    }
+    if (!runtime || !harness || harness === 'opencode') return null
+    return runtime.getOrCreate(serverId, harness)
+  }
+
+  router.get('/', (c) =>
+    c.json({ servers: runtime?.list() ?? [] }),
+  )
 
   router.post('/:serverId', async (c) => {
     if (
@@ -135,13 +192,47 @@ export function createAcpRouter(
       return c.json({ error: 'content-type must be application/json' }, 415)
     }
 
-    const connection = getConnection()
-    if (!connection?.ready) {
-      return c.json({ error: 'OpenCode ACP not ready' }, 503)
+    const rawAgent = c.req.query('agent')
+    const harness = parseAcpHarnessId(rawAgent)
+    if (rawAgent && !harness) {
+      return c.json(
+        { error: `unsupported ACP agent '${rawAgent}'` },
+        400,
+      )
     }
 
     try {
       const envelope = parseJsonRpcEnvelope(await c.req.json())
+      const managed = await resolveRuntimeProcess(
+        c.req.param('serverId'),
+        harness,
+      )
+      if (managed) {
+        const response = await managed.post(envelope)
+        return response ? c.json(response) : c.body(null, 202)
+      }
+
+      if (
+        runtime &&
+        !harness &&
+        getCanonicalSessionId() &&
+        c.req.param('serverId') !== getCanonicalSessionId()
+      ) {
+        return c.json(
+          {
+            error:
+              "first POST must include agent=claude, agent=codex, or agent=pi",
+          },
+          400,
+        )
+      }
+
+      const target = getOpenCodeConnection(
+        c.req.param('serverId'),
+      )
+      if (target.error) return target.error
+      const connection = target.connection
+
       if ('method' in envelope) {
         if (!ALLOWED_SESSION_METHODS.has(envelope.method as string)) {
           return c.json({ error: 'ACP method is not allowed' }, 405)
@@ -194,15 +285,45 @@ export function createAcpRouter(
       await connection.post(envelope)
       return c.body(null, 202)
     } catch (error) {
+      if (error instanceof AcpHarnessConflictError) {
+        return c.json({ error: error.message }, 409)
+      }
+      if (error instanceof AcpUpstreamError) {
+        return c.json({ error: error.message }, 502)
+      }
       const status = error instanceof AcpProtocolError ? 502 : 400
       return c.json({ error: errorMessage(error) }, status)
     }
   })
 
   router.get('/:serverId', (c) => {
-    const connection = getConnection()
-    if (!connection?.ready) {
-      return c.json({ error: 'OpenCode ACP not ready' }, 503)
+    const rawAgent = c.req.query('agent')
+    const harness = parseAcpHarnessId(rawAgent)
+    if (rawAgent && !harness) {
+      return c.json(
+        { error: `unsupported ACP agent '${rawAgent}'` },
+        400,
+      )
+    }
+
+    const managed = runtime?.get(c.req.param('serverId'))
+    const target = managed
+      ? { connection: managed.connection }
+      : getOpenCodeConnection(c.req.param('serverId'))
+    if (target.error) return target.error
+    const connection = target.connection
+
+    if (managed && harness && managed.harness !== harness) {
+      return c.json(
+        {
+          error: new AcpHarnessConflictError(
+            managed.serverId,
+            managed.harness,
+            harness,
+          ).message,
+        },
+        409,
+      )
     }
     const accept = c.req.header('accept')
     if (
@@ -264,6 +385,11 @@ export function createAcpRouter(
         'X-Accel-Buffering': 'no',
       },
     })
+  })
+
+  router.delete('/:serverId', async (c) => {
+    await runtime?.delete(c.req.param('serverId'))
+    return c.body(null, 204)
   })
 
   return router

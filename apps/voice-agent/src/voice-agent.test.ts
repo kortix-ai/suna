@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ACK_LINES, nextAckLine, resetAckRotation } from './ack';
+import { resolveCallContext } from './call-context';
 import { buildInstructions } from './instructions';
 
 /**
@@ -57,6 +58,33 @@ describe('the ack is a fixed string, not something the model writes', () => {
     resetAckRotation();
     const run2 = [nextAckLine(), nextAckLine(), nextAckLine()];
     expect(run2).toEqual(run1);
+  });
+});
+
+describe('call-scoped API credentials stay in private worker metadata', () => {
+  const roomMetadata = JSON.stringify({
+    project_id: 'project-1',
+    session_id: 'session-1',
+    call_id: 'call-1',
+    kortix_api_url: 'https://api.kortix.com',
+    bot_name: 'Kortix',
+    kortix_api_token: 'public-room-token',
+  });
+
+  test('reads the bearer from worker metadata', () => {
+    const context = resolveCallContext(
+      'voice-call-1',
+      roomMetadata,
+      JSON.stringify({ kortix_api_token: 'private-worker-token' }),
+    );
+
+    expect(context.kortixApiToken).toBe('private-worker-token');
+  });
+
+  test('does not accept a bearer from public room metadata', () => {
+    expect(() => resolveCallContext('voice-call-1', roomMetadata, undefined)).toThrow(
+      'voice-agent: worker metadata is missing kortix_api_token',
+    );
   });
 });
 
