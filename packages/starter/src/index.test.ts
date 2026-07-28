@@ -201,8 +201,8 @@ describe('getStarterFiles', () => {
       'xlsx',
       // Platform front door.
       'kortix-cli',
-      // The universal input.
-      'search',
+      // Computer basics — driving a real browser.
+      'agent-browser',
       // Web artifacts, and the skill that puts them on a public URL.
       'web-publishing-and-deployments',
       'webapp',
@@ -233,7 +233,11 @@ describe('getStarterFiles', () => {
     const paths = new Set(getMarketplaceFiles().map((f) => f.path));
 
     expect(paths.has('kortix.registry.json')).toBe(true);
-    expect(paths.has('runtime/skills/agent-browser/SKILL.md')).toBe(true);
+    expect(paths.has('runtime/skills/email-triage/SKILL.md')).toBe(true);
+    // `agent-browser` is scaffolded now (driving a browser is a floor capability,
+    // not an optional install), so it must NOT also sit in the marketplace root —
+    // its hand-written kortix.registry.json entry was removed with the move.
+    expect(paths.has('runtime/skills/agent-browser/SKILL.md')).toBe(false);
     expect(paths.has('runtime/pty/pty-tools.ts')).toBe(false);
     expect(paths.has('runtime/tools/memory.ts')).toBe(false);
     expect(paths.has('runtime/tools/web_search.ts')).toBe(false);

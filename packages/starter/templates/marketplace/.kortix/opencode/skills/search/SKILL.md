@@ -1,7 +1,6 @@
 ---
 name: search
 description: "Find and read information on the open web — fan-out web/news/finance search plus full-page fetching and source extraction. Use to answer current questions, gather and cite sources, verify a claim, or pull text from specific URLs. Triggers: 'search the web', 'look this up', 'find sources on', 'what's the latest on', 'fetch this page', 'is it true that…', 'compare X vs Y'."
-defaultProjectInstall: true
 ---
 
 # Search
