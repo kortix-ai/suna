@@ -264,10 +264,28 @@ export function ProjectHomeWelcomeBody({
             )}
           </h1>
 
-          {composer || onPickSuggestion ? (
+          {composer ? (
             <div className="flex w-full flex-col items-center">
               {composer}
+              {/* TODO(starter-prompts): hidden on purpose. These six chips are a
+                  hardcoded generic list — the same "Build a landing page" /
+                  "Draft a contract" slop for every project, regardless of what
+                  the project is or what the user has ever done in it. Generic
+                  suggestions read as filler and make the product look dumber
+                  than it is.
+
+                  Bring them back only when they are generated per project —
+                  from its actual memory, skills, connectors, and recent
+                  sessions — so each suggestion is something THIS user would
+                  plausibly ask next. Until then, an empty space under the
+                  composer is better than fake personalisation.
+
+                  Component + data are still in place (StarterPromptChips below,
+                  src/lib/starter-prompts.ts), so re-enabling is one line once
+                  there is a real generator behind it.
+
               {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
+              */}
             </div>
           ) : null}
         </div>
