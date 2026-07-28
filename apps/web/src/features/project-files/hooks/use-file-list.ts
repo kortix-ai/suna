@@ -1,9 +1,9 @@
 'use client';
 
+import type { FileNode } from '@/features/file-browser/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listFiles } from '../api/runtime-files';
 import { useProjectContext } from '../context';
-import type { FileNode } from '@/features/file-browser/types';
 
 export const fileListKeys = {
   all: ['project-files', 'list'] as const,
@@ -17,10 +17,7 @@ export const fileListKeys = {
  * Uses GET /v1/projects/:projectId/files (recursive list, filtered client-side
  * down to immediate children of `dirPath`).
  */
-export function useFileList(
-  dirPath: string,
-  options?: { enabled?: boolean },
-) {
+export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const ref = ctx?.ref ?? '';
@@ -29,8 +26,12 @@ export function useFileList(
     queryKey: fileListKeys.dir(projectId, ref, dirPath),
     queryFn: () => listFiles(projectId, ref, dirPath),
     enabled: !!projectId && !!ref && !!dirPath && options?.enabled !== false,
-    staleTime: 5_000,
-    gcTime: 2 * 60_000,
+    // Was 5s / 2min, which meant re-fetching the tree on almost every visit
+    // and losing it entirely a couple of minutes later. The shell prefetches
+    // this listing on mount, so keep it long enough for that warm-up to still
+    // be worth something; writes invalidate through useInvalidateFileList.
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,
     retry: (failureCount, error: Error) => {
       // `error` is whatever the queryFn rejected with — React Query does not

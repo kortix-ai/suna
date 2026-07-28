@@ -12,9 +12,9 @@ import { SidebarEdgePeek, SidebarTrigger, useSidebar } from '@/components/ui/sid
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
+import { ProjectPrefetcher } from '@/features/workspace/project-layout/project-prefetcher';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
-import { useGatewayCatalogSync } from '@kortix/sdk/react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { desktopShellPlatform } from '@/lib/desktop';
@@ -24,6 +24,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useLastProjectStore } from '@/stores/last-project-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
+import { useGatewayCatalogSync } from '@kortix/sdk/react';
 import { PanelLeft } from 'lucide-react';
 
 const CommandPalette = lazy(() =>
@@ -159,6 +160,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             <CommandPalette />
           </Suspense>
 
+          {/* Warms Files, Automations, Secrets and project detail so those
+              screens open from cache instead of a cold waterfall. */}
+          <ProjectPrefetcher projectId={projectId} />
+
           <ProjectSheelLayout>{children}</ProjectSheelLayout>
         </div>
 
@@ -200,7 +205,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           headers come and go (sessions render theirs only once booted) — so
           the opener lives here, always mounted, on every project view. The
           session header indents its leading buttons past it below md. */}
-       
+
       {desktopShell && !isExpanded && (
         <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
           <Button

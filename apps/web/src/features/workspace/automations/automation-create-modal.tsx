@@ -4,22 +4,23 @@
  * Create an automation in one step.
  *
  * The old flow was a two-step wizard whose first field was a raw six-field cron
- * expression, and which REQUIRED you to invent a webhook signing secret before
- * it would let you continue. Both are gone:
+ * expression, and which REFUSED to continue until you invented a webhook
+ * signing secret. Both of those are gone — the cadence is a preset list, and
+ * the secret is generated for you.
  *
- * - Cadence is a preset list rendered through describeCron ("Daily at 09:00").
- *   The raw expression lives in the detail sheet under Advanced.
- * - The webhook secret is generated. generateSecret() already existed; the
- *   wizard just never called it.
+ * But a generated secret you never see is useless: the value is stored as a
+ * project secret and is write-only afterwards, so creation is the ONLY moment
+ * it can be shown. Making a webhook therefore ends on a reveal step with the
+ * URL, the secret and a ready-to-run curl — not by closing the modal.
  *
- * Shape follows ux-references/perplexity/11-workflow-run-modal.png: what it
- * does on the left, a short form on the right, one collapsed "Additional
- * settings", one primary button.
+ * Everything else a trigger carries (agent, model, session strategy, delivery
+ * conditions) stays editable on the automation itself; this covers what you
+ * need to get one running.
  */
 
 import { AlarmClockSolid } from '@mynaui/icons-react';
 import { useMutation } from '@tanstack/react-query';
-import { Webhook } from 'lucide-react';
+import { Check, Copy, Webhook } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -44,14 +45,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
 
 import {
   CRON_PRESETS,
   DEFAULT_CRON_EXPR,
   TIMEZONES,
+  buildCurlExample,
   dailyExprAt,
   describeCron,
   generateSecret,
@@ -62,6 +65,50 @@ import {
 type Kind = 'cron' | 'webhook';
 /** The presets, plus a custom time. Still no raw cron. */
 type Cadence = string | 'custom-time';
+
+/** What a freshly created webhook must show exactly once. */
+interface CreatedWebhook {
+  slug: string;
+  url: string;
+  secretEnv: string;
+  /** Only set when we generated it — a reused secret is not ours to reveal. */
+  secretValue: string | null;
+}
+
+function CopyRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="flex items-center gap-2">
+        <Input
+          readOnly
+          value={value}
+          className="flex-1 font-mono text-xs"
+          onFocus={(event) => event.currentTarget.select()}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label={`Copy ${label.toLowerCase()}`}
+          onClick={async () => {
+            const ok = await copyToClipboard(value);
+            if (!ok) {
+              errorToast('Copy failed — select and copy manually');
+              return;
+            }
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+        </Button>
+      </div>
+      {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+    </Field>
+  );
+}
 
 export function AutomationCreateModal({
   projectId,
@@ -82,7 +129,9 @@ export function AutomationCreateModal({
   const [prompt, setPrompt] = useState('');
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('UTC');
+  const [secretEnvOverride, setSecretEnvOverride] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedWebhook | null>(null);
 
   useEffect(() => {
     if (open) return;
@@ -92,7 +141,9 @@ export function AutomationCreateModal({
     setPrompt('');
     setName('');
     setTimezone('UTC');
+    setSecretEnvOverride('');
     setError(null);
+    setCreated(null);
   }, [open, forcedKind]);
 
   const cronExpr =
@@ -102,6 +153,9 @@ export function AutomationCreateModal({
 
   /** The name is derived from the task unless the user typed one. */
   const effectiveName = name.trim() || prompt.trim().split('\n')[0].slice(0, 60);
+  const defaultSecretEnv = `WEBHOOK_${slugifyName(effectiveName || 'automation')
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
 
   const create = useMutation({
     mutationFn: async () => {
@@ -112,23 +166,26 @@ export function AutomationCreateModal({
       const slug = slugifyName(finalName);
 
       if (kind === 'webhook') {
-        // Generated, not demanded. Shown once in the detail sheet afterwards.
-        const secretEnv = `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
-        await upsertProjectSecret(projectId, {
-          name: normalizeSecretEnvName(secretEnv),
-          value: generateSecret(),
-        });
-        return createProjectTrigger(projectId, {
+        // An override names a secret that already exists, so there is nothing
+        // of ours to reveal. Otherwise mint one and show it once.
+        const override = normalizeSecretEnvName(secretEnvOverride);
+        const secretEnv = override || defaultSecretEnv;
+        const secretValue = override ? null : generateSecret();
+        if (secretValue) {
+          await upsertProjectSecret(projectId, { name: secretEnv, value: secretValue });
+        }
+        const listing = await createProjectTrigger(projectId, {
           name: finalName,
           slug,
           type: 'webhook',
           prompt_template: trimmedPrompt,
           enabled: true,
-          secret_env: normalizeSecretEnvName(secretEnv),
+          secret_env: secretEnv,
         });
+        return { listing, slug, secretEnv, secretValue };
       }
 
-      return createProjectTrigger(projectId, {
+      const listing = await createProjectTrigger(projectId, {
         name: finalName,
         slug,
         type: 'cron',
@@ -137,17 +194,89 @@ export function AutomationCreateModal({
         cron: cronExpr,
         timezone: timezone.trim() || 'UTC',
       });
+      return { listing, slug, secretEnv: '', secretValue: null };
     },
-    onSuccess: (listing) => {
-      const created = listing.triggers.filter((t) => t.name === effectiveName).slice(-1)[0];
-      successToast('Automation created', {
-        description: kind === 'cron' ? describeCron(cronExpr) : 'Webhook URL ready in the panel',
-      });
-      if (created) onCreated(created.slug);
-      else onOpenChange(false);
+    onSuccess: ({ listing, slug, secretEnv, secretValue }) => {
+      if (kind === 'webhook') {
+        const trigger = listing.triggers.find((t) => t.slug === slug);
+        // Do NOT close: this is the only time the secret can be read.
+        setCreated({ slug, url: trigger?.webhook_url ?? '', secretEnv, secretValue });
+        return;
+      }
+      successToast('Automation created', { description: describeCron(cronExpr) });
+      onCreated(slug);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Could not create'),
   });
+
+  const finish = () => {
+    if (!created) return;
+    onCreated(created.slug);
+    onOpenChange(false);
+  };
+
+  if (created) {
+    return (
+      <Modal
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) finish();
+          else onOpenChange(next);
+        }}
+      >
+        <ModalContent className="sm:max-w-2xl">
+          <ModalHeader>
+            <ModalTitle>Webhook ready</ModalTitle>
+            <ModalDescription>
+              POST to this URL and a session starts. Sign the raw body with the secret below.
+            </ModalDescription>
+          </ModalHeader>
+
+          <ModalBody className="space-y-4">
+            {created.secretValue ? (
+              <InfoBanner tone="warning" title="Copy the secret now">
+                It is stored as the project secret {created.secretEnv} and cannot be read again.
+                Rotate it from Settings → Environment if you lose it.
+              </InfoBanner>
+            ) : (
+              <InfoBanner tone="neutral" title={`Signed with ${created.secretEnv}`}>
+                This webhook reuses an existing project secret, so its value is not shown here.
+              </InfoBanner>
+            )}
+
+            <CopyRow label="Webhook URL" value={created.url} />
+            {created.secretValue ? (
+              <CopyRow
+                label="Signing secret"
+                value={created.secretValue}
+                hint={`Stored as ${created.secretEnv}.`}
+              />
+            ) : null}
+
+            <Field>
+              <FieldLabel>Example request</FieldLabel>
+              <Textarea
+                readOnly
+                rows={6}
+                value={buildCurlExample(created.url)}
+                className="font-mono text-xs"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <FieldDescription>
+                The signature must cover the raw request body byte-for-byte.
+              </FieldDescription>
+            </Field>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button type="button" onClick={finish}>
+              Done
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    );
+  }
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -198,7 +327,10 @@ export function AutomationCreateModal({
               rows={3}
               placeholder="Summarise yesterday's support tickets and post the digest to #support."
             />
-            <FieldDescription>Written the way you would ask a teammate.</FieldDescription>
+            <FieldDescription>
+              Written the way you would ask a teammate. Placeholders like {'{{ message.text }}'} are
+              filled from the payload.
+            </FieldDescription>
           </Field>
 
           {kind === 'cron' ? (
@@ -233,27 +365,33 @@ export function AutomationCreateModal({
               </FieldDescription>
             </Field>
           ) : (
-            <InfoBanner tone="neutral" title="A signing secret is created for you">
-              You will get the webhook URL and its secret as soon as this is saved.
+            <InfoBanner tone="neutral" title="A signing secret is generated for you">
+              You get the URL, the secret and a ready-to-run curl as soon as this is saved. The
+              secret is shown once.
             </InfoBanner>
           )}
 
-          {kind === 'cron' ? (
-            <Disclosure>
-              <DisclosureTrigger>Additional settings</DisclosureTrigger>
-              <DisclosureContent className="space-y-4 pt-3">
-                <Field>
-                  <FieldLabel htmlFor="automation-name">Name</FieldLabel>
-                  <Input
-                    id="automation-name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder={effectiveName || 'Daily support digest'}
-                  />
-                  <FieldDescription>
-                    Derived from the task if you leave this empty.
-                  </FieldDescription>
-                </Field>
+          <Disclosure>
+            <DisclosureTrigger>Additional settings</DisclosureTrigger>
+            <DisclosureContent className="space-y-4 pt-3">
+              <Field>
+                <FieldLabel htmlFor="automation-name">Name</FieldLabel>
+                <Input
+                  id="automation-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder={effectiveName || 'Daily support digest'}
+                />
+                <FieldDescription>
+                  Derived from the task if left empty. The slug becomes{' '}
+                  <code className="font-mono text-xs">
+                    {slugifyName(effectiveName || 'automation')}
+                  </code>
+                  .
+                </FieldDescription>
+              </Field>
+
+              {kind === 'cron' ? (
                 <Field>
                   <FieldLabel htmlFor="automation-timezone">Time zone</FieldLabel>
                   <Select value={timezone} onValueChange={setTimezone}>
@@ -269,9 +407,29 @@ export function AutomationCreateModal({
                     </SelectContent>
                   </Select>
                 </Field>
-              </DisclosureContent>
-            </Disclosure>
-          ) : null}
+              ) : (
+                <Field>
+                  <FieldLabel htmlFor="automation-secret-env">Signing secret name</FieldLabel>
+                  <Input
+                    id="automation-secret-env"
+                    value={secretEnvOverride}
+                    onChange={(event) => setSecretEnvOverride(event.target.value)}
+                    placeholder={defaultSecretEnv}
+                    className="font-mono text-xs"
+                  />
+                  <FieldDescription>
+                    Leave empty and one is generated. Name an existing project secret to reuse its
+                    key instead — UPPER_SNAKE_CASE.
+                  </FieldDescription>
+                </Field>
+              )}
+
+              <p className="text-muted-foreground text-xs">
+                Agent, model, session strategy and delivery conditions are editable on the
+                automation once it exists.
+              </p>
+            </DisclosureContent>
+          </Disclosure>
 
           {error ? (
             <InfoBanner tone="destructive" title="Could not create">
