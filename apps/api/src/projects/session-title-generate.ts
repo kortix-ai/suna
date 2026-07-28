@@ -1,29 +1,21 @@
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import { createGateway } from '@kortix/llm-gateway';
+import type { createGateway } from '@kortix/llm-gateway';
 import { config } from '../config';
 import { logger as appLogger } from '../lib/logger';
 import { createGatewayKey, revokeGatewayKey } from '../llm-gateway/gateway-keys';
-import { createInProcessGatewayHooks } from '../llm-gateway/hooks';
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { db } from '../shared/db';
+import { isPlaceholderOpencodeTitle } from './lib/opencode-title';
 import type { ProjectSessionRow } from './lib/serializers';
-import { isPlaceholderOpencodeTitle } from './opencode-title-sync';
 
-// Kortix-owned session titles.
+// Kortix-owned session titles — the single source of `metadata.name`.
 //
-// Historically a session's title came from OpenCode's in-sandbox summarizer,
-// mirrored into `metadata.name` by opencode-title-*. That path is fragile: it
-// depends on the summarizer succeeding in the sandbox and on the box being
-// awake when the deferred capture polls it, so long/failed/large sessions never
-// got a title and stayed the frozen "New session" placeholder.
-//
-// Instead we generate the title ourselves the moment a session serves its FIRST
-// user prompt: one short call to the internal LLM gateway, using the model the
-// session was started with, over just the first prompt text. It is the
-// authoritative source; the OpenCode sync is now a fallback that never
-// overwrites a real title (see opencode-title-sync / opencode-title-capture).
+// We generate the title ourselves the moment a session serves its FIRST user
+// prompt: one short call to the internal LLM gateway, using the model the user
+// actually picked for that turn (from the prompt body), over just the first
+// prompt text. Nothing else writes `metadata.name`.
 //
 // Fire-and-forget by contract: idempotent, best-effort, and it never blocks or
 // fails the prompt request.
@@ -39,10 +31,16 @@ const TITLE_SYSTEM_PROMPT =
 
 // The same pipeline the API mounts, run directly in-process so title generation
 // behaves identically whether the gateway is in-process or a standalone pod — we
-// never depend on the pod's URL for our own internal call.
+// never depend on the pod's URL for our own internal call. Loaded LAZILY: a
+// title is fire-and-forget, so importing this module must not drag the whole
+// gateway (routing, policy engine, catalog) into every consumer's load graph.
 let gatewaySingleton: ReturnType<typeof createGateway> | null = null;
-function internalGateway(): ReturnType<typeof createGateway> {
-  if (!gatewaySingleton) gatewaySingleton = createGateway(createInProcessGatewayHooks());
+async function internalGateway(): Promise<ReturnType<typeof createGateway>> {
+  if (!gatewaySingleton) {
+    const { createGateway } = await import('@kortix/llm-gateway');
+    const { createInProcessGatewayHooks } = await import('../llm-gateway/hooks');
+    gatewaySingleton = createGateway(createInProcessGatewayHooks());
+  }
   return gatewaySingleton;
 }
 
@@ -62,70 +60,60 @@ export function sanitizeGeneratedTitle(raw: string | null | undefined): string |
   return title;
 }
 
-/** First user prompt text from a REST (`{parts}`) or ACP (`{params:{prompt}}`)
- *  body — the two content-block shapes the sandbox prompt proxy forwards. */
-export function extractFirstPromptText(
+export interface PromptInfo {
+  /** First user prompt text (all text blocks joined), or null. */
+  text: string | null;
+  /** The model the user picked for THIS turn in gateway wire form, or null. */
+  model: string | null;
+}
+
+/** Wire form of a prompt-body `model` field — REST `body.model` or ACP
+ *  `body.params.model`, shaped `{ providerID, modelID }` (opencode's per-send
+ *  override) or a bare string. opencode's synthetic `kortix` provider already
+ *  carries the full gateway wire id in `modelID` (e.g. `codex/gpt-5.6-sol`);
+ *  any other provider is a BYOK `provider/model` pair. */
+function wireModelFrom(raw: unknown): string | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') return toWireModel(raw.trim()) || null;
+  if (typeof raw !== 'object') return null;
+  const m = raw as { providerID?: unknown; modelID?: unknown };
+  const modelId = typeof m.modelID === 'string' ? m.modelID.trim() : '';
+  const providerId = typeof m.providerID === 'string' ? m.providerID.trim() : '';
+  if (!modelId) return null;
+  return providerId && providerId !== 'kortix' ? `${providerId}/${modelId}` : modelId;
+}
+
+/** Parse the prompt-proxy body ONCE and pull out both the first user prompt text
+ *  and the live picked model. Handles REST (`{parts, model}`) and ACP
+ *  (`{params:{prompt, model}}`) shapes. Both fields null when unreadable. */
+export function extractPromptInfo(
   body: ArrayBuffer | undefined,
   incomingHeaders: Headers,
-): string | null {
-  if (!body) return null;
+): PromptInfo {
+  const none: PromptInfo = { text: null, model: null };
+  if (!body) return none;
   if (!(incomingHeaders.get('content-type') ?? '').toLowerCase().includes('application/json'))
-    return null;
+    return none;
   try {
     const parsed = JSON.parse(new TextDecoder().decode(body)) as {
       parts?: unknown;
-      params?: { prompt?: unknown };
+      model?: unknown;
+      params?: { prompt?: unknown; model?: unknown };
     };
     const blocks = Array.isArray(parsed.parts)
       ? parsed.parts
       : Array.isArray(parsed.params?.prompt)
         ? (parsed.params?.prompt as unknown[])
-        : null;
-    if (!blocks) return null;
-    const text = (blocks as Array<{ type?: unknown; text?: unknown }>)
-      .filter((p) => p?.type === 'text' && typeof p.text === 'string')
-      .map((p) => p.text as string)
-      .join('\n')
-      .trim();
-    return text || null;
+        : [];
+    const text =
+      (blocks as Array<{ type?: unknown; text?: unknown }>)
+        .filter((p) => p?.type === 'text' && typeof p.text === 'string')
+        .map((p) => p.text as string)
+        .join('\n')
+        .trim() || null;
+    return { text, model: wireModelFrom(parsed.model ?? parsed.params?.model) };
   } catch {
-    return null;
-  }
-}
-
-/** The model the user picked for THIS turn, in gateway wire form, read from the
- *  prompt body — REST `body.model` or ACP `body.params.model`, shaped
- *  `{ providerID, modelID }` (opencode's per-send override) or a bare string.
- *  This is the LIVE model actually used, unlike the session's stale boot-default
- *  `opencode_model`. Returns null when the body carries no model. */
-export function extractPromptModel(
-  body: ArrayBuffer | undefined,
-  incomingHeaders: Headers,
-): string | null {
-  if (!body) return null;
-  if (!(incomingHeaders.get('content-type') ?? '').toLowerCase().includes('application/json'))
-    return null;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-      model?: unknown;
-      params?: { model?: unknown };
-    };
-    const raw = parsed.model ?? parsed.params?.model;
-    if (!raw) return null;
-    if (typeof raw === 'string') return toWireModel(raw.trim()) || null;
-    if (typeof raw === 'object') {
-      const m = raw as { providerID?: unknown; modelID?: unknown };
-      const modelId = typeof m.modelID === 'string' ? m.modelID.trim() : '';
-      const providerId = typeof m.providerID === 'string' ? m.providerID.trim() : '';
-      if (!modelId) return null;
-      // opencode's synthetic `kortix` provider already carries the full gateway
-      // wire id in modelID (e.g. `codex/gpt-5.6-sol`, `glm-5.2`); any other
-      // provider is a BYOK `provider/model` pair.
-      return providerId && providerId !== 'kortix' ? `${providerId}/${modelId}` : modelId;
-    }
-    return null;
-  } catch {
-    return null;
+    return none;
   }
 }
 
@@ -157,7 +145,8 @@ async function generateViaGateway(
       { role: 'user', content: promptText.slice(0, MAX_PROMPT_CHARS) },
     ],
   });
-  const res = await internalGateway().chatCompletions({ authorization, rawBody });
+  const gateway = await internalGateway();
+  const res = await gateway.chatCompletions({ authorization, rawBody });
   if (!res.ok) {
     appLogger.warn('[title-generate] gateway returned non-200', { status: res.status, model });
     return null;

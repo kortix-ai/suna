@@ -12,6 +12,7 @@
 // sandbox-proxy tests document.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
+import * as realRequestContext from '../../lib/request-context';
 
 const ACTIVE_RECORD = {
   status: 'active',
@@ -25,7 +26,10 @@ const ACTIVE_RECORD = {
 };
 
 mock.module('../../config', () => ({ config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false } }));
-mock.module('../../lib/request-context', () => ({ getTraceHeaders: () => ({}) }));
+mock.module('../../lib/request-context', () => ({
+  ...realRequestContext,
+  getTraceHeaders: () => ({}),
+}));
 mock.module('../../shared/kortix-user-context', () => ({
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
 }));
@@ -46,9 +50,8 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-title-capture', () => ({
-  scheduleTitleCaptureAfterPrompt: () => {},
-  captureTitleAfterRuntimeEvent: async () => {},
+mock.module('../../projects/opencode-session-snapshot', () => ({
+  scheduleOpencodeSnapshotSync: () => {},
 }));
 mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
@@ -107,8 +110,15 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   test('a prompt POST that 502s is delivered to the sandbox at most once', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }));
     const res = await forwardToSandbox(
-      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null },
-      'POST', '/session/sess-1/message', '', jsonHeaders(), PROMPT_BODY, 'http://app.local',
+      'sb-1',
+      8000,
+      { kind: 'principal', userId: 'u1', callerSessionId: null },
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders(),
+      PROMPT_BODY,
+      'http://app.local',
     );
     // Exactly ONE upstream attempt — the 502 is passed straight through, never retried.
     expect(fetchCalls).toBe(1);
@@ -118,8 +128,15 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   test('a prompt POST that succeeds is forwarded once (happy path unchanged)', async () => {
     queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
     const res = await forwardToSandbox(
-      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null },
-      'POST', '/session/sess-1/message', '', jsonHeaders(), PROMPT_BODY, 'http://app.local',
+      'sb-1',
+      8000,
+      { kind: 'principal', userId: 'u1', callerSessionId: null },
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders(),
+      PROMPT_BODY,
+      'http://app.local',
     );
     expect(fetchCalls).toBe(1);
     expect(res.status).toBe(200);
@@ -128,9 +145,15 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   test('a duplicate inbound prompt under the same Idempotency-Key short-circuits', async () => {
     queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
     const args = [
-      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null } as const,
-      'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': 'dup-1' }),
-      PROMPT_BODY, 'http://app.local',
+      'sb-1',
+      8000,
+      { kind: 'principal', userId: 'u1', callerSessionId: null } as const,
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders({ 'idempotency-key': 'dup-1' }),
+      PROMPT_BODY,
+      'http://app.local',
     ] as const;
     const first = await forwardToSandbox(...args);
     const second = await forwardToSandbox(...args);
@@ -144,13 +167,17 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
 
 describe('forwardToSandbox — idempotent GET retry is unchanged', () => {
   test('a GET that 502s then 200s is retried and returns the eventual success', async () => {
-    queueFetch(
-      new Response('bad gateway', { status: 502 }),
-      new Response('ok', { status: 200 }),
-    );
+    queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
     const res = await forwardToSandbox(
-      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null },
-      'GET', '/session', '', new Headers(), undefined, 'http://app.local',
+      'sb-1',
+      8000,
+      { kind: 'principal', userId: 'u1', callerSessionId: null },
+      'GET',
+      '/session',
+      '',
+      new Headers(),
+      undefined,
+      'http://app.local',
     );
     expect(fetchCalls).toBe(2);
     expect(res.status).toBe(200);
@@ -172,9 +199,15 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     // Daytona rejects this BEFORE opencode ("no IP address found" means the box has
     // no runner at all), so delivery is provably not-delivered and releasing is safe.
     const args = [
-      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null } as const,
-      'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': 'down-1' }),
-      PROMPT_BODY, 'http://app.local',
+      'sb-1',
+      8000,
+      { kind: 'principal', userId: 'u1', callerSessionId: null } as const,
+      'POST',
+      '/session/sess-1/message',
+      '',
+      jsonHeaders({ 'idempotency-key': 'down-1' }),
+      PROMPT_BODY,
+      'http://app.local',
     ] as const;
 
     // MAX_RETRIES = 3 → four attempts, every one sandbox-down.
@@ -190,5 +223,4 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     expect(retry.status).toBe(200);
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
   });
-
 });

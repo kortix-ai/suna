@@ -3,7 +3,6 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
-import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import {
   AgentSecretGrantMismatchError,
@@ -13,14 +12,10 @@ import {
   SessionGrantRemintError,
   remintGrantForAgentSwitch,
 } from '../../projects/lib/session-token-grant';
-import {
-  captureTitleAfterRuntimeEvent,
-  scheduleTitleCaptureAfterPrompt,
-} from '../../projects/opencode-title-capture';
+import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import {
-  extractFirstPromptText,
-  extractPromptModel,
+  extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
 } from '../../projects/session-title-generate';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -345,24 +340,6 @@ function acpPromptSessionId(
     return envelope.method === 'session/prompt' && envelope.params?.sessionId === routeSessionId
       ? routeSessionId
       : null;
-  } catch {
-    return null;
-  }
-}
-
-function runtimeTitleStream(
-  method: string,
-  upstreamPort: number,
-  path: string,
-  contentType: string | null,
-): { protocol: 'acp' | 'rest'; expectedSessionId?: string } | null {
-  if (method.toUpperCase() !== 'GET' || upstreamPort !== SANDBOX_AGENT_PORT) return null;
-  if (!contentType?.toLowerCase().includes('text/event-stream')) return null;
-  if (/^\/global\/event(?:$|[/?#])/.test(path)) return { protocol: 'rest' };
-  const match = path.match(/^\/kortix\/acp\/([^/?#]+)(?:$|[/?#])/);
-  if (!match) return null;
-  try {
-    return { protocol: 'acp', expectedSessionId: decodeURIComponent(match[1]) };
   } catch {
     return null;
   }
@@ -760,25 +737,23 @@ export async function forwardToSandbox(
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           body = bodyWithoutPromptAgent(body, incomingHeaders);
         }
-        // A prompt is the one moment this sandbox is guaranteed awake, and
-        // Kortix-owned title: generate it ourselves from this first prompt via
-        // the internal gateway (the authoritative source). The OpenCode
-        // summarizer capture below stays as a fallback that never clobbers a
-        // real title. Both are fire-and-forget and never block the prompt.
-        if (userId) {
-          const firstPromptText = extractFirstPromptText(body, incomingHeaders);
-          if (firstPromptText) {
-            void generateSessionTitleFromFirstPrompt({
-              sessionId: record.sessionId,
-              projectId: record.projectId,
-              accountId: record.accountId,
-              userId,
-              firstPromptText,
-              modelHint: extractPromptModel(body, incomingHeaders) ?? undefined,
-            });
-          }
+        // A prompt is the one moment this sandbox is guaranteed awake, so off
+        // it we (1) generate the Kortix-owned session title from this first
+        // prompt, using the model the user picked, and (2) refresh the
+        // opencode_sessions snapshot the conversation list reads. Both are
+        // fire-and-forget and never block the prompt.
+        const prompt = extractPromptInfo(body, incomingHeaders);
+        if (userId && prompt.text) {
+          void generateSessionTitleFromFirstPrompt({
+            sessionId: record.sessionId,
+            projectId: record.projectId,
+            accountId: record.accountId,
+            userId,
+            firstPromptText: prompt.text,
+            modelHint: prompt.model ?? undefined,
+          });
         }
-        scheduleTitleCaptureAfterPrompt({
+        scheduleOpencodeSnapshotSync({
           sessionId: record.sessionId,
           projectId: record.projectId,
           externalId: record.externalId,
@@ -1058,20 +1033,18 @@ export async function forwardToSandbox(
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
       if (acpPromptSession && upstream.ok) {
-        if (userId) {
-          const firstPromptText = extractFirstPromptText(body, incomingHeaders);
-          if (firstPromptText) {
-            void generateSessionTitleFromFirstPrompt({
-              sessionId: record.sessionId,
-              projectId: record.projectId,
-              accountId: record.accountId,
-              userId,
-              firstPromptText,
-              modelHint: extractPromptModel(body, incomingHeaders) ?? undefined,
-            });
-          }
+        const prompt = extractPromptInfo(body, incomingHeaders);
+        if (userId && prompt.text) {
+          void generateSessionTitleFromFirstPrompt({
+            sessionId: record.sessionId,
+            projectId: record.projectId,
+            accountId: record.accountId,
+            userId,
+            firstPromptText: prompt.text,
+            modelHint: prompt.model ?? undefined,
+          });
         }
-        scheduleTitleCaptureAfterPrompt({
+        scheduleOpencodeSnapshotSync({
           sessionId: record.sessionId,
           projectId: record.projectId,
           externalId: record.externalId,
@@ -1079,32 +1052,7 @@ export async function forwardToSandbox(
         });
       }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
-      const titleStream = runtimeTitleStream(
-        method,
-        upstreamPort,
-        remainingPath,
-        upstream.headers.get('content-type'),
-      );
-      const responseBody =
-        upstream.body && titleStream
-          ? observeRuntimeSessionTitleStream(upstream.body, {
-              ...titleStream,
-              onTitle: async (event) => {
-                await captureTitleAfterRuntimeEvent({
-                  sessionId: record.sessionId,
-                  projectId: record.projectId,
-                  opencodeSessionId: event.sessionId,
-                  title: event.title,
-                });
-              },
-              onError: (error) => {
-                console.warn(
-                  `[title-capture] failed to inspect ACP stream for ${record.sessionId}: ${errorMessage(error, 'unknown error')}`,
-                );
-              },
-            })
-          : upstream.body;
-      return new Response(responseBody, {
+      return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers: respHeaders,

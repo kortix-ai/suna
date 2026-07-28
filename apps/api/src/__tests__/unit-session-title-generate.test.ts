@@ -3,8 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
-  extractFirstPromptText,
-  extractPromptModel,
+  extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
   sanitizeGeneratedTitle,
 } from '../projects/session-title-generate';
@@ -48,23 +47,43 @@ describe('sanitizeGeneratedTitle', () => {
   });
 });
 
-describe('extractFirstPromptText', () => {
-  it('reads REST { parts } text blocks', () => {
+describe('extractPromptInfo', () => {
+  it('reads REST { parts } text blocks and the kortix-namespace model', () => {
     const body = bodyOf({
       parts: [
         { type: 'text', text: 'hello' },
         { type: 'text', text: 'world' },
       ],
+      model: { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' },
     });
-    expect(extractFirstPromptText(body, headers())).toBe('hello\nworld');
+    expect(extractPromptInfo(body, headers())).toEqual({
+      text: 'hello\nworld',
+      model: 'codex/gpt-5.6-sol',
+    });
   });
 
-  it('reads ACP { params: { prompt } } text blocks', () => {
+  it('reads ACP { params: { prompt, model } }', () => {
     const body = bodyOf({
       method: 'session/prompt',
-      params: { sessionId: 'x', prompt: [{ type: 'text', text: 'set up connector' }] },
+      params: {
+        sessionId: 'x',
+        prompt: [{ type: 'text', text: 'set up connector' }],
+        model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      },
     });
-    expect(extractFirstPromptText(body, headers())).toBe('set up connector');
+    expect(extractPromptInfo(body, headers())).toEqual({
+      text: 'set up connector',
+      model: 'glm-5.2',
+    });
+  });
+
+  it('keeps a BYOK provider pair and accepts a string model', () => {
+    const byok = bodyOf({
+      parts: [],
+      model: { providerID: 'anthropic', modelID: 'claude-sonnet-4.6' },
+    });
+    expect(extractPromptInfo(byok, headers()).model).toBe('anthropic/claude-sonnet-4.6');
+    expect(extractPromptInfo(bodyOf({ model: 'kortix/glm-5.2' }), headers()).model).toBe('glm-5.2');
   });
 
   it('ignores non-text blocks and non-json / empty bodies', () => {
@@ -74,46 +93,15 @@ describe('extractFirstPromptText', () => {
         { type: 'text', text: 'ok' },
       ],
     });
-    expect(extractFirstPromptText(withImage, headers())).toBe('ok');
-    expect(extractFirstPromptText(bodyOf({ parts: [] }), headers())).toBeNull();
-    expect(extractFirstPromptText(undefined, headers())).toBeNull();
+    expect(extractPromptInfo(withImage, headers())).toEqual({ text: 'ok', model: null });
+    expect(extractPromptInfo(bodyOf({ parts: [] }), headers())).toEqual({
+      text: null,
+      model: null,
+    });
+    expect(extractPromptInfo(undefined, headers())).toEqual({ text: null, model: null });
     expect(
-      extractFirstPromptText(
-        bodyOf({ parts: [{ type: 'text', text: 'x' }] }),
-        headers('text/plain'),
-      ),
-    ).toBeNull();
-  });
-});
-
-describe('extractPromptModel', () => {
-  it('reads the kortix-namespace pick as the bare wire id (REST body.model)', () => {
-    const body = bodyOf({
-      parts: [{ type: 'text', text: 'go' }],
-      model: { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' },
-    });
-    expect(extractPromptModel(body, headers())).toBe('codex/gpt-5.6-sol');
-  });
-
-  it('reads an ACP params.model and a BYOK provider pair', () => {
-    const acp = bodyOf({
-      method: 'session/prompt',
-      params: { model: { providerID: 'kortix', modelID: 'glm-5.2' } },
-    });
-    expect(extractPromptModel(acp, headers())).toBe('glm-5.2');
-    const byok = bodyOf({
-      parts: [],
-      model: { providerID: 'anthropic', modelID: 'claude-sonnet-4.6' },
-    });
-    expect(extractPromptModel(byok, headers())).toBe('anthropic/claude-sonnet-4.6');
-  });
-
-  it('accepts a string model and returns null when absent', () => {
-    expect(extractPromptModel(bodyOf({ model: 'kortix/glm-5.2' }), headers())).toBe('glm-5.2');
-    expect(
-      extractPromptModel(bodyOf({ parts: [{ type: 'text', text: 'x' }] }), headers()),
-    ).toBeNull();
-    expect(extractPromptModel(undefined, headers())).toBeNull();
+      extractPromptInfo(bodyOf({ parts: [{ type: 'text', text: 'x' }] }), headers('text/plain')),
+    ).toEqual({ text: null, model: null });
   });
 });
 
