@@ -40,9 +40,7 @@ describe('the logged-out shell reuses the real one', () => {
     'SidebarBrandHeader',
     'SidebarBody',
     'SidebarNewButton',
-    'SidebarFooterSlot',
     'SidebarSectionLabel',
-    'SidebarPlainLink',
     'ProjectNavGroup',
     'ProjectHomeWelcomeBody',
     'ProjectSessionList',
@@ -149,10 +147,19 @@ describe('the logged-out shell gates every action', () => {
     expect(SHELL_CODE).toContain('<ProjectSessionList projectId=""');
   });
 
-  test('keeps the marketing pages reachable from the product shell', () => {
-    for (const href of ['/pricing', '/enterprise', '/docs', '/why']) {
-      expect(SHELL).toContain(href);
+  test('keeps the marketing pages reachable, from the top bar', () => {
+    // They used to hang off the bottom of the sidebar, which only existed when
+    // signed out — the sidebar must read the same in both states.
+    const TOP_BAR = readFileSync(join(HERE, 'marketing-top-bar.tsx'), 'utf8');
+    for (const href of ['/pricing', '/enterprise', '/docs', '/why', '/developers']) {
+      expect(TOP_BAR).toContain(href);
     }
+    expect(SHELL_CODE).toContain('MarketingTopBar');
+  });
+
+  test('the sidebar carries no marketing links of its own', () => {
+    expect(SHELL_CODE).not.toContain('/pricing');
+    expect(SHELL_CODE).not.toContain('SidebarFooterSlot');
   });
 });
 

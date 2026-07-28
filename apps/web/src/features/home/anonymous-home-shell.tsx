@@ -18,13 +18,13 @@
  * textarea instead of the full composer, and a sign-in gate on every action.
  */
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
-import { SidebarGroup, SidebarInset, SidebarMenu, SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarGroup, SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AnonymousSectionPreview } from '@/features/home/anonymous-section-preview';
 import { AnonymousSectionTabs } from '@/features/home/anonymous-section-tabs';
+import { MarketingTopBar } from '@/features/home/marketing-top-bar';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
 import { ComposerChatInput } from '@/features/session/composer-chat-input';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
@@ -34,9 +34,7 @@ import { ProjectSessionList } from '@/features/workspace/project-sidebar/project
 import {
   SidebarBody,
   SidebarBrandHeader,
-  SidebarFooterSlot,
   SidebarNewButton,
-  SidebarPlainLink,
   SidebarSectionLabel,
   SidebarShell,
 } from '@/features/workspace/project-sidebar/sidebar-chrome';
@@ -44,14 +42,6 @@ import { PROJECT_NAV_ITEMS, type ProjectNavKey } from '@/lib/project-nav';
 
 /** Where every gated pill/link points. Mirrors useSignInGate's target. */
 const SIGN_IN_HREF = `/auth?returnUrl=${encodeURIComponent('/')}`;
-
-const MARKETING_LINKS = [
-  { label: 'Why Kortix', href: '/why' },
-  { label: 'Pricing', href: '/pricing' },
-  { label: 'Enterprise', href: '/enterprise' },
-  { label: 'Developers', href: '/developers' },
-  { label: 'Docs', href: '/docs' },
-];
 
 function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | null }) {
   const { gate } = useSignInGate();
@@ -65,14 +55,8 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
             of the tells that these were two different apps. */}
         <SidebarNewButton label="New session" onClick={() => gate('/')} />
 
-        <ProjectNavGroup
-          items={PROJECT_NAV_ITEMS}
-          hrefFor={(item) => `/?view=${item.key}`}
-          isActive={(item) => item.key === activeSection}
-          onSelectFiles={() => gate('/')}
-          onSelectSettings={() => gate('/')}
-        />
-
+        {/* Same ORDER as the signed-in shell too — work first, configuration
+            after. It read Customize-then-Sessions here, which is the reverse. */}
         <SidebarGroup className="min-h-0 flex-1 flex-col py-0">
           <div className="flex min-h-0 flex-1 flex-col space-y-2">
             <SidebarSectionLabel className="mt-1 px-0">
@@ -86,23 +70,18 @@ function AnonymousSidebar({ activeSection }: { activeSection: ProjectNavKey | nu
           </div>
         </SidebarGroup>
 
-        <SidebarGroup className="mt-auto py-0.5">
-          <SidebarSectionLabel>Product</SidebarSectionLabel>
-          <SidebarMenu>
-            {MARKETING_LINKS.map((link) => (
-              <SidebarPlainLink key={link.href} href={link.href}>
-                {link.label}
-              </SidebarPlainLink>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        <ProjectNavGroup
+          items={PROJECT_NAV_ITEMS}
+          hrefFor={(item) => `/?view=${item.key}`}
+          isActive={(item) => item.key === activeSection}
+          onSelectFiles={() => gate('/')}
+          onSelectSettings={() => gate('/')}
+        />
       </SidebarBody>
 
-      <SidebarFooterSlot>
-        <Button type="button" size="sm" className="w-full" onClick={() => gate('/')}>
-          Sign in
-        </Button>
-      </SidebarFooterSlot>
+      {/* No Product group and no footer button. The marketing nav and sign-in
+          live in the top bar, so the sidebar itself is the same panel signed in
+          or out. */}
     </SidebarShell>
   );
 }
@@ -121,11 +100,7 @@ export function AnonymousHomeShell() {
             border against the sidebar, and the edge-peek strip. A hand-rolled
             div here is what made the two panels look different. */}
         <ShellInset>
-          <div className="absolute top-2 right-2 z-20 md:hidden">
-            <Button type="button" size="sm" variant="ghost" onClick={() => gate('/')}>
-              Sign in
-            </Button>
-          </div>
+          <MarketingTopBar onSignIn={() => gate('/')} />
 
           {activeSection ? (
             <div className="flex min-h-0 flex-1 flex-col">
@@ -158,14 +133,6 @@ export function AnonymousHomeShell() {
                 }
                 onPickSuggestion={() => gate('/')}
               />
-
-              <nav className="text-muted-foreground flex flex-wrap items-center justify-center gap-4 pb-4 text-xs md:hidden">
-                {MARKETING_LINKS.map((link) => (
-                  <Link key={link.href} href={link.href} className="hover:text-foreground">
-                    {link.label}
-                  </Link>
-                ))}
-              </nav>
             </div>
           )}
         </ShellInset>
