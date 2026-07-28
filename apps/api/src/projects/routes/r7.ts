@@ -19,6 +19,7 @@ import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { config } from '../../config';
@@ -55,6 +56,8 @@ import {
 } from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { resolveEndUserRef } from '../lib/end-user-ref';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 
 function parseBoundedPositiveInt(
@@ -684,16 +687,32 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          /**
+           * Kortix-as-a-Backend: list only the sessions belonging to ONE of the
+           * wrapper's end-users. Without it a wrapper has no way to answer
+           * "show me this customer's sessions" except by fetching every session
+           * in the project and filtering client-side.
+           *
+           * Accepts the deprecated `origin_ref` spelling too.
+           */
+          end_user_ref: z.string().trim().min(1).max(256).optional(),
+          origin_ref: z.string().trim().min(1).max(256).optional(),
         }),
       },
     responses: {
         200: json(z.array(SessionSchema), 'Sessions'),
-        ...errors(403, 404),
+        ...errors(400, 403, 404),
     },
   }),
   async (c) => {
   const projectId = c.req.param('projectId');
   const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  // Same resolver the create path uses, so the filter accepts exactly the
+  // spellings a wrapper is allowed to send a session with — and rejects a
+  // disagreeing pair rather than silently letting one win.
+  const resolvedRef = resolveEndUserRef(c.req.valid('query'));
+  if (!resolvedRef.ok) return c.json({ error: resolvedRef.message, code: resolvedRef.code }, 400);
+  const endUserRefFilter = resolvedRef.value;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -702,7 +721,15 @@ projectsApp.openapi(
   const rows = await db
     .select()
     .from(projectSessions)
-    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        eq(projectSessions.accountId, loaded.row.accountId),
+        // Filtered IN THE QUERY, not after: a wrapper listing one end-user must
+        // not have to pull every session in the project to find them.
+        ...(endUserRefFilter ? [eq(projectSessions.originRef, endUserRefFilter)] : []),
+      ),
+    )
     .orderBy(desc(projectSessions.updatedAt));
 
   const runtimeRows = rows.length
@@ -725,13 +752,14 @@ projectsApp.openapi(
     rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
   );
   const selected = selectSessionRowsForViewer({
+    endUserRefFiltered: endUserRefFilter !== null,
     rows,
     scope,
     canManageProject,
     subject,
     grantsBySession,
     runtimeStatusBySession,
-    callerSessionId: c.get('sessionId') ?? null,
+    callerSessionId: callerKortixSessionId(c),
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -1213,6 +1241,7 @@ projectsApp.openapi(
         sessionId: projectSessions.sessionId,
         opencodeSessionId: projectSessions.opencodeSessionId,
         createdBy: projectSessions.createdBy,
+        origin: projectSessions.origin,
       })
       .from(projectSessions)
       .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, kortixIds)));
@@ -1220,7 +1249,21 @@ projectsApp.openapi(
     const sessions: Record<string, number> = {};
     let total = 0;
     for (const s of sess) {
-      if (!isManager && s.createdBy !== loaded.userId) continue;
+      // created_by is shared across every KaaB session, so it cannot filter
+      // one end-user's pending gates from another's — and an execution_id is
+      // all the resolve route needs.
+      if (
+        !maySeeSessionApprovals({
+          isManager,
+          targetSessionId: s.sessionId,
+          targetSessionOrigin: s.origin ?? null,
+          targetSessionCreatedBy: s.createdBy,
+          callerUserId: loaded.userId,
+          callerSessionId: callerKortixSessionId(c),
+        })
+      ) {
+        continue;
+      }
       const n = byKortix[s.sessionId] ?? 0;
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
@@ -1313,19 +1356,37 @@ projectsApp.openapi(
     } catch {
       isManager = false;
     }
-    let isLauncher = false;
-    if (!isManager && row.sessionId) {
+    let targetCreatedBy: string | null = null;
+    let targetOrigin: string | null = null;
+    if (row.sessionId) {
       const [session] = await db
-        .select({ createdBy: projectSessions.createdBy })
+        .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
         .from(projectSessions)
         // Scope to THIS project too — sessionId is a PK so it's globally unique,
         // but making the project bound explicit keeps the gate self-documenting.
         .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
         .limit(1);
-      isLauncher = Boolean(session && session.createdBy === loaded.userId);
+      targetCreatedBy = session?.createdBy ?? null;
+      targetOrigin = session?.origin ?? null;
     }
-    if (!isManager && !isLauncher) {
-      return c.json({ error: 'Only a project manager or the session launcher can resolve this' }, 403);
+    const verdict = mayResolveApproval({
+      isManager,
+      targetSessionOrigin: targetOrigin,
+      targetSessionCreatedBy: targetCreatedBy,
+      callerUserId: loaded.userId,
+      callerSessionId: callerKortixSessionId(c),
+    });
+    if (!verdict.allowed) {
+      return c.json(
+        verdict.reason === 'session_bound_caller'
+          ? {
+              error:
+                'An agent cannot resolve its own approval — a human must approve or deny this',
+              code: 'APPROVAL_REQUIRES_HUMAN',
+            }
+          : { error: 'Only a project manager or the session launcher can resolve this' },
+        403,
+      );
     }
 
     const detail = {

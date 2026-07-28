@@ -48,6 +48,19 @@ export interface GatewaySessionRow {
   [key: string]: unknown;
 }
 
+/** One `/connector-profiles` row — the shape `selectConnectorBindingChoices`
+ *  filters. Deliberately the raw upstream shape, not the app's view of it. */
+export interface MockConnectionProfile {
+  profile_id: string;
+  connector_alias: string;
+  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  owner_id: string | null;
+  label: string;
+  status: 'active' | 'revoked' | 'error';
+  is_default: boolean;
+  metadata: Record<string, unknown>;
+}
+
 export interface MockUpstream {
   /** Base URL WITHOUT `/v1` — pass `${url}/v1` as `KORTIX_UPSTREAM`. */
   url: string;
@@ -62,6 +75,8 @@ export interface MockUpstream {
    *  never provisioned, to prove per-user filtering actually filters. */
   seedProject(overrides?: Partial<MockProject>): MockProject;
   seedGatewaySessions(projectId: string, rows: GatewaySessionRow[]): void;
+  /** Seed the connection profiles `/connector-profiles` returns for a project. */
+  seedConnectionProfiles(projectId: string, profiles: MockConnectionProfile[]): void;
   /** Make GET /v1/projects/:id/gateway/sessions fail (500) for this project id. */
   failGatewayFor(projectId: string): void;
   /** Make POST /v1/projects/:id/cli-token return HTTP 200 with a body MISSING
@@ -78,6 +93,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
   const projects = new Map<string, MockProject>();
   const secrets = new Map<string, Array<{ name: string; value?: string }>>();
   const gatewaySessions = new Map<string, GatewaySessionRow[]>();
+  const connectionProfiles = new Map<string, MockConnectionProfile[]>();
   const failingGatewayProjects = new Set<string>();
   const malformedCliTokenProjects = new Set<string>();
   const activeIntervals = new Set<ReturnType<typeof setInterval>>();
@@ -172,6 +188,12 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
           secrets.set(id, list);
           return Response.json({ ok: true });
         }
+      }
+
+      const profilesMatch = p.match(/^projects\/([^/]+)\/connector-profiles$/);
+      if (profilesMatch && method === 'GET') {
+        const [, id] = profilesMatch;
+        return Response.json({ profiles: connectionProfiles.get(id) ?? [] });
       }
 
       const gatewayMatch = p.match(/^projects\/([^/]+)\/gateway\/sessions$/);
@@ -346,6 +368,9 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
     },
     seedGatewaySessions(projectId, rows) {
       gatewaySessions.set(projectId, rows);
+    },
+    seedConnectionProfiles(projectId, profiles) {
+      connectionProfiles.set(projectId, profiles);
     },
     failGatewayFor(projectId) {
       failingGatewayProjects.add(projectId);

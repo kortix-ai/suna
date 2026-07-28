@@ -10,7 +10,7 @@
 // `bun:test`'s mock.module is process-global, so this lives in its own file (run
 // per-file) to avoid leaking stubs into sibling suites — same caveat other
 // sandbox-proxy tests document.
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
 
 const ACTIVE_RECORD = {
@@ -35,6 +35,16 @@ mock.module('../../shared/preview-ownership', () => ({
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
+}));
+// Same reason as the env sync above: the pre-prompt grant re-mint reads the
+// session's token row, and this file is about DELIVERY dedupe, not grants. It
+// is deliberately NOT a no-op stub of convenience — the real function fails the
+// prompt CLOSED when it cannot read the token (a prompt must never run under an
+// unverified grant), so an unmocked db here turns every delivery test red for a
+// reason that has nothing to do with delivery.
+mock.module('../../projects/lib/session-token-grant', () => ({
+  remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
+  SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/opencode-title-capture', () => ({
   scheduleTitleCaptureAfterPrompt: () => {},
@@ -81,6 +91,14 @@ const PROMPT_BODY = new TextEncoder().encode(
 ).buffer;
 
 beforeEach(() => __resetPromptDedupe());
+// Restore per TEST, not just once at the end. Every case installs its own stub
+// via queueFetch(), so a case that fails before reaching it would otherwise run
+// against the PREVIOUS case's exhausted queue and die with "fetch called more
+// times than queued" — turning one real failure into a cascade that hides which
+// assertion actually broke.
+afterEach(() => {
+  (globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH;
+});
 afterAll(() => {
   (globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH;
 });
@@ -137,4 +155,40 @@ describe('forwardToSandbox — idempotent GET retry is unchanged', () => {
     expect(fetchCalls).toBe(2);
     expect(res.status).toBe(200);
   });
+});
+
+describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases the claim', () => {
+  const sandboxDown = () =>
+    new Response('failed to get runner info: no IP address found', { status: 400 });
+
+  test('the retry re-delivers instead of getting a bogus 200 duplicate', async () => {
+    // The reviewer's catch on this PR. The Daytona sandbox-down branch used to be
+    // `if (status === 400 && attempt < MAX_RETRIES)`, so on the FINAL attempt it
+    // fell through and returned the 400 to the client with the dedupe claim still
+    // held. The client's retry under the same Idempotency-Key then short-circuited
+    // to `{status:'duplicate'}` and the user's prompt was silently lost — the very
+    // message-loss this PR exists to stop, surviving in the one path it missed.
+    //
+    // Daytona rejects this BEFORE opencode ("no IP address found" means the box has
+    // no runner at all), so delivery is provably not-delivered and releasing is safe.
+    const args = [
+      'sb-1', 8000, { kind: 'principal', userId: 'u1', callerSessionId: null } as const,
+      'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': 'down-1' }),
+      PROMPT_BODY, 'http://app.local',
+    ] as const;
+
+    // MAX_RETRIES = 3 → four attempts, every one sandbox-down.
+    queueFetch(sandboxDown(), sandboxDown(), sandboxDown(), sandboxDown());
+    const first = await forwardToSandbox(...args);
+    expect(first.status).toBe(400);
+
+    // THE ASSERTION: the retry must actually reach the sandbox again. Before the
+    // fix this was 0 fetches and a 200 "duplicate".
+    queueFetch(new Response('{"ok":true}', { status: 200 }));
+    const retry = await forwardToSandbox(...args);
+    expect(fetchCalls).toBe(1);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
 });

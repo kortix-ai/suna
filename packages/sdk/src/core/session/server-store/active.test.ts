@@ -141,3 +141,49 @@ test('deriveSubdomainOpts uses an empty-string sandboxId (never undefined) when 
 
   expect(deriveSubdomainOpts().sandboxId).toBe('');
 });
+
+// ── The reported bug, as a sequence ──
+//
+// Staging, cloud backend. A finished session's transcript renders BEFORE its
+// runtime binds, so the "Open the website" link was built with no sandbox id.
+// It shipped `https://staging-api.kortix.com/v1/p//3000/`, which returns
+// `{"error":true,"message":"Not found","status":404}`. Typing the same
+// `localhost:3000` into the preview panel's address bar worked, because that
+// surface was mounted after the runtime bound — the tell that this was a
+// timing bug, not a URL-building one.
+test('a preview URL built before the runtime binds is not a dead link, and binding fixes it', async () => {
+  const { rewriteLocalhostUrl, hasPreviewTarget } = await import('../url');
+  configureKortix({
+    backendUrl: 'https://staging-api.kortix.com/v1',
+    getToken: async () => 'tok',
+  });
+
+  // Transcript paints first — no runtime yet.
+  expect(hasPreviewTarget(deriveSubdomainOpts())).toBe(false);
+  const early = rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts());
+  expect(early).not.toBe('https://staging-api.kortix.com/v1/p//3000/');
+  expect(early).toBe('http://localhost:3000/');
+
+  // The session's sandbox binds a moment later. Re-deriving — which is what
+  // the reactive hook now does, and what the click handler does per click —
+  // yields the real preview URL.
+  setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-live/8000', 'sb-live');
+  expect(hasPreviewTarget(deriveSubdomainOpts())).toBe(true);
+  expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toBe(
+    'https://staging-api.kortix.com/v1/p/sb-live/3000/',
+  );
+});
+
+test('switching sessions re-points the preview URL instead of keeping the old sandbox', async () => {
+  const { rewriteLocalhostUrl } = await import('../url');
+  configureKortix({
+    backendUrl: 'https://staging-api.kortix.com/v1',
+    getToken: async () => 'tok',
+  });
+
+  setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-a/8000', 'sb-a');
+  expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toContain('/p/sb-a/3000/');
+
+  setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-b/8000', 'sb-b');
+  expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toContain('/p/sb-b/3000/');
+});

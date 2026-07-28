@@ -772,7 +772,9 @@ export async function handleChatCompletions(
       continue;
     }
 
-    const probe = await probeStream(candidateUpstream.body);
+    const probe = await probeStream(candidateUpstream.body, {
+      inactivityTimeoutMs: config.streamProbeTimeoutMs,
+    });
     if (probe.hasContent) {
       upstream = candidateUpstream;
       descriptor = chosenDescriptor;

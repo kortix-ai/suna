@@ -39,6 +39,38 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
+/**
+ * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
+ * below. Where `scope` says which subsystem OWNS a row, `strategy` says how (and
+ * whether) the value reaches the wire:
+ *
+ *   runtime  the plaintext value is injected into the sandbox env — today's
+ *            behavior, and the default, so an existing deployment is unchanged.
+ *   egress   a format-shaped handle is injected; the real credential is attached
+ *            outside the guest by the egress proxy, per host+method+path.
+ *   broker   a handle (or a session-scoped gateway key) is injected; a named
+ *            Kortix chokepoint attaches the credential.
+ *   denied   nothing is injected — the name is not emitted at all.
+ *
+ * The order of the values IS the strictness lattice: composition across the DB
+ * row, the manifest, the agent grant and the session allowlist takes the MAX, so
+ * a declaration can only ever strengthen delivery, never weaken it. Adding a
+ * value in the middle would silently re-rank every stored row — append only.
+ *
+ * A third `scope` value was deliberately NOT used: `scope='connector'` rows are
+ * written live by the channels install store and mean something else entirely.
+ *
+ * Declared up here with the other early enums because `projects` (the first
+ * table that uses it) is defined well above the secrets section, and a table's
+ * column builders run at module load — a later `const` would be in its TDZ.
+ */
+export const projectSecretStrategyEnum = kortixSchema.enum('project_secret_strategy', [
+  'runtime',
+  'egress',
+  'broker',
+  'denied',
+]);
+
 export const projectSessionStatusEnum = kortixSchema.enum('project_session_status', [
   'queued',
   'branching',
@@ -287,6 +319,14 @@ export const projects = kortixSchema.table(
     defaultBranch: varchar('default_branch', { length: 255 }).default('main').notNull(),
     manifestPath: text('manifest_path').default('kortix.yaml').notNull(),
     status: projectStatusEnum('status').default('active').notNull(),
+    // Delivery floor for secrets created in this project. Composed as a MAX with
+    // the row's own strategy, so raising it here can only ever strengthen an
+    // existing secret. Stays 'runtime' for every existing project — a
+    // Kortix-as-a-Backend project is the case that wants 'denied', where an
+    // undeclared secret exists but has no path until someone declares one.
+    secretDefaultStrategy: projectSecretStrategyEnum('secret_default_strategy')
+      .default('runtime')
+      .notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     // Monotonic CAS token for sandbox-provider switching. Reserved (bumped) on
     // THIS row at switch-REQUEST time and stamped onto the new provider_transitions
@@ -466,6 +506,57 @@ export const projectSecretScopeEnum = kortixSchema.enum('project_secret_scope', 
 ]);
 
 /**
+ * How a non-`runtime` secret is allowed to leave the box. Stored shape only —
+ * the grammar, the host/method/path matcher and the "no match ⇒ deny" rule live
+ * in the API's strategy module, which parses this blob DEFENSIVELY: a row can
+ * outlive the code that wrote it, and for `egress` this JSON is the thing that
+ * decides whether a credential is attached to an agent-influenced request.
+ *
+ * Keys are snake_case because this is the same document the REST route, the
+ * manifest `[env]` object form and the CLI accept — one grammar, not three.
+ */
+export interface SecretEgressRule {
+  /** Exact host, or ONE leading `*.` suffix. Never a regex — see matchRule. */
+  host: string;
+  /** Absent or empty = any method. */
+  methods?: string[];
+  /** Exact path, or ONE trailing `/*`. Absent = any path under `host`. */
+  path?: string;
+  /** Where the credential is attached. Absent = the policy-level default. */
+  inject?: SecretInjectionSlot;
+}
+
+export type SecretInjectionSlot =
+  | { kind: 'header'; name: string; template?: string }
+  | { kind: 'query'; name: string }
+  | { kind: 'json_body_field'; path: string };
+
+export interface SecretEgressPolicy {
+  /** For `strategy='broker'`: which Kortix chokepoint holds the real value. */
+  backend?: 'llm_gateway' | 'executor' | 'git_proxy' | 'kortix_fetch';
+  /** Env var carrying the base URL that points an unmodified vendor SDK at us. */
+  base_url_env?: string;
+  /**
+   * REQUIRED and non-empty. A policy with no rules matches nothing, and since
+   * "no match" is a deny, it would be an elaborate way to write `denied` — far
+   * more likely a caller who forgot the field than one who meant it.
+   */
+  rules: SecretEgressRule[];
+  /**
+   * REQUIRED. Where the credential is attached when a rule does not override it.
+   * "First match wins, no match denies" only means something if a matched rule
+   * has a defined slot to inject into; an absent default would leave a matched
+   * request with nowhere to put the secret and no principled answer.
+   */
+  inject: SecretInjectionSlot;
+  /** `observe` tunnels and audits undeclared hosts so a project can discover its
+   *  real egress footprint before committing to `deny`. */
+  on_no_match?: 'deny' | 'observe';
+  /** `tunnel` blind-pipes a host for cert-pinned clients — and so cannot inject. */
+  tls?: 'terminate' | 'tunnel';
+}
+
+/**
  * A project secret is `{ identifier, name (the KEY), value }`. `identifier` is
  * the unique-per-project handle — the human-facing label AND what an agent's
  * `secrets` grant (kortix.yaml) references. `name` is the env var KEY injected
@@ -492,6 +583,29 @@ export const projectSecrets = kortixSchema.table(
     name: varchar('name', { length: 64 }).notNull(),
     valueEnc: text('value_enc').notNull(),
     scope: projectSecretScopeEnum('scope').default('runtime').notNull(),
+    /** How the value reaches the wire. See projectSecretStrategyEnum. Set on
+     *  INSERT only, never on conflict-update — mirroring `scope` — so a value
+     *  re-entered through a setup link or `kortix env push` can never silently
+     *  downgrade a brokered secret back to plaintext. */
+    strategy: projectSecretStrategyEnum('strategy').default('runtime').notNull(),
+    /** NULL while strategy = 'runtime'; there is no wire for a plaintext row. */
+    egressPolicy: jsonb('egress_policy').$type<SecretEgressPolicy>(),
+    /** Format-shaping prefix for the minted handle (e.g. 'sk-ant-api03-') so a
+     *  vendor SDK that regex-validates key SHAPE keeps constructing. NULL uses
+     *  the self-describing default, which instead lands remediation text in the
+     *  model's own context when a stray SDK 401s. */
+    handlePrefix: varchar('handle_prefix', { length: 48 }),
+    /** Free-text note. The setup-link flow has always collected this and thrown
+     *  it away; the Delivery UI needs somewhere to say what a secret is for. */
+    description: text('description'),
+    /** Last explicit rotation. Distinct from updatedAt, which any edit bumps —
+     *  "anything ever delivered as runtime must be ROTATED, not re-scoped", so
+     *  this has to be answerable per secret. */
+    rotatedAt: timestamp('rotated_at', { withTimezone: true }),
+    /** Pins the strategy against every write path including the dedicated
+     *  strategy route. An agent with an unrestricted grant can otherwise flip a
+     *  row back to 'runtime' and reboot to read the value it was denied. */
+    strategyLocked: boolean('strategy_locked').default(false).notNull(),
     // NULL = the shared project-level row. Non-null = that member's PRIVATE
     // per-identifier override (used ONLY by the CODEX_AUTH_JSON per-user
     // provider login today — the general "only me" override was retired, see
@@ -519,6 +633,12 @@ export const projectSecrets = kortixSchema.table(
     uniqueIndex('idx_project_secrets_project_name_owner')
       .on(table.projectId, table.name, table.ownerUserId)
       .where(sql`${table.ownerUserId} is not null`),
+    // NOTE: a partial index `idx_project_secrets_project_strategy`
+    // ((project_id, strategy) WHERE strategy <> 'runtime') ALSO exists, created
+    // by 20260728132613912_secret_delivery_indexes.concurrent.ts. It is
+    // intentionally NOT declared here so `db:generate` won't emit a conflicting
+    // plain CREATE INDEX against the already-built one — index create/drop is
+    // the CONCURRENTLY escape hatch's territory (see MIGRATIONS.md).
   ],
 );
 
@@ -605,6 +725,11 @@ export const projectSessions = kortixSchema.table(
     // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
     // NULL, so it indexes only live backend sessions — a small fraction of the
     // table, and nothing at all for non-KaaB projects.
+    // Supports the KaaB "list this end-user's sessions" filter, which spans ALL
+    // statuses — the partial active-only index below cannot serve it.
+    index('idx_project_sessions_project_origin')
+      .on(table.projectId, table.originRef)
+      .where(sql`${table.originRef} is not null`),
     index('idx_project_sessions_account_origin_active')
       .on(table.accountId, table.originRef)
       .where(
@@ -660,6 +785,76 @@ export const projectSessionRuntimeContexts = kortixSchema.table(
       sql`jsonb_typeof(${table.context}) = 'object'`,
     ),
   ],
+);
+
+/**
+ * Lifecycle of one minted secret handle. `superseded` rather than deletion so a
+ * handle that shows up after rotation can still be attributed to the session and
+ * secret it was minted for — an unattributable handle is indistinguishable from
+ * a forged one, which is the whole point of keeping the row.
+ */
+export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_handle_status', [
+  'active',
+  'superseded',
+  'revoked',
+]);
+
+/**
+ * The handle a sandbox holds INSTEAD of a secret's value when that secret's
+ * delivery strategy is not `runtime`. One row per (session, secret, revision);
+ * minted at boot and reused on every hot push, so the string inside the box is
+ * stable for the session's life.
+ *
+ * The row stores `lookupId` and a SHA-256 of the full handle — never the handle
+ * itself. Presenting a handle is authentication, so a dump of this table must
+ * not be usable to spend the credentials it describes.
+ *
+ * `policySnapshot` is frozen at mint time on purpose: a live handle may LOSE
+ * validity (revocation, session end) but must never GAIN a host. Re-reading the
+ * secret's current `egressPolicy` at call time would let an agent widen its own
+ * reach by editing the row it was denied the value of.
+ *
+ * NOTE: this table's indexes — idx_secret_handles_lookup (unique, lookup_id),
+ * idx_secret_handles_session (session_id) and idx_secret_handles_session_secret_rev
+ * (unique, session_id + secret_id + revision) — are intentionally NOT declared
+ * here. They ship in 20260728132613912_secret_delivery_indexes.concurrent.ts so
+ * index creation stays on the CONCURRENTLY path; declaring them would make
+ * `db:generate` emit conflicting plain CREATE INDEX statements. See MIGRATIONS.md.
+ */
+export const projectSessionSecretHandles = kortixSchema.table(
+  'project_session_secret_handles',
+  {
+    handleId: uuid('handle_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    secretId: uuid('secret_id')
+      .notNull()
+      .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
+    /** Denormalized from the secret so a handle presented after the row is
+     *  deleted still audits as something a human can read. */
+    identifier: varchar('identifier', { length: 128 }).notNull(),
+    /** The env var KEY this handle was emitted under. Same non-uniqueness as
+     *  project_secrets.name — two identifiers may share one key. */
+    envName: varchar('env_name', { length: 64 }).notNull(),
+    /** The public 96-bit component of the handle; what the broker looks up. */
+    lookupId: varchar('lookup_id', { length: 32 }).notNull(),
+    /** SHA-256 hex of the whole handle string — 64 chars, always. varchar and
+     *  not char(64) despite the fixed width: char blank-pads and compares
+     *  ignoring trailing spaces, and squawk's ban-char-field is on. */
+    handleHash: varchar('handle_hash', { length: 64 }).notNull(),
+    /** Bumped by per-prompt rotation; the previous revision goes `superseded`
+     *  with an overlap window rather than dying mid-turn. */
+    revision: integer('revision').default(1).notNull(),
+    policySnapshot: jsonb('policy_snapshot').$type<SecretEgressPolicy>().notNull(),
+    status: projectSecretHandleStatusEnum('status').default('active').notNull(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
 );
 
 // Account-scoped default model preferences. Drives server-side resolution of the

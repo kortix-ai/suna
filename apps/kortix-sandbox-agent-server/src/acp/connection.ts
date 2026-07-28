@@ -176,6 +176,10 @@ export class AcpConnection {
     return this.nextEventId - 1
   }
 
+  get busy(): boolean {
+    return this.pending.size > 0
+  }
+
   async initialize(input: {
     clientInfo: { name: string; version: string }
   }): Promise<Record<string, unknown>> {
@@ -192,7 +196,7 @@ export class AcpConnection {
       'kortix:initialize',
     )
     if (!isObject(result) || result.protocolVersion !== 1) {
-      throw new AcpProtocolError('OpenCode ACP did not negotiate protocol version 1')
+      throw new AcpProtocolError('ACP harness did not negotiate protocol version 1')
     }
     this.initialized = true
     return result
@@ -209,7 +213,7 @@ export class AcpConnection {
       throw new AcpProtocolError(
         typeof error.message === 'string'
           ? error.message
-          : 'OpenCode ACP returned an error',
+          : 'ACP harness returned an error',
         typeof error.code === 'number' ? error.code : undefined,
         error.data,
       )
@@ -217,7 +221,7 @@ export class AcpConnection {
     return envelope.result
   }
 
-  private async requestEnvelope(
+  async requestEnvelope(
     method: string,
     params: unknown,
     id: string | number,

@@ -1,4 +1,11 @@
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
+import {
+  isSessionTargetVisibleToCaller,
+  isSessionVisibleTo,
+  loadSessionGrants,
+  resolveShareSubject,
+  type SecretGrant,
+  type ShareSubject,
+} from '../../executor/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
@@ -140,6 +147,14 @@ export async function loadVisibleSession(
 export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
   sessionId: string,
+  /**
+   * The CALLER's own session when the credential is bound to one. REQUIRED —
+   * see loadVisibleSession. Sharing is the worst surface to leave unnarrowed:
+   * a public share is UNAUTHENTICATED and its router is mounted before auth,
+   * so minting one against another end-user's session exposes their live app
+   * port and workspace files to anyone holding the URL.
+   */
+  callerSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   isOwner: boolean;
@@ -148,6 +163,16 @@ export async function loadSessionForSharing(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
+  // Apply only the session-bound KaaB narrowing here. Human project members
+  // must reach the sharing permission check and receive 403 when it rejects
+  // them. Session-content visibility does not govern share management.
+  if (!isSessionTargetVisibleToCaller({
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+  })) {
+    return null;
+  }
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };

@@ -73,7 +73,7 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId);
+    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json({ error: 'Only the session owner or an editor can view public shares' }, 403);
@@ -109,7 +109,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId);
+    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json({ error: 'Only the session owner or an editor can create public shares' }, 403);
@@ -168,7 +168,7 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId);
+    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json({ error: 'Only the session owner or an editor can revoke public shares' }, 403);

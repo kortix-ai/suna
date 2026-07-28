@@ -8,6 +8,10 @@ import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
 } from '../../projects/lib/secret-grant';
+import {
+  SessionGrantRemintError,
+  remintGrantForAgentSwitch,
+} from '../../projects/lib/session-token-grant';
 import { observeRuntimeSessionTitleStream } from '../../projects/acp-session-title-stream';
 import {
   captureTitleAfterRuntimeEvent,
@@ -31,7 +35,8 @@ import {
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
-import { claimPromptDelivery, promptDeliveryKey } from '../prompt-dedupe';
+import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
+import { carriesSessionData } from '../session-data-ports';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{
@@ -424,6 +429,17 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
   // We could not establish what this agent may read. 503 rather than 502: the
   // sandbox is fine, our ability to VERIFY entitlement is what failed, and
   // retrying is the correct client response.
+  // The switch was legal but we could not rewrite the token's grant to match the
+  // agent now running. 503 for the same reason as above — and refusing is the
+  // point: forwarding would run the new agent against the OLD agent's connector
+  // and CLI grants, which is exactly the escalation the re-mint closes.
+  if (err instanceof SessionGrantRemintError) {
+    return jsonProxyError(
+      { error: err.message, code: 'AGENT_SWITCH_GRANT_UNAPPLIED' },
+      503,
+      origin,
+    );
+  }
   if (err instanceof SecretGrantResolutionError) {
     return jsonProxyError(
       { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
@@ -576,9 +592,10 @@ export async function forwardToSandbox(
     });
   }
   // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
-  // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
-  // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
-  // request (sandbox ownership is already enforced unconditionally above). NOTE:
+  // The AUTH/CONTROL guards below (session-visibility gate + /kortix/env block)
+  // key on THIS via carriesSessionData(), which covers BOTH 8000 and opencode's
+  // 4096 — Platinum reroutes 4096→8000, Daytona does not, and gating on 8000
+  // alone left the direct-:4096 Daytona path ungated. NOTE:
   // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
@@ -601,7 +618,7 @@ export async function forwardToSandbox(
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    upstreamPort === 8000 &&
+    carriesSessionData(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -616,7 +633,7 @@ export async function forwardToSandbox(
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
   // never through this user-facing proxy — block it so an account member can't
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
-  if (upstreamPort === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
+  if (carriesSessionData(upstreamPort) && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
@@ -655,14 +672,20 @@ export async function forwardToSandbox(
   // Dedupe prompt delivery up-front. REST and ACP prompt POSTs are the only
   // mutating, non-idempotent calls here. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
+  //
+  // The key is held in an OUTER binding so the give-up path below can release it
+  // when delivery provably never happened. Without that release, a client retry
+  // under the same Idempotency-Key hits the bogus 200 "duplicate" and the user's
+  // prompt is silently lost.
+  let promptDedupeKey: string | null = null;
   if (promptDelivery) {
-    const dedupeKey = promptDeliveryKey({
+    promptDedupeKey = promptDeliveryKey({
       idempotencyKey: incomingHeaders.get('idempotency-key'),
       sandboxId,
       sessionId: record.sessionId,
       body,
     });
-    if (!claimPromptDelivery(dedupeKey)) {
+    if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
     }
   }
@@ -693,6 +716,12 @@ export async function forwardToSandbox(
   // stalled connection — see the giveup branch below for why it gets its own
   // response instead of the generic "sandbox unreachable" one.
   let sawLongTurnTimeout = false;
+  // A prompt delivery whose failure is AMBIGUOUS — a timeout/abort/reset where
+  // opencode may already hold the message. When true we must NOT release the
+  // dedupe claim on the unreachable path below (a retry could double-enqueue).
+  // It stays false only when every attempt PROVED nothing was delivered
+  // (connection refused), which is the one case a retry may safely re-deliver.
+  let promptDeliveryMaybeAccepted = false;
 
   // Wall-clock budget so a cold/dead sandbox returns our friendly page BEFORE
   // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
@@ -747,6 +776,18 @@ export async function forwardToSandbox(
             // The secret grant is resolved from the agent this prompt actually
             // runs, not the session's create-time column — see
             // projects/lib/secret-grant.ts.
+            requestedAgent,
+          });
+          // The env sync above already refused a secret-boundary switch, so
+          // reaching here means the switch is legal. Re-point the token's
+          // connector/CLI grant at the agent that will actually run — it was
+          // frozen at mint from the BOOT agent, and those gates read it at call
+          // time. Only on a real switch: an ordinary turn resolves to the
+          // session's own agent and skips the manifest read entirely.
+          await remintGrantForAgentSwitch({
+            projectId: record.projectId,
+            sessionId: record.sessionId,
+            sessionAgent,
             requestedAgent,
           });
         } catch (err) {
@@ -911,6 +952,11 @@ export async function forwardToSandbox(
           .catch(() => '');
         if (bodyText.includes('opencode not ready')) {
           void markSandboxUsed(sandboxId);
+          // opencode explicitly rejected the request as not-ready, so it did NOT
+          // enqueue the prompt. Release the dedupe claim so the client's retry
+          // (once opencode is up) actually delivers instead of short-circuiting
+          // to a bogus 200 "duplicate" that would drop the message.
+          if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
           return new Response(bodyText, {
             status: upstream.status,
@@ -950,12 +996,22 @@ export async function forwardToSandbox(
         }
       }
 
-      if (upstream.status === 400 && attempt < MAX_RETRIES) {
+      if (upstream.status === 400) {
         const bodyText = await upstream.text();
         const isSandboxDown =
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');
-        if (isSandboxDown) {
+        // Daytona rejected this BEFORE opencode — the box has no runner, so the
+        // prompt certainly was not enqueued. On the last attempt we stop
+        // retrying and pass the 400 through, and the dedupe claim must go with
+        // it: otherwise the client's retry under the same Idempotency-Key hits
+        // the bogus 200 "duplicate" and the message is lost. (Reviewer caught
+        // this: the retry guard used to be part of THIS condition, so the final
+        // attempt fell through holding the claim.)
+        if (isSandboxDown && attempt >= MAX_RETRIES && promptDedupeKey) {
+          releasePromptDelivery(promptDedupeKey);
+        }
+        if (isSandboxDown && attempt < MAX_RETRIES) {
           sawDeadSignal = true; // confirmed-dead → erroring the row is justified
           if (!wakeTriggered) {
             console.warn(
@@ -1058,6 +1114,9 @@ export async function forwardToSandbox(
         promptDelivery &&
         !isConnectionRefusedError(err)
       ) {
+        // Ambiguous: the box may already hold the message. Keep the dedupe
+        // claim so a client retry can't double-enqueue.
+        promptDeliveryMaybeAccepted = true;
         break;
       }
 
@@ -1083,6 +1142,15 @@ export async function forwardToSandbox(
   // health-check loop owns liveness and will retry the box.
   if (sawDeadSignal) {
     await markSandboxErrored(sandboxId);
+  }
+  // The sandbox was never reachable. For a prompt delivery this path is only
+  // taken after every attempt PROVED nothing was delivered (connection refused,
+  // or out of budget before a second try) — an ambiguous 5xx/timeout/reset would
+  // have returned above with the claim intact. So release the dedupe claim to let
+  // the client's retry actually deliver, instead of losing the message to a
+  // bogus 200 "duplicate".
+  if (promptDedupeKey && !promptDeliveryMaybeAccepted) {
+    releasePromptDelivery(promptDedupeKey);
   }
   return portUnreachableResponse({
     port,
@@ -1129,10 +1197,13 @@ export async function resolvePreviewWsUpstream(opts: {
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
-  // Daemon port (8000) carries session conversation data — gate on session
-  // visibility, not just account membership (see forwardToSandbox).
+  // Both session-data ports carry the conversation — gate on session visibility,
+  // not just account membership (see forwardToSandbox). This resolver forces
+  // opencode WebSockets to :4096 on Daytona, so keying on 8000 alone left the
+  // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
+  // side, one function further down the file.
   if (
-    upstreamPort === 8000 &&
+    carriesSessionData(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,

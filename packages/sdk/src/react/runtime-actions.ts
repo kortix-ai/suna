@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import type {
   Config,
   FileContent,
@@ -18,7 +19,9 @@ import type { SubdomainUrlOptions } from '../core/session/url';
 import {
   buildStaticFileHealthPreviewUrl,
   buildStaticFilePreviewUrl,
+  hasPreviewTarget,
 } from '../core/session/url';
+import { useCurrentRuntime } from './use-current-runtime';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 
 interface RuntimeResult<T> {
@@ -113,13 +116,41 @@ export function getRuntimeCacheKey(): string {
 export interface ActiveSandboxProxyContext {
   serverUrl: string;
   subdomainOpts: SubdomainUrlOptions;
+  /**
+   * Whether the context can address a sandbox yet. False before a session's
+   * runtime binds (and after it clears) — see `hasPreviewTarget`.
+   */
+  isReady: boolean;
 }
 
 export function createActiveSandboxProxyContext(): ActiveSandboxProxyContext {
+  const subdomainOpts = deriveSubdomainOpts();
   return {
     serverUrl: getActiveOpenCodeUrl(),
-    subdomainOpts: deriveSubdomainOpts(),
+    subdomainOpts,
+    isReady: hasPreviewTarget(subdomainOpts),
   };
+}
+
+/**
+ * Reactive form of `createActiveSandboxProxyContext`.
+ *
+ * The plain factory reads ambient state once. Anything that *renders* from it
+ * must re-read when the runtime binds, because the binding is asynchronous: a
+ * transcript paints as soon as messages load, which is routinely before
+ * `ensureReady()` resolves the sandbox. A component that memoized the factory's
+ * result on mount froze `sandboxId: ''` for its whole life and emitted
+ * `/v1/p//3000/` preview links forever after.
+ *
+ * `version` bumps on every `setCurrentRuntime`, so it is the exact invalidation
+ * signal — including the session-switch case, where the id changes but the
+ * shape does not.
+ */
+export function useActiveSandboxProxyContext(): ActiveSandboxProxyContext {
+  const version = useCurrentRuntime((state) => state.version);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` IS the dep;
+  // the factory reads module state that only changes when version bumps.
+  return useMemo(() => createActiveSandboxProxyContext(), [version]);
 }
 
 export function getActiveStaticFilePreviewUrl(path: string): string {

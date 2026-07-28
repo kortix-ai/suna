@@ -6,11 +6,12 @@ Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
 1. Process supervisor for `opencode serve` (spawn, restart on crash, drain on
    SIGTERM/SIGINT).
-2. Reverse proxy that fronts opencode's HTTP + SSE surface on
+2. Lazy ACP process runtime for Claude Code, Codex, and Pi.
+3. Reverse proxy that fronts opencode's HTTP + SSE surface on
    `KORTIX_SERVICE_PORT` (default `8000`).
-3. Small Kortix-namespaced control surface: `GET /kortix/health` and
+4. Small Kortix-namespaced control surface: `GET /kortix/health` and
    `POST /kortix/refresh`.
-4. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
+5. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
    HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
    assets resolve cleanly through the sandbox proxy. Ported from main's
    always-on `core/services/static-web.js` s6 service; now runs in-process
@@ -48,7 +49,19 @@ in-process daemon.
 | ---------------- | ------------------------------------------------------------------------ |
 | `GET /kortix/health` | Daemon liveness + opencode state + repo info (always 200 from daemon) |
 | `POST /kortix/refresh` | Signed-context protected repo fast-forward + opencode restart.     |
+| `GET /kortix/acp/` | List active non-OpenCode ACP processes. |
+| `POST /kortix/acp/:serverId?agent=codex` | Start or reuse one ACP process and send one JSON-RPC envelope. |
+| `GET /kortix/acp/:serverId` | Stream ACP requests and notifications over SSE. |
+| `DELETE /kortix/acp/:serverId` | Stop one ACP process. The operation is idempotent. |
 | `/*`             | Reverse-proxied to opencode. 503 while `opencode !== 'ok'`.              |
+
+The first `POST` for a non-OpenCode process must select `agent=claude`,
+`agent=codex`, or `agent=pi`. The same `serverId` cannot select a different
+harness later. The route returns `409` for that conflict.
+
+The sandbox image installs exact ACP adapter versions from
+`packages/shared/src/runtime-versions.json`. A runtime request never installs
+an npm package.
 
 ### `GET /kortix/health` response shape
 
@@ -107,7 +120,18 @@ KORTIX_REPO_URL=
 KORTIX_BRANCH_NAME=
 KORTIX_GITHUB_TOKEN=
 KORTIX_TOKEN=
+KORTIX_RUNTIME_CONFIG_DIR=
+KORTIX_RUNTIME_MODEL=
+KORTIX_ACP_CLAUDE_PATH=
+KORTIX_ACP_CLAUDE_ARGS=
+KORTIX_ACP_CODEX_PATH=
+KORTIX_ACP_CODEX_ARGS=
+KORTIX_ACP_PI_PATH=
+KORTIX_ACP_PI_ARGS=
 ```
+
+Each `KORTIX_ACP_*_ARGS` value is a JSON string array. The runtime does not
+parse shell syntax.
 
 ## Build
 
