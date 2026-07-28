@@ -16,9 +16,9 @@ name: Deploy Prod
 #        blob, stamped with the clean KORTIX_VERSION.
 #      - EKS (standby): the promote PR merge already bumped infra/k8s/envs/prod,
 #        so Argo CD rolls the prod Deployment — deploy-api WATCHES it reach vX.Y.Z.
-#      - US East 2 ECS shadow: deploy-us-shadow applies the same database
-#        migrations, refreshes logical replication, and rolls the US API and
-#        gateway. It does not change production routing or enable writers.
+#      - US East 2 ECS shadow: deploy-us-shadow rolls the US API and gateway
+#        without changing database replication. The cutover workflow owns the
+#        final database migration and reconciliation.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
@@ -774,9 +774,10 @@ jobs:
 
   # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
   # The shadow uses the native US East 2 Supabase project and separate ECS
-  # services. This job keeps its database schema, logical publication, API, and
-  # gateway on the same release as production. It does not change Cloudflare
-  # routing, production DNS, desired counts, or worker flags.
+  # services. This job keeps its API and gateway on the same release as
+  # production. Database synchronization remains an explicit cutover action.
+  # This job does not change Cloudflare routing, production DNS, database
+  # replication, desired counts, or worker flags.
   deploy-us-shadow:
     name: Deploy API + gateway to US East 2 shadow
     needs: [version, retag-images, verify-image-commits, migrate-db]
@@ -787,7 +788,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       source_sha: ${{ needs.version.outputs.source_sha }}
-      synchronize_database: true
+      synchronize_database: false
     secrets: inherit
 
   # ── Deploy API to prod EKS (the standby backend, kept in perfect parity) ─────
@@ -814,6 +815,8 @@ jobs:
       ARGO_APP: kortix-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
+      - uses: actions/checkout@v7
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -864,6 +867,13 @@ jobs:
               -p '{"spec":{"source":{"targetRevision":"prod"}}}'
           fi
           kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
+
+      - name: Reconcile Argo CD Application from repo (code is source of truth)
+        if: steps.guard.outputs.exists == 'true'
+        run: |
+          kubectl apply -f infra/k8s/argocd/applications/prod.yaml
+          kubectl -n argocd annotate application "$ARGO_APP" \
+            argocd.argoproj.io/refresh=hard --overwrite
 
       # Wait for Argo CD to reconcile the promote bump and the Deployment to finish
       # rolling out exactly :VERSION — Argo applied the new spec (observedGeneration
@@ -917,6 +927,8 @@ jobs:
       ARGO_APP: kortix-gateway-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
+      - uses: actions/checkout@v7
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
