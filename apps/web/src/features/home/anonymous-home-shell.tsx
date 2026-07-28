@@ -37,6 +37,7 @@ import { AnonymousSectionTabs } from '@/features/home/anonymous-section-tabs';
 import { useSignInGate } from '@/features/home/use-sign-in-gate';
 import { ComposerChatInput } from '@/features/session/composer-chat-input';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
+import { ShellInset } from '@/features/workspace/project-layout/shell-inset';
 import { ProjectNavGroup } from '@/features/workspace/project-sidebar/project-nav-items';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import {
@@ -153,7 +154,10 @@ export function AnonymousHomeShell() {
     <SidebarProvider>
       <AnonymousSidebar activeSection={activeSection} />
       <SidebarInset>
-        <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* The SAME inset the signed-in shell uses — background, the seam
+            border against the sidebar, and the edge-peek strip. A hand-rolled
+            div here is what made the two panels look different. */}
+        <ShellInset>
           <div className="absolute top-2 right-2 z-20 md:hidden">
             <Button type="button" size="sm" variant="ghost" onClick={() => gate('/')}>
               Sign in
@@ -206,7 +210,7 @@ export function AnonymousHomeShell() {
               </nav>
             </div>
           )}
-        </div>
+        </ShellInset>
       </SidebarInset>
     </SidebarProvider>
   );
