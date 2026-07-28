@@ -1,6 +1,10 @@
 import { locales, type Locale } from '@/i18n/config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import {
+  LAST_PROJECT_COOKIE,
+  resolveDefaultLandingPath,
+} from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
@@ -403,14 +407,23 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // FAST PATH: authenticated users hitting the homepage go straight to /projects.
+  // The default destination is a PROJECT, not the projects list. When the
+  // browser remembers which project was open last we jump straight there;
+  // otherwise the id-free landing door resolves (or provisions) one behind an
+  // instant paint. The cookie is browser-written, so `resolveDefaultLandingPath`
+  // only accepts a well-formed project id and falls back to the door.
+  const defaultLandingPath = resolveDefaultLandingPath(
+    request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+  );
+
+  // FAST PATH: authenticated users hitting the homepage go straight to a project.
   if (pathname === '/' && user) {
-    return redirectPreservingSession(new URL('/projects', request.url));
+    return redirectPreservingSession(new URL(defaultLandingPath, request.url));
   }
 
-  // Desktop shell never shows the marketing homepage — bounce to /projects.
+  // Desktop shell never shows the marketing homepage — bounce into the product.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return redirectPreservingSession(new URL('/projects', request.url));
+    return redirectPreservingSession(new URL(defaultLandingPath, request.url));
   }
 
   // Self-host: when the landing/marketing site is disabled
@@ -430,7 +443,9 @@ export async function middleware(request: NextRequest) {
       pathname === '/' ||
       SELF_HOST_MARKETING_ONLY.some((route) => pathname === route || pathname.startsWith(`${route}/`));
     if (isMarketingContent) {
-      return redirectPreservingSession(new URL(user ? '/projects' : '/auth', request.url));
+      return redirectPreservingSession(
+        new URL(user ? defaultLandingPath : '/auth', request.url),
+      );
     }
   }
 

@@ -1,7 +1,11 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
-import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  LAST_PROJECT_COOKIE,
+  PROJECT_LANDING_PATH,
+  projectPathFromId,
+} from '@/lib/onboarding/landing-destination';
 import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
 import { fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -214,21 +218,30 @@ export async function GET(request: NextRequest) {
               timeoutMs: 5000,
             });
 
-            if (accountState) {
-              if (!accountHasAppAccess(accountState)) {
-                finalDestination = '/accounts';
-              } else if (isNewUser) {
-                const projectPath = await resolveFirstProjectPathForNewUser({
-                  backendUrl,
-                  accessToken,
-                  isNewUser: true,
-                });
-                if (projectPath) finalDestination = projectPath;
-              }
+            // The ONLY backend call left on this redirect's critical path, and
+            // the only reason to override the destination here. First-project
+            // provisioning deliberately does NOT happen in this handler any
+            // more: it used to await accounts (8s) + projects (8s) + a managed
+            // git repo create AND a full starter push (90s) before the browser
+            // received any redirect at all, so a fresh signup stared at a blank
+            // callback page for the whole provision. `PROJECT_LANDING_PATH`
+            // now paints instantly and does that work behind the real UI.
+            if (accountState && !accountHasAppAccess(accountState)) {
+              finalDestination = '/accounts';
             }
           } catch (err) {
             console.warn('Could not check account state from backend:', err);
           }
+        }
+
+        // Returning users skip the landing door's resolve step entirely: the
+        // browser already told us which project they had open last. Reading a
+        // cookie costs nothing, so this is a strictly free hop to remove.
+        if (finalDestination === PROJECT_LANDING_PATH) {
+          const lastProjectPath = projectPathFromId(
+            request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+          );
+          if (lastProjectPath) finalDestination = lastProjectPath;
         }
       }
 

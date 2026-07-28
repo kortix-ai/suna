@@ -18,6 +18,8 @@ import Security from '@/features/marketing/security/security';
 import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { resolveDefaultLandingPath } from '@/lib/onboarding/landing-destination';
+import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
@@ -41,7 +43,7 @@ export default function Home() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
+    window.location.href = user ? resolveDefaultLandingPath(readLastProjectId()) : '/auth';
   }, [user]);
 
   return (
