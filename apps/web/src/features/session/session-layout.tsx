@@ -14,13 +14,12 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
-import { SessionVoiceTranscriptPanel } from '@/features/session/session-voice-transcript-panel';
-import { shouldPollVoiceTranscript } from '@/features/session/session-voice-transcript-shared';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
+  normalizeSessionPanelLayoutView,
   SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
@@ -89,8 +88,8 @@ export const SessionLayout = memo(function SessionLayout({
     }
   }, [transient, isActiveTab, sessionId, setActiveSession]);
 
-  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
-  const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
+  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
+  const panelView = normalizeSessionPanelLayoutView(storedPanelView);
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const setActivePanelSession = useSessionBrowserStore((s) => s.setActiveSessionId);
 
@@ -121,7 +120,6 @@ export const SessionLayout = memo(function SessionLayout({
   const showExplorer = !isEasy && effectiveView === 'explorer';
   const showTerminal = !isEasy && effectiveView === 'terminal';
   const showAudit = !isEasy && effectiveView === 'audit';
-  const showVoice = !isEasy && effectiveView === 'voice';
 
   // Pending-approval count for the "Audit" tab badge. Shares the header nudge's
   // query key so this is one deduped request; skipped while booting/transient.
@@ -305,18 +303,6 @@ export const SessionLayout = memo(function SessionLayout({
 
   const swappableBody = showAudit ? (
     <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
-  ) : showVoice ? (
-    <SessionVoiceTranscriptPanel
-      projectId={projectId}
-      projectSessionId={projectSessionId}
-      pollingEnabled={shouldPollVoiceTranscript({
-        panelOpen: isSidePanelOpen,
-        voiceView: showVoice,
-        visibleLayout: isVisibleLayout,
-        booting,
-        transient,
-      })}
-    />
   ) : showExplorer ? (
     <SessionFilesExplorer
       chatSessionId={sessionId}
@@ -575,9 +561,6 @@ function PanelHeaderSwitcher({
           </TabsTrigger>
           <TabsTrigger size="xs" value="audit" variant="secondary" className="h-7 w-fit">
             Audit
-          </TabsTrigger>
-          <TabsTrigger size="xs" value="voice" variant="secondary" className="h-7 w-fit">
-            Voice
           </TabsTrigger>
         </TabsList>
       </Tabs>
