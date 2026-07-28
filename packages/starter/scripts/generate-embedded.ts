@@ -17,7 +17,7 @@
  * build regenerate it before compiling. `scaffold.test.ts` asserts the
  * snapshot is in sync so a stale commit fails CI.
  */
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 // Computed independently of src/index.ts so this script never imports the
@@ -54,6 +54,10 @@ const IGNORED_FILES = new Set(['.DS_Store', 'Thumbs.db']);
 
 function walk(root: string): string[] {
   const out: string[] = [];
+  // A template root with no entries left (e.g. every bundled example project
+  // retired) is a legitimate state, not a build failure — git does not track
+  // empty directories, so the root simply vanishes.
+  if (!existsSync(root)) return out;
   for (const entry of readdirSync(root)) {
     if (IGNORED_DIRS.has(entry) || IGNORED_FILES.has(entry)) continue;
     const abs = join(root, entry);

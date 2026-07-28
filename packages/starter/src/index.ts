@@ -87,6 +87,9 @@ const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
 );
 const MARKETPLACE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'marketplace');
 const MANAGED_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'managed');
+
+/** Roots that may legitimately hold nothing — see `rawFilesForRoot`. */
+const OPTIONAL_TEMPLATE_ROOTS = new Set(['marketplace-projects']);
 const MARKETPLACE_PROJECTS_TEMPLATE_DIR = join(
   import.meta.dir,
   '..',
@@ -240,6 +243,11 @@ function rawFilesForRoot(name: string, dir: string): StarterFile[] {
   } catch {
     const embedded = EMBEDDED_STARTER[name];
     if (!embedded) {
+      // An OPTIONAL root that is legitimately empty (git does not track empty
+      // directories, so retiring every item under it removes the root outright)
+      // must degrade to "no files", not take down the whole catalog build. Only
+      // a root the scaffold actually needs is worth throwing over.
+      if (OPTIONAL_TEMPLATE_ROOTS.has(name)) return [];
       throw new Error(`starter template "${name}" is unavailable on disk and not embedded`);
     }
     return embedded.files;

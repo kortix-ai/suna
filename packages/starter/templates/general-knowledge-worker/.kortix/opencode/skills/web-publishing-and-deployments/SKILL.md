@@ -1,6 +1,6 @@
 ---
 name: web-publishing-and-deployments
-description: "Publish a website or web app from the sandbox to a public URL, and deploy to cloud providers — get a live link to share, ship a static site or SPA, put a built site online, or deploy a framework app / container. Use when the user says 'publish this', 'deploy it', 'put it online', 'give me a live URL', 'host this', 'share a preview link', or wants to make a site/app they (or you) just built reachable on the web. Covers the zero-account instant path (Cloudflare) and permanent hosting (Vercel, incl. any Dockerfile), and points at find-skills-sh for other providers and deeper provider-specific skills."
+description: "Publish a website or web app from the sandbox to a public URL, and deploy to cloud providers — get a live link to share, ship a static site or SPA, put a built site online, or deploy a framework app / container. Use when the user says 'publish this', 'deploy it', 'put it online', 'give me a live URL', 'host this', 'share a preview link', or wants to make a site/app they (or you) just built reachable on the web. Covers the zero-account instant path (Cloudflare) and permanent hosting (Vercel, incl. any Dockerfile), and points at kortix-marketplace for other providers and deeper provider-specific skills."
 defaultProjectInstall: true
 ---
 
@@ -81,22 +81,22 @@ Vercel account/token. Full detail: **`references/vercel.md`**.
    public URL** — anything you deploy this way is world-readable. Treat a public
    URL as public.
 
-## Other providers & going deeper (`find-skills-sh`)
+## Other providers & going deeper (`kortix-marketplace`)
 
 This skill covers the two fast paths (Cloudflare + Vercel) inline. For anything
 beyond that — **a different provider** (Netlify, Render, Fly.io, AWS, Deno
 Deploy, GitHub Pages, Railway, …) or a **deeper, provider-specific skill** for
 Vercel or Cloudflare (full framework configs, edge functions, DNS/domains, CI) —
-use the **`find-skills-sh`** skill to search the open ecosystem and install a
+use the **`kortix-marketplace`** skill to search the catalog and import a
 battle-tested one:
 
 ```bash
-npx skills find "netlify deploy"
-npx skills find "cloudflare workers"
-npx skills find "vercel deployment"
-npx skills find "fly.io deploy docker"
+kortix marketplace search "netlify deploy" --json
+kortix marketplace search "cloudflare workers" --json
+kortix marketplace search "fly.io deploy docker" --json
 ```
 
-Reach for `find-skills-sh` whenever the user names a provider this skill doesn't
-cover, or wants richer, dedicated Vercel/Cloudflare tooling than the quickstarts
-here — pull in and use the specialized skill rather than hand-rolling it.
+Reach for `kortix-marketplace` whenever the user names a provider this skill
+doesn't cover, or wants richer, dedicated Vercel/Cloudflare tooling than the
+quickstarts here — import and use the specialized skill rather than
+hand-rolling it.

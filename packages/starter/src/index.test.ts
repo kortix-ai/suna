@@ -376,182 +376,20 @@ describe('marketplace registry — first-party use-case templates', () => {
   });
 });
 
+
 describe('marketplace projects — full project templates', () => {
-  const files = getProjectTemplateFiles();
-  const paths = new Set(files.map((f) => f.path));
-
-  test('ships the SEO Department as a full cloneable project template', () => {
-    expect(paths.has('seo-department/project.json')).toBe(true);
-    expect(paths.has('seo-department/kortix.yaml')).toBe(true);
-    expect(paths.has('seo-department/README.md')).toBe(true);
-    expect(paths.has('seo-department/install.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/memory/SEO.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/agents/seo-director.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/agents/technical-seo.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/agents/content-strategist.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/agents/serp-analyst.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/agents/seo-repo-watchdog.md')).toBe(true);
-    expect(paths.has('seo-department/.kortix/opencode/skills/seo-operating-system/SKILL.md')).toBe(
-      true,
-    );
-    expect(paths.has('seo-department/.kortix/opencode/skills/technical-seo-audit/SKILL.md')).toBe(
-      true,
-    );
-    expect(paths.has('seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md')).toBe(
-      true,
-    );
-    expect(paths.has('seo-department/.kortix/opencode/skills/content-seo-workflow/SKILL.md')).toBe(
-      true,
-    );
-    expect(paths.has('seo-department/.kortix/opencode/skills/serp-intelligence/SKILL.md')).toBe(
-      true,
-    );
-  });
-
-  test('ships the Marketing Department as a full cloneable project template', () => {
-    expect(paths.has('marketing-department/project.json')).toBe(true);
-    expect(paths.has('marketing-department/kortix.yaml')).toBe(true);
-    expect(paths.has('marketing-department/README.md')).toBe(true);
-    expect(paths.has('marketing-department/install.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/memory/MARKETING.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/marketing-director.md')).toBe(
-      true,
-    );
-    expect(paths.has('marketing-department/.kortix/opencode/agents/campaign-strategist.md')).toBe(
-      true,
-    );
-    expect(paths.has('marketing-department/.kortix/opencode/agents/content-marketer.md')).toBe(
-      true,
-    );
-    expect(paths.has('marketing-department/.kortix/opencode/agents/lifecycle-marketer.md')).toBe(
-      true,
-    );
-    expect(paths.has('marketing-department/.kortix/opencode/agents/growth-analyst.md')).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/agents/brand-guardian.md')).toBe(true);
-    expect(
-      paths.has('marketing-department/.kortix/opencode/agents/marketing-repo-watchdog.md'),
-    ).toBe(true);
-    expect(
-      paths.has('marketing-department/.kortix/opencode/skills/marketing-operating-system/SKILL.md'),
-    ).toBe(true);
-    expect(
-      paths.has('marketing-department/.kortix/opencode/skills/brand-positioning/SKILL.md'),
-    ).toBe(true);
-    expect(
-      paths.has('marketing-department/.kortix/opencode/skills/campaign-strategy/SKILL.md'),
-    ).toBe(true);
-    expect(paths.has('marketing-department/.kortix/opencode/skills/content-engine/SKILL.md')).toBe(
-      true,
-    );
-    expect(
-      paths.has('marketing-department/.kortix/opencode/skills/lifecycle-growth/SKILL.md'),
-    ).toBe(true);
-    expect(
-      paths.has('marketing-department/.kortix/opencode/skills/marketing-analytics/SKILL.md'),
-    ).toBe(true);
-    expect(
-      paths.has('marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md'),
-    ).toBe(true);
-  });
-
   /**
-   * The department templates stay in the tree (they are real, working projects
-   * and still clonable by id) but are `hidden` so the marketplace leads with the
-   * single Kortix Starter project instead of a wall of half-relevant verticals.
-   * `web-studio` was already hidden; this is the rest of the set catching up.
+   * The bundled department templates (SEO / Marketing / Website Studio) were
+   * retired: the marketplace leads with the single Kortix Starter project rather
+   * than a wall of half-relevant verticals, and the synthetic starter item is
+   * built in the API catalog, not from this root.
+   *
+   * The `registry:project` machinery itself stays — this root is the extension
+   * point for bundling an example project again — so the contract worth pinning
+   * is that an EMPTY root degrades cleanly instead of throwing the catalog build.
    */
-  test('every bundled department template is hidden from the marketplace', () => {
-    const slugs = ['seo-department', 'marketing-department', 'web-studio'];
-    for (const slug of slugs) {
-      const metaFile = files.find((f) => f.path === `${slug}/project.json`);
-      const meta = JSON.parse(metaFile?.content ?? '{}') as { hidden?: boolean };
-      expect(meta.hidden).toBe(true);
-    }
-  });
-
-  test('SEO Department metadata is dependency-backed', () => {
-    const metaFile = files.find((f) => f.path === 'seo-department/project.json');
-    const meta = JSON.parse(metaFile?.content ?? '{}') as {
-      title?: string;
-      dependencies?: string[];
-    };
-
-    expect(meta.title).toBe('SEO Department');
-    expect(meta.dependencies).toEqual(
-      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
-    );
-  });
-
-  test('Marketing Department metadata is dependency-backed', () => {
-    const metaFile = files.find((f) => f.path === 'marketing-department/project.json');
-    const meta = JSON.parse(metaFile?.content ?? '{}') as {
-      title?: string;
-      hidden?: boolean;
-      dependencies?: string[];
-    };
-
-    expect(meta.title).toBe('Marketing Department');
-    expect(meta.dependencies).toEqual(
-      expect.arrayContaining(['deep-research', 'search', 'research-report', 'xlsx']),
-    );
-    expect(meta.dependencies).toEqual(
-      expect.arrayContaining([
-        'ad-performance-review',
-        'brand-mention-monitor',
-        'social-post-drafting',
-      ]),
-    );
-  });
-
-  test('SEO Department guides company setup around real website repo access', () => {
-    const readme = files.find((f) => f.path === 'seo-department/README.md')?.content ?? '';
-    const install = files.find((f) => f.path === 'seo-department/install.md')?.content ?? '';
-    const director =
-      files.find((f) => f.path === 'seo-department/.kortix/opencode/agents/seo-director.md')
-        ?.content ?? '';
-    const repoSkill =
-      files.find(
-        (f) => f.path === 'seo-department/.kortix/opencode/skills/seo-repo-monitoring/SKILL.md',
-      )?.content ?? '';
-
-    expect(readme).toContain('your company still needs to bring its real website context');
-    expect(install).toContain('Use this form');
-    expect(install).toContain('Guided Setup Rule');
-    expect(install).toContain('Do not end with');
-    expect(install).toContain('first main-backed');
-    expect(install).toContain('kortix triggers info repo-seo-watch');
-    expect(install).toContain('WEBHOOK_SEO_SECRET');
-    expect(director).toContain('company onboarding flow in the current session');
-    expect(director).toContain('install.md');
-    expect(director).toContain('do not start another session');
-    expect(director).toContain('website/app repository');
-    expect(repoSkill).toContain('do not assume the current project repo is the site');
-  });
-
-  test('Marketing Department guides company setup around real marketing context and repo access', () => {
-    const readme = files.find((f) => f.path === 'marketing-department/README.md')?.content ?? '';
-    const install = files.find((f) => f.path === 'marketing-department/install.md')?.content ?? '';
-    const director =
-      files.find(
-        (f) => f.path === 'marketing-department/.kortix/opencode/agents/marketing-director.md',
-      )?.content ?? '';
-    const repoSkill =
-      files.find(
-        (f) =>
-          f.path ===
-          'marketing-department/.kortix/opencode/skills/marketing-repo-awareness/SKILL.md',
-      )?.content ?? '';
-
-    expect(readme).toContain('your company still needs to bring its real context');
-    expect(install).toContain('Use this form');
-    expect(install).toContain('Guided Setup Rule');
-    expect(install).toContain('MARKETING_REPO_WEBHOOK_SECRET');
-    expect(install).toContain('kortix triggers info repo-marketing-watch');
-    expect(install).toContain('Do not end with');
-    expect(director).toContain('company onboarding flow in the current session');
-    expect(director).toContain('install.md');
-    expect(director).toContain('do not start another session');
-    expect(director).toContain('marketing repo');
-    expect(repoSkill).toContain('Do not assume the current');
+  test('an empty project-template root yields no files and does not throw', () => {
+    expect(() => getProjectTemplateFiles()).not.toThrow();
+    expect(getProjectTemplateFiles()).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 ---
 name: kortix-marketplace
-description: "The Kortix marketplace — how to discover capabilities and IMPORT them into this project. The marketplace is a catalog of open git repos: whole ready-made PROJECTS (registry:project) and individual skills/agents/tools. There is no deterministic 'installer' — you (the agent) import an item by reading its source and merging the files that fit into this project, then opening a change request. Use when the user wants to browse/search the Kortix catalog, 'add/clone the <X> project', 'import that skill/agent', pull in a marketplace capability, or add a new source. For the open npx-skills ecosystem, see find-skills-sh."
+description: "The Kortix marketplace — how to discover capabilities and IMPORT them into this project. The marketplace is a catalog of open git repos: whole ready-made PROJECTS (registry:project) and individual skills/agents/tools. There is no deterministic 'installer' — you (the agent) import an item by reading its source and merging the files that fit into this project, then opening a change request. Use when the user wants to browse/search the Kortix catalog, 'add/clone the <X> project', 'import that skill/agent', pull in a marketplace capability, or add a new source."
 ---
 
 <skill name="kortix-marketplace">
@@ -77,15 +77,14 @@ one click; an arbitrary git URL is admin-gated. Once added, its items show up in
 `kortix marketplace search`, and you import them the same way.
 </adding-a-source>
 
-<vs-find-skills-sh>
-- **`kortix-marketplace`** (this) — the Kortix catalog: whole projects + skills/
-  agents/tools, imported into this repo as owned files via a CR.
-- **`find-skills-sh`** — the open `npx skills` / skills.sh ecosystem, for pulling a
-  battle-tested community skill when the Kortix catalog doesn't have it.
+<outside-the-catalog>
+This skill covers the Kortix catalog: whole projects + skills/agents/tools,
+imported into this repo as owned files via a CR.
 
-Reach for the Kortix marketplace first for anything project-shaped; reach for
-`find-skills-sh` to tap the wider open ecosystem. Either way you end up importing
-plain files you own.
-</vs-find-skills-sh>
+When the catalog has nothing that fits, the wider open ecosystem is still fair
+game — `npx skills find "<query>"` searches skills.sh, and a skill from there is
+just a `SKILL.md` plus references, so it merges in through the exact same import
+recipe above. Either way you end up importing plain files you own.
+</outside-the-catalog>
 
 </skill>
